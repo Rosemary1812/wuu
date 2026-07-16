@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ServerEvent } from "../shared/protocol";
 import type { AppState } from "./AppState";
+import { translateCurrent } from "./i18n";
 import type {
   ComposerFile,
   ComposerImage,
@@ -138,7 +139,7 @@ export function useAppDebugState({
       appendRunDebugEvent({
         source: "client",
         method: "debug/copy",
-        detail: error instanceof Error ? error.message : "复制失败",
+        detail: error instanceof Error ? error.message : translateCurrent("common.copyFailed"),
         tone: "error"
       });
     }

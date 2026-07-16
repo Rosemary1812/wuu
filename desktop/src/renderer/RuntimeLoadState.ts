@@ -16,6 +16,7 @@ import {
   upsertThread,
   type AppState,
 } from "./AppState";
+import { translateCurrent } from "./i18n";
 import { ENABLE_COLLABORATION } from "./FeatureFlags";
 
 export async function loadRuntime(
@@ -61,7 +62,7 @@ export async function loadRuntime(
   const thread = defaultThread
     ? requireThread(
         await window.wuu.resumeThread(defaultThread.id),
-        "resume did not return a thread",
+        translateCurrent("thread.resumeMissing"),
       )
     : undefined;
   return {
@@ -78,7 +79,7 @@ export async function loadRuntime(
     running: isThreadRunning(thread),
     status:
       initialized.status === "needs_setup"
-        ? (initialized.issues?.[0]?.message ?? "请在设置中配置模型凭据")
+        ? (initialized.issues?.[0]?.message ?? translateCurrent("runtime.configureCredentials"))
         : "ready",
   };
 }
@@ -128,7 +129,7 @@ export async function loadPopOutRuntime(
     ]);
   const listedThreads = sortThreads([...listed.threads, ...archived.threads]);
   const thread = reconcileResumedThreadTurns(
-    requireThread(resumed, "resume did not return a thread"),
+    requireThread(resumed, translateCurrent("thread.resumeMissing")),
     listedThreads.find((item) => item.id === init.threadID),
   );
   const tab = createThreadSessionTab(thread, init.context);
@@ -177,7 +178,7 @@ function unavailableProjectRuntimeState(
     activeContext: projectState.active_context,
     activeProjectId: activeProjectID(projectState.active_context),
     status:
-      projectState.runtime_issue?.message ?? "当前工作区目录不可用，请恢复或重新定位该工作区。",
+      projectState.runtime_issue?.message ?? translateCurrent("runtime.workspaceUnavailable"),
   };
 }
 

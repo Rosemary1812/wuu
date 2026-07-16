@@ -7,6 +7,7 @@ import type { RuntimeContext, TerminalSessionEvent } from "../shared/protocol";
 import { currentAppliedTheme, observeAppliedTheme, type AppliedTheme } from "./Theme";
 import { WorkspacePanelEmpty } from "./WorkspaceFiles";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { translateCurrent, useI18n } from "./i18n";
 
 const WORKSPACE_TERMINAL_PENDING_EVENT_IDS = 12;
 const WORKSPACE_TERMINAL_PENDING_EVENTS_PER_ID = 256;
@@ -79,23 +80,27 @@ function formatTerminalDuration(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
+    return translateCurrent("workspace.terminal.durationHours", { hours, minutes, seconds });
   }
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return translateCurrent("workspace.terminal.durationMinutes", { minutes, seconds });
   }
-  return `${seconds}s`;
+  return translateCurrent("workspace.terminal.durationSeconds", { seconds });
 }
 
 function terminalExitText(event: Extract<TerminalSessionEvent, { type: "exit" }>): string {
   const duration = formatTerminalDuration(event.duration_ms);
   if (event.signal) {
-    return `stopped by ${event.signal} after ${duration}`;
+    return translateCurrent("workspace.terminal.stoppedBy", { signal: event.signal, duration });
   }
-  return `exit ${event.exit_code ?? "unknown"} after ${duration}`;
+  return translateCurrent("workspace.terminal.exited", {
+    code: event.exit_code ?? translateCurrent("workspace.terminal.unknown"),
+    duration,
+  });
 }
 
 export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: RuntimeContext }): JSX.Element {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const sessionIDRef = useRef<string | undefined>(undefined);
@@ -192,7 +197,7 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
         return;
       }
       terminal.writeln("");
-      terminal.writeln(`[terminal error: ${event.message}]`);
+      terminal.writeln(`[${translateCurrent("workspace.terminal.error", { message: event.message })}]`);
       setTerminalState("error");
       sessionIDRef.current = undefined;
     }
@@ -234,7 +239,7 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
         fitAndResize();
         terminal.focus();
       } catch (error) {
-        terminal.writeln(desktopApiErrorMessage(error, "终端启动失败"));
+        terminal.writeln(desktopApiErrorMessage(error, translateCurrent("workspace.terminal.startFailed")));
         setTerminalState("error");
       }
     }
@@ -262,7 +267,7 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
   }, [restartKey, workspaceRoot]);
 
   if (!workspaceRoot) {
-    return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。" icon={<Terminal size={24} />} />;
+    return <WorkspacePanelEmpty title={t("workspace.files.noProject")} description={t("workspace.terminal.noProjectDescription")} icon={<Terminal size={24} />} />;
   }
 
   return (
@@ -272,7 +277,7 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
       </div>
       {terminalState === "exited" || terminalState === "error" ? (
         <button className="workspace-terminal-restart" type="button" onClick={() => setRestartKey((current) => current + 1)}>
-          重新启动
+          {t("workspace.terminal.restart")}
         </button>
       ) : null}
     </div>

@@ -18,6 +18,7 @@ import {
   type SideThreadEntryState,
 } from "./SideThreadState";
 import { latestAgentMessageItemID, TurnView } from "./TurnView";
+import { useI18n } from "./i18n";
 
 export type SideThreadPanelHandle = {
   focusComposer: () => void;
@@ -50,6 +51,7 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
     },
     ref,
   ) {
+    const { t } = useI18n();
     const composerHostRef = useRef<HTMLDivElement | null>(null);
     const bodyScroll = useAutoFollowScrollContainer({ open: true });
     const turns = useMemo(
@@ -88,13 +90,13 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
         className="side-thread-panel"
         data-main-thread-id={mainThreadId}
         data-streaming={entry.streaming ? "true" : "false"}
-        aria-label="侧聊"
+        aria-label={t("sideThread.title")}
       >
         <button
           type="button"
           className="side-thread-panel__resizer"
           role="separator"
-          aria-label="调整侧聊宽度"
+          aria-label={t("sideThread.resize")}
           aria-orientation="vertical"
           aria-valuemin={SIDE_THREAD_MIN_WIDTH}
           aria-valuemax={SIDE_THREAD_MAX_WIDTH}
@@ -103,14 +105,14 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
         />
         <header className="side-thread-panel__header">
           <div className="side-thread-panel__heading">
-            <span className="side-thread-panel__title">侧聊</span>
+            <span className="side-thread-panel__title">{t("sideThread.title")}</span>
           </div>
           <button
             type="button"
             className="side-thread-panel__close"
             onClick={onClose}
-            aria-label="收起侧聊"
-            title="收起侧聊"
+            aria-label={t("sideThread.collapse")}
+            title={t("sideThread.collapse")}
           >
             <PanelRightClose size={16} strokeWidth={1.75} />
           </button>

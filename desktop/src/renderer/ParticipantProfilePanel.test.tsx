@@ -207,7 +207,7 @@ describe("ParticipantProfilePanel — initialName pre-fill", () => {
     // The other fields fall back to the new-mode defaults so the user
     // can move on to role / model without filling the whole identity
     // section from scratch.
-    expect(selectMenuValue("role")).toBe("reviewer");
+    expect(selectMenuValue("role")).toBe("审查");
   });
 
   it("leaves the name input blank when no initialName is provided", () => {
@@ -363,7 +363,7 @@ describe("ParticipantProfilePanel — identity and model", () => {
 
     expect(nameInput?.value).toBe("Mira");
     expect(taglineInput?.value).toBe("Catches typos");
-    expect(selectMenuValue("role")).toBe("reviewer");
+    expect(selectMenuValue("role")).toBe("审查");
     // The model trigger shows the model's display name, not the wire value.
     expect(selectMenuValue("model")).toBe("Claude Sonnet 4.7");
     // 旧 Memory 编辑框已随扁平记忆退役，不再渲染。
@@ -631,7 +631,7 @@ describe("ParticipantProfilePanel — read-only memory summary", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain("还没有关于 Ta 的记忆。");
+    expect(container.textContent).toContain("还没有关于该 Agent 的记忆。");
   });
 
   it("degrades to the not-ready line when the backend lacks memory/read", async () => {
@@ -717,7 +717,7 @@ describe("ParticipantProfilePanel — archive confirm dialog", () => {
 
     expect(onRetire).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
-      "Ta 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。",
+      "该 Agent 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。",
     );
     expect(dialogButton("归档")).toBeDefined();
     expect(dialogButton("再想想")).toBeDefined();

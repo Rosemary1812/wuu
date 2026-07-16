@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem } from "../shared/protocol";
 import { readableToolActivityCommand } from "./ToolActivity";
 import {
@@ -7,6 +7,9 @@ import {
   collectTurnSources,
   summarizeToolActivity,
 } from "./ToolActivityHelpers";
+import { setActiveLocale } from "./i18n";
+
+afterEach(() => setActiveLocale("zh-CN"));
 
 describe("readableToolActivityCommand", () => {
   it("uses structured rich tool results when the text projection is not JSON", () => {
@@ -175,6 +178,29 @@ describe("readableToolActivityCommand", () => {
         display: { kind: "command", text: "运行 npx vitest", capability: "command.bash" }
       })
     ).toBe("运行 npx vitest — command.bash");
+  });
+
+  it("localizes generated activity copy without changing command arguments", () => {
+    setActiveLocale("en-US");
+
+    expect(
+      readableToolActivityCommand({
+        name: "bash",
+        arguments: JSON.stringify({ command: "npm run typecheck" }),
+      }),
+    ).toBe("Run npm run typecheck");
+
+    expect(
+      summarizeToolActivity([
+        {
+          id: "tool-1",
+          type: "tool_call",
+          name: "bash",
+          status: "completed",
+          arguments: JSON.stringify({ command: "npm run typecheck" }),
+        },
+      ]).text,
+    ).toBe("Ran 1 command");
   });
 
   it("omits the capability suffix when display.capability is missing", () => {

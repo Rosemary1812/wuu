@@ -27,6 +27,7 @@ import { agentStatusLabel, sortChildAgents } from "./ThreadAgents";
 import { ParticipantChip } from "./ParticipantChip";
 import { type SubagentRowSummary } from "./EnvironmentSideStack";
 import { nicknameForSubagentID } from "./waterMarginNames";
+import { useI18n } from "./i18n";
 
 export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
@@ -100,6 +101,7 @@ export function EnvironmentPanel({
   onArchiveSubagent?: (agent: SubagentRowSummary) => void;
   onClearSubagentArchiveConfirm?: (agentID: string) => void;
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   if (activeMenu === "file" && rightPanelFilePath) {
     return (
       <EnvironmentFilePreview
@@ -113,7 +115,9 @@ export function EnvironmentPanel({
 
   const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
-  const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
+  const branchLabel = gitStatus?.is_repo
+    ? gitStatus.branch ?? "detached"
+    : t("environment.notGitRepository");
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
@@ -124,12 +128,12 @@ export function EnvironmentPanel({
     <aside
       className={`environment-panel ${motionState}`}
       ref={panelRef}
-      aria-label={planUpdate ? "进度与环境信息" : "环境信息"}
+      aria-label={t(planUpdate ? "environment.progressAndInfo" : "environment.info")}
       aria-hidden={motionState === "closing" ? true : undefined}
     >
       <div className="environment-panel-header floating">
         <div className="environment-panel-actions">
-          <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
+          <button className="icon-button" type="button" aria-label={t("environment.closeInfo")} onClick={onClose}>
             <X className="icon" />
           </button>
         </div>
@@ -145,21 +149,23 @@ export function EnvironmentPanel({
           onClick={onOpenReview}
         >
           <FolderPlus className="icon-lg" />
-          <strong>变更</strong>
+          <strong>{t("environment.changes")}</strong>
           <span className="environment-row-meta">
             {gitStatus?.is_repo
               ? hasChanges
                 ? (
                   <>
-                    {diff.files} 个文件
+                    {t(diff.files === 1 ? "environment.fileCountOne" : "environment.fileCount", {
+                      count: formatNumber(diff.files),
+                    })}
                     <span className="environment-diff">
-                      <span className="additions">+{diff.additions.toLocaleString()}</span>
-                      <span className="deletions">-{diff.deletions.toLocaleString()}</span>
+                      <span className="additions">+{formatNumber(diff.additions)}</span>
+                      <span className="deletions">-{formatNumber(diff.deletions)}</span>
                     </span>
                   </>
                 )
                 : null
-              : "非 Git"}
+              : t("environment.notGit")}
           </span>
           {gitStatus?.is_repo ? <ChevronRight className="icon" /> : null}
         </button>
@@ -182,8 +188,8 @@ export function EnvironmentPanel({
           onClick={onOpenCommit}
         >
           <CornerDownRight className="icon-lg" />
-          <strong>提交</strong>
-          <span>{hasChanges ? "提交当前更改" : ""}</span>
+          <strong>{t("environment.commit")}</strong>
+          <span>{hasChanges ? t("environment.commitChanges") : ""}</span>
         </button>
 
         <button
@@ -194,8 +200,8 @@ export function EnvironmentPanel({
           onClick={onOpenPullRequest}
         >
           <Github className="icon-lg" />
-          <strong>{gitStatus?.pr_url ? "查看拉取请求" : "创建拉取请求"}</strong>
-          <span>{gitStatus?.pr_url ? "已有 PR" : prDisabled ? pullRequestDisabledReason : "推送并创建 PR"}</span>
+          <strong>{t(gitStatus?.pr_url ? "environment.viewPR" : "environment.createPR")}</strong>
+          <span>{gitStatus?.pr_url ? t("environment.existingPR") : prDisabled ? pullRequestDisabledReason : t("environment.pushAndCreatePR")}</span>
         </button>
 
         {subagentSessions && subagentSessions.length > 0 ? (
@@ -248,6 +254,7 @@ function EnvironmentSubagents({
   onArchive?: (agent: SubagentRowSummary) => void;
   onClearArchiveConfirm?: (agentID: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   // We treat the summary as a quasi-`Agent` for the existing sort helper
   // — it sorts by started_at then by agent_path which keeps the visible
   // order deterministic and matches the sidebar's historical behaviour.
@@ -259,7 +266,7 @@ function EnvironmentSubagents({
   return (
     <div
       role="group"
-      aria-label="子任务"
+      aria-label={t("environment.subtasks")}
       className="environment-subagent-group"
     >
       {ordered.map((agent) => {
@@ -284,7 +291,9 @@ function EnvironmentSubagents({
                 type="button"
                 className="subagent-row-main"
                 onClick={() => onSelect?.(agent)}
-                aria-label={`打开子任务 ${agentLabelFromSummary(agent)}`}
+                aria-label={t("environment.openSubtask", {
+                  name: agentLabelFromSummary(agent),
+                })}
                 title={agentTooltipFromSummary(agent)}
               >
                 <span className="subagent-row-title">
@@ -301,12 +310,15 @@ function EnvironmentSubagents({
                   <span className="subagent-row-nested">{nestedLabel}</span>
                 ) : null}
               </button>
-              <div className="subagent-row-actions" aria-label="子任务操作">
+              <div
+                className="subagent-row-actions"
+                aria-label={t("environment.subtaskActions")}
+              >
                 <button
                   className={`sidebar-row-icon-button subagent-row-action ${agent.pinned ? "active" : ""}`}
                   type="button"
-                  aria-label={agent.pinned ? "取消置顶" : "置顶"}
-                  title={agent.pinned ? "取消置顶" : "置顶"}
+                  aria-label={t(agent.pinned ? "sidebar.unpin" : "sidebar.pin")}
+                  title={t(agent.pinned ? "sidebar.unpin" : "sidebar.pin")}
                   onClick={() => onTogglePinned?.(agent)}
                 >
                   <Pin className="icon-sm" />
@@ -314,8 +326,16 @@ function EnvironmentSubagents({
                 <button
                   className={`sidebar-row-icon-button subagent-row-action archive ${archiveConfirming ? "confirm" : ""}`}
                   type="button"
-                  aria-label={archiveConfirming ? "确认归档" : "归档"}
-                  title={archiveConfirming ? "再次点击归档" : "归档"}
+                  aria-label={t(
+                    archiveConfirming
+                      ? "environment.confirmArchive"
+                      : "sidebar.archiveAction",
+                  )}
+                  title={t(
+                    archiveConfirming
+                      ? "environment.clickAgainArchive"
+                      : "sidebar.archiveAction",
+                  )}
                   onClick={() => onArchive?.(agent)}
                 >
                   <Archive className="icon-sm" />
@@ -367,8 +387,9 @@ function agentTooltipFromSummary(agent: SubagentRowSummary): string {
 }
 
 function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {
+  const { t } = useI18n();
   return (
-    <section className="environment-plan-section" aria-label="任务进度">
+    <section className="environment-plan-section" aria-label={t("environment.taskProgress")}>
       <div className="environment-plan-scroll">
         <ol className="environment-plan-list">
           {planUpdate.plan.map((item, index) => (
@@ -394,6 +415,7 @@ function EnvironmentBranchMenu({
   onSelectBranch: (branch: string) => void;
   onCreateBranch: (branch: string) => Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [newBranch, setNewBranch] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -415,7 +437,11 @@ function EnvironmentBranchMenu({
       await onCreateBranch(branch);
       setNewBranch("");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "无法创建分支");
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : t("environment.createBranchFailed"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -425,13 +451,13 @@ function EnvironmentBranchMenu({
     <div className="environment-side-menu branch" role="menu">
       <label className="environment-search">
         <Search className="icon" />
-        <input value={query} placeholder="搜索分支" onChange={(event) => setQuery(event.target.value)} />
+        <input value={query} placeholder={t("environment.searchBranches")} onChange={(event) => setQuery(event.target.value)} />
       </label>
       {gitStatus.dirty_count > 0 ? (
-        <div className="environment-side-note">未提交更改会跟随分支切换；如果会覆盖本地内容，Git 会拒绝。</div>
+        <div className="environment-side-note">{t("environment.dirtyBranchNote")}</div>
       ) : null}
       <div className="environment-branch-list">
-        {branches.length === 0 ? <div className="environment-empty">没有匹配分支</div> : null}
+        {branches.length === 0 ? <div className="environment-empty">{t("environment.noMatchingBranches")}</div> : null}
         {branches.map((branch) => {
           const selected = branch === gitStatus.branch;
           return (
@@ -444,7 +470,7 @@ function EnvironmentBranchMenu({
         })}
       </div>
       <form className="environment-create-branch" onSubmit={(event) => void submitNewBranch(event)}>
-        <input value={newBranch} placeholder="新分支名称" onChange={(event) => setNewBranch(event.target.value)} />
+        <input value={newBranch} placeholder={t("environment.newBranchName")} onChange={(event) => setNewBranch(event.target.value)} />
         <button type="submit" disabled={!newBranch.trim() || submitting}>
           <Plus className="icon" />
         </button>
@@ -472,6 +498,7 @@ function EnvironmentFilePreview({
   panelRef: RefObject<HTMLDivElement | null>;
   motionState: EnvironmentPanelMotionState;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -490,7 +517,7 @@ function EnvironmentFilePreview({
       })
       .catch((e) => {
         if (!cancelled) {
-          setError(desktopApiErrorMessage(e, "打开文件失败"));
+          setError(desktopApiErrorMessage(e, t("environment.openFileFailed")));
         }
       })
       .finally(() => {
@@ -501,7 +528,7 @@ function EnvironmentFilePreview({
     return () => {
       cancelled = true;
     };
-  }, [filePath]);
+  }, [filePath, locale]);
 
   let body: JSX.Element;
   if (loading) {
@@ -509,7 +536,7 @@ function EnvironmentFilePreview({
       <div className="environment-panel-body">
         <div className="environment-row environment-file-row">
           <FileText aria-hidden="true" className="icon-lg" />
-          <strong>正在打开</strong>
+          <strong>{t("environment.opening")}</strong>
           <span>{filePath}</span>
         </div>
       </div>
@@ -519,7 +546,7 @@ function EnvironmentFilePreview({
       <div className="environment-panel-body">
         <div className="environment-row environment-file-row">
           <AlertCircle aria-hidden="true" className="icon-lg" />
-          <strong>打开失败</strong>
+          <strong>{t("environment.openFailed")}</strong>
           <span>{error}</span>
           <span className="environment-row-meta">{filePath}</span>
         </div>
@@ -530,7 +557,7 @@ function EnvironmentFilePreview({
       <div className="environment-panel-body">
         <div className="environment-row environment-file-row">
           <FileText aria-hidden="true" className="icon-lg" />
-          <strong>没有内容</strong>
+          <strong>{t("environment.noContent")}</strong>
           <span>{filePath}</span>
         </div>
       </div>
@@ -540,8 +567,8 @@ function EnvironmentFilePreview({
       <div className="environment-panel-body">
         <div className="environment-row environment-file-row">
           <FileX aria-hidden="true" className="icon-lg" />
-          <strong>无法预览</strong>
-          <span>{file.path} 是二进制文件</span>
+          <strong>{t("environment.cannotPreview")}</strong>
+          <span>{t("environment.binaryFile", { path: file.path })}</span>
         </div>
       </div>
     );
@@ -553,15 +580,15 @@ function EnvironmentFilePreview({
             <strong>{file.path}</strong>
             <span>
               {formatBytes(file.size_bytes)}
-              {file.truncated ? " · 仅显示前 512 KB" : ""}
+              {file.truncated ? t("environment.truncated512") : ""}
             </span>
           </div>
           <button
             type="button"
             className="icon-button"
             onClick={onClose}
-            aria-label="返回环境信息"
-            title="返回"
+            aria-label={t("environment.backToInfo")}
+            title={t("common.back")}
           >
             <ChevronRight aria-hidden="true" className="icon" />
           </button>
@@ -579,17 +606,17 @@ function EnvironmentFilePreview({
     <aside
       ref={panelRef}
       className={`environment-panel ${motionState}`}
-      aria-label="文件预览"
+      aria-label={t("environment.filePreview")}
       aria-hidden={motionState === "closing" ? true : undefined}
     >
       <div className="environment-panel-header">
-        <h2>文件</h2>
+        <h2>{t("environment.file")}</h2>
         <div className="environment-panel-actions">
           <button
             className="icon-button"
             type="button"
-            aria-label="返回环境信息"
-            title="返回"
+            aria-label={t("environment.backToInfo")}
+            title={t("common.back")}
             onClick={onClose}
           >
             <X aria-hidden="true" className="icon" />

@@ -1,4 +1,5 @@
 import type { Agent } from "../shared/protocol";
+import { getActiveLocale, translateCurrent } from "./i18n";
 
 export function sortChildAgents(agents: Agent[]): Agent[] {
   return agents.slice().sort((left, right) => {
@@ -7,7 +8,7 @@ export function sortChildAgents(agents: Agent[]): Agent[] {
     if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
       return leftTime - rightTime;
     }
-    return agentLabel(left).localeCompare(agentLabel(right), "zh-CN");
+    return agentLabel(left).localeCompare(agentLabel(right), getActiveLocale());
   });
 }
 
@@ -37,21 +38,21 @@ export function agentNestedLabel(agent: Agent): string | undefined {
 export function agentStatusLabel(status: string | undefined): string {
   switch (status) {
     case "pending":
-      return "等待";
+      return translateCurrent("agent.status.pending");
     case "queued":
-      return "排队中";
+      return translateCurrent("agent.status.queued");
     case "running":
-      return "运行中";
+      return translateCurrent("agent.status.running");
     case "waiting_children":
-      return "等待子任务";
+      return translateCurrent("agent.status.waitingChildren");
     case "completed":
-      return "完成";
+      return translateCurrent("agent.status.completed");
     case "failed":
-      return "失败";
+      return translateCurrent("agent.status.failed");
     case "cancelled":
-      return "已停止";
+      return translateCurrent("agent.status.cancelled");
     default:
-      return status?.trim() || "未知";
+      return status?.trim() || translateCurrent("common.unknown");
   }
 }
 

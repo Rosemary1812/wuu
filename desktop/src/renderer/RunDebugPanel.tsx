@@ -34,6 +34,13 @@ import {
   type JsonRecord,
 } from "./ToolActivity";
 import { LiveDuration, formatDuration } from "./TurnProgress";
+import {
+  formatCurrentDate,
+  formatCurrentNumber,
+  resolveLocalizedText,
+  translateCurrent as t,
+  useI18n,
+} from "./i18n";
 
 type RunDebugEventSource = "client" | "server";
 type RunDebugEventTone = "info" | "running" | "success" | "warning" | "error";
@@ -82,25 +89,34 @@ export function RunDebugPanel({
   onCopy: () => void;
   onClose: () => void;
 }): JSX.Element {
+  useI18n();
   const thread = activeThreadForState(state);
   const turn = phase.turn ?? activeDebugTurn(thread);
   const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
   const turnStartedAt = turn ? parseTurnTimestampMs(turn.started_at) : NaN;
   const model = state.initialized
     ? `${state.initialized.provider} / ${state.initialized.model}${state.initialized.variant || state.initialized.effort ? ` / ${state.initialized.variant || state.initialized.effort}` : ""}`
-    : "未初始化";
+    : t("runDebug.notInitialized");
   const queueDetail = [
-    queuedMessages.length > 0 ? `排队 ${queuedMessages.length}` : "",
-    guideMessages.length > 0 ? `引导 ${guideMessages.length}` : "",
-    composerImages.length > 0 ? `图片 ${composerImages.length}` : "",
-    composerFiles.length > 0 ? `文件 ${composerFiles.length}` : "",
+    queuedMessages.length > 0
+      ? t("runDebug.queuedCount", { count: formatCurrentNumber(queuedMessages.length) })
+      : "",
+    guideMessages.length > 0
+      ? t("runDebug.guideCount", { count: formatCurrentNumber(guideMessages.length) })
+      : "",
+    composerImages.length > 0
+      ? t("runDebug.imageCount", { count: formatCurrentNumber(composerImages.length) })
+      : "",
+    composerFiles.length > 0
+      ? t("runDebug.fileCount", { count: formatCurrentNumber(composerFiles.length) })
+      : "",
   ]
     .filter(Boolean)
-    .join("，");
+    .join(t("runDebug.listSeparator"));
   const streamStats = streamTextStore.stats();
 
   return (
-    <aside className="run-debug-panel" aria-label="调试信息">
+    <aside className="run-debug-panel" aria-label={t("runDebug.label")}>
       <div className="run-debug-header">
         <div>
           <span className={`run-debug-phase ${phase.tone}`}>{phase.label}</span>
@@ -110,7 +126,7 @@ export function RunDebugPanel({
           <button
             className="icon-button"
             type="button"
-            aria-label="复制调试信息"
+            aria-label={t("runDebug.copy")}
             onClick={onCopy}
           >
             <Copy className="icon" />
@@ -118,7 +134,7 @@ export function RunDebugPanel({
           <button
             className="icon-button"
             type="button"
-            aria-label="关闭调试信息"
+            aria-label={t("runDebug.close")}
             onClick={onClose}
           >
             <X className="icon" />
@@ -127,24 +143,30 @@ export function RunDebugPanel({
       </div>
 
       <div className="run-debug-scroll">
-        {copied ? <div className="run-debug-copied">已复制诊断信息</div> : null}
+        {copied ? (
+          <div className="run-debug-copied">{t("runDebug.copied")}</div>
+        ) : null}
         <section className="run-debug-section">
-          <h3>当前状态</h3>
+          <h3>{t("runDebug.currentStatus")}</h3>
           <RunDebugRow
-            label="运行"
-            value={state.running ? "running" : state.status || "ready"}
+            label={t("runDebug.running")}
+            value={
+              state.running
+                ? t("runDebug.runtimeStatus.running")
+                : debugRuntimeStatusLabel(state.status || "ready")
+            }
           />
-          <RunDebugRow label="模型" value={model} />
+          <RunDebugRow label={t("runDebug.model")} value={model} />
           <RunDebugRow
-            label="工作区"
-            value={state.activeContext?.cwd ?? thread?.cwd ?? "未连接"}
+            label={t("runDebug.workspace")}
+            value={state.activeContext?.cwd ?? thread?.cwd ?? t("runDebug.notConnected")}
           />
           <RunDebugRow
-            label="Thread"
-            value={thread ? shortDebugID(thread.id) : "无"}
+            label={t("runDebug.thread")}
+            value={thread ? shortDebugID(thread.id) : t("runDebug.none")}
           />
           <RunDebugRow
-            label="Turn"
+            label={t("runDebug.turn")}
             value={
               turn ? (
                 <>
@@ -156,37 +178,42 @@ export function RunDebugPanel({
                     Number.isFinite(turnStartedAt) ? (
                     <LiveDuration startedAtMs={turnStartedAt} />
                   ) : (
-                    "未知耗时"
+                    t("runDebug.unknownDuration")
                   )}
                 </>
               ) : (
-                "无"
+                t("runDebug.none")
               )
             }
           />
           <RunDebugRow
-            label="最后事件"
+            label={t("runDebug.lastEvent")}
             value={
               lastEvent ? (
                 <>
                   {lastEvent.method} · <LiveSince atMs={lastEvent.at} />
                 </>
               ) : (
-                "暂无"
+                t("runDebug.notAvailable")
               )
             }
           />
           {queueDetail ? (
-            <RunDebugRow label="待发送" value={queueDetail} />
+            <RunDebugRow label={t("runDebug.pendingSend")} value={queueDetail} />
           ) : null}
           <RunDebugRow
-            label="Stream 缓存"
-            value={`${streamStats.valueEntryCount}/${streamStats.entryCount} entries · 订阅 ${streamStats.listenerCount} · ${streamStats.totalValueLength} chars`}
+            label={t("runDebug.streamCache")}
+            value={t("runDebug.streamStats", {
+              values: formatCurrentNumber(streamStats.valueEntryCount),
+              entries: formatCurrentNumber(streamStats.entryCount),
+              listeners: formatCurrentNumber(streamStats.listenerCount),
+              chars: formatCurrentNumber(streamStats.totalValueLength),
+            })}
           />
         </section>
 
         <section className="run-debug-section">
-          <h3>本轮 Item</h3>
+          <h3>{t("runDebug.turnItems")}</h3>
           {turn?.items.length ? (
             <div className="run-debug-items">
               {turn.items.map((item) => (
@@ -194,12 +221,12 @@ export function RunDebugPanel({
               ))}
             </div>
           ) : (
-            <div className="run-debug-empty">还没有收到 turn/item。</div>
+            <div className="run-debug-empty">{t("runDebug.noTurnItems")}</div>
           )}
         </section>
 
         <section className="run-debug-section">
-          <h3>事件时间线</h3>
+          <h3>{t("runDebug.eventTimeline")}</h3>
           {events.length > 0 ? (
             <div className="run-debug-events">
               {events
@@ -217,7 +244,7 @@ export function RunDebugPanel({
                 ))}
             </div>
           ) : (
-            <div className="run-debug-empty">暂无事件。</div>
+            <div className="run-debug-empty">{t("runDebug.noEvents")}</div>
           )}
         </section>
       </div>
@@ -260,23 +287,23 @@ function RunDebugItem({
           turnID={turnID}
           item={item}
           field="text"
-          label="text"
+          label={t("runDebug.field.text")}
         />
         <DebugFieldLength
           turnID={turnID}
           item={item}
           field="arguments"
-          label="args"
+          label={t("runDebug.field.arguments")}
         />
         <DebugFieldLength
           turnID={turnID}
           item={item}
           field="result"
-          label="result"
+          label={t("runDebug.field.result")}
         />
         {item.error ? (
           <span className="error" title={item.error}>
-            error: {shortDebugError(item.error)}
+            {t("runDebug.field.error")}: {shortDebugError(item.error)}
           </span>
         ) : null}
       </div>
@@ -322,7 +349,7 @@ function DebugFieldLength({
   }
   return (
     <span>
-      {label} {length.toLocaleString()}
+      {label} {formatCurrentNumber(length)}
     </span>
   );
 }
@@ -333,7 +360,9 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
   useEffect(() => {
     const update = (): void => {
       if (nodeRef.current) {
-        nodeRef.current.textContent = `${formatDuration(Date.now() - atMs)} 前`;
+        nodeRef.current.textContent = t("runDebug.durationAgo", {
+          duration: formatDuration(Date.now() - atMs),
+        });
       }
     };
     update();
@@ -341,7 +370,11 @@ function LiveSince({ atMs }: { atMs: number }): JSX.Element {
     return () => window.clearInterval(timer);
   }, [atMs]);
 
-  return <span ref={nodeRef}>{formatDuration(Date.now() - atMs)} 前</span>;
+  return (
+    <span ref={nodeRef}>
+      {t("runDebug.durationAgo", { duration: formatDuration(Date.now() - atMs) })}
+    </span>
+  );
 }
 
 export function runDebugPhaseForState(state: AppState): RunDebugPhase {
@@ -349,8 +382,10 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
   const turn = activeDebugTurn(thread);
   if (!state.initialized) {
     return {
-      label: "运行时未就绪",
-      detail: state.status || "等待初始化",
+      label: t("runDebug.runtimeNotReady"),
+      detail: state.status
+        ? debugRuntimeStatusLabel(state.status)
+        : t("runDebug.waitingInitialization"),
       tone:
         state.status === "connecting" || state.status === "opening"
           ? "running"
@@ -360,8 +395,8 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
   }
   if (state.running && !turn) {
     return {
-      label: "正在发送请求",
-      detail: "还没收到 turn/started",
+      label: t("runDebug.sendingRequest"),
+      detail: t("runDebug.noTurnStarted"),
       tone: "running",
     };
   }
@@ -373,7 +408,7 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
     );
     if (runningTool) {
       return {
-        label: "正在调用工具",
+        label: t("runDebug.callingTool"),
         detail: readableToolName(runningTool.name),
         tone: "running",
         turn,
@@ -384,8 +419,8 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
     const latestItem = latestDebugItem(turn);
     if (!latestItem) {
       return {
-        label: "等待模型响应",
-        detail: "turn 已开始，尚未收到回复 item",
+        label: t("runDebug.waitingModel"),
+        detail: t("runDebug.turnStartedNoReply"),
         tone: "running",
         turn,
       };
@@ -393,11 +428,14 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
     if (latestItem.type === "agent_message") {
       const length = debugStreamFieldLength(turn.id, latestItem, "text");
       return {
-        label: length > 0 ? "正在生成回复" : "回复已开始",
+        label:
+          length > 0
+            ? t("runDebug.generatingReply")
+            : t("runDebug.replyStarted"),
         detail:
           length > 0
-            ? `已收到 ${length.toLocaleString()} 字`
-            : "等待首个回复片段",
+            ? t("runDebug.receivedChars", { count: formatCurrentNumber(length) })
+            : t("runDebug.waitingFirstReply"),
         tone: "running",
         turn,
         activeItem: latestItem,
@@ -406,11 +444,13 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
     if (latestItem.type === "reasoning") {
       const length = debugStreamFieldLength(turn.id, latestItem, "text");
       return {
-        label: "模型正在思考",
+        label: t("runDebug.modelThinking"),
         detail:
           length > 0
-            ? `已收到 ${length.toLocaleString()} 字思考内容`
-            : "等待推理片段",
+            ? t("runDebug.receivedReasoningChars", {
+                count: formatCurrentNumber(length),
+              })
+            : t("runDebug.waitingReasoning"),
         tone: "running",
         turn,
         activeItem: latestItem,
@@ -421,15 +461,15 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
       latestItem.type === "collab_agent_tool_call"
     ) {
       return {
-        label: "工具已返回",
-        detail: "等待模型继续处理工具结果",
+        label: t("runDebug.toolReturned"),
+        detail: t("runDebug.waitingToolResultProcessing"),
         tone: "running",
         turn,
         activeItem: latestItem,
       };
     }
     return {
-      label: "本轮处理中",
+      label: t("runDebug.turnProcessing"),
       detail: debugItemTitle(latestItem),
       tone: "running",
       turn,
@@ -438,45 +478,66 @@ export function runDebugPhaseForState(state: AppState): RunDebugPhase {
   }
   if (turn?.status === "failed") {
     return {
-      label: "处理失败",
-      detail: turn.error?.message ?? "本轮返回失败状态",
+      label: t("runDebug.processingFailed"),
+      detail: turn.error?.message ?? t("runDebug.turnFailedStatus"),
       tone: "error",
       turn,
     };
   }
   if (turn?.status === "interrupted") {
     return {
-      label: "已停止",
-      detail: "本轮已被中断",
+      label: t("runDebug.stopped"),
+      detail: t("runDebug.turnInterrupted"),
       tone: "warning",
       turn,
     };
   }
   if (turn?.status === "completed") {
     return {
-      label: "已完成",
+      label: t("runDebug.completed"),
       detail:
         turn.duration_ms === undefined
-          ? "本轮完成"
-          : `耗时 ${formatDuration(turn.duration_ms)}`,
+          ? t("runDebug.turnCompleted")
+          : t("runDebug.duration", { duration: formatDuration(turn.duration_ms) }),
       tone: "success",
       turn,
     };
   }
   if (state.running) {
     return {
-      label: "运行中",
-      detail: state.status || "等待事件",
+      label: t("runDebug.inProgress"),
+      detail: state.status
+        ? debugRuntimeStatusLabel(state.status)
+        : t("runDebug.waitingEvents"),
       tone: "running",
       turn,
     };
   }
   return {
-    label: state.status === "ready" ? "空闲" : "当前状态",
-    detail: state.status === "ready" ? "可以发送新消息" : state.status,
+    label:
+      state.status === "ready"
+        ? t("runDebug.idle")
+        : t("runDebug.currentStatus"),
+    detail:
+      state.status === "ready"
+        ? t("runDebug.canSend")
+        : debugRuntimeStatusLabel(state.status),
     tone: state.status === "ready" ? "idle" : "warning",
     turn,
   };
+}
+
+function debugRuntimeStatusLabel(status: string): string {
+  switch (status) {
+    case "ready":
+      return t("runDebug.runtimeStatus.ready");
+    case "connecting":
+      return t("runDebug.runtimeStatus.connecting");
+    case "opening":
+      return t("runDebug.runtimeStatus.opening");
+    default:
+      return resolveLocalizedText(status);
+  }
 }
 
 function activeDebugTurn(thread: Thread | undefined): Turn | undefined {
@@ -516,7 +577,7 @@ export function runDebugEventFromServerEvent(
       return {
         source: "server",
         method: event.message.method,
-        detail: "服务端正在等待客户端响应",
+        detail: t("runDebug.serverWaitingClient"),
         tone: "warning",
       };
     case "server-error":
@@ -530,7 +591,7 @@ export function runDebugEventFromServerEvent(
       return {
         source: "server",
         method: "server/exit",
-        detail: `app-server 退出：${event.code ?? "unknown"}`,
+        detail: t("runDebug.appServerExited", { code: event.code ?? "unknown" }),
         tone: "error",
       };
     case "notification":
@@ -559,7 +620,9 @@ function runDebugEventFromNotification(
     return {
       source: "server",
       method: debugNotificationMethodLabel(notification.method),
-      detail: `首个片段 ${delta.length.toLocaleString()} 字`,
+      detail: t("runDebug.firstDelta", {
+        count: formatCurrentNumber(delta.length),
+      }),
       tone: "running",
       threadID,
       turnID,
@@ -612,7 +675,9 @@ function runDebugEventFromNotification(
     return {
       source: "server",
       method: notification.method,
-      detail: turn ? `本轮开始：${shortDebugID(turn.id)}` : "本轮开始",
+      detail: turn
+        ? t("runDebug.turnStartedNamed", { id: shortDebugID(turn.id) })
+        : t("runDebug.turnStarted"),
       tone: "running",
       threadID,
       turnID: turn?.id ?? turnID,
@@ -630,8 +695,8 @@ function runDebugEventFromNotification(
       source: "server",
       method: notification.method,
       detail: failed
-        ? (stringValue(params, "error") ?? "本轮失败")
-        : "本轮完成",
+        ? (stringValue(params, "error") ?? t("runDebug.turnFailed"))
+        : t("runDebug.turnCompleted"),
       tone: failed ? "error" : "success",
       threadID,
       turnID: turn?.id ?? turnID,
@@ -646,7 +711,9 @@ function runDebugEventFromNotification(
     return {
       source: "server",
       method: notification.method,
-      detail: thread ? `Thread ${shortDebugID(thread.id)}` : "Thread 已更新",
+      detail: thread
+        ? t("runDebug.threadNamed", { id: shortDebugID(thread.id) })
+        : t("runDebug.threadUpdated"),
       tone: "info",
       threadID: thread?.id ?? threadID,
     };
@@ -751,18 +818,18 @@ function streamEventTone(eventType: string): RunDebugEventTone {
 function debugItemTitle(item: ThreadItem): string {
   switch (item.type) {
     case "user_message":
-      return "用户消息";
+      return t("runDebug.item.userMessage");
     case "agent_message":
-      return "回复";
+      return t("runDebug.item.reply");
     case "reasoning":
-      return "思考";
+      return t("runDebug.item.reasoning");
     case "tool_call":
     case "collab_agent_tool_call":
-      return `工具：${readableToolName(item.name)}`;
+      return t("runDebug.item.tool", { tool: readableToolName(item.name) });
     case "context_compaction":
-      return "上下文压缩";
+      return t("runDebug.item.compaction");
     case "error":
-      return "错误";
+      return t("runDebug.item.error");
     default:
       return item.type;
   }
@@ -770,24 +837,24 @@ function debugItemTitle(item: ThreadItem): string {
 
 function debugItemStatusLabel(item: ThreadItem): string {
   if (item.status === "failed" || item.error) {
-    return "失败";
+    return t("runDebug.status.failed");
   }
   if ((item.status ?? "in_progress") === "in_progress") {
-    return "进行中";
+    return t("runDebug.status.inProgress");
   }
-  return "完成";
+  return t("runDebug.status.completed");
 }
 
 function debugTurnStatusLabel(status: Turn["status"]): string {
   switch (status) {
     case "in_progress":
-      return "进行中";
+      return t("runDebug.status.inProgress");
     case "completed":
-      return "完成";
+      return t("runDebug.status.completed");
     case "failed":
-      return "失败";
+      return t("runDebug.status.failed");
     case "interrupted":
-      return "已停止";
+      return t("runDebug.status.stopped");
   }
 }
 
@@ -799,11 +866,10 @@ function shortDebugID(id: string): string {
 }
 
 function formatDebugTime(atMs: number): string {
-  return new Date(atMs).toLocaleTimeString("zh-CN", {
+  return formatCurrentDate(atMs, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
   });
 }
 

@@ -68,6 +68,7 @@ import {
   type ComposerSlashCommand,
   type ComposerSlashDraft
 } from "./ComposerSlashCommands";
+import { translateCurrent as translate, useI18n } from "./i18n";
 import {
   clipboardAttachmentFiles,
   type ComposerFile,
@@ -317,6 +318,7 @@ export function Composer({
   // Reset the side thread this composer is embedded in.
   onResetSideThread?: () => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
@@ -329,7 +331,7 @@ export function Composer({
   // stop affordance for the common "watching a turn, empty input" case while
   // never blocking a queued follow-up the user has clearly typed.
   const showComposerStop = running && !hasDraft;
-  const composerSendLabel = running ? "排队发送" : "发送";
+  const composerSendLabel = running ? t("composer.queueSend") : t("composer.send");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);
   const composerFrameRef = useRef<HTMLDivElement>(null);
@@ -368,12 +370,12 @@ export function Composer({
     ? prompt.slice(collapsedPromptPrefix.length)
     : prompt;
   const composerPlaceholder = placeholder ?? (readOnly
-    ? "子任务会话只读"
+    ? t("composer.readOnly")
     : hasCollapsedPromptBlocks
-      ? "要求后续变更"
+      ? t("composer.followupChanges")
       : hasAttachments
-        ? "添加描述"
-        : "向 wuu 提问，或输入 / 选择命令");
+        ? t("composer.addDescription")
+        : t("composer.placeholder"));
   const slashDraft =
     textOnly && !slashCommandsOverride ? undefined : parseComposerSlashDraft(prompt);
   const slashQuery = slashDraft?.query ?? "";
@@ -382,7 +384,7 @@ export function Composer({
   const slashRuntimeReady = Boolean(activeContext && initialized);
   const builtinSlashCommands = useMemo(
     () => buildComposerSlashCommands({ activeContext, initialized, running, compactDisabledReason, sideThreadDisabledReason, skills: slashSkills }),
-    [activeContext, compactDisabledReason, initialized, running, sideThreadDisabledReason, slashSkills]
+    [activeContext, compactDisabledReason, initialized, locale, running, sideThreadDisabledReason, slashSkills]
   );
   const slashCommands = slashCommandsOverride ?? builtinSlashCommands;
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
@@ -857,7 +859,7 @@ export function Composer({
     <div className={`composer-stack${isComposerExpanded ? " is-expanded" : ""}`}>
       <div className="composer-shell" ref={composerShellRef}>
         {slashMenuOpen ? (
-          <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
+          <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label={t("composer.slashCommands")}>
             {visibleSlashCommands.length > 0 ? (
               <>
                 <div className="slash-command-list scrollbar-hidden">
@@ -900,12 +902,12 @@ export function Composer({
                 </div>
               </>
             ) : (
-              <div className="slash-command-empty">没有匹配 “/{slashQuery}” 的命令</div>
+              <div className="slash-command-empty">{t("composer.noMatchingCommand", { query: slashQuery })}</div>
             )}
           </div>
         ) : null}
         {mentionMenuOpen ? (
-          <div className="mention-menu" id={mentionMenuID} role="listbox" aria-label="提及 Agent">
+          <div className="mention-menu" id={mentionMenuID} role="listbox" aria-label={t("composer.mentionAgent")}>
             <div className="mention-list scrollbar-hidden">
               {visibleMentionParticipants.map((participant, index) => {
                 const selected = index === selectedMentionIndex;
@@ -941,9 +943,9 @@ export function Composer({
             <button
               className={`composer-ultra-button${ultraEnabled ? " is-active" : ""}`}
               type="button"
-              aria-label={ultraEnabled ? "关闭 Ultra 多 agent 模式" : "开启 Ultra 多 agent 模式"}
+              aria-label={ultraEnabled ? t("composer.disableUltraMode") : t("composer.enableUltraMode")}
               aria-pressed={ultraEnabled}
-              title={ultraEnabled ? "关闭 Ultra" : "开启 Ultra"}
+              title={ultraEnabled ? t("composer.disableUltra") : t("composer.enableUltra")}
               onClick={() => onToggleUltra(!ultraEnabled)}
             >
               <span className="composer-ultra-notch" aria-hidden="true" />
@@ -1025,7 +1027,7 @@ export function Composer({
               </>
             )}
             {hasCollapsedPromptBlocks ? (
-              <div className="composer-collapsed-prompt-list" ref={collapsedPromptListRef} aria-label="折叠长文本">
+              <div className="composer-collapsed-prompt-list" ref={collapsedPromptListRef} aria-label={t("composer.collapsedLongText")}>
                 {activeCollapsedPromptBlocks.map((block, index) => (
                   <CollapsedComposerPromptCard
                     text={block.text}
@@ -1071,9 +1073,9 @@ export function Composer({
             <button
               className="composer-expand-button"
               type="button"
-              aria-label={isComposerExpanded ? "收起输入框" : "展开输入框"}
+              aria-label={isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
               aria-pressed={isComposerExpanded}
-              title={readOnly ? "只读会话不可展开" : isComposerExpanded ? "收起输入框" : "展开输入框"}
+              title={readOnly ? t("composer.readOnlyCannotExpand") : isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
               disabled={readOnly}
               onClick={toggleComposerExpansion}
             >
@@ -1108,7 +1110,7 @@ export function Composer({
                       title={projectPillTitle}
                       aria-haspopup="menu"
                       aria-expanded={menuOpen}
-                      aria-label={`切换项目：${projectPillLabel}`}
+                      aria-label={t("composer.switchProject", { project: projectPillLabel })}
                       onClick={onToggleMenu}
                     >
                       <span className="hero-project-pill-icon" aria-hidden="true">
@@ -1144,8 +1146,8 @@ export function Composer({
                     <button
                       className="composer-tool-button composer-attachment-button"
                       type="button"
-                      aria-label="添加附件"
-                      title="添加附件"
+                      aria-label={t("composer.addAttachment")}
+                      title={t("composer.addAttachment")}
                       disabled={readOnly}
                       onClick={() => attachmentInputRef.current?.click()}
                     >
@@ -1154,8 +1156,8 @@ export function Composer({
                     <button
                       className="composer-tool-button composer-slash-button"
                       type="button"
-                      aria-label="打开斜杠命令"
-                      title="输入 / 打开命令"
+                      aria-label={t("composer.openSlashCommands")}
+                      title={t("composer.openSlashCommandsHint")}
                       disabled={readOnly}
                       onClick={revealSlashCommands}
                     >
@@ -1167,7 +1169,7 @@ export function Composer({
                         type="button"
                         aria-haspopup="menu"
                         aria-expanded={accessMenuOpen}
-                        aria-label={`权限模式：${permissionChipLabel}`}
+                        aria-label={t("composer.permissionMode", { mode: permissionChipLabel })}
                         disabled={!initialized || readOnly || running}
                         onClick={onToggleAccessMenu}
                       >
@@ -1252,8 +1254,8 @@ export function Composer({
                   className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
                   type="button"
                   onClick={showComposerStop ? onInterrupt : submitComposer}
-                  aria-label={showComposerStop ? "停止" : composerSendLabel}
-                  title={showComposerStop ? "停止" : composerSendLabel}
+                  aria-label={showComposerStop ? t("composer.stop") : composerSendLabel}
+                  title={showComposerStop ? t("composer.stop") : composerSendLabel}
                   disabled={!showComposerStop && (readOnly || !hasDraft)}
                 >
                   {showComposerStop ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
@@ -1301,7 +1303,7 @@ function CollapsedComposerPromptCard({
         className="composer-collapsed-prompt-main"
         type="button"
         title={title}
-        aria-label={`在文本框中显示折叠长文本：${title}`}
+        aria-label={translate("composer.showCollapsedTextNamed", { title })}
         onClick={onReveal}
       >
         <span className="composer-collapsed-prompt-icon" aria-hidden="true">
@@ -1310,7 +1312,7 @@ function CollapsedComposerPromptCard({
         <span className="composer-collapsed-prompt-copy">
           <strong className="composer-collapsed-prompt-title">{title}</strong>
           <span className="composer-collapsed-prompt-action">
-            在文本框中显示
+            {translate("composer.showInTextBox")}
             <ChevronRight aria-hidden="true" />
           </span>
         </span>
@@ -1318,7 +1320,7 @@ function CollapsedComposerPromptCard({
       <button
         className="composer-collapsed-prompt-remove"
         type="button"
-        aria-label="移除折叠长文本"
+        aria-label={translate("composer.removeCollapsedText")}
         onClick={onRemove}
       >
         <X aria-hidden="true" />
@@ -1423,15 +1425,15 @@ function composerRuntimeContextKey(context: RuntimeContext): string {
 
 function heroProjectPillLabel(activeContext: RuntimeContext | undefined, activeProject: DesktopProject | undefined): string {
   if (activeContext?.kind === "project") {
-    return activeProject?.name ?? "当前项目";
+    return activeProject?.name ?? translate("composer.currentProject");
   }
   if (activeContext?.kind === "no_project") {
     // The no-project workspace is surfaced everywhere else — sidebar group,
     // session tab — as "对话", so the draft's cwd control matches that name
     // rather than the older, inconsistent "无项目".
-    return "对话";
+    return translate("composer.conversation");
   }
-  return "选择项目";
+  return translate("composer.selectProject");
 }
 
 function exactRunnableSlashCommand(commands: ComposerSlashCommand[], draft: ComposerSlashDraft): ComposerSlashCommand | undefined {
@@ -1468,7 +1470,7 @@ function collapsedComposerPromptTitle(text: string): string {
     .split(/\r\n|\r|\n/)
     .map((line) => line.trim())
     .find(Boolean);
-  return firstLine || "长文本";
+  return firstLine || translate("composer.longText");
 }
 
 function exactActionSlashCommand(commands: ComposerSlashCommand[], draft: ComposerSlashDraft): ComposerSlashCommand | undefined {

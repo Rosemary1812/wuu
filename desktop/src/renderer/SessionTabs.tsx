@@ -34,6 +34,7 @@ import {
 import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMenu";
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
@@ -68,6 +69,7 @@ export function SessionTabStrip({
   onNewThread: () => void;
   onReorder: (activeID: string, overID: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const newTabButtonRef = useRef<HTMLButtonElement>(null);
   const { requestFocusRestoration, tabListRef } = useTabCloseFocusRestoration(
     state.activeSessionTabID,
@@ -147,7 +149,7 @@ export function SessionTabStrip({
   }
 
   return (
-    <div className="session-tab-strip" aria-label="已打开的对话">
+    <div className="session-tab-strip" aria-label={t("tabs.openConversations")}>
       <div className="session-tab-list-shell">
         <DndContext
           sensors={sensors}
@@ -164,7 +166,7 @@ export function SessionTabStrip({
               ref={tabListRef}
               className="session-tab-scroll"
               role="tablist"
-              aria-label="对话"
+              aria-label={t("tabs.conversations")}
               data-enter-ready={enterReady ? "" : undefined}
               onKeyDown={handleTabListKeyDown}
             >
@@ -219,8 +221,9 @@ export function SessionTabStrip({
                       : undefined,
                   );
                 const label = sessionTabLabel(tab, state);
-                const closeLabel =
-                  tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
+                const closeLabel = tab.kind === "draft"
+                  ? t("tabs.closeNewConversation")
+                  : t("tabs.closeNamed", { name: label });
                 return (
                   <SortableSessionTab
                     key={tab.id}
@@ -298,8 +301,8 @@ export function SessionTabStrip({
         ref={newTabButtonRef}
         className="icon-button workspace-panel-add session-tab-new"
         type="button"
-        aria-label="新建对话"
-        title="新建对话"
+        aria-label={t("tabs.newConversation")}
+        title={t("tabs.newConversation")}
         disabled={!canStartNewThread}
         onClick={onNewThread}
       >
@@ -357,6 +360,7 @@ function SortableSessionTab({
   onDoubleClick,
   onContextMenu,
 }: SortableSessionTabProps): JSX.Element {
+  const { t } = useI18n();
   const {
     attributes,
     listeners,
@@ -375,8 +379,12 @@ function SortableSessionTab({
     transition,
   };
   const displayPendingCount = pendingCount > 9 ? "9+" : String(pendingCount);
+  const pendingLabel = t(
+    pendingCount === 1 ? "tabs.pendingInputOne" : "tabs.pendingInput",
+    { count: pendingCount },
+  );
   const tabTitle =
-    pendingCount > 0 ? `${label} · ${pendingCount} 条待处理输入` : label;
+    pendingCount > 0 ? `${label} · ${pendingLabel}` : label;
   return (
     <div
       ref={setNodeRef}
@@ -406,7 +414,7 @@ function SortableSessionTab({
         {pendingCount > 0 ? (
           <span
             className="session-tab-pending-count"
-            aria-label={`${pendingCount} 条待处理输入`}
+            aria-label={pendingLabel}
           >
             {displayPendingCount}
           </span>
@@ -489,30 +497,30 @@ function buildTabContextMenuItems({
   const nonRunningTabIDs = allTabIDs.filter((id) => !runningTabIDs.has(id));
   return [
     {
-      label: "在新窗口打开",
+      label: translate("tabs.openInNewWindow"),
       disabled:
         rightClickedTab?.kind !== "thread" && rightClickedTab?.kind !== "draft",
       onSelect: () => onPopOut(rightClickedTabID),
     },
     { separator: true },
     {
-      label: "关闭",
+      label: translate("common.close"),
       onSelect: () => onClose(rightClickedTabID),
     },
     {
-      label: "关闭其他",
+      label: translate("tabs.closeOthers"),
       disabled: allTabIDs.length <= 1,
       onSelect: () =>
         onCloseTabs(allTabIDs.filter((id) => id !== rightClickedTabID)),
     },
     { separator: true },
     {
-      label: "关闭未运行的",
+      label: translate("tabs.closeNotRunning"),
       disabled: nonRunningTabIDs.length === 0,
       onSelect: () => onCloseTabs(nonRunningTabIDs),
     },
     {
-      label: "关闭全部",
+      label: translate("tabs.closeAll"),
       disabled: allTabIDs.length <= 1,
       onSelect: () => onCloseTabs(allTabIDs),
     },

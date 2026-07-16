@@ -2,6 +2,7 @@ import type { MutableRefObject, SetStateAction } from "react";
 import type { GitCommitResult, GitPullRequestResult } from "../shared/protocol";
 import { sameRuntimeContext, type AppState } from "./AppState";
 import type { EnvironmentPanelMenu } from "./EnvironmentPanel";
+import { localizedText, translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -63,7 +64,11 @@ export function createEnvironmentActions(
         status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "checkout branch failed");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : translateCurrent("git.checkoutFailed"),
+      );
     }
   }
 
@@ -92,7 +97,9 @@ export function createEnvironmentActions(
         return;
       }
       setStatus(
-        error instanceof Error ? error.message : "refresh git status failed",
+        error instanceof Error
+          ? error.message
+          : translateCurrent("git.refreshFailed"),
       );
     } finally {
       deps.gitRefreshInFlightRef.current = false;
@@ -129,7 +136,7 @@ export function createEnvironmentActions(
       }));
       deps.setEnvironmentPanelMenu(null);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "create branch failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("git.branch.createFailed"));
       throw error;
     }
   }
@@ -145,7 +152,7 @@ export function createEnvironmentActions(
     deps.setAppState((current) => ({
       ...current,
       gitStatus: result.status,
-      status: `已提交 ${result.commit}`,
+      status: localizedText("git.commit.completed", { commit: result.commit }),
     }));
     return result;
   }
@@ -163,7 +170,9 @@ export function createEnvironmentActions(
     deps.setAppState((current) => ({
       ...current,
       gitStatus: result.status,
-      status: result.already_exists ? "已有拉取请求" : "已创建拉取请求",
+      status: result.already_exists
+        ? translateCurrent("git.pr.exists")
+        : translateCurrent("git.pr.created"),
     }));
     return result;
   }

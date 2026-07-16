@@ -1,4 +1,5 @@
 import mascotFace from "./assets/mascot-face.png";
+import { useI18n } from "./i18n";
 
 export function RuntimeLoading({
   status,
@@ -9,11 +10,12 @@ export function RuntimeLoading({
   pinned?: boolean;
   onExitPreview?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const isStarting = pinned || status === "connecting" || status === "opening";
   return (
     <div className="project-empty-pane">
       {isStarting ? (
-        <div className="wuu-launch" role="status" aria-label={pinned ? "wuu 启动动画预览" : "wuu 正在启动"}>
+        <div className="wuu-launch" role="status" aria-label={pinned ? t("loading.launchPreview") : t("loading.starting")}>
           <div className="wuu-launch-glass" aria-hidden="true">
             <img
               className="wuu-launch-carving"
@@ -24,7 +26,7 @@ export function RuntimeLoading({
           </div>
           {pinned && onExitPreview ? (
             <button className="wuu-launch-exit" type="button" onClick={onExitPreview}>
-              退出预览
+              {t("loading.exitPreview")}
             </button>
           ) : null}
         </div>
@@ -38,8 +40,9 @@ export function RuntimeLoading({
 }
 
 export function ViewSwitchLoading(): JSX.Element {
+  const { t } = useI18n();
   return (
-    <div className="view-switch-loading" role="status" aria-label="正在切换">
+    <div className="view-switch-loading" role="status" aria-label={t("loading.switching")}>
       <div className="wuu-launch-mark view-switch-mark" aria-hidden="true">
         <span>w</span>
         <span>u</span>

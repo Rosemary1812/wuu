@@ -1,12 +1,14 @@
 import { ChevronDown, GitFork } from "lucide-react";
 import type { Thread } from "../shared/protocol";
 import { MessageCopyButton } from "./MessageActions";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 export function ForkWorktreeNotice({
   thread,
 }: {
   thread: Thread;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const worktree = thread.worktree;
   if (!worktree || !thread.forked_from_id) {
     return null;
@@ -16,32 +18,32 @@ export function ForkWorktreeNotice({
   const head = worktree.base_head?.trim();
 
   return (
-    <section className="fork-worktree-notice" aria-label="从对话中派生的工作树">
+    <section className="fork-worktree-notice" aria-label={t("worktree.forkedAria")}>
       <details className="fork-worktree-card">
         <summary className="fork-worktree-summary">
           <span className="fork-worktree-glyph">
             <GitFork className="icon" aria-hidden="true" />
           </span>
           <span className="fork-worktree-summary-text">
-            <strong>已创建工作树</strong>
-            <span>从对话中派生</span>
+            <strong>{t("worktree.created")}</strong>
+            <span>{t("worktree.forkedFromConversation")}</span>
           </span>
           <ChevronDown className="fork-worktree-chevron icon" aria-hidden="true" />
         </summary>
         <div className="fork-worktree-details">
           <dl className="fork-worktree-meta">
             <div>
-              <dt>基础仓库</dt>
+              <dt>{t("worktree.baseRepository")}</dt>
               <dd>{worktree.base_repo || thread.cwd}</dd>
             </div>
             {head ? (
               <div>
-                <dt>基准提交</dt>
+                <dt>{t("worktree.baseCommit")}</dt>
                 <dd>{shortSHA(head)}</dd>
               </div>
             ) : null}
             <div>
-              <dt>工作树</dt>
+              <dt>{t("worktree.worktree")}</dt>
               <dd>{worktree.path}</dd>
             </div>
           </dl>
@@ -50,9 +52,9 @@ export function ForkWorktreeNotice({
               getText={() => log}
               className="fork-worktree-copy"
               iconSize={13}
-              idleLabel="复制工作树记录"
-              copiedLabel="已复制工作树记录"
-              failedLabel="复制失败"
+              idleLabel={t("worktree.copyLog")}
+              copiedLabel={t("worktree.logCopied")}
+              failedLabel={t("common.copyFailed")}
             />
             <pre className="fork-worktree-code">
               <code>{log}</code>
@@ -71,11 +73,11 @@ function worktreeCreationLog(thread: Thread): string {
   }
   const head = worktree.base_head?.trim();
   const lines = [
-    "[info] Starting worktree creation",
-    head ? `Preparing worktree (detached HEAD ${shortSHA(head)})` : "",
-    `[info] Base repository ${worktree.base_repo || thread.cwd}`,
-    `Worktree created at ${worktree.path}`,
-    `Fork session ${thread.id}`,
+    translate("worktree.logStarting"),
+    head ? translate("worktree.logPreparing", { head: shortSHA(head) }) : "",
+    translate("worktree.logBaseRepository", { path: worktree.base_repo || thread.cwd }),
+    translate("worktree.logCreatedAt", { path: worktree.path }),
+    translate("worktree.logForkSession", { id: thread.id }),
   ].filter(Boolean);
   return lines.join("\n");
 }

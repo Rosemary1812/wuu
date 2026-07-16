@@ -13,6 +13,7 @@ import {
   useComposerPendingState,
   type ComposerPendingStateController,
 } from "./ComposerPendingState";
+import { resolveLocalizedText } from "./i18n";
 
 let mountedRoots: Root[] = [];
 
@@ -203,7 +204,7 @@ describe("useComposerPendingState", () => {
     expect(
       hook.get().pendingComposerMessagesByThread["thread-a"],
     ).toBeUndefined();
-    expect(hook.setStatus).toHaveBeenCalledWith(
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
       "已撤回排队消息，可编辑后重新发送",
     );
   });
@@ -223,7 +224,7 @@ describe("useComposerPendingState", () => {
     });
 
     expect(hook.restorePrimaryComposerDraft).not.toHaveBeenCalled();
-    expect(hook.setStatus).toHaveBeenCalledWith(
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
       "先发送或清空当前输入，再编辑排队消息",
     );
   });
@@ -247,7 +248,9 @@ describe("useComposerPendingState", () => {
     expect(
       hook.get().pendingComposerMessagesByThread["thread-a"],
     ).toBeUndefined();
-    expect(hook.setStatus).toHaveBeenCalledWith("排队消息已被处理，无法取消");
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
+      "排队消息已被处理，无法取消",
+    );
   });
 
   it("restores an edited draft to its originating thread after a tab switch", async () => {

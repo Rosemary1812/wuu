@@ -1,4 +1,5 @@
 import type { CodexModelSummary, GitStatusResult, InitializeResult, ProviderModelSummary, ProviderSummary } from "../shared/protocol";
+import { translateCurrent as t } from "./i18n";
 
 export function isCodexProvider(initialized: InitializeResult): boolean {
   const summary = initialized.providers?.find((provider) => provider.name === initialized.provider);
@@ -17,21 +18,21 @@ export function shortCodexModelLabel(model: string): string {
 export function codexEffortLabel(effort: string): string {
   switch (effort) {
     case "":
-      return "默认";
+      return t("runtime.effort.default");
     case "none":
-      return "无";
+      return t("runtime.effort.none");
     case "minimal":
-      return "最少";
+      return t("runtime.effort.minimal");
     case "low":
-      return "低";
+      return t("runtime.effort.low");
     case "medium":
-      return "中";
+      return t("runtime.effort.medium");
     case "high":
-      return "高";
+      return t("runtime.effort.high");
     case "xhigh":
-      return "超高";
+      return t("runtime.effort.xhigh");
     case "max":
-      return "最大";
+      return t("runtime.effort.max");
     default:
       return effort;
   }
@@ -162,19 +163,19 @@ export function normalizedEffortForModel(currentEffort: string, model: CodexMode
 
 export function pullRequestUnavailableReason(gitStatus?: GitStatusResult): string {
   if (!gitStatus?.is_repo) {
-    return "不是 Git 仓库";
+    return t("runtime.pr.notRepository");
   }
   if (!gitStatus.gh_available) {
-    return "未安装 GitHub CLI";
+    return t("runtime.pr.githubCliMissing");
   }
   if (gitStatus.detached || !gitStatus.branch) {
-    return "需要具名分支";
+    return t("runtime.pr.namedBranchRequired");
   }
   if (gitStatus.default_branch && gitStatus.branch === gitStatus.default_branch) {
-    return "先创建功能分支";
+    return t("runtime.pr.createFeatureBranch");
   }
   if (gitStatus.dirty_count > 0) {
-    return "先提交本地更改";
+    return t("runtime.pr.commitChangesFirst");
   }
   return "";
 }

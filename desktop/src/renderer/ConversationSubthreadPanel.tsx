@@ -13,6 +13,7 @@ import type {
   ThreadItem,
 } from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
+import { formatCurrentNumber, translateCurrent as t, useI18n } from "./i18n";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 
 /**
@@ -54,32 +55,44 @@ function relativeTimeShort(iso: string | undefined, nowMs = Date.now()): string 
   }
   const elapsed = Math.max(0, nowMs - atMs);
   if (elapsed < 10_000) {
-    return "刚刚";
+    return t("time.justNow");
   }
   if (elapsed < 60_000) {
-    return `${Math.floor(elapsed / 1000)}秒前`;
+    const seconds = Math.floor(elapsed / 1000);
+    return t(seconds === 1 ? "time.secondAgo" : "time.secondsAgo", {
+      count: formatCurrentNumber(seconds),
+    });
   }
   if (elapsed < 60 * 60_000) {
-    return `${Math.floor(elapsed / 60_000)}分钟前`;
+    const minutes = Math.floor(elapsed / 60_000);
+    return t(minutes === 1 ? "time.minuteAgo" : "time.minutesAgo", {
+      count: formatCurrentNumber(minutes),
+    });
   }
   if (elapsed < 24 * 60 * 60_000) {
-    return `${Math.floor(elapsed / (60 * 60_000))}小时前`;
+    const hours = Math.floor(elapsed / (60 * 60_000));
+    return t(hours === 1 ? "time.hourAgo" : "time.hoursAgo", {
+      count: formatCurrentNumber(hours),
+    });
   }
-  return `${Math.floor(elapsed / (24 * 60 * 60_000))}天前`;
+  const days = Math.floor(elapsed / (24 * 60 * 60_000));
+  return t(days === 1 ? "time.dayAgo" : "time.daysAgo", {
+    count: formatCurrentNumber(days),
+  });
 }
 
 // The node state badge label + CSS modifier, keyed on the backend-derived
 // display state (piece.state; falls back to the raw status). done -> completed
 // upstream, so the panel never depends on the internal status vocabulary.
-const NODE_STATE_META: Record<string, { label: string; cls: string }> = {
-  completed: { label: "完成", cls: "done" },
-  done: { label: "完成", cls: "done" },
-  active: { label: "进行中", cls: "active" },
-  pending: { label: "待命", cls: "pending" },
-  blocked: { label: "阻塞", cls: "blocked" },
-  failed: { label: "失败", cls: "failed" },
-  retrying: { label: "重试中", cls: "retrying" },
-  cancelled: { label: "已取消", cls: "cancelled" },
+const NODE_STATE_META: Record<string, { labelKey: Parameters<typeof t>[0]; cls: string }> = {
+  completed: { labelKey: "subthread.node.completed", cls: "done" },
+  done: { labelKey: "subthread.node.completed", cls: "done" },
+  active: { labelKey: "subthread.node.active", cls: "active" },
+  pending: { labelKey: "subthread.node.pending", cls: "pending" },
+  blocked: { labelKey: "subthread.node.blocked", cls: "blocked" },
+  failed: { labelKey: "subthread.node.failed", cls: "failed" },
+  retrying: { labelKey: "subthread.node.retrying", cls: "retrying" },
+  cancelled: { labelKey: "subthread.node.cancelled", cls: "cancelled" },
 };
 
 function nodeStateMeta(
@@ -87,61 +100,66 @@ function nodeStateMeta(
   status: string | undefined,
 ): { label: string; cls: string } {
   const key = (state || status || "").trim();
-  return NODE_STATE_META[key] ?? { label: key || "未知", cls: "pending" };
+  const meta = NODE_STATE_META[key];
+  return meta
+    ? { label: t(meta.labelKey), cls: meta.cls }
+    : { label: key || t("subthread.node.unknown"), cls: "pending" };
 }
 
-const TASK_STATE_LABEL: Record<string, string> = {
-  planning: "规划中",
-  executing: "执行中",
-  running: "执行中",
-  awaiting_lead: "等待 Lead 验收",
-  blocked: "受阻",
-  needs_human: "需要你处理",
-  paused: "已暂停",
-  completed: "已完成",
-  failed: "失败",
+const TASK_STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
+  planning: "subthread.task.planning",
+  executing: "subthread.task.executing",
+  running: "subthread.task.executing",
+  awaiting_lead: "subthread.task.awaitingLead",
+  blocked: "subthread.task.blocked",
+  needs_human: "subthread.task.needsHuman",
+  paused: "subthread.task.paused",
+  completed: "subthread.task.completed",
+  failed: "subthread.task.failed",
 };
 
 function taskStateLabel(state: string | undefined): string {
   const key = state?.trim() ?? "";
-  return TASK_STATE_LABEL[key] ?? (key || "准备中");
+  const labelKey = TASK_STATE_LABEL[key];
+  return labelKey ? t(labelKey) : key || t("subthread.task.ready");
 }
 
 // Short human labels for the trace event kinds shown in the "轨迹" timeline. An
 // unknown kind falls through to its raw name (forward-compatible).
-const TRACE_KIND_LABEL: Record<string, string> = {
-  task_created: "任务创建",
-  workflow_planned: "编排计划",
-  workflow_revised: "调整编排",
-  node_started: "节点开始",
-  commentary: "说明",
-  tool_call: "工具调用",
-  tool_result: "工具结果",
-  node_progress: "进展",
-  handoff_created: "交接",
-  node_succeeded: "节点完成",
-  node_failed: "节点失败",
-  node_cancelled: "取消节点",
-  retrying: "重试",
-  blocked: "阻塞",
-  lead_invoked: "唤醒 lead",
-  task_completed: "任务完成",
+const TRACE_KIND_LABEL: Record<string, Parameters<typeof t>[0]> = {
+  task_created: "subthread.trace.taskCreated",
+  workflow_planned: "subthread.trace.workflowPlanned",
+  workflow_revised: "subthread.trace.workflowRevised",
+  node_started: "subthread.trace.nodeStarted",
+  commentary: "subthread.trace.commentary",
+  tool_call: "subthread.trace.toolCall",
+  tool_result: "subthread.trace.toolResult",
+  node_progress: "subthread.trace.nodeProgress",
+  handoff_created: "subthread.trace.handoffCreated",
+  node_succeeded: "subthread.trace.nodeSucceeded",
+  node_failed: "subthread.trace.nodeFailed",
+  node_cancelled: "subthread.trace.nodeCancelled",
+  retrying: "subthread.trace.retrying",
+  blocked: "subthread.trace.blocked",
+  lead_invoked: "subthread.trace.leadInvoked",
+  task_completed: "subthread.trace.taskCompleted",
 };
 
 function traceKindLabel(kind: string): string {
-  return TRACE_KIND_LABEL[kind] ?? kind;
+  const labelKey = TRACE_KIND_LABEL[kind];
+  return labelKey ? t(labelKey) : kind;
 }
 
 function taskAttentionText(state: string | undefined): string {
   switch (state?.trim()) {
     case "needs_human":
-      return "等待你的决定";
+      return t("subthread.attention.needsHuman");
     case "awaiting_lead":
-      return "Lead 正在验收 worker 结果";
+      return t("subthread.attention.awaitingLead");
     case "blocked":
-      return "Lead 需要调整编排后继续";
+      return t("subthread.attention.blocked");
     case "failed":
-      return "Lead 需要处理失败节点";
+      return t("subthread.attention.failed");
     default:
       return "";
   }
@@ -193,18 +211,19 @@ export function ConversationSubthreadPanel({
   /** Exposes raw task events for development diagnostics only. */
   showTechnicalTrace?: boolean;
 }): JSX.Element {
+  useI18n();
   const turns = subthread?.turns ?? [];
   const resolved = subthread?.status === "resolved";
   const alreadyTask = subthread?.status === "task" || Boolean(subthread?.task);
   const ownerID = subthread?.thread_owner_participant_id?.trim() ?? "";
   const ownerName = ownerID
     ? resolveParticipantName?.(ownerID) || ownerID
-    : "Owner 待同步";
+    : t("subthread.ownerPending");
   const phaseLabel = resolved
-    ? "已完成"
+    ? t("subthread.phase.completed")
     : alreadyTask
       ? taskStateLabel(subthread?.exec_state)
-      : "收敛中";
+      : t("subthread.phase.converging");
   const sourceText = sourceItem?.text?.trim() ?? "";
   const threadTitle =
     subthread?.title?.trim() ||
@@ -212,9 +231,9 @@ export function ConversationSubthreadPanel({
     "Thread";
   const sourceAuthor = sourceItem
     ? sourceItem.type === "user_message"
-      ? "你"
-      : sourceItem.participant?.name?.trim() || "群聊成员"
-    : "来源消息";
+      ? t("subthread.you")
+      : sourceItem.participant?.name?.trim() || t("subthread.groupMember")
+    : t("subthread.sourceMessage");
   // The panel's own scroll container (.conversation-subthread-body): a long
   // task/reply thread gets the same jump-to-latest pill as the main stream,
   // scoped to this panel's scroll (issue #5 Fix 2).
@@ -305,13 +324,18 @@ export function ConversationSubthreadPanel({
   }
 
   return (
-    <aside className="conversation-subthread-panel" aria-label="Thread">
+    <aside className="conversation-subthread-panel" aria-label={t("subthread.label")}>
       <header className="conversation-subthread-header">
         <div className="conversation-subthread-title-group">
           <h2>{threadTitle}</h2>
           {subthread ? (
             <span className="conversation-subthread-meta">
-              {phaseLabel} · {subthread.reply_count} 条回复
+              {phaseLabel} · {t(
+                subthread.reply_count === 1
+                  ? "chat.replyCountOne"
+                  : "chat.replyCount",
+                { count: formatCurrentNumber(subthread.reply_count) },
+              )}
             </span>
           ) : null}
         </div>
@@ -321,19 +345,23 @@ export function ConversationSubthreadPanel({
               type="button"
               className="conversation-subthread-escalate"
               disabled={!ownerID}
-              title={ownerID ? "Owner 将成为 Task Lead" : "Thread 需要 Owner"}
+              title={
+                ownerID
+                  ? t("subthread.promoteOwnerTitle")
+                  : t("subthread.promoteNeedsOwnerTitle")
+              }
               onClick={onEscalate}
             >
               <ListChecks aria-hidden="true" />
-              升级为 Task
+              {t("subthread.promote")}
             </button>
           ) : null}
           {subthread && !alreadyTask && !resolved ? (
             <button
               type="button"
               className="icon-button conversation-subthread-icon"
-              aria-label="标记已解决"
-              title="标记已解决"
+              aria-label={t("subthread.resolve")}
+              title={t("subthread.resolve")}
               onClick={() => onResolve(true)}
             >
               <Circle aria-hidden="true" />
@@ -343,8 +371,8 @@ export function ConversationSubthreadPanel({
             <button
               type="button"
               className="icon-button conversation-subthread-icon"
-              aria-label="弹出独立窗口"
-              title="弹出独立窗口"
+              aria-label={t("subthread.popOut")}
+              title={t("subthread.popOut")}
               onClick={onPopOut}
             >
               <SquareArrowOutUpRight aria-hidden="true" />
@@ -353,8 +381,8 @@ export function ConversationSubthreadPanel({
           <button
             type="button"
             className="icon-button conversation-subthread-icon"
-            aria-label="关闭"
-            title="关闭"
+            aria-label={t("common.close")}
+            title={t("common.close")}
             onClick={onClose}
           >
             <X aria-hidden="true" />
@@ -363,7 +391,10 @@ export function ConversationSubthreadPanel({
       </header>
       <div className="conversation-subthread-body" ref={bodyScrollRef}>
         {subthread ? (
-          <section className="conversation-subthread-overview" aria-label="Thread 概览">
+          <section
+            className="conversation-subthread-overview"
+            aria-label={t("subthread.overview")}
+          >
             <div className="conversation-subthread-overview-meta">
               <span className="conversation-subthread-phase">{phaseLabel}</span>
               <span className="conversation-subthread-owner">
@@ -372,7 +403,7 @@ export function ConversationSubthreadPanel({
             </div>
             <div className="conversation-subthread-source">
               <span>{sourceAuthor}</span>
-              {sourceText ? <p>{sourceText}</p> : <p>来自群聊中的原消息</p>}
+              {sourceText ? <p>{sourceText}</p> : <p>{t("subthread.originalMessage")}</p>}
             </div>
           </section>
         ) : null}
@@ -382,13 +413,20 @@ export function ConversationSubthreadPanel({
           </div>
         ) : null}
         {subthread && alreadyTask && plan.length > 0 ? (
-          <section className="conversation-subthread-board" aria-label="Task 进展">
+          <section
+            className="conversation-subthread-board"
+            aria-label={t("subthread.taskProgress")}
+          >
             {plan.map((piece) => {
               const meta = nodeStateMeta(piece.state, piece.status);
               const progressHint = piece.last_progress_at
-                ? `进展 ${relativeTimeShort(piece.last_progress_at)}`
+                ? t("subthread.progressAt", {
+                    time: relativeTimeShort(piece.last_progress_at),
+                  })
                 : piece.last_activity_at
-                  ? `活动 ${relativeTimeShort(piece.last_activity_at)}`
+                  ? t("subthread.activityAt", {
+                      time: relativeTimeShort(piece.last_activity_at),
+                    })
                   : "";
               const assigneeName = piece.assignee
                 ? resolveParticipantName
@@ -407,9 +445,16 @@ export function ConversationSubthreadPanel({
                 },
               );
               const attemptHint = piece.current_attempt_id
-                ? `第 ${piece.attempts ?? 1} 次尝试`
+                ? t("subthread.currentAttempt", {
+                    count: formatCurrentNumber(piece.attempts ?? 1),
+                  })
                 : (piece.attempts ?? 0) > 0
-                  ? `已尝试 ${piece.attempts} 次`
+                  ? t(
+                      piece.attempts === 1
+                        ? "subthread.attemptedOne"
+                        : "subthread.attempted",
+                      { count: formatCurrentNumber(piece.attempts ?? 0) },
+                    )
                   : "";
               return (
                 <div className="conversation-subthread-node" key={piece.id}>
@@ -444,12 +489,18 @@ export function ConversationSubthreadPanel({
                   ) : null}
                   {unresolvedDependencies.length ? (
                     <div className="conversation-subthread-node-detail">
-                      等待：{unresolvedDependencies.join("、")}
+                      {t("subthread.waitingFor", {
+                        names: unresolvedDependencies.join(
+                          t("subthread.dependencySeparator"),
+                        ),
+                      })}
                     </div>
                   ) : null}
                   {piece.failure_reason ? (
                     <div className="conversation-subthread-node-detail is-error">
-                      原因：{piece.failure_reason}
+                      {t("subthread.failureReason", {
+                        reason: piece.failure_reason,
+                      })}
                     </div>
                   ) : null}
                 </div>
@@ -471,13 +522,13 @@ export function ConversationSubthreadPanel({
                 aria-hidden="true"
                 className={traceOpen ? "is-open" : undefined}
               />
-              轨迹
+              {t("subthread.trace.title")}
             </button>
             {traceOpen ? (
               <div className="conversation-subthread-trace-body">
                 {traceLoading ? (
                   <div className="conversation-subthread-trace-state">
-                    加载轨迹…
+                    {t("subthread.trace.loading")}
                   </div>
                 ) : traceError ? (
                   <div className="conversation-subthread-trace-state error">
@@ -485,7 +536,7 @@ export function ConversationSubthreadPanel({
                   </div>
                 ) : (traceEvents?.length ?? 0) === 0 ? (
                   <div className="conversation-subthread-trace-state">
-                    暂无轨迹
+                    {t("subthread.trace.empty")}
                   </div>
                 ) : (
                   <ol className="conversation-subthread-trace-list">
@@ -516,14 +567,16 @@ export function ConversationSubthreadPanel({
         {loading ? (
           <div className="conversation-subthread-state" role="status">
             <Loader2 aria-hidden="true" />
-            <span>加载中</span>
+            <span>{t("common.loading")}</span>
           </div>
         ) : error ? (
           <div className="conversation-subthread-state error" role="alert">
             {error}
           </div>
         ) : turns.length === 0 ? (
-          <div className="conversation-subthread-state">暂无回复</div>
+          <div className="conversation-subthread-state">
+            {t("subthread.noReplies")}
+          </div>
         ) : (
           <ChatThreadViewContainer
             key={subthread?.id ?? "subthread"}

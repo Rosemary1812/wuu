@@ -1,6 +1,7 @@
 import { UsersRound } from "lucide-react";
 import type { ParticipantSummary } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
+import { useI18n } from "./i18n";
 
 const MAX_VISIBLE_AVATARS = 3;
 
@@ -17,19 +18,20 @@ export function GroupMembersCapsule({
   members: ParticipantSummary[];
   onOpen?: () => void;
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const visibleMembers = members.slice(0, MAX_VISIBLE_AVATARS);
   const hiddenCount = Math.max(0, members.length - visibleMembers.length);
   const names = members.map((member) => member.name.trim()).filter(Boolean);
   const detail =
     names.length > 0
-      ? names.slice(0, 4).join("、") + (names.length > 4 ? ` 等 ${names.length} 位` : "")
-      : "暂无成员";
+      ? names.slice(0, 4).join(t("groupInfo.nameSeparator")) + (names.length > 4 ? t("groupInfo.andMemberCount", { count: formatNumber(names.length) }) : "")
+      : t("groupInfo.empty");
   return (
     <button
       className="group-members-capsule"
       type="button"
-      aria-label={`群聊成员：${detail}`}
-      title="打开群聊信息"
+      aria-label={t("groupInfo.membersDetail", { detail })}
+      title={t("groupInfo.open")}
       onClick={onOpen}
     >
       <span className="group-members-capsule-avatars" aria-hidden="true">
@@ -43,11 +45,11 @@ export function GroupMembersCapsule({
           </span>
         )}
         {hiddenCount > 0 ? (
-          <span className="group-members-capsule-more">+{hiddenCount}</span>
+          <span className="group-members-capsule-more">+{formatNumber(hiddenCount)}</span>
         ) : null}
       </span>
       <span className="group-members-capsule-count" aria-hidden="true">
-        {members.length}
+        {formatNumber(members.length)}
       </span>
     </button>
   );

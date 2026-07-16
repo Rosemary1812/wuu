@@ -12,6 +12,7 @@ import type { WorkspaceFileSelection } from "./LinkTargets";
 import { RichContent } from "./RichContent";
 import type { WorkspaceMonacoViewState } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { translateCurrent, useI18n } from "./i18n";
 
 // monaco-editor is several MB of JS; a static import here would drag it into
 // the eager startup chunk. Load it only when a code editor actually mounts.
@@ -70,6 +71,7 @@ export function WorkspaceFileTree({
   selectedFilePath?: string;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const [directories, setDirectories] = useState<Record<string, WorkspaceDirectoryListResult>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -94,33 +96,33 @@ export function WorkspaceFileTree({
     void window.wuu.listWorkspaceDirectory("", workspaceRoot).then((result) => {
       if (!cancelled) setDirectories({ "": result });
     }).catch((nextError) => {
-      if (!cancelled) setError(desktopApiErrorMessage(nextError, "读取文件失败"));
+      if (!cancelled) setError(desktopApiErrorMessage(nextError, translateCurrent("workspace.files.readFailed")));
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [open, workspaceRoot]);
+  }, [open, workspaceRoot, locale]);
 
   if (!workspaceRoot) {
-    return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。这个面板会显示它的文件。" />;
+    return <WorkspacePanelEmpty title={t("workspace.files.noProject")} description={t("workspace.files.noProjectDescription")} />;
   }
 
   if (loading && !directories[""]) {
-    return <WorkspacePanelEmpty title="正在读取文件" description="文件树马上就绪。" />;
+    return <WorkspacePanelEmpty title={t("workspace.files.reading")} description={t("workspace.files.readingDescription")} />;
   }
 
   if (error) {
-    return <WorkspacePanelEmpty title="读取失败" description={error} />;
+    return <WorkspacePanelEmpty title={t("workspace.files.readFailedTitle")} description={error} />;
   }
 
   const rootDirectory = directories[""];
   if (!rootDirectory || rootDirectory.entries.length === 0) {
-    return <WorkspacePanelEmpty title="没有文件" description={formatWorkspaceRoot(workspaceRoot)} />;
+    return <WorkspacePanelEmpty title={t("workspace.files.empty")} description={formatWorkspaceRoot(workspaceRoot)} />;
   }
 
   return (
     <div className="workspace-file-panel">
-      {rootDirectory.truncated ? <div className="workspace-file-tree-limit">此目录内容过多，仅显示部分项目</div> : null}
+      {rootDirectory.truncated ? <div className="workspace-file-tree-limit">{t("workspace.files.truncated")}</div> : null}
       <WorkspaceFileTreeView
         directories={directories}
         workspaceRoot={rootDirectory.root}
@@ -132,7 +134,7 @@ export function WorkspaceFileTree({
           void window.wuu.listWorkspaceDirectory(path, workspaceRoot).then((result) => {
             setDirectories((current) => ({ ...current, [path]: result }));
           }).catch((nextError) => {
-            setError(desktopApiErrorMessage(nextError, "读取文件夹失败"));
+            setError(desktopApiErrorMessage(nextError, translateCurrent("workspace.files.readDirectoryFailed")));
           }).finally(() => loadingDirectoriesRef.current.delete(path));
         }}
       />
@@ -147,6 +149,8 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
   onOpenFile: (path: string) => void;
   onLoadDirectory: (path: string) => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
+  const treeFrameRef = useRef<HTMLDivElement | null>(null);
   const paths = useMemo(() => Object.values(directories).flatMap((directory) => directory.entries.map((entry) => entry.path)), [directories]);
   const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths]);
   const selectedFilePathRef = useRef(selectedFilePath);
@@ -214,8 +218,23 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
     model.scrollToPath(selectedFilePath, { focus: false, offset: "nearest" });
   }, [model, paths, selectedFilePath]);
 
+  useEffect(() => {
+    const host = treeFrameRef.current?.querySelector<HTMLElement>("file-tree-container");
+    if (!host?.shadowRoot) return undefined;
+    const localizeTreeControls = (): void => {
+      const search = host.shadowRoot?.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
+      if (search) search.placeholder = t("workspace.files.searchPlaceholder");
+      const options = host.shadowRoot?.querySelector<HTMLButtonElement>("[data-type='context-menu-trigger']");
+      if (options) options.setAttribute("aria-label", t("workspace.files.options"));
+    };
+    localizeTreeControls();
+    const observer = new MutationObserver(localizeTreeControls);
+    observer.observe(host.shadowRoot, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [locale]);
+
   return (
-    <div className="workspace-file-tree-frame">
+    <div className="workspace-file-tree-frame" ref={treeFrameRef}>
       <FileTree
         model={model}
         style={WORKSPACE_FILE_TREE_STYLE}
@@ -246,6 +265,7 @@ function WorkspaceTreeContextMenu({
   y: number;
   onClose: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   // The menu mounts at the cursor, but until React commits the first
   // paint its own size isn't known — measure on the layout effect that
@@ -359,7 +379,7 @@ function WorkspaceTreeContextMenu({
         className="workspace-tree-context-menu-item"
         onClick={copyToClipboard(absolutePath)}
       >
-        复制路径
+        {t("workspace.files.copyPath")}
       </button>
       <button
         type="button"
@@ -367,7 +387,7 @@ function WorkspaceTreeContextMenu({
         className="workspace-tree-context-menu-item"
         onClick={copyToClipboard(relativePath)}
       >
-        复制相对路径
+        {t("workspace.files.copyRelativePath")}
       </button>
       <button
         type="button"
@@ -375,7 +395,7 @@ function WorkspaceTreeContextMenu({
         className="workspace-tree-context-menu-item"
         onClick={copyToClipboard(entry.name)}
       >
-        复制文件名
+        {t("workspace.files.copyFileName")}
       </button>
       <button
         type="button"
@@ -383,7 +403,7 @@ function WorkspaceTreeContextMenu({
         className="workspace-tree-context-menu-item"
         onClick={revealInFolder}
       >
-        在文件管理器中显示
+        {t("workspace.files.revealInFileManager")}
       </button>
     </div>
   );
@@ -479,6 +499,7 @@ export function WorkspaceFilePreview({
   onOpenFile?: (path: string) => void;
   onDirtyChange?: (state: WorkspaceFileDirtyState) => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
   const [draftText, setDraftText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -515,7 +536,7 @@ export function WorkspaceFilePreview({
       })
       .catch((nextError) => {
         if (!cancelled) {
-          setError(desktopApiErrorMessage(nextError, "打开文件失败"));
+          setError(desktopApiErrorMessage(nextError, translateCurrent("workspace.files.openFailed")));
         }
       })
       .finally(() => {
@@ -527,7 +548,7 @@ export function WorkspaceFilePreview({
     return () => {
       cancelled = true;
     };
-  }, [activeContext?.cwd, selectedWorkspaceFilePath]);
+  }, [activeContext?.cwd, selectedWorkspaceFilePath, locale]);
 
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
   const isMarkdownReadingMode = isMarkdown && !selection;
@@ -564,8 +585,8 @@ export function WorkspaceFilePreview({
     return (
       <div className="workspace-main-empty">
         <FolderX size={36} />
-        <strong>没有项目</strong>
-        <span>先打开一个项目，再浏览文件。</span>
+        <strong>{t("workspace.files.noProject")}</strong>
+        <span>{t("workspace.files.previewNoProjectDescription")}</span>
       </div>
     );
   }
@@ -574,10 +595,10 @@ export function WorkspaceFilePreview({
     return (
       <div className="workspace-main-empty">
         <FolderOpen size={38} />
-        <strong>打开文件</strong>
-        <span>从工作区目录树中选择文件</span>
+        <strong>{t("workspace.files.openFile")}</strong>
+        <span>{t("workspace.files.openFileDescription")}</span>
         <button type="button" onClick={onOpenRightPanel}>
-          显示目录树
+          {t("workspace.files.showTree")}
         </button>
       </div>
     );
@@ -587,7 +608,7 @@ export function WorkspaceFilePreview({
     return (
       <div className="workspace-main-empty">
         <FileText size={36} />
-        <strong>正在打开</strong>
+        <strong>{t("workspace.files.opening")}</strong>
         <span>{selectedWorkspaceFilePath}</span>
       </div>
     );
@@ -597,7 +618,7 @@ export function WorkspaceFilePreview({
     return (
       <div className="workspace-main-empty">
         <AlertCircle size={36} />
-        <strong>打开失败</strong>
+        <strong>{t("workspace.files.openFailedTitle")}</strong>
         <span>{error}</span>
       </div>
     );
@@ -607,7 +628,7 @@ export function WorkspaceFilePreview({
     return (
       <div className="workspace-main-empty">
         <FileText size={36} />
-        <strong>没有内容</strong>
+        <strong>{t("workspace.files.noContent")}</strong>
         <span>{selectedWorkspaceFilePath}</span>
       </div>
     );
@@ -627,8 +648,8 @@ export function WorkspaceFilePreview({
     return (
       <div className="workspace-main-empty">
         <FileText size={36} />
-        <strong>无法预览</strong>
-        <span>{file.path} 是二进制文件。</span>
+        <strong>{t("workspace.files.cannotPreview")}</strong>
+        <span>{t("workspace.files.binary", { path: file.path })}</span>
       </div>
     );
   }

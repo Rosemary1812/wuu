@@ -10,6 +10,7 @@ import {
   createWindowResizeSettleScheduler,
   isWindowResizing,
 } from "./WindowResizeState";
+import { useI18n } from "./i18n";
 
 /**
  * JumpToLatestPill — self-contained "scroll to bottom" pill.
@@ -61,7 +62,7 @@ type JumpToLatestPillProps = {
    */
   threshold?: number;
   /**
-   * Accessible label for the pill button. Default "跳到最新".
+   * Accessible label for the pill button. Defaults to the localized label.
    */
   label?: string;
   /**
@@ -84,9 +85,11 @@ export function JumpToLatestPill({
   containerRef,
   bottomAnchor,
   threshold = DEFAULT_THRESHOLD_PX,
-  label = "跳到最新",
+  label,
   onScrolledAwayChange,
 }: JumpToLatestPillProps): React.ReactElement | null {
+  const { t } = useI18n();
+  const accessibleLabel = label ?? t("conversation.jumpToLatest");
   const [scrolledAway, setScrolledAway] = useState(false);
   const [position, setPosition] = useState<PillPosition | null>(null);
   // The prop being PRESENT (even as null) selects anchored/portaled mode. The
@@ -310,7 +313,7 @@ export function JumpToLatestPill({
     <button
       type="button"
       className="jump-to-latest-pill jump-to-latest-pill-sticky-centered"
-      aria-label={label}
+      aria-label={accessibleLabel}
       onClick={scrollToBottom}
     >
       {pillBody}

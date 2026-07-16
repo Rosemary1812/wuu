@@ -3,6 +3,7 @@ import {
   CODEX_PET_HINTS_MAX,
   CODEX_PET_SIZE_DEFAULT,
   CODEX_PET_SIZE_OPTIONS,
+  type AppLocale,
   type CodexPet,
   type CodexPetHint,
   type CodexPetSize,
@@ -12,6 +13,7 @@ import {
 } from "../shared/protocol";
 import { CODEX_PET_CELL_HEIGHT, CODEX_PET_CELL_WIDTH, CODEX_PET_STATES } from "./codexPets";
 import { appShellWebPreferences } from "./appShellGuards";
+import { getMainLocale, mainTranslate } from "./i18n";
 
 export type CodexPetRuntime = { running: boolean; status: string };
 
@@ -444,7 +446,12 @@ export function selectCodexPetBubbleLayout({
   };
 }
 
-export function codexPetWindowHTML(view: CodexPetView): string {
+export function codexPetWindowHTML(
+  view: CodexPetView,
+  locale: AppLocale = getMainLocale(),
+): string {
+  const conversationLabel = mainTranslate("conversation", {}, locale);
+  const resizeLabel = mainTranslate("resize", {}, locale);
   const styleVars = [
     `--pet-sheet:url('${view.spritesheetURL}')`,
     `--pet-y:${view.y}px`,
@@ -464,13 +471,13 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     .map(
       (hint) =>
         `<div class="hint-row" data-thread-id="${escapeHTML(hint.thread_id)}">` +
-        `<span class="row-title">${escapeHTML(hint.title || "对话")}</span>` +
+        `<span class="row-title">${escapeHTML(hint.title || conversationLabel)}</span>` +
         `<span class="row-preview">${escapeHTML(hint.preview)}</span>` +
         `</div>`,
     )
     .join("");
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8" />
+<html lang="${locale}"><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src wuu-file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; navigate-to wuu-pet:" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
@@ -504,14 +511,14 @@ export function codexPetWindowHTML(view: CodexPetView): string {
 </style></head><body><div class="stage layout-${escapeHTML(view.layout)}" style="${escapeHTML(styleVars)}">
 <div class="bubble" style="display:${view.hints.length ? "flex" : "none"}">${initialRowsHTML}</div>
 <div class="sprite-frame"><div class="sprite" role="img" aria-label="${escapeHTML(view.label)}"></div></div>
-<div class="resize-handle corner-nw" data-dir-x="-1" data-dir-y="-1" aria-label="调整大小"></div>
-<div class="resize-handle corner-ne" data-dir-x="1" data-dir-y="-1" aria-label="调整大小"></div>
-<div class="resize-handle corner-sw" data-dir-x="-1" data-dir-y="1" aria-label="调整大小"></div>
-<div class="resize-handle corner-se" data-dir-x="1" data-dir-y="1" aria-label="调整大小"></div>
-<div class="resize-handle edge-top" data-dir-x="0" data-dir-y="-1" aria-label="调整大小"></div>
-<div class="resize-handle edge-bottom" data-dir-x="0" data-dir-y="1" aria-label="调整大小"></div>
-<div class="resize-handle edge-left" data-dir-x="-1" data-dir-y="0" aria-label="调整大小"></div>
-<div class="resize-handle edge-right" data-dir-x="1" data-dir-y="0" aria-label="调整大小"></div>
+<div class="resize-handle corner-nw" data-dir-x="-1" data-dir-y="-1" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle corner-ne" data-dir-x="1" data-dir-y="-1" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle corner-sw" data-dir-x="-1" data-dir-y="1" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle corner-se" data-dir-x="1" data-dir-y="1" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle edge-top" data-dir-x="0" data-dir-y="-1" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle edge-bottom" data-dir-x="0" data-dir-y="1" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle edge-left" data-dir-x="-1" data-dir-y="0" aria-label="${escapeHTML(resizeLabel)}"></div>
+<div class="resize-handle edge-right" data-dir-x="1" data-dir-y="0" aria-label="${escapeHTML(resizeLabel)}"></div>
 </div>
 <script>
 (() => {
@@ -536,7 +543,7 @@ export function codexPetWindowHTML(view: CodexPetView): string {
       row.dataset.threadId = hint.thread_id;
       const title = document.createElement('span');
       title.className = 'row-title';
-      title.textContent = hint.title || '对话';
+      title.textContent = hint.title || ${JSON.stringify(conversationLabel)};
       const preview = document.createElement('span');
       preview.className = 'row-preview';
       preview.textContent = hint.preview;
@@ -790,6 +797,13 @@ export class CodexPetWindowManager {
     private readonly isPackaged = false,
   ) {}
 
+  refreshLocale(): void {
+    const pet = selectedCodexPet(this.snapshot);
+    if (!pet || !this.win || this.win.isDestroyed()) return;
+    this.destroy();
+    this.createWindow(pet);
+  }
+
   setSize(size: CodexPetSize): void {
     if (size === this.size) return;
     this.size = size;
@@ -1029,18 +1043,18 @@ export class CodexPetWindowManager {
   private popupMenu(win: BrowserWindow): void {
     const pet = selectedCodexPet(this.snapshot);
     const template: Electron.MenuItemConstructorOptions[] = [
-      { label: pet ? pet.display_name : "桌宠", enabled: false },
+      { label: pet ? pet.display_name : mainTranslate("pet"), enabled: false },
     ];
     if (this.hints.length) {
       for (const hint of this.hints) {
         template.push({
-          label: `打开会话 · ${hint.title}`,
+          label: mainTranslate("openConversation", { title: hint.title }),
           click: () => this.onJumpRequested(hint),
         });
       }
       template.push({ type: "separator" });
     }
-    template.push({ label: "关闭桌宠", click: () => this.onCloseRequested() });
+    template.push({ label: mainTranslate("closePet"), click: () => this.onCloseRequested() });
     Menu.buildFromTemplate(template).popup({ window: win });
   }
 

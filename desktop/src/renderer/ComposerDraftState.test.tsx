@@ -7,6 +7,7 @@ import {
   useComposerDraftState,
   type ComposerDraftStateController,
 } from "./ComposerDraftState";
+import { resolveLocalizedText } from "./i18n";
 
 let mountedRoots: Root[] = [];
 let cleanupCallbacks: Array<() => void> = [];
@@ -148,7 +149,9 @@ describe("useComposerDraftState", () => {
       await hook.get().attachComposerAttachmentFiles([unsupported]);
     });
 
-    expect(hook.setStatus).toHaveBeenCalledWith("仅支持图片和 PDF");
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
+      "仅支持图片和 PDF",
+    );
     expect(hook.get().composerImages).toEqual([]);
     expect(hook.get().composerFiles).toEqual([]);
   });

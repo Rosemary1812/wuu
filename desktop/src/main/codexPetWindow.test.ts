@@ -255,6 +255,22 @@ describe("codexPetWindowHTML", () => {
     expect(html).toContain("img-src wuu-file:");
   });
 
+  it("renders localized document and accessibility labels", () => {
+    const english = codexPetWindowHTML(
+      codexPetView(
+        snapshot(true).pets[0],
+        codexPetStateForRuntime({ running: false, status: "" }),
+        [{ ...sampleHint, title: "" }],
+        "above",
+      ),
+      "en-US",
+    );
+    expect(english).toContain('<html lang="en-US">');
+    expect(english).toContain('aria-label="Resize"');
+    expect(english).toContain('<span class="row-title">Conversation</span>');
+    expect(english).toContain("hint.title || \"Conversation\"");
+  });
+
   it("renders one bubble row per hint with title, preview, and jump wiring", () => {
     const second: CodexPetHint = {
       ...sampleHint,

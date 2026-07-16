@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatCurrentNumber, translateCurrent as t } from "./i18n";
 
 export function useLiveNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
@@ -68,16 +69,29 @@ export function formatChineseDuration(ms: number): string {
   const seconds = totalSeconds % 60;
   const parts: string[] = [];
   if (days > 0) {
-    parts.push(`${days} 天`);
-    if (hours > 0) parts.push(`${hours} 小时`);
+    parts.push(formatDurationUnit(days, "day"));
+    if (hours > 0) parts.push(formatDurationUnit(hours, "hour"));
   } else if (hours > 0) {
-    parts.push(`${hours} 小时`);
-    if (minutes > 0) parts.push(`${minutes} 分`);
+    parts.push(formatDurationUnit(hours, "hour"));
+    if (minutes > 0) parts.push(formatDurationUnit(minutes, "minute"));
   } else if (minutes > 0) {
-    parts.push(`${minutes} 分`);
-    if (seconds > 0) parts.push(`${seconds} 秒`);
+    parts.push(formatDurationUnit(minutes, "minute"));
+    if (seconds > 0) parts.push(formatDurationUnit(seconds, "second"));
   } else {
-    parts.push(`${seconds} 秒`);
+    parts.push(formatDurationUnit(seconds, "second"));
   }
   return parts.join(" ");
+}
+
+function formatDurationUnit(value: number, unit: "day" | "hour" | "minute" | "second"): string {
+  const key = `duration.${unit}${value === 1 ? "One" : ""}` as
+    | "duration.day"
+    | "duration.dayOne"
+    | "duration.hour"
+    | "duration.hourOne"
+    | "duration.minute"
+    | "duration.minuteOne"
+    | "duration.second"
+    | "duration.secondOne";
+  return t(key, { count: formatCurrentNumber(value) });
 }

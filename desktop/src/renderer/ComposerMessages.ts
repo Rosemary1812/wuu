@@ -1,5 +1,6 @@
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
 import type { InputFile, InputImage, Turn } from "../shared/protocol";
+import { formatCurrentNumber, translateCurrent } from "./i18n";
 
 // Renderer-side image compression runs on the Electron canvas before the
 // bytes cross the IPC boundary. It is a fast-path optimization, not the
@@ -116,7 +117,7 @@ export async function composerImageFromFile(file: File): Promise<ComposerImage> 
 
 export async function composerFileFromFile(file: File): Promise<ComposerFile> {
   if (!isPDFFile(file)) {
-    throw new Error("仅支持 PDF 文件");
+    throw new Error(translateCurrent("composer.attachment.pdfOnly"));
   }
   const data = await bufferToBase64(await file.arrayBuffer());
   return {
@@ -215,7 +216,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, mediaType: string, quality?: nu
     canvas.toBlob(
       (blob) => {
         if (!blob) {
-          reject(new Error("无法处理图片"));
+          reject(new Error(translateCurrent("composer.attachment.imageProcessFailed")));
           return;
         }
         resolve(blob);
@@ -238,13 +239,13 @@ function bufferToBase64(buffer: ArrayBuffer): Promise<string> {
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== "string") {
-        reject(new Error("无法编码图片"));
+        reject(new Error(translateCurrent("composer.attachment.imageEncodeFailed")));
         return;
       }
       const commaIndex = result.indexOf(",");
       resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
     };
-    reader.onerror = () => reject(reader.error ?? new Error("无法编码图片"));
+    reader.onerror = () => reject(reader.error ?? new Error(translateCurrent("composer.attachment.imageEncodeFailed")));
     reader.readAsDataURL(new Blob([buffer]));
   });
 }
@@ -372,10 +373,14 @@ export function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedCom
 
 export function queuedMessagePreview(message: QueuedComposerMessage): string {
   const text = message.text.trim().replace(/\s+/g, " ");
-  const imageText = message.images.length > 0 ? `${message.images.length} 张图片` : "";
-  const fileText = message.files.length > 0 ? `${message.files.length} 个文件` : "";
+  const imageText = message.images.length > 0
+    ? translateCurrent(message.images.length === 1 ? "composer.preview.imageOne" : "composer.preview.images", { count: formatCurrentNumber(message.images.length) })
+    : "";
+  const fileText = message.files.length > 0
+    ? translateCurrent(message.files.length === 1 ? "composer.preview.fileOne" : "composer.preview.files", { count: formatCurrentNumber(message.files.length) })
+    : "";
   const preview = [text, imageText, fileText].filter(Boolean).join(" · ");
-  return trimMiddle(preview || "空消息", 48);
+  return trimMiddle(preview || translateCurrent("composer.preview.empty"), 48);
 }
 
 function trimMiddle(value: string, maxLength: number): string {
@@ -446,7 +451,7 @@ export function createOptimisticCompactTurn(nowMs: number): Turn {
         id: `${id}-compact`,
         type: "context_compaction",
         status: "in_progress",
-        text: "正在压缩上下文",
+        text: translateCurrent("composer.compactingContext"),
         reason: "manual",
       },
     ],

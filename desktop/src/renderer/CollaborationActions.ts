@@ -27,6 +27,7 @@ import type { ContextCompositionEntry } from "./ContextCompositionCard";
 import type { InstructionFilesEntry } from "./InstructionFilesCard";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import type { SettingsPage } from "./SettingsView";
+import { localizedText, translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -128,7 +129,7 @@ export function createCollaborationActions(
     if (!activeThread) {
       deps.setAppState((current) => ({
         ...current,
-        status: "没有当前对话",
+        status: localizedText("collaboration.noCurrentConversation"),
       }));
       return;
     }
@@ -163,7 +164,7 @@ export function createCollaborationActions(
               ? {
                   ...entry,
                   loading: false,
-                  error: desktopApiErrorMessage(error, "无法读取指令文件"),
+                  error: desktopApiErrorMessage(error, translateCurrent("collaboration.instructionsReadFailed")),
                 }
               : entry,
           ),
@@ -177,7 +178,7 @@ export function createCollaborationActions(
     if (!activeThread) {
       deps.setAppState((current) => ({
         ...current,
-        status: "没有当前对话",
+        status: localizedText("collaboration.noCurrentConversation"),
       }));
       return;
     }
@@ -219,7 +220,7 @@ export function createCollaborationActions(
               ? {
                   ...entry,
                   loading: false,
-                  error: desktopApiErrorMessage(error, "无法读取上下文组成"),
+                  error: desktopApiErrorMessage(error, translateCurrent("collaboration.contextReadFailed")),
                 }
               : entry,
           ),
@@ -271,7 +272,7 @@ export function createCollaborationActions(
       } catch (error) {
         deps.setAppState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : "无法创建 Agent 对话",
+          status: error instanceof Error ? error.message : translateCurrent("collaboration.agentConversationCreateFailed"),
         }));
       }
     } finally {
@@ -299,7 +300,7 @@ export function createCollaborationActions(
     } catch (error) {
       deps.setAppState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "无法创建群聊",
+        status: error instanceof Error ? error.message : translateCurrent("collaboration.groupCreateFailed"),
       }));
     }
   }

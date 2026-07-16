@@ -21,8 +21,9 @@ import type {
   ParticipantSaveParams,
   ProviderSummary,
 } from "../shared/protocol";
-import { PARTICIPANT_ROLES } from "./ParticipantProfilePanel";
+import { PARTICIPANT_ROLES, participantRoleLabel } from "./ParticipantLabels";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
+import { translateCurrent, useI18n } from "./i18n";
 
 const AVATAR_MAX_BYTES = 512 * 1024;
 
@@ -54,10 +55,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
       if (typeof reader.result === "string") {
         resolve(reader.result);
       } else {
-        reject(new Error("文件读取失败"));
+        reject(new Error(translateCurrent("participant.avatar.fileReadFailed")));
       }
     };
-    reader.onerror = () => reject(new Error("文件读取失败"));
+    reader.onerror = () => reject(new Error(translateCurrent("participant.avatar.fileReadFailed")));
     reader.readAsDataURL(file);
   });
 }
@@ -75,6 +76,7 @@ export function NewParticipantDialog({
   onCreated,
   onClose,
 }: NewParticipantDialogProps): ReactElement | null {
+  const { locale, t } = useI18n();
   const [form, setForm] = useState<NewParticipantForm>({
     name: "",
     role: "reviewer",
@@ -153,12 +155,12 @@ export function NewParticipantDialog({
     if (known) {
       return undefined;
     }
-    return { value: form.model, label: `${form.model}（不可用）` };
-  }, [form.model, providerOptions]);
+    return { value: form.model, label: t("participant.modelUnavailable", { model: form.model }) };
+  }, [form.model, locale, providerOptions]);
 
   const modelGroups = useMemo<SelectMenuGroup[]>(() => {
     const groups: SelectMenuGroup[] = [
-      { options: [{ value: "", label: "跟随全局" }] },
+      { options: [{ value: "", label: t("participant.followGlobal") }] },
       ...providerOptions.map((provider) => ({
         label: provider.name,
         options: provider.models.map((model) => ({
@@ -171,7 +173,7 @@ export function NewParticipantDialog({
       groups.push({ options: [orphanModelOption] });
     }
     return groups;
-  }, [providerOptions, orphanModelOption]);
+  }, [locale, providerOptions, orphanModelOption]);
 
   const canSave = form.name.trim().length > 0 && !saving && !avatarError;
 
@@ -192,7 +194,7 @@ export function NewParticipantDialog({
       return;
     }
     if (file.size > AVATAR_MAX_BYTES) {
-      setAvatarError("头像超过 512KB，请压缩后再试");
+      setAvatarError(t("participant.avatar.tooLarge"));
       return;
     }
     const token = ++avatarReadTokenRef.current;
@@ -211,7 +213,7 @@ export function NewParticipantDialog({
       if (token !== avatarReadTokenRef.current) {
         return;
       }
-      setAvatarError("读取头像失败");
+      setAvatarError(t("participant.avatar.readFailed"));
     }
   }
 
@@ -299,12 +301,12 @@ export function NewParticipantDialog({
             id="new-participant-dialog-title"
             className="new-participant-title"
           >
-            {editing ? "编辑 Agent" : "新建 Agent"}
+            {editing ? t("participant.dialog.editTitle") : t("participant.dialog.createTitle")}
           </h2>
           <p className="new-participant-subtitle">
             {editing
-              ? "更新 Ta 的身份与运行配置。"
-              : "在这里填完所有信息，保存后即可在 Agent 列表里看到 Ta。"}
+              ? t("participant.dialog.editDescription")
+              : t("participant.dialog.createDescription")}
           </p>
         </div>
 
@@ -319,8 +321,8 @@ export function NewParticipantDialog({
             <button
               type="button"
               className="new-participant-avatar"
-              aria-label="上传头像"
-              title="上传头像"
+              aria-label={t("participant.avatar.upload")}
+              title={t("participant.avatar.upload")}
               onClick={triggerAvatarPicker}
             >
               {form.avatarImage ||
@@ -328,7 +330,7 @@ export function NewParticipantDialog({
                 <img
                   className="new-participant-avatar-image"
                   src={form.avatarImage ?? participant?.avatar_image}
-                  alt="头像"
+                  alt={t("participant.avatar.alt")}
                 />
               ) : (
                 <Camera
@@ -353,7 +355,7 @@ export function NewParticipantDialog({
                 onClick={triggerAvatarPicker}
               >
                 <ImagePlus aria-hidden="true" />
-                <span>上传图片</span>
+                <span>{t("participant.avatar.uploadImage")}</span>
               </button>
               {form.avatarImage ||
               (participant?.avatar_image && !form.clearAvatarImage) ? (
@@ -363,7 +365,7 @@ export function NewParticipantDialog({
                   onClick={clearAvatarImage}
                 >
                   <Trash2 aria-hidden="true" />
-                  <span>移除</span>
+                  <span>{t("common.remove")}</span>
                 </button>
               ) : null}
             </div>
@@ -375,7 +377,7 @@ export function NewParticipantDialog({
           ) : null}
 
           <label className="new-participant-field">
-            <span>名字</span>
+            <span>{t("participant.name")}</span>
             <input
               data-field="name"
               value={form.name}
@@ -383,39 +385,39 @@ export function NewParticipantDialog({
               onChange={(event) =>
                 updateField("name", event.currentTarget.value)
               }
-              placeholder="例如 Noel"
+              placeholder={t("participant.namePlaceholder")}
               onFocus={(event) => event.currentTarget.select()}
             />
           </label>
           <label className="new-participant-field">
-            <span>一句话介绍</span>
+            <span>{t("participant.tagline")}</span>
             <input
               data-field="tagline"
               value={form.tagline}
               onChange={(event) =>
                 updateField("tagline", event.currentTarget.value)
               }
-              placeholder="Find regressions"
+              placeholder={t("participant.taglinePlaceholder")}
             />
           </label>
           <div className="new-participant-field">
-            <span>角色</span>
+            <span>{t("participant.role")}</span>
             <SelectMenu
-              ariaLabel="角色"
+              ariaLabel={t("participant.role")}
               dataField="role"
               value={form.role}
               onChange={(next) => updateField("role", next)}
               options={PARTICIPANT_ROLES.map((role) => ({
                 value: role,
-                label: role,
+                label: participantRoleLabel(role),
               }))}
               flip
             />
           </div>
           <div className="new-participant-field">
-            <span>模型</span>
+            <span>{t("participant.model")}</span>
             <SelectMenu
-              ariaLabel="模型"
+              ariaLabel={t("participant.model")}
               dataField="model"
               value={form.model}
               onChange={(next) => updateField("model", next)}
@@ -427,7 +429,7 @@ export function NewParticipantDialog({
 
         <div className="new-participant-actions">
           <button type="button" onClick={onClose} disabled={saving}>
-            取消
+            {t("common.cancel")}
           </button>
           <button type="submit" disabled={!canSave}>
             {saving ? (
@@ -438,11 +440,11 @@ export function NewParticipantDialog({
             <span>
               {saving
                 ? editing
-                  ? "保存中…"
-                  : "创建中…"
+                  ? t("participant.saving")
+                  : t("participant.creating")
                 : editing
-                  ? "保存"
-                  : "创建"}
+                  ? t("common.save")
+                  : t("common.create")}
             </span>
           </button>
         </div>

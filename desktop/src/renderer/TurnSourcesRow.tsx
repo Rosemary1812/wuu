@@ -5,6 +5,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { TurnSource } from "./ToolActivityHelpers";
+import { useI18n } from "./i18n";
 
 /**
  * How many host icons we render inside the pill before collapsing the
@@ -57,10 +58,13 @@ export function TurnSourcesRow({
   sources: TurnSource[];
   onOpen?: (url: string) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (sources.length === 0) return null;
   // "来源" alone reads better for a single hit. With more, the count
   // helps users decide whether to expand the pill in the future.
-  const label = sources.length === 1 ? "来源" : `来源 ${sources.length}`;
+  const label = sources.length === 1
+    ? t("sources.label")
+    : t("sources.labelCount", { count: sources.length });
 
   // Single source → the entire pill is the click target. The label and
   // the icon stack both belong to the same button, so there is no dead
@@ -76,7 +80,7 @@ export function TurnSourcesRow({
       <button
         type="button"
         className="turn-sources-pill turn-sources-pill-single"
-        aria-label={`打开 ${tooltip}`}
+        aria-label={t("sources.openNamed", { name: tooltip })}
         title={tooltip}
         onClick={handleClick}
       >
@@ -142,6 +146,7 @@ function SourceIcon({
   source: TurnSource;
   onOpen?: (url: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const tooltip = sourceTooltip(source);
   const handleClick = (event: ReactMouseEvent<HTMLButtonElement>): void => {
     event.preventDefault();
@@ -151,7 +156,7 @@ function SourceIcon({
     <button
       type="button"
       className="turn-source-icon"
-      aria-label={`打开 ${tooltip}`}
+      aria-label={t("sources.openNamed", { name: tooltip })}
       title={tooltip}
       onClick={handleClick}
     >
@@ -198,6 +203,7 @@ function OverflowBadge({
   sources: TurnSource[];
   onOpen?: (url: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   // Anchors the document-level listeners used to dismiss the popover.
   // The popover itself renders inside this wrapper so a click on a menu
@@ -236,10 +242,10 @@ function OverflowBadge({
       <button
         type="button"
         className="turn-source-icon turn-source-overflow-badge"
-        aria-label={`查看另外 ${count} 个来源`}
+        aria-label={t("sources.viewMore", { count })}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`还有 ${count} 个来源`}
+        title={t("sources.moreTitle", { count })}
         onClick={toggle}
       >
         +{count}
@@ -264,6 +270,7 @@ function OverflowList({
   onOpen?: (url: string) => void;
   onClose: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <ul className="turn-source-overflow-list" role="menu">
       {sources.map((source) => {
@@ -281,7 +288,7 @@ function OverflowList({
               type="button"
               role="menuitem"
               className="turn-source-overflow-item"
-              aria-label={`打开 ${tooltip}`}
+              aria-label={t("sources.openNamed", { name: tooltip })}
               title={tooltip}
               onClick={handleClick}
             >

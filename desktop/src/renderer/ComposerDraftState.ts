@@ -19,6 +19,7 @@ import {
   type ComposerFile,
   type ComposerImage,
 } from "./ComposerMessages";
+import { localizedText, translateCurrent } from "./i18n";
 
 type ComposerDraftStatusSetter = (status: string) => void;
 
@@ -94,7 +95,7 @@ async function attachComposerAttachmentFilesToDraft(
   const imageFiles = files.filter(isComposerImageFile);
   const pdfFiles = files.filter(isPDFFile);
   if (imageFiles.length === 0 && pdfFiles.length === 0) {
-    setStatus("仅支持图片和 PDF");
+    setStatus(localizedText("composer.attachment.imagesAndPdfOnly"));
     return;
   }
   try {
@@ -105,7 +106,7 @@ async function attachComposerAttachmentFilesToDraft(
       targets.onFile,
     );
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "附件添加失败");
+    setStatus(error instanceof Error ? error.message : translateCurrent("composer.attachment.addFailed"));
   }
 }
 

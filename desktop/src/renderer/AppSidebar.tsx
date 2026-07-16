@@ -66,6 +66,7 @@ import { ThreadContextMenu } from "./ThreadContextMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { NewParticipantDialog } from "./NewParticipantDialog";
 import { ENABLE_COLLABORATION } from "./FeatureFlags";
+import { useI18n } from "./i18n";
 
 /**
  * Stable section identity keys for the new sidebar tree.
@@ -464,6 +465,7 @@ export function AppSidebar({
   onPointerLeave?: (event: ReactPointerEvent<HTMLElement>) => void;
   onOpenSettings: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
   // Floating create-group dialog for the 群聊 section: the + button opens a
@@ -551,7 +553,7 @@ export function AppSidebar({
       ? [
           {
             id: "collaboration" as const,
-            label: "协作",
+            label: t("sidebar.collaboration"),
             sectionIDs: sectionOrder.filter(
               (id) =>
                 id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
@@ -561,7 +563,7 @@ export function AppSidebar({
       : []),
     {
       id: "workspace" as const,
-      label: "工作区",
+      label: t("sidebar.workspace"),
       sectionIDs: sectionOrder.filter(
         (id) =>
           !ENABLE_COLLABORATION ||
@@ -590,14 +592,14 @@ export function AppSidebar({
         <div className="sidebar-brand">
           <span className="sidebar-brand-wordmark">wuu</span>
         </div>
-        <nav className="primary-nav" aria-label="主导航">
+        <nav className="primary-nav" aria-label={t("sidebar.mainNavigation")}>
           <button
             className="nav-item"
             onClick={onStartNewThread}
             disabled={!hasRuntimeContext}
           >
             <MessageSquarePlus className="icon-lg" />
-            <span>新对话</span>
+            <span>{t("sidebar.newConversation")}</span>
           </button>
           <button
             className="nav-item conversation-search-trigger"
@@ -608,7 +610,7 @@ export function AppSidebar({
             disabled={!hasRuntimeContext}
           >
             <Search className="icon-lg" />
-            <span>搜索会话</span>
+            <span>{t("sidebar.searchConversations")}</span>
           </button>
           <button
             className="nav-item"
@@ -616,18 +618,18 @@ export function AppSidebar({
             disabled={!hasRuntimeContext}
           >
             <Wrench className="icon-lg" />
-            <span>Skills</span>
+            <span>{t("skills.sectionSkills")}</span>
           </button>
           {debugFixturesVisible ? (
-            <div className="dev-fixture-nav" aria-label="开发调试会话">
-              <div className="dev-fixture-label">开发样例</div>
+            <div className="dev-fixture-nav" aria-label={t("sidebar.devFixtures.label")}>
+              <div className="dev-fixture-label">{t("sidebar.devFixtures.title")}</div>
               <button
                 className="nav-item dev-fixture-button"
                 onClick={() => onSeedConversationFixture("long")}
                 disabled={!fixturesEnabled}
               >
                 <FileText className="icon" />
-                <span>长对话</span>
+                <span>{t("sidebar.devFixtures.longConversation")}</span>
               </button>
               <button
                 className="nav-item dev-fixture-button"
@@ -635,7 +637,7 @@ export function AppSidebar({
                 disabled={!fixturesEnabled}
               >
                 <ListIcon className="icon" />
-                <span>富内容</span>
+                <span>{t("sidebar.devFixtures.richContent")}</span>
               </button>
               <button
                 className="nav-item dev-fixture-button"
@@ -643,7 +645,7 @@ export function AppSidebar({
                 disabled={!fixturesEnabled}
               >
                 <Clock className="icon" />
-                <span>运行中</span>
+                <span>{t("sidebar.devFixtures.running")}</span>
               </button>
               <button
                 className="nav-item dev-fixture-button"
@@ -651,7 +653,7 @@ export function AppSidebar({
                 disabled={!fixturesEnabled}
               >
                 <Archive className="icon" />
-                <span>上下文压缩</span>
+                <span>{t("sidebar.devFixtures.compaction")}</span>
               </button>
               <button
                 className="nav-item dev-fixture-button"
@@ -659,14 +661,14 @@ export function AppSidebar({
                 disabled={!fixturesEnabled}
               >
                 <CornerDownRight className="icon" />
-                <span>子任务</span>
+                <span>{t("sidebar.devFixtures.subtasks")}</span>
               </button>
               <button
                 className="nav-item dev-fixture-button"
                 onClick={onOpenChipGallery}
               >
                 <LayoutGrid className="icon" />
-                <span>Chip 图鉴</span>
+                <span>{t("sidebar.devFixtures.chipGallery")}</span>
               </button>
             </div>
           ) : null}
@@ -676,7 +678,7 @@ export function AppSidebar({
           {pinnedRows.length > 0 ? (
             <section
               className="sidebar-functional-group pinned-functional-group"
-              aria-label="置顶"
+              aria-label={t("sidebar.pinned")}
             >
               <div className="sidebar-functional-group-body">
                 <div className="pinned-thread-section">
@@ -685,9 +687,9 @@ export function AppSidebar({
                     iconKind="pinned"
                     CollapsedIcon={Pin}
                     ExpandedIcon={Pin}
-                    label="置顶"
-                    ariaLabel={`${pinnedCollapsed ? "展开" : "收起"}置顶`}
-                    title={pinnedCollapsed ? "展开置顶" : "收起置顶"}
+                    label={t("sidebar.pinned")}
+                    ariaLabel={t(pinnedCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.pinned") })}
+                    title={t(pinnedCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.pinned") })}
                     onToggle={() =>
                       onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_PINNED)
                     }
@@ -742,8 +744,8 @@ export function AppSidebar({
                           <button
                             className="sidebar-functional-action"
                             type="button"
-                            aria-label="添加工作区"
-                            title="添加工作区"
+                            aria-label={t("sidebar.addWorkspace")}
+                            title={t("sidebar.addWorkspace")}
                             aria-haspopup="menu"
                             aria-expanded={projectMenuOpen}
                             onClick={onToggleProjectMenu}
@@ -754,11 +756,11 @@ export function AppSidebar({
                             <div className="project-add-menu" role="menu">
                               <button role="menuitem" onClick={onCreateProject}>
                                 <FolderPlus className="icon-xl" />
-                                <span>新建空白项目</span>
+                                <span>{t("sidebar.newBlankProject")}</span>
                               </button>
                               <button role="menuitem" onClick={onOpenProjectFolder}>
                                 <FolderOpen className="icon-xl" />
-                                <span>使用现有文件夹</span>
+                                <span>{t("sidebar.useExistingFolder")}</span>
                               </button>
                             </div>
                           ) : null}
@@ -789,8 +791,8 @@ export function AppSidebar({
                   <button
                     type="button"
                     className="participant-roster-add"
-                    aria-label="新建群聊"
-                    title="新建群聊"
+                    aria-label={t("sidebar.newGroup")}
+                    title={t("sidebar.newGroup")}
                     disabled={!state.initialized}
                     onClick={openGroupThreadDialog}
                   >
@@ -803,9 +805,9 @@ export function AppSidebar({
                   key={SIDEBAR_SECTION_GROUP}
                   id={SIDEBAR_SECTION_GROUP}
                   className="group-thread-section"
-                  ariaLabel="群聊"
+                  ariaLabel={t("sidebar.groups")}
                   headerInfo={{
-                    label: "群聊",
+                    label: t("sidebar.groups"),
                     iconKind: "group",
                     CollapsedIcon: Hash,
                     ExpandedIcon: Hash,
@@ -817,9 +819,9 @@ export function AppSidebar({
                     iconKind="group"
                     CollapsedIcon={Hash}
                     ExpandedIcon={Hash}
-                    label="群聊"
-                    ariaLabel={`${groupCollapsed ? "展开" : "收起"}群聊`}
-                    title={groupCollapsed ? "展开群聊" : "收起群聊"}
+                    label={t("sidebar.groups")}
+                    ariaLabel={t(groupCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.groups") })}
+                    title={t(groupCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.groups") })}
                     onToggle={() =>
                       onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_GROUP)
                     }
@@ -848,7 +850,7 @@ export function AppSidebar({
                           disabled={!state.initialized}
                           onClick={openGroupThreadDialog}
                         >
-                          添加群聊
+                          {t("sidebar.addGroup")}
                         </button>
                       </div>
                     )}
@@ -874,7 +876,7 @@ export function AppSidebar({
                   y={rosterContextMenu.y}
                   items={[
                     {
-                      label: "编辑设定",
+                      label: t("sidebar.editAgentSettings"),
                       onSelect: () =>
                         setEditingParticipant(rosterContextMenu.participant),
                     },
@@ -883,7 +885,7 @@ export function AppSidebar({
                         const dm = dmThreadByParticipantID.get(
                           rosterContextMenu.participant.id,
                         );
-                        return dm?.pinned ? "取消置顶 DM" : "置顶 DM";
+                        return dm?.pinned ? t("sidebar.unpinDM") : t("sidebar.pinDM");
                       })(),
                       disabled: !dmThreadByParticipantID.has(
                         rosterContextMenu.participant.id,
@@ -905,8 +907,8 @@ export function AppSidebar({
                   <button
                     type="button"
                     className="participant-roster-add"
-                    aria-label="新建 Agent"
-                    title="新建 Agent"
+                    aria-label={t("sidebar.newAgent")}
+                    title={t("sidebar.newAgent")}
                     disabled={!state.initialized}
                     onClick={() => {
                       setCreatingParticipant(true);
@@ -921,9 +923,9 @@ export function AppSidebar({
                   key={SIDEBAR_SECTION_AGENTS}
                   id={SIDEBAR_SECTION_AGENTS}
                   className="participant-roster-section"
-                  ariaLabel="Agents"
+                  ariaLabel={t("sidebar.agents")}
                   headerInfo={{
-                    label: "Agents",
+                    label: t("sidebar.agents"),
                     iconKind: "agents",
                     CollapsedIcon: UserRound,
                     ExpandedIcon: UsersRound,
@@ -935,9 +937,9 @@ export function AppSidebar({
                     iconKind="agents"
                     CollapsedIcon={UserRound}
                     ExpandedIcon={UsersRound}
-                    label="Agents"
-                    ariaLabel={`${collapsed ? "展开" : "收起"} Agents`}
-                    title={collapsed ? "展开 Agents" : "收起 Agents"}
+                    label={t("sidebar.agents")}
+                    ariaLabel={t(collapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.agents") })}
+                    title={t(collapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.agents") })}
                     onToggle={() =>
                       onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_AGENTS)
                     }
@@ -953,7 +955,7 @@ export function AppSidebar({
                             setCreatingParticipant(true);
                           }}
                         >
-                          添加 Agent
+                          {t("sidebar.addAgent")}
                         </button>
                       ) : (
                         visibleParticipants.map((participant) => {
@@ -1007,7 +1009,7 @@ export function AppSidebar({
                                 <span
                                   className="participant-roster-status"
                                   data-status={status}
-                                  title={isBusy ? "运行中" : "在线"}
+                                  title={isBusy ? t("sidebar.running") : t("sidebar.online")}
                                 />
                                 {avatar}
                                 <span className="participant-roster-copy">
@@ -1019,13 +1021,13 @@ export function AppSidebar({
                               {dm ? (
                                 <div
                                   className="thread-row-actions"
-                                  aria-label="DM 操作"
+                                  aria-label={t("sidebar.dmActions")}
                                 >
                                   <button
                                     className={`sidebar-row-icon-button thread-row-action ${dm.pinned ? "active" : ""}`}
                                     type="button"
-                                    aria-label={dm.pinned ? "取消置顶" : "置顶"}
-                                    title={dm.pinned ? "取消置顶" : "置顶"}
+                                    aria-label={dm.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+                                    title={dm.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
                                     onClick={() => onTogglePinned(dm)}
                                   >
                                     <Pin className="icon-sm" />
@@ -1033,8 +1035,8 @@ export function AppSidebar({
                                   <button
                                     className="sidebar-row-icon-button thread-row-action archive"
                                     type="button"
-                                    aria-label="归档"
-                                    title="归档"
+                                    aria-label={t("sidebar.archiveAction")}
+                                    title={t("sidebar.archiveAction")}
                                     onClick={() => onArchiveThread(dm)}
                                   >
                                     <Archive className="icon-sm" />
@@ -1065,8 +1067,8 @@ export function AppSidebar({
             // automation can target them by id.
             const isScratchPseudo = project.id === SCRATCH_PSEUDO_PROJECT_ID;
             const sectionAriaLabel = isScratchPseudo
-              ? "项目"
-              : `项目 ${project.name}`;
+              ? t("sidebar.project")
+              : t("sidebar.projectNamed", { name: project.name });
             return (
               <SortableSection
                 key={key}
@@ -1074,7 +1076,7 @@ export function AppSidebar({
                 className="project-section"
                 ariaLabel={sectionAriaLabel}
                 headerInfo={{
-                  label: isScratchPseudo ? "对话" : project.name,
+                  label: isScratchPseudo ? t("sidebar.conversations") : project.name,
                   iconKind: isScratchPseudo ? "conversation" : "project",
                   CollapsedIcon: isScratchPseudo ? MessageSquare : Folder,
                   ExpandedIcon: isScratchPseudo ? MessagesSquare : FolderOpen,
@@ -1136,7 +1138,7 @@ export function AppSidebar({
             onClick={onOpenSettings}
           >
             <Settings className="icon-lg" />
-            <span>设置</span>
+            <span>{t("sidebar.settings")}</span>
           </button>
         </div>
       </div>
@@ -1157,14 +1159,14 @@ export function AppSidebar({
           setCreatingGroupThread(false);
           setGroupNameDraft("");
         }}
-        dialogTitle="新建群聊"
+        dialogTitle={t("sidebar.newGroupTitle")}
         dialogTitleId="group-thread-create-title"
-        fieldLabel="群聊名称"
-        fieldAriaLabel="群聊名称"
-        placeholder="群聊名称"
+        fieldLabel={t("sidebar.groupName")}
+        fieldAriaLabel={t("sidebar.groupName")}
+        placeholder={t("sidebar.groupName")}
         icon={Hash}
-        submitLabel="创建"
-        cancelLabel="取消"
+        submitLabel={t("common.create")}
+        cancelLabel={t("common.cancel")}
       />
       <NewParticipantDialog
         open={creatingParticipant || Boolean(editingParticipant)}

@@ -3,6 +3,7 @@ import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { initialState, type AppState } from "./AppState";
 import { createEnvironmentActions } from "./EnvironmentActions";
 import type { EnvironmentPanelMenu } from "./EnvironmentPanel";
+import { resolveLocalizedText } from "./i18n";
 
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
 
@@ -149,7 +150,7 @@ describe("createEnvironmentActions", () => {
       message: "commit message",
       include_unstaged: true,
     });
-    expect(harness.getAppState().status).toBe("已提交 abc123");
+    expect(resolveLocalizedText(harness.getAppState().status)).toBe("已提交 abc123");
   });
 
   it("opens and closes the environment panel with focus restoration", () => {

@@ -66,9 +66,9 @@ describe("ParticipantChip", () => {
     mount({ participant: reviewer });
     expect(chip()).not.toBeNull();
     expect(spanText(".participant-chip-name")).toBe("Reviewer·auth");
-    expect(spanText(".participant-chip-role")).toBe("reviewer");
+    expect(spanText(".participant-chip-role")).toBe("审查");
     expect(chip()!.textContent).toContain("Reviewer·auth");
-    expect(chip()!.textContent).toContain("reviewer");
+    expect(chip()!.textContent).toContain("审查");
   });
 
   it("renders the avatar image when the summary carries avatar_image", () => {

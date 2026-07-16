@@ -20,18 +20,10 @@ import { ImagePreviewProvider } from "./ImagePreview";
 import { Modal } from "./Modal";
 import { RichContent } from "./RichContent";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
+import { PARTICIPANT_ROLES, participantRoleLabel } from "./ParticipantLabels";
+import { formatCurrentDate, translateCurrent, useI18n } from "./i18n";
 
-export const PARTICIPANT_ROLES = [
-  "general-purpose",
-  "planner",
-  "researcher",
-  "worker",
-  "reviewer",
-  "qa",
-  "debugger",
-  "integrator",
-  "verification",
-];
+export { PARTICIPANT_ROLES } from "./ParticipantLabels";
 
 const AVATAR_MAX_BYTES = 512 * 1024;
 
@@ -94,7 +86,7 @@ function timestampLabel(value?: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return parsed.toLocaleString(undefined, {
+  return formatCurrentDate(parsed, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -109,10 +101,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
       if (typeof reader.result === "string") {
         resolve(reader.result);
       } else {
-        reject(new Error("文件读取失败"));
+        reject(new Error(translateCurrent("participant.avatar.fileReadFailed")));
       }
     };
-    reader.onerror = () => reject(new Error("文件读取失败"));
+    reader.onerror = () => reject(new Error(translateCurrent("participant.avatar.fileReadFailed")));
     reader.readAsDataURL(file);
   });
 }
@@ -167,6 +159,7 @@ export function ParticipantProfilePanel({
   onOpenMemoryPanel: (participantId: string) => void;
   onRetire: (participantId: string) => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const [form, setForm] = useState<ParticipantProfileForm>(() =>
     formFromParticipant(participant, initialName),
   );
@@ -241,15 +234,15 @@ export function ParticipantProfilePanel({
     if (known) {
       return undefined;
     }
-    return { value: form.model, label: `${form.model}（不可用）` };
-  }, [form.model, providerOptions]);
+    return { value: form.model, label: t("participant.modelUnavailable", { model: form.model }) };
+  }, [form.model, locale, providerOptions]);
 
   // Grouped model options for the SelectMenu: a leading "跟随全局" (follow
   // the global default), one labeled group per provider, then the orphan
   // pin fallback (if the pinned model is no longer offered).
   const modelGroups = useMemo<SelectMenuGroup[]>(() => {
     const groups: SelectMenuGroup[] = [
-      { options: [{ value: "", label: "跟随全局" }] },
+      { options: [{ value: "", label: t("participant.followGlobal") }] },
       ...providerOptions.map((provider) => ({
         label: provider.name,
         options: provider.models.map((model) => ({
@@ -262,11 +255,11 @@ export function ParticipantProfilePanel({
       groups.push({ options: [orphanModelOption] });
     }
     return groups;
-  }, [providerOptions, orphanModelOption]);
+  }, [locale, providerOptions, orphanModelOption]);
 
   const trackRecord = participant?.track_record ?? [];
   const panelTitle =
-    mode === "new" ? "新建 Agent" : participant?.name || "Agent";
+    mode === "new" ? t("participant.dialog.createTitle") : participant?.name || "Agent";
   const canSave =
     form.name.trim().length > 0 && !saving && !loading && !avatarError;
   const canSendFeedback =
@@ -275,11 +268,11 @@ export function ParticipantProfilePanel({
     !feedbackSubmitting &&
     !loading;
   const metaLine = useMemo(() => {
-    const parts = [form.role, form.model].filter(
+    const parts = [participantRoleLabel(form.role), form.model].filter(
       (part) => part.trim().length > 0,
     );
     return parts.join(" · ");
-  }, [form.model, form.role]);
+  }, [form.model, form.role, locale]);
 
   const avatarPreview = form.avatarImage || participant?.avatar_image;
   const showAvatarImage = Boolean(form.avatarImage || participant?.avatar_image);
@@ -301,7 +294,7 @@ export function ParticipantProfilePanel({
       return;
     }
     if (file.size > AVATAR_MAX_BYTES) {
-      setAvatarError("头像超过 512KB，请压缩后再试");
+      setAvatarError(t("participant.avatar.tooLarge"));
       return;
     }
     const token = ++avatarReadTokenRef.current;
@@ -321,7 +314,7 @@ export function ParticipantProfilePanel({
       if (token !== avatarReadTokenRef.current) {
         return;
       }
-      setAvatarError("读取头像失败");
+      setAvatarError(t("participant.avatar.readFailed"));
     }
   }
 
@@ -386,7 +379,7 @@ export function ParticipantProfilePanel({
   }
 
   return (
-    <aside className="participant-profile-panel" aria-label="Agent 档案">
+    <aside className="participant-profile-panel" aria-label={t("participant.profile.label")}>
       <header className="participant-profile-header">
         <div className="participant-profile-title-group">
           <h2>{panelTitle}</h2>
@@ -395,8 +388,8 @@ export function ParticipantProfilePanel({
         <button
           type="button"
           className="icon-button participant-profile-icon"
-          aria-label="关闭"
-          title="关闭"
+          aria-label={t("common.close")}
+          title={t("common.close")}
           onClick={onClose}
         >
           <X aria-hidden="true" />
@@ -409,12 +402,12 @@ export function ParticipantProfilePanel({
             role="status"
           >
             <Archive aria-hidden="true" />
-            <span>已归档</span>
+            <span>{t("participant.profile.archived")}</span>
           </div>
         ) : loading ? (
           <div className="participant-profile-state" role="status">
             <Loader2 className="participant-profile-spinner" aria-hidden="true" />
-            <span>加载中</span>
+            <span>{t("common.loading")}</span>
           </div>
         ) : (
           <>
@@ -427,25 +420,25 @@ export function ParticipantProfilePanel({
               className="participant-profile-section"
               aria-labelledby="participant-profile-identity"
             >
-              <h3 id="participant-profile-identity">身份</h3>
+              <h3 id="participant-profile-identity">{t("participant.profile.identity")}</h3>
               {participant?.forked_from_id ? (
                 <p className="participant-profile-fork-badge">
-                  {forkedFromName?.trim() || participant.forked_from_id} 的分身
+                  {t("participant.profile.forkOf", { name: forkedFromName?.trim() || participant.forked_from_id })}
                 </p>
               ) : null}
               <div className="participant-profile-avatar-row">
                 <button
                   type="button"
                   className="participant-profile-avatar"
-                  aria-label="上传头像"
-                  title="上传头像"
+                  aria-label={t("participant.avatar.upload")}
+                  title={t("participant.avatar.upload")}
                   onClick={triggerAvatarPicker}
                 >
                   {showAvatarImage && avatarPreview ? (
                     <img
                       className="participant-profile-avatar-image"
                       src={avatarPreview}
-                      alt="头像"
+                      alt={t("participant.avatar.alt")}
                     />
                   ) : (
                     <Camera
@@ -471,7 +464,7 @@ export function ParticipantProfilePanel({
                     onClick={triggerAvatarPicker}
                   >
                     <ImagePlus aria-hidden="true" />
-                    <span>上传图片</span>
+                    <span>{t("participant.avatar.uploadImage")}</span>
                   </button>
                   {showAvatarImage ? (
                     <button
@@ -480,7 +473,7 @@ export function ParticipantProfilePanel({
                       onClick={clearAvatarImage}
                     >
                       <Trash2 aria-hidden="true" />
-                      <span>移除</span>
+                      <span>{t("common.remove")}</span>
                     </button>
                   ) : null}
                 </div>
@@ -491,25 +484,25 @@ export function ParticipantProfilePanel({
                 </p>
               ) : null}
               <label className="participant-profile-field">
-                <span>名字</span>
+                <span>{t("participant.name")}</span>
                 <input
                   data-field="name"
                   value={form.name}
                   onChange={(event) =>
                     updateField("name", event.currentTarget.value)
                   }
-                  placeholder="Noel"
+                  placeholder={t("participant.namePlaceholder")}
                 />
               </label>
               <label className="participant-profile-field">
-                <span>一句话介绍</span>
+                <span>{t("participant.tagline")}</span>
                 <input
                   data-field="tagline"
                   value={form.tagline}
                   onChange={(event) =>
                     updateField("tagline", event.currentTarget.value)
                   }
-                  placeholder="Find regressions"
+                  placeholder={t("participant.taglinePlaceholder")}
                 />
               </label>
             </section>
@@ -518,24 +511,24 @@ export function ParticipantProfilePanel({
               className="participant-profile-section"
               aria-labelledby="participant-profile-config"
             >
-              <h3 id="participant-profile-config">配置</h3>
+              <h3 id="participant-profile-config">{t("participant.profile.configuration")}</h3>
               <div className="participant-profile-field">
-                <span>角色</span>
+                <span>{t("participant.role")}</span>
                 <SelectMenu
-                  ariaLabel="角色"
+                  ariaLabel={t("participant.role")}
                   dataField="role"
                   value={form.role}
                   onChange={(next) => updateField("role", next)}
                   options={PARTICIPANT_ROLES.map((role) => ({
                     value: role,
-                    label: role
+                    label: participantRoleLabel(role)
                   }))}
                 />
               </div>
               <div className="participant-profile-field">
-                <span>模型</span>
+                <span>{t("participant.model")}</span>
                 <SelectMenu
-                  ariaLabel="模型"
+                  ariaLabel={t("participant.model")}
                   dataField="model"
                   value={form.model}
                   onChange={(next) => updateField("model", next)}
@@ -549,7 +542,7 @@ export function ParticipantProfilePanel({
                 className="participant-profile-section"
                 aria-labelledby="participant-profile-memory"
               >
-                <h3 id="participant-profile-memory">记忆</h3>
+                <h3 id="participant-profile-memory">{t("participant.profile.memory")}</h3>
                 <MemorySummaryView state={memorySummary} />
                 <button
                   type="button"
@@ -557,7 +550,7 @@ export function ParticipantProfilePanel({
                   onClick={() => onOpenMemoryPanel(participantID)}
                 >
                   <Brain aria-hidden="true" />
-                  <span>在记忆面板中管理</span>
+                  <span>{t("participant.profile.manageMemory")}</span>
                 </button>
               </section>
             ) : null}
@@ -567,9 +560,9 @@ export function ParticipantProfilePanel({
                 className="participant-profile-section"
                 aria-labelledby="participant-profile-track"
               >
-                <h3 id="participant-profile-track">任务履历</h3>
+                <h3 id="participant-profile-track">{t("participant.profile.trackRecord")}</h3>
                 {trackRecord.length === 0 ? (
-                  <p className="participant-profile-empty">暂无记录</p>
+                  <p className="participant-profile-empty">{t("participant.profile.noRecords")}</p>
                 ) : (
                   <ol className="participant-profile-track-list">
                     {trackRecord.map((entry, index) => (
@@ -577,7 +570,7 @@ export function ParticipantProfilePanel({
                         key={`${entry.task_id ?? index}-${entry.created_at ?? index}`}
                       >
                         <div className="participant-profile-track-title">
-                          {entry.summary || entry.task_id || "任务"}
+                          {entry.summary || entry.task_id || t("participant.profile.task")}
                         </div>
                         <div className="participant-profile-track-meta">
                           {[entry.outcome, timestampLabel(entry.created_at)]
@@ -596,7 +589,7 @@ export function ParticipantProfilePanel({
                 className="participant-profile-section"
                 aria-labelledby="participant-profile-feedback"
               >
-                <h3 id="participant-profile-feedback">反馈</h3>
+                <h3 id="participant-profile-feedback">{t("participant.profile.feedback")}</h3>
                 <textarea
                   className="participant-profile-feedback"
                   value={feedback}
@@ -617,7 +610,7 @@ export function ParticipantProfilePanel({
                   ) : (
                     <Send aria-hidden="true" />
                   )}
-                  <span>写入反馈</span>
+                  <span>{t("participant.profile.writeFeedback")}</span>
                 </button>
                 {feedbackReply ? (
                   <p
@@ -635,7 +628,7 @@ export function ParticipantProfilePanel({
                 className="participant-profile-section"
                 aria-labelledby="participant-profile-manage"
               >
-                <h3 id="participant-profile-manage">管理</h3>
+                <h3 id="participant-profile-manage">{t("participant.profile.manage")}</h3>
                 <div className="participant-profile-reset-actions">
                   <button
                     type="button"
@@ -651,7 +644,7 @@ export function ParticipantProfilePanel({
                     ) : (
                       <Archive aria-hidden="true" />
                     )}
-                    <span>归档此同事</span>
+                    <span>{t("participant.profile.archiveColleague")}</span>
                   </button>
                 </div>
               </section>
@@ -681,7 +674,7 @@ export function ParticipantProfilePanel({
             ) : (
               <Save aria-hidden="true" />
             )}
-            <span>保存</span>
+            <span>{t("common.save")}</span>
           </button>
         </footer>
       )}
@@ -696,21 +689,22 @@ function ArchiveConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <Modal
-      ariaLabel="归档此同事"
+      ariaLabel={t("participant.profile.archiveColleague")}
       icon={<Archive className="icon-lg" />}
-      title="归档此同事"
-      subtitle="Ta 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。"
+      title={t("participant.profile.archiveColleague")}
+      subtitle={t("participant.profile.archiveDescription")}
       onClose={onCancel}
       panelClassName="participant-archive-dialog"
       footer={
         <>
           <button className="secondary-button" type="button" onClick={onCancel}>
-            再想想
+            {t("participant.profile.archiveCancel")}
           </button>
           <button className="primary-button" type="button" onClick={onConfirm}>
-            归档
+            {t("participant.profile.archive")}
           </button>
         </>
       }
@@ -723,11 +717,12 @@ function MemorySummaryView({
 }: {
   state: MemorySummaryState;
 }): JSX.Element {
+  const { t } = useI18n();
   if (state.status === "loading") {
-    return <p className="participant-profile-empty">加载中…</p>;
+    return <p className="participant-profile-empty">{t("common.loadingEllipsis")}</p>;
   }
   if (state.status === "unavailable") {
-    return <p className="participant-profile-empty">记忆服务尚未就绪。</p>;
+    return <p className="participant-profile-empty">{t("participant.profile.memoryUnavailable")}</p>;
   }
   if (state.status === "error") {
     return (
@@ -737,7 +732,7 @@ function MemorySummaryView({
     );
   }
   if (!state.result.index_md.trim()) {
-    return <p className="participant-profile-empty">还没有关于 Ta 的记忆。</p>;
+    return <p className="participant-profile-empty">{t("participant.profile.noMemory")}</p>;
   }
   return (
     <div

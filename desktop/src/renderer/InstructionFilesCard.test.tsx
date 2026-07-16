@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InstructionFilesCard, type InstructionFilesEntry } from "./InstructionFilesCard";
+import { setActiveLocale } from "./i18n";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -17,6 +18,7 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  setActiveLocale("zh-CN");
 });
 
 function renderCard(entry: InstructionFilesEntry, onDismiss?: (id: string) => void): void {
@@ -36,6 +38,34 @@ function click(element: Element | null): void {
 }
 
 describe("InstructionFilesCard", () => {
+  it("renders generated labels in English and preserves file content", () => {
+    setActiveLocale("en-US");
+    renderCard({
+      id: "en",
+      threadID: "t1",
+      loading: false,
+      result: {
+        files: [
+          {
+            path: "/repo/AGENTS.md",
+            name: "AGENTS.md",
+            source: "project",
+            scope: "project",
+            bytes: 20,
+            content: "原始指令内容",
+          },
+        ],
+      },
+    });
+
+    expect(container.textContent).toContain("Project");
+    expect(container.querySelector("article")?.getAttribute("aria-label")).toBe(
+      "Instruction files",
+    );
+    click(container.querySelector(".instruction-file-toggle"));
+    expect(container.textContent).toContain("原始指令内容");
+  });
+
   it("shows a loading state before the list arrives", () => {
     renderCard({ id: "e1", threadID: "t1", loading: true });
     expect(container.textContent).toContain("正在读取已加载的指令文件");

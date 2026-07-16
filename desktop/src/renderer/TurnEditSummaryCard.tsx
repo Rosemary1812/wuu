@@ -6,6 +6,7 @@ import {
   type ToolDiffPreviewFileDiff,
 } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import { useI18n } from "./i18n";
 
 type FileEdit = {
   path: string;
@@ -310,6 +311,7 @@ export function TurnEditSummaryCard({
   onOpenFile?: (path: string) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
 }): JSX.Element | null {
+  const { t, formatNumber } = useI18n();
   const [visibleCount, setVisibleCount] = useState(FILE_BATCH_SIZE);
 
   if (turn.status === "in_progress") return null;
@@ -327,7 +329,10 @@ export function TurnEditSummaryCard({
     <div className="turn-edit-summary-card">
       <div className="turn-edit-summary-header">
         <span className="turn-edit-summary-title">
-          {edits.length === 1 ? "本轮产出 1 项" : `本轮产出 ${edits.length} 项`}
+          {t(
+            edits.length === 1 ? "turnEdits.countOne" : "turnEdits.count",
+            { count: formatNumber(edits.length) },
+          )}
         </span>
       </div>
       <div className="turn-edit-summary-list">
@@ -360,7 +365,7 @@ export function TurnEditSummaryCard({
                 <button
                   className="turn-edit-summary-row is-clickable"
                   type="button"
-                  aria-label={`打开文件 ${edit.path}`}
+                  aria-label={t("turnEdits.openFile", { path: edit.path })}
                   onClick={() => {
                     if (onOpenFile) {
                       onOpenFile(edit.path);
@@ -390,7 +395,11 @@ export function TurnEditSummaryCard({
         })}
         {hiddenCount > 0 ? (
           <div className="turn-edit-summary-more">
-            <span>还有 {hiddenCount} 个文件</span>
+            <span>
+              {t(hiddenCount === 1 ? "turnEdits.moreFileOne" : "turnEdits.moreFiles", {
+                count: formatNumber(hiddenCount),
+              })}
+            </span>
             <button
               className="turn-edit-summary-more-button"
               type="button"
@@ -400,7 +409,9 @@ export function TurnEditSummaryCard({
                 )
               }
             >
-              再显示 {nextCount} 个
+              {t(nextCount === 1 ? "turnEdits.showMoreOne" : "turnEdits.showMore", {
+                count: formatNumber(nextCount),
+              })}
             </button>
           </div>
         ) : null}

@@ -21,6 +21,7 @@ import {
 } from "./ComposerMessages";
 import { useComposerQueryHistory } from "./ComposerQueryHistory";
 import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerTypes";
+import { useI18n } from "./i18n";
 
 export function ComposerAttachmentStrip({
   files,
@@ -33,6 +34,7 @@ export function ComposerAttachmentStrip({
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const { openPreview } = useImagePreview();
   if (images.length === 0 && files.length === 0) {
     return null;
@@ -41,7 +43,7 @@ export function ComposerAttachmentStrip({
     <div className="composer-attachments">
       {images.map((image, index) => {
         const src = imageSource(image);
-        const label = `Image ${index + 1}`;
+        const label = t("composer.imageNumber", { number: index + 1 });
         const handleOpen = (): void => {
           openPreview({ src, alt: label, title: label });
         };
@@ -58,13 +60,13 @@ export function ComposerAttachmentStrip({
               alt={label}
               role="button"
               tabIndex={0}
-              aria-label={`放大查看：${label}`}
+              aria-label={t("composer.enlargeNamed", { name: label })}
               onClick={handleOpen}
               onKeyDown={handleKeyDown}
             />
             <button
               type="button"
-              aria-label={`移除图片 ${index + 1}`}
+              aria-label={t("composer.removeImage", { number: index + 1 })}
               onClick={(event) => {
                 event.stopPropagation();
                 onRemoveImage(image.id);
@@ -78,8 +80,8 @@ export function ComposerAttachmentStrip({
       {files.map((file, index) => (
         <div className="composer-file-attachment" key={file.id}>
           <FileText className="icon" aria-hidden="true" />
-          <span>{file.filename?.trim() || `PDF ${index + 1}`}</span>
-          <button type="button" aria-label={`移除文件 ${index + 1}`} onClick={() => onRemoveFile(file.id)}>
+          <span>{file.filename?.trim() || t("composer.pdfNumber", { number: index + 1 })}</span>
+          <button type="button" aria-label={t("composer.removeFile", { number: index + 1 })} onClick={() => onRemoveFile(file.id)}>
             <X className="icon-xs" />
           </button>
         </div>
@@ -121,6 +123,7 @@ export function SplitPaneComposer({
   onSend: () => void;
   onInterrupt: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const hasAttachments = images.length > 0 || files.length > 0;
@@ -129,7 +132,7 @@ export function SplitPaneComposer({
   // with an empty input. Once there is a draft, it flips to send (queuing
   // mid-turn) so a typed follow-up is never blocked by the stop state.
   const showStop = running && !hasDraft;
-  const sendLabel = running ? "排队发送" : "发送";
+  const sendLabel = running ? t("composer.queueSend") : t("composer.send");
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
@@ -186,7 +189,7 @@ export function SplitPaneComposer({
         <textarea
           ref={textareaRef}
           value={prompt}
-          placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "继续这个分支"}
+          placeholder={readOnly ? t("composer.readOnly") : hasAttachments ? t("composer.addDescription") : t("composer.continueBranch")}
           disabled={readOnly}
           aria-readonly={readOnly}
           onChange={(event) => {
@@ -210,8 +213,8 @@ export function SplitPaneComposer({
           <button
             className="composer-action-button composer-attach-button"
             type="button"
-            aria-label="添加附件"
-            title="添加附件"
+            aria-label={t("composer.addAttachment")}
+            title={t("composer.addAttachment")}
             disabled={readOnly}
             onClick={() => attachmentInputRef.current?.click()}
           >
@@ -233,8 +236,8 @@ export function SplitPaneComposer({
               className="composer-action-button composer-stop-button"
               type="button"
               onClick={onInterrupt}
-              aria-label="停止"
-              title="停止"
+              aria-label={t("composer.stop")}
+              title={t("composer.stop")}
             >
               <Square aria-hidden="true" />
             </button>
@@ -299,13 +302,14 @@ export function ComposerQueueStrip({
   onEditGuideMessage: (id: string) => void;
   onEditQueuedMessage: (id: string) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const rows = buildQueueRows(guideMessages, queuedMessages);
   if (rows.length === 0) {
     return null;
   }
 
   return (
-    <ol className="composer-queue-list" aria-label="待发送消息">
+    <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
       {rows.map((row, index) => (
         <ComposerQueueItem
           key={row.key}
@@ -346,6 +350,13 @@ function ComposerQueueItem({
   onEdit: () => void;
   onRemove: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
+  const editContentLabel = kind === "guide"
+    ? t("composer.editGuideContent", { position })
+    : t("composer.editQueuedContent", { position });
+  const editLabel = kind === "guide"
+    ? t("composer.editGuide", { position })
+    : t("composer.editQueuedMessage", { position });
   return (
     <li className={`composer-queue-row ${kind}`} data-position={position}>
       <span className="composer-queue-index" aria-hidden="true">
@@ -354,7 +365,7 @@ function ComposerQueueItem({
       <button
         type="button"
         className="composer-queue-preview"
-        aria-label={`${kind === "guide" ? "编辑引导内容" : "编辑排队消息内容"} ${position}`}
+        aria-label={editContentLabel}
         title={message.text}
         onClick={onEdit}
       >
@@ -364,8 +375,8 @@ function ComposerQueueItem({
         <button
           type="button"
           className="composer-queue-action composer-input-header-action edit"
-          aria-label={`${kind === "guide" ? "编辑引导" : "编辑排队消息"} ${position}`}
-          title="编辑"
+          aria-label={editLabel}
+          title={t("common.edit")}
           onClick={onEdit}
         >
           <PencilLine className="icon-sm" aria-hidden="true" />
@@ -374,8 +385,8 @@ function ComposerQueueItem({
           <button
             type="button"
             className="composer-queue-action composer-input-header-action"
-            aria-label={`取消引导 ${position}`}
-            title="取消引导"
+            aria-label={t("composer.cancelGuide", { position })}
+            title={t("composer.cancelGuideTitle")}
             onClick={onRemove}
           >
             <CornerUpLeft className="icon-sm" aria-hidden="true" />
@@ -384,8 +395,8 @@ function ComposerQueueItem({
           <button
             type="button"
             className="composer-queue-action composer-input-header-action"
-            aria-label={`转为引导 ${position}`}
-            title="转为引导"
+            aria-label={t("composer.convertToGuide", { position })}
+            title={t("composer.convertToGuideTitle")}
             onClick={onGuide}
           >
             <CornerDownRight className="icon-sm" aria-hidden="true" />
@@ -394,8 +405,8 @@ function ComposerQueueItem({
         <button
           type="button"
           className="composer-queue-action composer-input-header-action danger"
-          aria-label={`移除排队消息 ${position}`}
-          title="移除"
+          aria-label={t("composer.removeQueuedMessage", { position })}
+          title={t("common.remove")}
           onClick={onRemove}
         >
           <X className="icon-sm" aria-hidden="true" />

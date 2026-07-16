@@ -1,28 +1,29 @@
 import { GitBranch, GitFork, Laptop } from "lucide-react";
 import { useState } from "react";
 import { Modal } from "./Modal";
+import { useI18n } from "./i18n";
 
 export type ForkMode = "local" | "worktree";
 
 type ForkOption = {
   mode: ForkMode;
   icon: typeof GitBranch;
-  title: string;
-  description: string;
+  titleKey: "fork.localTitle" | "fork.worktreeTitle";
+  descriptionKey: "fork.localDescription" | "fork.worktreeDescription";
 };
 
 const FORK_OPTIONS: ForkOption[] = [
   {
     mode: "local",
     icon: Laptop,
-    title: "派生到本地",
-    description: "在新的本地聊天中从此消息继续",
+    titleKey: "fork.localTitle",
+    descriptionKey: "fork.localDescription",
   },
   {
     mode: "worktree",
     icon: GitBranch,
-    title: "派生到 git worktree",
-    description: "在独立的 git worktree 中从此消息继续",
+    titleKey: "fork.worktreeTitle",
+    descriptionKey: "fork.worktreeDescription",
   },
 ];
 
@@ -47,6 +48,7 @@ export function ConversationForkDialog({
   onChoose: (mode: ForkMode) => void | Promise<void>;
   worktreeDisabledReason?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   // Tracks which option is mid-flight so only that button shows a spinner
   // and becomes non-interactive. We keep both options clickable even
   // while one is submitting — when the IPC returns, the caller closes
@@ -72,9 +74,9 @@ export function ConversationForkDialog({
 
   return (
     <Modal
-      ariaLabel="从较早消息创建分支"
+      ariaLabel={t("fork.dialogLabel")}
       icon={<GitFork className="icon-lg" />}
-      title="从较早消息创建分支？"
+      title={t("fork.dialogTitle")}
       onClose={onCancel}
       closeDisabled={disabled}
       panelClassName="fork-dialog"
@@ -82,17 +84,19 @@ export function ConversationForkDialog({
         <button
           className="secondary-button fork-dialog-cancel"
           type="button"
-          aria-label="取消"
+          aria-label={t("common.cancel")}
           disabled={disabled}
           onClick={onCancel}
         >
-          取消
+          {t("common.cancel")}
         </button>
       }
     >
       <div className="fork-dialog-options">
-        {FORK_OPTIONS.map(({ mode, icon: Icon, title, description }) => {
+        {FORK_OPTIONS.map(({ mode, icon: Icon, titleKey, descriptionKey }) => {
           const isBusy = busyMode === mode;
+          const title = t(titleKey);
+          const description = t(descriptionKey);
           const disabledReason =
             mode === "worktree" ? worktreeDisabledReason : undefined;
           const optionDisabled = disabled || Boolean(disabledReason);
@@ -120,7 +124,7 @@ export function ConversationForkDialog({
         })}
       </div>
       <p className="fork-dialog-note">
-        这会保持你当前的文件和工作树状态不变。如果后续轮次更改了文件系统，新的分支内容可能与当前磁盘上的内容不一致。
+        {t("fork.note")}
       </p>
     </Modal>
   );

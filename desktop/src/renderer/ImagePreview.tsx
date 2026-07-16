@@ -11,6 +11,7 @@ import {
   useState
 } from "react";
 import { Minus, RotateCcw, X, ZoomIn } from "lucide-react";
+import { useI18n } from "./i18n";
 
 export type ImagePreviewItem = {
   src: string;
@@ -77,6 +78,7 @@ function ImagePreviewOverlay({
   item: ImagePreviewItem;
   onClose: () => void;
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [loadStatus, setLoadStatus] = useState<"loading" | "loaded" | "error">("loading");
@@ -201,7 +203,7 @@ function ImagePreviewOverlay({
       className="image-preview-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="图片预览"
+      aria-label={t("imagePreview.label")}
       onClick={handleBackgroundClick}
     >
       <div className="image-preview-toolbar" onClick={(event) => event.stopPropagation()}>
@@ -211,21 +213,24 @@ function ImagePreviewOverlay({
             className="image-preview-toolbar-button"
             onClick={zoomOut}
             disabled={scale <= MIN_SCALE}
-            aria-label="缩小"
-            title="缩小"
+            aria-label={t("imagePreview.zoomOut")}
+            title={t("imagePreview.zoomOut")}
           >
             <Minus className="icon" aria-hidden="true" />
           </button>
           <span className="image-preview-zoom-readout" aria-live="polite">
-            {Math.round(scale * 100)}%
+            {formatNumber(scale, {
+              style: "percent",
+              maximumFractionDigits: 0,
+            })}
           </span>
           <button
             type="button"
             className="image-preview-toolbar-button"
             onClick={zoomIn}
             disabled={scale >= MAX_SCALE}
-            aria-label="放大"
-            title="放大"
+            aria-label={t("imagePreview.zoomIn")}
+            title={t("imagePreview.zoomIn")}
           >
             <ZoomIn className="icon" aria-hidden="true" />
           </button>
@@ -234,8 +239,8 @@ function ImagePreviewOverlay({
             className="image-preview-toolbar-button"
             onClick={resetTransform}
             disabled={scale === 1 && offset.x === 0 && offset.y === 0}
-            aria-label="重置缩放"
-            title="重置缩放"
+            aria-label={t("imagePreview.resetZoom")}
+            title={t("imagePreview.resetZoom")}
           >
             <RotateCcw className="icon" aria-hidden="true" />
           </button>
@@ -243,8 +248,8 @@ function ImagePreviewOverlay({
             type="button"
             className="image-preview-toolbar-button"
             onClick={onClose}
-            aria-label="关闭预览"
-            title="关闭预览（Esc）"
+            aria-label={t("imagePreview.close")}
+            title={t("imagePreview.closeShortcut")}
           >
             <X className="icon" aria-hidden="true" />
           </button>
@@ -261,10 +266,12 @@ function ImagePreviewOverlay({
         onDoubleClick={handleDoubleClick}
       >
         {loadStatus === "loading" ? (
-          <div className="image-preview-status">加载中…</div>
+          <div className="image-preview-status">{t("imagePreview.loading")}</div>
         ) : null}
         {loadStatus === "error" ? (
-          <div className="image-preview-status error">无法加载图片</div>
+          <div className="image-preview-status error">
+            {t("imagePreview.loadFailed")}
+          </div>
         ) : null}
         <img
           className={`image-preview-image${loadStatus === "loaded" ? " loaded" : ""}`}

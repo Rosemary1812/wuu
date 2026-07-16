@@ -9,6 +9,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import QRCode from "qrcode";
+import { useI18n } from "./i18n";
 
 export type RemoteDeviceView = {
   pub: string;
@@ -48,6 +49,7 @@ export function SettingsRemotePage({
   onOpenPairing,
   onRemoveDevice
 }: SettingsRemotePageProps): JSX.Element {
+  const { t, formatDate } = useI18n();
   const [relayDraft, setRelayDraft] = useState(status?.relay_url ?? "");
   useEffect(() => {
     setRelayDraft(status?.relay_url ?? "");
@@ -58,7 +60,7 @@ export function SettingsRemotePage({
     <div data-testid="settings-remote-page">
       {statusError ? <div className="settings-error">{statusError}</div> : null}
 
-      <RemoteSection title="中继与开关" description="手机与电脑经由中继互联;中继可自架(wuu relay)。">
+      <RemoteSection title={t("remote.relaySection")} description={t("remote.relaySectionDescription")}>
         <div className="settings-card">
           <form
             onSubmit={(event) => {
@@ -68,8 +70,8 @@ export function SettingsRemotePage({
             }}
           >
             <RemoteRow
-              title="中继地址"
-              description="ws[s]://主机:端口/v1/connect"
+              title={t("remote.relayAddress")}
+              description={t("remote.relayFormat")}
               block
             >
               <input
@@ -85,18 +87,18 @@ export function SettingsRemotePage({
                 type="submit"
                 disabled={busy || relayDraft.trim() === "" || relayDraft.trim() === (status?.relay_url ?? "")}
               >
-                保存中继
+                {t("remote.saveRelay")}
               </button>
             </RemoteRow>
           </form>
           <RemoteRow
-            title="远程访问"
+            title={t("remote.access")}
             description={
               relayConfigured
                 ? hostRunning
-                  ? "远程宿主运行中,已配对的手机可以连接"
-                  : "开启后这台电脑向中继注册,等待手机连接"
-                : "先配置中继地址"
+                  ? t("remote.hostRunning")
+                  : t("remote.hostStopped")
+                : t("remote.configureRelayFirst")
             }
           >
             <button
@@ -108,26 +110,26 @@ export function SettingsRemotePage({
               onClick={() => onToggleHost(!hostRunning)}
             >
               <span className="settings-switch-thumb" aria-hidden="true" />
-              <span className="sr-only">{hostRunning ? "关闭远程访问" : "开启远程访问"}</span>
+              <span className="sr-only">{hostRunning ? t("remote.disableAccess") : t("remote.enableAccess")}</span>
             </button>
           </RemoteRow>
         </div>
       </RemoteSection>
 
-      <RemoteSection title="配对手机" description="配对码只出现在这块屏幕上,不经过中继——扫到码即证明人在电脑前。">
+      <RemoteSection title={t("remote.pairSection")} description={t("remote.pairSectionDescription")}>
         <div className="settings-card">
           {pairUri ? (
             <div className="settings-remote-pairing" data-testid="remote-pair-panel">
               <PairQRCode uri={pairUri} />
-              <p className="settings-remote-pair-hint">用手机 App 扫码,或手动粘贴以下配对链接:</p>
+              <p className="settings-remote-pair-hint">{t("remote.pairHint")}</p>
               <code className="settings-remote-pair-uri" data-testid="remote-pair-uri">
                 {pairUri}
               </code>
             </div>
           ) : (
             <RemoteRow
-              title="配对新手机"
-              description={hostRunning ? "打开一个限时配对窗口并生成二维码" : "先开启远程访问"}
+              title={t("remote.pairNewPhone")}
+              description={hostRunning ? t("remote.openPairWindow") : t("remote.enableAccessFirst")}
             >
               <button
                 className="settings-button"
@@ -135,23 +137,23 @@ export function SettingsRemotePage({
                 disabled={busy || !hostRunning}
                 onClick={onOpenPairing}
               >
-                显示配对二维码
+                {t("remote.showPairQr")}
               </button>
             </RemoteRow>
           )}
         </div>
       </RemoteSection>
 
-      <RemoteSection title="已配对设备" description="吊销后该手机将无法再连接这台电脑。">
+      <RemoteSection title={t("remote.devicesSection")} description={t("remote.devicesSectionDescription")}>
         <div className="settings-card">
           {!status || status.devices.length === 0 ? (
-            <div className="settings-empty">尚未配对任何手机</div>
+            <div className="settings-empty">{t("remote.noDevices")}</div>
           ) : (
             status.devices.map((device) => (
               <RemoteRow
                 key={device.pub}
-                title={device.name && device.name.trim() !== "" ? device.name : "未命名设备"}
-                description={`${device.fingerprint} · 配对于 ${formatPairedAt(device.added_at)}`}
+                title={device.name && device.name.trim() !== "" ? device.name : t("remote.unnamedDevice")}
+                description={t("remote.pairedAt", { fingerprint: device.fingerprint, date: formatPairedAt(device.added_at, formatDate) })}
               >
                 <button
                   className="settings-button settings-button-danger"
@@ -159,7 +161,7 @@ export function SettingsRemotePage({
                   disabled={busy}
                   onClick={() => onRemoveDevice(device)}
                 >
-                  吊销
+                  {t("remote.revoke")}
                 </button>
               </RemoteRow>
             ))
@@ -173,6 +175,7 @@ export function SettingsRemotePage({
 /** Renders the pairing URI as an inline SVG QR code. SVG keeps the module
  *  free of canvas dependencies, so it renders identically in tests. */
 export function PairQRCode({ uri }: { uri: string }): JSX.Element {
+  const { t } = useI18n();
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
@@ -191,14 +194,14 @@ export function PairQRCode({ uri }: { uri: string }): JSX.Element {
     };
   }, [uri]);
   if (error) {
-    return <div className="settings-error">二维码生成失败:{error}</div>;
+    return <div className="settings-error">{t("remote.qrFailed", { error })}</div>;
   }
   return (
     <div
       className="settings-remote-qr"
       data-testid="remote-pair-qr"
       role="img"
-      aria-label="配对二维码"
+      aria-label={t("remote.pairQr")}
       // The SVG comes from the qrcode encoder over our own URI, not from
       // remote input.
       dangerouslySetInnerHTML={{ __html: svg }}
@@ -206,12 +209,15 @@ export function PairQRCode({ uri }: { uri: string }): JSX.Element {
   );
 }
 
-function formatPairedAt(addedAt: string): string {
+function formatPairedAt(
+  addedAt: string,
+  formatter: (value: Date | number | string, options?: Intl.DateTimeFormatOptions) => string,
+): string {
   const date = new Date(addedAt);
   if (Number.isNaN(date.getTime())) {
     return addedAt;
   }
-  return date.toISOString().slice(0, 10);
+  return formatter(date, { year: "numeric", month: "short", day: "numeric" });
 }
 
 /* Local copies of the settings primitives' markup: the originals live inside

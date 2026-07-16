@@ -152,7 +152,7 @@ describe("SettingsRemotePage devices", () => {
       })
     );
     expect(container!.textContent).toContain("我的手机");
-    expect(container!.textContent).toContain("2579e6ff1255 · 配对于 2026-07-07");
+    expect(container!.textContent).toContain("2579e6ff1255 · 配对于 2026年7月7日");
     expect(container!.textContent).toContain("未命名设备");
     expect(container!.textContent).toContain("not-a-date");
     const revoke = [...container!.querySelectorAll<HTMLButtonElement>("button")].filter(

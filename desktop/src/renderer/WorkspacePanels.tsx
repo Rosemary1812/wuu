@@ -42,18 +42,20 @@ import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
+import { translateCurrent, useI18n } from "./i18n";
+import type { TranslationKey } from "./i18n/resources/zh-CN";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 
 const WORKSPACE_TOOL_ITEMS: Array<{
   id: WorkspacePanelView;
-  title: string;
-  subtitle: string;
+  titleKey: TranslationKey;
+  subtitleKey: TranslationKey;
 }> = [
-  { id: "files", title: "文件", subtitle: "浏览项目文件" },
-  { id: "review", title: "审查", subtitle: "查看代码更改" },
-  { id: "terminal", title: "终端", subtitle: "运行 shell 命令" },
-  { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" }
+  { id: "files", titleKey: "workspace.tool.files", subtitleKey: "workspace.tool.filesDescription" },
+  { id: "review", titleKey: "workspace.tool.review", subtitleKey: "workspace.tool.reviewDescription" },
+  { id: "terminal", titleKey: "workspace.tool.terminal", subtitleKey: "workspace.tool.terminalDescription" },
+  { id: "browser", titleKey: "workspace.tool.browser", subtitleKey: "workspace.tool.browserDescription" }
 ];
 
 export const WORKSPACE_FILE_TREE_DEFAULT_WIDTH = 320;
@@ -160,6 +162,7 @@ export function WorkspaceRightPanel({
   onBrowserActivityRelease?: () => void;
   onBrowserActivityStop?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
   const fileTabs = tabs.filter((tab): tab is WorkspaceFileViewTab => tab.kind === "file");
   const visibleTabs = tabs;
@@ -340,7 +343,7 @@ export function WorkspaceRightPanel({
     if (
       tab.kind === "file" &&
       dirtyFileTabIDs.has(tab.id) &&
-      !window.confirm("此文件有未保存修改。关闭将丢失这些修改，仍要关闭吗？")
+      !window.confirm(t("workspace.unsavedCloseConfirm"))
     ) {
       return;
     }
@@ -374,8 +377,8 @@ export function WorkspaceRightPanel({
           <button
             className="icon-button workspace-panel-sidebar"
             type="button"
-            aria-label="打开导航侧栏"
-            title="打开导航侧栏"
+            aria-label={t("workspace.openNavigationSidebar")}
+            title={t("workspace.openNavigationSidebar")}
             disabled={!open}
             onClick={onOpenSidebar}
           >
@@ -400,7 +403,7 @@ export function WorkspaceRightPanel({
               ref={tabListRef}
               className="workspace-panel-tabs"
               role="tablist"
-              aria-label="产物与工具"
+              aria-label={t("workspace.artifactsAndTools")}
               data-enter-ready={enterReady ? "" : undefined}
               onKeyDown={handleTabListKeyDown}
             >
@@ -466,7 +469,7 @@ export function WorkspaceRightPanel({
           ref={addButtonRef}
           className={`icon-button workspace-panel-add${showingPicker ? " active" : ""}`}
           type="button"
-          aria-label="选择工具"
+          aria-label={t("workspace.chooseTool")}
           aria-pressed={showingPicker}
           disabled={!open}
           onClick={onShowTools}
@@ -478,17 +481,17 @@ export function WorkspaceRightPanel({
           type="button"
           aria-label={
             globalized && !canExitGlobalized
-              ? "窗口过窄，无法停靠右侧栏"
+              ? t("workspace.tooNarrowToDock")
               : globalized
-                ? "退出全面板"
-                : "展开为全面板"
+                ? t("workspace.exitFullPanel")
+                : t("workspace.expandFullPanel")
           }
           title={
             globalized && !canExitGlobalized
-              ? "窗口过窄，无法停靠右侧栏"
+              ? t("workspace.tooNarrowToDock")
               : globalized
-                ? "退出全面板"
-                : "展开为全面板"
+                ? t("workspace.exitFullPanel")
+                : t("workspace.expandFullPanel")
           }
           aria-pressed={globalized}
           disabled={!open || (globalized && !canExitGlobalized)}
@@ -499,7 +502,7 @@ export function WorkspaceRightPanel({
         <button
           className="icon-button workspace-panel-close"
           type="button"
-          aria-label="关闭右侧栏"
+          aria-label={t("workspace.closeRightPanel")}
           disabled={!open}
           onClick={onClose}
         >
@@ -515,7 +518,7 @@ export function WorkspaceRightPanel({
               ref={fileSplitRef}
               style={{ "--workspace-file-tree-width": `${fileTreeWidth}px` } as CSSProperties}
             >
-              <section className="workspace-files-content" aria-label="文件内容">
+              <section className="workspace-files-content" aria-label={t("workspace.fileContent")}>
                 <div className="workspace-files-content-body">
                   {fileTabs.map((tab) => (
                     <WorkspaceFileResource
@@ -528,8 +531,8 @@ export function WorkspaceRightPanel({
                   ))}
                   {activeTab?.kind === "files" ? (
                     <WorkspacePanelEmpty
-                      title="选择文件"
-                      description="从右侧文件树中选择要查看的文件。"
+                      title={t("workspace.selectFile")}
+                      description={t("workspace.selectFileDescription")}
                       icon={<FileText size={24} />}
                     />
                   ) : null}
@@ -538,7 +541,7 @@ export function WorkspaceRightPanel({
               <div
                 className="workspace-files-resizer"
                 role="separator"
-                aria-label="调整文件内容和文件树宽度"
+                aria-label={t("workspace.resizeFileContentTree")}
                 aria-orientation="vertical"
                 aria-valuemin={WORKSPACE_FILE_TREE_MIN_WIDTH}
                 aria-valuemax={WORKSPACE_FILE_TREE_MAX_WIDTH}
@@ -548,7 +551,7 @@ export function WorkspaceRightPanel({
                 onDoubleClick={resetFileTreeWidth}
                 onKeyDown={handleFileSplitKeyDown}
               />
-              <section className="workspace-files-tree" aria-label="文件树">
+              <section className="workspace-files-tree" aria-label={t("workspace.fileTree")}>
                 <WorkspaceFileTree
                   activeContext={workspaceContext}
                   open={open && (activeTab?.kind === "files" || activeTab?.kind === "file")}
@@ -661,6 +664,7 @@ function SortableWorkspaceViewTab({
   // confirm guard upstream).
   onDoubleClick: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
     disabled: !reorderable
@@ -689,7 +693,7 @@ function SortableWorkspaceViewTab({
         {...listeners}
         role="tab"
         aria-selected={active}
-        aria-label={dirty ? `${label}，有未保存修改` : label}
+        aria-label={dirty ? t("workspace.tabUnsaved", { label }) : label}
         tabIndex={active ? 0 : -1}
         title={tooltip}
         disabled={!open}
@@ -704,7 +708,7 @@ function SortableWorkspaceViewTab({
         className="workspace-tool-tab-close"
         type="button"
         draggable={false}
-        aria-label={`关闭${label}`}
+        aria-label={t("workspace.closeTab", { label })}
         disabled={!open}
         onClick={(event) => {
           event.stopPropagation();
@@ -750,8 +754,9 @@ function WorkspaceToolPicker({
   tabs: WorkspaceViewTab[];
   onSelectTool: (view: WorkspacePanelView) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
-    <div className="workspace-tool-menu" aria-label="工作区工具">
+    <div className="workspace-tool-menu" aria-label={t("workspace.tools")}>
       {WORKSPACE_TOOL_ITEMS.map((item) => (
         <button
           key={item.id}
@@ -763,7 +768,7 @@ function WorkspaceToolPicker({
             <WorkspaceToolIcon view={item.id} className="icon-xl" />
           </span>
           <span className="workspace-tool-menu-copy">
-            <strong>{item.title}</strong>
+            <strong>{t(item.titleKey)}</strong>
           </span>
         </button>
       ))}
@@ -782,14 +787,15 @@ export function WorkspaceBottomPanel({
   onSelectTool: (view: WorkspacePanelView) => void;
   onClose: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <section className="workspace-bottom-panel" aria-hidden={!open}>
       <div className="workspace-bottom-header">
-        <div className="workspace-bottom-title">工具</div>
+        <div className="workspace-bottom-title">{t("workspace.toolsShort")}</div>
         <button
           className="icon-button workspace-panel-close"
           type="button"
-          aria-label="关闭底部栏"
+          aria-label={t("workspace.closeBottomPanel")}
           disabled={!open}
           onClick={onClose}
         >
@@ -799,7 +805,7 @@ export function WorkspaceBottomPanel({
       {open ? (
         <div
           className="workspace-tool-grid"
-          aria-label="工作区工具"
+          aria-label={t("workspace.tools")}
         >
           {WORKSPACE_TOOL_ITEMS.map((item) => (
             <button
@@ -809,8 +815,8 @@ export function WorkspaceBottomPanel({
               onClick={() => onSelectTool(item.id)}
             >
               <WorkspaceToolIcon view={item.id} className="workspace-tool-card-icon" />
-              <strong>{item.title}</strong>
-              <span>{item.subtitle}</span>
+              <strong>{t(item.titleKey)}</strong>
+              <span>{t(item.subtitleKey)}</span>
             </button>
           ))}
         </div>
@@ -837,11 +843,15 @@ function workspaceToolFor(view: WorkspacePanelView): (typeof WORKSPACE_TOOL_ITEM
 }
 
 function workspaceViewTabLabel(tab: WorkspaceViewTab): string {
-  return tab.kind === "diff" || tab.kind === "file" ? tab.title : workspaceToolFor(tab.kind).title;
+  return tab.kind === "diff" || tab.kind === "file"
+    ? tab.title
+    : translateCurrent(workspaceToolFor(tab.kind).titleKey);
 }
 
 function workspaceViewTabTooltip(tab: WorkspaceViewTab): string {
-  return tab.kind === "diff" || tab.kind === "file" ? tab.path : workspaceToolFor(tab.kind).title;
+  return tab.kind === "diff" || tab.kind === "file"
+    ? tab.path
+    : translateCurrent(workspaceToolFor(tab.kind).titleKey);
 }
 
 function WorkspaceViewTabIcon({ tab, className }: { tab: WorkspaceViewTab; className?: string }): JSX.Element {

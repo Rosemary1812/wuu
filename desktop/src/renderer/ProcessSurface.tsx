@@ -17,6 +17,7 @@ import {
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 /**
  * How long to wait after the fold opens before snapping the reasoning
@@ -78,22 +79,24 @@ const TOOL_ACTIVITY_ITEM_TYPES = new Set<string>([
 // this size. Same-kind groups keep their more useful count summary.
 const CONDENSED_SUMMARY_MIN_TOOL_COUNT = 4;
 
-const PROCESS_KIND_LABELS: Record<ToolActivityProcessSegment["kind"], string> = {
-  edit: "更新文件",
-  create: "创建文件",
-  search: "搜索",
-  read: "查看文件",
-  list: "查看目录",
-  command: "执行检查",
-  agent: "处理子任务",
-  plan: "更新计划",
-  interaction: "等待回复",
-  schedule: "管理定时任务",
-  browser: "操作页面",
-  skill: "加载技能",
-  context: "整理上下文",
-  unknown: "使用工具",
-};
+function processKindLabel(kind: ToolActivityProcessSegment["kind"]): string {
+  switch (kind) {
+    case "edit": return translate("process.kind.edit");
+    case "create": return translate("process.kind.create");
+    case "search": return translate("process.kind.search");
+    case "read": return translate("process.kind.read");
+    case "list": return translate("process.kind.list");
+    case "command": return translate("process.kind.command");
+    case "agent": return translate("process.kind.agent");
+    case "plan": return translate("process.kind.plan");
+    case "interaction": return translate("process.kind.interaction");
+    case "schedule": return translate("process.kind.schedule");
+    case "browser": return translate("process.kind.browser");
+    case "skill": return translate("process.kind.skill");
+    case "context": return translate("process.kind.context");
+    default: return translate("process.kind.unknown");
+  }
+}
 
 function isToolActivityItem(item: ThreadItem): boolean {
   return TOOL_ACTIVITY_ITEM_TYPES.has(item.type);
@@ -107,22 +110,24 @@ function condensedToolActivityText(
   const failed = segments.some((segment) => segment.status === "failed");
   const running = segments.some((segment) => segment.status === "running");
   if (reasoningStreaming && !failed && !running) {
-    return `完成 ${toolCount} 项操作后，正在思考`;
+    return translate("process.thinkingAfterOperations", { count: toolCount });
   }
   if (failed) {
-    return `共处理 ${toolCount} 项操作，其中有未完成项`;
+    return translate("process.failedOperations", { count: toolCount });
   }
 
   const labels = Array.from(
-    new Set(segments.map((segment) => PROCESS_KIND_LABELS[segment.kind])),
+    new Set(segments.map((segment) => processKindLabel(segment.kind))),
   );
   const shownLabels = labels.slice(0, 2);
   const categoryText =
     labels.length > 2
-      ? `${shownLabels.join("、")}等`
-      : shownLabels.join("和");
-  const statusText = running ? "正在处理" : "已完成";
-  return `${statusText} ${toolCount} 项操作，包括${categoryText}`;
+      ? translate("process.categoriesMore", { categories: shownLabels.join(translate("toolActivity.compactSeparator")) })
+      : shownLabels.join(translate("process.categoryJoin"));
+  return translate(running ? "process.runningOperations" : "process.completedOperations", {
+    count: toolCount,
+    categories: categoryText,
+  });
 }
 
 export function ProcessSurface({
@@ -131,6 +136,7 @@ export function ProcessSurface({
   active,
   renderReasoningItem,
 }: ProcessSurfaceProps): JSX.Element {
+  const { t } = useI18n();
   const toolItems = processItems.filter(isToolActivityItem);
   const reasoningItems = processItems.filter(
     (item) => item.type === "reasoning",
@@ -208,7 +214,7 @@ export function ProcessSurface({
           ) : null}
           <AnimatedProcessText
             className="process-surface-reasoning-label"
-            text={reasoningStreaming ? "正在思考" : "思考过程"}
+            text={reasoningStreaming ? t("process.thinking") : t("process.reasoning")}
           />
         </span>
       ) : null}

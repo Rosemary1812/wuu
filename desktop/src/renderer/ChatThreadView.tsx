@@ -34,7 +34,7 @@ import { MessageReactions } from "./MessageReactions";
 import {
   REACTION_EMOJI,
   REACTION_KEYS,
-  REACTION_LABEL,
+  reactionLabel,
   reactionGlyph,
   ringModel,
   type MessageMarksView,
@@ -42,6 +42,7 @@ import {
 import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
 import { SystemEventDivider } from "./TurnNotice";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 // Distance (px) from the bottom of the scroll container within which the
 // view still counts as "at the bottom" and should auto-follow new rows.
@@ -54,21 +55,20 @@ const AUTO_FOLLOW_THRESHOLD_PX = 120;
 export const INITIAL_CHAT_WINDOW_ROWS = 80;
 export const CHAT_WINDOW_ROW_BATCH = 80;
 
-const CHAT_TASK_STATE_LABEL: Record<string, string> = {
-  planning: "规划中",
-  executing: "执行中",
-  running: "执行中",
-  awaiting_lead: "等待 Lead",
-  blocked: "受阻",
-  needs_human: "需要处理",
-  paused: "已暂停",
-  completed: "已完成",
-  failed: "失败",
-};
-
 function taskStateLabel(state: string | undefined): string {
   const key = state?.trim() ?? "";
-  return CHAT_TASK_STATE_LABEL[key] ?? (key || "准备中");
+  switch (key) {
+    case "planning": return translate("chat.task.planning");
+    case "executing":
+    case "running": return translate("chat.task.executing");
+    case "awaiting_lead": return translate("chat.task.awaitingLead");
+    case "blocked": return translate("chat.task.blocked");
+    case "needs_human": return translate("chat.task.needsHuman");
+    case "paused": return translate("chat.task.paused");
+    case "completed": return translate("chat.task.completed");
+    case "failed": return translate("chat.task.failed");
+    default: return key || translate("chat.task.ready");
+  }
 }
 
 /**
@@ -436,6 +436,7 @@ function ChatBubbleToolbar({
   onReact?: (item: ThreadItem, reaction: string) => void;
   onReply?: (item: ThreadItem) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const [pickerOpen, setPickerOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -469,15 +470,15 @@ function ChatBubbleToolbar({
       ref={rootRef}
       className={`chat-bubble-toolbar${pickerOpen ? " picker-open" : ""}`}
       role="toolbar"
-      aria-label="消息操作"
+      aria-label={t("chat.messageActions")}
       data-testid="chat-bubble-toolbar"
     >
       {onReact ? (
         <button
           type="button"
           className="chat-bubble-toolbar-btn chat-bubble-toolbar-react"
-          aria-label="贴表情"
-          title="贴表情"
+          aria-label={t("chat.addReaction")}
+          title={t("chat.addReaction")}
           aria-haspopup="true"
           aria-expanded={pickerOpen}
           onClick={() => setPickerOpen((open) => !open)}
@@ -486,7 +487,7 @@ function ChatBubbleToolbar({
         </button>
       ) : null}
       {onReact && pickerOpen ? (
-        <div className="chat-reaction-picker" role="group" aria-label="选择表情">
+        <div className="chat-reaction-picker" role="group" aria-label={t("chat.chooseReaction")}>
           {REACTION_KEYS.map((key) => (
             <button
               key={key}
@@ -506,7 +507,7 @@ function ChatBubbleToolbar({
                 </span>
               )}
               <span className="chat-reaction-picker-label">
-                {REACTION_LABEL[key] ?? key}
+                {reactionLabel(key)}
               </span>
             </button>
           ))}
@@ -519,12 +520,12 @@ function ChatBubbleToolbar({
         <button
           type="button"
           className="chat-bubble-toolbar-btn chat-bubble-toolbar-reply"
-          aria-label="开 Thread"
-          title="开 Thread"
+          aria-label={t("chat.openThread")}
+          title={t("chat.openThread")}
           onClick={() => onReply(item)}
         >
           <Reply size={14} aria-hidden="true" />
-          <span>开 Thread</span>
+          <span>{t("chat.openThread")}</span>
         </button>
       ) : null}
     </div>
@@ -540,6 +541,7 @@ function ThreadOwnerDialog({
   onSelect: (participantID: string) => void;
   onClose: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   const firstOptionRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -605,13 +607,13 @@ function ThreadOwnerDialog({
       >
         <header>
           <div>
-            <h2 id="thread-owner-dialog-title">谁来收敛这个 Thread？</h2>
-            <p>Owner 会在升级后继续担任 Task Lead。</p>
+            <h2 id="thread-owner-dialog-title">{t("chat.chooseThreadOwner")}</h2>
+            <p>{t("chat.threadOwnerDescription")}</p>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
-            aria-label="关闭 Owner 选择"
+            aria-label={t("chat.closeOwnerSelection")}
             onClick={onClose}
           >
             <X size={16} aria-hidden="true" />
@@ -636,7 +638,7 @@ function ThreadOwnerDialog({
           </div>
         ) : (
           <p className="thread-owner-dialog-empty">
-            群聊里还没有可担任 Owner 的 named agent。
+            {t("chat.noOwnerCandidates")}
           </p>
         )}
       </section>
@@ -659,6 +661,7 @@ function PendingChatRow({
   message: QueuedComposerMessage;
   cwd?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="chat-row chat-row--user chat-row--pending">
       <div className="chat-bubble-group">
@@ -669,7 +672,7 @@ function PendingChatRow({
           {message.files.length ? <MessageFileList files={message.files} /> : null}
           {message.text.trim() ? <RichContent text={message.text} cwd={cwd} /> : null}
         </div>
-        <div className="chat-pending-hint">发送中…</div>
+        <div className="chat-pending-hint">{t("chat.sending")}</div>
       </div>
     </div>
   );
@@ -682,13 +685,13 @@ function PendingChatRow({
 // named project), differentiated only by the trailing label.
 function focusDividerLabel(meta: FocusMeta): string {
   if (meta.kind === "home") {
-    return "⌂ 个人";
+    return translate("runtime.personalChip");
   }
   if (meta.kind === "workspace") {
-    const label = meta.name?.trim() || meta.root?.trim() || "工作区";
+    const label = meta.name?.trim() || meta.root?.trim() || translate("chat.workspace");
     return `⬒ ${label}`;
   }
-  return "⬒ 全部工作区";
+  return translate("chat.allWorkspacesDivider");
 }
 
 function ChatRow({
@@ -715,6 +718,7 @@ function ChatRow({
   /** Stamp a one-click reaction from the bubble's hover toolbar. Absent = no reactions. */
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const topBubbleClass = isTopBubble ? " chat-row--top-bubble" : "";
   // Long-text collapse state for the chat-style bubble — the same
   // threshold + preview estimator as `ThreadItemView`'s
@@ -746,7 +750,7 @@ function ChatRow({
   }
   if (row.kind === "focus") {
     const meta = row.item.focus_meta;
-    const label = meta ? focusDividerLabel(meta) : "⬒ 全部工作区";
+    const label = meta ? focusDividerLabel(meta) : t("chat.allWorkspacesDivider");
     return (
       <div className={`chat-row chat-row--focus${topBubbleClass}`}>
         <div
@@ -799,7 +803,7 @@ function ChatRow({
                 aria-expanded={expanded}
                 onClick={toggleExpanded}
               >
-                <span>{expanded ? "收起" : "显示更多"}</span>
+                <span>{expanded ? t("common.collapse") : t("common.showMore")}</span>
                 {expanded ? (
                   <ChevronUp aria-hidden="true" />
                 ) : (
@@ -839,7 +843,7 @@ function ChatRow({
   // participant
   const postKind = row.item.post_kind ?? "result";
   const participant = row.item.participant;
-  const name = participant?.name?.trim() || "参与者";
+  const name = participant?.name?.trim() || t("chat.participant");
   const participantStatus = participant?.id
     ? busyParticipantIDs?.has(participant.id)
       ? "busy"
@@ -850,7 +854,9 @@ function ChatRow({
     return (
       <div className={`chat-row chat-row--decline${topBubbleClass}`}>
         <div className="chat-decline-line">
-          {name} 认为无需回应{text ? `：${text}` : ""}
+          {text
+            ? t("chat.declinedWithReason", { name, reason: text })
+            : t("chat.declined", { name })}
         </div>
       </div>
     );
@@ -879,7 +885,7 @@ function ChatRow({
               aria-expanded={expanded}
               onClick={toggleExpanded}
             >
-              <span>{expanded ? "收起" : "显示更多"}</span>
+              <span>{expanded ? t("common.collapse") : t("common.showMore")}</span>
               {expanded ? (
                 <ChevronUp aria-hidden="true" />
               ) : (
@@ -939,6 +945,7 @@ function ReplyAffordance({
   onOpenSubthread?: (item: ThreadItem, suggestedOwnerID?: string) => void;
   resolveParticipantName?: (id: string) => string;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (!subthread) {
     // No Thread yet: nothing hangs under the bubble. Starting one is the hover
     // toolbar's 开 Thread button — one entry, no divergence. This slot only
@@ -948,12 +955,12 @@ function ReplyAffordance({
   const open = onOpenSubthread ? () => onOpenSubthread(item) : undefined;
   if (subthread.task || subthread.status === "task" || subthread.exec_state) {
     const state = subthread.status === "resolved"
-      ? "已完成"
+      ? t("chat.task.completed")
       : taskStateLabel(subthread.exec_state);
     const ownerID = subthread.thread_owner_participant_id?.trim() ?? "";
     const owner = ownerID
       ? resolveParticipantName?.(ownerID) || ownerID
-      : "Lead 待同步";
+      : t("chat.leadPending");
     const content = (
       <>
         <span className="chat-thread-summary-state">{state}</span>
@@ -975,7 +982,10 @@ function ReplyAffordance({
       </div>
     );
   }
-  const label = `${replyCountBadge(subthread.reply_count)} 条回复`;
+  const count = subthread.reply_count ?? 0;
+  const label = t(count === 1 ? "chat.replyCountOne" : "chat.replyCount", {
+    count: replyCountBadge(count),
+  });
   if (!open) {
     return <span className="chat-reply-badge">{label}</span>;
   }
@@ -1012,16 +1022,17 @@ function ChatAvatar({
   participant: ParticipantSummary | undefined;
   status?: "online" | "busy";
 }): JSX.Element {
+  const { t } = useI18n();
   const avatarImage = participant?.avatar_image?.trim();
-  const name = participant?.name?.trim() || "参与者";
+  const name = participant?.name?.trim() || t("chat.participant");
   const statusLabel =
-    status === "busy" ? "正在响应" : status === "online" ? "在线" : "";
+    status === "busy" ? t("chat.responding") : status === "online" ? t("chat.online") : "";
   return (
     <div
       className="chat-avatar"
       role={status ? "img" : undefined}
       aria-label={
-        status ? `${name} ${status === "busy" ? "正在响应" : "在线"}` : undefined
+        status ? t("chat.participantStatus", { name, status: statusLabel }) : undefined
       }
       aria-hidden={status ? undefined : true}
     >

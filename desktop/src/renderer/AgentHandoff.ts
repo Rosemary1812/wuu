@@ -1,3 +1,5 @@
+import { translateCurrent } from "./i18n";
+
 export type AgentHandoffDisplay = {
   label: string;
 };
@@ -88,7 +90,7 @@ export function agentHandoffDisplayItem(
     return undefined;
   }
   if (item.name === AGENT_NOTIFICATION_NAME) {
-    return { label: HANDOFF_GENERIC_LABEL };
+    return { label: handoffGenericLabel() };
   }
   return agentHandoffDisplay(item.text);
 }
@@ -124,23 +126,25 @@ function parseNotificationPayload(content: string): AgentNotificationPayload | u
   return parseJSON<AgentNotificationPayload>(raw);
 }
 
-const HANDOFF_GENERIC_LABEL = "subagent 更新了任务状态";
+function handoffGenericLabel(): string {
+  return translateCurrent("agent.handoff.updated");
+}
 
 function handoffStatusLabel(status: string): string {
   switch (status) {
     case "pending":
     case "queued":
-      return "subagent 等待执行任务";
+      return translateCurrent("agent.handoff.pending");
     case "running":
-      return "subagent 正在执行任务";
+      return translateCurrent("agent.handoff.running");
     case "completed":
-      return "subagent 完成了任务";
+      return translateCurrent("agent.handoff.completed");
     case "failed":
-      return "subagent 任务失败";
+      return translateCurrent("agent.handoff.failed");
     case "cancelled":
-      return "subagent 任务已取消";
+      return translateCurrent("agent.handoff.cancelled");
     default:
-      return HANDOFF_GENERIC_LABEL;
+      return handoffGenericLabel();
   }
 }
 

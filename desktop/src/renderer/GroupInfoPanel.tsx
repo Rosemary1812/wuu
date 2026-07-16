@@ -7,6 +7,8 @@ import type {
 } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import type { EnvironmentPanelMotionState } from "./EnvironmentPanel";
+import { participantRoleLabel } from "./ParticipantLabels";
+import { resolveLocalizedText, translateCurrent, useI18n } from "./i18n";
 
 export function GroupInfoPanel({
   panelRef,
@@ -27,6 +29,7 @@ export function GroupInfoPanel({
   onAddMember?: (participantID: string) => Promise<void> | void;
   onRemoveMember?: (participantID: string) => Promise<void> | void;
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const [addOpen, setAddOpen] = useState(false);
   const [addingParticipantID, setAddingParticipantID] = useState<string>();
   const memberIDs = useMemo(
@@ -80,18 +83,18 @@ export function GroupInfoPanel({
     <aside
       className={`environment-panel group-info-panel ${motionState}`}
       ref={panelRef}
-      aria-label="群聊信息"
+      aria-label={t("groupInfo.title")}
       aria-hidden={motionState === "closing" ? true : undefined}
     >
       <div className="environment-panel-header">
         <div className="environment-panel-title">
-          <h2>群聊信息</h2>
+          <h2>{t("groupInfo.title")}</h2>
         </div>
         <div className="environment-panel-actions">
           <button
             className="icon-button"
             type="button"
-            aria-label="关闭群聊信息"
+            aria-label={t("groupInfo.close")}
             onClick={onClose}
           >
             <X className="icon" />
@@ -100,9 +103,9 @@ export function GroupInfoPanel({
       </div>
 
       <div className="environment-panel-body group-info-panel-body">
-        <section className="group-info-summary" aria-label="群聊概览">
+        <section className="group-info-summary" aria-label={t("groupInfo.summary")}>
           <div className="group-info-field">
-            <span>群名称</span>
+            <span>{t("groupInfo.name")}</span>
             <strong>
               <Hash className="icon" aria-hidden="true" />
               {groupName}
@@ -110,19 +113,19 @@ export function GroupInfoPanel({
           </div>
         </section>
 
-        <section className="group-info-members" aria-label="群成员">
+        <section className="group-info-members" aria-label={t("groupInfo.members")}>
           <div className="group-info-members-heading">
             <div>
-              <h3>群成员</h3>
-              <span>{members.length} 人</span>
+              <h3>{t("groupInfo.members")}</h3>
+              <span>{t(members.length === 1 ? "groupInfo.memberCountOne" : "groupInfo.memberCount", { count: formatNumber(members.length) })}</span>
             </div>
             {canAddMember ? (
               <button
                 className="group-info-add-button"
                 type="button"
-                aria-label="添加群成员"
+                aria-label={t("groupInfo.addMember")}
                 aria-expanded={addOpen}
-                title="添加群成员"
+                title={t("groupInfo.addMember")}
                 onClick={() => setAddOpen((open) => !open)}
               >
                 <Plus aria-hidden="true" />
@@ -144,7 +147,7 @@ export function GroupInfoPanel({
                   <ParticipantAvatar participant={participant} />
                   <span>
                     <strong>{participant.name}</strong>
-                    {participant.role ? <em>{participant.role}</em> : null}
+                    {participant.role ? <em>{participantRoleLabel(participant.role)}</em> : null}
                   </span>
                 </button>
               ))}
@@ -153,17 +156,17 @@ export function GroupInfoPanel({
 
           <div className="group-info-member-list" role="list">
             {members.length === 0 ? (
-              <div className="group-info-empty">暂无成员</div>
+              <div className="group-info-empty">{t("groupInfo.empty")}</div>
             ) : (
               members.map((member) => (
                 <div className="group-info-member-row" role="listitem" key={member.id}>
                   <ParticipantAvatar participant={member} busy={member.busy} />
                   <span className="group-info-member-text">
                     <strong>{member.name}</strong>
-                    {member.role ? <em>{member.role}</em> : null}
+                    {member.role ? <em>{participantRoleLabel(member.role)}</em> : null}
                     {member.forked_from_id ? (
                       <em className="group-info-fork-badge">
-                        {resolveMemberName(member.forked_from_id)} 的分身
+                        {t("participant.profile.forkOf", { name: resolveMemberName(member.forked_from_id) })}
                       </em>
                     ) : null}
                   </span>
@@ -171,8 +174,8 @@ export function GroupInfoPanel({
                     <button
                       className="group-info-remove-button"
                       type="button"
-                      aria-label={`将 ${member.name} 移出群聊`}
-                      title={`将 ${member.name} 移出群聊`}
+                      aria-label={t("groupInfo.removeMember", { name: member.name })}
+                      title={t("groupInfo.removeMember", { name: member.name })}
                       onClick={() => void onRemoveMember(member.id)}
                     >
                       <X aria-hidden="true" />
@@ -200,6 +203,7 @@ function ParticipantAvatar({
   // idle members and for the add-member picker rows.
   busy?: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const name = participant.name.trim() || "Agent";
   const image = participant.avatar_image?.trim() ?? "";
   return (
@@ -215,8 +219,8 @@ function ParticipantAvatar({
         <span
           className="group-info-avatar-busy"
           role="img"
-          aria-label={`${name} 忙碌中`}
-          title="忙碌中"
+          aria-label={t("groupInfo.memberBusy", { name })}
+          title={t("groupInfo.busy")}
         />
       ) : null}
     </span>
@@ -224,6 +228,9 @@ function ParticipantAvatar({
 }
 
 function groupDisplayName(thread: Thread): string {
-  const title = thread.title?.trim() || thread.preview.trim() || "未命名群聊";
+  const title =
+    thread.title?.trim() ||
+    resolveLocalizedText(thread.preview.trim()) ||
+    translateCurrent("groupInfo.untitled");
   return title.replace(/^#/, "");
 }

@@ -12,6 +12,7 @@ import {
   type WorkspaceFileLinkTarget,
 } from "./LinkTargets";
 import { MessageCopyButton } from "./MessageActions";
+import { useI18n } from "./i18n";
 import { currentAppliedTheme, observeAppliedTheme, type AppliedTheme } from "./Theme";
 
 type RichContentProps = {
@@ -526,6 +527,7 @@ function RichCodeBlock({
   language: string;
   children: ReactNode;
 }): JSX.Element {
+  const { t } = useI18n();
   // Two layouts:
   //   - With a language tag, the header row carries the language label
   //     and the copy button on the same baseline. Keeps the chrome
@@ -546,9 +548,9 @@ function RichCodeBlock({
             getText={() => code}
             className="rich-code-copy"
             iconSize={13}
-            idleLabel="复制代码"
-            copiedLabel="已复制代码"
-            failedLabel="复制失败"
+            idleLabel={t("rich.copyCode")}
+            copiedLabel={t("rich.codeCopied")}
+            failedLabel={t("rich.copyFailed")}
           />
         </div>
         <pre className="rich-code">
@@ -566,9 +568,9 @@ function RichCodeBlock({
         getText={() => code}
         className="rich-code-copy"
         iconSize={13}
-        idleLabel="复制代码"
-        copiedLabel="已复制代码"
-        failedLabel="复制失败"
+        idleLabel={t("rich.copyCode")}
+        copiedLabel={t("rich.codeCopied")}
+        failedLabel={t("rich.copyFailed")}
       />
     </div>
   );
@@ -924,12 +926,13 @@ function RichFileLink({
   target: WorkspaceFileLinkTarget;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const reference = formatWorkspaceFileTarget(target);
   return (
     <button
       type="button"
       className="rich-link rich-file-link"
-      title={`打开文件：${reference}`}
+      title={t("rich.openFile", { reference })}
       onClick={() => onOpenFile(reference)}
     >
       <span className="rich-link-content">
@@ -1243,6 +1246,7 @@ function RichImage({
   caption?: string;
   autoPreview?: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const resolvedSource = resolveImageSource(source, cwd);
   const { openPreview } = useImagePreview();
   const titleText = caption ?? imageTarget(source);
@@ -1264,7 +1268,9 @@ function RichImage({
       loading="lazy"
       role="button"
       tabIndex={0}
-      aria-label={alt ? `放大查看：${alt}` : "放大查看图片"}
+      aria-label={
+        alt ? t("rich.enlargeNamed", { alt }) : t("rich.enlargeImage")
+      }
       onClick={handleActivate}
       onKeyDown={handleKeyDown}
     />
@@ -1417,6 +1423,7 @@ function base64URL(value: string): string {
 }
 
 function MermaidDiagram({ code }: { code: string }): JSX.Element {
+  const { locale, t } = useI18n();
   const reactID = useId();
   const diagramID = useMemo(() => `wuu-mermaid-${reactID.replace(/[^a-zA-Z0-9_-]/g, "")}-${hashString(code)}`, [code, reactID]);
   const [theme, setTheme] = useState<AppliedTheme>(currentAppliedTheme);
@@ -1443,7 +1450,11 @@ function MermaidDiagram({ code }: { code: string }): JSX.Element {
         }
       } catch (error) {
         if (!cancelled) {
-          setState({ status: "error", message: error instanceof Error ? error.message : "无法渲染 Mermaid 图" });
+          setState({
+            status: "error",
+            message:
+              error instanceof Error ? error.message : t("rich.mermaidFailed"),
+          });
         }
       }
     })();
@@ -1451,7 +1462,7 @@ function MermaidDiagram({ code }: { code: string }): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [code, diagramID, theme]);
+  }, [code, diagramID, locale, theme]);
 
   if (state.status === "rendered") {
     return <div className="rich-mermaid" dangerouslySetInnerHTML={{ __html: state.svg }} />;
@@ -1466,7 +1477,11 @@ function MermaidDiagram({ code }: { code: string }): JSX.Element {
       </div>
     );
   }
-  return <div className="rich-mermaid rich-mermaid-loading">正在渲染图表</div>;
+  return (
+    <div className="rich-mermaid rich-mermaid-loading">
+      {t("rich.renderingDiagram")}
+    </div>
+  );
 }
 
 function mermaidThemeVariables(theme: AppliedTheme): Record<string, string> {

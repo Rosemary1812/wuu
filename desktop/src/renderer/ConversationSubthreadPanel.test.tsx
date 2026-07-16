@@ -13,8 +13,10 @@ import type {
   ConversationSubthread,
   ParticipantSummary,
   ThreadItem,
+  WuuDesktopApi,
 } from "../shared/protocol";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
+import { I18nProvider, setActiveLocale } from "./i18n";
 import { REACTION_KEYS } from "./MessageMarks";
 
 let mountedRoots: Root[] = [];
@@ -77,6 +79,7 @@ afterEach(() => {
   mountedRoots = [];
   mountedContainers = [];
   delete (window as unknown as { wuu?: unknown }).wuu;
+  setActiveLocale("zh-CN");
   vi.restoreAllMocks();
 });
 
@@ -139,6 +142,46 @@ describe("ConversationSubthreadPanel", () => {
     expect(container.querySelector(".conversation-subthread-meta")?.textContent).toBe(
       "收敛中 · 1 条回复",
     );
+  });
+
+  it("renders interface labels in English while preserving task data", () => {
+    window.wuu = {
+      initialLanguagePreference: "en-US",
+      initialSystemLocale: "en-US",
+    } as unknown as WuuDesktopApi;
+    const task = subthreadWith({
+      title: "验证修复",
+      status: "task",
+      exec_state: "awaiting_lead",
+      reply_count: 2,
+      task: { id: "cth-1", status: "running", subthread_id: "cth-1" },
+      plan: [
+        {
+          id: "verify",
+          title: "保留原始任务标题",
+          status: "failed",
+          failure_reason: "后端原始失败原因",
+          attempts: 2,
+        },
+      ],
+    });
+    const container = mount(
+      <I18nProvider>
+        <ConversationSubthreadPanel
+          threadID="group-1"
+          subthread={task}
+          onClose={() => {}}
+          onResolve={() => {}}
+        />
+      </I18nProvider>,
+    );
+
+    expect(container.querySelector(".conversation-subthread-meta")?.textContent)
+      .toBe("Waiting for Lead review · 2 replies");
+    expect(container.textContent).toContain("The Lead is reviewing worker results");
+    expect(container.textContent).toContain("Tried 2 times");
+    expect(container.textContent).toContain("Reason: 后端原始失败原因");
+    expect(container.textContent).toContain("保留原始任务标题");
   });
 
   it("shows the source and owner, then upgrades without a second lead choice", () => {

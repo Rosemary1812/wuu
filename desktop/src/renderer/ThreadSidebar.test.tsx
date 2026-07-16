@@ -5,8 +5,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 import { PinnedThreadList, ProjectGroup, ProjectList, ThreadRowTitle } from "./ThreadSidebar";
-import type { DesktopProject, Thread } from "../shared/protocol";
+import type { DesktopProject, Thread, WuuDesktopApi } from "../shared/protocol";
 import { SCRATCH_PSEUDO_PROJECT_ID, summarizeThreadsForSidebar } from "./AppState";
+import { I18nProvider, setActiveLocale } from "./i18n";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -29,6 +30,8 @@ afterEach(() => {
   document.body
     .querySelectorAll(".thread-row-context-menu")
     .forEach((menu) => menu.remove());
+  delete (window as unknown as { wuu?: unknown }).wuu;
+  setActiveLocale("zh-CN");
 });
 
 function render(props: { title: string }): { span: HTMLSpanElement | null; getKey: () => string | null } {
@@ -355,6 +358,39 @@ describe("ProjectList", () => {
     expect(
       row?.querySelector(".thread-row-main")?.getAttribute("aria-label"),
     ).toContain("响应中");
+  });
+
+  it("renders thread actions and status in English", () => {
+    window.wuu = {
+      initialLanguagePreference: "en-US",
+      initialSystemLocale: "en-US",
+    } as unknown as WuuDesktopApi;
+    const [thread] = summarizeThreadsForSidebar([
+      makeProjectThread("thread-en", "/repo/wuu", "Original title"),
+    ]);
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <I18nProvider>
+          <PinnedThreadList
+            threads={[thread]}
+            activeID={undefined}
+            pendingThreadID={undefined}
+            lastViewedTurnByThreadID={{}}
+            onSelect={() => {}}
+            onTogglePinned={() => {}}
+            onArchive={() => {}}
+            onDelete={() => {}}
+          />
+        </I18nProvider>,
+      );
+    });
+
+    expect(container.querySelector(".thread-row-main")?.getAttribute("aria-label"))
+      .toBe("Original title, completed");
+    expect(container.querySelector('[aria-label="Pin"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Archive"]')).not.toBeNull();
   });
 
   it("opens the rename dialog from a double-click and saves through the sidebar owner", () => {

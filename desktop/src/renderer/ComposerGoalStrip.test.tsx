@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import { ComposerGoalStrip } from "./ComposerGoalStrip";
+import { setActiveLocale } from "./i18n";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -17,6 +18,7 @@ afterEach(() => {
     root?.unmount();
   });
   root = null;
+  setActiveLocale("zh-CN");
   container.remove();
 });
 
@@ -65,6 +67,12 @@ function changeInput(input: HTMLInputElement | HTMLTextAreaElement, value: strin
 }
 
 describe("ComposerGoalStrip", () => {
+  it("formats generated goal status in the active language", () => {
+    setActiveLocale("en-US");
+    renderStrip({ summary: { ...goalSummary(), status: "paused" } });
+
+    expect(container.querySelector(".composer-goal-strip-state")?.textContent).toBe("Paused");
+  });
   it("does not occupy composer space when there is no active goal", () => {
     renderStrip({ summary: null });
 

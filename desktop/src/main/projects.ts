@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
+import { mainTranslate } from "./i18n";
 import {
   existsSync,
   mkdirSync,
@@ -475,7 +476,7 @@ function activeProjectUnavailableIssue(
 ): ProjectRuntimeIssue {
   return {
     code: "active_project_unavailable",
-    message: `工作区目录当前不可用：${project.path}。请恢复该目录，或从工作区菜单选择“重新定位…”。`,
+    message: mainTranslate("projectUnavailable", { path: project.path }),
     project_id: project.id,
     cwd: project.path,
   };

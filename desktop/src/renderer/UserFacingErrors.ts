@@ -10,6 +10,7 @@ export type UserFacingErrorTone = "neutral" | "warning" | "auth" | "error";
 export type UserFacingErrorContext = "turn" | "tool" | "status";
 
 import type { TurnError } from "../shared/protocol";
+import { translateCurrent as t } from "./i18n";
 
 export type UserFacingErrorDisplay = {
   category: UserFacingErrorCategory;
@@ -31,24 +32,21 @@ export function rawErrorMessage(error: unknown, fallback = ""): string {
 // Reason phrases for the HTTP status codes the classifier can extract from
 // a provider error. The numeric code stays in the title ("401 未授权") so
 // screenshots carry enough signal to identify the upstream side of the
-// problem, while the phrase itself reads in Chinese like the rest of the
-// notice vocabulary.
-const HTTP_REASON_PHRASES: Record<string, string> = {
-  "400": "请求无效",
-  "401": "未授权",
-  "403": "无访问权限",
-  "404": "资源不存在",
-  "408": "请求超时",
-  "413": "请求体过大",
-  "429": "触发限流",
-  "500": "服务器错误",
-  "502": "网关错误",
-  "503": "服务不可用",
-  "504": "网关超时",
-  "529": "上游过载",
-};
-
-const RESPONSE_COMPLETED_MISSING_TITLE = "回答未完整返回";
+// problem, while the phrase itself follows the current interface language.
+const HTTP_REASON_KEYS = {
+  "400": "error.http400",
+  "401": "error.http401",
+  "403": "error.http403",
+  "404": "error.http404",
+  "408": "error.http408",
+  "413": "error.http413",
+  "429": "error.http429",
+  "500": "error.http500",
+  "502": "error.http502",
+  "503": "error.http503",
+  "504": "error.http504",
+  "529": "error.http529",
+} as const;
 
 function extractHttpCode(message: string): string | undefined {
   const match = message.match(/\b(400|401|403|404|408|413|429|500|502|503|504|529)\b/);
@@ -56,7 +54,8 @@ function extractHttpCode(message: string): string | undefined {
 }
 
 function httpTitle(code: string): string {
-  return HTTP_REASON_PHRASES[code] ? `${code} ${HTTP_REASON_PHRASES[code]}` : code;
+  const key = HTTP_REASON_KEYS[code as keyof typeof HTTP_REASON_KEYS];
+  return key ? `${code} ${t(key)}` : code;
 }
 
 function structuredStatusTitle(structured: TurnError | undefined): string | undefined {
@@ -68,13 +67,13 @@ function structuredStatusTitle(structured: TurnError | undefined): string | unde
 }
 
 type SpecificDisplay = {
-  /** Readable Chinese title, when the message maps to a known situation. */
+  /** Readable localized title, when the message maps to a known situation. */
   title?: string;
 };
 
 /**
  * Pull a specific situation out of the raw error so the system event is readable
- * at a glance. Known keywords map to a Chinese title; identifiers we cannot
+ * at a glance. Known keywords map to a localized title; identifiers we cannot
  * translate remain diagnostic data and never become a second visible label.
  *
  * The list is intentionally short: anything renderer-specific belongs to
@@ -90,7 +89,7 @@ function extractSpecificDisplay(
       return {};
     case "network": {
       if (isResponseCompletedMissingMessage(lower)) {
-        return { title: RESPONSE_COMPLETED_MISSING_TITLE };
+        return { title: t("error.responseIncomplete") };
       }
       // OpenAI/Anthropic-style wrapped errors look like
       // "stream request failed: stream error (previous_response_not_found)".
@@ -100,46 +99,46 @@ function extractSpecificDisplay(
       if (wrapped) return {};
       const code = extractHttpCode(message);
       if (code) return { title: httpTitle(code) };
-      if (lower.includes("rate limit") || lower.includes("too many requests")) return { title: "触发限流" };
-      if (lower.includes("overloaded")) return { title: "上游过载" };
-      if (lower.includes("timeout") || lower.includes("deadline exceeded")) return { title: "请求超时" };
-      if (lower.includes("connection refused")) return { title: "连接被拒绝" };
-      if (lower.includes("connection reset")) return { title: "连接被重置" };
-      if (lower.includes("connection dropped")) return { title: "连接已断开" };
-      if (lower.includes("no such host")) return { title: "无法解析主机" };
-      if (lower.includes("dns")) return { title: "DNS 解析失败" };
-      if (lower.includes("eof")) return { title: "连接意外中断" };
-      if (lower.includes("temporarily unavailable")) return { title: "服务暂时不可用" };
+      if (lower.includes("rate limit") || lower.includes("too many requests")) return { title: t("error.rateLimited") };
+      if (lower.includes("overloaded")) return { title: t("error.upstreamOverloaded") };
+      if (lower.includes("timeout") || lower.includes("deadline exceeded")) return { title: t("error.requestTimeout") };
+      if (lower.includes("connection refused")) return { title: t("error.connectionRefused") };
+      if (lower.includes("connection reset")) return { title: t("error.connectionReset") };
+      if (lower.includes("connection dropped")) return { title: t("error.connectionDropped") };
+      if (lower.includes("no such host")) return { title: t("error.hostResolutionFailed") };
+      if (lower.includes("dns")) return { title: t("error.dnsFailed") };
+      if (lower.includes("eof")) return { title: t("error.connectionInterrupted") };
+      if (lower.includes("temporarily unavailable")) return { title: t("error.temporarilyUnavailable") };
       return {};
     }
     case "auth": {
       const code = extractHttpCode(message);
       if (code) return { title: httpTitle(code) };
-      if (lower.includes("api key")) return { title: "API Key 无效" };
-      if (lower.includes("oauth")) return { title: "OAuth 登录失败" };
-      if (lower.includes("invalid token") || lower.includes("access token")) return { title: "凭据已失效" };
-      if (lower.includes("permission denied")) return { title: "没有访问权限" };
+      if (lower.includes("api key")) return { title: t("error.apiKeyInvalid") };
+      if (lower.includes("oauth")) return { title: t("error.oauthFailed") };
+      if (lower.includes("invalid token") || lower.includes("access token")) return { title: t("error.credentialExpired") };
+      if (lower.includes("permission denied")) return { title: t("error.accessDenied") };
       return {};
     }
     case "provider": {
       if (isResponseCompletedMissingMessage(lower)) {
-        return { title: RESPONSE_COMPLETED_MISSING_TITLE };
+        return { title: t("error.responseIncomplete") };
       }
       if (
         lower.includes("context_length_exceeded") ||
         lower.includes("context window") ||
         lower.includes("maximum context length")
       ) {
-        return { title: "上下文超出窗口" };
+        return { title: t("error.contextExceeded") };
       }
-      if (lower.includes("too many tokens")) return { title: "tokens 超出限制" };
-      if (lower.includes("content policy") || lower.includes("content_policy")) return { title: "触发内容安全策略" };
-      if (lower.includes("rate_limit") || lower.includes("rate limit")) return { title: "触发限流" };
-      if (lower.includes("model_not_found")) return { title: "模型不存在" };
-      if (lower.includes("model returned")) return { title: "模型返回错误" };
-      if (lower.includes("empty response") || lower.includes("empty answer")) return { title: "模型返回为空" };
-      if (lower.includes("response failed") || lower.includes("response error")) return { title: "响应失败" };
-      if (lower.includes("invalid_request_error")) return { title: "请求参数无效" };
+      if (lower.includes("too many tokens")) return { title: t("error.tokenLimitExceeded") };
+      if (lower.includes("content policy") || lower.includes("content_policy")) return { title: t("error.contentPolicy") };
+      if (lower.includes("rate_limit") || lower.includes("rate limit")) return { title: t("error.rateLimited") };
+      if (lower.includes("model_not_found")) return { title: t("error.modelNotFound") };
+      if (lower.includes("model returned")) return { title: t("error.modelError") };
+      if (lower.includes("empty response") || lower.includes("empty answer")) return { title: t("error.modelEmpty") };
+      if (lower.includes("response failed") || lower.includes("response error")) return { title: t("error.responseFailed") };
+      if (lower.includes("invalid_request_error")) return { title: t("error.invalidRequest") };
       return {};
     }
     case "tool": {
@@ -152,17 +151,17 @@ function extractSpecificDisplay(
       return {};
     }
     case "local": {
-      if (lower.includes("permission denied")) return { title: "权限不足" };
-      if (lower.includes("enoent") || lower.includes("no such file")) return { title: "文件不存在" };
-      if (lower.includes("not a directory")) return { title: "路径不是目录" };
-      if (lower.includes("is a directory")) return { title: "目标是目录" };
+      if (lower.includes("permission denied")) return { title: t("error.permissionInsufficient") };
+      if (lower.includes("enoent") || lower.includes("no such file")) return { title: t("error.fileNotFound") };
+      if (lower.includes("not a directory")) return { title: t("error.notDirectory") };
+      if (lower.includes("is a directory")) return { title: t("error.isDirectory") };
       if (
         lower.includes("outside the current workspace") ||
         lower.includes("outside the current git repository")
       ) {
-        return { title: "超出工作区范围" };
+        return { title: t("error.outsideWorkspace") };
       }
-      if (lower.includes("command failed") || lower.includes("exit status")) return { title: "命令执行失败" };
+      if (lower.includes("command failed") || lower.includes("exit status")) return { title: t("error.commandFailed") };
       return {};
     }
     case "internal":
@@ -194,7 +193,7 @@ export function userFacingErrorForMessage(
     (structured?.category as UserFacingErrorCategory | undefined) ??
     classifyUserFacingError(message, context);
 
-  // Title: always a Chinese label — keyword extraction from the raw
+  // Title: always a localized label — keyword extraction from the raw
   // message (or from the structured code, when the code itself is a
   // known identifier), then the HTTP status phrase, then the category
   // default. Raw machine identifiers remain on the structured error for
@@ -239,8 +238,8 @@ export function userFacingErrorForMissingReply(): UserFacingErrorDisplay {
   return {
     category: "internal",
     tone: "warning",
-    title: "无最终回答",
-    detail: "这轮只保留了过程记录，没有生成最终回答。",
+    title: t("error.missingReplyTitle"),
+    detail: t("error.missingReplyDetail"),
   };
 }
 
@@ -262,38 +261,38 @@ function toneForCategory(category: UserFacingErrorCategory): UserFacingErrorTone
 function defaultTitleForCategory(category: UserFacingErrorCategory): string {
   switch (category) {
     case "cancelled":
-      return "已停止";
+      return t("error.cancelledTitle");
     case "network":
-      return "网络异常";
+      return t("error.networkTitle");
     case "auth":
-      return "认证失败";
+      return t("error.authTitle");
     case "provider":
-      return "模型服务异常";
+      return t("error.providerTitle");
     case "tool":
-      return "工具调用失败";
+      return t("error.toolTitle");
     case "local":
-      return "本地操作失败";
+      return t("error.localTitle");
     case "internal":
-      return "wuu 内部错误";
+      return t("error.internalTitle");
   }
 }
 
 function defaultDetailForCategory(category: UserFacingErrorCategory): string {
   switch (category) {
     case "cancelled":
-      return "这次请求已停止，可以继续发送消息。";
+      return t("error.cancelledDetail");
     case "network":
-      return "没有完成这次请求。可以稍后再发，或检查当前 provider 状态。";
+      return t("error.networkDetail");
     case "auth":
-      return "Provider 凭据或权限不足，请在 Settings → Providers 检查。";
+      return t("error.authDetail");
     case "provider":
-      return "可能是上下文超出窗口、模型限流或上游中断。";
+      return t("error.providerDetail");
     case "tool":
-      return "某个工具没有完成。原始错误已留在调试信息中。";
+      return t("error.toolDetail");
     case "local":
-      return "无法完成本地文件、命令或权限相关操作。";
+      return t("error.localDetail");
     case "internal":
-      return "没有完成这次请求。调试信息可用于排查。";
+      return t("error.internalDetail");
   }
 }
 
@@ -306,7 +305,7 @@ function specificDetailForMessage(
     (category === "provider" || category === "network") &&
     isResponseCompletedMissingMessage(normalized)
   ) {
-    return "Provider WS 流在 response.completed 前断开；这次回答可能不完整。";
+    return t("error.responseIncompleteDetail");
   }
   return undefined;
 }
@@ -443,7 +442,20 @@ export function statusMessageForError(error: unknown, fallback: string): string 
 
 // Keyword lists mirror the title vocabulary produced above (specific
 // titles, HTTP phrases, category defaults) — extend them together.
-const AUTH_STATUS_KEYWORDS = ["权限", "登录", "认证", "凭据", "未授权", "API Key", "OAuth"];
+const AUTH_STATUS_KEYWORDS = [
+  "权限",
+  "登录",
+  "认证",
+  "凭据",
+  "未授权",
+  "API Key",
+  "OAuth",
+  "authentication",
+  "credentials",
+  "unauthorized",
+  "access denied",
+  "login",
+];
 const ERROR_STATUS_KEYWORDS = [
   "失败",
   "错误",
@@ -467,6 +479,21 @@ const ERROR_STATUS_KEYWORDS = [
   "未完整",
   "stream_closed",
   "response.completed",
+  "failed",
+  "error",
+  "unavailable",
+  "timeout",
+  "rate limit",
+  "interrupted",
+  "disconnected",
+  "refused",
+  "reset",
+  "overloaded",
+  "invalid",
+  "not found",
+  "empty",
+  "exceeded",
+  "incomplete",
 ];
 
 export function statusToneClass(status: string): string {

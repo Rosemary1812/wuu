@@ -1,6 +1,7 @@
 import { formatMessageFlowCommand } from "./message-flow-display";
 import type { ThreadItem } from "../shared/protocol";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
+import { translateCurrent as t } from "./i18n";
 
 export type ToolActivityKind =
   | "edit"
@@ -102,9 +103,10 @@ export function activitySummaryText(
   if (fragments.length === 0) {
     return fallback.text;
   }
+  const summary = fragments.join(t("toolActivity.listSeparator"));
   return fallback.failed
-    ? `未完成 · ${fragments.join("，")}`
-    : fragments.join("，");
+    ? t("toolActivity.incompleteSummary", { summary })
+    : summary;
 }
 
 function sectionSummaryText(section: ToolActivitySection): string {
@@ -196,95 +198,115 @@ function readableToolActivityCommandInner(
     return readableBackgroundCommandLabel(action, command);
   }
   if (capability === "command.bash" && command) {
-    return `运行 ${truncateText(command, 100)}`;
+    return t("toolActivity.runTarget", { target: truncateText(command, 100) });
   }
   if (capability === "file.edit" && path) {
-    return `更新 ${formatPathTarget(path, "文件")}`;
+    return t("toolActivity.updateTarget", { target: formatPathTarget(path, t("toolActivity.file")) });
   }
 
   switch (name) {
     case "read_file":
-      return `读取 ${formatPathTarget(path, "文件")}`;
+      return t("toolActivity.readTarget", { target: formatPathTarget(path, t("toolActivity.file")) });
     case "list_files":
       return path && path !== "."
-        ? `查看 ${formatDirectoryTarget(path)}`
-        : "查看项目目录";
+        ? t("toolActivity.viewTarget", { target: formatDirectoryTarget(path) })
+        : t("toolActivity.viewProjectDirectory");
     case "grep":
     case "glob":
-      return `搜索 ${formatSearchTarget(pattern)}`;
+      return t("toolActivity.searchTarget", { target: formatSearchTarget(pattern) });
     case "web_search":
-      return pattern ? `搜索网页 ${formatSearchTarget(pattern)}` : "搜索网页";
+      return pattern
+        ? t("toolActivity.searchWebTarget", { target: formatSearchTarget(pattern) })
+        : t("toolActivity.searchWeb");
     case "web_fetch": {
       const url = stringValue(result, "url") ?? stringValue(args, "url");
-      return url ? `读取网页 ${truncateText(url, 90)}` : "读取网页";
+      return url
+        ? t("toolActivity.readWebTarget", { target: truncateText(url, 90) })
+        : t("toolActivity.readWeb");
     }
     case "tool_search":
-      return pattern ? `搜索工具 ${formatSearchTarget(pattern)}` : "搜索工具";
+      return pattern
+        ? t("toolActivity.searchToolsTarget", { target: formatSearchTarget(pattern) })
+        : t("toolActivity.searchTools");
     case "load_skill": {
       const skill = stringValue(args, "name");
       return skill
-        ? `学习 ${truncateText(skill.replace(/^\//, ""), 70)} 技能`
-        : "学习技能";
+        ? t("toolActivity.learnSkillTarget", { target: truncateText(skill.replace(/^\//, ""), 70) })
+        : t("toolActivity.learnSkill");
     }
     case "update_plan":
-      return "更新计划";
+      return t("toolActivity.updatePlan");
     case "bash":
       if (command.startsWith("git ")) {
         return readableCommandLabel(item);
       }
-      return command ? `运行 ${truncateText(command, 100)}` : "运行命令";
+      return command
+        ? t("toolActivity.runTarget", { target: truncateText(command, 100) })
+        : t("toolActivity.runCommand");
     case "edit_file":
-      return `更新 ${formatPathTarget(path, "文件")}`;
+      return t("toolActivity.updateTarget", { target: formatPathTarget(path, t("toolActivity.file")) });
     case "write_file":
-      return `更新 ${formatPathTarget(path, "文件")}`;
+      return t("toolActivity.updateTarget", { target: formatPathTarget(path, t("toolActivity.file")) });
     case "apply_patch":
-      return `更新文件${path ? ` ${formatPathTarget(path, "文件")}` : ""}`;
+      return path
+        ? t("toolActivity.updateTarget", { target: formatPathTarget(path, t("toolActivity.file")) })
+        : t("toolActivity.updateFiles");
     case "spawn_agent": {
       const task =
         stringValue(args, "name") ??
         stringValue(args, "description") ??
         stringValue(args, "prompt");
-      return task ? `启动子任务 ${truncateText(task, 70)}` : "启动子任务";
+      return task
+        ? t("toolActivity.startSubtaskTarget", { target: truncateText(task, 70) })
+        : t("toolActivity.startSubtask");
     }
     case "followup_task": {
       const task = stringValue(args, "target") ?? stringValue(args, "message");
-      return task ? `追加子任务 ${truncateText(task, 70)}` : "追加子任务";
+      return task
+        ? t("toolActivity.followupSubtaskTarget", { target: truncateText(task, 70) })
+        : t("toolActivity.followupSubtask");
     }
     case "send_message": {
       const task = stringValue(args, "target") ?? stringValue(args, "message");
-      return task ? `发送给子任务 ${truncateText(task, 70)}` : "发送给子任务";
+      return task
+        ? t("toolActivity.messageSubtaskTarget", { target: truncateText(task, 70) })
+        : t("toolActivity.messageSubtask");
     }
     case "wait_agent":
-      return "等待子任务";
+      return t("toolActivity.waitForSubtask");
     case "await_agents":
-      return "等待子任务";
+      return t("toolActivity.waitForSubtask");
     case "close_agent":
-      return "关闭子任务";
+      return t("toolActivity.closeSubtask");
     case "list_agents":
-      return "查看子任务";
+      return t("toolActivity.viewSubtasks");
     case "agent_report":
-      return "读取子任务报告";
+      return t("toolActivity.readSubtaskReport");
     case "goal":
       switch (stringValue(args, "action")) {
         case "create": {
           const objective = stringValue(args, "objective");
-          return objective ? `启动 Goal ${truncateText(objective, 60)}` : "启动 Goal";
+          return objective
+            ? t("toolActivity.startGoalTarget", { target: truncateText(objective, 60) })
+            : t("toolActivity.startGoal");
         }
         case "update":
-          return "更新 Goal";
+          return t("toolActivity.updateGoal");
         default:
-          return "查看 Goal";
+          return t("toolActivity.viewGoal");
       }
     case "cron":
       switch (stringValue(args, "action")) {
         case "add": {
           const cron = stringValue(args, "cron");
-          return cron ? `安排定时任务 ${truncateText(cron, 60)}` : "安排定时任务";
+          return cron
+            ? t("toolActivity.scheduleTarget", { target: truncateText(cron, 60) })
+            : t("toolActivity.schedule");
         }
         case "remove":
-          return "取消定时任务";
+          return t("toolActivity.cancelSchedule");
         default:
-          return "查看定时任务";
+          return t("toolActivity.viewSchedule");
       }
     case "browser":
       return readableBrowserLabel(args);
@@ -456,7 +478,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "read",
-        title: "查看",
+        title: t("toolActivity.view"),
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -466,7 +488,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "search",
-        title: "搜索",
+        title: t("toolActivity.search"),
         detail: compactDetailText(compactSearchTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -476,7 +498,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "edit",
-        title: "更新文件",
+        title: t("toolActivity.updateFiles"),
         detail: compactDetailText(compactToolTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -486,7 +508,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "command",
-        title: "检查",
+        title: t("toolActivity.inspect"),
         detail: compactDetailText(compactCommandLabels(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -496,7 +518,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "agent",
-        title: "子任务",
+        title: t("toolActivity.subtasks"),
         detail: compactDetailText(compactAgentLabels(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -506,7 +528,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "plan",
-        title: "更新计划",
+        title: t("toolActivity.updatePlan"),
         detail: compactDetailText(compactPlanUpdates(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -516,7 +538,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "interaction",
-        title: "等待用户",
+        title: t("toolActivity.waitingForUser"),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -534,7 +556,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "browser",
-        title: "浏览器",
+        title: t("toolActivity.browser"),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -543,7 +565,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "skill",
-        title: "学习",
+        title: t("toolActivity.learn"),
         detail: compactDetailText(compactSkillTargets(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -553,7 +575,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "context",
-        title: "潜入上下文 · 植入续行摘要",
+        title: t("toolActivity.contextDive"),
         detail: compactDetailText(compactContextAnchors(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
@@ -563,7 +585,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "unknown",
-        title: "工具",
+        title: t("toolActivity.tool"),
         detail: compactDetailText(
           uniqueStrings(items.map((item) => readableToolName(item.name))),
         ),
@@ -588,8 +610,8 @@ function toolActivityProcessSegmentFromItems(
         kind: "read",
         status,
         error,
-        singularPrefix: "查看",
-        countPrefix: "查看",
+        singularPrefix: t("toolActivity.view"),
+        countPrefix: t("toolActivity.view"),
         targets,
         fallbackCount: items.length,
       });
@@ -607,16 +629,18 @@ function toolActivityProcessSegmentFromItems(
             kind: "search",
             status,
             error,
-            countPrefix: "搜索 ",
+            countPrefix: `${t("toolActivity.search")} `,
             count,
-            countSuffix: " 次",
+            countSuffix: ` ${t("toolActivity.times")}`,
           }
         : {
             id: key,
             kind: "search",
             status,
             error,
-            text: targets[0] ? `搜索 ${targets[0]}` : "搜索",
+            text: targets[0]
+              ? t("toolActivity.searchTarget", { target: targets[0] })
+              : t("toolActivity.search"),
           };
     }
     case "change": {
@@ -626,8 +650,8 @@ function toolActivityProcessSegmentFromItems(
         kind: "edit",
         status,
         error,
-        singularPrefix: "更新",
-        countPrefix: "更新",
+        singularPrefix: t("toolActivity.update"),
+        countPrefix: t("toolActivity.update"),
         targets,
         fallbackCount: items.length,
       });
@@ -641,16 +665,16 @@ function toolActivityProcessSegmentFromItems(
             kind: "command",
             status,
             error,
-            countPrefix: "检查 ",
+            countPrefix: `${t("toolActivity.inspect")} `,
             count,
-            countSuffix: " 项",
+            countSuffix: ` ${t("toolActivity.items")}`,
           }
         : {
             id: key,
             kind: "command",
             status,
             error,
-            text: labels[0] ?? "运行命令",
+            text: labels[0] ?? t("toolActivity.runCommand"),
           };
     }
     case "agent": {
@@ -662,16 +686,18 @@ function toolActivityProcessSegmentFromItems(
             kind: "agent",
             status,
             error,
-            countPrefix: "子任务 ",
+            countPrefix: `${t("toolActivity.subtasks")} `,
             count,
-            countSuffix: " 项",
+            countSuffix: ` ${t("toolActivity.items")}`,
           }
         : {
             id: key,
             kind: "agent",
             status,
             error,
-            text: labels[0] ? `子任务 ${truncateText(labels[0], 48)}` : "子任务",
+            text: labels[0]
+              ? t("toolActivity.subtaskTarget", { target: truncateText(labels[0], 48) })
+              : t("toolActivity.subtasks"),
           };
     }
     case "plan":
@@ -680,7 +706,7 @@ function toolActivityProcessSegmentFromItems(
         kind: "plan",
         status,
         error,
-        text: "更新计划",
+        text: t("toolActivity.updatePlan"),
       };
     case "schedule":
       return {
@@ -698,8 +724,8 @@ function toolActivityProcessSegmentFromItems(
         error,
         text:
           items.length > 1
-            ? "检查页面"
-            : (compactDetailText(compactCommandLabels(items)) ?? "检查页面"),
+            ? t("toolActivity.inspectPage")
+            : (compactDetailText(compactCommandLabels(items)) ?? t("toolActivity.inspectPage")),
       };
     case "skill": {
       const targets = compactSkillTargets(items);
@@ -710,16 +736,18 @@ function toolActivityProcessSegmentFromItems(
             kind: "skill",
             status,
             error,
-            countPrefix: "学习 ",
+            countPrefix: `${t("toolActivity.learn")} `,
             count,
-            countSuffix: " 项",
+            countSuffix: ` ${t("toolActivity.items")}`,
           }
         : {
             id: key,
             kind: "skill",
             status,
             error,
-            text: targets[0] ? `学习 ${truncateText(targets[0], 48)}` : "学习技能",
+            text: targets[0]
+              ? t("toolActivity.learnTarget", { target: truncateText(targets[0], 48) })
+              : t("toolActivity.learnSkill"),
           };
     }
     case "context":
@@ -728,7 +756,7 @@ function toolActivityProcessSegmentFromItems(
         kind: "context",
         status,
         error,
-        text: "潜入上下文 · 植入续行摘要",
+        text: t("toolActivity.contextDive"),
       };
     default: {
       const names = uniqueStrings(
@@ -741,16 +769,16 @@ function toolActivityProcessSegmentFromItems(
             kind: "unknown",
             status,
             error,
-            countPrefix: "工具 ",
+            countPrefix: `${t("toolActivity.tool")} `,
             count,
-            countSuffix: " 项",
+            countSuffix: ` ${t("toolActivity.items")}`,
           }
         : {
             id: key,
             kind: "unknown",
             status,
             error,
-            text: names[0] ?? "工具",
+            text: names[0] ?? t("toolActivity.tool"),
           };
     }
   }
@@ -784,7 +812,7 @@ function fileCountSegment({
         error,
         countPrefix: `${countPrefix} `,
         count,
-        countSuffix: " 个文件",
+        countSuffix: ` ${t("toolActivity.files")}`,
       }
     : {
         id,
@@ -840,7 +868,7 @@ function compactSkillTargets(items: ThreadItem[]): string[] {
         const args = parseJSONRecord(item.arguments);
         const skill = stringValue(args, "name");
         return skill
-          ? `${truncateText(skill.replace(/^\//, ""), 70)} 技能`
+          ? t("toolActivity.skillTarget", { target: truncateText(skill.replace(/^\//, ""), 70) })
           : undefined;
       })
       .filter((value): value is string => Boolean(value)),
@@ -896,19 +924,19 @@ function readableScheduleSummary(items: ThreadItem[]): string {
       const args = parseJSONRecord(item.arguments);
       switch (stringValue(args, "action")) {
         case "add":
-          return "安排定时任务";
+          return t("toolActivity.schedule");
         case "remove":
-          return "取消定时任务";
+          return t("toolActivity.cancelSchedule");
         case "list":
-          return "查看定时任务";
+          return t("toolActivity.viewSchedule");
         default:
-          return "处理定时任务";
+          return t("toolActivity.handleSchedule");
       }
     }),
   );
   return actions.length === 1
     ? actions[0]
-    : `处理 ${items.length} 项定时任务`;
+    : t("toolActivity.handleScheduleCount", { count: items.length });
 }
 
 function compactAgentLabels(items: ThreadItem[]): string[] {
@@ -929,8 +957,10 @@ function compactDetailText(values: string[]): string | undefined {
   if (values.length === 0) {
     return undefined;
   }
-  const shown = values.slice(0, 4).join("、");
-  return values.length > 4 ? `${shown} 等 ${values.length} 项` : shown;
+  const shown = values.slice(0, 4).join(t("toolActivity.compactSeparator"));
+  return values.length > 4
+    ? t("toolActivity.moreItems", { shown, count: values.length })
+    : shown;
 }
 
 function formatPathTarget(path: string | undefined, fallback: string): string {
@@ -938,21 +968,21 @@ function formatPathTarget(path: string | undefined, fallback: string): string {
     return fallback;
   }
   if (path === ".") {
-    return "当前目录";
+    return t("toolActivity.currentDirectory");
   }
   return fileBaseName(path);
 }
 
 function formatDirectoryTarget(path: string | undefined): string {
   if (!path || path === ".") {
-    return "当前目录";
+    return t("toolActivity.currentDirectory");
   }
   return fileBaseName(path);
 }
 
 function formatSearchTarget(pattern: string | undefined): string {
   if (!pattern) {
-    return "内容";
+    return t("toolActivity.content");
   }
   return truncateText(pattern.replace(/^\*\*\//, ""), 90);
 }
@@ -960,7 +990,7 @@ function formatSearchTarget(pattern: string | undefined): string {
 function compactSearchProcessTarget(pattern: string): string {
   const normalized = pattern.replace(/^\*\*\//, "").trim();
   if (!normalized) {
-    return "内容";
+    return t("toolActivity.content");
   }
   const alternatives = normalized
     .split("|")
@@ -972,7 +1002,7 @@ function compactSearchProcessTarget(pattern: string): string {
     if (boundary >= 3) {
       return `${prefix.slice(0, boundary + 1)}*`;
     }
-    return `${alternatives.length} 项`;
+    return t("toolActivity.itemCount", { count: alternatives.length });
   }
   return truncateText(normalized, 48);
 }
@@ -1015,48 +1045,52 @@ function readableCommandLabel(
   }
   if (command.startsWith("git ")) {
     if (subcommand === "status" || command.includes("status")) {
-      return "检查 Git 状态";
+      return t("toolActivity.checkGitStatus");
     }
     if (subcommand === "diff" || command.includes("diff")) {
-      return "查看代码差异";
+      return t("toolActivity.viewDiff");
     }
     if (subcommand === "log" || command.includes("log")) {
-      return "查看提交历史";
+      return t("toolActivity.viewCommitHistory");
     }
-    return "执行 Git 操作";
+    return t("toolActivity.runGitOperation");
   }
   if (/npm\s+run\s+typecheck|tsc\s+--noEmit/.test(command)) {
-    return "检查类型";
+    return t("toolActivity.checkTypes");
   }
   if (/npm\s+run\s+build|vite\s+build|electron-vite\s+build/.test(command)) {
-    return "构建应用";
+    return t("toolActivity.buildApp");
   }
   if (/go\s+test|npm\s+test|pnpm\s+test|yarn\s+test/.test(command)) {
-    return "运行测试";
+    return t("toolActivity.runTests");
   }
   if (/(?:^|[;&|]\s*)date(?:\s|$)/.test(command)) {
-    return "查看本地时间";
+    return t("toolActivity.viewLocalTime");
   }
   if (/(?:^|[;&|]\s*)sqlite3\b|(?:import|from)\s+sqlite3\b/.test(command)) {
-    return "操作本地数据库";
+    return t("toolActivity.useLocalDatabase");
   }
-  return "运行命令";
+  return t("toolActivity.runCommand");
 }
 
 function readableBackgroundCommandLabel(action: string, command: string): string {
   switch (action) {
     case "start_background":
-      return command ? `启动 ${truncateText(command, 100)}` : "启动后台任务";
+      return command
+        ? t("toolActivity.startTarget", { target: truncateText(command, 100) })
+        : t("toolActivity.startBackgroundTask");
     case "read_background":
-      return "读取后台输出";
+      return t("toolActivity.readBackgroundOutput");
     case "list_background":
-      return "查看后台任务";
+      return t("toolActivity.viewBackgroundTasks");
     case "stop_background":
-      return "停止后台任务";
+      return t("toolActivity.stopBackgroundTask");
     case "write_background":
-      return "写入后台输入";
+      return t("toolActivity.writeBackgroundInput");
     default:
-      return command ? `启动 ${truncateText(command, 100)}` : "后台任务";
+      return command
+        ? t("toolActivity.startTarget", { target: truncateText(command, 100) })
+        : t("toolActivity.backgroundTask");
   }
 }
 
@@ -1064,57 +1098,59 @@ function readableBrowserLabel(args: JsonRecord | undefined): string {
   const action = (stringValue(args, "action") ?? "").toLowerCase();
   if (action === "navigate" || action === "open") {
     const url = stringValue(args, "url");
-    return url ? `打开浏览器 ${truncateText(url, 90)}` : "打开浏览器";
+    return url
+      ? t("toolActivity.openBrowserTarget", { target: truncateText(url, 90) })
+      : t("toolActivity.openBrowser");
   }
   if (action === "click") {
-    return "点击浏览器";
+    return t("toolActivity.clickBrowser");
   }
   if (action === "type") {
-    return "输入浏览器文本";
+    return t("toolActivity.typeInBrowser");
   }
   if (action === "screenshot") {
-    return "截取浏览器";
+    return t("toolActivity.captureBrowser");
   }
   if (action === "evaluate") {
-    return "执行浏览器脚本";
+    return t("toolActivity.runBrowserScript");
   }
-  return "操作浏览器";
+  return t("toolActivity.useBrowser");
 }
 
 export function readableToolName(name: string | undefined): string {
   switch ((name ?? "").trim()) {
     case "read_file":
-      return "查看文件";
+      return t("toolActivity.viewFile");
     case "list_files":
-      return "查看目录";
+      return t("toolActivity.viewDirectory");
     case "grep":
-      return "搜索内容";
+      return t("toolActivity.searchContent");
     case "glob":
-      return "匹配文件";
+      return t("toolActivity.matchFiles");
     case "edit_file":
-      return "编辑文件";
+      return t("toolActivity.editFile");
     case "write_file":
-      return "写入文件";
+      return t("toolActivity.writeFile");
     case "apply_patch":
-      return "更新文件";
+      return t("toolActivity.updateFiles");
     case "web_search":
-      return "搜索网页";
+      return t("toolActivity.searchWeb");
     case "web_fetch":
-      return "读取网页";
+      return t("toolActivity.readWeb");
     case "bash":
-      return "运行命令";
+      return t("toolActivity.runCommand");
     case "tool_search":
-      return "搜索工具";
+      return t("toolActivity.searchTools");
     case "load_skill":
-      return "学习技能";
+      return t("toolActivity.learnSkill");
     case "update_plan":
-      return "更新计划";
+      return t("toolActivity.updatePlan");
     case "cron":
-      return "定时任务";
+      return t("toolActivity.scheduledTask");
     case "browser":
-      return "浏览器";
+      return t("toolActivity.browser");
     default:
-      return name?.trim() || "工具";
+      return name?.trim() || t("toolActivity.tool");
   }
 }
 
@@ -1221,14 +1257,14 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
     return {
       kind: created ? "create" : "edit",
       text: failed
-        ? "编辑失败"
+        ? t("toolActivity.editFailed")
         : created
           ? running
-            ? "正在创建"
-            : "已创建"
+            ? t("toolActivity.creating")
+            : t("toolActivity.created")
           : running
-            ? "正在编辑"
-            : "已编辑",
+            ? t("toolActivity.editing")
+            : t("toolActivity.edited"),
       fileName: filePath ? fileBaseName(filePath) : undefined,
       additions,
       deletions,
@@ -1239,40 +1275,42 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
 
   const parts: string[] = [];
   if (createdFiles.size > 0) {
-    parts.push(`已创建 ${createdFiles.size} 个文件`);
+    parts.push(t(createdFiles.size === 1 ? "toolActivity.createdFile" : "toolActivity.createdFiles", { count: createdFiles.size }));
   }
   if (editedFiles.size > 0) {
-    parts.push(`已编辑 ${editedFiles.size} 个文件`);
+    parts.push(t(editedFiles.size === 1 ? "toolActivity.editedFile" : "toolActivity.editedFiles", { count: editedFiles.size }));
   }
   if (readFiles.size > 0) {
-    parts.push(`已探索 ${readFiles.size} 个文件`);
+    parts.push(t(readFiles.size === 1 ? "toolActivity.exploredFile" : "toolActivity.exploredFiles", { count: readFiles.size }));
   }
   if (searchedFiles.size > 0) {
-    parts.push(`已搜索 ${searchedFiles.size} 个文件`);
+    parts.push(t(searchedFiles.size === 1 ? "toolActivity.searchedFile" : "toolActivity.searchedFiles", { count: searchedFiles.size }));
   }
   if (searchCount > 0) {
-    parts.push(`${searchCount} 次搜索`);
+    parts.push(t(searchCount === 1 ? "toolActivity.searchCountOne" : "toolActivity.searchCount", { count: searchCount }));
   }
   if (listCount > 0) {
-    parts.push(`${listCount} 次列表`);
+    parts.push(t(listCount === 1 ? "toolActivity.listCountOne" : "toolActivity.listCount", { count: listCount }));
   }
   if (commandCount > 0) {
-    parts.push(`已运行 ${commandCount} 条命令`);
+    parts.push(t(commandCount === 1 ? "toolActivity.commandCountOne" : "toolActivity.commandCount", { count: commandCount }));
   }
   if (agentCount > 0) {
-    parts.push(`已启动 ${agentCount} 个子任务`);
+    parts.push(t(agentCount === 1 ? "toolActivity.startedSubtaskCountOne" : "toolActivity.startedSubtaskCount", { count: agentCount }));
   }
   if (parts.length === 0 && unknownTools.size > 0) {
-    const names = Array.from(unknownTools).slice(0, 2).join("、");
-    parts.push(`${running ? "正在调用" : "已调用"} ${names}`);
+    const names = Array.from(unknownTools).slice(0, 2).join(t("toolActivity.compactSeparator"));
+    parts.push(t(running ? "toolActivity.callingTools" : "toolActivity.calledTools", { names }));
   }
   if (parts.length === 0) {
-    parts.push(running ? "正在使用工具" : "已使用工具");
+    parts.push(t(running ? "toolActivity.usingTools" : "toolActivity.usedTools"));
   }
 
   return {
     kind: primaryKind,
-    text: `${failed ? "工具失败 · " : ""}${parts.join(" · ")}`,
+    text: failed
+      ? t("toolActivity.failedSummary", { summary: parts.join(" · ") })
+      : parts.join(" · "),
     additions,
     deletions,
     running,

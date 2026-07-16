@@ -20,6 +20,7 @@ import {
   type PendingForkState,
 } from "./ConversationHistoryActions";
 import * as TurnViewHelpers from "./TurnViewHelpers";
+import { resolveLocalizedText, setActiveLocale } from "./i18n";
 
 // `scrollToUserMessage` schedules retry timeouts that would otherwise leak
 // across tests in jsdom (no DOM anchor is mounted, so the helper keeps
@@ -41,6 +42,7 @@ function restoreWuu(): void {
 
 afterEach(() => {
   restoreWuu();
+  setActiveLocale("zh-CN");
 });
 
 function projectContext(): RuntimeContext {
@@ -259,6 +261,23 @@ function buildActions({
 }
 
 describe("createConversationHistoryActions", () => {
+  it("localizes history action status in English", () => {
+    setActiveLocale("en-US");
+    const source = thread();
+    const harness = buildActions();
+    harness.localDemoThreadsRef.current.set(source.id, source);
+
+    harness.actions.startEditingThreadMessageFromHistory(
+      source,
+      "turn-1",
+      userItem(),
+    );
+
+    expect(resolveLocalizedText(harness.getAppState().status)).toBe(
+      "History cannot be edited in demo conversations",
+    );
+  });
+
   it("forks a pending conversation and clears the pending dialog", async () => {
     const source = thread("source-thread");
     const fork = thread("fork-thread");
@@ -393,7 +412,9 @@ describe("createConversationHistoryActions", () => {
     );
 
     expect(harness.getHistoryMessageEdit()).toBeUndefined();
-    expect(harness.getAppState().status).toBe("先处理待发送消息，再编辑历史");
+    expect(resolveLocalizedText(harness.getAppState().status)).toBe(
+      "先处理待发送消息，再编辑历史",
+    );
   });
 
   it("submits an edited history message and sends the replacement text", async () => {

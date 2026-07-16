@@ -17,6 +17,7 @@ import {
   type SessionTab,
 } from "./AppState";
 import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
+import { resolveLocalizedText } from "./i18n";
 
 function projectContext(id = "project-1"): RuntimeContext {
   return { kind: "project", project_id: id, cwd: `/tmp/${id}` };
@@ -192,7 +193,9 @@ describe("createProjectRuntimeActions", () => {
     await harness.actions.selectProjectForNewThread("project-2");
 
     expect(harness.closeProjectMenus).toHaveBeenCalled();
-    expect(harness.getAppState().status).toBe("任务运行中，暂不能切换项目");
+    expect(resolveLocalizedText(harness.getAppState().status)).toBe(
+      "任务运行中，暂不能切换项目",
+    );
   });
 
   it("opens a blank draft when creating a no-project conversation", async () => {
@@ -336,7 +339,9 @@ describe("createProjectRuntimeActions", () => {
     await harness.actions.useNoProject(false);
 
     expect(harness.closeProjectMenus).toHaveBeenCalled();
-    expect(harness.getAppState().status).toBe("任务运行中，暂不能切换项目");
+    expect(resolveLocalizedText(harness.getAppState().status)).toBe(
+      "任务运行中，暂不能切换项目",
+    );
   });
 
   it("reuses an existing no-project draft when the 对话 workspace plus is clicked", async () => {

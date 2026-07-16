@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   buildComposerSlashCommands,
+  buildSideThreadSlashCommands,
   composerSlashPrompt,
   filterComposerSlashCommands,
   runtimeFastModelTarget
 } from "./ComposerSlashCommands";
 import type { InitializeResult, SkillSummary } from "../shared/protocol";
+import { setActiveLocale } from "./i18n";
+
+afterEach(() => setActiveLocale("zh-CN"));
 
 function initialized(model: string, models: string[], helpMe = false): InitializeResult {
   return {
@@ -46,6 +50,22 @@ function skill(overrides: Partial<SkillSummary> & Pick<SkillSummary, "name">): S
 }
 
 describe("composer slash commands", () => {
+  it("rebuilds built-in and side-thread commands in the active language", () => {
+    setActiveLocale("en-US");
+
+    const commands = buildComposerSlashCommands({ running: false });
+    const review = commands.find((command) => command.name === "review");
+    const sideReset = buildSideThreadSlashCommands()[0];
+
+    expect(review).toMatchObject({
+      title: "Review current changes",
+      disabledReason: "Select a workspace first",
+    });
+    expect(sideReset).toMatchObject({
+      title: "Reset side chat",
+      tag: "Side chat",
+    });
+  });
   it("shows /fast only when the current provider exposes a fast model", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },

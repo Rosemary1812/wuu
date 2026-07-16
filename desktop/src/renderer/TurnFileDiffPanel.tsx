@@ -4,6 +4,7 @@ import type { GitFileDiffResult, WorkspaceFileReadResult } from "../shared/proto
 import { RichContent } from "./RichContent";
 import { ToolDiffContent } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import { translateCurrent, useI18n } from "./i18n";
 
 type ArtifactView = "changes" | "reading" | "source" | "current";
 
@@ -29,27 +30,29 @@ function normalizedSHA(value?: string): string | undefined {
 
 function gitStatusLabel(result?: GitFileDiffResult): string | undefined {
   if (!result) return undefined;
-  if (!result.is_repo) return "当前工作区未使用 Git";
+  if (!result.is_repo) return translateCurrent("turnDiff.git.notRepository");
   switch (result.status) {
     case "ignored":
-      return "Git：已忽略，不会提交";
+      return translateCurrent("turnDiff.git.ignored");
     case "untracked":
-      return "Git：未跟踪";
+      return translateCurrent("turnDiff.git.untracked");
     case "added":
-      return "Git：已新增";
+      return translateCurrent("turnDiff.git.added");
     case "modified":
-      return "Git：已修改";
+      return translateCurrent("turnDiff.git.modified");
     case "deleted":
-      return "Git：已删除";
+      return translateCurrent("turnDiff.git.deleted");
     default:
-      return "Git：无待提交变化";
+      return translateCurrent("turnDiff.git.clean");
   }
 }
 
 function actionLabel(selection: TurnFileDiffSelection): string {
-  if (selection.action === "delete") return "删除";
-  if (selection.action === "rename") return "重命名";
-  return selection.newFile || selection.action === "create" ? "新建" : "修改";
+  if (selection.action === "delete") return translateCurrent("turnDiff.action.delete");
+  if (selection.action === "rename") return translateCurrent("turnDiff.action.rename");
+  return selection.newFile || selection.action === "create"
+    ? translateCurrent("turnDiff.action.create")
+    : translateCurrent("turnDiff.action.modify");
 }
 
 function currentVersionLabel(
@@ -57,13 +60,13 @@ function currentVersionLabel(
   current?: WorkspaceFileReadResult,
   missing = false,
 ): string | undefined {
-  if (missing) return "当前文件已不存在";
+  if (missing) return translateCurrent("turnDiff.current.missing");
   if (!current) return undefined;
   const afterSHA = normalizedSHA(selection.afterSha);
   if (afterSHA && !current.truncated) {
     return current.sha256.toLowerCase() === afterSHA
-      ? "当前文件与本轮产出一致"
-      : "当前文件后来已变化";
+      ? translateCurrent("turnDiff.current.matches")
+      : translateCurrent("turnDiff.current.changed");
   }
   if (
     selection.snapshotText !== undefined &&
@@ -71,10 +74,10 @@ function currentVersionLabel(
     !current.truncated
   ) {
     return current.text === selection.snapshotText
-      ? "当前文件与本轮产出一致"
-      : "当前文件后来已变化";
+      ? translateCurrent("turnDiff.current.matches")
+      : translateCurrent("turnDiff.current.changed");
   }
-  return "正在显示当前工作区版本";
+  return translateCurrent("turnDiff.current.workspaceVersion");
 }
 
 export function TurnFileDiffPanel({
@@ -84,6 +87,7 @@ export function TurnFileDiffPanel({
   selection?: TurnFileDiffSelection;
   onClose: () => void;
 }): JSX.Element | null {
+  const { locale, t, formatNumber } = useI18n();
   const [requestedView, setRequestedView] = useState<ArtifactView>("changes");
   const [currentFile, setCurrentFile] = useState<WorkspaceFileReadResult | undefined>();
   const [gitFile, setGitFile] = useState<GitFileDiffResult | undefined>();
@@ -124,14 +128,14 @@ export function TurnFileDiffPanel({
   const views = useMemo(() => {
     if (!selection) return [] as Array<{ id: ArtifactView; label: string }>;
     const next: Array<{ id: ArtifactView; label: string }> = [];
-    if (selection.diff?.hunks.length) next.push({ id: "changes", label: "变化" });
+    if (selection.diff?.hunks.length) next.push({ id: "changes", label: t("turnDiff.view.changes") });
     if (selection.snapshotText !== undefined) {
-      if (isMarkdownPath(selection.path)) next.push({ id: "reading", label: "阅读" });
-      next.push({ id: "source", label: isMarkdownPath(selection.path) ? "源码" : "本轮内容" });
+      if (isMarkdownPath(selection.path)) next.push({ id: "reading", label: t("turnDiff.view.reading") });
+      next.push({ id: "source", label: isMarkdownPath(selection.path) ? t("turnDiff.view.source") : t("turnDiff.view.turnContent") });
     }
-    if (currentFile) next.push({ id: "current", label: "当前文件" });
+    if (currentFile) next.push({ id: "current", label: t("turnDiff.view.current") });
     return next;
-  }, [currentFile, selection]);
+  }, [currentFile, selection, locale]);
 
   if (!selection) return null;
 
@@ -155,35 +159,35 @@ export function TurnFileDiffPanel({
   const deliveryLabel = gitStatusLabel(gitFile);
 
   return (
-    <section className="turn-file-diff-panel" aria-label={`${selection.path} 的本轮产出`}>
+    <section className="turn-file-diff-panel" aria-label={t("turnDiff.panelLabel", { path: selection.path })}>
       <div className="turn-file-diff-header">
         <div className="turn-file-diff-heading">
-          <span className="turn-file-diff-kicker">本轮产出</span>
+          <span className="turn-file-diff-kicker">{t("turnDiff.kicker")}</span>
           <strong className="turn-file-diff-path" title={selection.path}>
             {selection.path}
           </strong>
           <span className="turn-file-diff-meta">
             <span>{actionLabel(selection)}</span>
             {selection.additions > 0 ? (
-              <span className="turn-edit-summary-add">+{selection.additions}</span>
+              <span className="turn-edit-summary-add">+{formatNumber(selection.additions)}</span>
             ) : null}
             {selection.deletions > 0 ? (
-              <span className="turn-edit-summary-delete">-{selection.deletions}</span>
+              <span className="turn-edit-summary-delete">-{formatNumber(selection.deletions)}</span>
             ) : null}
-            {selection.diff?.truncated ? <span>已截断</span> : null}
+            {selection.diff?.truncated ? <span>{t("turnDiff.truncated")}</span> : null}
           </span>
         </div>
         <button
           className="icon-button turn-file-diff-close"
           type="button"
-          aria-label="关闭成果面板"
+          aria-label={t("turnDiff.closePanel")}
           onClick={onClose}
         >
           <X className="icon" />
         </button>
       </div>
       <div className="turn-artifact-toolbar">
-        <div className="turn-artifact-view-tabs" role="tablist" aria-label="成果预览方式">
+        <div className="turn-artifact-view-tabs" role="tablist" aria-label={t("turnDiff.previewMode")}>
           {views.map((view) => (
             <button
               type="button"
@@ -226,13 +230,13 @@ export function TurnFileDiffPanel({
         ) : currentFile?.binary ? (
           <div className="turn-artifact-empty">
             <FileText size={28} />
-            <strong>暂不支持预览这种文件</strong>
+            <strong>{t("turnDiff.unsupportedPreview")}</strong>
             <span>{currentFile.path}</span>
           </div>
         ) : loadingCurrent ? (
-          <div className="turn-artifact-empty">正在读取当前文件…</div>
+          <div className="turn-artifact-empty">{t("turnDiff.readingCurrent")}</div>
         ) : (
-          <div className="turn-artifact-empty">没有可显示的内容。</div>
+          <div className="turn-artifact-empty">{t("turnDiff.noContent")}</div>
         )}
       </div>
     </section>

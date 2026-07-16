@@ -8,6 +8,7 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { useI18n } from "./i18n";
 
 /**
  * Shared chrome for the application's environment-style dialogs
@@ -57,6 +58,7 @@ export function Modal({
   footer,
   children,
 }: ModalProps): JSX.Element | null {
+  const { t } = useI18n();
   const panelRef = useRef<HTMLElement | null>(null);
   const dismissible = typeof onClose === "function" && !closeDisabled;
 
@@ -144,7 +146,7 @@ export function Modal({
           <button
             className="icon-button"
             type="button"
-            aria-label="关闭"
+            aria-label={t("common.close")}
             disabled={closeDisabled}
             onClick={() => {
               if (!closeDisabled) {

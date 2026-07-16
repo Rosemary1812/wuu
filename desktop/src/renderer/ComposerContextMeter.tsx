@@ -15,6 +15,7 @@
 import type { TurnContextUsage } from "./AppState";
 import { useId, useRef, useState } from "react";
 import { FloatingMenuPortal } from "./ComposerFloatingMenu";
+import { formatCurrentNumber, translateCurrent as translate, useI18n } from "./i18n";
 
 type ComposerContextMeterProps = {
   // Pass the latest per-turn usage snapshot from AppState. The component
@@ -55,6 +56,7 @@ function fillColor(level: FillLevel): string {
 export function ComposerContextMeter({
   usage,
 }: ComposerContextMeterProps): JSX.Element | null {
+  const { t } = useI18n();
   const tooltipID = useId();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -77,9 +79,11 @@ export function ComposerContextMeter({
     usage.window,
   )}`;
   const requestContext = usage.requestContext;
-  const ariaLabel =
-    `上下文上限 ${formatTokenCount(usage.window)}` +
-    `，已保留 ${formatTokenCount(used)} (${percent}%)`;
+  const ariaLabel = t("contextMeter.ariaLabel", {
+    limit: formatTokenCount(usage.window),
+    used: formatTokenCount(used),
+    percent,
+  });
   return (
     <div
       ref={anchorRef}
@@ -143,14 +147,14 @@ export function ComposerContextMeter({
           >
             <div className="composer-context-meter-tooltip-headline">
               <span className="composer-context-meter-tooltip-label">
-                保留历史
+                {t("contextMeter.retainedHistory")}
               </span>
               <span className="composer-context-meter-tooltip-value">
                 {percentLabel}
               </span>
             </div>
             <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">历史</span>
+              <span className="composer-context-meter-tooltip-label">{t("contextMeter.history")}</span>
               <span className="composer-context-meter-tooltip-value">
                 {valueLabel}
               </span>
@@ -160,7 +164,7 @@ export function ComposerContextMeter({
                 <div className="composer-context-meter-tooltip-divider" />
                 <div className="composer-context-meter-tooltip-row">
                   <span className="composer-context-meter-tooltip-label">
-                    稳定前缀
+                    {t("contextMeter.stablePrefix")}
                   </span>
                   <span className="composer-context-meter-tooltip-value">
                     {formatMessageShare(
@@ -171,7 +175,7 @@ export function ComposerContextMeter({
                 </div>
                 <div className="composer-context-meter-tooltip-row">
                   <span className="composer-context-meter-tooltip-label">
-                    本轮前缀
+                    {t("contextMeter.turnPrefix")}
                   </span>
                   <span className="composer-context-meter-tooltip-value">
                     {formatMessageShare(
@@ -182,7 +186,7 @@ export function ComposerContextMeter({
                 </div>
                 <div className="composer-context-meter-tooltip-row">
                   <span className="composer-context-meter-tooltip-label">
-                    临时上下文
+                    {t("contextMeter.transientContext")}
                   </span>
                   <span className="composer-context-meter-tooltip-value">
                     {formatTransientContext(requestContext)}
@@ -190,7 +194,7 @@ export function ComposerContextMeter({
                 </div>
                 <div className="composer-context-meter-tooltip-row">
                   <span className="composer-context-meter-tooltip-label">
-                    工具面
+                    {t("contextMeter.toolSurface")}
                   </span>
                   <span className="composer-context-meter-tooltip-value">
                     {formatToolSurface(requestContext)}
@@ -208,7 +212,10 @@ export function ComposerContextMeter({
 function formatMessageShare(value: number, total: number): string {
   const safeValue = Math.max(0, Math.round(value));
   const safeTotal = Math.max(0, Math.round(total));
-  return `${safeValue} / ${safeTotal} 条`;
+  return translate(safeTotal === 1 ? "contextMeter.messageShareOne" : "contextMeter.messageShare", {
+    value: formatCurrentNumber(safeValue),
+    total: formatCurrentNumber(safeTotal),
+  });
 }
 
 function formatTransientContext(
@@ -220,9 +227,12 @@ function formatTransientContext(
   );
   const byteLabel = formatByteCount(context.dynamicBytes);
   if (messageCount <= 0) {
-    return byteLabel ? byteLabel : "0 条";
+    return byteLabel ? byteLabel : translate("contextMeter.messageCount", { count: 0 });
   }
-  return byteLabel ? `${messageCount} 条 · ${byteLabel}` : `${messageCount} 条`;
+  const countLabel = translate(messageCount === 1 ? "contextMeter.messageCountOne" : "contextMeter.messageCount", {
+    count: formatCurrentNumber(messageCount),
+  });
+  return byteLabel ? `${countLabel} · ${byteLabel}` : countLabel;
 }
 
 function formatToolSurface(
@@ -231,9 +241,12 @@ function formatToolSurface(
   const toolCount = Math.max(0, Math.round(context.toolCount));
   const byteLabel = formatByteCount(context.toolSchemaBytes);
   if (toolCount <= 0) {
-    return byteLabel ? byteLabel : "0 个";
+    return byteLabel ? byteLabel : translate("contextMeter.toolCount", { count: 0 });
   }
-  return byteLabel ? `${toolCount} 个 · ${byteLabel}` : `${toolCount} 个`;
+  const countLabel = translate(toolCount === 1 ? "contextMeter.toolCountOne" : "contextMeter.toolCount", {
+    count: formatCurrentNumber(toolCount),
+  });
+  return byteLabel ? `${countLabel} · ${byteLabel}` : countLabel;
 }
 
 function formatByteCount(value: number): string {
@@ -246,7 +259,7 @@ function formatByteCount(value: number): string {
   if (value >= 1_000) {
     return `${trimNumber(value / 1_000)}kB`;
   }
-  return `${Math.round(value)}B`;
+  return `${formatCurrentNumber(Math.round(value))}B`;
 }
 
 function formatTokenCount(value: number): string {
@@ -261,14 +274,12 @@ function formatTokenCount(value: number): string {
     const scaled = value / 1_000;
     return `${trimNumber(scaled)}k`;
   }
-  return String(Math.round(value));
+  return formatCurrentNumber(Math.round(value));
 }
 
 function trimNumber(value: number): string {
-  if (value >= 100) {
-    return value.toFixed(0);
-  }
-  // Drop the trailing ".0" so small counts like 3k render as "3k" rather
-  // than "3.0k" — the trailing digit is noise for token-volume readouts.
-  return value.toFixed(1).replace(/\.0$/, "");
+  return formatCurrentNumber(value, {
+    maximumFractionDigits: value >= 100 ? 0 : 1,
+    minimumFractionDigits: 0,
+  });
 }

@@ -16,6 +16,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
+import { setActiveLocale } from "./i18n";
 
 beforeAll(() => {
   // jsdom does not lay out real heights. Stub getBoundingClientRect so
@@ -41,6 +42,7 @@ let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
 afterEach(() => {
+  setActiveLocale("zh-CN");
   if (root) {
     act(() => {
       root?.unmount();
@@ -64,6 +66,18 @@ function mount(element: ReactElement): HTMLDivElement {
 }
 
 describe("ContextCompactionNotice", () => {
+  it("localizes recognized compaction events", () => {
+    setActiveLocale("en-US");
+    const host = mount(
+      <ContextCompactionNotice
+        status="completed"
+        text="Compacted history: 18 → 5 messages"
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe("Context compacted");
+    expect(host.querySelector("aside")?.getAttribute("title")).toContain("18 messages became 5");
+  });
   it("renders the in_progress host with the shimmer-ready label when status is in_progress", () => {
     const host = mount(<ContextCompactionNotice status="in_progress" />);
     const aside = host.querySelector("aside.turn-notice.context-compaction-notice");

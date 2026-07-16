@@ -1,5 +1,6 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "./i18n";
 
 // Right-click edit menu for the composer textarea. Shares the visual
 // language of ThreadContextMenu (the conversation row's right-click
@@ -94,6 +95,7 @@ export function ComposerContextMenu({
   onClose: () => void;
   onValueChange: (next: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   // The menu mounts at the cursor, but until React commits the first
   // paint its own size isn't known — measure on the layout effect that
@@ -314,17 +316,17 @@ export function ComposerContextMenu({
   const canCopy = hasSelection;
 
   const items: Array<{ label: string; run: () => void; itemDisabled: boolean }> = [
-    { label: "剪切", run: runCut, itemDisabled: !canMutate },
-    { label: "复制", run: runCopy, itemDisabled: !canCopy },
+    { label: t("contextMenu.cut"), run: runCut, itemDisabled: !canMutate },
+    { label: t("contextMenu.copy"), run: runCopy, itemDisabled: !canCopy },
     {
-      label: "粘贴",
+      label: t("contextMenu.paste"),
       run: () => {
         void runPaste();
       },
       itemDisabled: disabled
     },
-    { label: "全选", run: runSelectAll, itemDisabled: false },
-    { label: "删除", run: runDelete, itemDisabled: !canMutate }
+    { label: t("contextMenu.selectAll"), run: runSelectAll, itemDisabled: false },
+    { label: t("contextMenu.delete"), run: runDelete, itemDisabled: !canMutate }
   ];
 
   return createPortal(

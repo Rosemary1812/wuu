@@ -1,4 +1,5 @@
 import type { ProviderSummary } from "../shared/protocol";
+import { useI18n } from "./i18n";
 
 /**
  * Onboarding chips rendered under the empty-conversation greeting.
@@ -34,17 +35,18 @@ export function EmptyStateHints({
   providers,
   onSelect,
 }: EmptyStateHintsProps): JSX.Element | null {
+  const { t } = useI18n();
   if (hasReadyProvider(providers)) {
     return null;
   }
   return (
-    <div className="empty-home-hints" aria-label="新会话提示">
+    <div className="empty-home-hints" aria-label={t("emptyHints.label")}>
       <button
         type="button"
         className="participant-chip participant-chip--pill empty-home-hint-chip"
         onClick={() => onSelect({ kind: "openSettings" })}
       >
-        配置模型
+        {t("emptyHints.configureModel")}
       </button>
     </div>
   );

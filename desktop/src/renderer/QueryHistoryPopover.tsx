@@ -11,6 +11,7 @@
  * list of past queries.
  */
 import type { JSX } from "react";
+import { useI18n } from "./i18n";
 
 export type QueryHistoryEntry = {
   turnID: string;
@@ -44,10 +45,15 @@ export function QueryHistoryPopover({
   maxItems,
   onSelect,
 }: QueryHistoryPopoverProps): JSX.Element {
+  const { t } = useI18n();
   if (entries.length === 0) {
     return (
-      <div className="query-history-popover" role="dialog" aria-label="历史输入">
-        <div className="query-history-empty">这个对话里还没有历史输入</div>
+      <div
+        className="query-history-popover"
+        role="dialog"
+        aria-label={t("queryHistory.label")}
+      >
+        <div className="query-history-empty">{t("queryHistory.empty")}</div>
       </div>
     );
   }
@@ -56,9 +62,13 @@ export function QueryHistoryPopover({
     <div
       className="query-history-popover"
       role="dialog"
-      aria-label="历史输入"
+      aria-label={t("queryHistory.label")}
     >
-      <div className="environment-panel-body query-history-list" role="listbox" aria-label="历史输入列表">
+      <div
+        className="environment-panel-body query-history-list"
+        role="listbox"
+        aria-label={t("queryHistory.list")}
+      >
         {visible.map((entry) => (
           <button
             key={`${entry.turnID}:${entry.itemID}`}

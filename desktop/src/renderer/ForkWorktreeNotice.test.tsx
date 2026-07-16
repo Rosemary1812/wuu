@@ -40,10 +40,10 @@ describe("ForkWorktreeNotice", () => {
     expect(notice?.textContent).toContain("基础仓库");
     expect(notice?.textContent).toContain("基准提交");
     expect(notice?.textContent).toContain("工作树");
-    expect(code?.textContent).toContain("detached HEAD d955824f");
-    expect(code?.textContent).toContain("Base repository /repo/project");
+    expect(code?.textContent).toContain("分离 HEAD d955824f");
+    expect(code?.textContent).toContain("基础仓库 /repo/project");
     expect(code?.textContent).toContain(
-      "Worktree created at /Users/me/.wuu/worktrees/fork-1/project",
+      "工作树已创建于 /Users/me/.wuu/worktrees/fork-1/project",
     );
   });
 

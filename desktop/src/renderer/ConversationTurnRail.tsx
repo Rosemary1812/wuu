@@ -17,6 +17,7 @@ import {
   createWindowResizeSettleScheduler,
   isWindowResizing,
 } from "./WindowResizeState";
+import { useI18n } from "./i18n";
 
 // Keep vertical capacity calculations aligned with the CSS bar height and gap.
 // Width magnification and easing remain CSS-only concerns.
@@ -115,6 +116,7 @@ export function ConversationTurnRail({
   onDragScrollAway?: () => void;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): JSX.Element | null {
+  const { t, formatNumber } = useI18n();
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
   const [viewportTurnID, setViewportTurnID] = useState<string | undefined>();
   // Turn currently "carried" by an in-flight pointer drag. Reuses the same
@@ -575,7 +577,7 @@ export function ConversationTurnRail({
     <div
       ref={containerRef}
       className="conversation-turn-rail"
-      aria-label="对话回合导航"
+      aria-label={t("turnRail.navigation")}
     >
       {visibleTurns.map((turn, index) => {
           const globalIndex = startIndex + index;
@@ -605,7 +607,9 @@ export function ConversationTurnRail({
               role="button"
               tabIndex={0}
               aria-current={isActive ? "location" : undefined}
-              aria-label={`跳转到第 ${globalIndex + 1} 轮对话`}
+              aria-label={t("turnRail.jumpToTurn", {
+                number: formatNumber(globalIndex + 1),
+              })}
             >
               <div
                 className="conversation-turn-rail-bridge"
@@ -687,6 +691,7 @@ const TurnHoverPreview = memo(function TurnHoverPreview({
 }: {
   turn: Turn;
 }): JSX.Element {
+  const { t } = useI18n();
   const previewRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
@@ -733,7 +738,7 @@ const TurnHoverPreview = memo(function TurnHoverPreview({
 
   const firstUserText = firstUserMessageText(turn);
   const snippet = turnReplySnippet(turn);
-  const body = snippet ? snippet.text : "暂无回复";
+  const body = snippet ? snippet.text : t("turnRail.noReply");
   return (
     <div
       ref={previewRef}

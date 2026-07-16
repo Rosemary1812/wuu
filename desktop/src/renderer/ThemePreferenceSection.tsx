@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ThemePreference } from "../shared/protocol";
 import { applyThemePreference } from "./Theme";
-
-const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
-  { value: "system", label: "跟随系统" },
-  { value: "light", label: "亮色" },
-  { value: "dark", label: "暗色" },
-];
+import { useI18n } from "./i18n";
 
 /**
  * 外观 row body: a three-way segmented control (system / light / dark).
@@ -15,6 +10,12 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
  * immediately so the user sees the switch without a save step.
  */
 export function ThemePreferenceControl(): JSX.Element {
+  const { t } = useI18n();
+  const themeOptions: Array<{ value: ThemePreference; label: string }> = [
+    { value: "system", label: t("common.system") },
+    { value: "light", label: t("settings.themeLight") },
+    { value: "dark", label: t("settings.themeDark") },
+  ];
   const [preference, setPreference] = useState<ThemePreference>(
     () => window.wuu?.initialThemePreference ?? "system",
   );
@@ -56,8 +57,8 @@ export function ThemePreferenceControl(): JSX.Element {
   }
 
   return (
-    <div className="theme-segmented" role="group" aria-label="外观主题">
-      {THEME_OPTIONS.map((option) => (
+    <div className="theme-segmented" role="group" aria-label={t("settings.themeGroup")}>
+      {themeOptions.map((option) => (
         <button
           key={option.value}
           type="button"

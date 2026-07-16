@@ -1,4 +1,5 @@
 import type { GitChangeFile } from "../shared/protocol";
+import { formatCurrentNumber, translateCurrent as t } from "./i18n";
 
 export type GitChangeTreeNode = {
   kind: "directory" | "file";
@@ -22,12 +23,12 @@ export type GitDiffDisplayLine = {
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) {
-    return `${bytes} B`;
+    return `${formatCurrentNumber(bytes)} B`;
   }
   if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 102.4) / 10} KB`;
+    return `${formatCurrentNumber(Math.round(bytes / 102.4) / 10)} KB`;
   }
-  return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
+  return `${formatCurrentNumber(Math.round(bytes / 1024 / 102.4) / 10)} MB`;
 }
 
 export function summarizeGitChangeFiles(files: GitChangeFile[]): { additions: number; deletions: number } {
@@ -180,21 +181,21 @@ export function gitChangeStatusLabel(status: GitChangeFile["status"]): string {
 function gitChangeStatusText(status: GitChangeFile["status"]): string {
   switch (status) {
     case "modified":
-      return "已修改";
+      return t("gitStatus.modified");
     case "added":
-      return "已新增";
+      return t("gitStatus.added");
     case "deleted":
-      return "已删除";
+      return t("gitStatus.deleted");
     case "renamed":
-      return "已重命名";
+      return t("gitStatus.renamed");
     case "copied":
-      return "已复制";
+      return t("gitStatus.copied");
     case "untracked":
-      return "未跟踪";
+      return t("gitStatus.untracked");
     case "ignored":
-      return "已被 Git 忽略";
+      return t("gitStatus.ignored");
     default:
-      return "已变更";
+      return t("gitStatus.changed");
   }
 }
 
@@ -204,9 +205,15 @@ export function gitChangeFilePathLabel(file: GitChangeFile): string {
 
 export function gitChangeStatusDescription(file: GitChangeFile): string {
   if (file.binary) {
-    return `${gitChangeStatusText(file.status)} · 二进制文件`;
+    return t("gitStatus.binaryDescription", {
+      status: gitChangeStatusText(file.status),
+    });
   }
-  return `${gitChangeStatusText(file.status)} · +${file.additions.toLocaleString()} -${file.deletions.toLocaleString()}`;
+  return t("gitStatus.textDescription", {
+    status: gitChangeStatusText(file.status),
+    additions: formatCurrentNumber(file.additions),
+    deletions: formatCurrentNumber(file.deletions),
+  });
 }
 
 export function gitDiffDisplayLines(patch: string): GitDiffDisplayLine[] {
@@ -262,7 +269,7 @@ export function desktopApiSupportsGitReview(): boolean {
 export function desktopApiErrorMessage(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   if (message.includes("No handler registered")) {
-    return "文件接口还没被当前窗口加载。请重启桌面端后再试。";
+    return t("workspaceReview.apiUnavailable");
   }
   return message || fallback;
 }

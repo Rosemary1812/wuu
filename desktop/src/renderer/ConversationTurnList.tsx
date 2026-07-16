@@ -6,6 +6,7 @@ import {
   turnReplySnippet,
   userMessageAnchorID,
 } from "./TurnViewHelpers";
+import { useI18n } from "./i18n";
 
 export const TURN_LIST_COLLAPSE_THRESHOLD = 80;
 export const TURN_LIST_RECENT_FULL_TURNS = 40;
@@ -133,13 +134,14 @@ function CollapsedTurnView({
   turn: Turn;
   onExpand: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const firstUserItem = turn.items.find(
     (item) => item.type === "user_message" && queryTextForUserItem(item),
   );
   const queryText = firstUserItem
     ? queryTextForUserItem(firstUserItem) ||
-      "这一轮没有可预览的用户消息"
-    : "这一轮没有可预览的用户消息";
+      t("turn.noUserPreview")
+    : t("turn.noUserPreview");
   const reply = turnReplySnippet(turn)?.text;
 
   return (
@@ -153,7 +155,7 @@ function CollapsedTurnView({
         className="turn-collapsed-button"
         type="button"
         onClick={onExpand}
-        aria-label="展开这一轮对话"
+        aria-label={t("turn.expandConversationTurn")}
       >
         <span className="turn-collapsed-marker" aria-hidden="true" />
         <span className="turn-collapsed-copy">
@@ -173,7 +175,7 @@ function CollapsedTurnView({
             </span>
           ) : null}
         </span>
-        <span className="turn-collapsed-action">展开</span>
+        <span className="turn-collapsed-action">{t("common.expand")}</span>
       </button>
     </section>
   );

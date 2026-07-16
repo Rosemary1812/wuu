@@ -16,6 +16,7 @@ import { ConversationTurnList } from "./ConversationTurnList";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { TurnView, latestAgentMessageItemID } from "./TurnView";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import { useI18n } from "./i18n";
 
 export function ConversationSplitPane({
   pane,
@@ -84,17 +85,20 @@ export function ConversationSplitPane({
   onStreamFrame: () => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const paneTurns = thread.turns ?? [];
   const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
-  const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
+  const closeLabel = t(
+    pane === "secondary" ? "split.closeRight" : "split.closeLeft",
+  );
   const paneRunning = isThreadRunning(thread);
   const paneReadOnly = Boolean(thread.read_only);
   const paneStatus = paneReadOnly
     ? paneRunning
-      ? "子任务运行中"
-      : "子任务会话只读"
+      ? t("app.childTaskRunning")
+      : t("app.childTaskReadOnly")
     : paneRunning
-      ? streamStatus?.text ?? "运行中"
+      ? streamStatus?.text ?? t("runDebug.inProgress")
       : active && appStatus !== "ready"
         ? appStatus
         : "";
@@ -102,13 +106,19 @@ export function ConversationSplitPane({
   return (
     <section
       className={`conversation-split-pane${active ? " active" : ""}`}
-      aria-label={pane === "secondary" ? "分叉对话" : "源对话"}
+      aria-label={t(
+        pane === "secondary" ? "split.forkConversation" : "split.sourceConversation",
+      )}
       onPointerDown={onActivate}
     >
       <div className="conversation-split-header">
         <div className="conversation-split-title">
-          <span>{pane === "secondary" ? "分叉" : "源会话"}</span>
-          <strong>{threadDisplayTitle(thread, threads, "新对话")}</strong>
+          <span>
+            {t(pane === "secondary" ? "split.fork" : "split.source")}
+          </span>
+          <strong>
+            {threadDisplayTitle(thread, threads, t("tabs.newConversation"))}
+          </strong>
         </div>
         <button
           className="icon-button conversation-split-close"

@@ -18,10 +18,10 @@ import {
   type FormEvent
 } from "react";
 import type { ActivitySession, RuntimeContext } from "../shared/protocol";
+import { translateCurrent, useI18n } from "./i18n";
 import { WorkspacePanelEmpty } from "./WorkspaceFiles";
 
 const HOME_PAGE_URL = "wuu://new-tab";
-const HOME_PAGE_TITLE = "新标签页";
 const SEARCH_FALLBACK_URL = "https://www.google.com/search?igu=1&q=";
 
 type WebviewElement = Electron.WebviewTag;
@@ -109,6 +109,7 @@ export function WorkspaceBrowserPanel({
   onActivityRelease?: () => void;
   onActivityStop?: () => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<WebviewElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -116,7 +117,7 @@ export function WorkspaceBrowserPanel({
   const onCurrentURLChangeRef = useRef(onCurrentURLChange);
 
   const [currentURL, setCurrentURL] = useState<string>(HOME_PAGE_URL);
-  const [pageTitle, setPageTitle] = useState<string>(HOME_PAGE_TITLE);
+  const [pageTitle, setPageTitle] = useState<string>(() => t("workspace.browser.newTab"));
   const [draftURL, setDraftURL] = useState<string>("");
   const [status, setStatus] = useState<BrowserStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
@@ -237,7 +238,10 @@ export function WorkspaceBrowserPanel({
       setStatus("error");
       setErrorMessage(
         event.errorDescription ||
-          `加载失败 (${event.errorCode ?? "未知错误"}): ${target}`
+          translateCurrent("workspace.browser.loadFailed", {
+            code: event.errorCode ?? translateCurrent("workspace.browser.unknownError"),
+            target,
+          })
       );
     };
 
@@ -269,7 +273,7 @@ export function WorkspaceBrowserPanel({
     if (target === HOME_PAGE_URL) {
       setCurrentURL(HOME_PAGE_URL);
       setDraftURL("");
-      setPageTitle(HOME_PAGE_TITLE);
+      setPageTitle(translateCurrent("workspace.browser.newTab"));
       setHostHint(undefined);
       onCurrentURLChangeRef.current?.(HOME_PAGE_URL);
       setStatus("idle");
@@ -327,7 +331,7 @@ export function WorkspaceBrowserPanel({
     setIsWebviewReady(false);
     setCurrentURL(HOME_PAGE_URL);
     setDraftURL("");
-    setPageTitle(HOME_PAGE_TITLE);
+    setPageTitle(translateCurrent("workspace.browser.newTab"));
     setHostHint(undefined);
     setStatus("idle");
     setErrorMessage(undefined);
@@ -335,6 +339,12 @@ export function WorkspaceBrowserPanel({
     setCanGoForward(false);
     onCurrentURLChangeRef.current?.(HOME_PAGE_URL);
   }, [open]);
+
+  useEffect(() => {
+    if (currentURL === HOME_PAGE_URL) {
+      setPageTitle(t("workspace.browser.newTab"));
+    }
+  }, [currentURL, locale]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -367,8 +377,8 @@ export function WorkspaceBrowserPanel({
         <button
           className="icon-button workspace-browser-nav"
           type="button"
-          aria-label="后退"
-          title="后退"
+          aria-label={t("workspace.browser.back")}
+          title={t("workspace.browser.back")}
           disabled={!canGoBack}
           onClick={goBack}
         >
@@ -377,8 +387,8 @@ export function WorkspaceBrowserPanel({
         <button
           className="icon-button workspace-browser-nav"
           type="button"
-          aria-label="前进"
-          title="前进"
+          aria-label={t("workspace.browser.forward")}
+          title={t("workspace.browser.forward")}
           disabled={!canGoForward}
           onClick={goForward}
         >
@@ -387,8 +397,8 @@ export function WorkspaceBrowserPanel({
         <button
           className="icon-button workspace-browser-nav"
           type="button"
-          aria-label={isLoading ? "停止" : "刷新"}
-          title={isLoading ? "停止" : "刷新"}
+          aria-label={isLoading ? t("workspace.browser.stop") : t("workspace.browser.refresh")}
+          title={isLoading ? t("workspace.browser.stop") : t("workspace.browser.refresh")}
           onClick={reload}
         >
           {isLoading ? <X className="icon" /> : <RotateCw className="icon" />}
@@ -409,18 +419,18 @@ export function WorkspaceBrowserPanel({
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"
-            placeholder="输入网址或搜索内容,例如 http://localhost:3000"
+            placeholder={t("workspace.browser.addressPlaceholder")}
             value={draftURL}
             onChange={(event) => setDraftURL(event.target.value)}
             onFocus={(event) => event.currentTarget.select()}
-            aria-label="地址"
+            aria-label={t("workspace.browser.address")}
           />
         </form>
         <button
           className="icon-button workspace-browser-nav"
           type="button"
-          aria-label="主页"
-          title="新标签页"
+          aria-label={t("workspace.browser.home")}
+          title={t("workspace.browser.newTab")}
           onClick={() => navigate(HOME_PAGE_URL)}
         >
           <Search className="icon" />
@@ -435,31 +445,31 @@ export function WorkspaceBrowserPanel({
         {!showWebview ? (
           <WorkspacePanelEmpty
             className="workspace-browser-home"
-            title={HOME_PAGE_TITLE}
+            title={t("workspace.browser.newTab")}
             description={
               activeContext?.cwd
-                ? "在地址栏输入网址,例如 http://localhost:3000,即可调试当前项目。"
-                : "在地址栏输入网址,例如 http://localhost:3000,即可开始调试。"
+                ? t("workspace.browser.homeWorkspaceDescription")
+                : t("workspace.browser.homeDescription")
             }
             icon={<Globe size={24} />}
           />
         ) : null}
         {status === "error" && errorMessage ? (
           <div className="workspace-browser-error" role="alert">
-            <strong>无法打开页面</strong>
+            <strong>{t("workspace.browser.cannotOpen")}</strong>
             <span>{errorMessage}</span>
             <button
               className="workspace-browser-retry"
               type="button"
               onClick={() => navigate(currentURL)}
             >
-              重试
+              {t("workspace.browser.retry")}
             </button>
           </div>
         ) : null}
         {!isWebviewReady && showWebview ? (
           <div className="workspace-browser-status" role="status">
-            正在准备浏览器…
+            {t("workspace.browser.preparing")}
           </div>
         ) : null}
       </div>
@@ -479,8 +489,8 @@ export function WorkspaceBrowserPanel({
               <button
                 className="icon-button workspace-browser-activity-button"
                 type="button"
-                aria-label="交还浏览器给 Agent"
-                title="交还给 Agent"
+                aria-label={t("workspace.browser.releaseToAgent")}
+                title={t("workspace.browser.releaseToAgentShort")}
                 onClick={onActivityRelease}
               >
                 <Bot className="icon-sm" />
@@ -489,8 +499,8 @@ export function WorkspaceBrowserPanel({
               <button
                 className="icon-button workspace-browser-activity-button"
                 type="button"
-                aria-label="接管浏览器"
-                title="接管浏览器"
+                aria-label={t("workspace.browser.takeOver")}
+                title={t("workspace.browser.takeOver")}
                 onClick={onActivityTakeover}
               >
                 <Hand className="icon-sm" />
@@ -499,8 +509,8 @@ export function WorkspaceBrowserPanel({
             <button
               className="icon-button workspace-browser-activity-button"
               type="button"
-              aria-label="停止浏览器 Activity"
-              title="停止 Activity"
+              aria-label={t("workspace.browser.stopActivity")}
+              title={t("workspace.browser.stopActivityShort")}
               onClick={onActivityStop}
             >
               <Square className="icon-sm" />
@@ -515,16 +525,16 @@ export function WorkspaceBrowserPanel({
 
 function browserActivityLabel(activity: ActivitySession): string {
   if (activity.state === "waiting_confirmation") {
-    return "等待确认";
+    return translateCurrent("workspace.browser.activityWaitingConfirmation");
   }
   if (activity.state === "error") {
-    return "Activity 出错";
+    return translateCurrent("workspace.browser.activityError");
   }
   if (activity.controller === "user") {
-    return "你正在控制";
+    return translateCurrent("workspace.browser.activityUserControl");
   }
   if (activity.controller === "agent") {
-    return "Agent 控制";
+    return translateCurrent("workspace.browser.activityAgentControl");
   }
-  return "未分配控制";
+  return translateCurrent("workspace.browser.activityUnassigned");
 }

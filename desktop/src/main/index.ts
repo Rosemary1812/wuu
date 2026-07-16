@@ -108,15 +108,19 @@ import {
   getCodexPetSize,
   getMessageFlowFontSize,
   getThemePreference,
+  getLanguagePreference,
   setCodexPetSettings,
   setMessageFlowFontSize,
   setThemePreference,
+  setLanguagePreference,
   type MessageFlowFontSize,
   type ThemePreference,
+  type LanguagePreference,
 } from "./desktopSettings";
 import { GitService } from "./gitService";
 import { openExternalURL, wireExternalNavigationGuards } from "./externalNavigation";
 import { ProjectManager, wuuHomePath } from "./projects";
+import { mainTranslate, resolveMainLocale, setMainLocale } from "./i18n";
 import { sideThreadEventFromServerEvent } from "./sideThreadEvents";
 import {
   registerRenderableFileProtocol,
@@ -544,6 +548,10 @@ function broadcastThemePreference(): void {
   broadcastToAll("wuu:theme-preference-changed", getThemePreference());
 }
 
+function broadcastLanguagePreference(): void {
+  broadcastToAll("wuu:language-preference-changed", getLanguagePreference());
+}
+
 function syncThemeAcrossWindows(): void {
   syncThemedWindowChrome();
   broadcastThemePreference();
@@ -605,7 +613,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
       ? `wuu · ${params.threadID.slice(0, 8)}`
       : params.kind === "subthread"
         ? `wuu · Thread ${params.subthreadID.slice(0, 8)}`
-        : "wuu · 对话";
+        : `wuu · ${mainTranslate("conversation")}`;
   const win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
@@ -652,26 +660,6 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     unregisterWindow(windowID);
   });
 
-  if (params.kind === "thread") {
-    // Async title refresh. We only need the title here; the renderer
-    // hydrates the actual thread through the window-routed app-server path.
-    // Failures are intentionally silent: the placeholder remains usable and
-    // window creation should not be blocked by a title lookup.
-    void appServerClientPool
-      .requestInContext<{ threads: Thread[] }>(params.context, "thread/list")
-      .then((result) => {
-        if (win.isDestroyed()) return;
-        const threads = Array.isArray(result?.threads) ? result.threads : [];
-        const match = threads.find((t) => t.id === params.threadID);
-        const title = typeof match?.title === "string" ? match.title : "";
-        if (title.length > 0) {
-          win.setTitle(`wuu · ${title}`);
-        }
-      })
-      .catch(() => {
-        if (win.isDestroyed()) return;
-      });
-  }
   loadRenderer(win);
   return win;
 }
@@ -800,6 +788,7 @@ async function directorySize(path: string): Promise<number> {
 }
 
 app.whenReady().then(async () => {
+  setMainLocale(resolveMainLocale(getLanguagePreference(), app.getLocale()));
   installProductionAppShellGuards({
     isPackaged: app.isPackaged,
     setApplicationMenu: () => {
@@ -1057,8 +1046,8 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({
-      title: "使用现有文件夹",
-      buttonLabel: "使用文件夹",
+      title: mainTranslate("chooseExistingFolder"),
+      buttonLabel: mainTranslate("useFolder"),
       properties: ["openDirectory"],
     });
     if (!projectPath) {
@@ -1068,8 +1057,8 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("wuu:project-create-blank", async () => {
     const projectPath = await showProjectDirectoryDialog({
-      title: "新建空白项目",
-      buttonLabel: "创建项目",
+      title: mainTranslate("createBlankProject"),
+      buttonLabel: mainTranslate("createProject"),
       properties: ["openDirectory", "createDirectory"],
     });
     if (!projectPath) {
@@ -1081,8 +1070,8 @@ app.whenReady().then(async () => {
     "wuu:project-relocate",
     async (_event, projectIDToRelocate: string) => {
       const projectPath = await showProjectDirectoryDialog({
-        title: "重新定位工作区",
-        buttonLabel: "定位到此文件夹",
+        title: mainTranslate("relocateWorkspace"),
+        buttonLabel: mainTranslate("relocateHere"),
         properties: ["openDirectory"],
       });
       if (!projectPath) {
@@ -1364,6 +1353,19 @@ app.whenReady().then(async () => {
     return remoteControlSnapshot(workdir);
   });
   ipcMain.handle("wuu:theme-preference-get", () => getThemePreference());
+  ipcMain.handle("wuu:language-preference-get", () => getLanguagePreference());
+  ipcMain.on("wuu:language-preference-get-sync", (event) => {
+    event.returnValue = getLanguagePreference();
+  });
+  ipcMain.handle("wuu:language-preference-set", (_event, language: LanguagePreference) => {
+    const valid: LanguagePreference[] = ["system", "zh-CN", "en-US"];
+    const next = valid.includes(language) ? language : "system";
+    setLanguagePreference(next);
+    setMainLocale(resolveMainLocale(next, app.getLocale()));
+    codexPetWindowManager.refreshLocale();
+    broadcastLanguagePreference();
+    return { ok: true, language: next };
+  });
   // Synchronous variant used by the preload script so the first paint
   // already carries the persisted theme (no light-mode flash on boot).
   ipcMain.on("wuu:theme-preference-get-sync", (event) => {

@@ -1,5 +1,7 @@
 import type { ParticipantSummary } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
+import { participantRoleLabel } from "./ParticipantLabels";
+import { useI18n } from "./i18n";
 
 export type ParticipantChipProps = {
   /**
@@ -39,6 +41,7 @@ export function ParticipantChip({
   size = "md",
   resolveName,
 }: ParticipantChipProps): JSX.Element {
+  const { t } = useI18n();
   const name =
     participant?.name.trim() ||
     fallbackTaskName?.trim() ||
@@ -47,13 +50,13 @@ export function ParticipantChip({
   const roleSource = participant
     ? (participant.role?.trim() ?? "")
     : (fallbackType?.trim() ?? "");
-  const role = roleSource !== name ? roleSource : "";
+  const role = roleSource !== name ? participantRoleLabel(roleSource) : "";
   const avatarImage = participant?.avatar_image?.trim() ?? "";
   const forkedFromID = participant?.forked_from_id?.trim() ?? "";
   // Compact "分身" pill in the tight inline chip; the母体 name rides in the
   // tooltip so the row stays a single line even for long母体 names.
   const forkTooltip = forkedFromID
-    ? `${resolveName ? resolveName(forkedFromID) : forkedFromID} 的分身`
+    ? t("participant.profile.forkOf", { name: resolveName ? resolveName(forkedFromID) : forkedFromID })
     : "";
   const className = `participant-chip${size === "sm" ? " participant-chip--sm" : ""}`;
   return (
@@ -80,7 +83,7 @@ export function ParticipantChip({
           title={forkTooltip}
           aria-label={forkTooltip}
         >
-          分身
+          {t("participant.fork")}
         </span>
       ) : null}
     </span>

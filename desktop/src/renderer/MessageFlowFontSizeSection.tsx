@@ -2,6 +2,7 @@ import {
   type ChangeEvent,
   type PointerEvent,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import {
@@ -9,6 +10,7 @@ import {
   type MessageFlowFontSize,
   type ThreadItem,
 } from "../shared/protocol";
+import { useI18n } from "./i18n";
 import { ThreadItemView } from "./ThreadItemView";
 
 // Mini conversation the Settings preview shows underneath the slider.
@@ -20,28 +22,7 @@ import { ThreadItemView } from "./ThreadItemView";
 // code, and a short list.
 const PREVIEW_TURN_ID = "settings-message-flow-preview-turn";
 
-const PREVIEW_USER_ITEM: ThreadItem = {
-  id: "settings-preview-user-message",
-  type: "user_message",
-  status: "completed",
-  text: "帮我把侧边栏的分组逻辑收敛到既有规范里，改完顺手跑一下测试。",
-};
-
-const PREVIEW_AGENT_ITEM: ThreadItem = {
-  id: "settings-preview-agent-message",
-  type: "agent_message",
-  status: "completed",
-  phase: "final_answer",
-  text: [
-    "先看一下 README 的目录约定，再读一个相邻页面的 CSS——把改动控制在同一套既有规范里。",
-    "",
-    "- 改动只落在 `desktop/src/renderer`，不动 Go 核心",
-    "- 顺手跑一下单元测试，免得新代码悄悄破坏既有流程",
-  ].join("\n"),
-};
-
 function noop(): void {}
-
 const { min, max, step, default: defaultSize } = MESSAGE_FLOW_FONT_SIZE_RANGE;
 
 function clampSize(value: unknown): MessageFlowFontSize {
@@ -84,9 +65,28 @@ export function applyMessageFlowFontSize(size: MessageFlowFontSize): void {
  * every drag tick.
  */
 export function MessageFlowFontSizeControl(): JSX.Element {
+  const { t } = useI18n();
   const [size, setSize] = useState<MessageFlowFontSize>(() =>
     clampSize(window.wuu?.initialMessageFlowFontSize),
   );
+  const previewUserItem = useMemo<ThreadItem>(() => ({
+    id: "settings-preview-user-message",
+    type: "user_message",
+    status: "completed",
+    text: t("settings.messageFontSizeSampleUser"),
+  }), [t]);
+  const previewAgentItem = useMemo<ThreadItem>(() => ({
+    id: "settings-preview-agent-message",
+    type: "agent_message",
+    status: "completed",
+    phase: "final_answer",
+    text: [
+      t("settings.messageFontSizeSampleIntro"),
+      "",
+      t("settings.messageFontSizeSampleScope"),
+      t("settings.messageFontSizeSampleTests"),
+    ].join("\n"),
+  }), [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +141,7 @@ export function MessageFlowFontSizeControl(): JSX.Element {
           onBlur={(event) =>
             persist(Number.parseFloat(event.currentTarget.value))
           }
-          aria-label="消息流字号"
+          aria-label={t("settings.messageFontSize")}
           data-testid="settings-message-flow-font-size-slider"
         />
         <span
@@ -154,14 +154,14 @@ export function MessageFlowFontSizeControl(): JSX.Element {
       </div>
       <div
         className="message-flow-preview"
-        aria-label="消息流字号预览"
+        aria-label={t("settings.messageFontSizePreview")}
         data-testid="settings-message-flow-font-size-preview"
       >
         <section className="turn" data-turn-status="completed">
           <ThreadItemView
             turnID={PREVIEW_TURN_ID}
             turnStatus="completed"
-            item={PREVIEW_USER_ITEM}
+            item={previewUserItem}
             streaming={false}
             onStreamFrame={noop}
           />
@@ -170,7 +170,7 @@ export function MessageFlowFontSizeControl(): JSX.Element {
               <ThreadItemView
                 turnID={PREVIEW_TURN_ID}
                 turnStatus="completed"
-                item={PREVIEW_AGENT_ITEM}
+                item={previewAgentItem}
                 streaming={false}
                 onStreamFrame={noop}
               />

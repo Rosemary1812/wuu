@@ -41,6 +41,12 @@ import {
   type StreamTextField,
 } from "./StreamText";
 import { statusMessageForError } from "./UserFacingErrors";
+import {
+  formatCurrentDate,
+  formatCurrentNumber,
+  localizedText,
+  translateCurrent as t,
+} from "./i18n";
 
 type ConversationPaneID = "primary" | "secondary";
 
@@ -296,13 +302,13 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
     case "server-error":
       return {
         ...state,
-        status: statusMessageForError(event.message, "server error"),
+        status: statusMessageForError(event.message, localizedText("error.server")),
       };
     case "server-exit":
       return {
         ...state,
         running: false,
-        status: event.message.trim() || "wuu core 已退出",
+        status: event.message.trim() || localizedText("appState.coreExited"),
       };
   }
 }
@@ -911,20 +917,27 @@ function streamStatusFromProviderState(
     failurePhase === "after_message_stream_start";
   if (eventsEmitted) {
     return {
-      text: `${transportSubject(failedTransport)}中断`,
+      text: t("appState.streamInterrupted", {
+        subject: transportSubject(failedTransport),
+      }),
       liveProgress: false,
     };
   }
   if (fallbackTransport) {
     return {
       text: failedTransport
-        ? `${failedTransport} 不可用，已切到 ${fallbackTransport}`
-        : `消息流已切到 ${fallbackTransport}`,
+        ? t("appState.transportFallback", {
+            failed: failedTransport,
+            fallback: fallbackTransport,
+          })
+        : t("appState.streamFallback", { fallback: fallbackTransport }),
       liveProgress: false,
     };
   }
   return {
-    text: `${transportSubject(failedTransport)}中断`,
+    text: t("appState.streamInterrupted", {
+      subject: transportSubject(failedTransport),
+    }),
     liveProgress: false,
   };
 }
@@ -948,20 +961,20 @@ function streamStatusFromLifecycle(
       return {
         text:
           replayReason === "invocation_unknown"
-            ? "工具是否执行成功无法确认，已停止自动恢复以避免重复操作"
-            : `为避免工具被重复执行，${subject}已停止自动恢复`,
+            ? t("appState.recoveryToolUnknown")
+            : t("appState.recoveryStoppedDuplicateTool", { subject }),
         liveProgress: false,
       };
     }
     if (failureCategory === "workflow_budget_exceeded") {
       return {
-        text: "本次任务的自动恢复额度已用完",
+        text: t("appState.recoveryBudgetExceeded"),
         liveProgress: false,
       };
     }
     if (failureCategory === "workflow_cost_indeterminate") {
       return {
-        text: "存在状态未知且可能已计费的请求，已停止自动恢复",
+        text: t("appState.recoveryCostIndeterminate"),
         liveProgress: false,
       };
     }
@@ -971,12 +984,12 @@ function streamStatusFromLifecycle(
       reason.includes("run it twice")
     ) {
       return {
-        text: `为避免工具被重复执行，${subject}已停止自动恢复`,
+        text: t("appState.recoveryStoppedDuplicateTool", { subject }),
         liveProgress: false,
       };
     }
     return {
-      text: `${subject}未能自动恢复`,
+      text: t("appState.recoveryFailed", { subject }),
       liveProgress: false,
     };
   }
@@ -989,20 +1002,31 @@ function streamStatusFromLifecycle(
     positiveInteger(numberValue(lifecycle, "max_attempts")) ??
     maxAttemptsFromRetries(numberValue(lifecycle, "max_retries"));
   const attemptText = maxAttempts
-    ? `第 ${attempt}/${maxAttempts} 次尝试`
-    : `第 ${attempt} 次尝试`;
+    ? t("appState.attemptOf", {
+        attempt: formatCurrentNumber(attempt),
+        max: formatCurrentNumber(maxAttempts),
+      })
+    : t("appState.attempt", { attempt: formatCurrentNumber(attempt) });
   const retryInMs = positiveInteger(numberValue(lifecycle, "retry_in_ms"));
   const waitText = retryWaitText(retryInMs);
   const submissionCount = positiveInteger(
     numberValue(lifecycle, "submission_count"),
   );
   const progressText = submissionCount
-    ? `${attemptText}，已发送 ${submissionCount} 次请求`
+    ? t(
+        submissionCount === 1
+          ? "appState.attemptRequestsOne"
+          : "appState.attemptRequests",
+        {
+          attempt: attemptText,
+          count: formatCurrentNumber(submissionCount),
+        },
+      )
     : attemptText;
   return {
     text: waitText
-      ? `${subject}暂时中断，${waitText}（${progressText}）`
-      : `${subject}正在恢复（${progressText}）`,
+      ? t("appState.reconnectingAfter", { subject, wait: waitText, progress: progressText })
+      : t("appState.reconnecting", { subject, progress: progressText }),
     liveProgress: true,
   };
 }
@@ -1012,9 +1036,15 @@ function retryWaitText(retryInMs: number | undefined): string | undefined {
     return undefined;
   }
   if (retryInMs < 60_000) {
-    return `约 ${Math.max(1, Math.ceil(retryInMs / 1_000))} 秒后继续`;
+    const seconds = Math.max(1, Math.ceil(retryInMs / 1_000));
+    return t(seconds === 1 ? "appState.retrySecond" : "appState.retrySeconds", {
+      count: formatCurrentNumber(seconds),
+    });
   }
-  return `约 ${Math.ceil(retryInMs / 60_000)} 分钟后继续`;
+  const minutes = Math.ceil(retryInMs / 60_000);
+  return t(minutes === 1 ? "appState.retryMinute" : "appState.retryMinutes", {
+    count: formatCurrentNumber(minutes),
+  });
 }
 
 function maxAttemptsFromRetries(maxRetries: number | undefined): number | undefined {
@@ -1044,7 +1074,9 @@ function failedTransportLabelFromProviderState(
 }
 
 function transportSubject(transport: string | undefined): string {
-  return transport ? `${transport} 消息流` : "消息流";
+  return transport
+    ? t("appState.namedMessageStream", { transport })
+    : t("appState.messageStream");
 }
 
 function transportLabel(transport: string | undefined): string | undefined {
@@ -1509,35 +1541,44 @@ function mergeListedThread(existing: Thread, listed: Thread): Thread {
 function conversationSearchThreadMeta(thread: Thread): string {
   const updatedAt = threadTime(thread);
   const timeLabel =
-    updatedAt > 0 ? conversationSearchTimeLabel(updatedAt) : "未知时间";
-  return thread.pinned ? `置顶 · ${timeLabel}` : timeLabel;
+    updatedAt > 0 ? conversationSearchTimeLabel(updatedAt) : t("appState.unknownTime");
+  return thread.pinned
+    ? t("appState.pinnedTime", { time: timeLabel })
+    : timeLabel;
 }
 
 function conversationSearchTimeLabel(atMs: number, nowMs = Date.now()): string {
   const elapsedMs = Math.max(0, nowMs - atMs);
   if (elapsedMs < 60_000) {
-    return "刚刚";
+    return t("time.justNow");
   }
   if (elapsedMs < 60 * 60_000) {
-    return `${Math.floor(elapsedMs / 60_000)}分钟前`;
+    const minutes = Math.floor(elapsedMs / 60_000);
+    return t(minutes === 1 ? "time.minuteAgo" : "time.minutesAgo", {
+      count: formatCurrentNumber(minutes),
+    });
   }
 
   const date = new Date(atMs);
   const now = new Date(nowMs);
   if (sameCalendarDay(date, now)) {
-    return `今天 ${formatHourMinute(date)}`;
+    return t("appState.todayAt", { time: formatHourMinute(date) });
   }
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (sameCalendarDay(date, yesterday)) {
-    return `昨天 ${formatHourMinute(date)}`;
+    return t("appState.yesterdayAt", { time: formatHourMinute(date) });
   }
 
   if (date.getFullYear() === now.getFullYear()) {
-    return `${date.getMonth() + 1}月${date.getDate()}日`;
+    return formatCurrentDate(date, { month: "short", day: "numeric" });
   }
-  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+  return formatCurrentDate(date, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function sameCalendarDay(left: Date, right: Date): boolean {
@@ -1549,10 +1590,9 @@ function sameCalendarDay(left: Date, right: Date): boolean {
 }
 
 function formatHourMinute(date: Date): string {
-  return date.toLocaleTimeString("zh-CN", {
+  return formatCurrentDate(date, {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
   });
 }
 
@@ -1569,7 +1609,7 @@ function conversationSearchContextLabel(
 ): string {
   const projectPath = threadProjectPath(thread);
   const project = projects.find((candidate) => candidate.path === projectPath);
-  return project?.name ?? "无项目";
+  return project?.name ?? t("appState.noProject");
 }
 
 function pinnedThreads(threads: Thread[]): Thread[] {
@@ -2347,7 +2387,7 @@ function createDraftSessionTab(
     id,
     kind: "draft",
     context,
-    title: "新对话",
+    title: t("tabs.newConversation"),
     prompt: draft.prompt,
     images: draft.images.map((image) => ({ ...image })),
     files: draft.files.map((file) => ({ ...file })),
@@ -2377,7 +2417,7 @@ function createSkillsSessionTab(context: RuntimeContext): SessionTab {
     id: skillsSessionTabID(context),
     kind: "skills",
     context,
-    title: "Skills",
+    title: "skills",
   };
 }
 
@@ -2700,12 +2740,12 @@ function threadNeedsResumeOnReselect(state: AppState, threadID: string): boolean
 // cwd basename so the tab still reads as *something* rather than blank.
 function workspaceNameForContext(context: RuntimeContext, state: AppState): string {
   if (context.kind === "no_project") {
-    return "对话";
+    return t("sidebar.conversations");
   }
   const project = state.projects.find(
     (candidate) => candidate.id === context.project_id,
   );
-  return project?.name || fileNameFromPath(context.cwd) || "项目";
+  return project?.name || fileNameFromPath(context.cwd) || t("sidebar.project");
 }
 
 function sessionTabLabel(tab: SessionTab, state: AppState): string {
@@ -2717,21 +2757,21 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
     return workspaceNameForContext(tab.context, state);
   }
   if (tab.kind === "skills") {
-    return tab.title;
+    return t("skills.title");
   }
   if (tab.kind === "board") {
     // 看板 tab 跟随群名(群改名后下次渲染即更新),前缀区分于群聊 tab 本身。
     const groupTitle = threadDisplayTitle(
       threadForTab(state, tab.threadID),
       state.threads,
-      tab.title || "群聊",
+      tab.title || t("sidebar.groups"),
     );
-    return `任务 · ${groupTitle}`;
+    return t("appState.tasksForGroup", { group: groupTitle });
   }
   return threadDisplayTitle(
     threadForTab(state, tab.threadID),
     state.threads,
-    tab.title || "未命名对话",
+    tab.title || t("search.untitledConversation"),
   );
 }
 
@@ -3132,17 +3172,23 @@ function turnPreview(turn: Turn): string {
   }
   const images = userItem.images ?? [];
   if (images.length === 1) {
-    return "[Image #1]";
+    return localizedText("appState.imageNumber", { number: 1 });
   }
   if (images.length > 1) {
-    return `[${images.length} images]`;
+    return localizedText("appState.images", { count: images.length });
   }
   const files = userItem.files ?? [];
   if (files.length === 1) {
-    return `[${files[0].filename?.trim() || "File #1"}]`;
+    const name = files[0].filename?.trim();
+    if (!name) {
+      return localizedText("appState.fileNumber", { number: 1 });
+    }
+    return localizedText("appState.fileNamed", {
+      name,
+    });
   }
   if (files.length > 1) {
-    return `[${files.length} files]`;
+    return localizedText("appState.files", { count: files.length });
   }
   return "";
 }
@@ -3153,10 +3199,22 @@ function hasText(value: string): boolean {
 
 function composerSubmissionDetail(imageCount: number, fileCount: number): string {
   const parts = [
-    imageCount > 0 ? `${imageCount} 张图片` : "",
-    fileCount > 0 ? `${fileCount} 个文件` : "",
+    imageCount > 0
+      ? t(imageCount === 1 ? "appState.imageCountOne" : "appState.imageCount", {
+          count: formatCurrentNumber(imageCount),
+        })
+      : "",
+    fileCount > 0
+      ? t(fileCount === 1 ? "appState.fileCountOne" : "appState.fileCount", {
+          count: formatCurrentNumber(fileCount),
+        })
+      : "",
   ].filter(Boolean);
-  return parts.length > 0 ? `已提交输入，包含 ${parts.join("、")}` : "已提交输入";
+  return parts.length > 0
+    ? t("appState.submittedWith", {
+        contents: parts.join(t("appState.listSeparator")),
+      })
+    : t("appState.submitted");
 }
 
 function laterTimestamp(

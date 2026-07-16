@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import type { ReactionAggregate } from "./MessageMarks";
-import { REACTION_LABEL } from "./MessageMarks";
+import { reactionLabel } from "./MessageMarks";
 import { reactionArt } from "./MessageReactionArt";
 
 // Reaction chips stamped on a message bubble. Same reaction from multiple
@@ -22,7 +22,7 @@ export function MessageReactions({
     <div className="chat-reactions">
       {reactions.map((r) => {
         const who = r.participantIds.map((id) => resolveName?.(id) ?? id).join("、");
-        const label = REACTION_LABEL[r.key] ?? r.key;
+        const label = reactionLabel(r.key);
         const art = reactionArt(r.key);
         return (
           <span

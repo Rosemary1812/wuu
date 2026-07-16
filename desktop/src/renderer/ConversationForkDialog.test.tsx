@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ConversationForkDialog } from "./ConversationForkDialog";
+import type { WuuDesktopApi } from "../shared/protocol";
+import { I18nProvider, setActiveLocale } from "./i18n";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -47,9 +49,32 @@ afterEach(() => {
   }
   vi.useRealTimers();
   vi.restoreAllMocks();
+  delete (window as unknown as { wuu?: unknown }).wuu;
+  setActiveLocale("zh-CN");
 });
 
 describe("ConversationForkDialog", () => {
+  it("renders the fork choices in English", () => {
+    window.wuu = {
+      initialLanguagePreference: "en-US",
+      initialSystemLocale: "en-US",
+    } as unknown as WuuDesktopApi;
+    mount(
+      <I18nProvider>
+        <ConversationForkDialog
+          onCancel={() => undefined}
+          onChoose={() => Promise.resolve()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(buttonByLabel("Fork locally")).toBeTruthy();
+    expect(buttonByLabel("Fork to a Git worktree")).toBeTruthy();
+    expect(document.querySelector(".fork-dialog-note")?.textContent).toContain(
+      "current files and worktree will remain unchanged",
+    );
+  });
+
   it("renders the two fork option buttons and the cancel button", () => {
     mount(
       createElement(ConversationForkDialog, {

@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { RingModel, SeenAggregate } from "./MessageMarks";
+import { formatCurrentNumber, translateCurrent, useI18n } from "./i18n";
 
 // A compact read-receipt ring (Feishu-style): a gray track that fills blue as
 // members finish reading; a distinct segment renders for members whose turn
@@ -13,7 +14,7 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
 function names(ids: string[], resolveName?: (id: string) => string): string {
-  return ids.map((id) => resolveName?.(id) ?? id).join("、");
+  return ids.map((id) => resolveName?.(id) ?? id).join(translateCurrent("readReceipt.nameSeparator"));
 }
 
 export function ringTitle(
@@ -21,11 +22,16 @@ export function ringTitle(
   seen: SeenAggregate,
   resolveName?: (id: string) => string,
 ): string {
-  const parts = [`已读 ${ring.completed}/${ring.total}`];
-  if (ring.completed > 0) parts[0] += `：${names(seen.completed, resolveName)}`;
-  if (ring.inProgress > 0) parts.push(`处理中：${names(seen.inProgress, resolveName)}`);
-  if (ring.failed > 0) parts.push(`未完成：${names(seen.failed, resolveName)}`);
-  return parts.join(" · ");
+  const count = translateCurrent("readReceipt.readCount", {
+    completed: formatCurrentNumber(ring.completed),
+    total: formatCurrentNumber(ring.total),
+  });
+  const parts = [ring.completed > 0
+    ? translateCurrent("readReceipt.withNames", { label: count, names: names(seen.completed, resolveName) })
+    : count];
+  if (ring.inProgress > 0) parts.push(translateCurrent("readReceipt.processingNames", { names: names(seen.inProgress, resolveName) }));
+  if (ring.failed > 0) parts.push(translateCurrent("readReceipt.incompleteNames", { names: names(seen.failed, resolveName) }));
+  return parts.join(translateCurrent("readReceipt.sectionSeparator"));
 }
 
 export function ReadReceiptRing({
@@ -37,6 +43,7 @@ export function ReadReceiptRing({
   seen: SeenAggregate;
   resolveName?: (id: string) => string;
 }): JSX.Element | null {
+  const { t, formatNumber } = useI18n();
   if (ring.total <= 0) {
     return null;
   }
@@ -45,13 +52,13 @@ export function ReadReceiptRing({
   const title = ringTitle(ring, seen, resolveName);
   const center = SIZE / 2;
   const rows: Array<{ key: string; label: string; people: string[] }> = [
-    { key: "done", label: `已读 ${ring.completed}/${ring.total}`, people: seen.completed },
+    { key: "done", label: t("readReceipt.readCount", { completed: formatNumber(ring.completed), total: formatNumber(ring.total) }), people: seen.completed },
   ];
   if (ring.inProgress > 0) {
-    rows.push({ key: "wip", label: "处理中", people: seen.inProgress });
+    rows.push({ key: "wip", label: t("readReceipt.processing"), people: seen.inProgress });
   }
   if (ring.failed > 0) {
-    rows.push({ key: "fail", label: "未完成", people: seen.failed });
+    rows.push({ key: "fail", label: t("readReceipt.incomplete"), people: seen.failed });
   }
   return (
     <span
@@ -108,7 +115,7 @@ export function ReadReceiptRing({
             <span className="chat-receipt-tooltip-label">{row.label}</span>
             {row.people.length > 0 ? (
               <span className="chat-receipt-tooltip-names">
-                {row.people.map((id) => resolveName?.(id) ?? id).join("、")}
+                {row.people.map((id) => resolveName?.(id) ?? id).join(t("readReceipt.nameSeparator"))}
               </span>
             ) : null}
           </span>

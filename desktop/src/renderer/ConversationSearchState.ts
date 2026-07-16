@@ -15,6 +15,7 @@ import {
   type AppState,
 } from "./AppState";
 import { motionDurationMs, prefersReducedMotion } from "./motion";
+import { translateCurrent } from "./i18n";
 
 const CONVERSATION_SEARCH_EXIT_MS = motionDurationMs(
   "--search-exit-duration",
@@ -176,7 +177,7 @@ export function useConversationSearch({
             ...current,
             previewLoading: false,
             previewError:
-              error instanceof Error ? error.message : "加载预览失败",
+              error instanceof Error ? error.message : translateCurrent("conversationSearch.previewLoadFailed"),
           };
         });
       });
@@ -309,7 +310,7 @@ export function useConversationSearch({
       setConversationSearch((current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : "搜索会话失败",
+        error: error instanceof Error ? error.message : translateCurrent("conversationSearch.searchFailed"),
       }));
     }
   }
@@ -410,4 +411,3 @@ function currentSelectedSearchThreadID(state: ConversationSearchState): string {
   const idx = Math.max(0, Math.min(state.selectedIndex, state.results.length - 1));
   return state.results[idx]?.thread.id ?? "";
 }
-

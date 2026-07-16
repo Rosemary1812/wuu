@@ -11,6 +11,7 @@ import type {
   SettingsUsageRange,
   SettingsUsageResponse,
 } from "../shared/protocol";
+import { translateCurrent } from "./i18n";
 
 export type SettingsRuntimeState = {
   usageRange: SettingsUsageRange;
@@ -25,8 +26,9 @@ export type SettingsRuntimeState = {
   ) => Promise<CodexPetsSnapshot>;
 };
 
-const CODEX_PETS_UNSUPPORTED_MESSAGE =
-  "当前桌面进程不支持 Codex Pets，请重启应用";
+function codexPetsUnsupportedMessage(): string {
+  return translateCurrent("settings.pets.unsupported");
+}
 
 export function useSettingsRuntimeState({
   settingsOpen,
@@ -45,9 +47,9 @@ export function useSettingsRuntimeState({
     useCallback(async (): Promise<CodexPetsSnapshot> => {
       const api = window.wuu as Partial<typeof window.wuu>;
       if (typeof api.listCodexPets !== "function") {
-        setCodexPetsError(CODEX_PETS_UNSUPPORTED_MESSAGE);
+        setCodexPetsError(codexPetsUnsupportedMessage());
         setCodexPetsLoading(false);
-        throw new Error(CODEX_PETS_UNSUPPORTED_MESSAGE);
+        throw new Error(codexPetsUnsupportedMessage());
       }
       setCodexPetsLoading(true);
       setCodexPetsError("");
@@ -57,7 +59,7 @@ export function useSettingsRuntimeState({
         return snapshot;
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "无法读取 Codex Pets";
+          error instanceof Error ? error.message : translateCurrent("settings.pets.readFailed");
         setCodexPetsError(message);
         throw error;
       } finally {
@@ -71,9 +73,9 @@ export function useSettingsRuntimeState({
     ): Promise<CodexPetsSnapshot> => {
       const api = window.wuu as Partial<typeof window.wuu>;
       if (typeof api.updateCodexPetSettings !== "function") {
-        setCodexPetsError(CODEX_PETS_UNSUPPORTED_MESSAGE);
+        setCodexPetsError(codexPetsUnsupportedMessage());
         setCodexPetsLoading(false);
-        throw new Error(CODEX_PETS_UNSUPPORTED_MESSAGE);
+        throw new Error(codexPetsUnsupportedMessage());
       }
       setCodexPetsLoading(true);
       setCodexPetsError("");
@@ -83,7 +85,7 @@ export function useSettingsRuntimeState({
         return snapshot;
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "无法保存 Codex Pet";
+          error instanceof Error ? error.message : translateCurrent("settings.pets.saveFailed");
         setCodexPetsError(message);
         throw error;
       } finally {
@@ -123,7 +125,7 @@ export function useSettingsRuntimeState({
     const api = window.wuu as Partial<typeof window.wuu>;
     if (typeof api.listCodexPets !== "function") {
       setCodexPetsLoading(false);
-      setCodexPetsError(CODEX_PETS_UNSUPPORTED_MESSAGE);
+      setCodexPetsError(codexPetsUnsupportedMessage());
       return () => {
         cancelled = true;
       };
@@ -140,7 +142,7 @@ export function useSettingsRuntimeState({
       .catch((error: unknown) => {
         if (!cancelled) {
           setCodexPetsError(
-            error instanceof Error ? error.message : "无法读取 Codex Pets",
+            error instanceof Error ? error.message : translateCurrent("settings.pets.readFailed"),
           );
         }
       })

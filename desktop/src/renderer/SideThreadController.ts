@@ -22,6 +22,7 @@ import {
   type SideThreadAction,
   type SideThreadStoreState
 } from "./SideThreadState";
+import { useI18n } from "./i18n";
 
 const SIDE_THREAD_RECOVERY_POLL_MS = 2_000;
 
@@ -87,13 +88,14 @@ function errorMessage(error: unknown): string {
 export function useSideThreadController(
   options: SideThreadControllerOptions
 ): SideThreadController {
+  const { t } = useI18n();
   const { activeThreadId, activeContext, ipc, disabled, disabledReason } = options;
   const ipcImpl = ipc ?? defaultIPC();
   const effectiveDisabled = Boolean(disabled || !ipcImpl);
   const effectiveReason = !ipcImpl
-    ? "当前版本不支持侧聊"
+    ? t("sideThread.unsupported")
     : disabled
-      ? disabledReason ?? "侧聊暂不可用"
+      ? disabledReason ?? t("sideThread.unavailable")
       : undefined;
 
   const [store, setStore] = useState<SideThreadStoreState>(() =>
@@ -544,7 +546,7 @@ export function useSideThreadController(
     startResize,
     sendDisabledReason:
       effectiveDisabled || !activeContext
-        ? effectiveReason ?? "请先选择工作区"
+        ? effectiveReason ?? t("sideThread.selectWorkspace")
         : undefined
   };
 }

@@ -48,6 +48,7 @@ import { userMessageAnchorID } from "./TurnViewHelpers";
 import {
   userFacingErrorForMessage,
 } from "./UserFacingErrors";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 export function ThreadItemView({
   turnID,
@@ -94,6 +95,7 @@ export function ThreadItemView({
   onOpenAgent?: (agentID: string) => void;
   onOpenSubthread?: (item: ThreadItem) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   switch (item.type) {
     case "user_message": {
       const text = item.text ?? "";
@@ -157,7 +159,7 @@ export function ThreadItemView({
           {!editing && (copyable || editable) ? (
             <div
               className="message-actions user-message-actions"
-              aria-label="用户消息操作"
+              aria-label={t("message.userActions")}
             >
               {copyable ? (
                 <MessageCopyButton
@@ -259,10 +261,12 @@ export function ThreadItemView({
       const text = item.text ?? "";
       const postKind = item.post_kind ?? "result";
       if (postKind === "decline") {
-        const participantName = item.participant?.name || "参与者";
+        const participantName = item.participant?.name || t("chat.participant");
         return (
           <div className="participant-decline-line">
-            {participantName} 认为无需回应{text.trim() ? `：${text.trim()}` : ""}
+            {text.trim()
+              ? t("chat.declinedWithReason", { name: participantName, reason: text.trim() })
+              : t("chat.declined", { name: participantName })}
           </div>
         );
       }
@@ -275,7 +279,7 @@ export function ThreadItemView({
             {item.participant ? (
               <ParticipantChip participant={item.participant} size="sm" />
             ) : (
-              <span className="participant-message-card-fallback">参与者</span>
+              <span className="participant-message-card-fallback">{t("chat.participant")}</span>
             )}
           </header>
           {hasText ? (
@@ -288,13 +292,13 @@ export function ThreadItemView({
               <a
                 href={`#${agentID}`}
                 className="participant-message-link"
-                aria-label="查看完整过程"
+                aria-label={t("message.viewFullProcess")}
                 onClick={(event) => {
                   event.preventDefault();
                   onOpenAgent?.(agentID);
                 }}
               >
-                查看完整过程
+                {t("message.viewFullProcess")}
               </a>
             </div>
           ) : null}
@@ -334,6 +338,7 @@ export function TaskCardItem({
   item: ThreadItem;
   onOpenSubthread?: () => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const task = item.task;
   if (!task) {
     return null;
@@ -362,17 +367,19 @@ export function TaskCardItem({
       <footer className="task-card-footer">
         {task.role ? <span className="task-card-meta">{task.role}</span> : null}
         {replyCount > 0 ? (
-          <span className="task-card-meta">{replyCountBadge(replyCount)} 条回复</span>
+          <span className="task-card-meta">
+            {t(replyCount === 1 ? "chat.replyCountOne" : "chat.replyCount", { count: replyCountBadge(replyCount) })}
+          </span>
         ) : null}
         {onOpenSubthread ? (
           <button
             type="button"
             className="task-card-open-button"
-            aria-label="查看过程"
+            aria-label={t("message.viewProcess")}
             onClick={onOpenSubthread}
           >
             <PanelRightOpen aria-hidden="true" />
-            <span>查看过程</span>
+            <span>{t("message.viewProcess")}</span>
           </button>
         ) : null}
       </footer>
@@ -383,22 +390,22 @@ export function TaskCardItem({
 function taskStatusLabel(status: string): string {
   switch (status) {
     case "pending":
-      return "待开始";
+      return translate("task.status.pending");
     case "queued":
-      return "排队中";
+      return translate("task.status.queued");
     case "running":
-      return "进行中";
+      return translate("task.status.running");
     case "awaiting_report":
-      return "待报告";
+      return translate("task.status.awaitingReport");
     case "completed":
-      return "已完成";
+      return translate("task.status.completed");
     case "failed":
-      return "失败";
+      return translate("task.status.failed");
     case "cancelled":
     case "canceled":
-      return "已取消";
+      return translate("task.status.cancelled");
     default:
-      return status || "未知";
+      return status || translate("common.unknown");
   }
 }
 
@@ -415,6 +422,7 @@ function UserMessageBubble({
   cwd?: string;
   onOpenFile?: (path: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   // Threshold + preview logic + state keying all live in
   // `./LongTextCollapse` so the chat bubble can reuse the exact same
   // numbers. The hook's `{text, expanded}` state shape is what makes
@@ -446,7 +454,7 @@ function UserMessageBubble({
           aria-expanded={expanded}
           onClick={toggleExpanded}
         >
-          <span>{expanded ? "收起" : "显示更多"}</span>
+          <span>{expanded ? t("common.collapse") : t("common.showMore")}</span>
           {expanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
         </button>
       ) : null}
@@ -470,6 +478,7 @@ function UserMessageInlineEditor({
   onCancel?: () => void;
   onSubmit?: (text: string, images: InputImage[], files: InputFile[]) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [text, setText] = useState(initialText);
   const [images, setImages] = useState<InputImage[]>(item.images ?? []);
   const [files, setFiles] = useState<InputFile[]>(item.files ?? []);
@@ -658,8 +667,8 @@ function UserMessageInlineEditor({
         <button
           type="button"
           className="user-message-edit-attach-button"
-          aria-label="添加附件"
-          title="添加图片或 PDF"
+          aria-label={t("composer.addAttachment")}
+          title={t("message.addImageOrPdf")}
           disabled={submitting}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -673,13 +682,13 @@ function UserMessageInlineEditor({
             disabled={submitting}
             onClick={onCancel}
           >
-            取消
+            {t("common.cancel")}
           </button>
           <button
             className="user-message-edit-button primary"
             type="button"
-            aria-label="发送"
-            title="发送"
+            aria-label={t("composer.send")}
+            title={t("composer.send")}
             disabled={!canSubmit || submitting}
             onClick={submit}
           >

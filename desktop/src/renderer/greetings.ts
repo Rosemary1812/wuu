@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { RuntimeContext, Thread } from "../shared/protocol";
+import { formatCurrentNumber, translateCurrent } from "./i18n";
 
 // Context for the empty new-conversation greeting. We keep it as a
 // discriminated union so the helper can't accidentally mix the
@@ -52,13 +53,13 @@ export function resolveGreetingContext(input: {
       participants.find((p) => p.id === activeThread.dm_participant_id)
         ?.name ||
       activeThread.title?.trim() ||
-      "这位成员";
+      translateCurrent("greeting.memberFallback");
     return { kind: "dm", agentName };
   }
   if (activeContextKind === "project") {
     return {
       kind: "project",
-      projectName: activeProjectName ?? "这个项目",
+      projectName: activeProjectName ?? translateCurrent("greeting.projectFallback"),
     };
   }
   return { kind: "wuu" };
@@ -80,28 +81,28 @@ export function greetingFor(hour: number, ctx: GreetingContext): string {
 
   if (hour >= 5 && hour < 11) {
     return project
-      ? `早上好，今天想在 ${project} 里先搞定什么？`
-      : "早上好，今天想先搞定什么？";
+      ? translateCurrent("greeting.project.morning", { project })
+      : translateCurrent("greeting.wuu.morning");
   }
   if (hour >= 11 && hour < 14) {
     return project
-      ? `中午好，接下来想在 ${project} 里做什么？`
-      : "中午好，休息一下，还是接着做点什么？";
+      ? translateCurrent("greeting.project.noon", { project })
+      : translateCurrent("greeting.wuu.noon");
   }
   if (hour >= 14 && hour < 18) {
     return project
-      ? `下午好，今天想在 ${project} 里推进什么？`
-      : "下午好，有什么我能帮忙推进的？";
+      ? translateCurrent("greeting.project.afternoon", { project })
+      : translateCurrent("greeting.wuu.afternoon");
   }
   if (hour >= 18 && hour < 22) {
     return project
-      ? `晚上好，今天还想在 ${project} 里处理什么？`
-      : "晚上好，今天还想处理什么？";
+      ? translateCurrent("greeting.project.evening", { project })
+      : translateCurrent("greeting.wuu.evening");
   }
   // 22:00 – 04:59 late night.
   return project
-    ? `夜深了，还想在 ${project} 里做点什么？`
-    : "夜深了，还要继续吗？";
+    ? translateCurrent("greeting.project.lateNight", { project })
+    : translateCurrent("greeting.wuu.lateNight");
 }
 
 // Group threads greet like a room you toss work into — one short line,
@@ -117,28 +118,28 @@ function groupGreeting(
   // "Alice 在" for one member, "Alice、Bob 都在" for several.
   const present = roster
     ? ctx.memberNames.length === 1
-      ? `${roster} 在`
-      : `${roster} 都在`
+      ? translateCurrent("greeting.group.onePresent", { roster })
+      : translateCurrent("greeting.group.manyPresent", { roster })
     : null;
 
   if (hour >= 5 && hour < 11) {
     return present
-      ? `早上好，${present}，有事直接喊。`
-      : "早上好，有事直接在群里喊。";
+      ? translateCurrent("greeting.group.morningPresent", { present })
+      : translateCurrent("greeting.group.morning");
   }
   if (hour >= 11 && hour < 14) {
-    return "中午好，想让谁接手，@ 一下就行。";
+    return translateCurrent("greeting.group.noon");
   }
   if (hour >= 14 && hour < 18) {
-    return "下午好，有任务就丢进群里。";
+    return translateCurrent("greeting.group.afternoon");
   }
   if (hour >= 18 && hour < 22) {
     return present
-      ? `晚上好，${present}，直接派活吧。`
-      : "晚上好，直接在群里派活吧。";
+      ? translateCurrent("greeting.group.eveningPresent", { present })
+      : translateCurrent("greeting.group.evening");
   }
   // 22:00 – 04:59 late night.
-  return "夜深了，还要拉大家推进什么吗？";
+  return translateCurrent("greeting.group.lateNight");
 }
 
 // DM threads greet as a hand-off to one named agent — name up front,
@@ -148,19 +149,19 @@ function dmGreeting(
   ctx: Extract<GreetingContext, { kind: "dm" }>,
 ): string {
   if (hour >= 5 && hour < 11) {
-    return `早上好，有什么要交给 ${ctx.agentName} 的？`;
+    return translateCurrent("greeting.dm.morning", { agent: ctx.agentName });
   }
   if (hour >= 11 && hour < 14) {
-    return `中午好，有事直接跟 ${ctx.agentName} 说。`;
+    return translateCurrent("greeting.dm.noon", { agent: ctx.agentName });
   }
   if (hour >= 14 && hour < 18) {
-    return `下午好，想让 ${ctx.agentName} 帮你做点什么？`;
+    return translateCurrent("greeting.dm.afternoon", { agent: ctx.agentName });
   }
   if (hour >= 18 && hour < 22) {
-    return `晚上好，任务交给 ${ctx.agentName} 就行。`;
+    return translateCurrent("greeting.dm.evening", { agent: ctx.agentName });
   }
   // 22:00 – 04:59 late night.
-  return `夜深了，还有要交给 ${ctx.agentName} 的吗？`;
+  return translateCurrent("greeting.dm.lateNight", { agent: ctx.agentName });
 }
 
 // Renders the member snapshot as a short roster string, or null when the
@@ -172,10 +173,10 @@ function formatRoster(memberNames: string[]): string | null {
     return null;
   }
   if (memberNames.length <= 3) {
-    return memberNames.join("、");
+    return memberNames.join(translateCurrent("greeting.nameSeparator"));
   }
-  const listed = memberNames.slice(0, 3).join("、");
-  return `${listed} 等 ${memberNames.length} 位成员`;
+  const listed = memberNames.slice(0, 3).join(translateCurrent("greeting.nameSeparator"));
+  return translateCurrent("greeting.rosterOverflow", { listed, count: formatCurrentNumber(memberNames.length) });
 }
 
 // Re-render once a minute so the greeting updates when the user crosses

@@ -24,6 +24,7 @@ import {
   selectRuntimeContext as defaultSelectRuntimeContext,
 } from "./RuntimeLoadState";
 import type { PendingViewSwitch } from "./ViewSwitchState";
+import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type SidebarProjectThreads = Record<string, Thread[] | undefined>;
@@ -165,7 +166,7 @@ export function createThreadActivationActions(
         try {
           const resumedThread = requireThread(
             await window.wuu.resumeThread(threadID),
-            "resume did not return a thread",
+            translateCurrent("thread.resumeMissing"),
           );
           const latestState = deps.getAppState();
           if (
@@ -218,7 +219,9 @@ export function createThreadActivationActions(
               ? {
                   ...current,
                   status:
-                    error instanceof Error ? error.message : "load failed",
+                    error instanceof Error
+                      ? error.message
+                      : translateCurrent("thread.loadFailed"),
                 }
               : current,
           );
@@ -230,7 +233,7 @@ export function createThreadActivationActions(
     try {
       const thread = requireThread(
         await window.wuu.resumeThread(threadID),
-        "resume did not return a thread",
+        translateCurrent("thread.resumeMissing"),
       );
       if (
         !deps.finishViewSwitch(requestID) ||
@@ -269,7 +272,7 @@ export function createThreadActivationActions(
       ) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "load failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
     }
   }
 
@@ -289,7 +292,7 @@ export function createThreadActivationActions(
       });
       const thread = requireThread(
         await window.wuu.resumeThread(threadID),
-        "resume did not return a thread",
+        translateCurrent("thread.resumeMissing"),
       );
       if (!deps.finishViewSwitch(requestID)) {
         return;
@@ -325,7 +328,7 @@ export function createThreadActivationActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "load failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
     }
   }
 
@@ -441,7 +444,7 @@ export function createThreadActivationActions(
         deps.getLocalDemoThread(agent.id) ??
         requireThread(
           await window.wuu.resumeThread(agent.id),
-          "resume did not return a child agent thread",
+          translateCurrent("thread.childResumeMissing"),
         );
       if (
         !deps.finishViewSwitch(requestID) ||
@@ -481,7 +484,9 @@ export function createThreadActivationActions(
         return;
       }
       setStatus(
-        error instanceof Error ? error.message : "load child agent failed",
+        error instanceof Error
+          ? error.message
+          : translateCurrent("thread.childLoadFailed"),
       );
     }
   }

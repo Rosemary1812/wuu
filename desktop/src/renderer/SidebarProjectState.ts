@@ -26,6 +26,7 @@ import {
 } from "./AppSidebar";
 import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { translateCurrent } from "./i18n";
 
 const SIDEBAR_COLLAPSED_SECTION_IDS_KEY =
   "wuu.desktop.collapsedSidebarSectionIDs";
@@ -358,7 +359,7 @@ export function useSidebarProjectState({
         [project.id]: threadsForDesktopProject(listed.threads, project),
       }));
     } catch (error) {
-      setStatus(desktopApiErrorMessage(error, "加载项目会话失败"));
+      setStatus(desktopApiErrorMessage(error, translateCurrent("project.threadsLoadFailed")));
     } finally {
       loadingProjectThreadIDsRef.current.delete(project.id);
     }

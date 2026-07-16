@@ -22,6 +22,7 @@ import {
 } from "./ComposerMessages";
 import { lastUserMessageAnchor, scrollToUserMessage } from "./TurnViewHelpers";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { localizedText, translateCurrent as t } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -131,7 +132,10 @@ export function createConversationHistoryActions(
       return;
     }
     if (deps.localDemoThreadsRef.current.has(sourceThread.id)) {
-      deps.setAppState((current) => ({ ...current, status: "示例会话不能分叉" }));
+      deps.setAppState((current) => ({
+        ...current,
+        status: localizedText("history.demoCannotFork"),
+      }));
       return;
     }
     if (mode === "worktree") {
@@ -158,7 +162,10 @@ export function createConversationHistoryActions(
       }
     }
     
-    deps.setAppState((current) => ({ ...current, status: "正在分叉会话" }));
+    deps.setAppState((current) => ({
+      ...current,
+      status: localizedText("history.forking"),
+    }));
     try {
       const fork = requireThread(
         await window.wuu.forkThread(sourceThread.id, turnID, itemID, mode),
@@ -207,7 +214,7 @@ export function createConversationHistoryActions(
     } catch (error) {
       deps.setAppState((current) => ({
         ...current,
-        status: error instanceof Error ? error.message : "fork failed",
+        status: error instanceof Error ? error.message : t("thread.forkFailed"),
       }));
       throw error;
     }
@@ -262,21 +269,21 @@ export function createConversationHistoryActions(
     if (deps.localDemoThreadsRef.current.has(sourceThread.id)) {
       deps.setAppState((current) => ({
         ...current,
-        status: "示例会话不能编辑历史",
+        status: localizedText("history.demoCannotEdit"),
       }));
       return;
     }
     if (isThreadRunning(sourceThread)) {
       deps.setAppState((current) => ({
         ...current,
-        status: "等待当前回复结束后再编辑历史",
+        status: localizedText("history.waitForReply"),
       }));
       return;
     }
     if (deps.threadHasPendingComposerMessages(sourceThread.id)) {
       deps.setAppState((current) => ({
         ...current,
-        status: "先处理待发送消息，再编辑历史",
+        status: localizedText("history.handlePendingFirst"),
       }));
       return;
     }
@@ -347,21 +354,21 @@ deps.rememberConversationScrollForEdit();
     if (!message) {
       deps.setAppState((current) => ({
         ...current,
-        status: "编辑内容不能为空",
+        status: localizedText("history.emptyEdit"),
       }));
       return;
     }
     if (isThreadRunning(sourceThread)) {
       deps.setAppState((current) => ({
         ...current,
-        status: "等待当前回复结束后再编辑历史",
+        status: localizedText("history.waitForReply"),
       }));
       return;
     }
     if (deps.threadHasPendingComposerMessages(sourceThread.id)) {
       deps.setAppState((current) => ({
         ...current,
-        status: "先处理待发送消息，再编辑历史",
+        status: localizedText("history.handlePendingFirst"),
       }));
       return;
     }
@@ -376,7 +383,7 @@ deps.rememberConversationScrollForEdit();
     
     deps.setAppState((current) => ({
       ...current,
-      status: "正在发送编辑后的消息",
+      status: localizedText("history.sendingEdit"),
     }));
     try {
       const result = await window.wuu.editThreadMessage(
@@ -398,7 +405,7 @@ deps.rememberConversationScrollForEdit();
           ...thread,
           child_agents: thread.child_agents ?? currentThread.child_agents,
         }),
-        { status: "正在发送请求" },
+        { status: localizedText("app.sendingRequest") },
       );
       deps.setAppState((current) =>
         updateThreadByID(
@@ -408,7 +415,7 @@ deps.rememberConversationScrollForEdit();
             ...thread,
             child_agents: thread.child_agents ?? currentThread.child_agents,
           }),
-          { status: "正在发送请求" },
+          { status: localizedText("app.sendingRequest") },
         ),
       );
       const sent = await deps.sendComposerMessageToThread(message, thread);
@@ -465,7 +472,7 @@ deps.rememberConversationScrollForEdit();
       );
       deps.setAppState((current) => ({
         ...current,
-        status: desktopApiErrorMessage(error, "编辑历史消息失败"),
+        status: desktopApiErrorMessage(error, t("history.editFailed")),
       }));
     }
   }

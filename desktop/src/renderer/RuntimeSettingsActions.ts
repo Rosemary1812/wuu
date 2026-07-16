@@ -16,6 +16,7 @@ import type {
   PermissionMode,
 } from "./ComposerTypes";
 import { isCodexProvider } from "./RuntimeHelpers";
+import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -169,7 +170,7 @@ export function createRuntimeSettingsActions(
         status:
           error instanceof Error
             ? error.message
-            : "update runtime settings failed",
+            : translateCurrent("runtime.settingsUpdateFailed"),
       }));
       throw error;
     }
@@ -204,7 +205,7 @@ export function createRuntimeSettingsActions(
         status:
           error instanceof Error
             ? error.message
-            : "更新 Ultra 模式失败",
+            : translateCurrent("runtime.ultraUpdateFailed"),
       }));
       throw error;
     }
@@ -238,7 +239,7 @@ export function createRuntimeSettingsActions(
         status:
           error instanceof Error
             ? error.message
-            : "update advanced settings failed",
+            : translateCurrent("runtime.advancedUpdateFailed"),
       }));
       throw error;
     }
@@ -271,7 +272,7 @@ export function createRuntimeSettingsActions(
         status:
           error instanceof Error
             ? error.message
-            : "update general settings failed",
+            : translateCurrent("runtime.generalUpdateFailed"),
       }));
       throw error;
     }
@@ -322,7 +323,7 @@ export function createRuntimeSettingsActions(
       deps.setAppState((current) => ({
         ...current,
         status:
-          error instanceof Error ? error.message : "remove provider failed",
+          error instanceof Error ? error.message : translateCurrent("runtime.providerRemoveFailed"),
       }));
       throw error;
     }
@@ -385,7 +386,7 @@ export function createRuntimeSettingsActions(
       deps.setCodexModels({
         provider,
         loading: false,
-        error: error instanceof Error ? error.message : "无法加载 Codex 模型",
+        error: error instanceof Error ? error.message : translateCurrent("runtime.modelsLoadFailed"),
         models: [],
       });
     }

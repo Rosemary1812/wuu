@@ -19,6 +19,7 @@ import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent } from "./RichContent";
 import { SelectMenu } from "./SelectMenu";
 import { ENABLE_COLLABORATION } from "./FeatureFlags";
+import { useI18n } from "./i18n";
 
 // 设置 → 记忆 面板（docs/plans/2026-07-04-memory-redesign.md §8.1）。
 //
@@ -30,8 +31,6 @@ import { ENABLE_COLLABORATION } from "./FeatureFlags";
 //
 // 后端 M2 尚未落地时三个方法都会以 unknown method 拒绝——面板显示
 // "记忆面板后端尚未就绪" 占位态，绝不崩溃、绝不停留在骨架屏。
-
-const BACKEND_NOT_READY_TEXT = "记忆面板后端尚未就绪";
 
 type OverviewState =
   | { status: "loading" }
@@ -54,19 +53,6 @@ type ChatEntry = {
   changedFiles?: MemoryChangedFile[];
 };
 
-const CHANGED_FILE_ACTION_LABELS: Record<MemoryChangedFileAction, string> = {
-  created: "新增",
-  modified: "更新",
-  deleted: "删除",
-};
-
-const MEMORY_FILE_TYPE_LABELS: Record<string, string> = {
-  user: "用户",
-  feedback: "反馈",
-  reference: "参考",
-  lesson: "教训",
-};
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -87,11 +73,7 @@ function memoryParams(
     : { scope };
 }
 
-function memoryFileTypeLabel(type: string): string {
-  return MEMORY_FILE_TYPE_LABELS[type] ?? (type || "—");
-}
-
-function timestampLabel(value?: string): string {
+function timestampLabel(value: string | undefined, locale: string): string {
   if (!value) {
     return "";
   }
@@ -99,12 +81,36 @@ function timestampLabel(value?: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return parsed.toLocaleString(undefined, {
+  return parsed.toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+type Translate = ReturnType<typeof useI18n>["t"];
+
+function memoryFileTypeLabel(type: string, t: Translate): string {
+  const labels: Record<string, string> = {
+    user: t("memory.typeUser"),
+    feedback: t("memory.typeFeedback"),
+    reference: t("memory.typeReference"),
+    lesson: t("memory.typeLesson"),
+  };
+  return labels[type] ?? (type || "—");
+}
+
+function memoryChangedFileActionLabel(
+  action: MemoryChangedFileAction,
+  t: Translate,
+): string {
+  const labels: Record<MemoryChangedFileAction, string> = {
+    created: t("memory.actionCreated"),
+    modified: t("memory.actionModified"),
+    deleted: t("memory.actionDeleted"),
+  };
+  return labels[action] ?? action;
 }
 
 export function MemoryPanel({
@@ -117,6 +123,7 @@ export function MemoryPanel({
   focusParticipantID?: string;
   collaborationEnabled?: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const [scope, setScope] = useState<MemoryScope>(
     collaborationEnabled && focusParticipantID ? "participant" : "user",
   );
@@ -281,7 +288,7 @@ export function MemoryPanel({
                 role: "assistant" as const,
                 text: "",
                 error: isMemoryBackendMissing(error)
-                  ? `${BACKEND_NOT_READY_TEXT}，这条消息未生效。`
+                  ? t("memory.messageNotApplied")
                   : errorMessage(error),
               }
             : entry,
@@ -299,10 +306,10 @@ export function MemoryPanel({
     <ImagePreviewProvider>
       <div className="settings-memory" data-testid="settings-memory">
         <header className="settings-page-header settings-memory-header">
-          <h1 className="settings-page-title">记忆</h1>
+          <h1 className="settings-page-title">{t("memory.title")}</h1>
           <div className="settings-memory-actions">
             <div className="settings-memory-raw-toggle">
-              <span className="settings-memory-raw-label">查看原文</span>
+              <span className="settings-memory-raw-label">{t("memory.viewSource")}</span>
               <button
                 className="settings-switch"
                 type="button"
@@ -313,7 +320,7 @@ export function MemoryPanel({
               >
                 <span className="settings-switch-thumb" aria-hidden="true" />
                 <span className="sr-only">
-                  {rawOpen ? "关闭原文视图" : "查看原文"}
+                  {rawOpen ? t("memory.closeSource") : t("memory.viewSource")}
                 </span>
               </button>
             </div>
@@ -334,7 +341,7 @@ export function MemoryPanel({
               ) : (
                 <RefreshCw className="icon" aria-hidden="true" />
               )}
-              <span>{overview.status === "loading" ? "总结中…" : "重新总结"}</span>
+              <span>{overview.status === "loading" ? t("memory.summarizing") : t("memory.summarizeAgain")}</span>
             </button>
           </div>
         </header>
@@ -344,7 +351,7 @@ export function MemoryPanel({
             <div
               className="settings-memory-tabs"
               role="tablist"
-              aria-label="记忆笔记本"
+              aria-label={t("memory.notebooks")}
             >
               <button
                 type="button"
@@ -353,7 +360,7 @@ export function MemoryPanel({
                 className={`settings-memory-tab${scope === "user" ? " active" : ""}`}
                 onClick={() => setScope("user")}
               >
-                我
+                {t("memory.me")}
               </button>
               <button
                 type="button"
@@ -362,14 +369,14 @@ export function MemoryPanel({
                 className={`settings-memory-tab${scope === "participant" ? " active" : ""}`}
                 onClick={() => setScope("participant")}
               >
-                同事
+                {t("memory.colleagues")}
               </button>
             </div>
             {scope === "participant" && namedAgents.length > 0 ? (
               <SelectMenu
                 className="settings-memory-agent-select"
                 triggerClassName="settings-select-trigger"
-                ariaLabel="选择同事"
+                ariaLabel={t("memory.selectColleague")}
                 dataTestid="memory-agent-select"
                 value={activeParticipantID}
                 onChange={(next) => setSelectedParticipantID(next)}
@@ -385,7 +392,7 @@ export function MemoryPanel({
         {!notebookReady ? (
           <div className="settings-card">
             <div className="settings-empty">
-              还没有同事，先在侧边栏创建一位。
+              {t("memory.noColleagues")}
             </div>
           </div>
         ) : (
@@ -405,7 +412,7 @@ export function MemoryPanel({
               <div className="settings-memory-chat-log">
                 {chatEntries.length === 0 ? (
                   <div className="settings-memory-chat-hint">
-                    想记住或忘掉什么，直接说。
+                    {t("memory.chatHint")}
                   </div>
                 ) : (
                   chatEntries.map((entry) => (
@@ -421,7 +428,7 @@ export function MemoryPanel({
                   className="settings-input settings-memory-chat-input"
                   data-testid="memory-chat-input"
                   value={chatDraft}
-                  placeholder="例如：删掉关于旧项目路径的记忆"
+                  placeholder={t("memory.chatPlaceholder")}
                   onChange={(event) => setChatDraft(event.target.value)}
                   disabled={chatPending}
                 />
@@ -438,7 +445,7 @@ export function MemoryPanel({
                   ) : (
                     <Send className="icon" aria-hidden="true" />
                   )}
-                  <span>发送</span>
+                  <span>{t("memory.send")}</span>
                 </button>
               </form>
             </section>
@@ -456,6 +463,7 @@ function MemoryOverviewView({
   overview: OverviewState;
   onRetry: () => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   if (overview.status === "loading") {
     return <MemorySkeleton />;
   }
@@ -469,27 +477,28 @@ function MemoryOverviewView({
           {overview.message}
         </div>
         <button className="settings-button" type="button" onClick={onRetry}>
-          重试
+          {t("memory.retry")}
         </button>
       </div>
     );
   }
   const { result } = overview;
   if (!result.essay_md.trim()) {
-    return <div className="settings-empty">这本笔记本还是空的。</div>;
+    return <div className="settings-empty">{t("memory.emptyNotebook")}</div>;
   }
   return (
     <div className="settings-memory-overview">
       <RichContent text={result.essay_md} />
       <div className="settings-memory-meta">
-        生成于 {timestampLabel(result.generated_at)}
-        {result.cached ? " · 缓存" : ""} · 12 小时内自动复用
+        {t("memory.generatedAt", { time: timestampLabel(result.generated_at, locale) })}
+        {result.cached ? ` · ${t("memory.cached")}` : ""} · {t("memory.cacheLifetime")}
       </div>
     </div>
   );
 }
 
 function MemoryRawView({ raw }: { raw: RawState }): JSX.Element {
+  const { locale, t } = useI18n();
   if (raw.status === "loading") {
     return <MemorySkeleton />;
   }
@@ -509,17 +518,17 @@ function MemoryRawView({ raw }: { raw: RawState }): JSX.Element {
       {result.index_md.trim() ? (
         <RichContent text={result.index_md} />
       ) : (
-        <div className="settings-empty">索引还是空的</div>
+        <div className="settings-empty">{t("memory.emptyIndex")}</div>
       )}
       {result.files.length > 0 ? (
         <div className="settings-memory-file-table-wrap">
           <table className="settings-memory-file-table">
             <thead>
               <tr>
-                <th scope="col">名称</th>
-                <th scope="col">描述</th>
-                <th scope="col">类型</th>
-                <th scope="col">时间</th>
+                <th scope="col">{t("memory.fileName")}</th>
+                <th scope="col">{t("memory.fileDescription")}</th>
+                <th scope="col">{t("memory.fileType")}</th>
+                <th scope="col">{t("memory.fileTime")}</th>
               </tr>
             </thead>
             <tbody>
@@ -529,21 +538,22 @@ function MemoryRawView({ raw }: { raw: RawState }): JSX.Element {
                     <code>{file.name}</code>
                   </td>
                   <td>{file.description || "—"}</td>
-                  <td>{memoryFileTypeLabel(file.type)}</td>
-                  <td>{timestampLabel(file.mtime) || "—"}</td>
+                  <td>{memoryFileTypeLabel(file.type, t)}</td>
+                  <td>{timestampLabel(file.mtime, locale) || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <div className="settings-memory-meta">暂无记忆文件</div>
+        <div className="settings-memory-meta">{t("memory.noFiles")}</div>
       )}
     </div>
   );
 }
 
 function MemoryChatEntryView({ entry }: { entry: ChatEntry }): JSX.Element {
+  const { t } = useI18n();
   if (entry.role === "user") {
     return (
       <div className="settings-memory-chat-entry user">
@@ -559,7 +569,7 @@ function MemoryChatEntryView({ entry }: { entry: ChatEntry }): JSX.Element {
             className="icon settings-memory-spinner"
             aria-hidden="true"
           />
-          <span>整理中…</span>
+          <span>{t("memory.organizing")}</span>
         </div>
       ) : entry.error ? (
         <div className="settings-error" role="alert">
@@ -570,13 +580,13 @@ function MemoryChatEntryView({ entry }: { entry: ChatEntry }): JSX.Element {
           <RichContent text={entry.text} />
           {entry.changedFiles && entry.changedFiles.length > 0 ? (
             <details className="settings-memory-changes">
-              <summary>变更了 {entry.changedFiles.length} 个记忆文件</summary>
+              <summary>{t("memory.changedFiles", { count: entry.changedFiles.length })}</summary>
               <ul>
                 {entry.changedFiles.map((file) => (
                   <li key={file.path}>
                     <code>{file.path}</code>
                     <span className="settings-memory-change-action">
-                      {CHANGED_FILE_ACTION_LABELS[file.action] ?? file.action}
+                      {memoryChangedFileActionLabel(file.action, t)}
                     </span>
                   </li>
                 ))}
@@ -592,12 +602,13 @@ function MemoryChatEntryView({ entry }: { entry: ChatEntry }): JSX.Element {
 // 简洁的灰条骨架：仓库里没有现成的 skeleton 组件，按契约自制一个，只用
 // 主题 token（--ink-overlay-8），亮暗主题自动适配。
 function MemorySkeleton(): JSX.Element {
+  const { t } = useI18n();
   const widths = ["42%", "100%", "94%", "78%", "88%", "63%"];
   return (
     <div
       className="settings-memory-skeleton"
       role="status"
-      aria-label="加载中"
+      aria-label={t("memory.loading")}
       data-testid="memory-skeleton"
     >
       {widths.map((width, index) => (
@@ -612,12 +623,13 @@ function MemorySkeleton(): JSX.Element {
 }
 
 function MemoryBackendMissingNotice(): JSX.Element {
+  const { t } = useI18n();
   return (
     <div
       className="settings-empty settings-memory-unavailable"
       data-testid="memory-backend-missing"
     >
-      {BACKEND_NOT_READY_TEXT}，升级内核后可用。
+      {t("memory.upgradeCore")}
     </div>
   );
 }

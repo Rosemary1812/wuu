@@ -239,7 +239,7 @@ describe("AppSidebar layout", () => {
       container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
     ).map((button) => button.textContent?.trim());
 
-    expect(labels).toEqual(["新对话", "搜索会话", "Skills"]);
+    expect(labels).toEqual(["新对话", "搜索会话", "技能"]);
   });
 
   it("moves the workspace add action into the workspace group header", () => {

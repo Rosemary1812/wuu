@@ -15,6 +15,7 @@
 import type { JSX, RefObject } from "react";
 
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
+import { useI18n } from "./i18n";
 
 export type QueryHistoryRailProps = {
   entries: QueryHistoryEntry[];
@@ -38,6 +39,7 @@ export function QueryHistoryRail({
   onHoverStart,
   onHoverEnd,
 }: QueryHistoryRailProps): JSX.Element | null {
+  const { t } = useI18n();
   if (entries.length === 0) {
     return null;
   }
@@ -50,7 +52,7 @@ export function QueryHistoryRail({
       className={`query-history-rail${active ? " active" : ""}`}
       role="button"
       tabIndex={0}
-      aria-label="历史输入索引"
+      aria-label={t("queryHistory.index")}
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
       onFocus={onHoverStart}

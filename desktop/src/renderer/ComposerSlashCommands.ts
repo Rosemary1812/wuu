@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { InitializeResult, RuntimeContext, SkillSummary } from "../shared/protocol";
+import { translateCurrent as t } from "./i18n";
 
 export type ComposerSlashCommandAction =
   | "new-thread"
@@ -86,17 +87,17 @@ export function buildComposerSlashCommands({
   sideThreadDisabledReason?: string;
   skills?: SkillSummary[];
 }): ComposerSlashCommand[] {
-  const needsRuntime = activeContext && initialized ? undefined : "先选择工作区";
-  const needsWorkspace = activeContext ? undefined : "先选择工作区";
-  const needsIdleThread = running ? "当前任务运行中" : undefined;
+  const needsRuntime = activeContext && initialized ? undefined : t("slash.selectWorkspaceFirst");
+  const needsWorkspace = activeContext ? undefined : t("slash.selectWorkspaceFirst");
+  const needsIdleThread = running ? t("slash.taskRunning") : undefined;
   const fastTarget = runtimeFastModelTarget(initialized);
   const helpMeCommands: ComposerSlashCommand[] = initialized?.features?.helpme
     ? [
         {
           id: "helpme",
           name: "helpme",
-          title: "HelpMe 求助",
-          description: "让 fresh 子 agent 重新理解，并自动压缩上下文",
+          title: t("slash.helpme.title"),
+          description: t("slash.helpme.description"),
           tag: "Agent",
           kind: "prompt",
           aliases: ["rescue", "handoff"],
@@ -109,8 +110,8 @@ export function buildComposerSlashCommands({
     {
       id: "review",
       name: "review",
-      title: "审查当前更改",
-      description: "把本地改动整理成审查请求，可继续补充要求",
+      title: t("slash.review.title"),
+      description: t("slash.review.description"),
       tag: "Agent",
       kind: "prompt",
       aliases: ["audit"],
@@ -120,8 +121,8 @@ export function buildComposerSlashCommands({
     {
       id: "debug",
       name: "debug",
-      title: "调查问题",
-      description: "复现或定位证据，先找根因再修复",
+      title: t("slash.debug.title"),
+      description: t("slash.debug.description"),
       tag: "Agent",
       kind: "prompt",
       aliases: ["investigate", "diagnose"],
@@ -131,8 +132,8 @@ export function buildComposerSlashCommands({
     {
       id: "fix",
       name: "fix",
-      title: "修复问题",
-      description: "读取相关代码，做最小且完整的修复",
+      title: t("slash.fix.title"),
+      description: t("slash.fix.description"),
       tag: "Agent",
       kind: "prompt",
       aliases: ["repair"],
@@ -143,8 +144,8 @@ export function buildComposerSlashCommands({
     {
       id: "test",
       name: "test",
-      title: "补测试",
-      description: "为当前改动补真实行为测试并运行验证",
+      title: t("slash.test.title"),
+      description: t("slash.test.description"),
       tag: "Agent",
       kind: "prompt",
       aliases: ["tests"],
@@ -154,8 +155,8 @@ export function buildComposerSlashCommands({
     {
       id: "explain",
       name: "explain",
-      title: "解释代码或错误",
-      description: "结合文件和运行证据说明当前行为",
+      title: t("slash.explain.title"),
+      description: t("slash.explain.description"),
       tag: "Agent",
       kind: "prompt",
       aliases: ["why"],
@@ -165,8 +166,8 @@ export function buildComposerSlashCommands({
     {
       id: "skills",
       name: "skills",
-      title: "浏览 Skills",
-      description: "查看可用 Skills，并生成可补充参数的草稿",
+      title: t("slash.skills.title"),
+      description: t("slash.skills.description"),
       tag: "Skill",
       kind: "action",
       action: "open-skills",
@@ -177,9 +178,9 @@ export function buildComposerSlashCommands({
     {
       id: "context",
       name: "context",
-      title: "查看上下文组成",
-      description: "打开最近一次模型请求的上下文组成视图",
-      tag: "视图",
+      title: t("slash.context.title"),
+      description: t("slash.context.description"),
+      tag: t("slash.tag.view"),
       kind: "action",
       action: "context",
       aliases: ["ctx"],
@@ -189,9 +190,9 @@ export function buildComposerSlashCommands({
     {
       id: "instructions",
       name: "instructions",
-      title: "查看指令文件",
-      description: "查看已加载的 AGENTS.md / CLAUDE.md 指令文件",
-      tag: "视图",
+      title: t("slash.instructions.title"),
+      description: t("slash.instructions.description"),
+      tag: t("slash.tag.view"),
       kind: "action",
       action: "instructions",
       aliases: ["agents"],
@@ -201,9 +202,9 @@ export function buildComposerSlashCommands({
     {
       id: "memory",
       name: "memory",
-      title: "打开记忆面板",
-      description: "查看并修改 Wuu 记住的内容（设置 → 记忆）",
-      tag: "配置",
+      title: t("slash.memory.title"),
+      description: t("slash.memory.description"),
+      tag: t("slash.tag.configuration"),
       kind: "action",
       action: "open-memory",
       keywords: ["memory", "notebook", "记忆", "笔记本"]
@@ -211,9 +212,9 @@ export function buildComposerSlashCommands({
     {
       id: "commit",
       name: "commit",
-      title: "提交当前改动",
-      description: "检查本地改动，验证后创建一个原子提交",
-      tag: "工作流",
+      title: t("slash.commit.title"),
+      description: t("slash.commit.description"),
+      tag: t("slash.tag.workflow"),
       kind: "prompt",
       aliases: ["save"],
       keywords: ["git", "commit", "提交", "保存"],
@@ -222,9 +223,9 @@ export function buildComposerSlashCommands({
     {
       id: "pr",
       name: "pr",
-      title: "准备 Pull Request",
-      description: "整理说明和验证，确认就绪后创建 PR",
-      tag: "工作流",
+      title: t("slash.pr.title"),
+      description: t("slash.pr.description"),
+      tag: t("slash.tag.workflow"),
       kind: "prompt",
       aliases: ["pull-request", "pullrequest"],
       keywords: ["github", "pull request", "merge request", "pr", "合并请求"],
@@ -233,9 +234,9 @@ export function buildComposerSlashCommands({
     {
       id: "diff",
       name: "diff",
-      title: "打开变更面板",
-      description: "查看当前 Git diff 和文件改动",
-      tag: "工作区",
+      title: t("slash.diff.title"),
+      description: t("slash.diff.description"),
+      tag: t("slash.tag.workspace"),
       kind: "action",
       action: "open-review",
       aliases: ["changes"],
@@ -245,9 +246,9 @@ export function buildComposerSlashCommands({
     {
       id: "new",
       name: "new",
-      title: "新建对话",
-      description: "在当前工作区新建会话；已有草稿时直接继续编辑",
-      tag: "会话",
+      title: t("slash.new.title"),
+      description: t("slash.new.description"),
+      tag: t("slash.tag.conversation"),
       kind: "action",
       action: "new-thread",
       aliases: ["clear"],
@@ -258,9 +259,9 @@ export function buildComposerSlashCommands({
       // Side-thread messages remain outside the main conversation history.
       id: "side",
       name: "side",
-      title: "打开当前对话的侧聊",
-      description: "在当前 Tab 内展开一条附属对话，可询问任务进度而不会污染主线",
-      tag: "会话",
+      title: t("slash.side.title"),
+      description: t("slash.side.description"),
+      tag: t("slash.tag.conversation"),
       kind: "action",
       action: "open-side-thread",
       // Side chat remains available while the main turn is running.
@@ -269,9 +270,9 @@ export function buildComposerSlashCommands({
     {
       id: "compact",
       name: "compact",
-      title: "压缩上下文",
-      description: "把较早的对话折叠成摘要，释放上下文窗口",
-      tag: "会话",
+      title: t("slash.compact.title"),
+      description: t("slash.compact.description"),
+      tag: t("slash.tag.conversation"),
       kind: "action",
       action: "compact",
       aliases: ["compress"],
@@ -281,9 +282,9 @@ export function buildComposerSlashCommands({
     {
       id: "terminal",
       name: "terminal",
-      title: "打开终端",
-      description: "在当前工作区启动 shell",
-      tag: "工作区",
+      title: t("slash.terminal.title"),
+      description: t("slash.terminal.description"),
+      tag: t("slash.tag.workspace"),
       kind: "action",
       action: "open-terminal",
       aliases: ["shell"],
@@ -293,9 +294,9 @@ export function buildComposerSlashCommands({
     {
       id: "files",
       name: "files",
-      title: "打开文件",
-      description: "浏览当前工作区文件树",
-      tag: "工作区",
+      title: t("slash.files.title"),
+      description: t("slash.files.description"),
+      tag: t("slash.tag.workspace"),
       kind: "action",
       action: "open-files",
       aliases: ["file", "tree"],
@@ -305,9 +306,9 @@ export function buildComposerSlashCommands({
     {
       id: "project",
       name: "project",
-      title: "打开项目",
-      description: "选择一个本地文件夹作为工作区",
-      tag: "项目",
+      title: t("slash.project.title"),
+      description: t("slash.project.description"),
+      tag: t("slash.tag.project"),
       kind: "action",
       action: "open-project",
       aliases: ["open"],
@@ -316,9 +317,9 @@ export function buildComposerSlashCommands({
     {
       id: "no-project",
       name: "no-project",
-      title: "切到临时工作区",
-      description: "不绑定项目，直接开始一个临时对话",
-      tag: "项目",
+      title: t("slash.noProject.title"),
+      description: t("slash.noProject.description"),
+      tag: t("slash.tag.project"),
       kind: "action",
       action: "no-project",
       aliases: ["scratch", "none"],
@@ -328,9 +329,9 @@ export function buildComposerSlashCommands({
     {
       id: "model",
       name: "model",
-      title: "切换模型",
-      description: "快速选择 provider、模型和参数档位",
-      tag: "配置",
+      title: t("slash.model.title"),
+      description: t("slash.model.description"),
+      tag: t("slash.tag.configuration"),
       kind: "action",
       action: "model",
       aliases: ["models"],
@@ -342,23 +343,23 @@ export function buildComposerSlashCommands({
           {
             id: "fast",
             name: "fast",
-            title: "切换快速模式",
-            description: fastTarget.current ? "当前模型已经是 fast mode" : "切到当前模型的 fast mode",
-            tag: "配置",
+            title: t("slash.fast.title"),
+            description: fastTarget.current ? t("slash.fast.currentDescription") : t("slash.fast.description"),
+            tag: t("slash.tag.configuration"),
             kind: "action",
             action: "fast",
             aliases: ["quick"],
             keywords: ["fast", "priority", "快速", "高速"],
-            disabledReason: needsRuntime ?? needsIdleThread ?? (fastTarget.current ? "当前已是快速模式" : undefined)
+            disabledReason: needsRuntime ?? needsIdleThread ?? (fastTarget.current ? t("slash.fast.alreadyEnabled") : undefined)
           } satisfies ComposerSlashCommand
         ]
       : []),
     {
       id: "effort",
       name: "effort",
-      title: "调整模型档位",
-      description: "切换当前模型支持的 variant / reasoning effort",
-      tag: "配置",
+      title: t("slash.effort.title"),
+      description: t("slash.effort.description"),
+      tag: t("slash.tag.configuration"),
       kind: "action",
       action: "effort",
       aliases: ["variant", "variants"],
@@ -368,9 +369,9 @@ export function buildComposerSlashCommands({
     {
       id: "settings",
       name: "settings",
-      title: "打开设置",
-      description: "切换 provider、模型和运行配置",
-      tag: "配置",
+      title: t("slash.settings.title"),
+      description: t("slash.settings.description"),
+      tag: t("slash.tag.configuration"),
       kind: "action",
       action: "settings",
       aliases: ["config"],
@@ -387,9 +388,9 @@ export function buildSideThreadSlashCommands(): ComposerSlashCommand[] {
     {
       id: "side-reset",
       name: "reset",
-      title: "重置侧聊",
-      description: "清空侧聊历史，下一条消息将基于主对话的最新进展",
-      tag: "侧聊",
+      title: t("slash.sideReset.title"),
+      description: t("slash.sideReset.description"),
+      tag: t("slash.tag.sideChat"),
       kind: "action",
       action: "reset-side-thread",
       aliases: ["rebase"],
@@ -480,7 +481,7 @@ function buildSkillSlashCommands(skills: SkillSummary[], disabledReason?: string
       id: `skill:${key}`,
       name,
       title: `/${name}`,
-      description: skill.description || skill.when_to_use || skill.trigger_condition || "使用这个 Skill",
+      description: skill.description || skill.when_to_use || skill.trigger_condition || t("slash.useSkill"),
       tag: "Skill",
       kind: "skill",
       aliases: skill.examples?.slice(0, 3),

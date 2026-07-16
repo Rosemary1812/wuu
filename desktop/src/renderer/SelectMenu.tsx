@@ -8,6 +8,7 @@ import {
 } from "react";
 import { FloatingMenuPortal, isInsideFloatingMenu } from "./ComposerFloatingMenu";
 import type { FloatingMenuAlign, FloatingMenuPlacement } from "./ComposerTypes";
+import { useI18n } from "./i18n";
 
 // SelectMenu — the product-styled replacement for a native <select>.
 //
@@ -38,7 +39,7 @@ export function SelectMenu({
   options,
   groups,
   disabled = false,
-  placeholder = "请选择",
+  placeholder,
   ariaLabel,
   id,
   className,
@@ -72,6 +73,7 @@ export function SelectMenu({
   align?: FloatingMenuAlign;
   flip?: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const anchorRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -83,7 +85,7 @@ export function SelectMenu({
     groups ?? (options ? [{ options }] : []);
   const flatOptions = resolvedGroups.flatMap((group) => group.options);
   const selected = flatOptions.find((option) => option.value === value);
-  const triggerLabel = selected?.label ?? placeholder;
+  const triggerLabel = selected?.label ?? placeholder ?? t("common.select");
   const hasSelection = selected !== undefined;
 
   function firstEnabledIndex(): number {

@@ -54,7 +54,7 @@ describe("SkillsCatalog", () => {
     });
 
     expect(container.textContent).toContain("reviewer");
-    expect(container.textContent).toContain("Agent Templates");
+    expect(container.textContent).toContain("Agent 模板");
     expect(container.textContent).not.toContain("临时子代理模板");
     expect(container.textContent).toContain("invalid frontmatter");
   });
@@ -112,7 +112,7 @@ describe("SkillsCatalog", () => {
       );
     });
 
-    expect(container.textContent).toContain("Plugins");
+    expect(container.textContent).toContain("插件");
     expect(container.textContent).toContain("Control macOS apps through Accessibility.");
     expect(container.textContent).toContain("官方");
     expect(container.textContent).toContain("插件 · cua-mac");
@@ -121,4 +121,3 @@ describe("SkillsCatalog", () => {
     expect(container.textContent).not.toContain("computer");
   });
 });
-

@@ -1,6 +1,7 @@
 import { ChevronRight, FileText, Info, X } from "lucide-react";
 import { useState } from "react";
 import type { InstructionFile, InstructionsListResult } from "../shared/protocol";
+import { formatCurrentNumber, translateCurrent as t, useI18n } from "./i18n";
 
 // InstructionFilesEntry mirrors ContextCompositionEntry: App owns the fetch
 // and drops the result here. Keeping the card presentational makes it trivial
@@ -21,6 +22,7 @@ export function InstructionFilesCard({
   entry: InstructionFilesEntry;
   onDismiss?: (id: string) => void;
 }): JSX.Element {
+  useI18n();
   const { result, loading, error } = entry;
   const files = result?.files ?? [];
   const globalFiles = files.filter((file) => file.scope === "global");
@@ -28,29 +30,29 @@ export function InstructionFilesCard({
   const hasFiles = files.length > 0;
 
   return (
-    <article className="instruction-files-card" aria-label="指令文件">
+    <article className="instruction-files-card" aria-label={t("instructions.label")}>
       <div className="instruction-files-card-inner">
         {onDismiss ? (
           <button
             className="icon-button instruction-files-dismiss"
             type="button"
-            aria-label="移除指令文件卡片"
+            aria-label={t("instructions.dismiss")}
             onClick={() => onDismiss(entry.id)}
           >
             <X className="icon" />
           </button>
         ) : null}
 
-        {loading ? <InstructionFilesState text="正在读取已加载的指令文件" /> : null}
+        {loading ? <InstructionFilesState text={t("instructions.loading")} /> : null}
         {!loading && error ? <InstructionFilesState tone="error" text={error} /> : null}
         {!loading && !error && !hasFiles ? (
-          <InstructionFilesState text="当前会话没有加载任何指令文件（AGENTS.md / CLAUDE.md）。" />
+          <InstructionFilesState text={t("instructions.empty")} />
         ) : null}
 
         {!loading && !error && hasFiles ? (
           <div className="instruction-files-groups">
-            <InstructionFilesGroup label="全局" files={globalFiles} />
-            <InstructionFilesGroup label="项目" files={projectFiles} />
+            <InstructionFilesGroup label={t("instructions.global")} files={globalFiles} />
+            <InstructionFilesGroup label={t("instructions.project")} files={projectFiles} />
           </div>
         ) : null}
       </div>
@@ -95,7 +97,7 @@ function InstructionFileRow({ file }: { file: InstructionFile }): JSX.Element {
       </button>
       {expanded ? (
         <pre className="instruction-file-preview">
-          {content.length > 0 ? content : "（文件为空）"}
+          {content.length > 0 ? content : t("instructions.fileEmpty")}
         </pre>
       ) : null}
     </div>
@@ -120,10 +122,16 @@ function InstructionFilesState({
 function formatBytes(bytes: number): string {
   const safe = Math.max(0, Math.round(bytes));
   if (safe >= 1_000_000) {
-    return `${(safe / 1_000_000).toFixed(1)} MB`;
+    return `${formatCurrentNumber(safe / 1_000_000, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })} MB`;
   }
   if (safe >= 1_000) {
-    return `${(safe / 1_000).toFixed(1)} KB`;
+    return `${formatCurrentNumber(safe / 1_000, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })} KB`;
   }
-  return `${safe} B`;
+  return `${formatCurrentNumber(safe)} B`;
 }

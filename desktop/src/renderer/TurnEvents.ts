@@ -5,6 +5,7 @@ import {
   userFacingErrorForMissingReply,
   type UserFacingErrorDisplay,
 } from "./UserFacingErrors";
+import { translateCurrent } from "./i18n";
 
 export type TurnEventKind =
   | "user_stopped"
@@ -85,15 +86,15 @@ export function turnEventForTurn(
     baseDisplay.category === "cancelled"
       ? {
           ...baseDisplay,
-          title: hasAssistantOutput ? "回复已中断" : "已停止",
+          title: hasAssistantOutput ? translateCurrent("turn.interrupted.title") : translateCurrent("turn.stopped.title"),
           detail: hasAssistantOutput
-            ? "已保留已生成内容，可以继续发送消息。"
-            : "这次请求已停止，没有生成回复内容。",
+            ? translateCurrent("turn.interrupted.detail")
+            : translateCurrent("turn.stopped.detail"),
         }
       : {
           ...baseDisplay,
           detail: hasAssistantOutput
-            ? `${baseDisplay.detail} 已保留已生成内容。`
+            ? translateCurrent("turn.error.preservedOutput", { detail: baseDisplay.detail })
             : baseDisplay.detail,
         };
 

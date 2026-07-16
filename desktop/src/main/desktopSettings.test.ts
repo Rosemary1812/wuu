@@ -9,11 +9,13 @@ import {
   getMainWindowBounds,
   getMessageFlowFontSize,
   getThemePreference,
+  getLanguagePreference,
   readDesktopSettings,
   setCodexPetSettings,
   setMainWindowBounds,
   setMessageFlowFontSize,
   setThemePreference,
+  setLanguagePreference,
   writeDesktopSettings,
 } from "./desktopSettings";
 
@@ -56,6 +58,19 @@ describe("desktopSettings", () => {
 
   it("defaults the theme preference to system", () => {
     expect(getThemePreference(file)).toBe("system");
+  });
+
+  it("defaults and round-trips the language preference", () => {
+    expect(getLanguagePreference(file)).toBe("system");
+    setLanguagePreference("en-US", file);
+    expect(getLanguagePreference(file)).toBe("en-US");
+    setLanguagePreference("zh-CN", file);
+    expect(getLanguagePreference(file)).toBe("zh-CN");
+  });
+
+  it("rejects unknown language preferences", async () => {
+    await writeFile(file, JSON.stringify({ language: "fr-FR" }));
+    expect(getLanguagePreference(file)).toBe("system");
   });
 
   it("round-trips the theme preference", () => {

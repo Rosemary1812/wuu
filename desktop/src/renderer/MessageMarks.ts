@@ -18,6 +18,9 @@ export interface MessageMark {
 // this map is the swappable skin — replace with custom art later without
 // touching the backend or the key vocabulary (design §6). The user finds bare
 // emoji cheap, so these are a stand-in until real assets land.
+import { translateCurrent } from "./i18n";
+import type { TranslationKey } from "./i18n/resources/zh-CN";
+
 export const REACTION_EMOJI: Record<string, string> = {
   eyes: "👀",
   nice: "👍",
@@ -34,14 +37,19 @@ export function reactionGlyph(key: string): string {
 // Human-readable labels (a11y name + tooltip) for the hover toolbar's one-click
 // reaction buttons. Keys mirror the backend vocabulary; the glyph (REACTION_EMOJI)
 // is the swappable skin.
-export const REACTION_LABEL: Record<string, string> = {
-  eyes: "看到了",
-  nice: "赞同",
-  shrug: "无所谓",
-  sideeye: "存疑",
-  smug: "得意",
-  whoa: "惊讶",
+const REACTION_LABEL_KEY: Record<string, TranslationKey> = {
+  eyes: "reaction.eyes",
+  nice: "reaction.nice",
+  shrug: "reaction.shrug",
+  sideeye: "reaction.sideeye",
+  smug: "reaction.smug",
+  whoa: "reaction.whoa",
 };
+
+export function reactionLabel(key: string): string {
+  const translationKey = REACTION_LABEL_KEY[key];
+  return translationKey ? translateCurrent(translationKey) : key;
+}
 
 // The reaction keys a human may stamp from the chat UI, in display order. Kept
 // in lockstep with the backend vocabulary (reactionKeys in tool_participant_react.go)

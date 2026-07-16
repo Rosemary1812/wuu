@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { turnEventForItem, turnEventForTurn } from "./TurnEvents";
 import {
   userFacingErrorForMessage,
   userFacingErrorForMissingReply,
 } from "./UserFacingErrors";
+import { setActiveLocale } from "./i18n";
+
+afterEach(() => setActiveLocale("zh-CN"));
 
 describe("userFacingErrorForMessage", () => {
   it("classifies wrapped context overflow as a provider error", () => {
@@ -64,6 +67,16 @@ describe("userFacingErrorForMessage", () => {
     const display = userFacingErrorForMessage("panic: nil pointer", "turn");
     expect(display.category).toBe("internal");
     expect(display.title).toBe("wuu 内部错误");
+  });
+
+  it("localizes generated labels while leaving provider input available for classification", () => {
+    setActiveLocale("en-US");
+
+    const display = userFacingErrorForMessage("connection reset by peer", "turn");
+
+    expect(display.category).toBe("network");
+    expect(display.title).toBe("Connection reset");
+    expect(display.detail).toContain("provider status");
   });
 
   describe("structured TurnError input from the Go core", () => {

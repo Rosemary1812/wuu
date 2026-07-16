@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ProviderModelSummary, ProviderSummary } from "../shared/protocol";
 import {
   codexEffortLabel,
+  pullRequestUnavailableReason,
   providerModelReasoningMode,
   providerModelVariantOptions
 } from "./RuntimeHelpers";
+import { setActiveLocale } from "./i18n";
+
+afterEach(() => setActiveLocale("zh-CN"));
 
 function providerWithModel(model: ProviderModelSummary | undefined): ProviderSummary | undefined {
   if (!model) {
@@ -22,6 +26,13 @@ describe("codexEffortLabel", () => {
   it("distinguishes xhigh from max", () => {
     expect(codexEffortLabel("xhigh")).toBe("超高");
     expect(codexEffortLabel("max")).toBe("最大");
+  });
+
+  it("uses the active language for generated runtime labels", () => {
+    setActiveLocale("en-US");
+
+    expect(codexEffortLabel("xhigh")).toBe("Extra high");
+    expect(pullRequestUnavailableReason()).toBe("Not a Git repository");
   });
 });
 

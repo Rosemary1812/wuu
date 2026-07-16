@@ -28,6 +28,7 @@ import {
   LEGACY_CONVERSATION_DESIGN_TOKEN_STORAGE_KEYS,
   type ConversationDesignTokenKey,
 } from "./ConversationDesignTokens";
+import { useI18n } from "./i18n";
 
 type Overrides = Partial<Record<ConversationDesignTokenKey, number>>;
 
@@ -108,6 +109,7 @@ function clearFromDOM(): void {
 }
 
 export function DesignTokensPanel(): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const [open, setOpen] = useState(false);
   const [overrides, setOverrides] = useState<Overrides>({});
 
@@ -150,8 +152,8 @@ export function DesignTokensPanel(): JSX.Element {
         className="design-tokens-toggle"
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title="设计调音台（开发用）"
-        aria-label="打开设计调音台"
+        title={t("designTokens.devTitle")}
+        aria-label={t("designTokens.open")}
         aria-expanded={open}
       >
         <Sliders className="icon" />
@@ -160,18 +162,18 @@ export function DesignTokensPanel(): JSX.Element {
         <aside
           className="design-tokens-panel"
           role="dialog"
-          aria-label="设计调音台"
+          aria-label={t("designTokens.title")}
         >
           <div className="design-tokens-header">
             <div className="design-tokens-title">
               <Sliders className="icon-sm" />
-              <h2>设计调音台</h2>
+              <h2>{t("designTokens.title")}</h2>
             </div>
             <button
               className="design-tokens-close"
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="关闭"
+              aria-label={t("common.close")}
             >
               <X className="icon-sm" />
             </button>
@@ -182,9 +184,9 @@ export function DesignTokensPanel(): JSX.Element {
               return (
                 <div className="design-token" key={token.key}>
                   <div className="design-token-label">
-                    <span className="design-token-name">{token.label}</span>
+                    <span className="design-token-name">{t(token.labelKey)}</span>
                     <span className="design-token-value">
-                      {value}
+                      {formatNumber(value)}
                       {token.unit}
                     </span>
                   </div>
@@ -197,7 +199,7 @@ export function DesignTokensPanel(): JSX.Element {
                     onChange={(e) =>
                       handleChange(token.key, Number(e.target.value))
                     }
-                    aria-label={token.label}
+                    aria-label={t(token.labelKey)}
                   />
                 </div>
               );
@@ -210,9 +212,9 @@ export function DesignTokensPanel(): JSX.Element {
               onClick={handleReset}
             >
               <RotateCcw className="icon-xs" />
-              恢复默认
+              {t("common.restoreDefaults")}
             </button>
-            <span className="design-tokens-hint">值保存到 localStorage</span>
+            <span className="design-tokens-hint">{t("designTokens.storageHint")}</span>
           </div>
         </aside>
       ) : null}

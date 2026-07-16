@@ -4,6 +4,7 @@ import {
   type Thread,
   type ThreadItem,
 } from "../shared/protocol";
+import { translateCurrent } from "./i18n";
 
 // The bubble's preview text is the latest STABLE agent_message from the
 // top-ranked thread. We deliberately do NOT fall back to Thread.preview
@@ -136,7 +137,7 @@ function scoreThreads(input: ActiveSessionHintInput): ScoredThread[] {
       thread,
       priority,
       hintStatus,
-      title: title || "对话",
+      title: title || translateCurrent("thread.conversation"),
       preview,
       attention,
       updatedAt,

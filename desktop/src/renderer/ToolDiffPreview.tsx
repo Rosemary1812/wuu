@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ThreadItem } from "../shared/protocol";
+import { useI18n } from "./i18n";
 
 function useTriggerPosition() {
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -264,24 +265,32 @@ function DiffHunkView({ hunk }: { hunk: DiffHunk }): JSX.Element {
 }
 
 function DiffSummaryView({ diff }: { diff: FileDiff }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const parts: string[] = [];
   if (diff.newFile) {
     parts.push(
-      diff.lines === undefined ? "新建文件" : `新建文件，${diff.lines} 行`,
+      diff.lines === undefined
+        ? t("toolDiff.newFile")
+        : t("toolDiff.newFileLines", { count: formatNumber(diff.lines) }),
     );
   } else if (diff.summary) {
     parts.push(diff.summary);
   } else if (diff.oldLines !== undefined || diff.newLines !== undefined) {
     parts.push(
-      `旧文件 ${diff.oldLines ?? 0} 行，新文件 ${diff.newLines ?? 0} 行`,
+      t("toolDiff.oldNewLines", {
+        old: formatNumber(diff.oldLines ?? 0),
+        new: formatNumber(diff.newLines ?? 0),
+      }),
     );
   }
-  if (diff.truncated && !parts.some((part) => part.includes("截断"))) {
-    parts.push("行级 diff 已截断");
+  if (diff.truncated && !parts.some((part) => /截断|truncat/i.test(part))) {
+    parts.push(t("toolDiff.lineDiffTruncated"));
   }
   return (
     <span className="tool-diff-preview-summary">
-      {parts.length > 0 ? parts.join("；") : "没有可用的行级 diff"}
+      {parts.length > 0
+        ? parts.join(t("toolDiff.summarySeparator"))
+        : t("toolDiff.noLineDiff")}
     </span>
   );
 }
@@ -313,6 +322,7 @@ export function ToolDiffPreview({
   diff?: ToolDiffPreviewFileDiff;
   children: React.ReactNode;
 }): JSX.Element {
+  const { t } = useI18n();
   const diff = useMemo(
     () => explicitDiff ?? (item ? extractFileDiff(item) : undefined),
     [explicitDiff, item],
@@ -384,16 +394,20 @@ export function ToolDiffPreview({
             className="tool-diff-preview-card"
             role="region"
             style={cardStyle}
-            aria-label={`${diff.path ? diff.path : "文件"} 的变更预览`}
+            aria-label={t("toolDiff.previewNamed", {
+              name: diff.path ? diff.path : t("toolDiff.file"),
+            })}
             onMouseEnter={preview.keepOpen}
             onMouseLeave={handleLeave}
           >
             <span className="tool-diff-preview-header">
               <span className="tool-diff-preview-title">
-                {diff.path ? diff.path : "变更预览"}
+                {diff.path ? diff.path : t("toolDiff.preview")}
               </span>
               {diff.truncated ? (
-                <span className="tool-diff-preview-truncated">已截断</span>
+                <span className="tool-diff-preview-truncated">
+                  {t("toolDiff.truncated")}
+                </span>
               ) : null}
             </span>
             <span className="tool-diff-preview-body">

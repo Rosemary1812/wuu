@@ -6,6 +6,7 @@ import {
 import type { GitCommitResult, GitPullRequestResult, GitStatusResult } from "../shared/protocol";
 import { humanizeBranchTitle } from "./RuntimeHelpers";
 import { Modal } from "./Modal";
+import { useI18n } from "./i18n";
 
 export function CommitChangesDialog({
   gitStatus,
@@ -18,6 +19,7 @@ export function CommitChangesDialog({
   onCancel: () => void;
   onCommit: (params: { message: string; includeUnstaged: boolean }) => Promise<GitCommitResult>;
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const [message, setMessage] = useState("");
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -37,7 +39,7 @@ export function CommitChangesDialog({
       await onCommit({ message, includeUnstaged });
       onCancel();
     } catch (commitError) {
-      setError(commitError instanceof Error ? commitError.message : "提交失败");
+      setError(commitError instanceof Error ? commitError.message : t("git.commit.failed"));
     } finally {
       setSubmitting(false);
     }
@@ -45,34 +47,35 @@ export function CommitChangesDialog({
 
   return (
     <Modal
-      ariaLabel="提交更改"
+      ariaLabel={t("git.commit.title")}
       icon={<CornerDownRight className="icon-lg" />}
-      title="提交更改"
+      title={t("git.commit.title")}
       onClose={onCancel}
       asForm
       onSubmit={(event) => void submit(event)}
       footer={
         <>
           <button className="secondary-button" type="button" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button
             className="primary-button"
             type="submit"
             disabled={!hasChanges || submitting}
           >
-            继续
+            {t("common.continue")}
           </button>
         </>
       }
     >
       <div className="environment-dialog-summary">
-        <span>分支</span>
-        <strong>{branch ?? "未知"}</strong>
-        <span>更改</span>
+        <span>{t("git.branch")}</span>
+        <strong>{branch ?? t("common.unknown")}</strong>
+        <span>{t("git.changes")}</span>
         <strong>
-          {diff.files} 个文件 <span className="additions">+{diff.additions.toLocaleString()}</span>{" "}
-          <span className="deletions">-{diff.deletions.toLocaleString()}</span>
+          {t(diff.files === 1 ? "git.fileCountOne" : "git.fileCount", { count: formatNumber(diff.files) })}{" "}
+          <span className="additions">+{formatNumber(diff.additions)}</span>{" "}
+          <span className="deletions">-{formatNumber(diff.deletions)}</span>
         </strong>
       </div>
       <label className="environment-toggle">
@@ -81,13 +84,13 @@ export function CommitChangesDialog({
           checked={includeUnstaged}
           onChange={(event) => setIncludeUnstaged(event.currentTarget.checked)}
         />
-        <span>包含未暂存的更改</span>
+        <span>{t("git.commit.includeUnstaged")}</span>
       </label>
       <label className="environment-field">
-        <span>提交消息</span>
+        <span>{t("git.commit.message")}</span>
         <input
           value={message}
-          placeholder="留空以自动生成提交消息"
+          placeholder={t("git.commit.messagePlaceholder")}
           onChange={(event) => setMessage(event.target.value)}
         />
       </label>
@@ -107,6 +110,7 @@ export function PullRequestDialog({
   onCancel: () => void;
   onCreate: (params: { title: string; body: string; draft: boolean }) => Promise<GitPullRequestResult>;
 }): JSX.Element {
+  const { t } = useI18n();
   const [title, setTitle] = useState(() => humanizeBranchTitle(gitStatus?.branch ?? ""));
   const [body, setBody] = useState("");
   const [draft, setDraft] = useState(false);
@@ -131,7 +135,7 @@ export function PullRequestDialog({
       const created = await onCreate({ title, body, draft });
       setResult(created);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "创建拉取请求失败");
+      setError(createError instanceof Error ? createError.message : t("git.pr.createFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -139,23 +143,23 @@ export function PullRequestDialog({
 
   return (
     <Modal
-      ariaLabel={existingURL ? "拉取请求" : "创建拉取请求"}
+      ariaLabel={existingURL ? t("git.pr.title") : t("git.pr.createTitle")}
       icon={<Github className="icon-lg" />}
-      title={existingURL ? "拉取请求" : "创建拉取请求"}
+      title={existingURL ? t("git.pr.title") : t("git.pr.createTitle")}
       onClose={onCancel}
       asForm
       onSubmit={(event) => void submit(event)}
       footer={
         <>
           <button className="secondary-button" type="button" onClick={onCancel}>
-            关闭
+            {t("common.close")}
           </button>
           <button
             className="primary-button"
             type="submit"
             disabled={blocked || submitting}
           >
-            {existingURL ? "打开" : "继续"}
+            {existingURL ? t("common.open") : t("common.continue")}
           </button>
         </>
       }
@@ -163,30 +167,30 @@ export function PullRequestDialog({
       {blocked ? <div className="environment-dialog-error">{disabledReason}</div> : null}
       {existingURL ? (
         <div className="environment-pr-result">
-          <span>{result?.already_exists ? "已有 PR" : "PR 已准备好"}</span>
+          <span>{result?.already_exists ? t("git.pr.exists") : t("git.pr.ready")}</span>
           <button
             className="secondary-button"
             type="button"
             onClick={() => window.open(existingURL, "_blank", "noopener,noreferrer")}
           >
-            打开 PR
+            {t("git.pr.open")}
           </button>
         </div>
       ) : (
         <>
           <label className="environment-field">
-            <span>标题</span>
+            <span>{t("git.pr.fieldTitle")}</span>
             <input
               value={title}
-              placeholder="使用分支名作为标题"
+              placeholder={t("git.pr.titlePlaceholder")}
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
           <label className="environment-field">
-            <span>说明</span>
+            <span>{t("git.pr.description")}</span>
             <textarea
               value={body}
-              placeholder="可留空，让 gh 使用提交内容"
+              placeholder={t("git.pr.descriptionPlaceholder")}
               onChange={(event) => setBody(event.target.value)}
             />
           </label>
@@ -196,7 +200,7 @@ export function PullRequestDialog({
               checked={draft}
               onChange={(event) => setDraft(event.currentTarget.checked)}
             />
-            <span>创建为草稿</span>
+            <span>{t("git.pr.draft")}</span>
           </label>
         </>
       )}

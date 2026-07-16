@@ -14,6 +14,7 @@ import type {
   SettingsUsageResponse,
   WuuDesktopApi
 } from "../shared/protocol";
+import { I18nProvider } from "./i18n";
 
 type GlobalWindow = typeof window & { wuu: WuuDesktopApi };
 
@@ -108,13 +109,16 @@ function renderSettings(props: {
   // 等计算字段，测试场景下冗余）。
   archivedThreads?: readonly ArchivedSessionView[];
   onUnarchiveThread?: (thread: ArchivedSessionView) => void;
+  locale?: "zh-CN" | "en-US";
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
   const setUsageRange = vi.fn();
-  act(() => {
-    root = createRoot(container);
-    root!.render(
-      <SettingsView
+  if (props.locale) {
+    window.wuu.initialLanguagePreference = props.locale;
+    window.wuu.initialSystemLocale = props.locale;
+  }
+  const view = (
+    <SettingsView
         initialized={props.initialized}
         initialPage={props.initialPage ?? "general"}
         running={false}
@@ -149,8 +153,11 @@ function renderSettings(props: {
         onSidebarSeparatorKey={noopResizeKey}
         archivedThreads={props.archivedThreads ?? []}
         onUnarchiveThread={props.onUnarchiveThread ?? (() => {})}
-      />,
-    );
+    />
+  );
+  act(() => {
+    root = createRoot(container);
+    root!.render(props.locale ? <I18nProvider>{view}</I18nProvider> : view);
   });
   const about = container.querySelector("[data-testid=\"settings-about\"]");
   return {
@@ -245,6 +252,35 @@ describe("SettingsView shell", () => {
 });
 
 describe("SettingsView provider configuration", () => {
+  it("renders provider configuration in English", () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const { rootText } = renderSettings({
+      locale: "en-US",
+      initialPage: "providers",
+      initialized: baseInitialized({
+        provider: "local",
+        model: "",
+        providers: [{
+          name: "local",
+          type: "openai-compatible",
+          model: "",
+          base_url: "http://127.0.0.1:11434/v1",
+          api_key_configured: false,
+        }],
+      }),
+    });
+
+    expect(rootText()).toContain("Model providers");
+    expect(rootText()).toContain("Local model provider");
+    expect(rootText()).toContain("No model selected");
+    expect(rootText()).toContain("Missing API key");
+    expect(rootText()).toContain("Reasoning effort");
+    expect(rootText()).not.toContain("模型服务");
+  });
+
   it("shows BYOK provider controls as a first-class settings page", async () => {
     installBuildInfoStub({
       core: undefined,
@@ -501,8 +537,8 @@ describe("SettingsView advanced settings", () => {
     expect(inputs.length).toBeGreaterThanOrEqual(6);
     const [compactThreshold, compactKeepRecent, providerContextWindow, maxContextTokens, maxSteps, temperature] = inputs;
     expect((temperature as HTMLInputElement).value).toBe("");
-    // Auto 语义由占位符承载，不再出现在行描述文字里。
-    expect((temperature as HTMLInputElement).placeholder).toBe("Auto");
+    // The placeholder carries the automatic-value meaning instead of the row description.
+    expect((temperature as HTMLInputElement).placeholder).toBe("自动");
     await act(async () => {
       setInputValue(compactThreshold, "50");
       setInputValue(compactKeepRecent, "20000");

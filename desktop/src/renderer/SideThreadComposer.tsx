@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { buildSideThreadSlashCommands } from "./ComposerSlashCommands";
 import { Composer, type CodexModelLoadState } from "./ComposerView";
+import { useI18n } from "./i18n";
 
 const EMPTY_MODEL_STATE: CodexModelLoadState = {
   loading: false,
@@ -36,10 +37,11 @@ export function SideThreadComposer({
   onInterrupt,
   onReset,
 }: SideThreadComposerProps): JSX.Element {
+  const { locale, t } = useI18n();
   const runtimeRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
-  const slashCommands = useMemo(() => buildSideThreadSlashCommands(), []);
+  const slashCommands = useMemo(() => buildSideThreadSlashCommands(), [locale]);
   const readOnly = running || Boolean(disabledReason);
   // A side turn may be started by another window while this one has a local
   // draft. Hide that draft while the shared composer is in stop mode, then
@@ -52,7 +54,7 @@ export function SideThreadComposer({
       variant="dock"
       hideRuntimeControls
       textOnly
-      placeholder="询问当前任务，不会加入主对话"
+      placeholder={t("composer.sideThreadPlaceholder")}
       prompt={visibleDraft}
       setPrompt={onChangeDraft}
       files={[]}

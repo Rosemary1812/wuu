@@ -1,4 +1,5 @@
 import type { DesktopPlatform } from "../shared/protocol";
+import { translateCurrent } from "./i18n";
 
 // JS-side mirror of the data-platform stamp the preload puts on <html>.
 // window.wuu.platform is the truth (process.platform in the preload); the
@@ -34,10 +35,10 @@ export function primaryShortcutLabel(key: string | number): string {
 export function revealInFileManagerLabel(): string {
   switch (desktopPlatform()) {
     case "darwin":
-      return "在 Finder 中显示";
+      return translateCurrent("platform.revealFinder");
     case "win32":
-      return "在资源管理器中显示";
+      return translateCurrent("platform.revealExplorer");
     default:
-      return "在文件管理器中显示";
+      return translateCurrent("platform.revealFileManager");
   }
 }

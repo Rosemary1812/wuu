@@ -7,6 +7,7 @@ import { SidebarSection } from "./SidebarSection";
 import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
 import { revealInFileManagerLabel } from "./platform";
 import { isThreadRunning, isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
+import { resolveLocalizedText, useI18n } from "./i18n";
 
 function threadsForProjectPath(
   threads: ThreadSummary[],
@@ -178,6 +179,7 @@ export function ProjectGroup({
   // state and history reconnect). The remedy for a moved/deleted directory.
   onRelocateProject?: (id: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [visibleThreadCount, setVisibleThreadCount] = useState<number>(
     PROJECT_THREAD_INITIAL_VISIBLE_COUNT,
   );
@@ -245,10 +247,20 @@ export function ProjectGroup({
         CollapsedIcon={CollapsedIcon}
         ExpandedIcon={ExpandedIcon}
         label={project.name}
-        ariaLabel={`${expanded ? "收起" : "展开"} ${project.name} 的会话${
-          projectHasUnread ? "，有未读会话" : ""
-        }`}
-        title={expanded ? "收起会话" : "展开会话"}
+        ariaLabel={t(
+          expanded
+            ? "threadSidebar.collapseProject"
+            : "threadSidebar.expandProject",
+          {
+            name: project.name,
+            unread: projectHasUnread ? t("threadSidebar.hasUnread") : "",
+          },
+        )}
+        title={t(
+          expanded
+            ? "threadSidebar.collapseConversations"
+            : "threadSidebar.expandConversations",
+        )}
         active={activeProject}
         pending={pendingProject}
         unread={projectHasUnread}
@@ -266,15 +278,23 @@ export function ProjectGroup({
           <button
             className="sidebar-row-icon-button project-row-new-thread"
             type="button"
-            aria-label={`在 ${project.name} 中新建会话`}
-            title={isMissing ? "工作区目录已不存在，无法新建会话" : "新建会话"}
+            aria-label={t("threadSidebar.newInProject", { name: project.name })}
+            title={
+              isMissing
+                ? t("threadSidebar.missingWorkspace")
+                : t("sidebar.newConversation")
+            }
             disabled={isMissing}
             onClick={() => onStartNewThread(project.id)}
           >
             <MessageSquarePlus className="icon" />
           </button>
         }
-        emptyNote={loadingProjectThreads ? "正在加载会话" : "还没有会话"}
+        emptyNote={
+          loadingProjectThreads
+            ? t("threadSidebar.loadingConversations")
+            : t("threadSidebar.noConversations")
+        }
       >
         {projectThreads.length === 0 ? null : (
           <ThreadList
@@ -302,11 +322,11 @@ export function ProjectGroup({
           y={contextMenu.y}
           items={[
             {
-              label: "重新定位…",
+              label: t("threadSidebar.relocate"),
               onSelect: () => onRelocateProject?.(project.id),
             },
             {
-              label: "移除工作区",
+              label: t("threadSidebar.removeWorkspace"),
               onSelect: () => onRemoveProject?.(project.id),
             },
           ]}
@@ -393,6 +413,7 @@ function ThreadList({
   onShowMore: () => void;
   onCollapse: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [stickyVisibleThreadIDs, setStickyVisibleThreadIDs] = useState<
     Set<string>
   >(() => new Set());
@@ -450,7 +471,7 @@ function ThreadList({
         <div className="thread-list-footer">
           {hiddenCount > 0 ? (
             <button className="thread-list-more" type="button" onClick={onShowMore}>
-              展开
+              {t("common.expand")}
             </button>
           ) : null}
           {expanded ? (
@@ -458,10 +479,10 @@ function ThreadList({
               className="thread-list-collapse-btn"
               type="button"
               onClick={collapseVisibleThreads}
-              aria-label="收起已展开的会话"
-              title="收起"
+              aria-label={t("threadSidebar.collapseExpanded")}
+              title={t("common.collapse")}
             >
-              收起
+              {t("common.collapse")}
             </button>
           ) : null}
         </div>
@@ -560,6 +581,7 @@ function ThreadRows({
   onDelete: (thread: ThreadSummary) => void;
   onRename?: (thread: ThreadSummary, title: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; thread: ThreadSummary } | null>(null);
   const [renameDialog, setRenameDialog] = useState<{
     thread: ThreadSummary;
@@ -576,7 +598,11 @@ function ThreadRows({
   }
 
   function editableThreadTitle(thread: ThreadSummary): string {
-    return thread.title?.trim() || thread.preview?.trim() || "";
+    return (
+      thread.title?.trim() ||
+      resolveLocalizedText(thread.preview?.trim() ?? "") ||
+      ""
+    );
   }
 
   function openRenameDialog(thread: ThreadSummary): void {
@@ -637,7 +663,13 @@ function ThreadRows({
                 className="thread-row-main"
                 type="button"
                 aria-busy={pendingSwitch || running}
-                aria-label={`${title}${forkMarker ? "，分叉自其他会话" : ""}，${running ? "响应中" : "已完成"}`}
+                aria-label={t("threadSidebar.threadStatus", {
+                  title,
+                  fork: forkMarker ? t("threadSidebar.forked") : "",
+                  status: running
+                    ? t("threadSidebar.responding")
+                    : t("threadSidebar.completed"),
+                })}
                 onClick={() => onSelect(thread.id)}
                 onDoubleClick={() => openRenameDialog(thread)}
               >
@@ -649,12 +681,15 @@ function ThreadRows({
                   aria-hidden="true"
                 />
               ) : null}
-              <div className="thread-row-actions" aria-label="对话操作">
+              <div
+                className="thread-row-actions"
+                aria-label={t("threadSidebar.actions")}
+              >
                 <button
                   className={`sidebar-row-icon-button thread-row-action ${thread.pinned ? "active" : ""}`}
                   type="button"
-                  aria-label={thread.pinned ? "取消置顶" : "置顶"}
-                  title={thread.pinned ? "取消置顶" : "置顶"}
+                  aria-label={t(thread.pinned ? "sidebar.unpin" : "sidebar.pin")}
+                  title={t(thread.pinned ? "sidebar.unpin" : "sidebar.pin")}
                   onClick={() => onTogglePinned(thread)}
                 >
                   <Pin className="icon-sm" />
@@ -662,8 +697,8 @@ function ThreadRows({
                 <button
                   className="sidebar-row-icon-button thread-row-action archive"
                   type="button"
-                  aria-label="归档"
-                  title="归档"
+                  aria-label={t("sidebar.archiveAction")}
+                  title={t("sidebar.archiveAction")}
                   onClick={() => onArchive(thread)}
                 >
                   <Archive className="icon-sm" />
@@ -678,16 +713,16 @@ function ThreadRows({
           y={contextMenu.y}
           items={[
             {
-              label: contextMenu.thread.pinned ? "取消置顶" : "置顶",
+              label: t(contextMenu.thread.pinned ? "sidebar.unpin" : "sidebar.pin"),
               onSelect: () => onTogglePinned(contextMenu.thread),
             },
             {
-              label: "重命名对话",
+              label: t("threadSidebar.rename"),
               disabled: !onRename,
               onSelect: () => openRenameDialog(contextMenu.thread),
             },
             {
-              label: "复制工作目录",
+              label: t("threadSidebar.copyWorkingDirectory"),
               onSelect: () => {
                 void copyToClipboard(contextMenu.thread.cwd);
               },
@@ -699,20 +734,20 @@ function ThreadRows({
               },
             },
             {
-              label: "复制会话 ID",
+              label: t("threadSidebar.copyConversationID"),
               onSelect: () => {
                 void copyToClipboard(contextMenu.thread.id);
               },
             },
             { separator: true },
             {
-              label: "删除对话",
+              label: t("threadSidebar.delete"),
               // A running thread cannot be deleted (the server also rejects
               // it); disable the entry so the confirm dialog never promises
               // a deletion that will fail.
               disabled: isThreadRunning(contextMenu.thread),
               onSelect: () => {
-                if (!window.confirm("删除后不可恢复，对话与工件将被清除")) {
+                if (!window.confirm(t("threadSidebar.deleteConfirmation"))) {
                   return;
                 }
                 onDelete(contextMenu.thread);
@@ -728,14 +763,14 @@ function ThreadRows({
         onTitleChange={setRenameTitle}
         onSubmit={submitRenameDialog}
         onClose={closeRenameDialog}
-        dialogTitle="重命名对话"
+        dialogTitle={t("threadSidebar.rename")}
         dialogTitleId="thread-rename-title"
-        fieldLabel="会话标题"
-        fieldAriaLabel="会话标题"
-        placeholder="会话标题"
+        fieldLabel={t("threadSidebar.title")}
+        fieldAriaLabel={t("threadSidebar.title")}
+        placeholder={t("threadSidebar.title")}
         icon={MessageSquare}
-        submitLabel="保存"
-        cancelLabel="取消"
+        submitLabel={t("common.save")}
+        cancelLabel={t("common.cancel")}
       />
     </>
   );

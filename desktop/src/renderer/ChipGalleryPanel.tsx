@@ -26,6 +26,7 @@ import {
 } from "./UserFacingErrors";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { TurnView } from "./TurnView";
+import { translateCurrent, useI18n } from "./i18n";
 
 export function ChipGalleryPanel({
   open,
@@ -34,6 +35,7 @@ export function ChipGalleryPanel({
   open: boolean;
   onClose: () => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (!open) {
     return null;
   }
@@ -46,25 +48,24 @@ export function ChipGalleryPanel({
       <div
         className="chip-gallery-panel"
         role="dialog"
-        aria-label="Chip 图鉴"
+        aria-label={t("chipGallery.title")}
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="chip-gallery-header">
           <div>
-            <h2>Chip 图鉴</h2>
+            <h2>{t("chipGallery.title")}</h2>
             <p>
-              Turn-level 用户通知 chip 的设计系统图鉴。所有变体由
+              {t("chipGallery.descriptionPrefix")}{" "}
               <code>userFacingErrorForMessage</code> /
               <code>userFacingErrorForMissingReply</code> /
-              <code>ContextCompactionNotice</code> 统一渲染,跟 conversation
-              流里看到的一致。点击背景关闭。
+              <code>ContextCompactionNotice</code>{" "}{t("chipGallery.descriptionSuffix")}
             </p>
           </div>
           <button
             className="icon-button"
             type="button"
-            aria-label="关闭"
+            aria-label={t("common.close")}
             onClick={onClose}
           >
             <X className="icon" />
@@ -94,26 +95,27 @@ type GalleryEntry = {
   render: () => JSX.Element;
 };
 
-const GALLERY_ENTRIES: GalleryEntry[] = [
+function galleryEntries(): GalleryEntry[] {
+  return [
   // -----------------------------------------------------------------------
   // Cancellation / soft outcomes
   // -----------------------------------------------------------------------
   {
-    label: "已停止",
+    label: translateCurrent("turn.stopped.title"),
     kind: "cancelled · neutral",
-    description: "用户中断,无已生成内容",
+    description: translateCurrent("chipGallery.cancelledEmpty"),
     render: () => <TurnNotice display={cancelledEmpty()} />,
   },
   {
-    label: "回复已中断",
+    label: translateCurrent("turn.interrupted.title"),
     kind: "cancelled · neutral",
-    description: "用户中断,有已生成内容(已保留)",
+    description: translateCurrent("chipGallery.cancelledWithOutput"),
     render: () => <TurnNotice display={cancelledWithOutput()} />,
   },
   {
-    label: "无最终回答",
+    label: translateCurrent("chipGallery.noFinalAnswer"),
     kind: "missing_final_answer · warning",
-    description: "完成但只有 commentary,无 final_answer",
+    description: translateCurrent("chipGallery.commentaryOnly"),
     render: () => <TurnNotice display={userFacingErrorForMissingReply()} />,
   },
 
@@ -121,15 +123,15 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   // Context compaction
   // -----------------------------------------------------------------------
   {
-    label: "正在自动压缩上下文",
+    label: translateCurrent("chipGallery.compacting"),
     kind: "context_compacting · progress",
-    description: "压缩进行中,带共享 live-gray sweep",
+    description: translateCurrent("chipGallery.compactingDescription"),
     render: () => <ContextCompactionNotice status="in_progress" />,
   },
   {
-    label: "上下文已压缩",
+    label: translateCurrent("chipGallery.compacted"),
     kind: "context_compacted · gray",
-    description: "正常压缩完成",
+    description: translateCurrent("chipGallery.compactedDescription"),
     render: () => (
       <ContextCompactionNotice
         status="completed"
@@ -138,9 +140,9 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
     ),
   },
   {
-    label: "已压缩上下文（Inception）",
+    label: translateCurrent("chipGallery.inception"),
     kind: "context_inception · gray",
-    description: "Inception 续接摘要已写入上下文",
+    description: translateCurrent("chipGallery.inceptionDescription"),
     render: () => (
       <ContextCompactionNotice
         status="completed"
@@ -150,9 +152,9 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
     ),
   },
   {
-    label: "已合并求助结果",
+    label: translateCurrent("chipGallery.helpme"),
     kind: "context_helpme · gray",
-    description: "HelpMe 恢复结果已合并进上下文",
+    description: translateCurrent("chipGallery.helpmeDescription"),
     render: () => (
       <ContextCompactionNotice
         status="completed"
@@ -162,9 +164,9 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
     ),
   },
   {
-    label: "上下文压缩失败",
+    label: translateCurrent("chipGallery.compactionFailed"),
     kind: "context_compaction_failed · gray",
-    description: "自动压缩失败,保留原上下文",
+    description: translateCurrent("chipGallery.compactionFailedDescription"),
     render: () => (
       <ContextCompactionNotice
         status="completed"
@@ -179,7 +181,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "context_length_exceeded",
     kind: "provider · error",
-    description: "输入超过上下文窗口",
+    description: translateCurrent("chipGallery.contextExceeded"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage(
@@ -192,7 +194,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "stream_closed_before_response.completed",
     kind: "provider · error",
-    description: "Provider WS 流在 response.completed 前断开",
+    description: translateCurrent("chipGallery.streamClosed"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage(
@@ -205,7 +207,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "connection reset",
     kind: "network · error",
-    description: "TCP 连接被对端重置",
+    description: translateCurrent("chipGallery.connectionReset"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage("connection reset by peer", "turn")}
@@ -215,7 +217,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "timeout",
     kind: "network · error",
-    description: "请求超时 / deadline exceeded",
+    description: translateCurrent("chipGallery.timeout"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage("deadline exceeded", "turn")}
@@ -229,7 +231,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "401 unauthorized",
     kind: "auth · auth",
-    description: "Provider 凭据无效",
+    description: translateCurrent("chipGallery.invalidCredentials"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage("401 unauthorized", "turn")}
@@ -239,7 +241,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "403 forbidden",
     kind: "auth · auth",
-    description: "Provider 权限不足",
+    description: translateCurrent("chipGallery.insufficientPermissions"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage("403 forbidden", "turn")}
@@ -253,7 +255,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "command failed",
     kind: "local · error",
-    description: "本地命令执行失败(exit status)",
+    description: translateCurrent("chipGallery.commandFailed"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage(
@@ -266,14 +268,15 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
   {
     label: "panic: nil pointer",
     kind: "internal · error",
-    description: "wuu 内部错误",
+    description: translateCurrent("chipGallery.internalError"),
     render: () => (
       <TurnNotice
         display={userFacingErrorForMessage("panic: nil pointer", "turn")}
       />
     ),
   },
-];
+  ];
+}
 
 /**
  * The two `cancelled` displays are not produced by `userFacingErrorForMessage`
@@ -285,8 +288,8 @@ function cancelledEmpty(): UserFacingErrorDisplay {
   return {
     category: "cancelled",
     tone: "neutral",
-    title: "已停止",
-    detail: "这次请求已停止，没有生成回复内容。",
+    title: translateCurrent("turn.stopped.title"),
+    detail: translateCurrent("turn.stopped.detail"),
   };
 }
 
@@ -294,23 +297,25 @@ function cancelledWithOutput(): UserFacingErrorDisplay {
   return {
     category: "cancelled",
     tone: "neutral",
-    title: "回复已中断",
-    detail: "已保留已生成内容，可以继续发送消息。",
+    title: translateCurrent("turn.interrupted.title"),
+    detail: translateCurrent("turn.interrupted.detail"),
   };
 }
 
 function ChipGalleryGallery(): JSX.Element {
+  const { t } = useI18n();
+  const entries = galleryEntries();
   return (
     <section className="chip-gallery-section">
       <header>
-        <h3>Gallery</h3>
+        <h3>{t("chipGallery.galleryTitle")}</h3>
         <p>
-          按 <code>kind · tone</code> 分组,每行独立展示一个 chip。hover
-          chip 看完整 detail。
+          {t("chipGallery.galleryDescriptionPrefix")} <code>kind · tone</code>{" "}
+          {t("chipGallery.galleryDescriptionSuffix")}
         </p>
       </header>
       <ul className="chip-gallery-entries">
-        {GALLERY_ENTRIES.map((entry, index) => (
+        {entries.map((entry, index) => (
           <li
             key={`${entry.kind}-${index}`}
             className="chip-gallery-entry"
@@ -347,9 +352,10 @@ type ContextTurn = {
  * minimum items needed to surface the target chip via the real
  * `turnEventForTurn` / `turnEventForItem` pipeline.
  */
-const CONTEXT_TURNS: ContextTurn[] = [
+function contextTurns(): ContextTurn[] {
+  return [
   {
-    heading: "用户中断,无已生成内容",
+    heading: translateCurrent("chipGallery.cancelledEmpty"),
     turn: {
       id: "demo-cancelled-empty",
       // No assistant items on purpose — `turnHasAssistantOutput(turn)`
@@ -358,20 +364,20 @@ const CONTEXT_TURNS: ContextTurn[] = [
       // output case below). The user message bubble still renders
       // from `userItems` in TurnView, so the in-context view shows
       // a question followed by the chip with no assistant body.
-      items: [userMessage("帮我看一下 src/ 目录结构")],
+      items: [userMessage(translateCurrent("chipGallery.mock.inspectSource"))],
       items_view: "full",
       status: "interrupted",
     },
   },
   {
-    heading: "用户中断,有已生成内容(已保留)",
+    heading: translateCurrent("chipGallery.cancelledWithOutput"),
     turn: {
       id: "demo-cancelled-partial",
       items: [
-        userMessage("写一个解析 JSON 的函数"),
-        commentary("好的,先看一下需求..."),
+        userMessage(translateCurrent("chipGallery.mock.writeParser")),
+        commentary(translateCurrent("chipGallery.mock.checkRequirements")),
         finalAnswer(
-          "下面是一个支持嵌套对象和数组的 JSON 解析器:\n\n```js\nfunction parseJSON(input) {\n  return JSON.parse(input);\n}\n```",
+          translateCurrent("chipGallery.mock.parserAnswer"),
         ),
       ],
       items_view: "full",
@@ -379,42 +385,42 @@ const CONTEXT_TURNS: ContextTurn[] = [
     },
   },
   {
-    heading: "完成但只有 commentary,无最终回答",
+    heading: translateCurrent("chipGallery.commentaryOnly"),
     turn: {
       id: "demo-missing-reply",
       items: [
-        userMessage("总结一下刚才的讨论"),
-        commentary("我先回顾一下..."),
-        commentary("看起来有几个关键点..."),
-        commentary("让我再看看第三个文件..."),
+        userMessage(translateCurrent("chipGallery.mock.summarize")),
+        commentary(translateCurrent("chipGallery.mock.review")),
+        commentary(translateCurrent("chipGallery.mock.keyPoints")),
+        commentary(translateCurrent("chipGallery.mock.thirdFile")),
       ],
       items_view: "full",
       status: "completed",
     },
   },
   {
-    heading: "Turn 中含 context_compaction item",
+    heading: translateCurrent("chipGallery.contextTurn"),
     turn: {
       id: "demo-compact",
       items: [
-        userMessage("继续之前的工作"),
+        userMessage(translateCurrent("chipGallery.mock.continueWork")),
         {
           id: "compact-1",
           type: "context_compaction",
           status: "completed",
           text: "✦ Compacted history: 18 → 5 messages (was ~12k tokens)",
         },
-        finalAnswer("好的,继续工作。"),
+        finalAnswer(translateCurrent("chipGallery.mock.continueAnswer")),
       ],
       items_view: "full",
       status: "completed",
     },
   },
   {
-    heading: "Provider 错误(上下文超限) + 推荐操作",
+    heading: translateCurrent("chipGallery.providerError"),
     turn: {
       id: "demo-failed",
-      items: [userMessage("分析这个大文件")],
+      items: [userMessage(translateCurrent("chipGallery.mock.analyzeLargeFile"))],
       items_view: "full",
       status: "failed",
       error: {
@@ -424,7 +430,8 @@ const CONTEXT_TURNS: ContextTurn[] = [
       },
     },
   },
-];
+  ];
+}
 
 function userMessage(text: string): Turn["items"][number] {
   return {
@@ -459,17 +466,19 @@ function finalAnswer(text: string): Turn["items"][number] {
 }
 
 function ChipGalleryInContext(): JSX.Element {
+  const { t } = useI18n();
+  const turns = contextTurns();
   return (
     <section className="chip-gallery-section">
       <header>
-        <h3>In-Context</h3>
+        <h3>{t("chipGallery.inContextTitle")}</h3>
         <p>
-          Mock 出来的 turn,走真实 <code>TurnView</code> 渲染,展示 chip
-          在 user 消息下方 / assistant turn 后的实际位置和间距。
+          {t("chipGallery.inContextDescriptionPrefix")} <code>TurnView</code>{" "}
+          {t("chipGallery.inContextDescriptionSuffix")}
         </p>
       </header>
       <ul className="chip-gallery-context">
-        {CONTEXT_TURNS.map((entry) => (
+        {turns.map((entry) => (
           <li
             key={entry.turn.id}
             className="chip-gallery-context-item"

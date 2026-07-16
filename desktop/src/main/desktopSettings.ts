@@ -14,6 +14,7 @@ import {
   type CodexPetSettings,
   type CodexPetSize,
   type MessageFlowFontSize,
+  type LanguagePreference,
   type ThemePreference,
 } from "../shared/protocol";
 import type { WindowBounds } from "./windowState";
@@ -22,6 +23,7 @@ export type {
   CodexPetSettings,
   MessageFlowFontSize,
   ThemePreference,
+  LanguagePreference,
   WindowBounds,
 };
 
@@ -41,6 +43,7 @@ export type DesktopSettings = {
   // Appearance. "system" follows the OS light/dark preference; the
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
+  language?: LanguagePreference;
   // User-facing reading size for the message stream, in pixels. The
   // renderer clamps incoming values to MESSAGE_FLOW_FONT_SIZE_RANGE
   // (13–20 step 0.5 default 14) before applying and the IPC boundary
@@ -59,6 +62,7 @@ export type DesktopSettings = {
 };
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
+const LANGUAGE_PREFERENCES: readonly LanguagePreference[] = ["system", "zh-CN", "en-US"];
 
 export function desktopSettingsPath(): string {
   return join(wuuHomePath(), "desktop-settings.json");
@@ -74,6 +78,9 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     const settings: DesktopSettings = {};
     if (THEME_PREFERENCES.includes(record.theme as ThemePreference)) {
       settings.theme = record.theme as ThemePreference;
+    }
+    if (LANGUAGE_PREFERENCES.includes(record.language as LanguagePreference)) {
+      settings.language = record.language as LanguagePreference;
     }
     if (
       isMessageFlowFontSize(record.message_flow_font_size)
@@ -146,6 +153,15 @@ export function getThemePreference(filePath?: string): ThemePreference {
 export function setThemePreference(theme: ThemePreference, filePath?: string): void {
   const settings = readDesktopSettings(filePath);
   writeDesktopSettings({ ...settings, theme }, filePath);
+}
+
+export function getLanguagePreference(filePath?: string): LanguagePreference {
+  return readDesktopSettings(filePath).language ?? "system";
+}
+
+export function setLanguagePreference(language: LanguagePreference, filePath?: string): void {
+  const settings = readDesktopSettings(filePath);
+  writeDesktopSettings({ ...settings, language }, filePath);
 }
 
 export function getMessageFlowFontSize(

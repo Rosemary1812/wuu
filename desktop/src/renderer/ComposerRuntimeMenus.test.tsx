@@ -2,8 +2,9 @@ import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InitializeResult } from "../shared/protocol";
-import { RuntimePicker } from "./ComposerRuntimeMenus";
+import { permissionModeOption, RuntimePicker } from "./ComposerRuntimeMenus";
 import type { CodexRuntimeMenu } from "./ComposerTypes";
+import { setActiveLocale } from "./i18n";
 
 describe("RuntimePicker", () => {
   let container: HTMLDivElement;
@@ -17,6 +18,7 @@ describe("RuntimePicker", () => {
   afterEach(() => {
     act(() => root?.unmount());
     root = null;
+    setActiveLocale("zh-CN");
     document
       .querySelectorAll('[data-floating-menu-owner="codex-runtime"]')
       .forEach((element) => element.remove());
@@ -89,6 +91,15 @@ describe("RuntimePicker", () => {
     act(() => rows[1]?.click());
     expect(onToggleMenu).toHaveBeenNthCalledWith(1, "model");
     expect(onToggleMenu).toHaveBeenNthCalledWith(2, "effort");
+  });
+
+  it("builds permission labels in the active language", () => {
+    setActiveLocale("en-US");
+
+    expect(permissionModeOption("standard")).toMatchObject({
+      label: "Full trust within workspace",
+      chipLabel: "Standard",
+    });
   });
 
   it("hides Effort when the model does not expose reasoning levels", () => {

@@ -1,5 +1,6 @@
 import { Info, X } from "lucide-react";
 import type { ContextCompositionCategory, ThreadContextCompositionResult } from "../shared/protocol";
+import { formatCurrentNumber, translateCurrent as t, useI18n } from "./i18n";
 
 export type ContextCompositionEntry = {
   id: string;
@@ -18,6 +19,7 @@ export function ContextCompositionCard({
   entry: ContextCompositionEntry;
   onDismiss?: (id: string) => void;
 }): JSX.Element {
+  useI18n();
   const { result, loading, error } = entry;
   const categories = result?.categories ?? [];
   const contributing = categories.filter((category) => category.contributes !== false);
@@ -30,20 +32,20 @@ export function ContextCompositionCard({
   const runtime = [result?.provider, result?.model].filter(Boolean).join(" · ");
 
   return (
-    <article className="context-composition-card" aria-label="上下文">
+    <article className="context-composition-card" aria-label={t("contextCard.label")}>
       <div className="context-composition-card-inner">
         {onDismiss ? (
           <button
             className="icon-button context-composition-dismiss"
             type="button"
-            aria-label="移除上下文卡片"
+            aria-label={t("contextCard.dismiss")}
             onClick={() => onDismiss(entry.id)}
           >
             <X className="icon" />
           </button>
         ) : null}
 
-        {loading ? <ContextCompositionState text="正在读取上下文记录" /> : null}
+        {loading ? <ContextCompositionState text={t("contextCard.loading")} /> : null}
         {!loading && error ? <ContextCompositionState tone="error" text={error} /> : null}
         {!loading && !error && result && !result.available ? (
           <ContextCompositionState text={unavailableMessage(result.reason)} />
@@ -54,7 +56,10 @@ export function ContextCompositionCard({
             <div className="context-composition-gauge">
               {/* 占用/上限的语义由数字和量表承载，版面上不再用文字复述；
                 * 完整说明只保留在悬停提示里。 */}
-              <div className="context-composition-headline" title="历史占用 / 上下文上限">
+              <div
+                className="context-composition-headline"
+                title={t("contextCard.occupancyTitle")}
+              >
                 <strong>
                   {formatTokens(retainedTokens)}
                   {contextWindow > 0 ? (
@@ -71,7 +76,10 @@ export function ContextCompositionCard({
                 ) : null}
               </div>
 
-              <div className="context-composition-bar" aria-label="上下文占用组成条">
+              <div
+                className="context-composition-bar"
+                aria-label={t("contextCard.compositionBar")}
+              >
                 {contributing.map((category) => (
                   <span
                     className={`context-composition-segment tone-${category.tone ?? "default"}`}
@@ -86,7 +94,8 @@ export function ContextCompositionCard({
                 <div className="context-composition-summary-meta">
                   {cacheReadTokens > 0 ? (
                     <span className="context-composition-meta-item">
-                      缓存命中 <strong>{formatTokens(cacheReadTokens)}</strong>
+                      {t("contextCard.cacheHit")}{" "}
+                      <strong>{formatTokens(cacheReadTokens)}</strong>
                     </span>
                   ) : null}
                   {runtime ? <span className="context-composition-runtime">{runtime}</span> : null}
@@ -124,10 +133,14 @@ function ContextCategoryRow({ category, promptTokens }: { category: ContextCompo
     >
       <span className="context-category-swatch" aria-hidden="true" />
       <span className="context-category-label">{category.label}</span>
-      {category.request_only ? <span className="context-category-tag">本次</span> : null}
+      {category.request_only ? (
+        <span className="context-category-tag">{t("contextCard.thisRequest")}</span>
+      ) : null}
       <strong className="context-category-tokens">{formatTokens(category.tokens ?? 0)}</strong>
       <span className="context-category-percent">
-        {category.contributes === false ? "未计入" : formatPercent(category.tokens ?? 0, promptTokens)}
+        {category.contributes === false
+          ? t("contextCard.excluded")
+          : formatPercent(category.tokens ?? 0, promptTokens)}
       </span>
     </div>
   );
@@ -136,11 +149,11 @@ function ContextCategoryRow({ category, promptTokens }: { category: ContextCompo
 function unavailableMessage(reason?: string): string {
   switch (reason) {
     case "no_request_yet":
-      return "还没有模型请求记录。发送一轮后这里会显示真实请求组成。";
+      return t("contextCard.noRequestYet");
     case "no_trace_path":
-      return "当前对话还没有可读取的上下文记录。";
+      return t("contextCard.noTracePath");
     default:
-      return "没有找到上下文记录。";
+      return t("contextCard.notFound");
   }
 }
 
@@ -163,9 +176,12 @@ function compositionBarTokens(promptTokens: number, retainedTokens: number, cont
 
 function formatPercent(value: number, total: number): string {
   if (value <= 0 || total <= 0) {
-    return "0%";
+    return formatCurrentNumber(0, { style: "percent" });
   }
-  return `${Math.round((value / total) * 100)}%`;
+  return formatCurrentNumber(value / total, {
+    style: "percent",
+    maximumFractionDigits: 0,
+  });
 }
 
 function formatTokens(value: number): string {
@@ -175,10 +191,16 @@ function formatTokens(value: number): string {
 function formatCompactNumber(value: number): string {
   const safe = Math.max(0, Math.round(value));
   if (safe >= 1_000_000) {
-    return `${(safe / 1_000_000).toFixed(safe >= 10_000_000 ? 0 : 1)}M`;
+    return `${formatCurrentNumber(safe / 1_000_000, {
+      minimumFractionDigits: safe >= 10_000_000 ? 0 : 1,
+      maximumFractionDigits: safe >= 10_000_000 ? 0 : 1,
+    })}M`;
   }
   if (safe >= 1_000) {
-    return `${(safe / 1_000).toFixed(safe >= 100_000 ? 0 : 1)}k`;
+    return `${formatCurrentNumber(safe / 1_000, {
+      minimumFractionDigits: safe >= 100_000 ? 0 : 1,
+      maximumFractionDigits: safe >= 100_000 ? 0 : 1,
+    })}k`;
   }
-  return safe.toLocaleString();
+  return formatCurrentNumber(safe);
 }

@@ -22,6 +22,7 @@ import {
   isInsideFloatingMenu,
 } from "./ComposerFloatingMenu";
 import { Modal } from "./Modal";
+import { formatCurrentNumber, translateCurrent as translate, useI18n } from "./i18n";
 
 const ACTION_CONFIRM_WINDOW_MS = 3000;
 
@@ -44,6 +45,7 @@ export function ComposerGoalStrip({
   onResume: () => void | Promise<void>;
   onClear: () => void | Promise<void>;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [confirmingAction, setConfirmingAction] =
@@ -194,12 +196,12 @@ export function ComposerGoalStrip({
 
   function handlePauseGoal(): void {
     setActionsOpen(false);
-    runAction("pause", onPause, "暂停目标失败");
+    runAction("pause", onPause, t("goal.pauseFailed"));
   }
 
   function handleResumeGoal(): void {
     setActionsOpen(false);
-    runAction("resume", onResume, "继续目标失败");
+    runAction("resume", onResume, t("goal.resumeFailed"));
   }
 
   function handleConfirmableGoalAction(action: ConfirmableGoalAction): void {
@@ -211,7 +213,7 @@ export function ComposerGoalStrip({
     }
     resetConfirmation();
     setActionsOpen(false);
-    runAction(action, onClear, "清除目标失败");
+    runAction(action, onClear, t("goal.clearFailed"));
   }
 
   function runAction(
@@ -237,7 +239,7 @@ export function ComposerGoalStrip({
   async function handleSubmitEdit(): Promise<void> {
     const next = draft.trim();
     if (!next) {
-      setError("目标文本不能为空");
+      setError(t("goal.emptyText"));
       return;
     }
     if (next === activeSummary.text.trim()) {
@@ -251,7 +253,7 @@ export function ComposerGoalStrip({
       setEditing(false);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "更新目标失败");
+      setError(cause instanceof Error ? cause.message : t("goal.updateFailed"));
     } finally {
       setBusy(null);
     }
@@ -294,9 +296,9 @@ export function ComposerGoalStrip({
             <button
               className="composer-goal-strip-action composer-input-header-action"
               type="button"
-              aria-label="查看目标详情"
+              aria-label={t("goal.viewDetails")}
               aria-expanded={infoOpen}
-              title="目标详情"
+              title={t("goal.details")}
               onClick={() => {
                 clearInfoCloseTimer();
                 setActionsOpen(false);
@@ -320,7 +322,7 @@ export function ComposerGoalStrip({
                   onMouseEnter={clearInfoCloseTimer}
                   onMouseLeave={scheduleInfoClose}
                 >
-                  <div className="composer-goal-strip-info-title">目标详情</div>
+                  <div className="composer-goal-strip-info-title">{t("goal.details")}</div>
                   <dl className="composer-goal-strip-info-list">
                     {infoRows.map((row) => (
                       <div key={row.label} className="composer-goal-strip-info-row">
@@ -337,9 +339,9 @@ export function ComposerGoalStrip({
             <button
               className="composer-goal-strip-action composer-input-header-action"
               type="button"
-              aria-label="目标操作"
+              aria-label={t("goal.actions")}
               aria-expanded={actionsOpen}
-              title="目标操作"
+              title={t("goal.actions")}
               disabled={disabled || busy !== null}
               onClick={() => {
                 setInfoOpen(false);
@@ -368,20 +370,20 @@ export function ComposerGoalStrip({
                   {canPause ? (
                     <GoalMenuButton
                       icon={Pause}
-                      label="暂停目标"
+                      label={t("goal.pause")}
                       onClick={handlePauseGoal}
                     />
                   ) : null}
                   {canResume ? (
                     <GoalMenuButton
                       icon={Play}
-                      label="继续目标"
+                      label={t("goal.resume")}
                       onClick={handleResumeGoal}
                     />
                   ) : null}
                   <GoalMenuButton
                     icon={Pencil}
-                    label="编辑目标"
+                    label={t("goal.edit")}
                     onClick={handleStartEdit}
                   />
                   {canClear ? (
@@ -390,8 +392,8 @@ export function ComposerGoalStrip({
                       icon={Trash2}
                       label={
                         confirmingAction === "clear"
-                          ? "再次点击确认清除"
-                          : "清除目标"
+                          ? t("goal.confirmClear")
+                          : t("goal.clear")
                       }
                       onClick={() => handleConfirmableGoalAction("clear")}
                     />
@@ -410,9 +412,9 @@ export function ComposerGoalStrip({
       {editing
         ? createPortal(
             <Modal
-              ariaLabel="编辑目标"
+              ariaLabel={t("goal.edit")}
               icon={<Target className="icon-lg" />}
-              title="编辑目标"
+              title={t("goal.edit")}
               onClose={handleCancelEdit}
               closeDisabled={busy === "edit"}
               panelClassName="composer-goal-edit-dialog"
@@ -426,7 +428,7 @@ export function ComposerGoalStrip({
                     disabled={busy === "edit"}
                     onClick={handleCancelEdit}
                   >
-                    取消
+                    {t("common.cancel")}
                   </button>
                   <button
                     className="primary-button composer-goal-edit-save"
@@ -439,13 +441,13 @@ export function ComposerGoalStrip({
                         aria-hidden="true"
                       />
                     ) : null}
-                    <span>{busy === "edit" ? "保存中" : "保存"}</span>
+                    <span>{busy === "edit" ? t("common.saving") : t("common.save")}</span>
                   </button>
                 </>
               }
             >
               <label className="composer-goal-edit-field">
-                <span>目标内容</span>
+                <span>{t("goal.content")}</span>
                 <textarea
                   ref={inputRef}
                   className="composer-goal-edit-textarea"
@@ -455,7 +457,7 @@ export function ComposerGoalStrip({
                   rows={10}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleEditKeyDown}
-                  aria-label="目标内容"
+                  aria-label={t("goal.content")}
                 />
               </label>
               {error ? (
@@ -497,7 +499,7 @@ function GoalMenuButton({
 
 function goalStripDisplayText(text: string): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0]?.trim() ?? "";
-  return firstLine || "（无目标文本）";
+  return firstLine || translate("goal.noText");
 }
 
 function goalStatusKey(summary: ComposerGoalSummary): string {
@@ -506,8 +508,8 @@ function goalStatusKey(summary: ComposerGoalSummary): string {
 
 function goalVisibleStatusText(summary: ComposerGoalSummary): string {
   const status = goalStatusKey(summary);
-  if (status === "paused") return "已暂停";
-  if (status === "blocked") return "已阻塞";
+  if (status === "paused") return translate("goal.paused");
+  if (status === "blocked") return translate("goal.blocked");
   return "";
 }
 
@@ -517,40 +519,44 @@ function goalStatusText(summary: ComposerGoalSummary): string {
     case "":
     case "active":
     case "running":
-      return "运行中";
+      return translate("goal.running");
     case "paused":
-      return "已暂停";
+      return translate("goal.paused");
     case "blocked":
-      return "已阻塞";
+      return translate("goal.blocked");
     default:
-      return "状态未知";
+      return translate("goal.unknownStatus");
   }
 }
 
 function goalInfoRows(summary: ComposerGoalSummary, nowMS: number): GoalInfoRow[] {
   const rows: GoalInfoRow[] = [
-    { label: "状态", value: goalStatusText(summary) },
+    { label: translate("goal.status"), value: goalStatusText(summary) },
     {
-      label: "运行",
+      label: translate("goal.elapsed"),
       value: formatGoalDuration(goalRunningSeconds(summary, nowMS)),
     },
   ];
   if ((summary.goal_turns ?? 0) > 0) {
-    rows.push({ label: "回合", value: `${summary.goal_turns} 轮` });
+    const turns = summary.goal_turns ?? 0;
+    rows.push({
+      label: translate("goal.turnsLabel"),
+      value: translate(turns === 1 ? "goal.turnCountOne" : "goal.turnCount", { count: formatCurrentNumber(turns) }),
+    });
   }
   if ((summary.tokens_used ?? 0) > 0) {
     rows.push({
-      label: "Tokens",
+      label: translate("goal.tokens"),
       value: formatCompactNumber(summary.tokens_used ?? 0),
     });
   }
   const blocker = summary.blocker?.trim() ?? "";
   if (blocker) {
-    rows.push({ label: "阻塞原因", value: blocker });
+    rows.push({ label: translate("goal.blocker"), value: blocker });
   }
   const progress = summary.recent_progress?.trim() ?? "";
   if (progress) {
-    rows.push({ label: "最近进展", value: progress });
+    rows.push({ label: translate("goal.recentProgress"), value: progress });
   }
   return rows;
 }
@@ -565,7 +571,7 @@ function goalRunningSeconds(summary: ComposerGoalSummary, nowMS: number): number
 }
 
 function formatCompactNumber(value: number): string {
-  return Math.max(0, value).toLocaleString("en-US");
+  return formatCurrentNumber(Math.max(0, value));
 }
 
 function formatGoalDuration(totalSeconds: number): string {
@@ -574,10 +580,21 @@ function formatGoalDuration(totalSeconds: number): string {
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainingSeconds = seconds % 60;
   if (hours > 0) {
-    return `${hours} 小时 ${minutes} 分`;
+    return `${formatGoalDurationUnit(hours, "hour")} ${formatGoalDurationUnit(minutes, "minute")}`;
   }
   if (minutes > 0) {
-    return `${minutes} 分 ${remainingSeconds} 秒`;
+    return `${formatGoalDurationUnit(minutes, "minute")} ${formatGoalDurationUnit(remainingSeconds, "second")}`;
   }
-  return `${remainingSeconds} 秒`;
+  return formatGoalDurationUnit(remainingSeconds, "second");
+}
+
+function formatGoalDurationUnit(value: number, unit: "hour" | "minute" | "second"): string {
+  const suffix = value === 1 ? "One" : "";
+  return translate(`goal.duration.${unit}${suffix}` as
+    | "goal.duration.hour"
+    | "goal.duration.hourOne"
+    | "goal.duration.minute"
+    | "goal.duration.minuteOne"
+    | "goal.duration.second"
+    | "goal.duration.secondOne", { count: formatCurrentNumber(value) });
 }

@@ -118,7 +118,7 @@ describe("ChipGalleryPanel", () => {
     // Each item has a heading and a framed mock turn.
     const firstItem = items[0];
     expect(firstItem?.querySelector("h4")?.textContent).toBe(
-      "用户中断,无已生成内容",
+      "用户中断，无已生成内容",
     );
     expect(
       firstItem?.querySelector(".chip-gallery-context-frame"),

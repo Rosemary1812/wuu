@@ -9,6 +9,7 @@ import type {
   ParticipantSaveParams,
 } from "../shared/protocol";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { localizedText, translateCurrent } from "./i18n";
 
 const DEFAULT_PARTICIPANT_ARCHIVED_NOTICE_MS = 1_500;
 
@@ -169,7 +170,7 @@ export function useParticipantState({
             ? {
                 ...current,
                 saving: false,
-                error: desktopApiErrorMessage(error, "无法保存 Agent"),
+                error: desktopApiErrorMessage(error, translateCurrent("participant.saveFailed")),
               }
             : current,
         );
@@ -197,7 +198,7 @@ export function useParticipantState({
         const result = await window.wuu.sendMemoryChat({
           scope: "participant",
           participant_id: participant.id,
-          message: `用户反馈：${text}`,
+          message: translateCurrent("participant.userFeedback", { text }),
         });
         setParticipantPanel((current) =>
           current
@@ -214,7 +215,7 @@ export function useParticipantState({
             ? {
                 ...current,
                 feedbackSubmitting: false,
-                error: desktopApiErrorMessage(error, "无法写入反馈"),
+                error: desktopApiErrorMessage(error, translateCurrent("participant.feedbackFailed")),
               }
             : current,
         );
@@ -253,7 +254,7 @@ export function useParticipantState({
             ? {
                 ...current,
                 retiring: false,
-                error: desktopApiErrorMessage(error, "无法归档 Agent"),
+                error: desktopApiErrorMessage(error, translateCurrent("participant.archiveFailed")),
               }
             : current,
         );
@@ -314,9 +315,12 @@ export function useParticipantState({
       setParticipants((current) =>
         saved.reduce(replaceParticipantProfile, current),
       );
-      setStatus(`已导入 ${saved.length} 个 Agent`);
+      setStatus(localizedText(
+        saved.length === 1 ? "participant.importedOne" : "participant.imported",
+        { count: saved.length },
+      ));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "导入团队模板失败");
+      setStatus(error instanceof Error ? error.message : translateCurrent("participant.importTemplateFailed"));
     }
   }
 

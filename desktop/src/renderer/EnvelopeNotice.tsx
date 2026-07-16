@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { EnvelopeMeta } from "../shared/protocol";
+import { useI18n } from "./i18n";
 
 /**
  * Collapsed meta row for envelope-injected user messages in a resident
@@ -24,6 +25,7 @@ export function EnvelopeNotice({
   meta: EnvelopeMeta;
   text: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const records = meta;
   const titles = [
@@ -35,14 +37,14 @@ export function EnvelopeNotice({
   ];
   const source =
     titles.length === 1
-      ? `「${titles[0]}」`
+      ? t("envelope.namedSource", { title: titles[0] })
       : titles.length > 1
-        ? "多个会话"
-        : "其他会话";
+        ? t("envelope.multipleConversations")
+        : t("envelope.otherConversation");
   const label =
     records.length > 1
-      ? `收到来自${source}的 ${records.length} 条消息`
-      : `收到来自${source}的消息`;
+      ? t("envelope.messagesReceived", { source, count: records.length })
+      : t("envelope.messageReceived", { source });
   const addressed = records.some((record) => record.addressed === true);
   const maxHop = records.reduce(
     (max, record) => Math.max(max, record.hop ?? 0),
@@ -54,16 +56,16 @@ export function EnvelopeNotice({
         type="button"
         className="chat-inline-divider envelope-notice-toggle"
         aria-expanded={expanded}
-        aria-label={`${label}，${expanded ? "收起" : "展开"}`}
+        aria-label={t("envelope.toggle", { label, action: expanded ? t("common.collapse") : t("common.expand") })}
         onClick={() => setExpanded((previous) => !previous)}
       >
         <span className="chat-inline-divider-label envelope-notice-label">
           <span className="envelope-notice-title">{label}</span>
           {addressed ? (
-            <span className="envelope-notice-addressed">点名</span>
+            <span className="envelope-notice-addressed">{t("envelope.addressed")}</span>
           ) : null}
           {maxHop > 0 ? (
-            <span className="envelope-notice-hop">转发×{maxHop}</span>
+            <span className="envelope-notice-hop">{t("envelope.forwarded", { count: maxHop })}</span>
           ) : null}
           {expanded ? (
             <ChevronDown className="envelope-notice-chevron" aria-hidden="true" />

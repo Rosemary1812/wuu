@@ -27,6 +27,7 @@ import {
   type ThreadPendingComposerMessages,
 } from "./ComposerPendingMessages";
 import { isRecord, recordValue, stringValue } from "./ToolActivity";
+import { localizedText, translateCurrent } from "./i18n";
 
 export type ComposerPendingStateController = {
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
@@ -216,7 +217,7 @@ export function useComposerPendingState({
     try {
       const result = await window.wuu.dequeueTurn(target.threadID, id);
       if (!result.ok) {
-        setStatus("排队消息已被处理，无法取消");
+        setStatus(localizedText("composer.queueAlreadyHandled"));
         return false;
       }
       return true;
@@ -235,7 +236,11 @@ export function useComposerPendingState({
           ],
         };
       });
-      setStatus(error instanceof Error ? error.message : "取消排队失败");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : translateCurrent("composer.cancelQueueFailed"),
+      );
       return false;
     }
   }
@@ -257,7 +262,7 @@ export function useComposerPendingState({
     try {
       const result = await window.wuu.unsteerTurn(target.threadID, id);
       if (!result.ok) {
-        setStatus("引导消息已被处理，无法取消");
+        setStatus(localizedText("composer.guideAlreadyHandled"));
         return false;
       }
       return true;
@@ -276,7 +281,11 @@ export function useComposerPendingState({
           ],
         };
       });
-      setStatus(error instanceof Error ? error.message : "取消引导失败");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : translateCurrent("composer.cancelGuideFailed"),
+      );
       return false;
     }
   }
@@ -296,7 +305,7 @@ export function useComposerPendingState({
     if (!composerDraftHasContent(getPrimaryComposerDraft())) {
       return true;
     }
-    setStatus("先发送或清空当前输入，再编辑排队消息");
+    setStatus(localizedText("composer.clearBeforeEditingQueue"));
     return false;
   }
 
@@ -314,7 +323,7 @@ export function useComposerPendingState({
       return;
     }
     restorePendingComposerMessage(target.threadID, target.message);
-    setStatus("已撤回排队消息，可编辑后重新发送");
+    setStatus(localizedText("composer.queueRestoredForEditing"));
   }
 
   async function editGuideMessage(id: string): Promise<void> {
@@ -358,7 +367,7 @@ export function useComposerPendingState({
     }
     const turnID = activeTurnIDForThread(targetThread);
     if (!turnID) {
-      setStatus("没有可引导的任务");
+      setStatus(localizedText("composer.noActiveTurnToGuide"));
       return;
     }
     try {
@@ -376,7 +385,11 @@ export function useComposerPendingState({
         guides: [...previous.guides, target.message],
       }));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "引导失败");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : translateCurrent("composer.guideFailed"),
+      );
     }
   }
 

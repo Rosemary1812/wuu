@@ -37,6 +37,7 @@ import {
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 export function AssistantTurnShell({
   turn,
@@ -537,7 +538,8 @@ function ReasoningFold({
   onOpenSubthread?: (item: ThreadItem) => void;
   onStreamFrame: () => void;
 }): JSX.Element {
-  const label = streaming ? "正在思考" : "查看思考过程";
+  const { t } = useI18n();
+  const label = streaming ? t("process.thinking") : t("process.viewReasoning");
   // Only the latest visible gray process label sweeps while the turn
   // is still running. The label text still reflects this item's own
   // state.
@@ -630,8 +632,8 @@ function turnProcessTitle(
 }
 
 function taskFinishedLabel(elapsedMs: number): string {
-  if (elapsedMs < 1000) return "用时不到 1 秒";
-  return `用时 ${formatChineseDuration(elapsedMs)}`;
+  if (elapsedMs < 1000) return translate("process.finishedUnderSecond");
+  return translate("process.finishedIn", { duration: formatChineseDuration(elapsedMs) });
 }
 
 function turnProcessMetaParts(turn: Turn, elapsedMs: number): string[] {

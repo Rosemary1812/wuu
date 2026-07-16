@@ -1,6 +1,7 @@
 import type { ThreadItemStatus } from "../shared/protocol";
 import type { TurnEventDisplay } from "./TurnEvents";
 import type { UserFacingErrorDisplay, UserFacingErrorTone } from "./UserFacingErrors";
+import { translateCurrent as t } from "./i18n";
 
 export type SystemEventDisplay = {
   label: string;
@@ -118,7 +119,8 @@ export function ContextCompactionNotice({
   // the `title` attribute so it is available on hover without taking a
   // second visual line.
   const label = contextCompactionTitle(text, reason, status);
-  const tone = label === "压缩失败" ? "error" : "neutral";
+  const normalized = normalizeContextCompactionText(text);
+  const tone = status === "failed" || isFailedCompactNotice(normalized) ? "error" : "neutral";
   return (
     <SystemEventNotice
       event={{ label, detail, tone }}
@@ -129,10 +131,10 @@ export function ContextCompactionNotice({
 
 function contextCompactionProgressTitle(text?: string, reason?: string): string {
   if (isManualCompact(reason, normalizeContextCompactionText(text))) {
-    return "正在压缩上下文";
+    return t("compaction.compacting");
   }
   const normalized = normalizeContextCompactionText(text);
-  return normalized || "正在自动压缩上下文";
+  return normalized || t("compaction.autoCompacting");
 }
 
 function contextCompactionTitle(
@@ -142,24 +144,24 @@ function contextCompactionTitle(
 ): string {
   const normalized = normalizeContextCompactionText(text);
   if (status === "failed") {
-    return "压缩失败";
+    return t("compaction.failed");
   }
   if (isFailedCompactNotice(normalized)) {
-    return "压缩失败";
+    return t("compaction.failed");
   }
   if (isUnchangedCompactNotice(normalized)) {
-    return "无需压缩";
+    return t("compaction.notNeeded");
   }
   if (isInceptionCompact(reason, normalized)) {
-    return "已压缩上下文（Inception）";
+    return t("compaction.inceptionComplete");
   }
   if (isHelpMeCompact(reason, normalized)) {
-    return "已合并求助结果";
+    return t("compaction.helpmeComplete");
   }
   if (isManualCompact(reason, normalized)) {
-    return "压缩成功";
+    return t("compaction.manualComplete");
   }
-  return "上下文已压缩";
+  return t("compaction.complete");
 }
 
 function contextCompactionDetail(
@@ -169,25 +171,25 @@ function contextCompactionDetail(
 ): string {
   const normalized = normalizeContextCompactionText(text);
   if (status === "failed") {
-    return "压缩没有完成，当前对话仍保留原上下文。";
+    return t("compaction.failedDetail");
   }
   if (!normalized) {
-    return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
+    return t("compaction.completeDetail");
   }
   if (isFailedCompactNotice(normalized)) {
-    return "压缩没有完成，当前对话仍保留原上下文。";
+    return t("compaction.failedDetail");
   }
   if (isUnchangedCompactNotice(normalized)) {
-    return "当前对话还没有足够的历史需要整理，原上下文保持不变。";
+    return t("compaction.notNeededDetail");
   }
   if (isInceptionCompact(reason, normalized)) {
-    return "已生成续接摘要，后续回复会沿用保留下来的任务状态。";
+    return t("compaction.inceptionDetail");
   }
   if (isHelpMeCompact(reason, normalized)) {
-    return "已把 HelpMe 恢复结果整理进上下文，后续回复会沿用新的任务状态。";
+    return t("compaction.helpmeDetail");
   }
   if (/^Compacted history$/i.test(normalized)) {
-    return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
+    return t("compaction.completeDetail");
   }
   const compactNotice = parseContextCompactionNotice(normalized);
   if (compactNotice) {
@@ -233,6 +235,7 @@ function parseContextCompactionNotice(text: string): string | undefined {
     return undefined;
   }
   const [, , before, after, tokens] = match;
-  const tokenDetail = tokens ? `，原约 ${tokens.trim()}` : "";
-  return `已压缩较早上下文：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
+  return tokens
+    ? t("compaction.summaryWithTokens", { before, after, tokens: tokens.trim() })
+    : t("compaction.summary", { before, after });
 }

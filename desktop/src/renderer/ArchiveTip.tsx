@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Archive, CircleAlert, X } from "lucide-react";
+import { useI18n } from "./i18n";
 
 const ARCHIVE_TIP_AUTO_DISMISS_MS = 6000;
 
@@ -20,6 +21,7 @@ export function ArchiveTip({
   onViewArchive,
   onDismiss,
 }: ArchiveTipProps): JSX.Element {
+  const { t } = useI18n();
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
@@ -53,10 +55,10 @@ export function ArchiveTip({
         ) : trimmedTitle ? (
           <>
             <strong>{trimmedTitle}</strong>
-            <span> 已归档</span>
+            <span> {t("archive.archivedSuffix")}</span>
           </>
         ) : (
-          <span>会话已归档</span>
+          <span>{t("archive.conversationArchived")}</span>
         )}
       </span>
       {failed ? null : (
@@ -65,13 +67,13 @@ export function ArchiveTip({
           className="archive-tip-action"
           onClick={onViewArchive}
         >
-          查看归档
+          {t("archive.viewArchive")}
         </button>
       )}
       <button
         type="button"
         className="archive-tip-dismiss"
-        aria-label="关闭提示"
+        aria-label={t("common.closeNotice")}
         onClick={() => {
           setLeaving(true);
           window.setTimeout(onDismiss, 200);

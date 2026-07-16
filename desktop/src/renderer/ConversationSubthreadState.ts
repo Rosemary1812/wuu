@@ -19,6 +19,7 @@ import {
   type OpenSubthreadPanel,
 } from "./AppState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { translateCurrent } from "./i18n";
 
 export type ConversationSubthreadStateOptions = {
   activeThreadID?: string;
@@ -167,7 +168,7 @@ export function useConversationSubthreadState({
             ? {
                 threadID,
                 loading: false,
-                error: desktopApiErrorMessage(error, "无法打开 thread"),
+                error: desktopApiErrorMessage(error, translateCurrent("collaboration.thread.openFailed")),
               }
             : current,
         );
@@ -233,7 +234,7 @@ export function useConversationSubthreadState({
             ? {
                 threadID: thread.id,
                 loading: false,
-                error: desktopApiErrorMessage(error, "无法打开 thread"),
+                error: desktopApiErrorMessage(error, translateCurrent("collaboration.thread.openFailed")),
               }
             : current,
         );
@@ -282,7 +283,7 @@ export function useConversationSubthreadState({
             ? {
                 ...panel,
                 loading: false,
-                error: desktopApiErrorMessage(error, "无法更新 thread"),
+                error: desktopApiErrorMessage(error, translateCurrent("collaboration.thread.updateFailed")),
               }
             : panel,
         );
@@ -343,7 +344,7 @@ export function useConversationSubthreadState({
           stillCurrent &&
           prev?.threadID === threadID &&
           prev.subthread?.id === subthreadID
-            ? { ...prev, error: desktopApiErrorMessage(error, "无法发送回复") }
+            ? { ...prev, error: desktopApiErrorMessage(error, translateCurrent("collaboration.thread.replyFailed")) }
             : prev,
         );
       }
@@ -392,7 +393,7 @@ export function useConversationSubthreadState({
             ? {
                 ...panel,
                 loading: false,
-                error: desktopApiErrorMessage(error, "无法升级为 Task"),
+                error: desktopApiErrorMessage(error, translateCurrent("collaboration.thread.promoteFailed")),
               }
             : panel,
         );

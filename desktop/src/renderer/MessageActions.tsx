@@ -3,6 +3,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState }
 import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
 import { useImagePreview } from "./ImagePreview";
+import { useI18n } from "./i18n";
 
 export function AgentMessageActions({
   getText,
@@ -11,6 +12,7 @@ export function AgentMessageActions({
   getText: () => string;
   onFork?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
   // `pulse` is a transient state used to retrigger the icon bounce/shake keyframes
   // and to render the floating "+1" / "−1" burst above the clicked button. It is
@@ -47,16 +49,16 @@ export function AgentMessageActions({
   }
 
   return (
-    <div className="message-actions agent-message-actions" aria-label="助手消息操作">
+    <div className="message-actions agent-message-actions" aria-label={t("message.assistantActions")}>
       <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
       <button
         className={`message-action-button message-action-button--like${
           feedback === "liked" ? " is-active" : ""
         }${pulse === "liked" ? " is-pulsing" : ""}`}
         type="button"
-        aria-label="赞"
+        aria-label={t("message.like")}
         aria-pressed={feedback === "liked"}
-        title="赞"
+        title={t("message.like")}
         onClick={() => handleFeedbackClick("liked")}
       >
         <ThumbsUp key={`thumbs-up-${clickToken}`} className="icon" />
@@ -75,9 +77,9 @@ export function AgentMessageActions({
           feedback === "disliked" ? " is-active" : ""
         }${pulse === "disliked" ? " is-pulsing" : ""}`}
         type="button"
-        aria-label="踩"
+        aria-label={t("message.dislike")}
         aria-pressed={feedback === "disliked"}
-        title="踩"
+        title={t("message.dislike")}
         onClick={() => handleFeedbackClick("disliked")}
       >
         <ThumbsDown key={`thumbs-down-${clickToken}`} className="icon" />
@@ -91,7 +93,7 @@ export function AgentMessageActions({
           </span>
         ) : null}
       </button>
-      <button className="message-action-button" type="button" aria-label="分叉" title="分叉" disabled={!onFork} onClick={onFork}>
+      <button className="message-action-button" type="button" aria-label={t("message.fork")} title={t("message.fork")} disabled={!onFork} onClick={onFork}>
         <GitFork className="icon" />
       </button>
     </div>
@@ -102,9 +104,9 @@ export function MessageCopyButton({
   getText,
   className = "",
   iconSize = 14,
-  idleLabel = "复制消息",
-  copiedLabel = "已复制消息",
-  failedLabel = "复制失败"
+  idleLabel,
+  copiedLabel,
+  failedLabel,
 }: {
   getText: () => string;
   className?: string;
@@ -113,9 +115,13 @@ export function MessageCopyButton({
   copiedLabel?: string;
   failedLabel?: string;
 }): JSX.Element {
+  const { t } = useI18n();
+  const resolvedIdleLabel = idleLabel ?? t("message.copy");
+  const resolvedCopiedLabel = copiedLabel ?? t("message.copied");
+  const resolvedFailedLabel = failedLabel ?? t("common.copyFailed");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const resetTimerRef = useRef<number | undefined>(undefined);
-  const label = copyState === "copied" ? copiedLabel : copyState === "failed" ? failedLabel : idleLabel;
+  const label = copyState === "copied" ? resolvedCopiedLabel : copyState === "failed" ? resolvedFailedLabel : resolvedIdleLabel;
 
   useEffect(() => {
     return () => {
@@ -182,12 +188,13 @@ export function MessageEditButton({
   className?: string;
   iconSize?: number;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <button
       className={`message-edit-button ${className}`}
       type="button"
-      aria-label="编辑并重试"
-      title="编辑并重试"
+      aria-label={t("message.editAndRetry")}
+      title={t("message.editAndRetry")}
       onClick={onEdit}
     >
       <PencilLine size={iconSize} />
@@ -203,12 +210,13 @@ export function MessageImageGrid({
   /** When provided, each image gets a remove button (used inside the inline editor). */
   onRemove?: (index: number) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const { openPreview } = useImagePreview();
   return (
     <div className={`message-images${onRemove ? " message-images-editable" : ""}`}>
       {images.map((image, index) => {
         const src = imageSource(image);
-        const label = `图片 ${index + 1}`;
+        const label = t("composer.imageNumber", { number: index + 1 });
         const handleOpen = (): void => {
           openPreview({ src, alt: label, title: label });
         };
@@ -226,7 +234,7 @@ export function MessageImageGrid({
               alt={label}
               role="button"
               tabIndex={0}
-              aria-label={`放大查看：${label}`}
+              aria-label={t("composer.enlargeNamed", { name: label })}
               onClick={handleOpen}
               onKeyDown={handleKeyDown}
             />
@@ -234,8 +242,8 @@ export function MessageImageGrid({
               <button
                 type="button"
                 className="message-image-remove"
-                aria-label={`移除图片 ${index + 1}`}
-                title="移除"
+                aria-label={t("composer.removeImage", { number: index + 1 })}
+                title={t("common.remove")}
                 onClick={(event) => {
                   event.stopPropagation();
                   onRemove(index);
@@ -259,20 +267,21 @@ export function MessageFileList({
   /** When provided, each file gets a remove button (used inside the inline editor). */
   onRemove?: (index: number) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className={`message-files${onRemove ? " message-files-editable" : ""}`}>
       {files.map((file, index) => (
         <div className="message-file-frame" key={`${file.media_type}-${file.filename ?? index}-${index}`}>
           <div className="message-file">
             <FileText className="icon" aria-hidden="true" />
-            <span>{file.filename?.trim() || `File ${index + 1}`}</span>
+            <span>{file.filename?.trim() || t("message.fileNumber", { number: index + 1 })}</span>
           </div>
           {onRemove ? (
             <button
               type="button"
               className="message-file-remove"
-              aria-label={`移除文件 ${file.filename?.trim() || index + 1}`}
-              title="移除"
+              aria-label={t("message.removeFileNamed", { name: file.filename?.trim() || index + 1 })}
+              title={t("common.remove")}
               onClick={() => onRemove(index)}
             >
               <X size={12} aria-hidden="true" />

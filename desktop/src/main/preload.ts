@@ -11,6 +11,7 @@ import {
   type SideThreadSendParams,
   type ThreadStartParams,
   type ThemePreference,
+  type LanguagePreference,
   type WindowResizeState,
   type WuuDesktopApi,
 } from "../shared/protocol";
@@ -24,6 +25,15 @@ const initialThemePreference = ((): ThemePreference => {
     return value === "light" || value === "dark" || value === "system"
       ? value
       : "system";
+  } catch {
+    return "system";
+  }
+})();
+
+const initialLanguagePreference = ((): LanguagePreference => {
+  try {
+    const value = ipcRenderer.sendSync("wuu:language-preference-get-sync") as unknown;
+    return value === "zh-CN" || value === "en-US" || value === "system" ? value : "system";
   } catch {
     return "system";
   }
@@ -237,6 +247,24 @@ const api: WuuDesktopApi = {
     return () => ipcRenderer.removeListener("wuu:remote-event", listener);
   },
   initialThemePreference,
+  initialLanguagePreference,
+  initialSystemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
+  getLanguagePreference: () => ipcRenderer.invoke("wuu:language-preference-get"),
+  setLanguagePreference: (language: LanguagePreference) =>
+    ipcRenderer.invoke("wuu:language-preference-set", language),
+  onLanguagePreferenceChange: (handler: (language: LanguagePreference) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: unknown,
+    ) => {
+      if (payload === "zh-CN" || payload === "en-US" || payload === "system") {
+        handler(payload);
+      }
+    };
+    ipcRenderer.on("wuu:language-preference-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:language-preference-changed", listener);
+  },
   initialMessageFlowFontSize,
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>

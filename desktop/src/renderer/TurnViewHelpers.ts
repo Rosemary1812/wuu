@@ -7,6 +7,7 @@ import {
 import { debugStreamFieldLength, latestDebugItem } from "./RunDebugPanel";
 import { streamFieldValue } from "./ThreadItemText";
 import { prefersReducedMotion } from "./motion";
+import { formatCurrentNumber, getActiveLocale, translateCurrent as t } from "./i18n";
 
 type TurnProgressContent = {
   label: string;
@@ -224,17 +225,17 @@ export function formatRelativeTime(iso: string | undefined): string {
   const diffMs = Date.now() - then;
   const minutes = Math.round(diffMs / 60_000);
   if (minutes < 1) {
-    return "刚刚";
+    return t("time.justNow");
   }
   if (minutes < 60) {
-    return `${minutes} 分钟前`;
+    return t(minutes === 1 ? "time.minuteAgo" : "time.minutesAgo", { count: formatCurrentNumber(minutes) });
   }
   const hours = Math.round(minutes / 60);
   if (hours < 24) {
-    return `${hours} 小时前`;
+    return t(hours === 1 ? "time.hourAgo" : "time.hoursAgo", { count: formatCurrentNumber(hours) });
   }
   const days = Math.round(hours / 24);
-  return `${days} 天前`;
+  return t(days === 1 ? "time.dayAgo" : "time.daysAgo", { count: formatCurrentNumber(days) });
 }
 
 const JUMP_HIGHLIGHT_CLASS = "user-message-jump-flash";
@@ -371,8 +372,9 @@ export function turnProgressContent(
   elapsedMs: number,
   hasFinalText: boolean,
 ): TurnProgressContent {
+  const locale = getActiveLocale() === "zh-CN" ? "zh" : "en";
   if (turn.status === "interrupted") {
-    return { label: "已停止", detail: "这次请求已停止" };
+    return { label: t("error.cancelledTitle"), detail: t("turn.requestStopped") };
   }
   if (turn.status !== "in_progress") {
     return {
@@ -380,7 +382,7 @@ export function turnProgressContent(
         done: true,
         failed: turn.status === "failed",
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
     };
   }
@@ -396,7 +398,7 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
     };
   }
@@ -408,9 +410,9 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
-      detail: waitingDetail(elapsedMs, "已收到请求，正在等待模型回应"),
+      detail: waitingDetail(elapsedMs, t("turn.waitingForModel")),
     };
   }
   if (latestItem.type === "agent_message") {
@@ -423,9 +425,9 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText: hasText,
-        locale: "zh",
+        locale,
       }),
-      detail: hasText ? undefined : waitingDetail(elapsedMs, "正在组织回答"),
+      detail: hasText ? undefined : waitingDetail(elapsedMs, t("turn.organizingAnswer")),
     };
   }
   if (latestItem.type === "reasoning") {
@@ -434,9 +436,9 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
-      detail: waitingDetail(elapsedMs, "正在组织回答"),
+      detail: waitingDetail(elapsedMs, t("turn.organizingAnswer")),
     };
   }
   if (
@@ -448,7 +450,7 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
     };
   }
@@ -458,7 +460,7 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
     };
   }
@@ -468,7 +470,7 @@ export function turnProgressContent(
         done: false,
         failed: false,
         hasFinalText,
-        locale: "zh",
+        locale,
       }),
     };
   }
@@ -478,18 +480,18 @@ export function turnProgressContent(
       done: false,
       failed: false,
       hasFinalText,
-      locale: "zh",
+      locale,
     }),
-    detail: waitingDetail(elapsedMs, "请求正在处理中"),
+    detail: waitingDetail(elapsedMs, t("turn.processingRequest")),
   };
 }
 
 function waitingDetail(elapsedMs: number, defaultDetail: string): string {
   if (elapsedMs >= 30_000) {
-    return "这个请求比平常更久，仍在等待响应";
+    return t("turn.takingLonger");
   }
   if (elapsedMs >= 8_000) {
-    return "请求已开始，正在继续处理";
+    return t("turn.continuingRequest");
   }
   return defaultDetail;
 }

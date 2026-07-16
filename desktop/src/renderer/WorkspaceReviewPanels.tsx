@@ -36,6 +36,7 @@ import {
   summarizeGitChangeFiles,
   type GitChangeTreeNode
 } from "./WorkspaceReviewHelpers";
+import { useI18n } from "./i18n";
 
 const WORKSPACE_REVIEW_TREE_DEFAULT_WIDTH = 280;
 const WORKSPACE_REVIEW_TREE_MIN_WIDTH = 220;
@@ -68,6 +69,7 @@ function clampWorkspaceReviewTreeWidth(width: number, panelWidth = Number.POSITI
 }
 
 export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResult }): JSX.Element {
+  const { locale, t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
   const splitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
   const [changes, setChanges] = useState<GitChangesResult | undefined>(undefined);
@@ -95,7 +97,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     setSelectedPath(undefined);
     setFileDiff(undefined);
     if (!desktopApiSupportsGitReview()) {
-      setError("审查接口还没被当前窗口加载。请重启桌面端后再试。");
+      setError(t("workspaceReview.apiUnavailable"));
       setLoadingChanges(false);
       return;
     }
@@ -114,7 +116,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
       })
       .catch((nextError) => {
         if (!cancelled) {
-          setError(desktopApiErrorMessage(nextError, "读取变更失败"));
+          setError(desktopApiErrorMessage(nextError, t("workspaceReview.readChangesFailed")));
         }
       })
       .finally(() => {
@@ -126,7 +128,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -150,7 +152,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     let cancelled = false;
     setFileDiff(undefined);
     if (!desktopApiSupportsGitReview()) {
-      setError("审查接口还没被当前窗口加载。请重启桌面端后再试。");
+      setError(t("workspaceReview.apiUnavailable"));
       setLoadingDiff(false);
       return;
     }
@@ -165,7 +167,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
       })
       .catch((nextError) => {
         if (!cancelled) {
-          setError(desktopApiErrorMessage(nextError, "读取 diff 失败"));
+          setError(desktopApiErrorMessage(nextError, t("workspaceReview.readDiffFailed")));
         }
       })
       .finally(() => {
@@ -177,7 +179,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return () => {
       cancelled = true;
     };
-  }, [selectedPath]);
+  }, [selectedPath, locale]);
 
   useEffect(() => {
     window.localStorage.setItem(WORKSPACE_REVIEW_TREE_WIDTH_KEY, String(treePaneWidth));
@@ -266,8 +268,8 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return (
       <div className="workspace-main-empty">
         <GitBranch size={36} />
-        <strong>正在读取变更</strong>
-        <span>正在检查当前工作区的本地代码差异。</span>
+        <strong>{t("workspaceReview.readingChanges")}</strong>
+        <span>{t("workspaceReview.checkingLocalDiff")}</span>
       </div>
     );
   }
@@ -276,7 +278,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return (
       <div className="workspace-main-empty">
         <AlertCircle size={36} />
-        <strong>读取失败</strong>
+        <strong>{t("workspaceReview.readFailed")}</strong>
         <span>{error}</span>
       </div>
     );
@@ -286,8 +288,8 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return (
       <div className="workspace-main-empty">
         <FolderX size={36} />
-        <strong>不是 Git 仓库</strong>
-        <span>当前项目没有可查看的 Git 变更。</span>
+        <strong>{t("workspaceReview.notGitRepository")}</strong>
+        <span>{t("workspaceReview.noGitChanges")}</span>
       </div>
     );
   }
@@ -296,8 +298,8 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return (
       <div className="workspace-main-empty">
         <Check size={36} />
-        <strong>工作区干净</strong>
-        <span>当前没有待审查的代码差异。</span>
+        <strong>{t("workspaceReview.clean")}</strong>
+        <span>{t("workspaceReview.noReviewDiff")}</span>
       </div>
     );
   }
@@ -309,7 +311,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
       }${
         resizingSplit ? " resizing-split" : ""
       }`}
-      aria-label="审查变更"
+      aria-label={t("workspaceReview.reviewChanges")}
       ref={panelRef}
       style={panelStyle}
     >
@@ -326,7 +328,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
         <div
           className="workspace-review-resizer"
           role="separator"
-          aria-label="调整 diff 和文件树宽度"
+          aria-label={t("workspaceReview.resizeDiffTree")}
           aria-orientation="vertical"
           aria-valuemin={WORKSPACE_REVIEW_TREE_MIN_WIDTH}
           aria-valuemax={WORKSPACE_REVIEW_TREE_MAX_WIDTH}
@@ -368,25 +370,32 @@ function WorkspaceReviewDiffPeekPanel({
   error?: string;
   branch?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const diffLines = useMemo(() => (fileDiff?.patch ? gitDiffDisplayLines(fileDiff.patch) : []), [fileDiff?.patch]);
   return (
-    <section className="workspace-review-diff-panel workspace-diff-detail" aria-label={`${file.path} 的代码差异`}>
+    <section
+      className="workspace-review-diff-panel workspace-diff-detail"
+      aria-label={t("workspaceReview.codeDiffFor", { path: file.path })}
+    >
       <div className="workspace-diff-detail-header">
         <div>
           <strong>{gitChangeFilePathLabel(file)}</strong>
           <span>
-            {branch ?? "当前分支"} · {gitChangeStatusDescription(file)}
+            {branch ?? t("workspaceReview.currentBranch")} · {gitChangeStatusDescription(file)}
           </span>
         </div>
       </div>
       {error ? <div className="workspace-diff-error">{error}</div> : null}
       {loading ? (
-        <div className="workspace-diff-empty">正在读取 diff...</div>
+        <div className="workspace-diff-empty">{t("workspaceReview.readingDiff")}</div>
       ) : fileDiff?.binary ? (
-        <div className="workspace-diff-empty">这是二进制文件，无法显示文本 diff。</div>
+        <div className="workspace-diff-empty">{t("workspaceReview.binaryNoTextDiff")}</div>
       ) : fileDiff?.patch ? (
         <div className="workspace-diff-code-scroll">
-          <pre className="workspace-diff-code" aria-label={`${fileDiff.path} 的代码差异`}>
+          <pre
+            className="workspace-diff-code"
+            aria-label={t("workspaceReview.codeDiffFor", { path: fileDiff.path })}
+          >
             {diffLines.map((line, index) => (
               <span className={`workspace-diff-line ${line.kind}`} key={`${index}:${line.content.slice(0, 24)}`}>
                 <span className="workspace-diff-line-number">{line.oldLine ?? ""}</span>
@@ -397,9 +406,13 @@ function WorkspaceReviewDiffPeekPanel({
           </pre>
         </div>
       ) : (
-        <div className="workspace-diff-empty">没有可显示的文本 diff。</div>
+        <div className="workspace-diff-empty">{t("workspaceReview.noTextDiff")}</div>
       )}
-      {fileDiff?.truncated ? <div className="workspace-diff-truncated">diff 太大，已截断预览。</div> : null}
+      {fileDiff?.truncated ? (
+        <div className="workspace-diff-truncated">
+          {t("workspaceReview.diffTruncated")}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -411,6 +424,7 @@ export function WorkspaceDiffReview({
   activeContext?: RuntimeContext;
   gitStatus?: GitStatusResult;
 }): JSX.Element {
+  const { locale, t, formatNumber } = useI18n();
   const [changes, setChanges] = useState<GitChangesResult | undefined>(undefined);
   const [selectedPath, setSelectedPath] = useState<string | undefined>(undefined);
   const [fileDiff, setFileDiff] = useState<GitFileDiffResult | undefined>(undefined);
@@ -427,7 +441,9 @@ export function WorkspaceDiffReview({
   const treeNodes = useMemo(() => buildGitChangeTree(filteredFiles), [filteredFiles]);
   const diffLines = useMemo(() => (fileDiff?.patch ? gitDiffDisplayLines(fileDiff.patch) : []), [fileDiff?.patch]);
   const selectedFile = files.find((file) => file.path === selectedPath);
-  const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
+  const branchLabel = gitStatus?.is_repo
+    ? gitStatus.branch ?? "detached"
+    : t("environment.notGitRepository");
   const upstreamLabel = gitStatus?.upstream;
 
   useEffect(() => {
@@ -445,7 +461,7 @@ export function WorkspaceDiffReview({
     setSelectedPath(undefined);
     setFileDiff(undefined);
     if (!desktopApiSupportsGitReview()) {
-      setError("审查接口还没被当前窗口加载。请重启桌面端后再试。");
+      setError(t("workspaceReview.apiUnavailable"));
       setLoadingChanges(false);
       return;
     }
@@ -464,7 +480,7 @@ export function WorkspaceDiffReview({
       })
       .catch((nextError) => {
         if (!cancelled) {
-          setError(desktopApiErrorMessage(nextError, "读取变更失败"));
+          setError(desktopApiErrorMessage(nextError, t("workspaceReview.readChangesFailed")));
         }
       })
       .finally(() => {
@@ -476,7 +492,7 @@ export function WorkspaceDiffReview({
     return () => {
       cancelled = true;
     };
-  }, [workspaceRoot, refreshVersion]);
+  }, [workspaceRoot, refreshVersion, locale]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -501,7 +517,7 @@ export function WorkspaceDiffReview({
     let cancelled = false;
     setFileDiff(undefined);
     if (!desktopApiSupportsGitReview()) {
-      setError("审查接口还没被当前窗口加载。请重启桌面端后再试。");
+      setError(t("workspaceReview.apiUnavailable"));
       setLoadingDiff(false);
       return;
     }
@@ -516,7 +532,7 @@ export function WorkspaceDiffReview({
       })
       .catch((nextError) => {
         if (!cancelled) {
-          setError(desktopApiErrorMessage(nextError, "读取 diff 失败"));
+          setError(desktopApiErrorMessage(nextError, t("workspaceReview.readDiffFailed")));
         }
       })
       .finally(() => {
@@ -528,7 +544,7 @@ export function WorkspaceDiffReview({
     return () => {
       cancelled = true;
     };
-  }, [workspaceRoot, selectedPath, refreshVersion]);
+  }, [workspaceRoot, selectedPath, refreshVersion, locale]);
 
   function toggleTreePath(path: string): void {
     setExpandedPaths((current) => {
@@ -546,8 +562,8 @@ export function WorkspaceDiffReview({
     return (
       <div className="workspace-main-empty">
         <FolderX size={36} />
-        <strong>没有项目</strong>
-        <span>先打开一个项目，再查看本地变更。</span>
+        <strong>{t("workspaceReview.noProject")}</strong>
+        <span>{t("workspaceReview.openProjectFirst")}</span>
       </div>
     );
   }
@@ -556,7 +572,7 @@ export function WorkspaceDiffReview({
     return (
       <div className="workspace-main-empty">
         <GitBranch size={36} />
-        <strong>正在读取变更</strong>
+        <strong>{t("workspaceReview.readingChanges")}</strong>
         <span>{formatWorkspaceRoot(workspaceRoot ?? "")}</span>
       </div>
     );
@@ -566,7 +582,7 @@ export function WorkspaceDiffReview({
     return (
       <div className="workspace-main-empty">
         <AlertCircle size={36} />
-        <strong>读取失败</strong>
+        <strong>{t("workspaceReview.readFailed")}</strong>
         <span>{error}</span>
       </div>
     );
@@ -576,8 +592,8 @@ export function WorkspaceDiffReview({
     return (
       <div className="workspace-main-empty">
         <FolderX size={36} />
-        <strong>不是 Git 仓库</strong>
-        <span>当前项目没有可查看的 Git 变更。</span>
+        <strong>{t("workspaceReview.notGitRepository")}</strong>
+        <span>{t("workspaceReview.noGitChanges")}</span>
       </div>
     );
   }
@@ -586,10 +602,10 @@ export function WorkspaceDiffReview({
     return (
       <div className="workspace-main-empty">
         <Check size={36} />
-        <strong>工作区干净</strong>
-        <span>当前没有未提交的代码差异。</span>
+        <strong>{t("workspaceReview.clean")}</strong>
+        <span>{t("workspaceReview.noUncommittedDiff")}</span>
         <button type="button" onClick={() => setRefreshVersion((version) => version + 1)}>
-          刷新
+          {t("common.refresh")}
         </button>
       </div>
     );
@@ -599,7 +615,7 @@ export function WorkspaceDiffReview({
     <article className="workspace-diff-review">
       <header className="workspace-diff-header">
         <div className="workspace-diff-title">
-          <strong>审查</strong>
+          <strong>{t("workspaceReview.review")}</strong>
           <span>
             {branchLabel}
             {upstreamLabel ? (
@@ -611,14 +627,14 @@ export function WorkspaceDiffReview({
           </span>
         </div>
         <div className="workspace-diff-summary">
-          <span>{files.length} 个文件</span>
-          <span className="additions">+{totals.additions.toLocaleString()}</span>
-          <span className="deletions">-{totals.deletions.toLocaleString()}</span>
+          <span>{t(files.length === 1 ? "environment.fileCountOne" : "environment.fileCount", { count: formatNumber(files.length) })}</span>
+          <span className="additions">+{formatNumber(totals.additions)}</span>
+          <span className="deletions">-{formatNumber(totals.deletions)}</span>
           <button
             className="icon-button"
             type="button"
-            aria-label="刷新变更"
-            title="刷新变更"
+            aria-label={t("workspaceReview.refreshChanges")}
+            title={t("workspaceReview.refreshChanges")}
             disabled={loadingChanges || loadingDiff}
             onClick={() => setRefreshVersion((version) => version + 1)}
           >
@@ -630,18 +646,18 @@ export function WorkspaceDiffReview({
         <section className="workspace-diff-detail">
           <div className="workspace-diff-detail-header">
             <div>
-              <strong>{selectedFile ? gitChangeFilePathLabel(selectedFile) : "选择文件"}</strong>
-              <span>{selectedFile ? gitChangeStatusDescription(selectedFile) : "从左侧选择一个变更文件"}</span>
+              <strong>{selectedFile ? gitChangeFilePathLabel(selectedFile) : t("workspaceReview.selectFile")}</strong>
+              <span>{selectedFile ? gitChangeStatusDescription(selectedFile) : t("workspaceReview.selectFromLeft")}</span>
             </div>
           </div>
           {error ? <div className="workspace-diff-error">{error}</div> : null}
           {loadingDiff ? (
-            <div className="workspace-diff-empty">正在读取 diff...</div>
+            <div className="workspace-diff-empty">{t("workspaceReview.readingDiff")}</div>
           ) : fileDiff?.binary ? (
-            <div className="workspace-diff-empty">这是二进制文件，无法显示文本 diff。</div>
+            <div className="workspace-diff-empty">{t("workspaceReview.binaryNoTextDiff")}</div>
           ) : fileDiff?.patch ? (
             <div className="workspace-diff-code-scroll">
-              <pre className="workspace-diff-code" aria-label={`${fileDiff.path} 的代码差异`}>
+              <pre className="workspace-diff-code" aria-label={t("workspaceReview.codeDiffFor", { path: fileDiff.path })}>
                 {diffLines.map((line, index) => (
                   <span
                     className={`workspace-diff-line ${line.kind}`}
@@ -655,9 +671,9 @@ export function WorkspaceDiffReview({
               </pre>
             </div>
           ) : (
-            <div className="workspace-diff-empty">没有可显示的文本 diff。</div>
+            <div className="workspace-diff-empty">{t("workspaceReview.noTextDiff")}</div>
           )}
-          {fileDiff?.truncated ? <div className="workspace-diff-truncated">diff 太大，已截断预览。</div> : null}
+          {fileDiff?.truncated ? <div className="workspace-diff-truncated">{t("workspaceReview.diffTruncated")}</div> : null}
         </section>
         <GitChangeTreePanel
           files={filteredFiles}
@@ -693,20 +709,30 @@ function GitChangeTreePanel({
   onSelectFile: (path: string) => void;
   onTogglePath: (path: string) => void;
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   const forceExpanded = query.trim().length > 0;
   const totals = summarizeGitChangeFiles(files);
   return (
-    <aside className="workspace-diff-tree" aria-label="变更文件树">
+    <aside className="workspace-diff-tree" aria-label={t("workspaceReview.changeFileTree")}>
       <div className="workspace-diff-tree-header">
         <div>
-          <strong>文件</strong>
+          <strong>{t("workspaceReview.files")}</strong>
           <span>
-            {forceExpanded ? `${files.length} 个匹配` : `${files.length} 个文件`}
+            {t(
+              forceExpanded
+                ? files.length === 1
+                  ? "workspaceReview.matchCountOne"
+                  : "workspaceReview.matchCount"
+                : files.length === 1
+                  ? "environment.fileCountOne"
+                  : "environment.fileCount",
+              { count: formatNumber(files.length) },
+            )}
             {files.length > 0 ? (
               <>
                 {" "}
-                <span className="additions">+{totals.additions.toLocaleString()}</span>{" "}
-                <span className="deletions">-{totals.deletions.toLocaleString()}</span>
+                <span className="additions">+{formatNumber(totals.additions)}</span>{" "}
+                <span className="deletions">-{formatNumber(totals.deletions)}</span>
               </>
             ) : null}
           </span>
@@ -716,13 +742,15 @@ function GitChangeTreePanel({
         <Search className="icon" />
         <input
           value={query}
-          placeholder="筛选文件..."
+          placeholder={t("workspaceReview.filterFiles")}
           onChange={(event) => onQueryChange(event.currentTarget.value)}
         />
       </label>
       <div className="workspace-diff-tree-scroll">
         {nodes.length === 0 ? (
-          <div className="workspace-diff-tree-empty">没有匹配文件</div>
+          <div className="workspace-diff-tree-empty">
+            {t("workspaceReview.noMatchingFiles")}
+          </div>
         ) : (
           <div className="workspace-diff-tree-list">
             {nodes.map((node) => (
@@ -824,15 +852,16 @@ function GitChangeTreeNodeView({
 }
 
 function GitChangeFileStats({ file }: { file: GitChangeFile }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   return (
     <span className="workspace-diff-tree-stats">
       <span className={`workspace-diff-file-status ${file.status}`}>{gitChangeStatusLabel(file.status)}</span>
       {file.binary ? (
-        <span className="workspace-diff-tree-binary">binary</span>
+        <span className="workspace-diff-tree-binary">{t("workspace.review.binary")}</span>
       ) : (
         <>
-          <span className="additions">+{file.additions.toLocaleString()}</span>
-          <span className="deletions">-{file.deletions.toLocaleString()}</span>
+          <span className="additions">+{formatNumber(file.additions)}</span>
+          <span className="deletions">-{formatNumber(file.deletions)}</span>
         </>
       )}
     </span>

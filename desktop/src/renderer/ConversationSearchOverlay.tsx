@@ -17,6 +17,7 @@ import {
   conversationSearchThreadMeta,
 } from "./AppState";
 import { threadDisplayTitle } from "./ThreadTitles";
+import { useI18n } from "./i18n";
 
 export function ConversationSearchOverlay({
   state,
@@ -49,6 +50,7 @@ export function ConversationSearchOverlay({
   onSelectIndex: (index: number) => void;
   onSelectResult: (result: ThreadSearchResultItem) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (!state.open && !state.closing) {
     return null;
   }
@@ -66,7 +68,7 @@ export function ConversationSearchOverlay({
         className="conversation-search-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="搜索会话"
+        aria-label={t("search.conversations")}
         ref={dialogRef}
       >
         <div className="conversation-search-input-wrap">
@@ -74,7 +76,7 @@ export function ConversationSearchOverlay({
           <input
             ref={inputRef}
             value={state.query}
-            placeholder="搜索对话内容或提问"
+            placeholder={t("search.placeholder")}
             onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={onKeyDown}
           />
@@ -82,7 +84,7 @@ export function ConversationSearchOverlay({
             <button
               className="conversation-search-clear"
               type="button"
-              aria-label="清空搜索"
+              aria-label={t("search.clear")}
               onClick={onClearQuery}
             >
               <X className="icon" />
@@ -100,7 +102,7 @@ export function ConversationSearchOverlay({
           <div className="conversation-search-results">
             {results.map((result, resultIndex) => {
               const thread = result.thread;
-              const title = threadDisplayTitle(thread, threads, "未命名对话");
+              const title = threadDisplayTitle(thread, threads, t("search.untitledConversation"));
               const active = thread.id === activeThreadID;
               const pending = pendingThreadID === thread.id;
               const selected = state.selectedIndex === resultIndex;
@@ -152,10 +154,10 @@ export function ConversationSearchOverlay({
             {results.length === 0 ? (
               <div className="conversation-search-empty">
                 {state.loading
-                  ? "正在搜索会话"
+                  ? t("search.searching")
                   : state.query.trim()
-                    ? "没有匹配的会话"
-                    : "暂无会话"}
+                    ? t("search.noMatches")
+                    : t("search.noConversations")}
               </div>
             ) : null}
           </div>
@@ -202,10 +204,11 @@ function ConversationSearchPreview({
   previewError: string;
   query: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const idx = Math.max(0, Math.min(selectedIndex, results.length - 1));
   const selectedResult = results[idx];
   const thread = selectedResult?.thread;
-  const title = thread ? threadDisplayTitle(thread, threads, "未命名对话") : "";
+  const title = thread ? threadDisplayTitle(thread, threads, t("search.untitledConversation")) : "";
   const contextLabel = thread
     ? conversationSearchContextLabel(thread, projects)
     : "";
@@ -233,7 +236,7 @@ function ConversationSearchPreview({
   return (
     <aside
       className="conversation-search-preview"
-      aria-label="会话预览"
+      aria-label={t("search.preview")}
       data-state={
         !thread
           ? "empty"
@@ -248,7 +251,7 @@ function ConversationSearchPreview({
     >
       {!thread ? (
         <div className="conversation-search-preview-empty">
-          选择一个会话查看预览
+          {t("search.selectForPreview")}
         </div>
       ) : (
         <>
@@ -276,12 +279,12 @@ function ConversationSearchPreview({
           ) : null}
           {loadingForSelection ? (
             <div className="conversation-search-preview-loading">
-              加载预览中…
+              {t("search.loadingPreview")}
             </div>
           ) : null}
           {!loadingForSelection && !errorForSelection && !hasTurns ? (
             <div className="conversation-search-preview-empty">
-              暂无预览
+              {t("search.noPreview")}
             </div>
           ) : null}
           {hasTurns ? (

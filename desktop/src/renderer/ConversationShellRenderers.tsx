@@ -59,6 +59,7 @@ import { RunDebugPanel } from "./RunDebugPanel";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { ViewSwitchLoading } from "./LoadingViews";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import { useI18n } from "./i18n";
 
 type ComposerProps = ComponentProps<typeof Composer>;
 type RunDebugPanelProps = ComponentProps<typeof RunDebugPanel>;
@@ -321,6 +322,7 @@ export function ConversationSplitLayoutRenderer({
   onSplitSeparatorKey,
   ...paneProps
 }: ConversationSplitLayoutRendererProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="conversation-split">
       <ConversationSplitPaneRenderer
@@ -332,7 +334,7 @@ export function ConversationSplitLayoutRenderer({
         className="conversation-split-resizer"
         role="separator"
         aria-orientation="vertical"
-        aria-label="调整左右对话宽度"
+        aria-label={t("shell.resizeSplit")}
         aria-valuemin={CONVERSATION_SPLIT_MIN_PERCENT}
         aria-valuemax={CONVERSATION_SPLIT_MAX_PERCENT}
         aria-valuenow={Math.round(splitLeftPercent)}
@@ -475,6 +477,7 @@ export function ConversationTitleActions({
   rightPanelOpen,
   onToggleRightPanel,
 }: ConversationTitleActionsProps): JSX.Element {
+  const { t } = useI18n();
   const showTaskBoardAction =
     activeThreadIsGroup ||
     state.sessionTabs.some((tab) => {
@@ -498,7 +501,7 @@ export function ConversationTitleActions({
           onClick={onPinLaunchPreview}
         >
           <Terminal className="icon" />
-          <span>启动动画</span>
+          <span>{t("shell.launchPreview")}</span>
         </button>
       ) : null}
       {debugControlsVisible && enablePlanPanelDebug ? (
@@ -509,20 +512,22 @@ export function ConversationTitleActions({
           onClick={onSeedPlanPanelDebug}
         >
           <ListChecks className="icon" />
-          <span>计划面板</span>
+          <span>{t("shell.planPanel")}</span>
         </button>
       ) : null}
       {debugControlsVisible ? (
         <button
           className={`launch-preview-button conversation-grid-button${conversationGridVisible ? " active" : ""}`}
           type="button"
-          aria-label={conversationGridVisible ? "隐藏对话网格" : "显示对话网格"}
+          aria-label={t(
+            conversationGridVisible ? "shell.hideGrid" : "shell.showGrid",
+          )}
           aria-pressed={conversationGridVisible}
-          title="按 G 切换对话网格"
+          title={t("shell.gridShortcut")}
           onClick={onToggleConversationGrid}
         >
           <Grid3X3 className="icon" />
-          <span>网格</span>
+          <span>{t("shell.grid")}</span>
         </button>
       ) : null}
       {debugControlsVisible && enableRunDebugPanel ? (
@@ -530,12 +535,14 @@ export function ConversationTitleActions({
           <button
             className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
             type="button"
-            aria-label={runDebugOpen ? "隐藏调试信息" : "显示调试信息"}
+            aria-label={t(
+              runDebugOpen ? "shell.hideDebug" : "shell.showDebug",
+            )}
             aria-expanded={runDebugOpen}
             onClick={onToggleRunDebug}
           >
             <Bug className="icon" />
-            <span>调试</span>
+            <span>{t("shell.debug")}</span>
           </button>
           {runDebugOpen ? (
             <RunDebugPanel
@@ -560,8 +567,12 @@ export function ConversationTitleActions({
             <button
               className="icon-button task-board-button"
               type="button"
-              aria-label={taskBoardAvailable ? "打开任务看板" : "当前对话没有任务看板"}
-              title={taskBoardAvailable ? "任务看板" : "当前对话没有任务看板"}
+              aria-label={t(
+                taskBoardAvailable ? "shell.openTaskBoard" : "shell.noTaskBoard",
+              )}
+              title={t(
+                taskBoardAvailable ? "shell.taskBoard" : "shell.noTaskBoard",
+              )}
               disabled={!taskBoardAvailable}
               onClick={() => {
                 if (activeThreadIsGroup && activeThread) {
@@ -579,11 +590,11 @@ export function ConversationTitleActions({
             aria-label={
               environmentPanelVisible
                 ? activeThreadIsGroup
-                  ? "隐藏群聊信息"
-                  : "隐藏环境信息"
+                  ? t("shell.hideGroupInfo")
+                  : t("shell.hideEnvironmentInfo")
                 : activeThreadIsGroup
-                  ? "显示群聊信息"
-                  : "显示环境信息"
+                  ? t("shell.showGroupInfo")
+                  : t("shell.showEnvironmentInfo")
             }
             aria-pressed={environmentPanelVisible}
             onClick={onToggleEnvironmentPanel}
@@ -593,7 +604,9 @@ export function ConversationTitleActions({
           <button
             className="icon-button side-panel-toggle-button"
             type="button"
-            aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
+            aria-label={t(
+              rightPanelOpen ? "shell.closeRightSidebar" : "shell.openRightSidebar",
+            )}
             aria-pressed={rightPanelOpen}
             onClick={onToggleRightPanel}
           >
@@ -731,6 +744,7 @@ export function ConversationSidePanels({
   onRetireParticipant,
   viewContextSwitchPending,
 }: ConversationSidePanelsProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <>
       <EnvironmentSideStack
@@ -828,7 +842,7 @@ export function ConversationSidePanels({
         <div
           className="thread-panel-resizer"
           role="separator"
-          aria-label="调整 Thread 面板宽度"
+          aria-label={t("shell.resizeThreadPanel")}
           aria-orientation="vertical"
           aria-valuemin={THREAD_PANEL_MIN_WIDTH}
           aria-valuemax={THREAD_PANEL_MAX_WIDTH}

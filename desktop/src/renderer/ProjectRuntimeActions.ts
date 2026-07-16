@@ -16,6 +16,7 @@ import {
   type SessionTab,
 } from "./AppState";
 import { loadRuntime as defaultLoadRuntime } from "./RuntimeLoadState";
+import { localizedText, translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -142,7 +143,7 @@ export function createProjectRuntimeActions(
     }
     if (isAnyThreadRunning(currentState)) {
       deps.closeProjectMenus();
-      setStatus("任务运行中，暂不能切换项目");
+      setStatus(localizedText("project.switchWhileRunning"));
       return;
     }
     const requestID = deps.beginViewSwitch(switchKind, switchTarget);
@@ -195,7 +196,7 @@ export function createProjectRuntimeActions(
         projectId === state.activeProjectId &&
         state.activeContext?.kind === "project",
       selectContext: () => window.wuu.selectProject(projectId),
-      failureStatus: "open project failed",
+      failureStatus: translateCurrent("project.openFailed"),
     });
   }
 
@@ -269,7 +270,7 @@ export function createProjectRuntimeActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "open project failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("project.openFailed"));
     }
   }
 
@@ -305,7 +306,7 @@ export function createProjectRuntimeActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "create project failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("project.createFailed"));
     }
   }
 
@@ -341,7 +342,7 @@ export function createProjectRuntimeActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "open folder failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("project.folderOpenFailed"));
     }
   }
 
@@ -353,7 +354,7 @@ export function createProjectRuntimeActions(
     }
     if (
       !window.confirm(
-        "是否同时清理该项目的本地状态（会话/目标/工件）？记忆将保留归档。",
+        translateCurrent("project.cleanupConfirm"),
       )
     ) {
       return;
@@ -365,7 +366,7 @@ export function createProjectRuntimeActions(
       );
     } catch (error) {
       setStatus(
-        error instanceof Error ? error.message : "cleanup project state failed",
+        error instanceof Error ? error.message : translateCurrent("project.cleanupFailed"),
       );
     }
   }
@@ -408,7 +409,7 @@ export function createProjectRuntimeActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "remove workspace failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("project.removeFailed"));
     }
   }
 
@@ -447,7 +448,9 @@ export function createProjectRuntimeActions(
         return;
       }
       setStatus(
-        error instanceof Error ? error.message : "relocate workspace failed",
+        error instanceof Error
+          ? error.message
+          : translateCurrent("project.relocateFailed"),
       );
     }
   }
@@ -465,7 +468,7 @@ export function createProjectRuntimeActions(
         switchTarget: "no-project",
         isCurrentContext: (state) => state.activeContext?.kind === "no_project",
         selectContext: () => window.wuu.selectNoProject(false),
-        failureStatus: "open no-project failed",
+        failureStatus: translateCurrent("project.scratchOpenFailed"),
       });
       return;
     }
@@ -518,7 +521,7 @@ export function createProjectRuntimeActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "open no-project failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("project.scratchOpenFailed"));
     }
   }
 

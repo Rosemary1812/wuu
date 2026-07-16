@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { ConversationSubthread, TaskPieceView } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { translateCurrent, useI18n } from "./i18n";
+import type { TranslationKey } from "./i18n/resources/zh-CN";
 
 type TaskBoardViewProps = {
   threadID: string;
@@ -28,24 +30,26 @@ type BoardLoadState = {
   error?: string;
 };
 
-const EXEC_STATE_LABEL: Record<string, string> = {
-  planning: "规划中",
-  executing: "执行中",
-  running: "执行中",
-  awaiting_lead: "等待 Lead",
-  blocked: "受阻",
-  needs_human: "需要处理",
-  paused: "已暂停",
-  completed: "已完成",
-  failed: "失败",
+const EXEC_STATE_LABEL: Record<string, TranslationKey> = {
+  planning: "taskBoard.state.planning",
+  executing: "taskBoard.state.executing",
+  running: "taskBoard.state.executing",
+  awaiting_lead: "taskBoard.state.awaitingLead",
+  blocked: "taskBoard.state.blocked",
+  needs_human: "taskBoard.state.needsHuman",
+  paused: "taskBoard.state.paused",
+  completed: "taskBoard.state.completed",
+  failed: "taskBoard.state.failed",
 };
 
 function executionLabel(subthread: ConversationSubthread): string {
   if (subthread.status === "resolved") {
-    return "已完成";
+    return translateCurrent("taskBoard.state.completed");
   }
   const key = subthread.exec_state?.trim() ?? "";
-  return EXEC_STATE_LABEL[key] ?? (key || "准备中");
+  return EXEC_STATE_LABEL[key]
+    ? translateCurrent(EXEC_STATE_LABEL[key])
+    : key || translateCurrent("taskBoard.state.ready");
 }
 
 function isEscalatedTask(subthread: ConversationSubthread): boolean {
@@ -117,6 +121,7 @@ export function TaskBoardView({
   resolveParticipantName,
   onOpenTask,
 }: TaskBoardViewProps): JSX.Element {
+  const { locale, t, formatNumber } = useI18n();
   const requestKey = `${threadID}:${refreshToken}`;
   const [snapshot, setSnapshot] = useState<BoardSnapshot>();
   const [loadState, setLoadState] = useState<BoardLoadState>({
@@ -148,7 +153,7 @@ export function TaskBoardView({
           setLoadState({
             requestKey,
             loading: false,
-            error: desktopApiErrorMessage(err, "无法加载任务列表"),
+            error: desktopApiErrorMessage(err, translateCurrent("taskBoard.loadFailed")),
           });
         }
       }
@@ -156,7 +161,7 @@ export function TaskBoardView({
     return () => {
       cancelled = true;
     };
-  }, [requestKey, threadID]);
+  }, [requestKey, threadID, locale]);
 
   const participantName = (id: string): string =>
     resolveParticipantName?.(id) ?? id;
@@ -166,7 +171,7 @@ export function TaskBoardView({
       subthread.lead_participant_id?.trim() ||
       subthread.thread_owner_participant_id?.trim() ||
       "";
-    const lead = leadID ? participantName(leadID) : "Lead 信息缺失";
+    const lead = leadID ? participantName(leadID) : t("taskBoard.leadMissing");
     const plan = subthread.plan ?? [];
     const cancelledCount = plan.filter(
       (piece) => (piece.state || piece.status || "").trim() === "cancelled",
@@ -197,22 +202,27 @@ export function TaskBoardView({
           <span className="task-board-row-main">
             <span className="task-board-row-heading">
               <span className="task-board-row-title">
-                {subthread.title?.trim() || "未命名任务"}
+                {subthread.title?.trim() || t("taskBoard.untitled")}
               </span>
               <span className="task-board-row-state">
                 {executionLabel(subthread)}
               </span>
             </span>
             <span className="task-board-row-meta">
-              <span>Lead · {lead}</span>
+              <span>{t("taskBoard.lead", { name: lead })}</span>
               {livePlan.length > 0 ? (
                 <span>
-                  {completedCount}/{livePlan.length} 完成
+                  {t("taskBoard.planProgress", {
+                    completed: formatNumber(completedCount),
+                    total: formatNumber(livePlan.length),
+                  })}
                 </span>
               ) : null}
-              {cancelledCount > 0 ? <span>{cancelledCount} 已取消</span> : null}
+              {cancelledCount > 0 ? (
+                <span>{t(cancelledCount === 1 ? "taskBoard.cancelledOne" : "taskBoard.cancelled", { count: formatNumber(cancelledCount) })}</span>
+              ) : null}
               {activeWorkers.length > 0 ? (
-                <span>执行 · {activeWorkers.join("、")}</span>
+                <span>{t("taskBoard.executingWorkers", { names: activeWorkers.join(t("taskBoard.nameSeparator")) })}</span>
               ) : null}
             </span>
           </span>
@@ -228,41 +238,45 @@ export function TaskBoardView({
     board.completed.length === 0;
 
   return (
-    <div className="task-board" aria-label="任务看板">
+    <div className="task-board" aria-label={t("taskBoard.label")}>
       <header className="task-board-header">
         <h2>{title?.trim() || threadID}</h2>
         {board ? (
           <span className="task-board-header-meta">
-            {board.attention.length} 待处理 · {board.running.length} 执行中 · {board.completed.length} 已完成
+            {t("taskBoard.summary", {
+              attention: formatNumber(board.attention.length),
+              running: formatNumber(board.running.length),
+              completed: formatNumber(board.completed.length),
+            })}
           </span>
         ) : null}
       </header>
       {loading ? (
-        <div className="task-board-loading" role="status">加载任务…</div>
+        <div className="task-board-loading" role="status">{t("taskBoard.loading")}</div>
       ) : null}
       {error ? (
         <div className="task-board-error" role="alert">{error}</div>
       ) : null}
       {empty ? (
         <div className="task-board-empty">
-          还没有 Task。从群聊消息开启 Thread，收敛后升级的 Task 会出现在这里。
+          {t("taskBoard.empty")}
         </div>
       ) : null}
       {board && board.attention.length > 0 ? (
         <section className="task-board-section is-attention">
-          <h3>需要处理</h3>
+          <h3>{t("taskBoard.section.attention")}</h3>
           <ul className="task-board-list">{board.attention.map(renderRow)}</ul>
         </section>
       ) : null}
       {board && board.running.length > 0 ? (
         <section className="task-board-section">
-          <h3>执行中</h3>
+          <h3>{t("taskBoard.section.running")}</h3>
           <ul className="task-board-list">{board.running.map(renderRow)}</ul>
         </section>
       ) : null}
       {board && board.completed.length > 0 ? (
         <section className="task-board-section">
-          <h3>已完成</h3>
+          <h3>{t("taskBoard.section.completed")}</h3>
           <ul className="task-board-list">{board.completed.map(renderRow)}</ul>
         </section>
       ) : null}

@@ -45,23 +45,14 @@ export function messageFlowStatusLabel({
   stalled = false,
   locale = 'en',
 }: MessageFlowStatusInput): string {
-  if (locale === 'zh') {
-    if (done) {
-      return failed ? '过程失败' : '过程记录'
-    }
-    if (stalled) {
-      return '仍在生成'
-    }
-    return hasFinalText ? '正在回复' : '正在处理'
-  }
-
+  const appLocale = locale === 'zh' ? 'zh-CN' : 'en-US'
   if (done) {
-    return failed ? 'Activity failed' : 'Activity log'
+    return translate(appLocale, failed ? 'messageFlow.activityFailed' : 'messageFlow.activityLog')
   }
   if (stalled) {
-    return 'Still generating'
+    return translate(appLocale, 'messageFlow.stillGenerating')
   }
-  return hasFinalText ? 'Replying' : 'Working'
+  return translate(appLocale, hasFinalText ? 'messageFlow.replying' : 'messageFlow.working')
 }
 
 export function isMessageFlowFailedStatus(status: string | undefined): boolean {
@@ -101,3 +92,4 @@ function formatUnknownInput(value: unknown): string {
     return String(value)
   }
 }
+import { translate } from "./i18n";

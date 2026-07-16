@@ -3,6 +3,7 @@ import type { ThreadItem, Turn } from "../shared/protocol";
 import { streamFieldValue } from "./ThreadItemText";
 import { readableToolActivityCommand } from "./ToolActivityHelpers";
 import { isCancellationMessage } from "./UserFacingErrors";
+import { translateCurrent } from "./i18n";
 
 /**
  * The single, ordered list of items that make up an assistant turn.
@@ -211,7 +212,7 @@ export function buildAssistantTurnDisplay(
       (item) => item.type === "agent_message" && item.phase === "commentary",
     );
     if (hasCommentary) {
-      missingReplyMessage = "这轮只保留了过程记录，没有生成最终回答。";
+      missingReplyMessage = translateCurrent("turn.missingFinalAnswer");
     }
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "./i18n";
 
 // Toolbar gauge. The numeric readout is rendered inline next to the dial
 // so the user can see the current rate without hovering. The needle and
@@ -38,6 +39,7 @@ export function ComposerTokenGauge({
   sampledAt?: number;
   source?: "real" | "estimated" | "none";
 }): JSX.Element {
+  const { t, formatNumber } = useI18n();
   // Displayed value tracks the target with a per-frame lerp so the needle
   // settles instead of jittering on every sliding-window update. The initial
   // value is the target itself so the gauge paints the real number on first
@@ -109,8 +111,7 @@ export function ComposerTokenGauge({
   const needleDeg = NEEDLE_START_DEG + NEEDLE_ANGLE * ratio;
   const rounded = Math.round(displayed);
   const isEstimated = source === "estimated";
-  const speedLabel = `${isEstimated ? "约 " : ""}${rounded} tok/s`;
-  const ariaPrefix = isEstimated ? "估算生成速度" : "生成速度";
+  const speedLabel = t(isEstimated ? "composer.speed.estimatedShort" : "composer.speed.short", { speed: formatNumber(rounded) });
 
   return (
     <div
@@ -118,7 +119,7 @@ export function ComposerTokenGauge({
       data-state={running ? "running" : "idle"}
       role="status"
       aria-live="polite"
-      aria-label={`${ariaPrefix} ${rounded} token 每秒`}
+      aria-label={t(isEstimated ? "composer.speed.estimatedLabel" : "composer.speed.label", { speed: formatNumber(rounded) })}
       style={{ color }}
     >
       <svg

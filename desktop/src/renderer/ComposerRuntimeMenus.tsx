@@ -46,6 +46,7 @@ import {
   shortCodexModelLabel,
   variantLabel
 } from "./RuntimeHelpers";
+import { translateCurrent as translate, useI18n } from "./i18n";
 
 type ChipTone = "neutral" | "danger";
 
@@ -60,30 +61,32 @@ type PermissionModeOption = {
   tone?: "danger";
 };
 
-const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
-  {
-    mode: "standard",
-    label: "工作区内完全信任",
-    chipLabel: "标准",
-    icon: Shield,
-    chipTone: "neutral"
-  },
-  {
-    mode: "read_only",
-    label: "只读",
-    chipLabel: "只读",
-    icon: Eye,
-    chipTone: "neutral"
-  },
-  {
-    mode: "unconfined",
-    label: "无边界",
-    chipLabel: "无边界",
-    icon: TriangleAlert,
-    chipTone: "danger",
-    tone: "danger"
-  }
-];
+function permissionModeOptions(): PermissionModeOption[] {
+  return [
+    {
+      mode: "standard",
+      label: translate("runtime.permission.standardLabel"),
+      chipLabel: translate("runtime.permission.standard"),
+      icon: Shield,
+      chipTone: "neutral"
+    },
+    {
+      mode: "read_only",
+      label: translate("runtime.permission.readOnly"),
+      chipLabel: translate("runtime.permission.readOnly"),
+      icon: Eye,
+      chipTone: "neutral"
+    },
+    {
+      mode: "unconfined",
+      label: translate("runtime.permission.unconfined"),
+      chipLabel: translate("runtime.permission.unconfined"),
+      icon: TriangleAlert,
+      chipTone: "danger",
+      tone: "danger"
+    }
+  ];
+}
 
 export function permissionModeFromSummary(permissions?: PermissionSummary): PermissionModeState {
   const mode = permissions?.mode?.trim();
@@ -104,7 +107,8 @@ export function permissionModeHasAdvancedOverrides(_permissions?: PermissionSumm
 }
 
 export function permissionModeOption(mode: PermissionModeState): Omit<PermissionModeOption, "mode"> & { mode: PermissionModeState } {
-  return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[0];
+  const options = permissionModeOptions();
+  return options.find((option) => option.mode === mode) ?? options[0];
 }
 
 export function RuntimePicker({
@@ -241,17 +245,18 @@ function RuntimeMainMenu({
   onOpenEffortMenu: () => void;
   onOpenModelMenu: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const showEffort = reasoningMode === "levels" && options.length > 1;
   return (
     <div className="codex-runtime-menu codex-main-menu" role="menu">
       <button className="codex-runtime-summary-row" role="menuitem" type="button" onClick={onOpenModelMenu}>
-        <span className="codex-runtime-summary-label">Model</span>
+        <span className="codex-runtime-summary-label">{t("runtime.model")}</span>
         <span className="codex-runtime-summary-value">{currentLabel}</span>
         <ChevronRight className="codex-menu-chevron icon-lg" />
       </button>
       {showEffort ? (
         <button className="codex-runtime-summary-row" role="menuitem" type="button" onClick={onOpenEffortMenu}>
-          <span className="codex-runtime-summary-label">Effort</span>
+          <span className="codex-runtime-summary-label">{t("runtime.effort")}</span>
           <span className="codex-runtime-summary-value">{variantLabel(selectedVariant)}</span>
           <ChevronRight className="codex-menu-chevron icon-lg" />
         </button>
@@ -299,6 +304,7 @@ function RuntimeModelMenu({
   selectedVariant: string;
   onSelectModel: (provider: string, model: string, variant?: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const providers = initialized.providers ?? [];
   const codexProviderSelected = isCodexProvider(initialized);
   const configuredModels = providers
@@ -314,16 +320,16 @@ function RuntimeModelMenu({
   );
   return (
     <div className="codex-runtime-menu codex-model-menu" role="menu">
-      <div className="codex-menu-label">已配置</div>
-      {codexProviderSelected && state.loading ? <div className="composer-menu-empty">正在加载 Codex 模型</div> : null}
+      <div className="codex-menu-label">{t("runtime.configured")}</div>
+      {codexProviderSelected && state.loading ? <div className="composer-menu-empty">{t("runtime.loadingCodexModels")}</div> : null}
       {codexProviderSelected && state.error ? (
         <div className="composer-menu-note warning">
-          <strong>无法读取 Codex 登录态</strong>
+          <strong>{t("runtime.codexLoginUnavailable")}</strong>
           <span>{state.error}</span>
         </div>
       ) : null}
       {!state.loading && providers.length === 0 ? (
-        <div className="composer-menu-empty">没有可用模型</div>
+        <div className="composer-menu-empty">{t("runtime.noModels")}</div>
       ) : null}
       {configuredModels.map(({ provider, model }) => (
         <RuntimeModelMenuItem
@@ -338,7 +344,7 @@ function RuntimeModelMenu({
       {additionalModels.length > 0 ? (
         <>
           <div className="codex-menu-separator" />
-          <div className="codex-menu-label">更多模型</div>
+          <div className="codex-menu-label">{t("runtime.moreModels")}</div>
           {additionalModels.map(({ provider, model }) => (
             <RuntimeModelMenuItem
               key={`additional/${provider.name}/${model.id}`}
@@ -479,10 +485,12 @@ export function AccessMenu({
   disabled: boolean;
   onSelect: (mode: PermissionMode) => void;
 }): JSX.Element {
+  useI18n();
   const mode = permissionModeFromSummary(permissions);
+  const options = permissionModeOptions();
   return (
     <div className="composer-context-menu access-menu" role="menu">
-      {PERMISSION_MODE_OPTIONS.map((option) => (
+      {options.map((option) => (
         <button
           key={option.mode}
           className={`permission-mode-option${option.tone === "danger" ? " danger" : ""}`}
@@ -509,16 +517,17 @@ export function BranchMenu({
   gitStatus: GitStatusResult;
   onSelectBranch: (branch: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const branches = gitStatus.branches ?? [];
   return (
     <div className="composer-context-menu branch-menu" role="menu">
       {gitStatus.dirty_count > 0 ? (
         <div className="composer-menu-note warning">
-          <strong>有未提交更改</strong>
-          <span>{gitStatus.dirty_count} 个文件会随分支切换保留；如果会覆盖本地改动，Git 会拒绝切换。</span>
+          <strong>{t("runtime.uncommittedChanges")}</strong>
+          <span>{t(gitStatus.dirty_count === 1 ? "runtime.dirtyFileWarningOne" : "runtime.dirtyFileWarning", { count: gitStatus.dirty_count })}</span>
         </div>
       ) : null}
-      {branches.length === 0 ? <div className="composer-menu-empty">没有本地分支</div> : null}
+      {branches.length === 0 ? <div className="composer-menu-empty">{t("runtime.noLocalBranches")}</div> : null}
       {branches.map((branch) => {
         const selected = branch === gitStatus.branch;
         return (
@@ -558,6 +567,7 @@ export function ProjectPickerMenu({
   onCreateProject: () => void;
   onOpenProject: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredProjects = normalizedQuery
     ? projects.filter((project) => project.name.toLocaleLowerCase().includes(normalizedQuery) || project.path.toLocaleLowerCase().includes(normalizedQuery))
@@ -567,10 +577,10 @@ export function ProjectPickerMenu({
     <div className="composer-project-menu" role="menu">
       <label className="project-search">
         <Search className="icon-lg" />
-        <input value={query} placeholder="搜索项目" onChange={(event) => setQuery(event.target.value)} />
+        <input value={query} placeholder={t("runtime.searchProjects")} onChange={(event) => setQuery(event.target.value)} />
       </label>
       <div className="project-picker-list">
-        {filteredProjects.length === 0 ? <div className="project-picker-empty">没有匹配项目</div> : null}
+        {filteredProjects.length === 0 ? <div className="project-picker-empty">{t("runtime.noMatchingProjects")}</div> : null}
         {filteredProjects.map((project) => {
           const selected = activeContext?.kind === "project" && activeContext.project_id === project.id;
           return (
@@ -585,15 +595,15 @@ export function ProjectPickerMenu({
       <div className="project-picker-divider" />
       <button type="button" role="menuitem" onClick={onOpenProject}>
         <FolderOpen className="icon-lg" />
-        <span>使用现有文件夹</span>
+        <span>{t("runtime.useExistingFolder")}</span>
       </button>
       <button type="button" role="menuitem" onClick={onCreateProject}>
         <FolderPlus className="icon-lg" />
-        <span>新建空白项目</span>
+        <span>{t("runtime.createBlankProject")}</span>
       </button>
       <button type="button" role="menuitem" onClick={onSelectNoProject}>
         <FolderX className="icon-lg" />
-        <span>不使用项目</span>
+        <span>{t("runtime.noProject")}</span>
         {activeContext?.kind === "no_project" ? <Check className="icon-lg" /> : null}
       </button>
     </div>
@@ -627,19 +637,29 @@ function chatFocusChipDisplay(value: string): {
   const trimmed = value.trim();
   if (trimmed === CHAT_FOCUS_HOME) {
     return {
-      label: "⌂ 个人",
+      label: translate("runtime.personalChip"),
       isDefault: false,
-      title: "仅个人空间",
-      ariaLabel: "工作焦点：仅个人空间"
+      title: translate("runtime.personalSpaceOnly"),
+      ariaLabel: translate("runtime.workFocusPersonal")
     };
   }
   if (trimmed === CHAT_FOCUS_ALL) {
     // Default state renders as a bare, de-emphasized icon with no
     // visible label — the chip stays invisible-ish until the user
     // narrows the focus.
-    return { label: "", isDefault: true, title: "全部工作区", ariaLabel: "工作焦点：全部工作区" };
+    return {
+      label: "",
+      isDefault: true,
+      title: translate("runtime.allWorkspaces"),
+      ariaLabel: translate("runtime.workFocusAll"),
+    };
   }
-  return { label: trimmed, isDefault: false, title: trimmed, ariaLabel: `工作焦点：${trimmed}` };
+  return {
+    label: trimmed,
+    isDefault: false,
+    title: trimmed,
+    ariaLabel: translate("runtime.workFocusNamed", { name: trimmed }),
+  };
 }
 
 export function ChatFocusChip({
@@ -653,6 +673,7 @@ export function ChatFocusChip({
   disabled?: boolean;
   onChange: (value: string) => void;
 }): JSX.Element {
+  useI18n();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -752,6 +773,7 @@ function ChatFocusMenu({
   setQuery: (value: string) => void;
   onSelect: (value: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredProjects = normalizedQuery
     ? projects.filter((project) => project.name.toLocaleLowerCase().includes(normalizedQuery))
@@ -765,16 +787,16 @@ function ChatFocusMenu({
         onClick={() => onSelect(CHAT_FOCUS_ALL)}
       >
         <LayoutGrid className="icon-lg" />
-        <span>全部工作区</span>
+        <span>{t("runtime.allWorkspaces")}</span>
         {trimmedValue === CHAT_FOCUS_ALL ? <Check className="icon-lg" /> : null}
       </button>
       <div className="project-picker-divider" />
       <label className="project-search">
         <Search className="icon-lg" />
-        <input value={query} placeholder="搜索项目" onChange={(event) => setQuery(event.target.value)} />
+        <input value={query} placeholder={t("runtime.searchProjects")} onChange={(event) => setQuery(event.target.value)} />
       </label>
       <div className="project-picker-list">
-        {filteredProjects.length === 0 ? <div className="project-picker-empty">没有匹配项目</div> : null}
+        {filteredProjects.length === 0 ? <div className="project-picker-empty">{t("runtime.noMatchingProjects")}</div> : null}
         {filteredProjects.map((project) => {
           const selected = trimmedValue === project.name;
           return (
@@ -798,7 +820,7 @@ function ChatFocusMenu({
         onClick={() => onSelect(CHAT_FOCUS_HOME)}
       >
         <Home className="icon-lg" />
-        <span>仅个人空间</span>
+        <span>{t("runtime.personalSpaceOnly")}</span>
         {trimmedValue === CHAT_FOCUS_HOME ? <Check className="icon-lg" /> : null}
       </button>
     </div>

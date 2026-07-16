@@ -22,6 +22,7 @@ import {
   loadRuntime as defaultLoadRuntime,
   selectRuntimeContext as defaultSelectRuntimeContext,
 } from "./RuntimeLoadState";
+import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type ViewSwitchKind = "thread" | "project" | "runtime";
@@ -131,7 +132,7 @@ export function createSessionTabActions(
         if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
           return;
         }
-        setStatus(error instanceof Error ? error.message : "load failed");
+        setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
       }
       return;
     }
@@ -178,7 +179,7 @@ export function createSessionTabActions(
         if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
           return;
         }
-        setStatus(error instanceof Error ? error.message : "load failed");
+        setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
       }
       return;
     }
@@ -196,7 +197,7 @@ export function createSessionTabActions(
       });
       const thread = requireThread(
         await window.wuu.resumeThread(tab.threadID),
-        "resume did not return a thread",
+        translateCurrent("thread.resumeMissing"),
       );
       if (!deps.finishViewSwitch(requestID)) {
         return;
@@ -226,7 +227,7 @@ export function createSessionTabActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "load failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
     }
   }
 
@@ -292,7 +293,7 @@ export function createSessionTabActions(
         if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
           return;
         }
-        setStatus(error instanceof Error ? error.message : "load failed");
+        setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
       }
       return;
     }
@@ -336,7 +337,7 @@ export function createSessionTabActions(
         if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
           return;
         }
-        setStatus(error instanceof Error ? error.message : "load failed");
+        setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
       }
       return;
     }
@@ -355,7 +356,7 @@ export function createSessionTabActions(
           });
       const thread = requireThread(
         await window.wuu.resumeThread(fallbackTab.threadID),
-        "resume did not return a thread",
+        translateCurrent("thread.resumeMissing"),
       );
       if (!deps.finishViewSwitch(requestID)) {
         return;
@@ -384,7 +385,7 @@ export function createSessionTabActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "load failed");
+      setStatus(error instanceof Error ? error.message : translateCurrent("thread.loadFailed"));
     }
   }
 
@@ -445,7 +446,9 @@ export function createSessionTabActions(
       await closeSessionTab(tabID);
     } catch (error) {
       setStatus(
-        error instanceof Error ? error.message : "open detached window failed",
+        error instanceof Error
+          ? error.message
+          : translateCurrent("window.openDetachedFailed"),
       );
     } finally {
       deps.poppingOutTabIDsRef.current.delete(tabID);

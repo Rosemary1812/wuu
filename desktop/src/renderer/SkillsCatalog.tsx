@@ -1,12 +1,14 @@
 import { AlertTriangle, Bot, Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
+  AppLocale,
   AgentTemplateDiagnostic,
   AgentTemplateSummary,
   ExtensionInventoryRecord,
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
+import { formatCurrentNumber, translateCurrent, useI18n } from "./i18n";
 
 type LoadState = {
   loading: boolean;
@@ -31,6 +33,7 @@ export function SkillsCatalog({
   activeContext?: RuntimeContext;
   extensionInventory?: ExtensionInventoryRecord[];
 }): JSX.Element {
+  const { locale, t } = useI18n();
   const [state, setState] = useState<LoadState>(initialLoadState);
   const [filter, setFilter] = useState("");
   const contextKey = activeContext ? runtimeContextKey(activeContext) : "";
@@ -68,18 +71,18 @@ export function SkillsCatalog({
         }
         setState({
           loading: false,
-          error: error instanceof Error ? error.message : "加载扩展目录失败",
+          error: error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
           skills: [],
           agentTemplates: [],
           diagnostics: []
         });
       }
     }
-  }, [contextKey]);
+  }, [contextKey, locale]);
 
   const visibleSkills = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    const items = [...state.skills].sort(compareSkills);
+    const items = [...state.skills].sort((left, right) => compareSkills(left, right, locale));
     if (!query) {
       return items;
     }
@@ -88,7 +91,7 @@ export function SkillsCatalog({
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(query))
     );
-  }, [filter, state.skills]);
+  }, [filter, locale, state.skills]);
 
   const plugins = useMemo(
     () => extensionInventory.filter((record) => record.kind === "plugin"),
@@ -97,7 +100,7 @@ export function SkillsCatalog({
 
   const visiblePlugins = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    const items = [...plugins].sort((left, right) => left.name.localeCompare(right.name));
+    const items = [...plugins].sort((left, right) => left.name.localeCompare(right.name, locale));
     if (!query) {
       return items;
     }
@@ -106,11 +109,11 @@ export function SkillsCatalog({
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(query))
     );
-  }, [filter, plugins]);
+  }, [filter, locale, plugins]);
 
   const visibleAgentTemplates = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    const items = [...state.agentTemplates].sort(compareAgentTemplates);
+    const items = [...state.agentTemplates].sort((left, right) => compareAgentTemplates(left, right, locale));
     if (!query) {
       return items;
     }
@@ -119,7 +122,7 @@ export function SkillsCatalog({
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(query))
     );
-  }, [filter, state.agentTemplates]);
+  }, [filter, locale, state.agentTemplates]);
 
   async function refreshSkills(): Promise<void> {
     setState((current) => ({ ...current, loading: true, error: "" }));
@@ -138,7 +141,7 @@ export function SkillsCatalog({
     } catch (error) {
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : "加载扩展目录失败",
+        error: error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
         skills: [],
         agentTemplates: [],
         diagnostics: []
@@ -147,10 +150,10 @@ export function SkillsCatalog({
   }
 
   return (
-    <section className="skills-catalog" aria-label="Skills">
+    <section className="skills-catalog" aria-label={t("skills.catalogLabel")}>
       <header className="skills-catalog-header">
         <div className="skills-catalog-title">
-          <strong>技能</strong>
+          <strong>{t("skills.title")}</strong>
         </div>
         <div className="skills-catalog-controls">
           <label className="skills-search">
@@ -158,11 +161,11 @@ export function SkillsCatalog({
             <input
               type="search"
               value={filter}
-              placeholder="搜索技能"
+              placeholder={t("skills.searchPlaceholder")}
               onChange={(event) => setFilter(event.currentTarget.value)}
             />
           </label>
-          <button className="icon-button skills-refresh" type="button" aria-label="刷新 Skills" onClick={() => void refreshSkills()}>
+          <button className="icon-button skills-refresh" type="button" aria-label={t("skills.refresh")} onClick={() => void refreshSkills()}>
             <RefreshCw className="icon" />
           </button>
         </div>
@@ -182,7 +185,7 @@ export function SkillsCatalog({
       ) : null}
 
       <div className="skills-section-heading">
-        <strong>Skills</strong>
+        <strong>{t("skills.sectionSkills")}</strong>
         <span>{catalogCount(state.loading, filter, visibleSkills.length, state.skills.length)}</span>
       </div>
 
@@ -196,13 +199,13 @@ export function SkillsCatalog({
               <span className="skill-row-titlebar">
                 <h2>{skill.name}</h2>
                 {isBundledSkill(skill.source) ? (
-                  <span className="skill-row-tag" title="随 Wuu 内置分发的官方技能">
-                    官方
+                  <span className="skill-row-tag" title={t("skills.officialSkillTitle")}>
+                    {t("skills.official")}
                   </span>
                 ) : null}
                 {pluginSkillID(skill.source) ? (
-                  <span className="skill-row-tag" title="由插件提供的技能">
-                    插件 · {pluginSkillID(skill.source)}
+                  <span className="skill-row-tag" title={t("skills.pluginSkillTitle")}>
+                    {t("skills.pluginTag", { id: pluginSkillID(skill.source) })}
                   </span>
                 ) : null}
               </span>
@@ -215,7 +218,7 @@ export function SkillsCatalog({
       {plugins.length > 0 ? (
         <>
           <div className="skills-section-heading">
-            <strong>Plugins</strong>
+            <strong>{t("skills.sectionPlugins")}</strong>
             <span>{catalogCount(state.loading, filter, visiblePlugins.length, plugins.length)}</span>
           </div>
 
@@ -229,8 +232,8 @@ export function SkillsCatalog({
                   <span className="skill-row-titlebar">
                     <h2>{record.name}</h2>
                     {record.provenance.official ? (
-                      <span className="skill-row-tag" title="随 Wuu 内置分发的官方插件">
-                        官方
+                      <span className="skill-row-tag" title={t("skills.officialPluginTitle")}>
+                        {t("skills.official")}
                       </span>
                     ) : null}
                   </span>
@@ -243,7 +246,7 @@ export function SkillsCatalog({
       ) : null}
 
       <div className="skills-section-heading">
-        <strong>Agent Templates</strong>
+        <strong>{t("skills.sectionAgentTemplates")}</strong>
         <span>{catalogCount(state.loading, filter, visibleAgentTemplates.length, state.agentTemplates.length)}</span>
       </div>
 
@@ -269,8 +272,8 @@ export function SkillsCatalog({
       visibleAgentTemplates.length === 0 ? (
         <div className="skills-empty">
           <Wrench className="icon-xl" />
-          <strong>暂无 Skills</strong>
-          <span>{filter.trim() ? "没有匹配项" : "当前运行时未发现 Skills"}</span>
+          <strong>{t("skills.empty")}</strong>
+          <span>{filter.trim() ? t("skills.noMatches") : t("skills.noneInRuntime")}</span>
         </div>
       ) : null}
     </section>
@@ -289,20 +292,20 @@ function pluginSkillID(source: string): string {
   return source.startsWith("plugin:") ? source.slice("plugin:".length) : "";
 }
 
-function compareSkills(left: SkillSummary, right: SkillSummary): number {
+function compareSkills(left: SkillSummary, right: SkillSummary, locale: AppLocale): number {
   const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
   if (sourceDelta !== 0) {
     return sourceDelta;
   }
-  return left.name.localeCompare(right.name);
+  return left.name.localeCompare(right.name, locale);
 }
 
-function compareAgentTemplates(left: AgentTemplateSummary, right: AgentTemplateSummary): number {
+function compareAgentTemplates(left: AgentTemplateSummary, right: AgentTemplateSummary, locale: AppLocale): number {
   const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
   if (sourceDelta !== 0) {
     return sourceDelta;
   }
-  return left.name.localeCompare(right.name);
+  return left.name.localeCompare(right.name, locale);
 }
 
 function sourceRank(source: string): number {
@@ -320,9 +323,14 @@ function sourceRank(source: string): number {
 
 function catalogCount(loading: boolean, filter: string, visible: number, total: number): string {
   if (loading) {
-    return "加载中";
+    return translateCurrent("skills.loading");
   }
-  return filter.trim() ? `${visible} / ${total}` : `${total}`;
+  return filter.trim()
+    ? translateCurrent("skills.filteredCount", {
+        visible: formatCurrentNumber(visible),
+        total: formatCurrentNumber(total),
+      })
+    : formatCurrentNumber(total);
 }
 
 function runtimeContextKey(context: RuntimeContext): string {

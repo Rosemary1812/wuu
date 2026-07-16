@@ -1,7 +1,9 @@
+import type { TranslationKey } from "./i18n/resources/zh-CN";
+
 export type ConversationDesignToken = {
   readonly key: string;
   readonly cssVar: string;
-  readonly label: string;
+  readonly labelKey: TranslationKey;
   readonly min: number;
   readonly max: number;
   readonly step: number;
@@ -23,7 +25,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "flow-width",
     cssVar: "--session-outer-width",
-    label: "消息流宽度",
+    labelKey: "designTokens.flowWidth",
     min: 640,
     max: 1280,
     step: 16,
@@ -33,7 +35,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "message-max-width",
     cssVar: "--conversation-message-max-width",
-    label: "消息最大宽度",
+    labelKey: "designTokens.messageMaxWidth",
     min: 480,
     max: 1080,
     step: 16,
@@ -43,7 +45,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "composer-width",
     cssVar: "--session-composer-width",
-    label: "输入框宽度",
+    labelKey: "designTokens.composerWidth",
     min: 480,
     max: 1200,
     step: 20,
@@ -53,7 +55,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "composer-radius",
     cssVar: "--session-composer-radius",
-    label: "输入框圆角",
+    labelKey: "designTokens.composerRadius",
     min: 0,
     max: 32,
     step: 1,
@@ -63,7 +65,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "msg-font-size",
     cssVar: "--conversation-message-font-size",
-    label: "正文字号",
+    labelKey: "designTokens.bodyFontSize",
     min: 13,
     max: 20,
     step: 0.5,
@@ -73,7 +75,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "prose-line-height",
     cssVar: CONVERSATION_READING_LINE_HEIGHT_CSS_VAR,
-    label: "正文行高",
+    labelKey: "designTokens.bodyLineHeight",
     min: 1.5,
     max: 2.3,
     step: 0.02,
@@ -83,7 +85,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "prose-block-gap",
     cssVar: "--conversation-prose-block-gap",
-    label: "段落间距",
+    labelKey: "designTokens.paragraphGap",
     min: 4,
     max: 48,
     step: 1,
@@ -93,7 +95,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "meta-line-height",
     cssVar: "--conversation-meta-line-height",
-    label: "Meta 行高",
+    labelKey: "designTokens.metaLineHeight",
     min: 1.2,
     max: 1.8,
     step: 0.05,
@@ -103,7 +105,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "control-line-height",
     cssVar: "--conversation-control-line-height",
-    label: "控件行高",
+    labelKey: "designTokens.controlLineHeight",
     min: 1.2,
     max: 2.2,
     step: 0.05,
@@ -113,7 +115,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "process-gap",
     cssVar: "--conversation-process-detail-gap",
-    label: "过程详情间距",
+    labelKey: "designTokens.processGap",
     min: 2,
     max: 32,
     step: 1,
@@ -123,7 +125,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "message-element-gap",
     cssVar: "--conversation-message-element-gap",
-    label: "消息块间距",
+    labelKey: "designTokens.messageGap",
     min: 4,
     max: 32,
     step: 1,
@@ -133,7 +135,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "turn-gap",
     cssVar: "--conversation-turn-item-gap",
-    label: "Turn 内相邻项间距",
+    labelKey: "designTokens.turnItemGap",
     min: 0,
     max: 24,
     step: 1,
@@ -143,7 +145,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "turn-boundary-gap",
     cssVar: "--conversation-turn-boundary-gap",
-    label: "Turn 之间间距",
+    labelKey: "designTokens.turnGap",
     min: 8,
     max: 48,
     step: 4,
@@ -153,7 +155,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "flow-top-gap",
     cssVar: "--conversation-flow-top-gap",
-    label: "首条消息顶部留白",
+    labelKey: "designTokens.flowTopGap",
     min: 24,
     max: 96,
     step: 4,
@@ -163,7 +165,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
   {
     key: "flow-padding",
     cssVar: "--session-outer-padding-inline",
-    label: "流两侧留白",
+    labelKey: "designTokens.flowSidePadding",
     min: 24,
     max: 96,
     step: 4,

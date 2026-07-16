@@ -10,6 +10,7 @@ import {
   useParticipantState,
   type ParticipantStateController,
 } from "./ParticipantState";
+import { resolveLocalizedText } from "./i18n";
 
 let mountedRoots: Root[] = [];
 
@@ -169,6 +170,8 @@ describe("useParticipantState", () => {
     expect(hook.get().participants).toEqual([
       expect.objectContaining({ id: "participant-1", role: "Lead" }),
     ]);
-    expect(hook.setStatus).toHaveBeenCalledWith("已导入 1 个 Agent");
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
+      "已导入 1 个 Agent",
+    );
   });
 });
