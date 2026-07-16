@@ -329,6 +329,12 @@ function readPopOutInit(): PopOutInitResult | null {
   }
 }
 
+type MainComposerFocusRequest = {
+  target: ComposerVariant;
+  origin: Element | null;
+  interactionVersion: number;
+};
+
 export function App(): JSX.Element {
   const { locale, t, formatNumber } = useI18n();
   const [popOutInit] = useState<PopOutInitResult | null>(() => readPopOutInit());
@@ -375,6 +381,9 @@ export function App(): JSX.Element {
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
   const settingsShellRef = useRef<HTMLDivElement>(null);
+  const [mainComposerFocusRequest, setMainComposerFocusRequest] =
+    useState<MainComposerFocusRequest | null>(null);
+  const userInteractionVersionRef = useRef(0);
   const {
     sidebarWidth,
     sidebarCollapsed,
@@ -1432,6 +1441,18 @@ export function App(): JSX.Element {
   }, [state]);
 
   useEffect(() => {
+    const markUserInteraction = (): void => {
+      userInteractionVersionRef.current += 1;
+    };
+    document.addEventListener("pointerdown", markUserInteraction, true);
+    document.addEventListener("keydown", markUserInteraction, true);
+    return () => {
+      document.removeEventListener("pointerdown", markUserInteraction, true);
+      document.removeEventListener("keydown", markUserInteraction, true);
+    };
+  }, []);
+
+  useEffect(() => {
     void refreshGoalSummary();
   }, [refreshGoalSummary]);
 
@@ -1872,6 +1893,78 @@ export function App(): JSX.Element {
     }
     return conversationScrollRef.current;
   }, [conversationScrollRef, splitConversation, splitPaneRefs, state.activePane]);
+  const focusMainComposer = useCallback(
+    (
+      target: ComposerVariant,
+      origin: Element | null,
+      interactionVersion: number,
+    ): boolean => {
+      const composer = conversationPaneRef.current?.querySelector<HTMLElement>(
+        `[data-main-conversation-composer="${target}"]`,
+      );
+      const textarea = composer?.querySelector<HTMLTextAreaElement>("textarea");
+      if (!textarea || textarea.disabled) {
+        return false;
+      }
+
+      const activeElement = document.activeElement;
+      if (
+        userInteractionVersionRef.current === interactionVersion &&
+        (activeElement === document.body || activeElement === origin)
+      ) {
+        textarea.focus();
+      }
+      return true;
+    },
+    [conversationPaneRef],
+  );
+  const requestMainComposerFocus = useCallback(
+    (
+      target: ComposerVariant,
+      origin: Element | null = document.activeElement,
+    ): MainComposerFocusRequest => {
+      const request = {
+        target,
+        origin,
+        interactionVersion: userInteractionVersionRef.current,
+      };
+      setMainComposerFocusRequest(request);
+      return request;
+    },
+    [],
+  );
+  const cancelMainComposerFocusRequest = useCallback(
+    (request: MainComposerFocusRequest): void => {
+      setMainComposerFocusRequest((current) =>
+        current === request ? null : current,
+      );
+    },
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (!mainComposerFocusRequest) {
+      return;
+    }
+    if (
+      !focusMainComposer(
+        mainComposerFocusRequest.target,
+        mainComposerFocusRequest.origin,
+        mainComposerFocusRequest.interactionVersion,
+      )
+    ) {
+      return;
+    }
+    setMainComposerFocusRequest((current) =>
+      current === mainComposerFocusRequest ? null : current,
+    );
+  }, [
+    emptyConversation,
+    focusMainComposer,
+    mainComposerFocusRequest,
+    mainConversationDockVisible,
+    state.activeSessionTabID,
+  ]);
   const handleTurnCollapseComplete = useCallback(() => {
     scheduleStreamScroll();
   }, [scheduleStreamScroll]);
@@ -2491,6 +2584,7 @@ export function App(): JSX.Element {
     return (
       <Composer
         variant={variant}
+        mainConversation
         containerRef={variant === "dock" ? dockComposerRef : undefined}
         prompt={prompt}
         setPrompt={setPrompt}
@@ -2605,7 +2699,7 @@ export function App(): JSX.Element {
         onSelectGitBranch={(branch) => void checkoutBranch(branch)}
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
-        onStartNewThread={() => void startNewThread()}
+        onStartNewThread={startNewThreadWithComposerFocus}
         onOpenSideThread={openSideThreadPanel}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
@@ -2899,6 +2993,55 @@ export function App(): JSX.Element {
     selectRuntimeContext,
   });
 
+  function focusHeroAfter(
+    action: Promise<void | boolean>,
+    origin: Element | null,
+    matchesDestination: (state: AppState) => boolean,
+  ): void {
+    const interactionVersion = userInteractionVersionRef.current;
+    void action.then((succeeded) => {
+      if (succeeded === false) {
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        const current = appStateRef.current;
+        if (
+          !current.thread &&
+          !current.secondaryThread &&
+          activeSessionTab(current)?.kind === "draft" &&
+          matchesDestination(current)
+        ) {
+          focusMainComposer("hero", origin, interactionVersion);
+        }
+      });
+    });
+  }
+
+  function startNewThreadWithComposerFocus(): void {
+    const origin = document.activeElement;
+    const context = appStateRef.current.activeContext;
+    focusHeroAfter(
+      startNewThread(),
+      origin,
+      (current) => sameRuntimeContext(current.activeContext, context),
+    );
+  }
+
+  function startNewThreadForProjectWithComposerFocus(id: string): void {
+    const origin = document.activeElement;
+    focusHeroAfter(
+      id === SCRATCH_PSEUDO_PROJECT_ID
+        ? useNoProject(true)
+        : startNewThreadForProject(id),
+      origin,
+      (current) =>
+        id === SCRATCH_PSEUDO_PROJECT_ID
+          ? current.activeContext?.kind === "no_project"
+          : current.activeContext?.kind === "project" &&
+            current.activeProjectId === id,
+    );
+  }
+
   const {
     toggleThreadPinned,
     renameThread,
@@ -3064,6 +3207,16 @@ export function App(): JSX.Element {
     if (!message || !currentState.activeContext || !currentState.initialized) {
       return;
     }
+    let focusRequest: MainComposerFocusRequest | undefined;
+    if (emptyConversation) {
+      const activeElement = document.activeElement;
+      if (
+        activeElement === document.body ||
+        activeElement?.closest("[data-main-conversation-composer]")
+      ) {
+        focusRequest = requestMainComposerFocus("dock", activeElement);
+      }
+    }
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
@@ -3091,7 +3244,17 @@ export function App(): JSX.Element {
       }
       return;
     }
-    await sendComposerMessage(message, true);
+    const sent = await sendComposerMessage(message, true);
+    if (!sent && focusRequest) {
+      cancelMainComposerFocusRequest(focusRequest);
+      window.requestAnimationFrame(() => {
+        focusMainComposer(
+          "hero",
+          focusRequest.origin,
+          focusRequest.interactionVersion,
+        );
+      });
+    }
   }
 
   async function compactActiveThread(): Promise<void> {
@@ -3943,7 +4106,7 @@ export function App(): JSX.Element {
             sectionOrder={sidebarSectionOrder}
             onStartNewThread={() => {
               revealConversationFromFocusedWorkspace();
-              void startNewThread();
+              startNewThreadWithComposerFocus();
             }}
             onOpenSkillsTab={openSkillsTab}
             onToggleConversationSearch={toggleConversationSearch}
@@ -3986,11 +4149,7 @@ export function App(): JSX.Element {
             onToggleSidebarSectionCollapsed={toggleSidebarSectionCollapsed}
             onStartNewThreadForProject={(id) => {
               revealConversationFromFocusedWorkspace();
-              if (id === SCRATCH_PSEUDO_PROJECT_ID) {
-                void useNoProject(true);
-              } else {
-                void startNewThreadForProject(id);
-              }
+              startNewThreadForProjectWithComposerFocus(id);
             }}
             onSelectProjectThread={(projectID, threadID) => {
               revealConversationFromFocusedWorkspace();
@@ -4091,7 +4250,7 @@ export function App(): JSX.Element {
               onCloseSessionTab={(tabID) => void closeSessionTab(tabID)}
               onCloseSessionTabs={(tabIDs) => void closeSessionTabs(tabIDs)}
               onPopOutSessionTab={(tabID) => void popOutSessionTab(tabID)}
-              onStartNewThread={() => void startNewThread()}
+              onStartNewThread={startNewThreadWithComposerFocus}
               onReorderSessionTabs={reorderSessionTabs}
             />
           </div>

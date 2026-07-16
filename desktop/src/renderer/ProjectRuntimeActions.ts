@@ -41,12 +41,12 @@ export type ProjectRuntimeActionsDeps = {
 
 export type ProjectRuntimeActions = {
   selectProjectForNewThread: (projectId: string) => Promise<void>;
-  startNewThreadForProject: (projectId: string) => Promise<void>;
+  startNewThreadForProject: (projectId: string) => Promise<boolean>;
   createBlankProject: () => Promise<void>;
   chooseProjectFolder: () => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   relocateProject: (projectId: string) => Promise<void>;
-  useNoProject: (fresh: boolean) => Promise<void>;
+  useNoProject: (fresh: boolean) => Promise<boolean>;
 };
 
 export function createProjectRuntimeActions(
@@ -131,7 +131,7 @@ export function createProjectRuntimeActions(
     isCurrentContext: (state: AppState) => boolean;
     selectContext: () => Promise<ProjectListResult>;
     failureStatus: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const currentState = deps.getAppState();
     if (isCurrentContext(currentState)) {
       deps.closeProjectMenus();
@@ -139,12 +139,12 @@ export function createProjectRuntimeActions(
       if (context && (currentState.thread || currentState.secondaryThread)) {
         activateWorkspaceDraft(context);
       }
-      return;
+      return true;
     }
     if (isAnyThreadRunning(currentState)) {
       deps.closeProjectMenus();
       setStatus(localizedText("project.switchWhileRunning"));
-      return;
+      return false;
     }
     const requestID = deps.beginViewSwitch(switchKind, switchTarget);
     deps.closeProjectMenus();
@@ -161,7 +161,7 @@ export function createProjectRuntimeActions(
         resumeLatestThread: false,
       });
       if (!deps.finishViewSwitch(requestID)) {
-        return;
+        return false;
       }
       deps.restoreLoadedRuntimeComposerDraft(loadedState, carryDraft);
       deps.setAppState((current) => {
@@ -180,11 +180,13 @@ export function createProjectRuntimeActions(
           status: "ready",
         };
       });
+      return true;
     } catch (error) {
       if (!deps.finishViewSwitch(requestID)) {
-        return;
+        return false;
       }
       setStatus(error instanceof Error ? error.message : failureStatus);
+      return false;
     }
   }
 
@@ -200,7 +202,7 @@ export function createProjectRuntimeActions(
     });
   }
 
-  async function startNewThreadForProject(projectId: string): Promise<void> {
+  async function startNewThreadForProject(projectId: string): Promise<boolean> {
     deps.cancelViewSwitch();
     deps.closeProjectMenus();
     
@@ -210,7 +212,7 @@ export function createProjectRuntimeActions(
       currentState.activeContext?.kind === "project"
     ) {
       activateWorkspaceDraft(currentState.activeContext);
-      return;
+      return true;
     }
     const requestID = deps.beginViewSwitch("project", projectId);
     const outgoingDraft = deps.getPrimaryComposerDraft();
@@ -220,10 +222,10 @@ export function createProjectRuntimeActions(
         resumeLatestThread: false,
       });
       if (!deps.finishViewSwitch(requestID)) {
-        return;
+        return false;
       }
       if (!loadedState.activeContext) {
-        return;
+        return false;
       }
       if (
         draftSessionTabForContext(
@@ -247,7 +249,7 @@ export function createProjectRuntimeActions(
             status: "ready",
           };
         });
-        return;
+        return true;
       }
       deps.clearPrimaryComposerDraft();
       const nextTab = deps.nextDraftSessionTab(loadedState.activeContext);
@@ -266,11 +268,13 @@ export function createProjectRuntimeActions(
           status: "ready",
         };
       });
+      return true;
     } catch (error) {
       if (!deps.finishViewSwitch(requestID)) {
-        return;
+        return false;
       }
       setStatus(error instanceof Error ? error.message : translateCurrent("project.openFailed"));
+      return false;
     }
   }
 
@@ -455,7 +459,7 @@ export function createProjectRuntimeActions(
     }
   }
 
-  async function useNoProject(fresh: boolean): Promise<void> {
+  async function useNoProject(fresh: boolean): Promise<boolean> {
     // The non-fresh flavor is the composer picker's 不使用项目 entry —
     // the same "retarget my draft" gesture as picking a project, so it
     // shares that path (land on the 对话 draft page, never resume an
@@ -463,14 +467,13 @@ export function createProjectRuntimeActions(
     // button: an explicit "start clean" that discards nothing but also
     // carries nothing.
     if (!fresh) {
-      await retargetDraftToContext({
+      return retargetDraftToContext({
         switchKind: "runtime",
         switchTarget: "no-project",
         isCurrentContext: (state) => state.activeContext?.kind === "no_project",
         selectContext: () => window.wuu.selectNoProject(false),
         failureStatus: translateCurrent("project.scratchOpenFailed"),
       });
-      return;
     }
     const currentState = deps.getAppState();
     const requestID = deps.beginViewSwitch("runtime", "no-project:fresh");
@@ -482,10 +485,10 @@ export function createProjectRuntimeActions(
         resumeLatestThread: false,
       });
       if (!deps.finishViewSwitch(requestID)) {
-        return;
+        return false;
       }
       if (!loadedState.activeContext) {
-        return;
+        return false;
       }
       const existingDraft = draftSessionTabForContext(
         currentState.sessionTabs,
@@ -499,7 +502,7 @@ export function createProjectRuntimeActions(
             loadedState,
           ),
         );
-        return;
+        return true;
       }
       const nextTab = deps.nextDraftSessionTab(loadedState.activeContext);
       deps.clearPrimaryComposerDraft();
@@ -517,11 +520,13 @@ export function createProjectRuntimeActions(
           running: false,
         };
       });
+      return true;
     } catch (error) {
       if (!deps.finishViewSwitch(requestID)) {
-        return;
+        return false;
       }
       setStatus(error instanceof Error ? error.message : translateCurrent("project.scratchOpenFailed"));
+      return false;
     }
   }
 

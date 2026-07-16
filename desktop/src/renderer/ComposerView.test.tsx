@@ -83,6 +83,7 @@ function initialized(permissions?: PermissionSummary): InitializeResult {
 function renderComposer(props: {
   accessMenuOpen?: boolean;
   variant?: ComposerVariant;
+  mainConversation?: boolean;
   prompt?: string;
   running?: boolean;
   ultraEnabled?: boolean;
@@ -97,6 +98,7 @@ function renderComposer(props: {
   readOnly?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
+  onStartNewThread?: () => void;
   onOpenContextComposition?: () => void;
   onOpenSideThread?: () => void;
   sideThreadDisabledReason?: string;
@@ -135,6 +137,7 @@ function renderComposer(props: {
       <ImagePreviewProvider>
         <Composer
           variant={props.variant}
+          mainConversation={props.mainConversation}
           prompt={props.prompt ?? ""}
           setPrompt={props.setPrompt ?? (() => {})}
           files={[]}
@@ -178,7 +181,7 @@ function renderComposer(props: {
           onSelectGitBranch={() => {}}
           onCreateProject={() => {}}
           onOpenProject={() => {}}
-          onStartNewThread={() => {}}
+          onStartNewThread={props.onStartNewThread ?? (() => {})}
           onOpenSideThread={props.onOpenSideThread}
           onOpenWorkspaceTool={() => {}}
           onOpenContextComposition={props.onOpenContextComposition ?? (() => {})}
@@ -1126,6 +1129,33 @@ describe("Composer send control", () => {
     expect(onOpenContextComposition).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
     expect(setPrompt).toHaveBeenCalledWith("");
+  });
+
+  it("runs /new as a new-thread action", () => {
+    const setPrompt = vi.fn();
+    const onStartNewThread = vi.fn();
+    renderComposer({
+      prompt: "/new",
+      setPrompt,
+      onStartNewThread,
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送"]',
+    );
+    act(() => sendButton?.click());
+
+    expect(onStartNewThread).toHaveBeenCalledTimes(1);
+    expect(setPrompt).toHaveBeenCalledWith("");
+  });
+
+  it("marks only an explicitly identified main-conversation composer", () => {
+    renderComposer({ variant: "hero", mainConversation: true });
+
+    expect(
+      container.querySelector("[data-main-conversation-composer=\"hero\"]"),
+    ).not.toBeNull();
   });
 
   it("keeps /side disabled on a draft without a persisted thread", () => {
