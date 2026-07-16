@@ -8,6 +8,20 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-16
+
+### Changed
+
+- GitHub Releases now contain only the unsigned macOS arm64 desktop DMG and ZIP
+  packages; standalone CLI archives and the npm installer are no longer
+  published.
+
+### Fixed
+
+- The desktop app now always runs its bundled private `wuu-core` and no longer
+  installs, replaces, or falls back to a standalone `wuu` CLI. A CLI installed
+  separately from source can coexist with the app and use a different version.
+
 ## [0.4.0] - 2026-07-15
 
 ### Added

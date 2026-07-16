@@ -1,6 +1,6 @@
 {
   "name": "@blueberrycongee/wuu-desktop",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Desktop app for the Wuu AI coding agent",
   "author": "Andy wu <lpageo@163.com>",
   "private": true,
@@ -68,8 +68,8 @@
         "from": "build/bin",
         "to": "bin",
         "filter": [
-          "**/*",
-          "!wuu-cua-mac*"
+          "wuu-core",
+          "wuu-core.exe"
         ]
       }
     ],

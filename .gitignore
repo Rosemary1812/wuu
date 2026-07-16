@@ -1,7 +1,7 @@
 # ============================================================
 # Build artifacts
 # ============================================================
-# Go build (Makefile → /bin/wuu), goreleaser (→ dist/),
+# Go build (Makefile → /bin/wuu),
 # electron-vite (→ desktop/out/, .vite/, node_modules/),
 # pnpm/npm (→ node_modules/).
 

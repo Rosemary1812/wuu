@@ -9,68 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  cli:
-    name: CLI archives
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-
-      - name: Verify tag source
-        run: |
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::release tag ${GITHUB_REF_NAME} must point to a commit on main"
-            exit 1
-          fi
-
-      - name: Check release version
-        run: node scripts/release-version.mjs check "$GITHUB_REF_NAME"
-
-      - name: Check and test Go core
-        run: make check-go test-go
-
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean --skip=publish
-
-      - name: Verify CLI archives
-        run: |
-          cd dist
-          sha256sum --check checksums.txt
-          for archive in wuu_*.tar.gz; do
-            tar -tzf "$archive" | grep -Fx "wuu"
-          done
-          mkdir smoke
-          tar -xzf "wuu_${GITHUB_REF_NAME#v}_linux_amd64.tar.gz" -C smoke
-          version_output="$(smoke/wuu --version)"
-          echo "$version_output"
-          echo "$version_output" | grep -F "${GITHUB_REF_NAME}"
-          if echo "$version_output" | grep -q dirty; then
-            echo "::error::CLI archive was built from a dirty worktree."
-            exit 1
-          fi
-
-      - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: cli
-          path: |
-            dist/*.tar.gz
-            dist/checksums.txt
-          if-no-files-found: error
-
   desktop-macos:
     name: Desktop macOS
     runs-on: macos-15
@@ -92,8 +30,19 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
+      - name: Verify tag source
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::release tag ${GITHUB_REF_NAME} must point to a commit on main"
+            exit 1
+          fi
+
       - name: Check release version
         run: node ../scripts/release-version.mjs check "$GITHUB_REF_NAME"
+
+      - name: Check and test Go core
+        run: make -C .. check-go test-go
 
       - name: Install
         run: npm ci
@@ -111,10 +60,16 @@ jobs:
         run: |
           echo "::notice::macOS desktop artifacts are unsigned preview builds; users may need to remove Gatekeeper quarantine after installing."
 
-          version_output="$(release/mac-arm64/wuu.app/Contents/Resources/bin/wuu --version)"
+          core="release/mac-arm64/wuu.app/Contents/Resources/bin/wuu-core"
+          version_output="$("$core" --version)"
           echo "$version_output"
           if echo "$version_output" | grep -q dirty; then
             echo "::error::Packaged core was built from a dirty worktree."
+            exit 1
+          fi
+
+          if [ -e "release/mac-arm64/wuu.app/Contents/Resources/bin/wuu" ]; then
+            echo "::error::Packaged app must keep its core private as wuu-core."
             exit 1
           fi
 
@@ -145,7 +100,6 @@ jobs:
   release:
     name: GitHub Release
     needs:
-      - cli
       - desktop-macos
     runs-on: ubuntu-latest
     permissions:
@@ -160,11 +114,6 @@ jobs:
           name: desktop-macos-arm64
           path: desktop-release
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: cli
-          path: cli-release
-
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -172,18 +121,12 @@ jobs:
           node scripts/release-version.mjs notes "$GITHUB_REF_NAME" > release-notes.md
           printf '\n\n' >> release-notes.md
           cat >> release-notes.md <<'EOF'
-          This release contains command-line archives for macOS and Linux on
-          amd64 and arm64, plus an unsigned macOS arm64 desktop preview.
-
-          CLI archives:
-
-          - `wuu_<version>_<os>_<arch>.tar.gz`
-          - `checksums.txt`
-
-          Desktop preview:
+          This release contains only the unsigned macOS arm64 desktop app:
 
           - `wuu-<version>-mac-arm64.dmg`
           - `wuu-<version>-mac-arm64.zip`
+
+          The app includes its own private wuu core. Standalone CLI archives are not published.
 
           The app is not signed or notarized yet. After moving `wuu.app` to `/Applications`, macOS may block it. For a release asset you trust, remove the quarantine attribute:
 
@@ -194,7 +137,7 @@ jobs:
 
           EOF
 
-          gh release create "$GITHUB_REF_NAME" cli-release/* desktop-release/* \
+          gh release create "$GITHUB_REF_NAME" desktop-release/* \
             --verify-tag \
             --title "wuu ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md

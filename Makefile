@@ -1,7 +1,7 @@
 .PHONY: setup dev check repository-check version-check eval-check check-go check-desktop check-clients test test-go \
 	test-desktop test-clients test-native build build-go build-desktop \
-	build-clients build-macos ci install vet clean release-check release-dry \
-	snapshot print-version tag-release version-check release-prepare
+	build-clients build-macos ci install vet clean release-check \
+	print-version tag-release version-check release-prepare
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
@@ -86,13 +86,7 @@ vet:
 clean:
 	rm -rf bin/ dist/
 
-release-dry:
-	goreleaser check
-	goreleaser release --snapshot --clean --skip=publish
-
-release-check: version-check
-	goreleaser check
-	cd npm && npm pack --dry-run
+release-check: version-check check-go test-go test-desktop
 
 version-check:
 	node scripts/release-version.mjs check
@@ -100,9 +94,6 @@ version-check:
 release-prepare:
 	@test -n "$(RELEASE_VERSION)" || { echo "usage: make release-prepare RELEASE_VERSION=0.4.0"; exit 1; }
 	node scripts/release-version.mjs prepare "$(RELEASE_VERSION)"
-
-snapshot:
-	goreleaser release --snapshot --clean
 
 print-version:
 	@echo v$(BASE_VERSION)

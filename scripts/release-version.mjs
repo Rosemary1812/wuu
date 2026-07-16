@@ -8,7 +8,6 @@ const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const versionFile = resolve(repoRoot, "VERSION");
 const desktopManifest = resolve(repoRoot, "desktop/package.json");
 const desktopLock = resolve(repoRoot, "desktop/package-lock.json");
-const npmManifest = resolve(repoRoot, "npm/package.json");
 const changelogFile = resolve(repoRoot, "CHANGELOG.md");
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
@@ -70,8 +69,6 @@ function prepare(rawNextVersion) {
     json.version = nextVersion;
     json.packages[""].version = nextVersion;
   });
-  updateJSON(npmManifest, (json) => { json.version = nextVersion; });
-
   const date = new Date().toISOString().slice(0, 10);
   const released = `${marker}\n\n## [${nextVersion}] - ${date}\n\n${unreleased}\n\n`;
   writeFileSync(changelogFile, changelog.slice(0, markerStart) + released + changelog.slice(bodyEnd));
@@ -101,7 +98,6 @@ function currentVersions() {
     desktop: desktop.version,
     desktopLock: lock.version,
     desktopLockRoot: lock.packages?.[""]?.version,
-    npm: readJSON(npmManifest).version,
   };
 }
 

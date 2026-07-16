@@ -27,7 +27,7 @@ Run from the repository root:
 | `make test` | Run Go, desktop, remote-core, mobile, and macOS-native tests where supported |
 | `make build` | Build the Go CLI, Electron renderer/main, and mobile web export |
 | `make ci` | Run the same component checks used by required CI jobs |
-| `make release-check` | Check release versions, GoReleaser config, and npm package contents without publishing |
+| `make release-check` | Check release versions and run the Go core and desktop test gates |
 
 Component commands are available when a full run is unnecessary:
 
@@ -53,8 +53,8 @@ Pull requests and pushes to `main` run:
 - **Clients check:** protocol/core/mobile typecheck, client tests, and mobile web export;
 - **macOS native check:** Swift/native tests and a directory-packaged Electron app.
 
-Tagged releases add CLI archive/checksum verification and unsigned macOS DMG/ZIP
-verification. See [release.md](release.md).
+Tagged releases add unsigned macOS DMG/ZIP verification. GitHub Releases do not
+publish standalone CLI archives. See [release.md](release.md).
 
 ## Product boundaries
 

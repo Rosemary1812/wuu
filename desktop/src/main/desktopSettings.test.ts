@@ -6,13 +6,11 @@ import {
   getCodexPetScale,
   getCodexPetSettings,
   getCodexPetSize,
-  getCliAutoInstallEnabled,
   getMainWindowBounds,
   getMessageFlowFontSize,
   getThemePreference,
   readDesktopSettings,
   setCodexPetSettings,
-  setCliAutoInstallEnabled,
   setMainWindowBounds,
   setMessageFlowFontSize,
   setThemePreference,
@@ -32,28 +30,17 @@ afterEach(async () => {
 });
 
 describe("desktopSettings", () => {
-  it("defaults cli_auto_install to enabled when no file exists", () => {
-    expect(getCliAutoInstallEnabled(file)).toBe(true);
-  });
-
-  it("round-trips the auto-install flag", () => {
-    setCliAutoInstallEnabled(false, file);
-    expect(getCliAutoInstallEnabled(file)).toBe(false);
-    setCliAutoInstallEnabled(true, file);
-    expect(getCliAutoInstallEnabled(file)).toBe(true);
-  });
-
   it("creates parent directories on write", async () => {
     const nested = join(dir, "a", "b", "settings.json");
-    writeDesktopSettings({ cli_auto_install: false }, nested);
-    expect(JSON.parse(await readFile(nested, "utf8"))).toEqual({ cli_auto_install: false });
+    writeDesktopSettings({ theme: "dark" }, nested);
+    expect(JSON.parse(await readFile(nested, "utf8"))).toEqual({ theme: "dark" });
   });
 
   it("preserves existing file permissions", async () => {
     await writeFile(file, "{}\n", { mode: 0o640 });
     await chmod(file, 0o640);
 
-    writeDesktopSettings({ cli_auto_install: false }, file);
+    writeDesktopSettings({ theme: "dark" }, file);
 
     if (process.platform !== "win32") {
       expect((await stat(file)).mode & 0o777).toBe(0o640);
@@ -62,16 +49,9 @@ describe("desktopSettings", () => {
 
   it("falls back to defaults on corrupted or malformed files", async () => {
     await writeFile(file, "{not json");
-    expect(getCliAutoInstallEnabled(file)).toBe(true);
-    await writeFile(file, JSON.stringify({ cli_auto_install: "yes" }));
     expect(readDesktopSettings(file)).toEqual({});
-    expect(getCliAutoInstallEnabled(file)).toBe(true);
-  });
-
-  it("preserves unknown-but-valid fields it manages", () => {
-    setCliAutoInstallEnabled(false, file);
-    const settings = readDesktopSettings(file);
-    expect(settings.cli_auto_install).toBe(false);
+    await writeFile(file, JSON.stringify({ theme: "sepia" }));
+    expect(readDesktopSettings(file)).toEqual({});
   });
 
   it("defaults the theme preference to system", () => {
@@ -92,11 +72,11 @@ describe("desktopSettings", () => {
     expect(getThemePreference(file)).toBe("system");
   });
 
-  it("keeps the theme when toggling other settings", () => {
+  it("keeps the theme when changing other settings", () => {
     setThemePreference("dark", file);
-    setCliAutoInstallEnabled(false, file);
+    setMessageFlowFontSize(16, file);
     expect(getThemePreference(file)).toBe("dark");
-    expect(getCliAutoInstallEnabled(file)).toBe(false);
+    expect(getMessageFlowFontSize(file)).toBe(16);
   });
 
   it("defaults the message-flow font size to 14", () => {

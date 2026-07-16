@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +31,9 @@ describe("writeTextFileAtomicSync", () => {
   it("preserves the permissions of an existing file", async () => {
     const path = join(directory, "script.sh");
     await writeFile(path, "old\n", { mode: 0o750 });
+    if (process.platform !== "win32") {
+      await chmod(path, 0o750);
+    }
 
     writeTextFileAtomicSync(path, "new\n");
 

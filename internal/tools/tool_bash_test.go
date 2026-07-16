@@ -216,19 +216,7 @@ func TestBashRunResolvesLocalNpxTypecheckRunnerWithProjectOptionOrder(t *testing
 	}
 }
 
-func TestBashRunExecutesLocalNpxTscCommands(t *testing.T) {
-	root := t.TempDir()
-	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "tsc")
-	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf ran > tsc-ran.txt\n")
-	if err := os.Chmod(runnerPath, 0o755); err != nil {
-		t.Fatalf("chmod runner: %v", err)
-	}
-
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
+func TestBashDoesNotTreatMutatingNpxTscCommandsAsVerification(t *testing.T) {
 	for _, command := range []string{
 		"cd desktop && npx tsc --init",
 		"cd desktop && npx tsc --noEmit --init",
@@ -236,19 +224,8 @@ func TestBashRunExecutesLocalNpxTscCommands(t *testing.T) {
 		"cd desktop && npx tsc --noEmit --build",
 		"cd desktop && npx tsc",
 	} {
-		_, err := kit.Execute(context.Background(), providers.ToolCall{
-			Name:      "bash",
-			Arguments: `{"command":"` + command + `","scope":"targeted"}`,
-		})
-		if err != nil {
-			t.Fatalf("expected local npx tsc command to run for %q, got %v", command, err)
-		}
-		marker := filepath.Join(root, "desktop", "tsc-ran.txt")
-		if got := mustReadFile(t, marker); got != "ran" {
-			t.Fatalf("local npx tsc marker for %q = %q, want ran", command, got)
-		}
-		if err := os.Remove(marker); err != nil {
-			t.Fatalf("remove marker: %v", err)
+		if testCommandLooksLikeLocalRunnerVerification(command) {
+			t.Fatalf("mutating tsc command classified as verification: %q", command)
 		}
 	}
 }

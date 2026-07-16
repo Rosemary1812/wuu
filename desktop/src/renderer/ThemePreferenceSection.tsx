@@ -10,8 +10,8 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
 
 /**
  * 外观 row body: a three-way segmented control (system / light / dark).
- * Self-contained like CliInstallSection — reads and persists through
- * window.wuu directly, and applies the choice to <html data-theme>
+ * Reads and persists through window.wuu directly, and applies the choice to
+ * <html data-theme>
  * immediately so the user sees the switch without a save step.
  */
 export function ThemePreferenceControl(): JSX.Element {

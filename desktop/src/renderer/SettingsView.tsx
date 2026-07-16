@@ -66,7 +66,6 @@ export type ArchivedSessionView = {
   archive_project_name?: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
-import { CliInstallSection } from "./CliInstallSection";
 import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
 import { MemoryPanel } from "./MemoryPanel";
 import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
@@ -1884,8 +1883,6 @@ function SettingsGeneralPage({
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
-
-      <CliInstallSection />
     </>
   );
 }

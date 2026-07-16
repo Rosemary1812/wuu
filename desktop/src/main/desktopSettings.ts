@@ -4,9 +4,8 @@ import { wuuHomePath } from "./projects";
 import { writeTextFileAtomicSync } from "./atomicFile";
 
 // Desktop-only settings that the Electron main process needs before the
-// renderer loads (e.g. whether to auto-install the wuu CLI symlink at
-// startup). Persistence mirrors projects.ts: a small JSON file under the wuu
-// home directory (~/.wuu), written synchronously on change.
+// renderer loads. Persistence mirrors projects.ts: a small JSON file under
+// the wuu home directory (~/.wuu), written synchronously on change.
 
 import {
   CODEX_PET_SIZE_DEFAULT,
@@ -39,10 +38,6 @@ function isMessageFlowFontSize(value: unknown): value is MessageFlowFontSize {
 }
 
 export type DesktopSettings = {
-  // Auto-install the wuu CLI into ~/.local/bin at app startup. Defaults to
-  // true — the CLI is how agents invoke wuu, so it should not depend on the
-  // user finding a button in settings.
-  cli_auto_install?: boolean;
   // Appearance. "system" follows the OS light/dark preference; the
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
@@ -77,9 +72,6 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     }
     const record = parsed as Record<string, unknown>;
     const settings: DesktopSettings = {};
-    if (typeof record.cli_auto_install === "boolean") {
-      settings.cli_auto_install = record.cli_auto_install;
-    }
     if (THEME_PREFERENCES.includes(record.theme as ThemePreference)) {
       settings.theme = record.theme as ThemePreference;
     }
@@ -145,15 +137,6 @@ export function writeDesktopSettings(
     filePath,
     `${JSON.stringify(settings, null, 2)}\n`,
   );
-}
-
-export function getCliAutoInstallEnabled(filePath?: string): boolean {
-  return readDesktopSettings(filePath).cli_auto_install ?? true;
-}
-
-export function setCliAutoInstallEnabled(enabled: boolean, filePath?: string): void {
-  const settings = readDesktopSettings(filePath);
-  writeDesktopSettings({ ...settings, cli_auto_install: enabled }, filePath);
 }
 
 export function getThemePreference(filePath?: string): ThemePreference {

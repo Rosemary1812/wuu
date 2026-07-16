@@ -54,6 +54,7 @@ function makeClient(spawnAppServer: AppServerSpawn): {
       stateChangeCount += 1;
     },
     spawnAppServer,
+    (_env, workdir) => ({ command: "test-wuu-core", args: [], cwd: workdir }),
   );
   return {
     client,

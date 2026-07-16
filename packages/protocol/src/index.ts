@@ -1432,62 +1432,6 @@ export type InstructionsListResult = {
   files: InstructionFile[];
 };
 
-// Filesystem-level status of the "install wuu command" action (symlink into
-// ~/.local/bin). Produced by the pure cliInstall module in the main process.
-export type CliInstallFsStatus = {
-  platform_supported: boolean;
-  platform: string;
-  source_path: string | null;
-  install_dir: string;
-  install_path: string;
-  installed: boolean;
-  linked_to_source: boolean;
-  // install_path is a symlink whose target no longer exists (the app was
-  // moved or updated). Safe for the startup auto-install to rebuild.
-  link_dangling: boolean;
-  // Something else owns install_path: a real binary (go install /
-  // install.sh) or a symlink to another target. The desktop never touches
-  // it automatically; only the manual overwrite flow may replace it.
-  foreign_install: boolean;
-  on_path: boolean;
-};
-
-// Full status shown in settings: filesystem state plus the persisted
-// auto-install preference and the outcome of this session's startup
-// auto-install pass (if any).
-export type CliInstallStatus = CliInstallFsStatus & {
-  auto_install_enabled: boolean;
-  last_auto_install: CliAutoInstallResult | null;
-};
-
-export type CliAutoInstallOutcome =
-  | "installed" // fresh symlink created (nothing was there)
-  | "repaired" // dangling symlink rebuilt after an app move/update
-  | "already-linked" // nothing to do
-  | "skipped-existing" // foreign wuu present — left untouched
-  | "unsupported" // platform without symlink support (Windows)
-  | "no-source" // no wuu binary could be located
-  | "failed"; // filesystem error; never blocks startup
-
-export type CliAutoInstallResult = {
-  outcome: CliAutoInstallOutcome;
-  install_path: string;
-  source_path: string | null;
-  on_path: boolean;
-  message?: string;
-};
-
-export type CliInstallResult = {
-  ok: boolean;
-  // Set when a file already exists at install_path and overwrite was not
-  // requested — the UI prompts before replacing it.
-  needs_overwrite?: boolean;
-  install_path: string;
-  source_path?: string;
-  on_path: boolean;
-  message?: string;
-};
-
 export type Turn = {
   id: string;
   kind?: TurnKind;
@@ -2144,13 +2088,6 @@ export type WuuDesktopApi = {
   // system prompt at session start. Read-only; used by the session view's
   // 指令文件 block to mirror Claude Code's /memory visibility.
   listInstructionFiles: () => Promise<InstructionsListResult>;
-  // "Install wuu command" action: inspect and create a ~/.local/bin/wuu
-  // symlink, mirroring VS Code's "install 'code' command". Install runs
-  // automatically at startup (self-repairing, never overwriting a foreign
-  // install); the toggle below persists whether that auto pass is enabled.
-  getCliInstallStatus: () => Promise<CliInstallStatus>;
-  installCli: (overwrite?: boolean) => Promise<CliInstallResult>;
-  setCliAutoInstallEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
   // 远程控制（设置 → 远程）。管理机器级 remote host 守护进程与手机配对,
   // 走主进程 RemoteHostManager 而非 app-server 协议。
   getRemoteControlSnapshot: () => Promise<RemoteControlSnapshot>;

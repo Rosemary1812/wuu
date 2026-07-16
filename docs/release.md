@@ -8,7 +8,7 @@ Tagged releases are published by `.github/workflows/release.yml`.
 
 1. Add user-visible changes under `CHANGELOG.md`'s `[Unreleased]` section.
 2. Run `make release-prepare RELEASE_VERSION=0.4.0`. The command validates the
-   version, updates `VERSION`, desktop/npm manifests and the desktop lockfile,
+   version, updates `VERSION`, the desktop manifest and lockfile,
    and moves the unreleased notes into a dated release section.
 3. Review the diff, run `make ci release-check`, and commit the release change.
 4. After the commit is on `main`, run `make tag-release` and push the annotated
@@ -31,15 +31,15 @@ wuu uses Semantic Versioning while it is pre-1.0:
 The private protocol, remote-core, and mobile packages remain at `0.0.0` until
 they have an independent public release contract.
 
-Before tagging, `make check-go test-go` must pass. The release workflow reruns
-those gates against the tagged commit before it builds any CLI archives.
-Release tooling consumes committed module manifests and does not update
-`go.mod` or `go.sum`.
+Before tagging, the Go core and desktop test suites must pass. The release
+workflow reruns those gates against the tagged commit before it builds the
+desktop app. Release tooling consumes committed module manifests and does not
+update `go.mod` or `go.sum`.
 
 ## GitHub Secrets
 
-The current release workflow publishes Go CLI archives and the macOS Electron
-desktop preview package to the same GitHub Release. It requires:
+The current release workflow publishes only the macOS Electron desktop preview
+package. It requires:
 
 - `GITHUB_TOKEN` (provided by GitHub Actions)
 
@@ -81,19 +81,18 @@ Do not ask users to run this for builds from untrusted sources.
 
 ## Output
 
-The CLI job verifies that the tag commit belongs to `main`, checks and tests the
-Go core, builds macOS and Linux archives with GoReleaser, verifies their
-checksums, and runs the Linux amd64 binary. The macOS desktop job builds and
-verifies the unsigned arm64 desktop preview app. The GitHub Release is created
-only after both jobs succeed.
+The macOS desktop job verifies that the tag commit belongs to `main`, checks and
+tests the Go core and desktop app, then builds and verifies the unsigned arm64
+desktop preview. The workflow verifies that the packaged core version is clean
+and that the DMG and ZIP are structurally valid before creating the GitHub
+Release.
 
-The workflow verifies that the packaged core version is clean and that the DMG
-and ZIP are structurally valid.
+The app contains its required private `wuu-core` subprocess. No standalone CLI
+archive is published; a separately source-installed `wuu` CLI can coexist with
+the app and may have a different version.
 
-The final GitHub Release contains:
+The final GitHub Release contains only:
 
-- `wuu_<version>_<os>_<arch>.tar.gz` for macOS and Linux on amd64 and arm64
-- `checksums.txt`
 - `wuu-<version>-mac-arm64.dmg`
 - `wuu-<version>-mac-arm64.zip`
 - matching `.blockmap` files

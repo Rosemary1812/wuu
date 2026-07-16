@@ -36,6 +36,7 @@ const environment = launchEnvironment(
 );
 assert.ok(environment.includes("ELECTRON_RENDERER_URL=http://localhost:5173"));
 assert.ok(environment.includes("WUU_DEV_LAUNCH_TOKEN=token-1"));
+assert.ok(environment.includes("WUU_DESKTOP_USE_GO_RUN=1"));
 assert.ok(environment.includes("WUU_SOURCE_ROOT=/repo"));
 assert.ok(environment.includes("WUU_ENABLE_CUA_MAC=1"));
 assert.ok(environment.includes("WUU_CUA_MAC_HELPER=/repo/desktop/build/bin/wuu-cua-mac"));
@@ -84,7 +85,7 @@ assert.doesNotMatch(devLauncherSource, /env\.WUU_ENABLE_CUA_MAC\s*=\s*["']1["']/
 assert.equal(packageJSON.scripts["build:core"], "node scripts/build-core.cjs");
 assert.doesNotMatch(packageJSON.scripts["pack:mac"], /cua-mac/);
 assert.doesNotMatch(packageJSON.scripts["dist:mac"], /cua-mac/);
-assert.ok(packageJSON.build.extraResources[0].filter.includes("!wuu-cua-mac*"));
+assert.deepEqual(packageJSON.build.extraResources[0].filter, ["wuu-core", "wuu-core.exe"]);
 assert.equal(packageJSON.build.mac.extendInfo, undefined);
 
 const identities = parseCodeSigningIdentities([

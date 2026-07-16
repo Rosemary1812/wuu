@@ -233,6 +233,7 @@ export class AppServerClient {
     ) => void,
     private readonly onStateChange: () => void,
     private readonly spawnAppServer: AppServerSpawn = defaultSpawnAppServer,
+    private readonly resolveCommand: typeof resolveWuuCommand = resolveWuuCommand,
   ) {}
 
   request<T>(method: string, params?: unknown): Promise<T> {
@@ -315,7 +316,7 @@ export class AppServerClient {
     }
     const sourceRoot = wuuSourceRoot();
     const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
-    const command = resolveWuuCommand(
+    const command = this.resolveCommand(
       process.env,
       this.workdir,
       sourceRoot,

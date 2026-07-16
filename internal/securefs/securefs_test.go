@@ -128,6 +128,9 @@ func TestOpenFile_ExistingFileNotChmoded(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("chmod seed: %v", err)
+	}
 	f, err := OpenFile(path, os.O_RDWR, FileMode)
 	if err != nil {
 		t.Fatalf("OpenFile existing: %v", err)

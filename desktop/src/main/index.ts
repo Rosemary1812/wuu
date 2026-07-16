@@ -30,8 +30,6 @@ import type {
   CoreBuildInfo,
   DesktopBuildInfo,
   InputFile,
-  CliAutoInstallResult,
-  CliInstallStatus,
   CodexPetSettingsUpdate,
   InputImage,
   InitializeResult,
@@ -93,7 +91,7 @@ import { AppServerClientPool } from "./appServerClients";
 import {
   CUAObservationCoordinator,
 } from "./cuaActivityWindows";
-import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
+import { removeLegacyDesktopCliLink } from "./legacyCliLink";
 import {
   defaultCodexPetsDir,
   ensureCodexPetsDir,
@@ -106,11 +104,9 @@ import {
   getCodexPetSettings,
   getCodexPetScale,
   getCodexPetSize,
-  getCliAutoInstallEnabled,
   getMessageFlowFontSize,
   getThemePreference,
   setCodexPetSettings,
-  setCliAutoInstallEnabled,
   setMessageFlowFontSize,
   setThemePreference,
   type MessageFlowFontSize,
@@ -171,10 +167,6 @@ let windowResizeState = false;
 // 200ms delay matches windowResizeEndTimer so the two callbacks fire
 // together — a single "user finished resizing" tick writes once.
 let mainWindowBoundsSaveTimer: NodeJS.Timeout | undefined;
-// Outcome of this session's startup CLI auto-install pass. Surfaced through
-// wuu:cli-install-status so the settings page can show a one-time,
-// non-blocking note when the pass actually installed or repaired the link.
-let lastCliAutoInstall: CliAutoInstallResult | null = null;
 const appServerClientPool = new AppServerClientPool(
   () => projectManager.ensureRuntimeContext(),
   () => projectManager.activeWorkdir(),
@@ -700,6 +692,7 @@ async function directorySize(path: string): Promise<number> {
 
 app.whenReady().then(async () => {
   await clearOversizedDevCaches();
+  await removeLegacyDesktopCliLink().catch(() => false);
   projectManager.load();
   registerRenderableFileProtocol();
   // Pick up the user's chosen size before the pet window is created, so the
@@ -713,22 +706,6 @@ app.whenReady().then(async () => {
     codexPetWindowManager.setScale(persistedPetScale);
   }
   codexPetWindowManager.sync(codexPetsSnapshot());
-
-  // Startup CLI install pass (default on, toggleable in settings). Runs in
-  // the background so it never delays window creation; autoInstallCli is
-  // idempotent, self-repairs dangling links after an app move/update, and
-  // never overwrites a wuu binary the desktop does not own. Windows returns
-  // "unsupported" without touching the filesystem.
-  if (getCliAutoInstallEnabled()) {
-    void autoInstallCli()
-      .then((result) => {
-        lastCliAutoInstall = result;
-      })
-      .catch(() => {
-        // autoInstallCli reports failures as outcomes; this is a last-resort
-        // guard so startup can never be affected.
-      });
-  }
 
   ipcMain.handle(
     "wuu:pop-out-session",
@@ -1226,21 +1203,6 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:instructions-list", (event) =>
     appServerRequest<InstructionsListResult>(event, "instructions/list"),
   );
-  ipcMain.handle(
-    "wuu:cli-install-status",
-    async (): Promise<CliInstallStatus> => ({
-      ...(await getCliInstallStatus()),
-      auto_install_enabled: getCliAutoInstallEnabled(),
-      last_auto_install: lastCliAutoInstall,
-    }),
-  );
-  ipcMain.handle("wuu:cli-install", (_event, overwrite?: boolean) =>
-    installCli({ overwrite: Boolean(overwrite) }),
-  );
-  ipcMain.handle("wuu:cli-auto-install-set", (_event, enabled: boolean) => {
-    setCliAutoInstallEnabled(Boolean(enabled));
-    return { ok: true, enabled: Boolean(enabled) };
-  });
   ipcMain.handle("wuu:remote-snapshot", (event) =>
     remoteControlSnapshot(runtimeContextForEvent(event).cwd),
   );

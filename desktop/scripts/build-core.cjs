@@ -8,7 +8,7 @@ const version = readFileSync(join(repoRoot, "VERSION"), "utf8").trim() || "0.1.0
 const commit =
   run("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot, optional: true }) || "none";
 const date = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-const binaryName = process.platform === "win32" ? "wuu.exe" : "wuu";
+const binaryName = process.platform === "win32" ? "wuu-core.exe" : "wuu-core";
 const outDir = join(desktopRoot, "build", "bin");
 const outPath = join(outDir, binaryName);
 

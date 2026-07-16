@@ -203,11 +203,6 @@ const api: WuuDesktopApi = {
   getThreadContextComposition: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-context-composition", threadId),
   listInstructionFiles: () => ipcRenderer.invoke("wuu:instructions-list"),
-  getCliInstallStatus: () => ipcRenderer.invoke("wuu:cli-install-status"),
-  installCli: (overwrite?: boolean) =>
-    ipcRenderer.invoke("wuu:cli-install", overwrite),
-  setCliAutoInstallEnabled: (enabled: boolean) =>
-    ipcRenderer.invoke("wuu:cli-auto-install-set", enabled),
   getRemoteControlSnapshot: () => ipcRenderer.invoke("wuu:remote-snapshot"),
   setRemoteRelay: (relayUrl: string) =>
     ipcRenderer.invoke("wuu:remote-relay-set", relayUrl),
