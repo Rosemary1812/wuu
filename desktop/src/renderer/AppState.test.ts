@@ -62,6 +62,7 @@ import {
   type SessionTab,
   type ThreadSummary,
 } from "./AppState";
+import { PROCESS_NOTIFICATION_NAME } from "./InternalUserNotification";
 import { streamTextKey, streamTextStore } from "./StreamText";
 
 function installManualRAF(): {
@@ -148,6 +149,10 @@ function handoffText(): string {
     })}\n</subagent_notification>`,
     trigger_turn: true
   });
+}
+
+function processNotificationText(): string {
+  return '<process_notification>{"process_id":"proc-1","status":"completed"}</process_notification>';
 }
 
 function threadWithUserTexts(texts: string[]): Thread {
@@ -305,6 +310,17 @@ describe("AppState server requests", () => {
 describe("queryTextsForThread", () => {
   it("skips internal agent handoff messages", () => {
     const thread = threadWithUserTexts([handoffText(), "真正的用户问题"]);
+
+    expect(queryTextsForThread(thread)).toEqual(["真正的用户问题"]);
+  });
+
+  it("skips named and legacy process notifications", () => {
+    const thread = threadWithUserTexts([
+      "unparseable process payload",
+      processNotificationText(),
+      "真正的用户问题",
+    ]);
+    thread.turns[0].items[0].name = PROCESS_NOTIFICATION_NAME;
 
     expect(queryTextsForThread(thread)).toEqual(["真正的用户问题"]);
   });
@@ -2861,6 +2877,31 @@ describe("chatMessagesFromTurns", () => {
         item: notification,
       },
       { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: realMessage },
+    ]);
+  });
+
+  it("hides named and legacy process notifications from chat rows", () => {
+    const named: ThreadItem = {
+      id: "process-named",
+      type: "user_message",
+      name: PROCESS_NOTIFICATION_NAME,
+      text: handoffText(),
+    };
+    const legacy: ThreadItem = {
+      id: "process-legacy",
+      type: "user_message",
+      text: processNotificationText(),
+    };
+    const realMessage: ThreadItem = {
+      id: "user-1",
+      type: "user_message",
+      text: "继续检查",
+    };
+
+    expect(
+      chatMessagesFromTurns([turn("turn-1", [named, legacy, realMessage])]),
+    ).toEqual([
+      { kind: "user", id: "turn-1:user-1", turnID: "turn-1", item: realMessage },
     ]);
   });
 

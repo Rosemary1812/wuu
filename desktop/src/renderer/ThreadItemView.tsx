@@ -19,6 +19,10 @@ import {
 } from "./ComposerMessages";
 import { EnvelopeNotice } from "./EnvelopeNotice";
 import {
+  isInternalUserNotificationItem,
+  isProcessNotificationItem,
+} from "./InternalUserNotification";
+import {
   collapsedLongTextPreview,
   useLongTextCollapse,
 } from "./LongTextCollapse";
@@ -93,6 +97,9 @@ export function ThreadItemView({
   switch (item.type) {
     case "user_message": {
       const text = item.text ?? "";
+      if (isProcessNotificationItem(item)) {
+        return null;
+      }
       // Envelope-routed messages (group chat → resident DM) render as a
       // collapsed meta row, never as a user bubble — a bubble would read
       // as if the user typed the forwarded content themselves.
@@ -112,6 +119,9 @@ export function ThreadItemView({
             className="agent-handoff-divider"
           />
         );
+      }
+      if (isInternalUserNotificationItem(item)) {
+        return null;
       }
       const copyable = text.trim() !== "";
       const editable = Boolean(

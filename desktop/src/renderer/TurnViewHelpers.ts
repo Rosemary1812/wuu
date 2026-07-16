@@ -1,5 +1,5 @@
 import type { Thread, Turn } from "../shared/protocol";
-import { isAgentHandoffItem } from "./AgentHandoff";
+import { isInternalUserNotificationItem } from "./InternalUserNotification";
 import {
   messageFlowFinalTextIndex,
   messageFlowStatusLabel,
@@ -54,7 +54,7 @@ export function firstUserMessageAnchor(
     "turns" in source ? source.turns ?? [] : [source as Turn];
   for (const turn of turns) {
     for (const item of turn.items ?? []) {
-      if (item.type === "user_message" && !isAgentHandoffItem(item)) {
+      if (item.type === "user_message" && !isInternalUserNotificationItem(item)) {
         return { turnID: turn.id, itemID: item.id };
       }
     }
@@ -80,7 +80,7 @@ export function lastUserMessageAnchor(
     const items = turn.items ?? [];
     for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
       const item = items[itemIndex];
-      if (item.type === "user_message" && !isAgentHandoffItem(item)) {
+      if (item.type === "user_message" && !isInternalUserNotificationItem(item)) {
         return { turnID: turn.id, itemID: item.id };
       }
     }
@@ -180,7 +180,7 @@ export function firstUserMessageText(
     }
     // Gate first on the item-level signal so corrupted payload text never
     // reaches the trim path.
-    if (isAgentHandoffItem(item)) {
+    if (isInternalUserNotificationItem(item)) {
       continue;
     }
     const trimmed = (item.text ?? "").trim();

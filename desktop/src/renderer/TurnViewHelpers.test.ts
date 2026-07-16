@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Thread, Turn } from "../shared/protocol";
+import { PROCESS_NOTIFICATION_NAME } from "./InternalUserNotification";
 import {
   firstUserMessageAnchor,
   lastUserMessageAnchor,
@@ -28,6 +29,10 @@ function handoffText(): string {
     })}\n</subagent_notification>`,
     trigger_turn: true
   });
+}
+
+function processNotificationText(): string {
+  return '<process_notification>{"process_id":"proc-1"}</process_notification>';
 }
 
 /**
@@ -261,7 +266,7 @@ describe("anchor ID helpers", () => {
 function buildThread(
   turns: Array<{
     id: string;
-    items: Array<{ id: string; type: string; text?: string }>;
+    items: Array<{ id: string; type: string; text?: string; name?: string }>;
   }>,
 ): Thread {
   return {
@@ -351,6 +356,22 @@ describe("firstUserMessageAnchor", () => {
   it("skips internal agent handoff anchors", () => {
     const turn = buildTurn([
       { id: "handoff", type: "user_message", text: handoffText() },
+      { id: "u-1", type: "user_message", text: "hello" },
+    ]);
+    expect(firstUserMessageAnchor(turn)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-1",
+    });
+  });
+
+  it("skips named process notification anchors", () => {
+    const turn = buildTurn([
+      {
+        id: "process",
+        type: "user_message",
+        name: PROCESS_NOTIFICATION_NAME,
+        text: "unparseable process payload",
+      },
       { id: "u-1", type: "user_message", text: "hello" },
     ]);
     expect(firstUserMessageAnchor(turn)).toEqual({
@@ -479,6 +500,17 @@ describe("lastUserMessageAnchor", () => {
     });
   });
 
+  it("skips legacy process notification anchors", () => {
+    const turn = buildTurn([
+      { id: "u-1", type: "user_message", text: "hello" },
+      { id: "process", type: "user_message", text: processNotificationText() },
+    ]);
+    expect(lastUserMessageAnchor(turn)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-1",
+    });
+  });
+
   it("matches the snapshot the fork picker checks against", () => {
     // App.tsx's `isForkTargetLatest` compares the (turnID, itemID) the
     // user clicked against the value this helper returns, so the
@@ -554,7 +586,7 @@ describe("threadReplySnippet", () => {
  * behavior (e.g. the conversation turn rail) in isolation.
  */
 function buildTurn(
-  items: Array<{ id: string; type: string; text?: string }>,
+  items: Array<{ id: string; type: string; text?: string; name?: string }>,
 ): Turn {
   return {
     id: "turn-1",
@@ -577,6 +609,20 @@ describe("firstUserMessageText", () => {
   it("skips internal agent handoff text", () => {
     const turn = buildTurn([
       { id: "handoff", type: "user_message", text: handoffText() },
+      { id: "u-1", type: "user_message", text: "hello" },
+    ]);
+    expect(firstUserMessageText(turn)).toBe("hello");
+  });
+
+  it("skips process notifications in turn previews", () => {
+    const turn = buildTurn([
+      {
+        id: "process-named",
+        type: "user_message",
+        name: PROCESS_NOTIFICATION_NAME,
+        text: "unparseable process payload",
+      },
+      { id: "process-legacy", type: "user_message", text: processNotificationText() },
       { id: "u-1", type: "user_message", text: "hello" },
     ]);
     expect(firstUserMessageText(turn)).toBe("hello");

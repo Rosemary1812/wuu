@@ -16,7 +16,11 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
-import { agentHandoffDisplayItem, isAgentHandoffItem } from "./AgentHandoff";
+import { agentHandoffDisplayItem } from "./AgentHandoff";
+import {
+  isInternalUserNotificationItem,
+  isProcessNotificationItem,
+} from "./InternalUserNotification";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { sortChildAgents } from "./ThreadAgents";
 import {
@@ -2126,9 +2130,9 @@ export function applySubthreadUpdatedNotification(
  * becomes a "focus" row regardless of what type the backend tags it
  * with.
  *
- * Subagent completion handoffs are internal user_message envelopes. The raw
- * JSON never reaches the chat DOM; trigger-turn handoffs become system event
- * divider rows and non-trigger mailbox records stay hidden.
+ * Internal user-role notifications never render as user-authored chat.
+ * Trigger-turn agent handoffs become system event divider rows; non-trigger
+ * handoffs and process completion notifications stay hidden.
  */
 export function chatMessagesFromTurns(
   turns: ReadonlyArray<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>,
@@ -2140,6 +2144,9 @@ export function chatMessagesFromTurns(
       if (item.focus_meta) {
         rows.push({ kind: "focus", id, turnID: turn.id, item });
       } else if (item.type === "user_message") {
+        if (isProcessNotificationItem(item)) {
+          continue;
+        }
         // Subagent notifications / inter-agent handoffs are delivered to the
         // resident as a self-addressed user_message (a JSON envelope wrapping
         // a <subagent_notification> payload). They are working-transcript
@@ -2158,7 +2165,7 @@ export function chatMessagesFromTurns(
           });
           continue;
         }
-        if (isAgentHandoffItem(item)) {
+        if (isInternalUserNotificationItem(item)) {
           continue;
         }
         if (item.envelope_meta && item.envelope_meta.length > 0) {
@@ -2791,7 +2798,7 @@ function queryTextForUserItem(item: ThreadItem): string | undefined {
   // Gate first on the item-level signal so corrupted payload text
   // (combined envelopes with \n\n joins, <changed_file_overlap> tails)
   // never reaches the text trim/return path.
-  if (isAgentHandoffItem(item)) {
+  if (isInternalUserNotificationItem(item)) {
     return undefined;
   }
   const text = (item.text ?? "").trim();

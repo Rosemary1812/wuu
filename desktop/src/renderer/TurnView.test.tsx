@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { ASSISTANT_TURN_PRESENTATION_STABILIZE_MS } from "./AssistantTurnPresentation";
+import { PROCESS_NOTIFICATION_NAME } from "./InternalUserNotification";
 import { TurnView } from "./TurnView";
 
 let root: Root | undefined;
@@ -107,6 +108,36 @@ describe("TurnView", () => {
 
     const turn = view.querySelector<HTMLElement>(".turn");
     expect(turn?.dataset.turnStatus).toBe("in_progress");
+  });
+
+  it("hides named and legacy process notifications from the direct turn renderer", () => {
+    const processText =
+      '<process_notification>{"process_id":"proc-legacy"}</process_notification>';
+    const view = render(
+      makeTurn("completed", [
+        {
+          id: "process-named",
+          type: "user_message",
+          name: PROCESS_NOTIFICATION_NAME,
+          text: '<process_notification>{"process_id":"proc-named"}</process_notification>',
+        },
+        {
+          id: "process-legacy",
+          type: "user_message",
+          text: processText,
+        },
+        {
+          id: "user-1",
+          type: "user_message",
+          text: "真正的用户消息",
+        },
+      ]),
+    );
+
+    expect(view.textContent).not.toContain("proc-named");
+    expect(view.textContent).not.toContain("proc-legacy");
+    expect(view.textContent).toContain("真正的用户消息");
+    expect(view.querySelectorAll(".user-message-block")).toHaveLength(1);
   });
 
   it("keeps completed turn outputs visible after the turn is no longer latest", () => {
