@@ -10,6 +10,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import { conversationSearchVisibleSnippet } from "./ConversationSearchDisplay";
+import { primaryShortcutLabel } from "./platform";
 import type { ConversationSearchState } from "./ConversationSearchState";
 import {
   conversationSearchContextLabel,
@@ -88,7 +89,7 @@ export function ConversationSearchOverlay({
             </button>
           ) : (
             <kbd className="conversation-search-shortcut-hint" aria-hidden="true">
-              ⌘P
+              {primaryShortcutLabel("P")}
             </kbd>
           )}
         </div>
@@ -141,7 +142,7 @@ export function ConversationSearchOverlay({
                     </span>
                     {resultIndex < 9 ? (
                       <span className="conversation-search-result-shortcut">
-                        ⌘{resultIndex + 1}
+                        {primaryShortcutLabel(resultIndex + 1)}
                       </span>
                     ) : null}
                   </span>

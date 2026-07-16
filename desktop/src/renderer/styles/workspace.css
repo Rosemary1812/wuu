@@ -138,7 +138,9 @@
   align-items: center;
   gap: 4px;
   border-bottom: 1px solid var(--surface-3);
-  padding: 0 8px;
+  /* The docked panel sits at the window's right edge, so the tabbar is
+   * what clears the Windows controls overlay; a no-op elsewhere. */
+  padding: 0 max(8px, var(--window-controls-inset-right)) 0 8px;
   -webkit-app-region: drag;
   position: relative;
   z-index: 1;

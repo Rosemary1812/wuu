@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   type IpcMainInvokeEvent,
+  nativeTheme,
   screen,
   session as electronSession,
   type OpenDialogOptions,
@@ -133,6 +134,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEV_CACHE_CLEANUP_THRESHOLD_BYTES = 512 * 1024 * 1024;
 const DEV_CACHE_DIRECTORIES = ["Cache", "Code Cache", "GPUCache", "DawnCache"];
 const DEFAULT_WINDOW_BACKGROUND = "#f6f6f4";
+// Dark-theme counterpart, matching --paper in theme.css. Used on Windows
+// where the window fill (not a vibrancy material) is what shows behind the
+// transparent web layer — a dark-theme launch must not flash white.
+const DARK_WINDOW_BACKGROUND = "#1d2024";
+// Matches the renderer titlebar row (48px in the tabbed/popped-out states)
+// so the overlay buttons center on the same strip the renderer draws.
+const WINDOWS_TITLEBAR_OVERLAY_HEIGHT = 48;
 registerRenderableFileScheme();
 
 let mainWindow: BrowserWindow | null = null;
@@ -432,7 +440,7 @@ function mainWindowMaterialOptions(): Pick<
   "backgroundColor" | "transparent" | "vibrancy" | "visualEffectState"
 > {
   if (process.platform !== "darwin") {
-    return { backgroundColor: DEFAULT_WINDOW_BACKGROUND };
+    return { backgroundColor: windowBackgroundColor() };
   }
   return {
     backgroundColor: "#00000000",
@@ -440,6 +448,79 @@ function mainWindowMaterialOptions(): Pick<
     vibrancy: "sidebar",
     visualEffectState: "active",
   };
+}
+
+function resolvedThemeIsDark(): boolean {
+  const preference = getThemePreference();
+  if (preference === "system") return nativeTheme.shouldUseDarkColors;
+  return preference === "dark";
+}
+
+// Pre-paint window fill. macOS keeps the fixed light color (the vibrancy
+// material paints over it); elsewhere the fill IS the visible backdrop, so
+// it follows the stored theme.
+function windowBackgroundColor(): string {
+  if (process.platform === "darwin") return DEFAULT_WINDOW_BACKGROUND;
+  return resolvedThemeIsDark() ? DARK_WINDOW_BACKGROUND : DEFAULT_WINDOW_BACKGROUND;
+}
+
+// The window-chrome contract per platform: macOS hides the titlebar and
+// leaves the traffic lights over the renderer's drag strip (top-left);
+// Windows hides it and lets Chromium draw min/max/close as a controls
+// overlay (top-right — the renderer reserves that corner through the
+// --window-controls-inset-* variables). Anything else keeps the native
+// frame, which needs no in-page reservation at all.
+function windowFrameOptions(): Pick<
+  BrowserWindowConstructorOptions,
+  "titleBarStyle" | "trafficLightPosition" | "titleBarOverlay"
+> {
+  if (process.platform === "darwin") {
+    return {
+      titleBarStyle: "hiddenInset",
+      trafficLightPosition: { x: 18, y: 16 },
+    };
+  }
+  if (process.platform === "win32") {
+    return {
+      titleBarStyle: "hidden",
+      titleBarOverlay: windowsTitleBarOverlay(),
+    };
+  }
+  return {};
+}
+
+function windowsTitleBarOverlay(): Electron.TitleBarOverlay {
+  const dark = resolvedThemeIsDark();
+  return {
+    // Track the themed window fill so the button strip reads as part of
+    // the titlebar; symbol colors mirror the --ink text tokens.
+    color: dark ? DARK_WINDOW_BACKGROUND : DEFAULT_WINDOW_BACKGROUND,
+    symbolColor: dark ? "#e4e6e8" : "#1f2328",
+    height: WINDOWS_TITLEBAR_OVERLAY_HEIGHT,
+  };
+}
+
+// Windows redraws the controls overlay only when told to; theme changes
+// (explicit preference or OS dark-mode flips while on "system") re-push
+// the overlay colors to every open window that carries one.
+const titleBarOverlayWindows = new Set<BrowserWindow>();
+
+function registerTitleBarOverlayWindow(win: BrowserWindow): void {
+  if (process.platform !== "win32") return;
+  titleBarOverlayWindows.add(win);
+  win.on("closed", () => {
+    titleBarOverlayWindows.delete(win);
+  });
+}
+
+function refreshTitleBarOverlays(): void {
+  if (process.platform !== "win32") return;
+  const overlay = windowsTitleBarOverlay();
+  for (const win of titleBarOverlayWindows) {
+    if (!win.isDestroyed()) {
+      win.setTitleBarOverlay(overlay);
+    }
+  }
 }
 
 type PopOutWindowParams =
@@ -504,9 +585,8 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     height: winHeight,
     x,
     y,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 18, y: 16 },
-    backgroundColor: DEFAULT_WINDOW_BACKGROUND,
+    ...windowFrameOptions(),
+    backgroundColor: windowBackgroundColor(),
     title: placeholderTitle,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -516,6 +596,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     },
   });
   const windowID = win.webContents.id;
+  registerTitleBarOverlayWindow(win);
 
   windowRegistry.registerWindow(win, "popped-out", {
     workdir: params.context.cwd,
@@ -578,8 +659,7 @@ function createWindow(): void {
   const windowOptions: BrowserWindowConstructorOptions = {
     width,
     height,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 18, y: 16 },
+    ...windowFrameOptions(),
     ...mainWindowMaterialOptions(),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -594,6 +674,7 @@ function createWindow(): void {
   }
 
   mainWindow = new BrowserWindow(windowOptions);
+  registerTitleBarOverlayWindow(mainWindow);
 
   windowRegistry.registerWindow(mainWindow, "main");
   const win = mainWindow;
@@ -1243,8 +1324,12 @@ app.whenReady().then(async () => {
     const valid: ThemePreference[] = ["system", "light", "dark"];
     const next = valid.includes(theme) ? theme : "system";
     setThemePreference(next);
+    refreshTitleBarOverlays();
     return { ok: true, theme: next };
   });
+  // "system" preference: OS dark-mode flips arrive here, not through the
+  // preference IPC.
+  nativeTheme.on("updated", refreshTitleBarOverlays);
   ipcMain.on("wuu:message-flow-font-size-get-sync", (event) => {
     // Sync partner of getMessageFlowFontSize — preload needs the value
     // before first paint to stamp --conversation-message-font-size on

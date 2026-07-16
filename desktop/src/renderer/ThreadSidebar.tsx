@@ -5,6 +5,7 @@ import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import { SidebarSection } from "./SidebarSection";
 import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
+import { revealInFileManagerLabel } from "./platform";
 import { isThreadRunning, isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
 
 function threadsForProjectPath(
@@ -692,7 +693,7 @@ function ThreadRows({
               },
             },
             {
-              label: "在 Finder 中显示",
+              label: revealInFileManagerLabel(),
               onSelect: () => {
                 void window.wuu.revealSession(contextMenu.thread.id);
               },

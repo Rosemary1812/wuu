@@ -15,12 +15,16 @@ function cssRule(selector: string): string {
 
 describe("settings shell titlebar", () => {
   it("aligns its sidebar toggle with the main conversation titlebar", () => {
-    expect(cssRule(".settings-titlebar")).toMatch(/padding:\s*0 24px;/);
+    // Same neutral 24px as .titlebar; the right side additionally clears
+    // the Windows controls overlay (inset is 0 elsewhere).
+    expect(cssRule(".settings-titlebar")).toMatch(
+      /padding:\s*0 max\(24px, var\(--window-controls-inset-right\)\) 0 24px;/,
+    );
   });
 
-  it("keeps its collapse toggle clear of the macOS traffic lights", () => {
+  it("keeps its collapse toggle clear of the OS window controls", () => {
     expect(cssRule(".settings-shell.sidebar-collapsed .settings-titlebar")).toMatch(
-      /padding-left:\s*86px;/,
+      /padding-left:\s*max\(24px, var\(--window-controls-inset-left\)\);/,
     );
   });
 });

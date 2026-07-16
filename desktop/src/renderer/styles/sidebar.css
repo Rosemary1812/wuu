@@ -51,6 +51,15 @@
   --sidebar-settings-button-hover-ring: rgba(255, 255, 255, 0.42);
 }
 
+/* Windows has no vibrancy view — the themed window fill is all that sits
+ * behind the web layer, so the near-clear material fill above would leave
+ * the rail indistinguishable from the content column. Give it an opaque
+ * surface instead; the dark value lives in theme.css with the other dark
+ * overrides. */
+:root[data-platform="win32"] {
+  --sidebar-material-fill: #ededeb;
+}
+
 .app-shell {
   display: grid;
   position: relative;
@@ -90,7 +99,7 @@
 }
 
 .app-shell.popped-out-shell .titlebar {
-  padding-left: 86px;
+  padding-left: max(24px, var(--window-controls-inset-left));
 }
 
 /* Right-panel "globalized" focus mode: the panel takes the stage as a
@@ -161,7 +170,7 @@
  * the tabbar's buttons opt out via the `.workspace-panel-tabbar button`
  * rule in workspace.css. */
 .app-shell.right-panel-globalized .workspace-panel-tabbar {
-  padding-left: 86px;
+  padding-left: max(8px, var(--window-controls-inset-left));
   -webkit-app-region: drag;
 }
 
@@ -169,8 +178,11 @@
   /* Expand only when the right panel's left edge enters the traffic-light zone. */
   padding-left: clamp(
     10px,
-    calc(86px - (100vw - var(--workspace-right-panel-width, 360px))),
-    86px
+    calc(
+      var(--window-controls-inset-left) -
+        (100vw - var(--workspace-right-panel-width, 360px))
+    ),
+    max(10px, var(--window-controls-inset-left))
   );
 }
 
@@ -526,13 +538,16 @@
 }
 
 .sidebar-collapsed .titlebar {
-  padding-left: 86px;
+  padding-left: max(24px, var(--window-controls-inset-left));
 }
 
 .traffic-spacer {
   /* Keep enough room for the macOS traffic-light row while letting the
    * sidebar content sit higher than the old 58px reservation. The titlebar
-   * itself is 48px, but the lights need ~28px from the window top. */
+   * itself is 48px, but the lights need ~28px from the window top. The
+   * same height stays on every platform: with hidden window chrome the
+   * sidebar has no other drag strip, and matching heights keep the rail's
+   * vertical rhythm identical across OSes. */
   height: 46px;
   -webkit-app-region: drag;
 }

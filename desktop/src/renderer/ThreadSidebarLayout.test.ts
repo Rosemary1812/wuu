@@ -98,8 +98,10 @@ describe("globalized right panel chrome", () => {
       ".app-shell.sidebar-collapsed.right-panel-open:not(.right-panel-globalized) .workspace-panel-tabbar",
     );
 
+    // The 86px reservation now rides --window-controls-inset-left so it
+    // collapses to the neutral 10px on platforms without traffic lights.
     expect(body).toMatch(
-      /padding-left:\s*clamp\(\s*10px,\s*calc\(86px\s*-\s*\(100vw\s*-\s*var\(--workspace-right-panel-width,\s*360px\)\)\),\s*86px\s*\);/,
+      /padding-left:\s*clamp\(\s*10px,\s*calc\(\s*var\(--window-controls-inset-left\)\s*-\s*\(100vw\s*-\s*var\(--workspace-right-panel-width,\s*360px\)\)\s*\),\s*max\(10px,\s*var\(--window-controls-inset-left\)\)\s*\);/,
     );
     expect(body).not.toMatch(/padding-left:\s*86px;/);
   });

@@ -1866,6 +1866,10 @@ export const MESSAGE_FLOW_FONT_SIZE_RANGE = {
 
 export type ThemePreference = "system" | "light" | "dark";
 
+// The three OS families the desktop shell distinguishes. Anything more
+// exotic collapses to "linux" (native-frame fallback chrome).
+export type DesktopPlatform = "darwin" | "win32" | "linux";
+
 export type CodexPetStateID =
   | "idle"
   | "running-right"
@@ -2097,6 +2101,10 @@ export type WuuDesktopApi = {
   startRemotePairing: () => Promise<RemoteControlSnapshot>;
   removeRemoteDevice: (fingerprintOrPub: string) => Promise<RemoteControlSnapshot>;
   onRemoteControlEvent: (handler: (event: RemoteControlEvent) => void) => () => void;
+  // Which OS the desktop shell runs on. The preload stamps data-platform
+  // on <html> before first paint (window-chrome CSS keys off it) and
+  // mirrors the value here for renderer logic (shortcut hints, OS labels).
+  platform?: DesktopPlatform;
   // Appearance. The preference persists in desktop-settings.json; the
   // renderer resolves "system" against prefers-color-scheme and stamps
   // data-theme on <html>. `initialThemePreference` is read synchronously

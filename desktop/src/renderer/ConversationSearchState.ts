@@ -346,7 +346,7 @@ export function useConversationSearch({
       }));
       return;
     }
-    if (event.metaKey && /^[1-9]$/.test(event.key)) {
+    if ((event.metaKey || event.ctrlKey) && /^[1-9]$/.test(event.key)) {
       const index = Number(event.key) - 1;
       const result = conversationSearchResults[index];
       if (result) {

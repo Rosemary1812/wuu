@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   MESSAGE_FLOW_FONT_SIZE_RANGE,
+  type DesktopPlatform,
   type MessageFlowFontSize,
   type PopOutInitResult,
   type RemoteControlEvent,
@@ -70,6 +71,21 @@ try {
   // preload stamp only costs a one-frame flash.
 }
 
+// Which OS chrome the window carries: macOS traffic lights top-left,
+// Windows controls-overlay top-right. Window-chrome CSS keys off this
+// stamp, so it must land before first paint like the theme stamp above.
+const desktopPlatform: DesktopPlatform =
+  process.platform === "darwin" || process.platform === "win32"
+    ? process.platform
+    : "linux";
+
+try {
+  document.documentElement.dataset.platform = desktopPlatform;
+} catch {
+  // main.tsx re-stamps on boot; losing the preload stamp only costs a
+  // one-frame flash of the wrong corner reservation.
+}
+
 try {
   // Set --conversation-message-font-size as an inline custom property on
   // <html>. Inline wins over the `:root` declaration in conversation-shell.css
@@ -86,6 +102,7 @@ try {
 }
 
 const api: WuuDesktopApi = {
+  platform: desktopPlatform,
   listProjects: () => ipcRenderer.invoke("wuu:project-list"),
   createBlankProject: () => ipcRenderer.invoke("wuu:project-create-blank"),
   chooseProjectFolder: () => ipcRenderer.invoke("wuu:project-choose-folder"),

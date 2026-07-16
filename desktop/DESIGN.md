@@ -6,6 +6,8 @@
 
 外观只有一根轴：`data-theme="light" | "dark"`，由持久化偏好（跟随系统/亮/暗）解析，preload 在首帧前同步 stamp 到 `<html>`。**没有第二根皮肤轴**——曾短暂存在 `data-skin`（火苗/工作双皮肤），后来判断"两者只差几个颜色时刻，不值得机制成本"，把火苗直接焊进底盘、拆掉整套 skin 机制。
 
+`data-platform="darwin" | "win32" | "linux"`（preload 同帧 stamp）不是第二根外观轴——它只陈述 OS 窗口 chrome 的物理事实，不承载风格决策：macOS 红绿灯占左上角、Windows 控件 overlay 占右上角（顶边条通过 `max(中性内边距, var(--window-controls-inset-left/right))` 各自让出被占的那个角，见 base.css）；win32 没有 vibrancy 材质，侧栏改用不透明底色。快捷键提示（⌘ vs Ctrl+）和文件管理器称谓走 `renderer/platform.ts`，按键处理器一律同时接受 metaKey 与 ctrlKey——标签永远不能藏住一个能用的绑定。
+
 火苗（这套气质）的设计哲学：**底盘极素，识别度只来自少数署名时刻**。背景是中性白/黑，墨阶、发丝线、投影、几何都不带风格；不加描边、不加偏移投影、不换底色——装饰读起来是"用力"，克制读起来才是"品质"（此前的奶油底、新粗野硬影、全局墨线描边三版都因此被否）。静态署名时刻只有三个：
 
 1. 空状态问候——吉祥物 + 衬线标题（`turns.css` `.empty-home-mascot` / `--empty-home-title-font`）；

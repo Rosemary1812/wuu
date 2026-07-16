@@ -374,6 +374,13 @@
   color-scheme: dark;
 }
 
+/* Windows swaps the vibrancy material for an opaque rail surface (light
+ * value at the token's declaration in sidebar.css). platform+theme beats
+ * both single-attribute rules, so the pairing stays unambiguous. */
+:root[data-platform="win32"][data-theme="dark"] {
+  --sidebar-material-fill: #17191d;
+}
+
 /* Ask the engine for dark form controls / built-in scrollbars in dark. */
 :root[data-theme="light"] {
   color-scheme: light;

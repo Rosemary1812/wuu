@@ -270,9 +270,17 @@
   column-gap: 10px;
   overflow: hidden;
   border-bottom: 1px solid var(--surface-3);
-  padding: 0 24px;
+  /* Right side clears the Windows controls overlay; a no-op elsewhere
+   * (the inset is 0 and max() collapses to the neutral padding). */
+  padding: 0 max(24px, var(--window-controls-inset-right)) 0 24px;
   transition: padding-left var(--sidebar-motion-duration) var(--sidebar-motion-ease);
   -webkit-app-region: drag;
+}
+
+/* With the right panel open the panel's tabbar owns the top-right corner
+ * instead, so the titlebar keeps its neutral padding. No-op on macOS. */
+.app-shell.right-panel-open .titlebar {
+  padding-right: 24px;
 }
 
 .title-block,
