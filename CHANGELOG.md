@@ -8,6 +8,13 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-16
+
+### Fixed
+
+- Inline code in message conversations and workspace Markdown previews now
+  uses a dark theme-aware surface instead of retaining the light chip background.
+
 ## [0.5.1] - 2026-07-16
 
 ### Changed
