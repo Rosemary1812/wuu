@@ -44,6 +44,16 @@ describe("global text selection", () => {
   });
 });
 
+describe("dark theme inline code", () => {
+  it("overrides the light message-flow chip instead of leaving a bright surface", () => {
+    const darkTheme = themeCss.match(
+      /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/,
+    )?.[1] ?? "";
+
+    expect(darkTheme).toMatch(/--surface-chip:\s*var\(--surface-4\);/);
+  });
+});
+
 /**
  * Neutral-hue regression guard.
  *

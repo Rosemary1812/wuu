@@ -159,6 +159,15 @@ describe("workspace markdown reading prose", () => {
     expect(hoveredLink).toMatch(/text-decoration:\s*underline;/);
   });
 
+  it("uses the shared theme-aware chip only for inline code", () => {
+    const inlineCode = cssRuleBody(
+      ".workspace-markdown-reading .rich-content :not(pre) > code",
+    );
+
+    expect(inlineCode).toMatch(/background:\s*var\(--surface-chip\);/);
+    expect(workspaceCss).not.toMatch(/\.workspace-markdown-reading\s+code\s*\{/);
+  });
+
   it("frames code blocks, tables, and blockquotes so they read as artifacts", () => {
     const codeBlock = cssRuleBody(".workspace-markdown-reading .rich-code-block");
     const tableWrap = cssRuleBody(".workspace-markdown-reading .rich-table-wrap");

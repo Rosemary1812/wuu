@@ -321,6 +321,7 @@
   --rich-link-color: #60a5fa;
   --rich-link-hover-color: #79b8ff;
   --rich-code-surface-bg: #26292d;
+  --surface-chip: var(--surface-4);
   --fork-worktree-copy-bg: rgba(38, 42, 46, 0.9);
   --fork-worktree-focus-ring: rgba(88, 166, 255, 0.3);
   --rich-blockquote-color: #a3a9ae;
