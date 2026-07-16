@@ -630,3 +630,34 @@ func TestScheduler_StopCancelsAndWaitsForCallbacks(t *testing.T) {
 	}
 	s.Stop()
 }
+
+func TestScheduler_removesExpiredPausedRecurringTask(t *testing.T) {
+	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	if err := store.Add(Task{
+		ID:        "paused-expired",
+		Cron:      "* * * * *",
+		Prompt:    "stale",
+		CreatedAt: time.Now().Add(-RecurringMaxAge - time.Hour).UnixMilli(),
+		Recurring: true,
+		Paused:    true,
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	var fired atomic.Int32
+	s := NewScheduler(SchedulerConfig{
+		Store:   store,
+		OnFire:  func(context.Context, Task) error { fired.Add(1); return nil },
+		IsOwner: func() bool { return true },
+	})
+	t.Cleanup(s.Stop)
+	s.check()
+
+	if fired.Load() != 0 {
+		t.Fatalf("paused expired task fired %d times", fired.Load())
+	}
+	tasks, err := store.List()
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("expired paused task not removed: %#v, %v", tasks, err)
+	}
+}

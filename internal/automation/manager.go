@@ -74,11 +74,13 @@ type Manager struct {
 
 func NewManager(cfg Config) *Manager {
 	stateDir := strings.TrimSpace(cfg.StateDir)
+	runStore := NewRunStore(statepath.AutomationRunsPath(stateDir))
+	runStore.onError = cfg.OnError
 	return &Manager{
 		stateDir:     stateDir,
 		durableStore: cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir)),
 		sessionStore: cron.NewSessionTaskStore(stateDir),
-		runStore:     NewRunStore(statepath.AutomationRunsPath(stateDir)),
+		runStore:     runStore,
 		lock:         cron.NewLock(statepath.ScheduledTasksLockPath(stateDir)),
 		onError:      cfg.OnError,
 	}
@@ -202,8 +204,12 @@ func (m *Manager) AddTask(params AddTaskParams) (Task, error) {
 	if task.Title == "" {
 		task.Title = prompt
 	}
-	if _, err := task.NextFireAt(); err != nil {
+	next, err := task.NextFireAt()
+	if err != nil {
 		return Task{}, fmt.Errorf("automation has no valid future run: %w", err)
+	}
+	if next.After(time.Now().AddDate(1, 0, 0)) {
+		return Task{}, errors.New("automation next run is more than 1 year away")
 	}
 	if err := m.ensureCapacity(); err != nil {
 		return Task{}, err
@@ -286,6 +292,14 @@ func (m *Manager) Fire(ctx context.Context, task Task) error {
 	if executor == nil {
 		return errors.New("automation executor is not attached")
 	}
+	skip, err := m.overlapsActiveRun(task)
+	if err != nil {
+		return fmt.Errorf("check automation run overlap: %w", err)
+	}
+	if skip {
+		m.reportError(fmt.Errorf("automation task %q fire skipped: a previous run is still active", task.ID))
+		return nil
+	}
 	run := Run{
 		ID:          newRunID(),
 		TaskID:      task.ID,
@@ -307,6 +321,33 @@ func (m *Manager) Fire(ctx context.Context, task Task) error {
 		status = RunStatusRunning
 	}
 	return m.runStore.UpdateAdmission(run.ID, status, result.ThreadID, result.TurnID, result.QueueID)
+}
+
+// overlapsActiveRun implements the overlap policy for clock fires. A task
+// whose previous occurrence has not reached a terminal state must not fan
+// out: new_thread tasks would otherwise accumulate concurrent threads, and
+// thread_heartbeat tasks would grow the target thread's queue without bound.
+// A heartbeat task may have one running occurrence plus one queued follow-up
+// (the queue already coalesces continuity); anything beyond that is skipped.
+func (m *Manager) overlapsActiveRun(task Task) (bool, error) {
+	runs, err := m.runStore.List()
+	if err != nil {
+		return false, err
+	}
+	for _, run := range runs {
+		if run.TaskID != task.ID {
+			continue
+		}
+		switch run.Status {
+		case RunStatusQueued:
+			return true, nil
+		case RunStatusRunning:
+			if Mode(task.Mode) != ModeThreadHeartbeat {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (m *Manager) CompleteRun(runID, threadID, turnID string, runErr error) error {

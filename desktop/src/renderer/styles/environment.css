@@ -122,14 +122,35 @@
 }
 
 .environment-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px 8px;
+}
+
+.environment-panel-header.floating {
   position: absolute;
   top: 15px;
   right: 14px;
   z-index: 2;
+  justify-content: flex-end;
+  gap: 0;
+  padding: 0;
+}
+
+.environment-panel-header h2 {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+}
+
+.environment-panel-title {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0;
+  gap: 6px;
+  min-width: 0;
 }
 
 .environment-panel-actions {
@@ -149,7 +170,7 @@
   gap: 3px;
 }
 
-.environment-panel-header + .environment-panel-body .environment-row:first-child {
+.environment-panel-header.floating + .environment-panel-body .environment-row:first-child {
   padding-right: 40px;
 }
 

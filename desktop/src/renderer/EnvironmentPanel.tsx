@@ -127,7 +127,7 @@ export function EnvironmentPanel({
       aria-label={planUpdate ? "进度与环境信息" : "环境信息"}
       aria-hidden={motionState === "closing" ? true : undefined}
     >
-      <div className="environment-panel-header">
+      <div className="environment-panel-header floating">
         <div className="environment-panel-actions">
           <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
             <X className="icon" />

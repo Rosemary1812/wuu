@@ -20,16 +20,23 @@ type Run struct {
 	Mode        string    `json:"mode"`
 	Status      RunStatus `json:"status"`
 	TriggeredAt time.Time `json:"triggered_at"`
-	CompletedAt time.Time `json:"completed_at,omitempty"`
+	CompletedAt time.Time `json:"completed_at,omitzero"`
 	ThreadID    string    `json:"thread_id,omitempty"`
 	TurnID      string    `json:"turn_id,omitempty"`
 	QueueID     string    `json:"queue_id,omitempty"`
 	Error       string    `json:"error,omitempty"`
 }
 
+// maxStoredRuns bounds the run-history file. Every fire of a recurring task
+// appends a record and every mutation rewrites the whole file, so an
+// unbounded history degrades quadratically; oldest terminal runs are dropped
+// first, non-terminal runs are always kept.
+const maxStoredRuns = 500
+
 type RunStore struct {
-	path string
-	mu   sync.Mutex
+	path    string
+	mu      sync.Mutex
+	onError func(error)
 }
 
 func NewRunStore(path string) *RunStore {
@@ -52,7 +59,7 @@ func (s *RunStore) Add(run Run) error {
 				return nil, fmt.Errorf("automation run %q already exists", run.ID)
 			}
 		}
-		return append(runs, run), nil
+		return pruneRuns(append(runs, run)), nil
 	})
 }
 
@@ -82,23 +89,30 @@ func (s *RunStore) Finish(id string, status RunStatus, threadID, turnID, errorTe
 	})
 }
 
+// FailIfPending is also invoked for queue ids that never belonged to an
+// automation run (any queued user turn being discarded), so it only writes
+// when a matching non-terminal run exists.
 func (s *RunStore) FailIfPending(id, errorText string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil
 	}
-	return s.update(func(runs []Run) ([]Run, error) {
-		for index := range runs {
-			if runs[index].ID != id || runs[index].Status == RunStatusCompleted || runs[index].Status == RunStatusFailed {
-				continue
-			}
-			runs[index].Status = RunStatusFailed
-			runs[index].CompletedAt = time.Now().UTC()
-			runs[index].Error = strings.TrimSpace(errorText)
-			break
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runs, err := s.load()
+	if err != nil {
+		return err
+	}
+	for index := range runs {
+		if runs[index].ID != id || runs[index].Status == RunStatusCompleted || runs[index].Status == RunStatusFailed {
+			continue
 		}
-		return runs, nil
-	})
+		runs[index].Status = RunStatusFailed
+		runs[index].CompletedAt = time.Now().UTC()
+		runs[index].Error = strings.TrimSpace(errorText)
+		return s.save(runs)
+	}
+	return nil
 }
 
 func (s *RunStore) mutate(id string, mutation func(*Run)) error {
@@ -143,7 +157,17 @@ func (s *RunStore) load() ([]Run, error) {
 		Runs []Run `json:"runs"`
 	}
 	if err := json.Unmarshal(data, &wrapper); err != nil {
-		return nil, fmt.Errorf("parse automation runs: %w", err)
+		// Run history is informational; an unreadable file must never take
+		// the workspace down (Manager.Start loads it on the app-server
+		// startup path). Quarantine the file and continue from empty.
+		backup := fmt.Sprintf("%s.corrupt-%d", s.path, time.Now().UnixMilli())
+		if renameErr := os.Rename(s.path, backup); renameErr != nil {
+			return nil, fmt.Errorf("parse automation runs: %w", err)
+		}
+		if s.onError != nil {
+			s.onError(fmt.Errorf("parse automation runs: %w; corrupt history moved to %s", err, backup))
+		}
+		return nil, nil
 	}
 	return wrapper.Runs, nil
 }
@@ -180,6 +204,22 @@ func (s *RunStore) save(runs []Run) error {
 		return err
 	}
 	return os.Rename(tmpPath, s.path)
+}
+
+func pruneRuns(runs []Run) []Run {
+	if len(runs) <= maxStoredRuns {
+		return runs
+	}
+	overflow := len(runs) - maxStoredRuns
+	pruned := make([]Run, 0, maxStoredRuns)
+	for _, run := range runs {
+		if overflow > 0 && (run.Status == RunStatusCompleted || run.Status == RunStatusFailed) {
+			overflow--
+			continue
+		}
+		pruned = append(pruned, run)
+	}
+	return pruned
 }
 
 func newRunID() string {

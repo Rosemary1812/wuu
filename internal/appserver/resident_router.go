@@ -664,6 +664,37 @@ func (s *Server) kickResidentAgent(participantID string) {
 	}
 }
 
+func (s *Server) residentDrainHasPendingWork(participantID, threadID string) bool {
+	if s == nil || s.rt == nil {
+		return false
+	}
+	participantID = strings.TrimSpace(participantID)
+	threadID = strings.TrimSpace(threadID)
+	if participantID == "" || threadID == "" {
+		return false
+	}
+
+	compensations, err := session.PendingResidentAdmissionCompensations(s.rt.SessionDir)
+	if err != nil {
+		providers.DebugLogf("preflight resident admission compensations for %q: %v", participantID, err)
+		return true
+	}
+	for _, pending := range compensations {
+		if pending.ThreadID == threadID {
+			return true
+		}
+	}
+	if len(s.pendingResidentWakeIntents(participantID, threadID)) > 0 {
+		return true
+	}
+	pending, err := session.PendingResidentEnvelopes(s.rt.SessionDir, participantID, 1)
+	if err != nil {
+		providers.DebugLogf("preflight resident inbox for %q: %v", participantID, err)
+		return true
+	}
+	return len(pending) > 0 || len(s.pullResidentChatEnvelopes(participantID, threadID)) > 0
+}
+
 func (s *Server) pendingResidentWakeIntents(participantID, threadID string) []session.ResidentWakeIntent {
 	if s == nil || s.rt == nil {
 		return nil
@@ -770,6 +801,15 @@ func (s *Server) drainResidentAgent(participantID string) {
 	running := th.running
 	th.mu.Unlock()
 	if running {
+		return
+	}
+	// Turn completion always kicks the resident once more to catch work that
+	// arrived while the turn was running. Most direct DM turns have no such
+	// work. Avoid taking the cross-process execution lease for that empty probe:
+	// a user can submit the next DM turn as soon as turn/completed is published,
+	// and the probe would otherwise make that valid turn fail as externally busy.
+	// If work arrives after this check, beginResidentDrain marks a pending rerun.
+	if !s.residentDrainHasPendingWork(participantID, th.ID) {
 		return
 	}
 	// Probe execution ownership before reading the inbox. A closing peer may

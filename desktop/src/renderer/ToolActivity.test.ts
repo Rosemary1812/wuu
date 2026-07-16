@@ -256,6 +256,13 @@ describe("buildToolActivityProcessSegments", () => {
         arguments: JSON.stringify({ pattern: "cache_write" }),
       },
       {
+        id: "search-3",
+        type: "tool_call",
+        name: "grep",
+        status: "completed",
+        arguments: JSON.stringify({ pattern: "cache_write" }),
+      },
+      {
         id: "schedule-1",
         type: "tool_call",
         name: "cron",
@@ -268,7 +275,7 @@ describe("buildToolActivityProcessSegments", () => {
       {
         kind: "search",
         countPrefix: "搜索 ",
-        count: 2,
+        count: 3,
         countSuffix: " 次",
       },
       {
@@ -306,7 +313,39 @@ describe("buildToolActivityProcessSegments", () => {
     ] satisfies ThreadItem[]);
     expect(databaseSegment).toMatchObject({
       kind: "command",
-      text: "查询本地数据",
+      text: "操作本地数据库",
+    });
+  });
+
+  it("does not mislabel commands that merely mention sqlite3 or date", () => {
+    const label = (command: string) => {
+      const [segment] = buildToolActivityProcessSegments([
+        {
+          id: `cmd-${command.length}`,
+          type: "tool_call",
+          name: "bash",
+          status: "completed",
+          arguments: JSON.stringify({ command }),
+        },
+      ] satisfies ThreadItem[]);
+      return segment;
+    };
+
+    expect(label("rm sessions.sqlite3")).toMatchObject({
+      kind: "command",
+      text: "运行命令",
+    });
+    expect(label("go test ./internal/sqlite3/...")).toMatchObject({
+      kind: "command",
+      text: "运行测试",
+    });
+    expect(label("npm run typecheck && date")).toMatchObject({
+      kind: "command",
+      text: "检查类型",
+    });
+    expect(label("sqlite3 state.db 'SELECT 1'")).toMatchObject({
+      kind: "command",
+      text: "操作本地数据库",
     });
   });
 });

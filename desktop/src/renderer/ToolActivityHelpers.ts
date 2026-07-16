@@ -598,7 +598,9 @@ function toolActivityProcessSegmentFromItems(
       const targets = compactSearchTargets(items).map(
         compactSearchProcessTarget,
       );
-      const count = targets.length || items.length;
+      // "搜索 N 次" counts search invocations; targets are deduplicated
+      // patterns and would understate repeated searches of the same pattern.
+      const count = items.length;
       return count > 1
         ? {
             id: key,
@@ -1023,12 +1025,6 @@ function readableCommandLabel(
     }
     return "执行 Git 操作";
   }
-  if (/(?:^|[;&|]\s*)date(?:\s|$)/.test(command)) {
-    return "查看本地时间";
-  }
-  if (/\bsqlite3\b|(?:import|from)\s+sqlite3\b/.test(command)) {
-    return "查询本地数据";
-  }
   if (/npm\s+run\s+typecheck|tsc\s+--noEmit/.test(command)) {
     return "检查类型";
   }
@@ -1037,6 +1033,12 @@ function readableCommandLabel(
   }
   if (/go\s+test|npm\s+test|pnpm\s+test|yarn\s+test/.test(command)) {
     return "运行测试";
+  }
+  if (/(?:^|[;&|]\s*)date(?:\s|$)/.test(command)) {
+    return "查看本地时间";
+  }
+  if (/(?:^|[;&|]\s*)sqlite3\b|(?:import|from)\s+sqlite3\b/.test(command)) {
+    return "操作本地数据库";
   }
   return "运行命令";
 }

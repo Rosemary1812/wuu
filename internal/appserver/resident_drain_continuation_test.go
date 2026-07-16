@@ -50,6 +50,29 @@ func TestResidentTurnCompletionDrainsMessageArrivingWhileTurnRuns(t *testing.T) 
 	waitForResidentInboxEmpty(t, rt.SessionDir, residentID)
 }
 
+func TestResidentDrainPreflightSkipsEmptyDirectDM(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(srv.Close)
+	residentID := saveNamedParticipant(t, rt, "Quiet Reader", "reviewer", "")
+	dm, err := srv.ensureResidentDMThread(residentID)
+	if err != nil {
+		t.Fatalf("ensure resident DM: %v", err)
+	}
+	if srv.residentDrainHasPendingWork(residentID, dm.ID) {
+		t.Fatal("empty direct DM unexpectedly requires a resident drain")
+	}
+
+	groupID := startGroupThreadForTest(t, srv)
+	if err := session.AddThreadMember(rt.SessionDir, groupID, residentID); err != nil {
+		t.Fatal(err)
+	}
+	enqueueResidentDrainEnvelope(t, rt.SessionDir, residentID, groupID, "pending", time.Now().UTC())
+	if !srv.residentDrainHasPendingWork(residentID, dm.ID) {
+		t.Fatal("pending resident envelope was missed by drain preflight")
+	}
+}
+
 func TestResidentTurnCompletionDrainsBeyondBatchLimit(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("batch reply")})
 	srv := New(rt, &lockedBuffer{})

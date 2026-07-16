@@ -3,7 +3,12 @@ package automation
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 type recordingExecutor struct {
@@ -183,5 +188,130 @@ func TestManagerRecoversQueuedRunAndFailsInterruptedRun(t *testing.T) {
 	}
 	if interrupted := byID["running-run"]; interrupted.Status != RunStatusFailed || interrupted.CompletedAt.IsZero() || interrupted.Error == "" {
 		t.Fatalf("interrupted running run = %#v", interrupted)
+	}
+}
+
+func TestManagerSkipsOverlappingNewThreadFire(t *testing.T) {
+	manager := NewManager(Config{StateDir: t.TempDir()})
+	executor := &recordingExecutor{result: ExecutionResult{
+		Status: RunStatusRunning, ThreadID: "thread-1", TurnID: "turn-1",
+	}}
+	manager.executor = executor
+	task := Task{ID: "task-1", Prompt: "inspect", Mode: string(ModeNewThread)}
+	if err := manager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("first Fire() error = %v", err)
+	}
+	if err := manager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("overlapping Fire() error = %v", err)
+	}
+	runs, err := manager.ListRuns()
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs after overlapping fire = %#v, %v", runs, err)
+	}
+	if len(executor.tasks) != 1 {
+		t.Fatalf("executor calls = %d, want 1", len(executor.tasks))
+	}
+	if err := manager.CompleteRun(runs[0].ID, "thread-1", "turn-1", nil); err != nil {
+		t.Fatalf("CompleteRun() error = %v", err)
+	}
+	if err := manager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("Fire() after completion error = %v", err)
+	}
+	runs, _ = manager.ListRuns()
+	if len(runs) != 2 {
+		t.Fatalf("runs after completion fire = %#v", runs)
+	}
+}
+
+func TestManagerHeartbeatAllowsSingleQueuedFollowUp(t *testing.T) {
+	manager := NewManager(Config{StateDir: t.TempDir()})
+	executor := &recordingExecutor{result: ExecutionResult{
+		Status: RunStatusRunning, ThreadID: "thread-1", TurnID: "turn-1",
+	}}
+	manager.executor = executor
+	task := Task{
+		ID: "hb-task", Prompt: "inspect", Mode: string(ModeThreadHeartbeat),
+		HeartbeatThreadID: "thread-1",
+	}
+	if err := manager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("first Fire() error = %v", err)
+	}
+	executor.result = ExecutionResult{Status: RunStatusQueued, ThreadID: "thread-1", QueueID: "queue-1"}
+	if err := manager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("second Fire() error = %v", err)
+	}
+	if err := manager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("third Fire() error = %v", err)
+	}
+	runs, err := manager.ListRuns()
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("heartbeat runs = %#v, %v", runs, err)
+	}
+	if len(executor.tasks) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(executor.tasks))
+	}
+}
+
+func TestManagerStartSurvivesCorruptRunHistory(t *testing.T) {
+	stateDir := t.TempDir()
+	runsPath := statepath.AutomationRunsPath(stateDir)
+	if err := os.WriteFile(runsPath, []byte("not json"), 0o600); err != nil {
+		t.Fatalf("write corrupt history: %v", err)
+	}
+	var reported []error
+	manager := NewManager(Config{
+		StateDir: stateDir,
+		OnError:  func(err error) { reported = append(reported, err) },
+	})
+	if err := manager.Start(&recordingExecutor{}); err != nil {
+		t.Fatalf("Start() with corrupt history error = %v", err)
+	}
+	defer manager.Stop()
+	runs, err := manager.ListRuns()
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("runs after quarantine = %#v, %v", runs, err)
+	}
+	if len(reported) == 0 {
+		t.Fatal("quarantine was not reported through OnError")
+	}
+	if _, statErr := os.Stat(runsPath); !os.IsNotExist(statErr) {
+		t.Fatalf("corrupt history still at original path: %v", statErr)
+	}
+	quarantined, _ := filepath.Glob(runsPath + ".corrupt-*")
+	if len(quarantined) != 1 {
+		t.Fatalf("quarantined files = %#v", quarantined)
+	}
+}
+
+func TestRunStoreFailIfPendingUnknownIDDoesNotWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.json")
+	store := NewRunStore(path)
+	if err := store.FailIfPending("unknown-queue-id", "queued turn removed"); err != nil {
+		t.Fatalf("FailIfPending() error = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("no-op FailIfPending created the runs file: %v", err)
+	}
+}
+
+func TestPruneRunsDropsOldestTerminalFirst(t *testing.T) {
+	runs := make([]Run, 0, maxStoredRuns+10)
+	for i := 0; i < 5; i++ {
+		runs = append(runs, Run{ID: fmt.Sprintf("active-%d", i), Status: RunStatusRunning})
+	}
+	for i := 0; i < maxStoredRuns; i++ {
+		runs = append(runs, Run{ID: fmt.Sprintf("done-%d", i), Status: RunStatusCompleted})
+	}
+	pruned := pruneRuns(runs)
+	if len(pruned) != maxStoredRuns {
+		t.Fatalf("pruned length = %d, want %d", len(pruned), maxStoredRuns)
+	}
+	for i := 0; i < 5; i++ {
+		if pruned[i].ID != fmt.Sprintf("active-%d", i) {
+			t.Fatalf("non-terminal run dropped: pruned[%d] = %#v", i, pruned[i])
+		}
+	}
+	if pruned[5].ID != "done-5" {
+		t.Fatalf("oldest terminal runs were not dropped first: pruned[5] = %#v", pruned[5])
 	}
 }

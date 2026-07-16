@@ -185,13 +185,15 @@ func (s *Scheduler) checkStore(kind string, store schedulerStore, sessionOnly bo
 		if s.shouldStopWork() {
 			return
 		}
-		if task.Paused {
-			continue
-		}
+		// Expiry cleanup runs before the paused check so pausing a task
+		// cannot keep an expired entry in the store forever.
 		if task.Recurring && IsExpired(task, now.UnixMilli()) {
 			if _, err := store.RemoveIfUnchanged(task); err != nil {
 				s.reportError(fmt.Errorf("remove expired %s scheduled task %q: %w", kind, task.ID, err))
 			}
+			continue
+		}
+		if task.Paused {
 			continue
 		}
 
