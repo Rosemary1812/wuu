@@ -122,6 +122,10 @@
    * dense against 14px type on screen.
    */
   --conversation-reading-line-height: 1.75;
+  /* Commentary is short process narration, not long-form answer prose. A
+     tighter pitch avoids the excess optical whitespace that Latin glyphs
+     leave inside the mixed-script reading line box. */
+  --conversation-commentary-line-height: 1.6;
   --conversation-prose-block-gap: 18px;
   --conversation-message-element-gap: 18px;
   /* Process rows share the message size and weight; color and spacing,

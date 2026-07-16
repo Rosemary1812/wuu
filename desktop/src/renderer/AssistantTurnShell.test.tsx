@@ -41,6 +41,10 @@ const turnsCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/turns.css"),
   "utf8",
 );
+const conversationShellCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/conversation-shell.css"),
+  "utf8",
+);
 
 function cssRule(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1278,6 +1282,20 @@ describe("AssistantTurnShell — turn divider styles", () => {
 
     expect(cssRule(".activity-timeline-item")).not.toContain("animation:");
     expect(turnsCSS).not.toContain("activity-timeline-item-in");
+  });
+});
+
+describe("AssistantTurnShell — process typography", () => {
+  it("keeps process commentary tighter than long-form answer prose", () => {
+    const commentaryRule = cssRule(".turn-process-entry-commentary");
+
+    expect(commentaryRule).toContain(
+      "line-height: var(--conversation-commentary-line-height);",
+    );
+    expect(commentaryRule).not.toContain("--conversation-reading-line-height");
+    expect(conversationShellCSS).toContain(
+      "--conversation-commentary-line-height: 1.6;",
+    );
   });
 });
 
