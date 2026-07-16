@@ -8,6 +8,30 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
+### Added
+
+- Scheduled automations now run through persisted threads and turns, support
+  new-thread and heartbeat modes, and retain bounded run history.
+- The core and desktop source now include Windows-aware process, shell-path,
+  window-chrome, and packaging support. GitHub Releases remain macOS-only.
+
+### Changed
+
+- The desktop conversation and composer stay centered at readable widths on
+  wide windows, while environment and group panels scale responsively.
+- Internal process notifications are hidden from conversations, and command
+  and search activity summaries more accurately describe completed work.
+
+### Fixed
+
+- Failed and interrupted turns preserve completed assistant and tool history
+  across reloads, including partial response text already shown before a stop.
+- Scheduled runs avoid overlapping or unbounded queued work, expired paused
+  schedules are removed, and corrupt run-history files no longer block startup.
+- Desktop side-panel headers retain their intended layout and typography.
+
 ## [0.4.1] - 2026-07-16
 
 ### Changed

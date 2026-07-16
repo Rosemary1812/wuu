@@ -1483,13 +1483,3 @@
   background: var(--surface-1);
   max-width: var(--conversation-message-max-width, 680px);
 }
-
-.message-flow-preview-paragraph {
-  font-size: var(--conversation-message-font-size);
-  line-height: var(--conversation-reading-line-height);
-  margin: 0;
-}
-
-.message-flow-preview-paragraph + .message-flow-preview-paragraph {
-  margin-top: var(--conversation-prose-block-gap, 18px);
-}

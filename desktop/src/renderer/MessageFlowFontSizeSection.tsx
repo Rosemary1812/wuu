@@ -8,16 +8,20 @@ import {
   MESSAGE_FLOW_FONT_SIZE_RANGE,
   type MessageFlowFontSize,
 } from "../shared/protocol";
+import { StreamingMarkdown } from "./StreamingMarkdown";
 
-// Sample prose the Settings preview shows underneath the slider. Two
-// short paragraphs model the actual turn layout: each is roughly the
-// length of a real agent reply line, with mixed CJK/Latin glyphs so the
-// preview looks like the conversation pane rather than a polite
-// placeholder.
-const PREVIEW_SAMPLES: readonly string[] = [
+// Sample reply the Settings preview shows underneath the slider. It is
+// rendered through the exact pipeline the conversation pane uses
+// (.agent-block > .agent-text > StreamingMarkdown), so the slider
+// previews real message-flow typography instead of a look-alike
+// placeholder. Mixed CJK/Latin prose, inline code, and a short list
+// cover the shapes a typical agent reply takes.
+const PREVIEW_SAMPLE_MARKDOWN = [
   "先看一下 README 的目录约定，再读一个相邻页面的 CSS——把改动控制在同一套既有规范里。",
-  "顺手跑一下单元测试，免得新代码悄悄破坏既有流程。",
-];
+  "",
+  "- 改动只落在 `desktop/src/renderer`，不动 Go 核心",
+  "- 顺手跑一下单元测试，免得新代码悄悄破坏既有流程",
+].join("\n");
 
 const { min, max, step, default: defaultSize } = MESSAGE_FLOW_FONT_SIZE_RANGE;
 
@@ -134,14 +138,16 @@ export function MessageFlowFontSizeControl(): JSX.Element {
         aria-label="消息流字号预览"
         data-testid="settings-message-flow-font-size-preview"
       >
-        {PREVIEW_SAMPLES.map((text) => (
-          <p
-            className="message-flow-preview-paragraph"
-            key={text}
-          >
-            {text}
-          </p>
-        ))}
+        <article className="agent-block">
+          <div className="agent-text">
+            <StreamingMarkdown
+              streamKey="settings-message-flow-font-size-preview"
+              initialText={PREVIEW_SAMPLE_MARKDOWN}
+              isLive={false}
+              phase="final_answer"
+            />
+          </div>
+        </article>
       </div>
     </div>
   );
