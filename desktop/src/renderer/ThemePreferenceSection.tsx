@@ -36,6 +36,16 @@ export function ThemePreferenceControl(): JSX.Element {
     };
   }, []);
 
+  // Reflect switches made in other windows: the preference is app-global,
+  // so the segmented control must follow the main-process broadcast too.
+  useEffect(
+    () =>
+      window.wuu?.onThemePreferenceChange?.((theme) => {
+        setPreference(theme);
+      }),
+    [],
+  );
+
   function choose(next: ThemePreference): void {
     setPreference(next);
     applyThemePreference(next);

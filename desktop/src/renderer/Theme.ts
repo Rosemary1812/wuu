@@ -84,3 +84,18 @@ export function applyThemePreference(preference: ThemePreference): void {
   query.addEventListener("change", onChange);
   systemListenerCleanup = () => query.removeEventListener("change", onChange);
 }
+
+/**
+ * Follow preference changes made in OTHER windows. The main process owns
+ * the app-global preference and broadcasts every change; each window
+ * re-applies it locally (the initiating window already applied it — the
+ * re-apply is idempotent). Returns a disposer; the boot subscription is
+ * window-lifetime, so it only matters for tests.
+ */
+export function startThemePreferenceSync(): () => void {
+  return (
+    window.wuu?.onThemePreferenceChange?.((theme) => {
+      applyThemePreference(theme);
+    }) ?? (() => {})
+  );
+}

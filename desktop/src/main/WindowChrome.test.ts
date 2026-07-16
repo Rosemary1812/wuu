@@ -32,7 +32,7 @@ describe("window chrome platform branches", () => {
     expect(mainSource).toContain('titleBarStyle: "hidden"');
     expect(mainSource).toContain("titleBarOverlay: windowsTitleBarOverlay()");
     // Theme flips re-push overlay colors to every open overlay window.
-    expect(mainSource).toContain('nativeTheme.on("updated", refreshTitleBarOverlays)');
+    expect(mainSource).toContain('nativeTheme.on("updated", syncThemeAcrossWindows)');
   });
 
   it("stamps data-platform before first paint, like data-theme", () => {

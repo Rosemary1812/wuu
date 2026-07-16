@@ -2114,6 +2114,12 @@ export type WuuDesktopApi = {
   setThemePreference: (
     theme: ThemePreference,
   ) => Promise<{ ok: boolean; theme: ThemePreference }>;
+  // The preference is app-global: the main process broadcasts every change
+  // (explicit choice, or an OS dark-mode flip while on "system") to all
+  // windows, and each renderer re-applies data-theme. Returns a disposer.
+  onThemePreferenceChange: (
+    handler: (theme: ThemePreference) => void,
+  ) => () => void;
   // Message-stream reading size. Persists to desktop-settings.json as a
   // fixed three-step ladder. `initialMessageFlowFontSize` is read
   // synchronously in the preload so the first paint already has the

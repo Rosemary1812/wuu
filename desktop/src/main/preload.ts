@@ -241,6 +241,19 @@ const api: WuuDesktopApi = {
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>
     ipcRenderer.invoke("wuu:theme-preference-set", theme),
+  onThemePreferenceChange: (handler: (theme: ThemePreference) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: unknown,
+    ) => {
+      if (payload === "light" || payload === "dark" || payload === "system") {
+        handler(payload);
+      }
+    };
+    ipcRenderer.on("wuu:theme-preference-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:theme-preference-changed", listener);
+  },
   getMessageFlowFontSize: () =>
     ipcRenderer.invoke("wuu:message-flow-font-size-get"),
   setMessageFlowFontSize: (fontSize: MessageFlowFontSize) =>

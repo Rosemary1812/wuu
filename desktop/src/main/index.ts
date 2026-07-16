@@ -500,27 +500,46 @@ function windowsTitleBarOverlay(): Electron.TitleBarOverlay {
   };
 }
 
-// Windows redraws the controls overlay only when told to; theme changes
-// (explicit preference or OS dark-mode flips while on "system") re-push
-// the overlay colors to every open window that carries one.
-const titleBarOverlayWindows = new Set<BrowserWindow>();
+// The theme preference is app-global state owned by the main process.
+// Every themed content window (main + pop-outs) registers here; a theme
+// change — explicit preference or an OS dark-mode flip while on
+// "system" — re-pushes the native chrome (Windows controls overlay,
+// non-macOS window background fill) to all of them, and the new
+// preference is broadcast so each renderer re-applies data-theme.
+// macOS skips both: its vibrancy material and transparent fill are
+// theme-independent.
+const themedChromeWindows = new Set<BrowserWindow>();
 
-function registerTitleBarOverlayWindow(win: BrowserWindow): void {
-  if (process.platform !== "win32") return;
-  titleBarOverlayWindows.add(win);
+function registerThemedChromeWindow(win: BrowserWindow): void {
+  themedChromeWindows.add(win);
   win.on("closed", () => {
-    titleBarOverlayWindows.delete(win);
+    themedChromeWindows.delete(win);
   });
 }
 
-function refreshTitleBarOverlays(): void {
-  if (process.platform !== "win32") return;
-  const overlay = windowsTitleBarOverlay();
-  for (const win of titleBarOverlayWindows) {
-    if (!win.isDestroyed()) {
+function syncThemedWindowChrome(): void {
+  if (process.platform === "darwin") return;
+  const background = windowBackgroundColor();
+  const overlay = process.platform === "win32" ? windowsTitleBarOverlay() : undefined;
+  for (const win of themedChromeWindows) {
+    if (win.isDestroyed()) continue;
+    // Windows redraws the controls overlay only when told to, and every
+    // platform keeps the creation-time backgroundColor until re-set —
+    // both must follow the theme or the window frame lags the content.
+    win.setBackgroundColor(background);
+    if (overlay) {
       win.setTitleBarOverlay(overlay);
     }
   }
+}
+
+function broadcastThemePreference(): void {
+  broadcastToAll("wuu:theme-preference-changed", getThemePreference());
+}
+
+function syncThemeAcrossWindows(): void {
+  syncThemedWindowChrome();
+  broadcastThemePreference();
 }
 
 type PopOutWindowParams =
@@ -596,7 +615,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     },
   });
   const windowID = win.webContents.id;
-  registerTitleBarOverlayWindow(win);
+  registerThemedChromeWindow(win);
 
   windowRegistry.registerWindow(win, "popped-out", {
     workdir: params.context.cwd,
@@ -674,7 +693,7 @@ function createWindow(): void {
   }
 
   mainWindow = new BrowserWindow(windowOptions);
-  registerTitleBarOverlayWindow(mainWindow);
+  registerThemedChromeWindow(mainWindow);
 
   windowRegistry.registerWindow(mainWindow, "main");
   const win = mainWindow;
@@ -1324,12 +1343,13 @@ app.whenReady().then(async () => {
     const valid: ThemePreference[] = ["system", "light", "dark"];
     const next = valid.includes(theme) ? theme : "system";
     setThemePreference(next);
-    refreshTitleBarOverlays();
+    syncThemeAcrossWindows();
     return { ok: true, theme: next };
   });
   // "system" preference: OS dark-mode flips arrive here, not through the
-  // preference IPC.
-  nativeTheme.on("updated", refreshTitleBarOverlays);
+  // preference IPC. They go through the same multi-window sync so every
+  // window's content, background, and native chrome move together.
+  nativeTheme.on("updated", syncThemeAcrossWindows);
   ipcMain.on("wuu:message-flow-font-size-get-sync", (event) => {
     // Sync partner of getMessageFlowFontSize — preload needs the value
     // before first paint to stamp --conversation-message-font-size on
