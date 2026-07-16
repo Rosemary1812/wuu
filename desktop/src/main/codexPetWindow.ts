@@ -11,6 +11,7 @@ import {
   type CodexPetsSnapshot,
 } from "../shared/protocol";
 import { CODEX_PET_CELL_HEIGHT, CODEX_PET_CELL_WIDTH, CODEX_PET_STATES } from "./codexPets";
+import { appShellWebPreferences } from "./appShellGuards";
 
 export type CodexPetRuntime = { running: boolean; status: string };
 
@@ -786,6 +787,7 @@ export class CodexPetWindowManager {
     private readonly onJumpRequested: (hint: CodexPetHint) => void,
     private readonly onSizeChange?: (size: CodexPetSize) => void,
     private readonly onScaleChange?: (scale: number) => void,
+    private readonly isPackaged = false,
   ) {}
 
   setSize(size: CodexPetSize): void {
@@ -963,6 +965,7 @@ export class CodexPetWindowManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        ...appShellWebPreferences(this.isPackaged),
       },
     });
     this.win = win;

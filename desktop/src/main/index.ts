@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   type IpcMainInvokeEvent,
+  Menu,
   nativeTheme,
   screen,
   session as electronSession,
@@ -124,6 +125,11 @@ import {
 import { TerminalSessionManager } from "./terminalSessions";
 import { WorkspaceFileService } from "./workspaceFiles";
 
+import {
+  appShellWebPreferences,
+  installProductionAppShellGuards,
+  productionApplicationMenuTemplate,
+} from "./appShellGuards";
 import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
 import {
   computeDefaultMainWindowBounds,
@@ -223,6 +229,7 @@ const codexPetWindowManager = new CodexPetWindowManager(
     // per-frame scale updates never reach this callback.
     updateCodexPetSettings({ scale });
   },
+  app.isPackaged,
 );
 const terminalSessionManager = new TerminalSessionManager(
   (windowID, event) => emitTerminalEvent(windowID, event),
@@ -612,6 +619,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      ...appShellWebPreferences(app.isPackaged),
     },
   });
   const windowID = win.webContents.id;
@@ -685,6 +693,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      ...appShellWebPreferences(app.isPackaged),
     },
   };
   if (restoredBounds) {
@@ -791,6 +800,27 @@ async function directorySize(path: string): Promise<number> {
 }
 
 app.whenReady().then(async () => {
+  installProductionAppShellGuards({
+    isPackaged: app.isPackaged,
+    setApplicationMenu: () => {
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate(productionApplicationMenuTemplate(process.platform)),
+      );
+    },
+    onWebContentsCreated: (listener) => {
+      app.on("web-contents-created", (_event, contents) => {
+        listener({
+          onBeforeInputEvent: (handler) => {
+            contents.on("before-input-event", (event, value) => handler(event, value));
+          },
+          onDevToolsOpened: (handler) => {
+            contents.on("devtools-opened", handler);
+          },
+          closeDevTools: () => contents.closeDevTools(),
+        });
+      });
+    },
+  });
   await clearOversizedDevCaches();
   await removeLegacyDesktopCliLink().catch(() => false);
   projectManager.load();
