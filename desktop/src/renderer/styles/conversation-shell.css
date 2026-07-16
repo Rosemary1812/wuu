@@ -63,6 +63,23 @@
   --environment-panel-reserved-width: 372px;
   --environment-panel-width: 328px;
   --environment-panel-edge-gap: 18px;
+  --environment-panel-flow-gap: calc(
+    var(--environment-panel-reserved-width) - var(--environment-panel-width)
+  );
+  /* Reserve only the space needed to keep a centered composer clear of the
+     right panel. As the effective sidebar shrinks and the conversation pane
+     grows, this falls smoothly to zero so the message flow returns to the
+     visual center of the window. */
+  --environment-panel-content-inset: clamp(
+    0px,
+    calc(
+      var(--session-composer-width) + var(--environment-panel-width) +
+        var(--environment-panel-width) + var(--environment-panel-edge-gap) +
+        var(--environment-panel-edge-gap) + var(--environment-panel-flow-gap) +
+        var(--environment-panel-flow-gap) - 100vw + var(--sidebar-width, 0px)
+    ),
+    var(--environment-panel-reserved-width)
+  );
   /*
    * Thread (reply) panel width is deliberately NOT declared here. It is owned by
    * useAppLayoutState and written to `.app-shell` — statically via shellStyle and
@@ -198,13 +215,13 @@
 
 .conversation-pane.environment-panel-reserved.subthread-panel-visible {
   --conversation-visible-inset-right: calc(
-    var(--environment-panel-reserved-width) + var(--thread-panel-width, 372px)
+    var(--environment-panel-content-inset) + var(--thread-panel-width, 372px)
   );
 }
 
 .conversation-pane.environment-panel-reserved.side-thread-panel-visible {
   --conversation-visible-inset-right: calc(
-    var(--environment-panel-reserved-width) + var(--side-thread-width, 400px)
+    var(--environment-panel-content-inset) + var(--side-thread-width, 400px)
   );
 }
 
@@ -242,7 +259,7 @@
 }
 
 .conversation-pane.environment-panel-reserved {
-  --conversation-visible-inset-right: var(--environment-panel-reserved-width);
+  --conversation-visible-inset-right: var(--environment-panel-content-inset);
 }
 
 .titlebar {

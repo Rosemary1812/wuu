@@ -184,6 +184,8 @@ async function run() {
   assert.equal(defaultEnvironment.visible, true, "Environment panel should start visible above the wide-window breakpoint.");
   assert.equal(typeof defaultEnvironment.panelRightGap, "number", "Environment panel right gap should be measurable.");
   assert.equal(typeof defaultEnvironment.panelMessageGap, "number", "Environment panel message gap should be measurable.");
+  assert.equal(typeof defaultEnvironment.panelWidth, "number", "Environment panel width should be measurable.");
+  assert.equal(typeof defaultEnvironment.conversationContentWidth, "number", "Message flow width should be measurable.");
   assert.ok(defaultEnvironment.panelRightGap <= 24, "Environment panel should sit near the right edge on wide windows.");
 
   win.setSize(1720, 860);
@@ -198,23 +200,104 @@ async function run() {
   );
   assert.equal(typeof beforeEnvironmentResize.panelRightGap, "number", "Wide environment panel right gap should be measurable.");
   assert.equal(typeof beforeEnvironmentResize.panelMessageGap, "number", "Wide environment panel message gap should be measurable.");
-  assert.ok(beforeEnvironmentResize.panelRightGap <= 24, "Environment panel should keep a stable right edge as width grows.");
   assert.ok(
-    beforeEnvironmentResize.panelMessageGap >= defaultEnvironment.panelMessageGap - 2,
-    `Extra width should not reduce the gap between the message flow and the environment panel. Default=${JSON.stringify(defaultEnvironment)} Wide=${JSON.stringify(beforeEnvironmentResize)}`
+    beforeEnvironmentResize.panelRightGap <= 24,
+    `Environment panel should keep its right-side anchor as width grows. Wide=${JSON.stringify(beforeEnvironmentResize)}`
   );
   assert.ok(
-    beforeEnvironmentResize.panelMessageGap >= 72,
-    `Environment panel should keep a comfortable gap from the message flow. Wide=${JSON.stringify(beforeEnvironmentResize)}`
+    beforeEnvironmentResize.panelWidth >= 320 && beforeEnvironmentResize.panelWidth >= defaultEnvironment.panelWidth + 40,
+    `Extra width should grow the environment panel toward full size. Default=${JSON.stringify(defaultEnvironment)} Wide=${JSON.stringify(beforeEnvironmentResize)}`
   );
   assert.ok(
-    beforeEnvironmentResize.scrollPaddingRight > 300,
-    "Scroll region should reserve inline environment panel space before resize."
+    beforeEnvironmentResize.conversationContentWidth <= 680,
+    `Extra width should preserve the readable message-flow cap. Wide=${JSON.stringify(beforeEnvironmentResize)}`
+  );
+  const wideFlow = await waitFor(win, () => flowSnapshot(), 1000);
+  assert.ok(
+    Math.abs(wideFlow.composerStackCenter - wideFlow.conversationContentCenter) <= 2,
+    `Wide-screen composer and message flow should share a center. Flow=${JSON.stringify(wideFlow)}`
   );
   assert.ok(
-    beforeEnvironmentResize.composerPaddingRight > 300,
-    "Composer should reserve inline environment panel space before resize."
+    Math.abs(wideFlow.composerStackWidth - wideFlow.conversationContentWidth) <= 4,
+    `Wide-screen composer and message flow should share a width. Flow=${JSON.stringify(wideFlow)}`
   );
+  assert.ok(
+    beforeEnvironmentResize.panelMessageGap <= 136,
+    `The wider flow and panel should keep the full-screen gap controlled. Wide=${JSON.stringify(beforeEnvironmentResize)}`
+  );
+  assert.ok(
+    beforeEnvironmentResize.scrollPaddingRight >= 40 && beforeEnvironmentResize.scrollPaddingRight <= 100,
+    `Scroll region should reserve only the space needed to clear the environment panel. Wide=${JSON.stringify(beforeEnvironmentResize)}`
+  );
+  assert.ok(
+    Math.abs(beforeEnvironmentResize.composerPaddingRight - beforeEnvironmentResize.scrollPaddingRight) <= 1,
+    "Composer and message flow should consume the same dynamic environment-panel inset."
+  );
+
+  await evaluate(win, () => {
+    const button = Array.from(document.querySelectorAll(".sidebar-toggle-button")).find((candidate) =>
+      candidate.getAttribute("aria-label")?.includes("收起左侧栏")
+    );
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Sidebar collapse button not found.");
+    }
+    button.click();
+  });
+  await waitFor(
+    win,
+    () => {
+      const shell = document.querySelector(".app-shell");
+      const pane = document.querySelector(".conversation-pane");
+      if (!(shell instanceof HTMLElement) || !(pane instanceof HTMLElement)) {
+        return null;
+      }
+      return shell.classList.contains("sidebar-collapsed") &&
+        !shell.classList.contains("sidebar-animating") &&
+        pane.getBoundingClientRect().left <= 1
+        ? true
+        : null;
+    },
+    1200
+  );
+  win.setSize(2000, 860);
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
+  const collapsedWideFlow = await waitFor(win, () => flowSnapshot(), 1000);
+  assert.ok(
+    Math.abs(collapsedWideFlow.conversationContentCenter - collapsedWideFlow.paneCenter) <= 6,
+    `With no fixed sidebar, the full-screen message flow should return to the pane center. Flow=${JSON.stringify(collapsedWideFlow)}`
+  );
+  assert.ok(
+    collapsedWideFlow.conversationContentLeft >= collapsedWideFlow.sidebarOpenWidth + 24,
+    `The centered message flow should stay clear of the hover sidebar drawer. Flow=${JSON.stringify(collapsedWideFlow)}`
+  );
+  assert.ok(
+    Math.abs(collapsedWideFlow.composerStackCenter - collapsedWideFlow.conversationContentCenter) <= 2 &&
+      Math.abs(collapsedWideFlow.composerStackWidth - collapsedWideFlow.conversationContentWidth) <= 4,
+    `Collapsed-sidebar composer and message flow should remain aligned. Flow=${JSON.stringify(collapsedWideFlow)}`
+  );
+  await evaluate(win, () => {
+    const button = Array.from(document.querySelectorAll(".sidebar-toggle-button")).find((candidate) =>
+      candidate.getAttribute("aria-label")?.includes("展开左侧栏")
+    );
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Sidebar expand button not found.");
+    }
+    button.click();
+  });
+  await waitFor(
+    win,
+    () => {
+      const shell = document.querySelector(".app-shell");
+      return shell instanceof HTMLElement &&
+        !shell.classList.contains("sidebar-collapsed") &&
+        !shell.classList.contains("sidebar-animating")
+        ? true
+        : null;
+    },
+    1200
+  );
+  win.setSize(1720, 860);
+  await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
 
   win.setSize(1280, 640);
   const duringEnvironmentResize = await waitFor(
@@ -924,6 +1007,8 @@ async function evaluate(win, fn) {
         resizing: document.documentElement.classList.contains("window-resizing"),
         panelMessageGap: panelRect && flow ? panelRect.left - flow.conversationContentRight : null,
         panelRightGap: panelRect ? paneRect.right - panelRect.right : null,
+        panelWidth: panelRect?.width ?? null,
+        conversationContentWidth: flow?.conversationContentWidth ?? null,
         scrollPaddingRight: Number.parseFloat(scrollStyle.paddingRight || "0"),
         composerPaddingRight: Number.parseFloat(composerStyle.paddingRight || "0"),
         scrollTransitionProperty: scrollStyle.transitionProperty,
@@ -937,13 +1022,17 @@ async function evaluate(win, fn) {
       const conversation = document.querySelector(".conversation-width");
       const composer = document.querySelector(".dock-composer-wrap");
       const stack = composer?.querySelector(".composer-stack");
-      if (!scroll || !conversation || !composer || !stack) {
+      const pane = document.querySelector(".conversation-pane");
+      const shell = document.querySelector(".app-shell");
+      if (!scroll || !conversation || !composer || !stack || !pane || !shell) {
         return null;
       }
       const scrollRect = scroll.getBoundingClientRect();
       const conversationRect = conversation.getBoundingClientRect();
       const composerRect = composer.getBoundingClientRect();
       const stackRect = stack.getBoundingClientRect();
+      const paneRect = pane.getBoundingClientRect();
+      const shellStyle = getComputedStyle(shell);
       const conversationStyle = getComputedStyle(conversation);
       const scrollStyle = getComputedStyle(scroll);
       const composerStyle = getComputedStyle(composer);
@@ -962,6 +1051,8 @@ async function evaluate(win, fn) {
         conversationContentLeft,
         conversationContentRight,
         conversationContentWidth: conversationContentRight - conversationContentLeft,
+        paneCenter: paneRect.left + paneRect.width / 2,
+        sidebarOpenWidth: Number.parseFloat(shellStyle.getPropertyValue("--sidebar-open-width") || "0"),
         conversationCenter: conversationRect.left + conversationRect.width / 2,
         conversationRight: conversationRect.right,
         conversationWidth: conversationRect.width,

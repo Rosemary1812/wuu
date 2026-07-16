@@ -38,7 +38,7 @@
 
 .conversation-pane.environment-panel-reserved .scroll-region,
 .conversation-pane.environment-panel-reserved .dock-composer-wrap {
-  padding-right: var(--environment-panel-reserved-width);
+  padding-right: var(--environment-panel-content-inset);
 }
 
 @media (max-width: 1060px) {

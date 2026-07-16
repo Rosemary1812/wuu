@@ -130,6 +130,9 @@ describe("EnvironmentSideStack", () => {
     expect(environmentPanelScaleForWidth(560)).toBe(0.8);
     expect(environmentPanelScaleForWidth(420)).toBe(0.6);
     expect(environmentPanelScaleForWidth(320)).toBe(0.576);
+    expect(environmentPanelScaleForWidth(1_000)).toBe(0.8);
+    expect(environmentPanelScaleForWidth(1_200)).toBe(0.9);
+    expect(environmentPanelScaleForWidth(1_400)).toBe(1);
 
     const stack = container.querySelector<HTMLElement>(
       ".environment-info-side-stack",

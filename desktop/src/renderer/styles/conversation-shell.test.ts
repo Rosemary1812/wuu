@@ -32,7 +32,7 @@ describe("conversation shell visible center", () => {
       /--conversation-visible-inset-right:\s*0px;/,
     );
     expect(cssRuleBody(".conversation-pane.environment-panel-reserved")).toMatch(
-      /--conversation-visible-inset-right:\s*var\(--environment-panel-reserved-width\);/,
+      /--conversation-visible-inset-right:\s*var\(--environment-panel-content-inset\);/,
     );
     expect(cssRuleBody(".jump-to-latest-cluster")).toMatch(
       /right:\s*var\(--conversation-visible-inset-right\);/,
@@ -48,6 +48,15 @@ describe("conversation shell visible center", () => {
     // The panel column still reads it, with a first-open fallback of 372px.
     expect(cssRuleBody(".conversation-pane.subthread-panel-visible")).toMatch(
       /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*var\(--thread-panel-width,\s*372px\);/,
+    );
+  });
+
+  it("re-centers the fixed readable flow instead of widening it on wide screens", () => {
+    expect(cssRuleBody(".conversation-pane")).toMatch(
+      /--environment-panel-content-inset:\s*clamp\([\s\S]*?var\(--session-composer-width\)[\s\S]*?-\s*100vw\s*\+\s*var\(--sidebar-width,\s*0px\)[\s\S]*?var\(--environment-panel-reserved-width\)/,
+    );
+    expect(conversationShellCssNoComments).not.toMatch(
+      /\.conversation-pane\.environment-panel-reserved\s*\{[^}]*--session-(?:outer|composer)-width\s*:/,
     );
   });
 });
