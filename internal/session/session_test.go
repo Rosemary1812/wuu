@@ -703,6 +703,9 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 		PostKind:       "result",
 		ThreadID:       "cth-review",
 		Hidden:         true,
+		FinishReason:   "length",
+		StopReason:     "context_length_exceeded",
+		Truncated:      true,
 		ToolCalls:      json.RawMessage(`[{"id":"call_1","name":"read_file","arguments":"{}"}]`),
 		DiscoveredTools: json.RawMessage(
 			`[{"type":"function","name":"mcp_docs_search","input_schema":{"type":"object"}}]`,
@@ -727,7 +730,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "done" || visible[0].DisplayContent != "visible done" || visible[0].Phase != "final_answer" || visible[0].ParticipantID != "prt-x" || visible[0].PostKind != "result" || visible[0].ThreadID != "cth-review" || !visible[0].Hidden || string(visible[0].ToolCalls) == "" || string(visible[0].DiscoveredTools) == "" {
+	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "done" || visible[0].DisplayContent != "visible done" || visible[0].Phase != "final_answer" || visible[0].ParticipantID != "prt-x" || visible[0].PostKind != "result" || visible[0].ThreadID != "cth-review" || !visible[0].Hidden || visible[0].FinishReason != "length" || visible[0].StopReason != "context_length_exceeded" || !visible[0].Truncated || string(visible[0].ToolCalls) == "" || string(visible[0].DiscoveredTools) == "" {
 		t.Fatalf("unexpected visible history: %+v", visible)
 	}
 

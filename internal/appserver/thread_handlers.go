@@ -675,6 +675,7 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 	th.Turns = turnsFromHistory(th.ID, committedHistory, now)
 	th.UpdatedAt = now
 	th.currentTurn = ""
+	th.currentTurnResumed = false
 	th.nextItemIndex = 0
 	th.activeAgentItemID = ""
 	th.activeReasoningItemID = ""

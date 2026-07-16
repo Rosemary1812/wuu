@@ -84,6 +84,7 @@ func (s *Server) refreshDurableThreadHistoryLocked(th *threadState) error {
 	th.Turns = applyTokenUsageMetasToTurns(th.Turns, loaded.tokenMetas)
 	th.currentTurn = ""
 	th.currentTurnKind = ""
+	th.currentTurnResumed = false
 	th.nextItemIndex = 0
 	th.activeAgentItemID = ""
 	th.activeReasoningItemID = ""
@@ -207,6 +208,43 @@ func abortStartedThreadTurn(th *threadState, started startedThreadTurn, cause er
 
 const turnTerminalHistoryRecord = "turn_terminal"
 
+func (s *Server) persistTurnTerminal(th *threadState, turnID string, kind TurnKind, status TurnStatus, cause error, at time.Time) error {
+	if s == nil || s.rt == nil || th == nil || !th.PersistHistory || strings.TrimSpace(turnID) == "" {
+		return nil
+	}
+	if kind == TurnKindCompact {
+		return nil
+	}
+	if status != TurnStatusCompleted && status != TurnStatusFailed && status != TurnStatusInterrupted {
+		return nil
+	}
+	clientID := strings.TrimSpace(turnID)
+	if kind == TurnKindInternal {
+		// Internal continuations have no durable user-message boundary. Reload
+		// intentionally folds their output into the current visible turn, so their
+		// failure marker must target that same aggregate instead of an ephemeral ID.
+		if status == TurnStatusCompleted {
+			return nil
+		}
+		clientID = ""
+	}
+	if status == TurnStatusCompleted && kind != TurnKindUser {
+		return nil
+	}
+	message := ""
+	if cause != nil {
+		message = cause.Error()
+	}
+	return session.AppendHistoryRecord(s.rt.SessionDir, th.ID, session.HistoryRecord{
+		Role:           "meta",
+		Content:        turnTerminalHistoryRecord,
+		DisplayContent: message,
+		ClientID:       clientID,
+		StopReason:     string(status),
+		At:             at,
+	})
+}
+
 // abortStartedThreadTurnDurably records a terminal projection for an ordinary
 // user message that was already appended before its runner could be launched.
 // Meta records are excluded from provider history but let restart projection
@@ -216,15 +254,8 @@ func (s *Server) abortStartedThreadTurnDurably(th *threadState, started startedT
 		cause = errors.New("turn start aborted")
 	}
 	var persistErr error
-	if s != nil && s.rt != nil && th != nil && th.PersistHistory && started.userMsgSeq > 0 {
-		persistErr = session.AppendHistoryRecord(s.rt.SessionDir, th.ID, session.HistoryRecord{
-			Role:           "meta",
-			Content:        turnTerminalHistoryRecord,
-			DisplayContent: cause.Error(),
-			ClientID:       started.turnID,
-			StopReason:     string(TurnStatusFailed),
-			At:             time.Now().UTC(),
-		})
+	if started.userMsgSeq > 0 {
+		persistErr = s.persistTurnTerminal(th, started.turnID, TurnKindUser, TurnStatusFailed, cause, time.Now().UTC())
 	}
 	abortStartedThreadTurn(th, started, cause)
 	if persistErr != nil {

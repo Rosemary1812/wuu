@@ -91,6 +91,7 @@ func threadWorktreeInfo(path, baseHEAD, baseRepo string) *WorktreeInfo {
 func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
 	th.currentTurn = turnID
 	th.currentTurnKind = TurnKindUser
+	th.currentTurnResumed = false
 	th.running = true
 	th.runningProviderName = th.ModelProvider
 	th.runningModel = th.Model
@@ -147,6 +148,7 @@ func (th *threadState) resumePersistedUserTurnLocked(clientID string, now time.T
 		th.Turns[i] = turn
 		th.currentTurn = turn.ID
 		th.currentTurnKind = TurnKindUser
+		th.currentTurnResumed = true
 		th.running = true
 		th.runningProviderName = th.ModelProvider
 		th.runningModel = th.Model
@@ -163,6 +165,7 @@ func (th *threadState) resumePersistedUserTurnLocked(clientID string, now time.T
 
 func (th *threadState) appendUserMessageTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
 	th.currentTurn = turnID
+	th.currentTurnResumed = false
 	th.UpdatedAt = now
 	th.nextItemIndex = 0
 	th.activeAgentItemID = ""
@@ -206,6 +209,7 @@ func (th *threadState) startCompactTurnLocked(turnID string, displayMsg provider
 func (th *threadState) startInternalTurnWithKindLocked(turnID string, kind TurnKind, now time.Time) Turn {
 	th.currentTurn = turnID
 	th.currentTurnKind = kind
+	th.currentTurnResumed = false
 	th.running = true
 	th.runningProviderName = th.ModelProvider
 	th.runningModel = th.Model
@@ -257,6 +261,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 		th.Turns = append(th.Turns, turn)
 		th.currentTurn = turnID
 		th.currentTurnKind = TurnKindInternal
+		th.currentTurnResumed = false
 		th.running = true
 		th.runningProviderName = th.ModelProvider
 		th.runningModel = th.Model
@@ -283,6 +288,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	th.Turns[index] = turn
 	th.currentTurn = turn.ID
 	th.currentTurnKind = TurnKindInternal
+	th.currentTurnResumed = false
 	th.running = true
 	th.runningProviderName = th.ModelProvider
 	th.runningModel = th.Model
@@ -348,6 +354,7 @@ func (th *threadState) releaseTurnExecutionLocked(turnID string) {
 	th.running = false
 	th.currentTurn = ""
 	th.currentTurnKind = ""
+	th.currentTurnResumed = false
 	th.runningProviderName = ""
 	th.runningModel = ""
 	th.cancel = nil
@@ -1130,22 +1137,39 @@ func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []pe
 		}
 		if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
 			if current != nil && rec.Content == turnTerminalHistoryRecord && (strings.TrimSpace(rec.ClientID) == "" || rec.ClientID == current.ID) {
+				status, ok := parseTurnTerminalStatus(rec.StopReason)
+				if !ok {
+					continue
+				}
 				at := rec.At
 				if at.IsZero() {
 					at = now
+				}
+				sourceID := turnTerminalItemSourceID(rec.ClientID)
+				items := current.Items[:0]
+				for _, item := range current.Items {
+					if item.Type != ThreadItemError || item.SourceID != sourceID {
+						items = append(items, item)
+					}
+				}
+				current.Items = items
+				current.Status = status
+				current.Error = nil
+				current.CompletedAt = &at
+				if status == TurnStatusCompleted {
+					continue
 				}
 				message := strings.TrimSpace(rec.DisplayContent)
 				if message == "" {
 					message = "turn start aborted"
 				}
-				current.Status = TurnStatusFailed
 				current.Error = &TurnError{Message: message}
-				current.CompletedAt = &at
 				appendItem(ThreadItem{
-					ID:     nextItemID(current.ID),
-					Type:   ThreadItemError,
-					Status: ThreadItemStatusFailed,
-					Error:  message,
+					ID:       nextItemID(current.ID),
+					SourceID: sourceID,
+					Type:     ThreadItemError,
+					Status:   ThreadItemStatusFailed,
+					Error:    message,
 				})
 			}
 			continue
@@ -1255,6 +1279,23 @@ func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []pe
 		}
 	}
 	return turns
+}
+
+func parseTurnTerminalStatus(raw string) (TurnStatus, bool) {
+	switch TurnStatus(strings.ToLower(strings.TrimSpace(raw))) {
+	case TurnStatusCompleted:
+		return TurnStatusCompleted, true
+	case TurnStatusInterrupted:
+		return TurnStatusInterrupted, true
+	case "", TurnStatusFailed:
+		return TurnStatusFailed, true
+	default:
+		return "", false
+	}
+}
+
+func turnTerminalItemSourceID(clientID string) string {
+	return turnTerminalHistoryRecord + ":" + strings.TrimSpace(clientID)
 }
 
 func pendingCompactionsContainReason(items []ThreadItem, reason string) bool {

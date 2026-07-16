@@ -89,6 +89,7 @@ type threadState struct {
 	running             bool
 	currentTurn         string
 	currentTurnKind     TurnKind
+	currentTurnResumed  bool
 	runningProviderName string
 	runningModel        string
 	cancel              context.CancelFunc
