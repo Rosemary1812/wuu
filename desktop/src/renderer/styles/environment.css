@@ -65,6 +65,11 @@
   pointer-events: none;
 }
 
+.environment-side-stack.environment-info-side-stack {
+  transform: scale(var(--environment-panel-scale, 1));
+  transform-origin: top right;
+}
+
                                                                     
                                                                    
                                                                         

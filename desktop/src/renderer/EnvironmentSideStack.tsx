@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type {
   Agent,
   ParticipantProfile,
@@ -10,6 +10,7 @@ import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
+import { environmentPanelScaleForWidth } from "./EnvironmentPanelScale";
 import { GroupInfoPanel } from "./GroupInfoPanel";
 
 export type SubagentRowSummary = Pick<
@@ -28,6 +29,40 @@ export type SubagentRowSummary = Pick<
   | "nested_running_count"
   | "participant"
 >;
+
+function useEnvironmentPanelScale(
+  stackRef: RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+): void {
+  useEffect(() => {
+    const stack = stackRef.current;
+    const container = stack?.parentElement;
+    if (!enabled || !stack || !container) {
+      return;
+    }
+
+    const applyScale = (width: number): void => {
+      const scale = environmentPanelScaleForWidth(width);
+      stack.style.setProperty(
+        "--environment-panel-scale",
+        String(scale),
+      );
+    };
+    applyScale(container.clientWidth);
+
+    if (typeof ResizeObserver === "undefined") {
+      const handleResize = (): void => applyScale(container.clientWidth);
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      applyScale(entries[0]?.contentRect.width ?? container.clientWidth);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [enabled, stackRef]);
+}
 
 export function EnvironmentSideStack({
   visible,
@@ -110,11 +145,16 @@ export function EnvironmentSideStack({
     participantID: string,
   ) => Promise<void> | void;
 }): JSX.Element | null {
-  if ((!visible && !mounted) || !state.initialized) {
+  const stackRef = useRef<HTMLDivElement>(null);
+  const shouldRender = (visible || mounted) && Boolean(state.initialized);
+  const thread = state.initialized ? activeThreadForState(state) : undefined;
+  const groupThread = Boolean(thread && isGroupThread(thread));
+  useEnvironmentPanelScale(stackRef, shouldRender && !groupThread);
+
+  if (!shouldRender || !state.initialized) {
     return null;
   }
 
-  const thread = activeThreadForState(state);
   if (thread && isGroupThread(thread)) {
     return (
       <div className="environment-side-stack">
@@ -142,7 +182,10 @@ export function EnvironmentSideStack({
   }
 
   return (
-    <div className="environment-side-stack">
+    <div
+      className="environment-side-stack environment-info-side-stack"
+      ref={stackRef}
+    >
       <EnvironmentPanel
         panelRef={panelRef}
         motionState={closing ? "closing" : motionState}

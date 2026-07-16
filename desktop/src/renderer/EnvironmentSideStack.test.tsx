@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InitializeResult, Thread } from "../shared/protocol";
 import { initialState, type AppState } from "./AppState";
+import { environmentPanelScaleForWidth } from "./EnvironmentPanelScale";
 import { EnvironmentSideStack } from "./EnvironmentSideStack";
 
 let container: HTMLDivElement;
@@ -106,6 +107,7 @@ describe("EnvironmentSideStack", () => {
   it("renders the environment panel without a docked query-history card", () => {
     renderStack();
 
+    expect(container.querySelector(".environment-info-side-stack")).not.toBeNull();
     expect(container.querySelector(".environment-side-stack > .environment-panel")).not.toBeNull();
     expect(container.querySelector(".environment-side-stack > .query-history-environment-slot")).toBeNull();
     expect(container.querySelector(".query-history-popover")).toBeNull();
@@ -116,6 +118,29 @@ describe("EnvironmentSideStack", () => {
 
     expect(rule).toContain("overflow: visible");
     expect(rule).not.toContain("overflow: hidden");
+  });
+
+  it("scales the complete environment panel at narrow widths", () => {
+    Object.defineProperty(container, "clientWidth", {
+      configurable: true,
+      value: 420,
+    });
+    renderStack();
+
+    expect(environmentPanelScaleForWidth(560)).toBe(0.8);
+    expect(environmentPanelScaleForWidth(420)).toBe(0.6);
+    expect(environmentPanelScaleForWidth(320)).toBe(0.576);
+
+    const stack = container.querySelector<HTMLElement>(
+      ".environment-info-side-stack",
+    );
+    expect(stack?.style.getPropertyValue("--environment-panel-scale")).toBe(
+      "0.6",
+    );
+
+    const rule = cssRule(".environment-side-stack.environment-info-side-stack");
+    expect(rule).toContain("transform: scale(var(--environment-panel-scale, 1))");
+    expect(rule).toContain("transform-origin: top right");
   });
 
   it("renders group info instead of session environment rows for group threads", () => {
