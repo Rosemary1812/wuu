@@ -68,6 +68,7 @@ thirdparty/
 # ============================================================
 
 # AI agent scratchpads (each shell/contributor brings its own)
+AGENTS.md
 CLAUDE.md
 .claude/
 .mavis/
