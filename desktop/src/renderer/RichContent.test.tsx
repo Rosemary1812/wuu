@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent, __resetRichFileReferenceResolutionCacheForTests } from "./RichContent";
+import { StreamingMarkdown } from "./StreamingMarkdown";
 
 const { mermaidInitialize, mermaidRender } = vi.hoisted(() => ({
   mermaidInitialize: vi.fn(),
@@ -455,5 +456,95 @@ describe("RichContent raw HTML and heading levels", () => {
     expect(container.querySelector(".rich-heading.rich-heading--h1")?.textContent).toContain("alpha");
     expect(container.querySelector(".rich-heading.rich-heading--h2")?.textContent).toContain("beta");
     expect(container.querySelector(".rich-heading.rich-heading--h3")?.textContent).toContain("gamma");
+  });
+
+  describe("CJK autolink boundaries", () => {
+    function singleWebLink(): HTMLAnchorElement {
+      const links = container.querySelectorAll("a.rich-web-link");
+      expect(links).toHaveLength(1);
+      return links[0] as HTMLAnchorElement;
+    }
+
+    it("ends a bare URL before a fullwidth full stop", () => {
+      render(<RichContent text={"链接 https://example.com/a。"} />);
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe("https://example.com/a");
+      expect(link.textContent).toBe("https://example.com/a");
+      expect(link.parentElement?.textContent).toBe("链接 https://example.com/a。");
+    });
+
+    it("ends a bare URL before a fullwidth comma and keeps the following text out", () => {
+      render(<RichContent text={"见 https://example.com/a?b=1，谢谢"} />);
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe("https://example.com/a?b=1");
+      expect(link.textContent).toBe("https://example.com/a?b=1");
+      expect(link.parentElement?.textContent).toBe("见 https://example.com/a?b=1，谢谢");
+    });
+
+    it("keeps paired fullwidth parentheses inside the URL", () => {
+      render(<RichContent text={"https://example.com/a（注释）"} />);
+
+      const link = singleWebLink();
+      // jsdom reflects `href` through URL serialization, which percent-encodes
+      // non-ASCII; compare against the serialized form.
+      expect(link.getAttribute("href")).toBe(new URL("https://example.com/a（注释）").href);
+      expect(link.textContent).toBe("https://example.com/a（注释）");
+    });
+
+    it("excludes an unbalanced trailing fullwidth open paren and everything after it", () => {
+      render(<RichContent text={"PR：https://github.com/blueberrycongee/wuu/pull/45（分支 → main…）"} />);
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe("https://github.com/blueberrycongee/wuu/pull/45");
+      expect(link.textContent).toBe("https://github.com/blueberrycongee/wuu/pull/45");
+    });
+
+    it("excludes an unmatched fullwidth close paren", () => {
+      render(<RichContent text={"（见 https://example.com/a）"} />);
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe("https://example.com/a");
+      expect(link.textContent).toBe("https://example.com/a");
+    });
+
+    it("keeps the GFM ASCII trailing-punctuation behavior", () => {
+      render(<RichContent text={"https://example.com/a, next"} />);
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe("https://example.com/a");
+      expect(link.textContent).toBe("https://example.com/a");
+    });
+
+    it("does not trim explicit markdown links", () => {
+      render(<RichContent text={"[文档](https://example.com/a。)"} />);
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe(new URL("https://example.com/a。").href);
+      expect(link.textContent).toBe("文档");
+    });
+
+    it("opens the trimmed URL on click", () => {
+      render(<RichContent text={"链接 https://example.com/a。"} />);
+
+      act(() => singleWebLink().click());
+      expect(openExternalMock).toHaveBeenCalledWith("https://example.com/a");
+    });
+
+    it("applies the same boundary in the streaming markdown path", () => {
+      render(
+        <StreamingMarkdown
+          streamKey="cjk-autolink-test"
+          initialText={"见 https://example.com/a。"}
+          isLive={false}
+          phase="final_answer"
+        />,
+      );
+
+      const link = singleWebLink();
+      expect(link.getAttribute("href")).toBe("https://example.com/a");
+      expect(link.textContent).toBe("https://example.com/a");
+    });
   });
 });
