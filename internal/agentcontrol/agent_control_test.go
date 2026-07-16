@@ -1982,6 +1982,10 @@ func TestNewRestoresQueuedSpawnPayload(t *testing.T) {
 	if got, ok := c.threads.Resolve(meta.Path); !ok || got.ID != meta.ID {
 		t.Fatalf("restored thread metadata did not resolve: %+v ok=%v", got, ok)
 	}
+	waitForQueuedSpawnRecoveryTest(t, func() bool {
+		exists, existsErr := c.HarnessStore().QueueItemExists(meta.ID)
+		return existsErr == nil && !exists
+	}, "restored queued spawn acknowledgement")
 	items, err := c.HarnessStore().ListQueueItems()
 	if err != nil {
 		t.Fatalf("ListQueueItems: %v", err)

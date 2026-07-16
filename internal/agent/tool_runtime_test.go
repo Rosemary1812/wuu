@@ -446,37 +446,43 @@ func TestTurnToolRuntime_StreamingErrorDoesNotExecuteAgain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	tools := &runtimeTestTools{
-		metadata: map[string]ToolMetadata{
-			"read_file": {ReadOnly: true, ConcurrencySafe: true},
-		},
-		results: map[string]string{
-			"call_1": `{"ok":true}`,
-		},
+	tools := &cancelAwareRuntimeTools{
+		started:  make(chan struct{}),
+		canceled: make(chan struct{}),
 	}
 	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
 		Type:     providers.EventToolUseStart,
-		ToolCall: &providers.ToolCall{ID: "call_1", Name: "read_file"},
+		ToolCall: &providers.ToolCall{ID: "orphan", Name: "read_file"},
 	})
 	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
 		Type: providers.EventToolUseEnd,
 		ToolCall: &providers.ToolCall{
-			ID:        "call_1",
+			ID:        "orphan",
 			Name:      "read_file",
 			Arguments: `{"path":"a.go"}`,
 		},
 	})
+	select {
+	case <-tools.started:
+	case <-time.After(time.Second):
+		t.Fatal("expected streaming execution to start")
+	}
 	runtime.Cancel()
 
 	msgs, err := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
-		{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`},
+		{ID: "orphan", Name: "read_file", Arguments: `{"path":"a.go"}`},
 	}, nil)
 	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Content, "context canceled") {
 		t.Fatalf("expected one settled cancellation result, got messages=%+v error=%v", msgs, err)
 	}
-	if calls := tools.recordedCalls(); len(calls) > 1 {
-		t.Fatalf("streaming execution was repeated: %+v", calls)
+	if calls := tools.recordedCalls(); len(calls) != 1 {
+		t.Fatalf("streaming execution count = %d, want 1: %+v", len(calls), calls)
+	}
+	select {
+	case <-tools.canceled:
+	default:
+		t.Fatal("expected streaming execution to observe cancellation")
 	}
 }
 
