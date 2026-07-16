@@ -52,6 +52,10 @@ Where things stand now: files changed, verification results, and what remains un
 // the extraction never needs the whole history in one window. The journal is
 // bounded to helpMeCompactMaxSectionBytes.
 func BuildHelpMeParentJournal(ctx context.Context, client providers.Client, model string, budget Budget, history []providers.ChatMessage) (string, error) {
+	return BuildHelpMeParentJournalWithOptions(ctx, client, model, budget, nil, history)
+}
+
+func BuildHelpMeParentJournalWithOptions(ctx context.Context, client providers.Client, model string, budget Budget, options map[string]any, history []providers.ChatMessage) (string, error) {
 	if client == nil {
 		return "", nil
 	}
@@ -71,7 +75,7 @@ func BuildHelpMeParentJournal(ctx context.Context, client providers.Client, mode
 		if n <= 0 {
 			n = 1
 		}
-		next, err := extractHelpMeJournalChunk(ctx, client, model, remaining[:n], journal)
+		next, err := extractHelpMeJournalChunk(ctx, client, model, options, remaining[:n], journal)
 		if err != nil {
 			return "", err
 		}
@@ -124,10 +128,10 @@ func buildHelpMeJournalPrompt(chunk []providers.ChatMessage, previousJournal str
 	return b.String()
 }
 
-func extractHelpMeJournalChunk(ctx context.Context, client providers.Client, model string, chunk []providers.ChatMessage, previousJournal string) (string, error) {
+func extractHelpMeJournalChunk(ctx context.Context, client providers.Client, model string, options map[string]any, chunk []providers.ChatMessage, previousJournal string) (string, error) {
 	toExtract := chunk
 	for attempt := 0; ; attempt++ {
-		req := helpMeJournalRequest(model, buildHelpMeJournalPrompt(toExtract, previousJournal))
+		req := helpMeJournalRequest(model, buildHelpMeJournalPrompt(toExtract, previousJournal), options)
 		resp, err := summarizeCompact(ctx, client, req)
 		if err != nil {
 			// Same backstop as summarizeCompactChunk: if the extraction
@@ -143,7 +147,7 @@ func extractHelpMeJournalChunk(ctx context.Context, client providers.Client, mod
 	}
 }
 
-func helpMeJournalRequest(model, prompt string) providers.ChatRequest {
+func helpMeJournalRequest(model, prompt string, options map[string]any) providers.ChatRequest {
 	return providers.ChatRequest{
 		Model:     model,
 		Operation: providers.NewInferenceOperation(providers.InferenceOperationReview, providers.InferenceProfileContinuationCritical),
@@ -151,11 +155,9 @@ func helpMeJournalRequest(model, prompt string) providers.ChatRequest {
 			{Role: "system", Content: helpMeJournalSystemPrompt},
 			{Role: "user", Content: prompt},
 		},
-		Temperature: 0.2,
-		MaxTokens:   helpMeJournalMaxTokens,
-		ProviderOptions: map[string]any{
-			"textVerbosity": "low",
-		},
+		Temperature:     0.2,
+		MaxTokens:       helpMeJournalMaxTokens,
+		ProviderOptions: compactSummaryProviderOptions(options),
 	}
 }
 

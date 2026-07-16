@@ -371,7 +371,8 @@ func TestCompact_SetsSummaryOutputControls(t *testing.T) {
 	}
 
 	client := &mockCompactClient{response: "summary of older turns"}
-	_, err := Compact(context.Background(), messages, client, "gpt-5.5")
+	options := map[string]any{"temperatureSupported": false, "textVerbosity": "high"}
+	_, err := CompactWithBudgetAndOptions(context.Background(), messages, client, "gpt-5.5", Budget{}, options)
 	if err != nil {
 		t.Fatalf("Compact: %v", err)
 	}
@@ -380,6 +381,12 @@ func TestCompact_SetsSummaryOutputControls(t *testing.T) {
 	}
 	if got := client.lastRequest.ProviderOptions["textVerbosity"]; got != "low" {
 		t.Fatalf("expected low text verbosity, got %#v", got)
+	}
+	if got := client.lastRequest.ProviderOptions["temperatureSupported"]; got != false {
+		t.Fatalf("expected model temperature compatibility option, got %#v", got)
+	}
+	if got := options["textVerbosity"]; got != "high" {
+		t.Fatalf("compact request mutated caller options, got %#v", got)
 	}
 }
 

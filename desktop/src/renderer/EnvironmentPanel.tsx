@@ -115,8 +115,6 @@ export function EnvironmentPanel({
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
-  const planTotal = planUpdate?.plan.length ?? 0;
-  const planCompleted = planUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
     onSetActiveMenu(activeMenu === menu ? null : menu);
@@ -130,21 +128,6 @@ export function EnvironmentPanel({
       aria-hidden={motionState === "closing" ? true : undefined}
     >
       <div className="environment-panel-header">
-        <div className="environment-panel-title">
-          {planUpdate ? (
-            <>
-              <h2>进度</h2>
-              <span
-                className="environment-panel-counter"
-                aria-label={`已完成 ${planCompleted} 项，共 ${planTotal} 项`}
-              >
-                {planCompleted}/{planTotal}
-              </span>
-            </>
-          ) : (
-            <h2>环境信息</h2>
-          )}
-        </div>
         <div className="environment-panel-actions">
           <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
             <X className="icon" />
@@ -153,8 +136,6 @@ export function EnvironmentPanel({
       </div>
 
       {planUpdate ? <EnvironmentPlanSection planUpdate={planUpdate} /> : null}
-
-      {planUpdate ? <div className="environment-section-heading">环境信息</div> : null}
 
       <div className="environment-panel-body">
         <button

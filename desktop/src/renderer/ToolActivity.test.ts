@@ -238,6 +238,77 @@ describe("buildToolActivityProcessSegments", () => {
       },
     ]);
   });
+
+  it("uses action-oriented copy for repeated searches and scheduled tasks", () => {
+    const segments = buildToolActivityProcessSegments([
+      {
+        id: "search-1",
+        type: "tool_call",
+        name: "grep",
+        status: "completed",
+        arguments: JSON.stringify({ pattern: "cache_read" }),
+      },
+      {
+        id: "search-2",
+        type: "tool_call",
+        name: "grep",
+        status: "completed",
+        arguments: JSON.stringify({ pattern: "cache_write" }),
+      },
+      {
+        id: "schedule-1",
+        type: "tool_call",
+        name: "cron",
+        status: "completed",
+        arguments: JSON.stringify({ action: "list" }),
+      },
+    ] satisfies ThreadItem[]);
+
+    expect(segments).toMatchObject([
+      {
+        kind: "search",
+        countPrefix: "搜索 ",
+        count: 2,
+        countSuffix: " 次",
+      },
+      {
+        kind: "schedule",
+        text: "查看定时任务",
+      },
+    ]);
+  });
+
+  it("describes recognizable data-check commands by their purpose", () => {
+    const [timeSegment] = buildToolActivityProcessSegments([
+      {
+        id: "time-1",
+        type: "tool_call",
+        name: "bash",
+        status: "completed",
+        arguments: JSON.stringify({ command: "date '+%H:%M'" }),
+      },
+    ] satisfies ThreadItem[]);
+    expect(timeSegment).toMatchObject({
+      kind: "command",
+      text: "查看本地时间",
+    });
+
+    const [databaseSegment] = buildToolActivityProcessSegments([
+      {
+        id: "database-1",
+        type: "tool_call",
+        name: "bash",
+        status: "completed",
+        arguments: JSON.stringify({
+          command: "python3 - <<'PY'\nimport sqlite3\nPY",
+        }),
+      },
+    ] satisfies ThreadItem[]);
+    expect(databaseSegment).toMatchObject({
+      kind: "command",
+      text: "查询本地数据",
+    });
+  });
 });
 
 

@@ -248,6 +248,27 @@ func TestSetGroupThreadPersistsAndSurfacesRegardlessOfCWD(t *testing.T) {
 	}
 }
 
+func TestSetSourcePersistsAndLists(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "automation-thread", "/tmp/project"); err != nil {
+		t.Fatalf("CreateWithMetadata: %v", err)
+	}
+	if _, err := SetSource(dir, "automation-thread", "automation"); err != nil {
+		t.Fatalf("SetSource: %v", err)
+	}
+	found, ok, err := Find(dir, "automation-thread")
+	if err != nil || !ok || found.Source != "automation" {
+		t.Fatalf("Find() = %+v, %t, %v", found, ok, err)
+	}
+	sessions, err := List(dir, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Source != "automation" {
+		t.Fatalf("sessions = %+v", sessions)
+	}
+}
+
 func TestSetFocusWorkspacePersistsAndIsResettable(t *testing.T) {
 	dir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "agent-home")

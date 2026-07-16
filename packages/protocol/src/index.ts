@@ -1003,6 +1003,7 @@ export type Thread = {
   agent_path?: string;
   preview: string;
   title?: string;
+  source?: string;
   model_provider: string;
   model: string;
   cwd: string;

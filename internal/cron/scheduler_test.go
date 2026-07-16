@@ -241,6 +241,16 @@ func TestScheduler_StartCatchesUpMissedOneShots(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("fileStore.Add recurring: %v", err)
 	}
+	if err := fileStore.Add(Task{
+		ID:        "paused-missed",
+		Cron:      missedCronFor(missedAt),
+		Prompt:    "paused missed",
+		CreatedAt: missedAt.Add(-time.Hour).UnixMilli(),
+		Recurring: false,
+		Paused:    true,
+	}); err != nil {
+		t.Fatalf("fileStore.Add paused: %v", err)
+	}
 
 	firedCh := make(chan string, 4)
 	s := NewScheduler(SchedulerConfig{
@@ -270,8 +280,12 @@ func TestScheduler_StartCatchesUpMissedOneShots(t *testing.T) {
 	}
 
 	fileTasks, _ := fileStore.List()
-	if len(fileTasks) != 1 || fileTasks[0].ID != "recurring-untouched" {
-		t.Fatalf("expected only the recurring task to remain, got %#v", fileTasks)
+	remaining := map[string]bool{}
+	for _, task := range fileTasks {
+		remaining[task.ID] = true
+	}
+	if len(fileTasks) != 2 || !remaining["recurring-untouched"] || !remaining["paused-missed"] {
+		t.Fatalf("expected recurring and paused tasks to remain, got %#v", fileTasks)
 	}
 	sessionTasks, _ := sessionStore.List()
 	if len(sessionTasks) != 0 {

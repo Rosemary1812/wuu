@@ -20,13 +20,19 @@ const (
 )
 
 type Task struct {
-	ID          string            `json:"id"`
-	Cron        string            `json:"cron"`
-	Prompt      string            `json:"prompt,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   int64             `json:"createdAt"`
-	LastFiredAt int64             `json:"lastFiredAt,omitempty"`
-	Recurring   bool              `json:"recurring"`
+	ID                string            `json:"id"`
+	Title             string            `json:"title,omitempty"`
+	Cron              string            `json:"cron"`
+	Timezone          string            `json:"timezone,omitempty"`
+	Prompt            string            `json:"prompt,omitempty"`
+	Mode              string            `json:"mode,omitempty"`
+	CreatorThreadID   string            `json:"creatorThreadId,omitempty"`
+	HeartbeatThreadID string            `json:"heartbeatThreadId,omitempty"`
+	Metadata          map[string]string `json:"metadata,omitempty"`
+	CreatedAt         int64             `json:"createdAt"`
+	LastFiredAt       int64             `json:"lastFiredAt,omitempty"`
+	Recurring         bool              `json:"recurring"`
+	Paused            bool              `json:"paused,omitempty"`
 }
 
 func (t Task) NextFireAt() (time.Time, error) {
@@ -34,11 +40,18 @@ func (t Task) NextFireAt() (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	anchor := time.Now()
+	location := time.Local
+	if timezone := strings.TrimSpace(t.Timezone); timezone != "" {
+		location, err = time.LoadLocation(timezone)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("load timezone %q: %w", timezone, err)
+		}
+	}
+	anchor := time.Now().In(location)
 	if t.LastFiredAt > 0 {
-		anchor = time.UnixMilli(t.LastFiredAt)
+		anchor = time.UnixMilli(t.LastFiredAt).In(location)
 	} else if t.CreatedAt > 0 {
-		anchor = time.UnixMilli(t.CreatedAt)
+		anchor = time.UnixMilli(t.CreatedAt).In(location)
 	}
 	return JitteredNextRun(ce, t.ID, anchor, t.Recurring)
 }
@@ -156,6 +169,28 @@ func (s *TaskStore) Remove(ids ...string) error {
 		}
 		return filtered, nil
 	})
+}
+
+func (s *TaskStore) SetPaused(id string, paused bool) (Task, bool, error) {
+	var updated Task
+	found := false
+	err := s.updateIfChanged(func(tasks []Task) ([]Task, bool, error) {
+		for index := range tasks {
+			if tasks[index].ID != id {
+				continue
+			}
+			found = true
+			if tasks[index].Paused == paused {
+				updated = tasks[index]
+				return tasks, false, nil
+			}
+			tasks[index].Paused = paused
+			updated = tasks[index]
+			return tasks, true, nil
+		}
+		return tasks, false, nil
+	})
+	return updated, found, err
 }
 
 // ClaimForDispatch atomically consumes one due task occurrence if the stored
@@ -293,6 +328,22 @@ func (s *SessionTaskStore) Remove(ids ...string) error {
 	return nil
 }
 
+func (s *SessionTaskStore) SetPaused(id string, paused bool) (Task, bool, error) {
+	sessionTaskState.mu.Lock()
+	defer sessionTaskState.mu.Unlock()
+
+	tasks := sessionTaskState.tasks[s.namespace]
+	for index := range tasks {
+		if tasks[index].ID != id {
+			continue
+		}
+		tasks[index].Paused = paused
+		sessionTaskState.tasks[s.namespace] = tasks
+		return tasks[index], true, nil
+	}
+	return Task{}, false, nil
+}
+
 func (s *SessionTaskStore) ClaimForDispatch(expected Task, firedAt int64) (bool, error) {
 	sessionTaskState.mu.Lock()
 	defer sessionTaskState.mu.Unlock()
@@ -353,12 +404,18 @@ func matchingTaskIndex(tasks []Task, expected Task) (int, error) {
 
 func sameTask(left, right Task) bool {
 	return left.ID == right.ID &&
+		left.Title == right.Title &&
 		left.Cron == right.Cron &&
+		left.Timezone == right.Timezone &&
 		left.Prompt == right.Prompt &&
+		left.Mode == right.Mode &&
+		left.CreatorThreadID == right.CreatorThreadID &&
+		left.HeartbeatThreadID == right.HeartbeatThreadID &&
 		maps.Equal(left.Metadata, right.Metadata) &&
 		left.CreatedAt == right.CreatedAt &&
 		left.LastFiredAt == right.LastFiredAt &&
-		left.Recurring == right.Recurring
+		left.Recurring == right.Recurring &&
+		left.Paused == right.Paused
 }
 
 func GenerateTaskID() string {

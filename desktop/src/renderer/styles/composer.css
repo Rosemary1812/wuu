@@ -2,7 +2,6 @@
   /* Component color tokens for composer.css.
      Light-theme values; the dark theme overrides these in base.css theme blocks. */
   --composer-frame-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
-  --composer-frame-hero-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
   --composer-image-attachment-button-shadow: 0 2px 8px rgba(20, 24, 28, 0.12);
   --composer-file-attachment-button-hover-bg: #eceee9;
   --composer-goal-strip-danger-hover-bg: rgba(220, 80, 80, 0.12);
@@ -346,7 +345,7 @@
 .hero-composer-wrap .composer-frame {
   border-radius: var(--session-composer-radius, var(--radius-sm));
   background: var(--paper);
-  box-shadow: var(--composer-frame-hero-shadow);
+  box-shadow: var(--composer-frame-shadow);
 }
 
 /* Force the hero composer to the dock composer's dialog width so the

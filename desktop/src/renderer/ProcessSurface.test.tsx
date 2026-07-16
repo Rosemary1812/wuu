@@ -358,6 +358,95 @@ describe("ProcessSurface", () => {
     expect(count?.textContent).toBe("3");
   });
 
+  it("condenses many mixed tool calls into one bounded summary sentence", () => {
+    const { container } = render({
+      processItems: [
+        {
+          id: "search-1",
+          type: "tool_call",
+          name: "grep",
+          status: "completed",
+          arguments: JSON.stringify({ pattern: "cache_read" }),
+        },
+        {
+          id: "search-2",
+          type: "tool_call",
+          name: "grep",
+          status: "completed",
+          arguments: JSON.stringify({ pattern: "cache_write" }),
+        },
+        makeReadFile("read-1", "session.ts"),
+        makeReadFile("read-2", "storage.ts"),
+        {
+          id: "command-1",
+          type: "tool_call",
+          name: "bash",
+          status: "completed",
+          arguments: JSON.stringify({ command: "sqlite3 sessions.db" }),
+        },
+        {
+          id: "schedule-1",
+          type: "tool_call",
+          name: "cron",
+          status: "completed",
+          arguments: JSON.stringify({ action: "list" }),
+        },
+      ],
+      streaming: false,
+    });
+
+    const summary = container.querySelector(".process-surface-summary-line");
+    expect(summary?.textContent).toBe(
+      "已完成 6 项操作，包括搜索、查看文件等",
+    );
+    expect(summary?.querySelectorAll(".process-surface-segment")).toHaveLength(0);
+  });
+
+  it("keeps a useful count when many calls are all the same kind", () => {
+    const { container } = render({
+      processItems: [
+        makeReadFile("tool-1", "a.ts"),
+        makeReadFile("tool-2", "b.ts"),
+        makeReadFile("tool-3", "c.ts"),
+        makeReadFile("tool-4", "d.ts"),
+      ],
+      streaming: false,
+    });
+
+    expect(
+      container.querySelector(".process-surface-summary-line")?.textContent,
+    ).toBe("查看 4 个文件");
+  });
+
+  it("reports the current phase instead of appending reasoning to a long summary", () => {
+    const { container } = render({
+      processItems: [
+        makeReadFile("read-1", "a.ts"),
+        makeReadFile("read-2", "b.ts"),
+        {
+          id: "search-1",
+          type: "tool_call",
+          name: "grep",
+          status: "completed",
+          arguments: JSON.stringify({ pattern: "cache" }),
+        },
+        {
+          id: "command-1",
+          type: "tool_call",
+          name: "bash",
+          status: "completed",
+          arguments: JSON.stringify({ command: "npm test" }),
+        },
+        makeReasoning("reason-1", "checking results", "in_progress"),
+      ],
+      streaming: true,
+    });
+
+    expect(
+      container.querySelector(".process-surface-summary-line")?.textContent,
+    ).toBe("完成 4 项操作后，正在思考");
+  });
+
   it("marks the count is-changing for ~180ms when the value changes", async () => {
     const { container } = render({
       processItems: [

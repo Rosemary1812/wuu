@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -31,6 +32,7 @@ func (t *CronTool) Definition() providers.ToolDefinition {
 		Description: "Manage scheduled tasks that run a prompt at cron intervals. " +
 			"action=list returns all scheduled tasks with their IDs, schedules, and prompts. " +
 			"action=add creates a task and requires cron plus prompt. A task can be recurring (runs repeatedly until removed or expired) or one-shot (runs once). " +
+			"Use new_thread when each run should be a separate visible conversation. Use thread_heartbeat when continuity in the current conversation matters. " +
 			"action=remove deletes a task and requires id.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -47,6 +49,23 @@ func (t *CronTool) Definition() providers.ToolDefinition {
 				"prompt": map[string]any{
 					"type":        "string",
 					"description": "Used by action=add. The prompt to execute each time the task fires.",
+				},
+				"title": map[string]any{
+					"type":        "string",
+					"description": "Used by action=add. Optional name shown for the automation.",
+				},
+				"timezone": map[string]any{
+					"type":        "string",
+					"description": "Used by action=add. IANA timezone for the schedule. Defaults to local time.",
+				},
+				"mode": map[string]any{
+					"type":        "string",
+					"enum":        []string{"new_thread", "thread_heartbeat"},
+					"description": "Used by action=add. Defaults to new_thread. Choose new_thread for an independent visible thread per run; choose thread_heartbeat when each run must continue with the current thread's latest context.",
+				},
+				"heartbeat_thread_id": map[string]any{
+					"type":        "string",
+					"description": "Used with thread_heartbeat. Defaults to the current thread.",
 				},
 				"recurring": map[string]any{
 					"type":        "boolean",
@@ -68,12 +87,16 @@ func (t *CronTool) Definition() providers.ToolDefinition {
 
 func (t *CronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Action    string `json:"action"`
-		Cron      string `json:"cron"`
-		Prompt    string `json:"prompt"`
-		Recurring bool   `json:"recurring"`
-		Durable   bool   `json:"durable"`
-		ID        string `json:"id"`
+		Action            string `json:"action"`
+		Cron              string `json:"cron"`
+		Prompt            string `json:"prompt"`
+		Recurring         bool   `json:"recurring"`
+		Durable           bool   `json:"durable"`
+		ID                string `json:"id"`
+		Mode              string `json:"mode"`
+		HeartbeatThreadID string `json:"heartbeat_thread_id"`
+		Title             string `json:"title"`
+		Timezone          string `json:"timezone"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -82,7 +105,7 @@ func (t *CronTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	case "list":
 		return t.executeList()
 	case "add":
-		return t.executeAdd(args.Cron, args.Prompt, args.Recurring, args.Durable)
+		return t.executeAdd(args.Title, args.Cron, args.Timezone, args.Prompt, args.Mode, args.HeartbeatThreadID, args.Recurring, args.Durable)
 	case "remove":
 		return t.executeRemove(args.ID)
 	default:
@@ -90,78 +113,36 @@ func (t *CronTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	}
 }
 
-func (t *CronTool) executeAdd(cronExpr, prompt string, recurring, durable bool) (string, error) {
-	var args struct {
-		Cron      string
-		Prompt    string
-		Recurring bool
-		Durable   bool
-	}
-	args.Cron = strings.TrimSpace(cronExpr)
-	args.Prompt = strings.TrimSpace(prompt)
-	args.Recurring = recurring
-	args.Durable = durable
-	if args.Cron == "" {
-		return "", fmt.Errorf("cron action=add requires cron")
-	}
-	if args.Prompt == "" {
-		return "", fmt.Errorf("cron action=add requires prompt")
-	}
-
-	ce, err := cron.ParseCronExpression(args.Cron)
-	if err != nil {
-		return "", fmt.Errorf("invalid cron expression: %w", err)
-	}
-
-	next, err := ce.NextRun(time.Now())
-	if err != nil {
-		return "", fmt.Errorf("cron has no valid future run: %w", err)
-	}
-	if next.After(time.Now().AddDate(1, 0, 0)) {
-		return "", fmt.Errorf("cron next run is more than 1 year away")
-	}
-
-	stateDir, err := t.env.WorkspaceStateDir()
+func (t *CronTool) executeAdd(title, cronExpr, timezone, prompt, mode, heartbeatThreadID string, recurring, durable bool) (string, error) {
+	manager, err := t.automationManager()
 	if err != nil {
 		return "", err
 	}
-	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
-	sessionStore := cron.NewSessionTaskStore(stateDir)
-	fileTasks, _ := fileStore.List()
-	sessionTasks, _ := sessionStore.List()
-	if len(fileTasks)+len(sessionTasks) >= cron.MaxJobs {
-		return "", fmt.Errorf("maximum number of scheduled tasks reached (%d)", cron.MaxJobs)
+	task, err := manager.AddTask(automation.AddTaskParams{
+		Title:             title,
+		Prompt:            prompt,
+		Schedule:          cronExpr,
+		Timezone:          timezone,
+		Mode:              automation.Mode(strings.TrimSpace(mode)),
+		CreatorThreadID:   strings.TrimSpace(t.env.SessionID),
+		HeartbeatThreadID: heartbeatThreadID,
+		Recurring:         recurring,
+		Durable:           durable,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to save task: %w", err)
 	}
-
-	task := cron.Task{
-		ID:        cron.GenerateTaskID(),
-		Cron:      args.Cron,
-		Prompt:    args.Prompt,
-		Metadata:  map[string]string{"kind": "prompt"},
-		CreatedAt: time.Now().UnixMilli(),
-		Recurring: args.Recurring,
-	}
-
-	storeLabel := "session-only"
-	var storeErr error
-	if args.Durable {
-		storeLabel = "durable"
-		storeErr = fileStore.Add(task)
-	} else {
-		storeErr = sessionStore.Add(task)
-	}
-	if storeErr != nil {
-		return "", fmt.Errorf("failed to save task: %w", storeErr)
-	}
-
 	result := map[string]any{
 		"action":     "cron",
 		"id":         task.ID,
-		"schedule":   args.Cron,
-		"prompt":     args.Prompt,
+		"title":      task.Title,
+		"schedule":   task.Cron,
+		"timezone":   task.Timezone,
+		"prompt":     task.Prompt,
+		"mode":       task.Mode,
 		"kind":       taskKind(task),
-		"type":       map[bool]string{true: "recurring", false: "one-shot"}[args.Recurring],
-		"durability": storeLabel,
+		"type":       map[bool]string{true: "recurring", false: "one-shot"}[task.Recurring],
+		"durability": task.Metadata["durability"],
 	}
 	return mustJSON(result)
 }
@@ -176,16 +157,11 @@ func (t *CronTool) executeRemove(id string) (string, error) {
 		return "", fmt.Errorf("cron action=remove requires id")
 	}
 
-	stateDir, err := t.env.WorkspaceStateDir()
+	manager, err := t.automationManager()
 	if err != nil {
 		return "", err
 	}
-	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
-	sessionStore := cron.NewSessionTaskStore(stateDir)
-	if err := fileStore.Remove(id); err != nil {
-		return "", fmt.Errorf("failed to remove task: %w", err)
-	}
-	if err := sessionStore.Remove(id); err != nil {
+	if err := manager.RemoveTask(id); err != nil {
 		return "", fmt.Errorf("failed to remove task: %w", err)
 	}
 
@@ -194,24 +170,18 @@ func (t *CronTool) executeRemove(id string) (string, error) {
 }
 
 func (t *CronTool) executeList() (string, error) {
-	stateDir, err := t.env.WorkspaceStateDir()
+	manager, err := t.automationManager()
 	if err != nil {
 		return "", err
 	}
-	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
-	sessionStore := cron.NewSessionTaskStore(stateDir)
-	fileTasks, err := fileStore.List()
-	if err != nil {
-		return "", fmt.Errorf("failed to list tasks: %w", err)
-	}
-	sessionTasks, err := sessionStore.List()
+	tasks, err := manager.ListTasks()
 	if err != nil {
 		return "", fmt.Errorf("failed to list tasks: %w", err)
 	}
 
 	now := time.Now().UnixMilli()
 	var items []map[string]any
-	appendTask := func(task cron.Task, sessionOnly bool) {
+	for _, task := range tasks {
 		typeLabel := "one-shot"
 		if task.Recurring {
 			typeLabel = "recurring"
@@ -219,23 +189,30 @@ func (t *CronTool) executeList() (string, error) {
 		if cron.IsExpired(task, now) {
 			typeLabel += " [expired]"
 		}
-		if sessionOnly {
+		if task.Metadata["durability"] != "durable" {
 			typeLabel += " [session-only]"
 		}
 		items = append(items, map[string]any{
-			"id":       task.ID,
-			"schedule": task.Cron,
-			"type":     typeLabel,
-			"kind":     taskKind(task),
-			"prompt":   task.Prompt,
+			"id":                  task.ID,
+			"title":               task.Title,
+			"schedule":            task.Cron,
+			"timezone":            task.Timezone,
+			"type":                typeLabel,
+			"kind":                taskKind(task),
+			"prompt":              task.Prompt,
+			"mode":                task.Mode,
+			"creator_thread_id":   task.CreatorThreadID,
+			"heartbeat_thread_id": task.HeartbeatThreadID,
+			"paused":              task.Paused,
 		})
-	}
-	for _, task := range fileTasks {
-		appendTask(task, false)
-	}
-	for _, task := range sessionTasks {
-		appendTask(task, true)
 	}
 
 	return mustJSON(map[string]any{"action": "cron", "tasks": items, "count": len(items)})
+}
+
+func (t *CronTool) automationManager() (*automation.Manager, error) {
+	if t == nil || t.env == nil || t.env.AutomationManager == nil {
+		return nil, fmt.Errorf("automation manager is unavailable")
+	}
+	return t.env.AutomationManager, nil
 }

@@ -1,0 +1,43 @@
+package appserver
+
+import (
+	"bytes"
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/automation"
+	"github.com/blueberrycongee/wuu/internal/runtime"
+)
+
+func TestAutomationListRPC(t *testing.T) {
+	stateDir := t.TempDir()
+	manager := automation.NewManager(automation.Config{StateDir: stateDir})
+	defer manager.Stop()
+	if _, err := manager.AddTask(automation.AddTaskParams{
+		Prompt: "inspect", Schedule: "*/5 * * * *", Timezone: "UTC", Durable: true,
+	}); err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+	var out bytes.Buffer
+	server := New(&runtime.Session{
+		StateDir: stateDir, SessionDir: filepath.Join(stateDir, "sessions"), AutomationManager: manager,
+	}, &out)
+	defer server.Close()
+	if err := server.handleLine(context.Background(), []byte(`{"id":"list","method":"automation/list"}`)); err != nil {
+		t.Fatalf("automation/list error = %v", err)
+	}
+	result := remarshal[AutomationListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
+	if len(result.Tasks) != 1 || result.Tasks[0].Prompt != "inspect" {
+		t.Fatalf("tasks = %#v", result.Tasks)
+	}
+	taskID := result.Tasks[0].ID
+	out.Reset()
+	if err := server.handleLine(context.Background(), []byte(`{"id":"pause","method":"automation/update","params":{"id":"`+taskID+`","paused":true}}`)); err != nil {
+		t.Fatalf("automation/update error = %v", err)
+	}
+	updated := remarshal[AutomationUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "pause")["result"])
+	if !updated.Task.Paused {
+		t.Fatalf("updated task = %#v", updated.Task)
+	}
+}

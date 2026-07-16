@@ -74,8 +74,55 @@ const TOOL_ACTIVITY_ITEM_TYPES = new Set<string>([
   "collab_agent_tool_call",
 ]);
 
+// Mixed activity becomes harder to scan than a sentence once a group reaches
+// this size. Same-kind groups keep their more useful count summary.
+const CONDENSED_SUMMARY_MIN_TOOL_COUNT = 4;
+
+const PROCESS_KIND_LABELS: Record<ToolActivityProcessSegment["kind"], string> = {
+  edit: "更新文件",
+  create: "创建文件",
+  search: "搜索",
+  read: "查看文件",
+  list: "查看目录",
+  command: "执行检查",
+  agent: "处理子任务",
+  plan: "更新计划",
+  interaction: "等待回复",
+  schedule: "管理定时任务",
+  browser: "操作页面",
+  skill: "加载技能",
+  context: "整理上下文",
+  unknown: "使用工具",
+};
+
 function isToolActivityItem(item: ThreadItem): boolean {
   return TOOL_ACTIVITY_ITEM_TYPES.has(item.type);
+}
+
+function condensedToolActivityText(
+  segments: ToolActivityProcessSegment[],
+  toolCount: number,
+  reasoningStreaming: boolean,
+): string {
+  const failed = segments.some((segment) => segment.status === "failed");
+  const running = segments.some((segment) => segment.status === "running");
+  if (reasoningStreaming && !failed && !running) {
+    return `完成 ${toolCount} 项操作后，正在思考`;
+  }
+  if (failed) {
+    return `共处理 ${toolCount} 项操作，其中有未完成项`;
+  }
+
+  const labels = Array.from(
+    new Set(segments.map((segment) => PROCESS_KIND_LABELS[segment.kind])),
+  );
+  const shownLabels = labels.slice(0, 2);
+  const categoryText =
+    labels.length > 2
+      ? `${shownLabels.join("、")}等`
+      : shownLabels.join("和");
+  const statusText = running ? "正在处理" : "已完成";
+  return `${statusText} ${toolCount} 项操作，包括${categoryText}`;
 }
 
 export function ProcessSurface({
@@ -97,6 +144,9 @@ export function ProcessSurface({
   const reasoningStreaming =
     streaming &&
     reasoningItems.some((item) => item.status === "in_progress");
+  const useCondensedSummary =
+    toolItems.length >= CONDENSED_SUMMARY_MIN_TOOL_COUNT &&
+    toolSegments.length > 1;
   const activeGrayText = active ?? streaming;
 
   // Details are opt-in. The running row itself should stay compact by
@@ -133,14 +183,25 @@ export function ProcessSurface({
 
   const summaryLine = (
     <span className="process-surface-summary-line">
-      {toolSegments.map((segment, index) => (
-        <ProcessSurfaceSegmentView
-          key={segment.id}
-          segment={segment}
-          separator={index > 0}
+      {useCondensedSummary ? (
+        <AnimatedProcessText
+          className="process-surface-condensed-summary"
+          text={condensedToolActivityText(
+            toolSegments,
+            toolItems.length,
+            reasoningStreaming,
+          )}
         />
-      ))}
-      {hasReasoning ? (
+      ) : (
+        toolSegments.map((segment, index) => (
+          <ProcessSurfaceSegmentView
+            key={segment.id}
+            segment={segment}
+            separator={index > 0}
+          />
+        ))
+      )}
+      {hasReasoning && !useCondensedSummary ? (
         <span className="process-surface-segment process-surface-reasoning-segment">
           {toolSegments.length > 0 ? (
             <span className="process-surface-separator">·</span>

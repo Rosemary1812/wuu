@@ -21,8 +21,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
-	"github.com/blueberrycongee/wuu/internal/cron"
-	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
@@ -597,121 +595,6 @@ func writeSessionTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-func waitForScheduledGoalState(t *testing.T, stateDir, taskID string) goalrunner.State {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		entries, err := os.ReadDir(filepath.Join(stateDir, "goals"))
-		if err != nil {
-			lastErr = err
-			time.Sleep(20 * time.Millisecond)
-			continue
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "cron-goal-"+taskID+"-") {
-				continue
-			}
-			state, err := goalrunner.NewStore(filepath.Join(stateDir, "goals", entry.Name())).LoadState()
-			if err != nil {
-				lastErr = err
-				continue
-			}
-			if state.Status == goalrunner.StatusCompleted {
-				return state
-			}
-			lastErr = nil
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if lastErr != nil {
-		t.Fatalf("scheduled goal state not found: %v", lastErr)
-	}
-	t.Fatalf("scheduled goal state for task %q not completed", taskID)
-	return goalrunner.State{}
-}
-
-func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
-	root := t.TempDir()
-	stateDir := filepath.Join(t.TempDir(), "state")
-	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
-
-	taskStore := cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir))
-	prompt := "Run weekly QA with arguments: settings search"
-	if err := taskStore.Add(cron.Task{
-		ID:        "prompt-1",
-		Cron:      "* * * * *",
-		Prompt:    prompt,
-		Metadata:  map[string]string{"kind": "workflow", "workflow_name": "weekly-qa", "workflow_arguments": "settings search"},
-		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
-		Recurring: false,
-	}); err != nil {
-		t.Fatalf("taskStore.Add: %v", err)
-	}
-
-	client := &sessionRecordingClient{}
-	rt := &Session{
-		RootDir:    root,
-		StateDir:   stateDir,
-		SessionDir: filepath.Join(stateDir, "sessions"),
-		StreamRunner: &agent.StreamRunner{
-			Client: client,
-			Model:  "test-model",
-		},
-	}
-	if err := rt.StartCronScheduler(); err != nil {
-		t.Fatalf("StartCronScheduler: %v", err)
-	}
-	t.Cleanup(func() { _, _ = rt.Cleanup() })
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		req := client.LastRequest()
-		if len(req.Messages) > 0 {
-			foundPrompt := false
-			for _, msg := range req.Messages {
-				if msg.Role == "user" && msg.Content == prompt {
-					foundPrompt = true
-					break
-				}
-			}
-			if !foundPrompt {
-				t.Fatalf("unexpected scheduled prompt request: %+v", req.Messages)
-			}
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if len(client.LastRequest().Messages) == 0 {
-		t.Fatal("expected scheduled prompt to run")
-	}
-
-	tasks, err := taskStore.List()
-	if err != nil {
-		t.Fatalf("taskStore.List: %v", err)
-	}
-	if len(tasks) != 0 {
-		t.Fatalf("one-shot prompt task should be removed after firing, got %+v", tasks)
-	}
-
-	goalState := waitForScheduledGoalState(t, stateDir, "prompt-1")
-	if goalState.Status != goalrunner.StatusCompleted {
-		t.Fatalf("scheduled goal status = %s, want completed: %+v", goalState.Status, goalState)
-	}
-	if goalState.Trigger.Type != "scheduled" || goalState.Trigger.Source != "cron" {
-		t.Fatalf("scheduled goal trigger not recorded: %+v", goalState.Trigger)
-	}
-	if goalState.Trigger.Payload["kind"] != "prompt" {
-		t.Fatalf("scheduled goal should record prompt kind, got metadata: %+v", goalState.Trigger.Payload)
-	}
-	if _, ok := goalState.Trigger.Payload["workflow_name"]; ok {
-		t.Fatalf("scheduled goal should ignore legacy workflow metadata: %+v", goalState.Trigger.Payload)
-	}
-	if goalState.AssignedAgent != "cron-scheduler" {
-		t.Fatalf("scheduled goal assigned agent = %q", goalState.AssignedAgent)
 	}
 }
 

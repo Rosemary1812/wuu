@@ -6,6 +6,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/insight"
@@ -27,6 +28,10 @@ const (
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
 	MethodAgentTemplateList    = "agent-template/list"
+	MethodAutomationList       = "automation/list"
+	MethodAutomationRuns       = "automation/run/list"
+	MethodAutomationUpdate     = "automation/update"
+	MethodAutomationRemove     = "automation/remove"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
 	// of the most-recently-updated non-terminal goal in the requested thread
 	// scope. The mutation methods are user-owned controls for the active
@@ -1741,8 +1746,30 @@ const (
 	WorkspaceKindDM WorkspaceKind = "dm"
 )
 
+type AutomationListResult struct {
+	Tasks []automation.Task `json:"tasks"`
+}
+
+type AutomationRunsResult struct {
+	Runs []automation.Run `json:"runs"`
+}
+
+type AutomationUpdateParams struct {
+	ID     string `json:"id"`
+	Paused *bool  `json:"paused"`
+}
+
+type AutomationUpdateResult struct {
+	Task automation.Task `json:"task"`
+}
+
+type AutomationRemoveParams struct {
+	ID string `json:"id"`
+}
+
 type Thread struct {
 	ID               string        `json:"id"`
+	Source           string        `json:"source,omitempty"`
 	ParentID         string        `json:"parent_id,omitempty"`
 	AgentPath        string        `json:"agent_path,omitempty"`
 	Preview          string        `json:"preview"`

@@ -203,10 +203,6 @@ func runRemoteHost(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := rt.StartCronScheduler(); err != nil {
-		_, _ = rt.Cleanup()
-		return err
-	}
 	defer func() { _, _ = rt.Cleanup() }()
 
 	opts := host.Options{

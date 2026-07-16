@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/contextbudget"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
@@ -151,6 +152,10 @@ func CanCompactWithBudget(messages []providers.ChatMessage, model string, budget
 }
 
 func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, budget Budget) ([]providers.ChatMessage, error) {
+	return CompactWithBudgetAndOptions(ctx, messages, client, model, budget, nil)
+}
+
+func CompactWithBudgetAndOptions(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, budget Budget, options map[string]any) ([]providers.ChatMessage, error) {
 	plan, ok := planCompaction(messages, model, budget)
 	if !ok {
 		return messages, nil
@@ -161,7 +166,7 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 	toSummarize := plan.conversation[:plan.keepStart]
 	toKeep := plan.conversation[plan.keepStart:]
 
-	summary, err := summarizeCompactHistory(ctx, client, model, budget, toSummarize, plan.previousSummary)
+	summary, err := summarizeCompactHistory(ctx, client, model, budget, options, toSummarize, plan.previousSummary)
 	if err != nil {
 		return messages, err
 	}
@@ -215,7 +220,7 @@ func planCompaction(messages []providers.ChatMessage, model string, budget Budge
 	}, true
 }
 
-func summarizeCompactHistory(ctx context.Context, client providers.Client, model string, budget Budget, messages []providers.ChatMessage, previousSummary string) (string, error) {
+func summarizeCompactHistory(ctx context.Context, client providers.Client, model string, budget Budget, options map[string]any, messages []providers.ChatMessage, previousSummary string) (string, error) {
 	if len(messages) == 0 {
 		return strings.TrimSpace(previousSummary), nil
 	}
@@ -228,7 +233,7 @@ func summarizeCompactHistory(ctx context.Context, client providers.Client, model
 			n = 1
 		}
 		chunk := remaining[:n]
-		next, err := summarizeCompactChunk(ctx, client, model, chunk, summary)
+		next, err := summarizeCompactChunk(ctx, client, model, options, chunk, summary)
 		if err != nil {
 			return "", err
 		}
@@ -249,10 +254,10 @@ func limitSummaryOutput(summary string) string {
 	return summary[:cut]
 }
 
-func summarizeCompactChunk(ctx context.Context, client providers.Client, model string, messages []providers.ChatMessage, previousSummary string) (string, error) {
+func summarizeCompactChunk(ctx context.Context, client providers.Client, model string, options map[string]any, messages []providers.ChatMessage, previousSummary string) (string, error) {
 	toSummarize := messages
 	for attempt := 0; ; attempt++ {
-		summaryReq := compactSummaryRequest(model, buildSummaryPrompt(toSummarize, previousSummary))
+		summaryReq := compactSummaryRequest(model, buildSummaryPrompt(toSummarize, previousSummary), options)
 		resp, err := summarizeCompact(ctx, client, summaryReq)
 		if err != nil {
 			// If the summary request itself overflowed the model's
@@ -269,7 +274,7 @@ func summarizeCompactChunk(ctx context.Context, client providers.Client, model s
 	}
 }
 
-func compactSummaryRequest(model, prompt string) providers.ChatRequest {
+func compactSummaryRequest(model, prompt string, options map[string]any) providers.ChatRequest {
 	return providers.ChatRequest{
 		Model:     model,
 		Operation: providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical),
@@ -277,12 +282,19 @@ func compactSummaryRequest(model, prompt string) providers.ChatRequest {
 			{Role: "system", Content: "You summarize coding-agent conversations for context compaction. Follow the user's required format exactly. Do not call tools."},
 			{Role: "user", Content: prompt},
 		},
-		Temperature: 0.3,
-		MaxTokens:   compactSummaryMaxTokens,
-		ProviderOptions: map[string]any{
-			"textVerbosity": "low",
-		},
+		Temperature:     0.3,
+		MaxTokens:       compactSummaryMaxTokens,
+		ProviderOptions: compactSummaryProviderOptions(options),
 	}
+}
+
+func compactSummaryProviderOptions(options map[string]any) map[string]any {
+	out := provideroptions.Clone(options)
+	if out == nil {
+		out = make(map[string]any, 1)
+	}
+	out["textVerbosity"] = "low"
+	return out
 }
 
 func summarizeCompact(ctx context.Context, client providers.Client, req providers.ChatRequest) (providers.ChatResponse, error) {

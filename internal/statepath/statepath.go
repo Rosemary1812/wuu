@@ -253,6 +253,11 @@ func ScheduledTasksLockPath(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "scheduled_tasks.lock")
 }
 
+// AutomationRunsPath returns the workspace-scoped automation run history file.
+func AutomationRunsPath(workspaceStateDir string) string {
+	return filepath.Join(workspaceStateDir, "automation_runs.json")
+}
+
 func sanitizeSlug(input string) string {
 	var b strings.Builder
 	lastDash := false

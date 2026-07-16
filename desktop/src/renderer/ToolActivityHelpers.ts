@@ -525,7 +525,7 @@ function toolActivitySectionFromItems(
       return {
         id: key,
         kind: "schedule",
-        title: "定时任务",
+        title: readableScheduleSummary(items),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -607,7 +607,7 @@ function toolActivityProcessSegmentFromItems(
             error,
             countPrefix: "搜索 ",
             count,
-            countSuffix: " 项",
+            countSuffix: " 次",
           }
         : {
             id: key,
@@ -679,6 +679,14 @@ function toolActivityProcessSegmentFromItems(
         status,
         error,
         text: "更新计划",
+      };
+    case "schedule":
+      return {
+        id: key,
+        kind: "schedule",
+        status,
+        error,
+        text: readableScheduleSummary(items),
       };
     case "browser":
       return {
@@ -880,6 +888,27 @@ function compactCommandLabels(items: ThreadItem[]): string[] {
   return uniqueStrings(items.map((item) => readableCommandLabel(item)));
 }
 
+function readableScheduleSummary(items: ThreadItem[]): string {
+  const actions = uniqueStrings(
+    items.map((item) => {
+      const args = parseJSONRecord(item.arguments);
+      switch (stringValue(args, "action")) {
+        case "add":
+          return "安排定时任务";
+        case "remove":
+          return "取消定时任务";
+        case "list":
+          return "查看定时任务";
+        default:
+          return "处理定时任务";
+      }
+    }),
+  );
+  return actions.length === 1
+    ? actions[0]
+    : `处理 ${items.length} 项定时任务`;
+}
+
 function compactAgentLabels(items: ThreadItem[]): string[] {
   return uniqueStrings(
     items.map((item) => {
@@ -993,6 +1022,12 @@ function readableCommandLabel(
       return "查看提交历史";
     }
     return "执行 Git 操作";
+  }
+  if (/(?:^|[;&|]\s*)date(?:\s|$)/.test(command)) {
+    return "查看本地时间";
+  }
+  if (/\bsqlite3\b|(?:import|from)\s+sqlite3\b/.test(command)) {
+    return "查询本地数据";
   }
   if (/npm\s+run\s+typecheck|tsc\s+--noEmit/.test(command)) {
     return "检查类型";

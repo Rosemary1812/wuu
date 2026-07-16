@@ -15,6 +15,7 @@ import (
 type journalRecordingClient struct {
 	mu        sync.Mutex
 	prompts   []string
+	requests  []providers.ChatRequest
 	responses []string
 }
 
@@ -26,6 +27,7 @@ func (c *journalRecordingClient) Chat(_ context.Context, req providers.ChatReque
 		prompt = req.Messages[len(req.Messages)-1].Content
 	}
 	c.prompts = append(c.prompts, prompt)
+	c.requests = append(c.requests, req)
 	idx := len(c.prompts) - 1
 	if idx >= len(c.responses) {
 		idx = len(c.responses) - 1
@@ -37,6 +39,12 @@ func (c *journalRecordingClient) recorded() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]string(nil), c.prompts...)
+}
+
+func (c *journalRecordingClient) recordedRequests() []providers.ChatRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]providers.ChatRequest(nil), c.requests...)
 }
 
 func TestBuildHelpMeParentJournalSingleChunk(t *testing.T) {
@@ -69,6 +77,32 @@ func TestBuildHelpMeParentJournalSingleChunk(t *testing.T) {
 	// The extraction prompt is not the continuation-style compact prompt.
 	if strings.Contains(prompts[0], "context compaction") || strings.Contains(prompts[0], "## External State") {
 		t.Fatalf("extraction must not reuse the continuation summary prompt:\n%s", prompts[0])
+	}
+}
+
+func TestBuildHelpMeParentJournalPropagatesProviderOptions(t *testing.T) {
+	client := &journalRecordingClient{responses: []string{"### User goal\nkeep model compatibility"}}
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "investigate the failure"},
+		{Role: "assistant", Content: "working on it"},
+	}
+	options := map[string]any{"temperatureSupported": false, "textVerbosity": "high"}
+
+	if _, err := BuildHelpMeParentJournalWithOptions(context.Background(), client, "fake-model", Budget{}, options, history); err != nil {
+		t.Fatal(err)
+	}
+	requests := client.recordedRequests()
+	if len(requests) != 1 {
+		t.Fatalf("expected one extraction request, got %d", len(requests))
+	}
+	if got := requests[0].ProviderOptions["temperatureSupported"]; got != false {
+		t.Fatalf("expected model temperature compatibility option, got %#v", got)
+	}
+	if got := requests[0].ProviderOptions["textVerbosity"]; got != "low" {
+		t.Fatalf("expected low extraction verbosity, got %#v", got)
+	}
+	if got := options["textVerbosity"]; got != "high" {
+		t.Fatalf("journal extraction mutated caller options, got %#v", got)
 	}
 }
 

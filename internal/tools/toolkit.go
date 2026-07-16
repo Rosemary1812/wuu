@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/mcp"
@@ -169,6 +170,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
 		ProcessMgr:                  t.env.ProcessMgr,
 		AgentControl:                t.env.AgentControl,
+		AutomationManager:           t.env.AutomationManager,
 		ParticipantSpeech:           t.env.ParticipantSpeech,
 		GroupManager:                t.env.GroupManager,
 		TaskManager:                 t.env.TaskManager,
@@ -352,6 +354,11 @@ func (t *Toolkit) Skills() []skills.Skill {
 // SetSessionID sets the current session ID.
 func (t *Toolkit) SetSessionID(id string) {
 	t.env.SessionID = id
+}
+
+// SetAutomationManager attaches the workspace automation service.
+func (t *Toolkit) SetAutomationManager(manager *automation.Manager) {
+	t.env.AutomationManager = manager
 }
 
 // SessionID returns the session currently bound to this toolkit.

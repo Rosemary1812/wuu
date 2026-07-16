@@ -171,6 +171,7 @@ func (m *Manager) defaultsSnapshot() managerDefaults {
 type RuntimeDefaults struct {
 	Client              providers.StreamClient
 	Model               string
+	ProviderOptions     map[string]any
 	ContextWindow       int
 	MaxInputTokens      int
 	OutputReserveTokens int
@@ -187,6 +188,7 @@ func (m *Manager) RuntimeDefaults() RuntimeDefaults {
 	return RuntimeDefaults{
 		Client:              d.client,
 		Model:               d.model,
+		ProviderOptions:     provideroptions.Clone(d.options),
 		ContextWindow:       d.contextWindow,
 		MaxInputTokens:      d.maxInputTokens,
 		OutputReserveTokens: d.outputReserve,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	proc "github.com/blueberrycongee/wuu/internal/process"
@@ -237,6 +238,7 @@ type Env struct {
 	NativeDeferredToolDiscovery bool
 	ProcessMgr                  *proc.Manager
 	AgentControl                *agentcontrol.AgentControl
+	AutomationManager           *automation.Manager
 	ParticipantSpeech           ParticipantSpeech
 	// GroupManager backs the resident-only create_group / add_member actions
 	// of manage_participant. Nil means group management is unavailable in this

@@ -99,7 +99,10 @@ type Runner struct {
 	// NativeDeferredToolDiscovery lets provider adapters use native
 	// deferred-tool declarations for tools marked DeferLoading.
 	NativeDeferredToolDiscovery bool
-	InferenceJournal            providers.InferenceJournal
+	// ProviderOptions carries provider-specific model compatibility and variant
+	// options into both agent requests and nested compaction requests.
+	ProviderOptions  map[string]any
+	InferenceJournal providers.InferenceJournal
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -160,16 +163,17 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		CompactThresholdPct:         r.CompactThresholdPct,
 		CompactKeepRecentTokens:     r.CompactKeepRecentTokens,
 		NativeDeferredToolDiscovery: r.NativeDeferredToolDiscovery,
+		ProviderOptions:             r.ProviderOptions,
 		SystemPromptSections:        cloneSystemPromptSections(r.SystemPromptSections),
 		OnUsage:                     onUsage,
 		PostToolRewrite:             compact.RewriteHistoryFromInternalToolMessagesWithContext,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return compact.CompactWithBudget(ctx, messages, r.Client, r.Model, compact.Budget{
+			return compact.CompactWithBudgetAndOptions(ctx, messages, r.Client, r.Model, compact.Budget{
 				ContextTokens:       maxCtx,
 				InputTokens:         r.MaxInputTokens,
 				OutputReserveTokens: r.OutputReserveTokens,
 				KeepRecentTokens:    r.CompactKeepRecentTokens,
-			})
+			}, r.ProviderOptions)
 		},
 	}
 

@@ -5,6 +5,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { observeAutoFollowResizeTargets } from "./AutoFollowScroll";
 import {
   createWindowResizeSettleScheduler,
   isWindowResizing,
@@ -75,6 +76,7 @@ type JumpToLatestPillProps = {
 
 const DEFAULT_THRESHOLD_PX = 80;
 const PILL_BOTTOM_GAP_PX = 12;
+const COMPOSER_FRAME_SELECTOR = ".composer-frame";
 
 type PillPosition = { left: number; bottom: number };
 
@@ -125,20 +127,35 @@ export function JumpToLatestPill({
     scheduleUpdate();
     node.addEventListener("scroll", scheduleUpdate, { passive: true });
 
-    // Re-evaluate on container resize. A thread-panel drag mutates the
-    // scroll container's `clientHeight`; without this listener the
-    // pill would stay hidden or shown based on the pre-resize distance.
+    // Re-evaluate on container and content resize. A thread-panel drag mutates
+    // the container's `clientHeight`, while expanding or collapsing a fold
+    // mutates its child's height and therefore the container's `scrollHeight`.
+    // Observing both prevents a transient fold layout from leaving the pill
+    // stuck in its pre-settle state.
     // Guarded: test environments (jsdom) have no ResizeObserver, and the
     // pill degrades gracefully to scroll-event-only updates without it.
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(scheduleUpdate)
         : undefined;
-    resizeObserver?.observe(node);
+    if (resizeObserver) {
+      observeAutoFollowResizeTargets(node, resizeObserver);
+    }
+    const childObserver =
+      typeof MutationObserver !== "undefined"
+        ? new MutationObserver(() => {
+            if (resizeObserver) {
+              observeAutoFollowResizeTargets(node, resizeObserver);
+            }
+            scheduleUpdate();
+          })
+        : undefined;
+    childObserver?.observe(node, { childList: true });
 
     return () => {
       resizeSettleUpdate.cancel();
       node.removeEventListener("scroll", scheduleUpdate);
+      childObserver?.disconnect();
       resizeObserver?.disconnect();
     };
   }, [containerRef, threshold]);
@@ -149,7 +166,9 @@ export function JumpToLatestPill({
       return;
     }
     const containerRect = container.getBoundingClientRect();
-    const anchorRect = bottomAnchor.getBoundingClientRect();
+    const visualAnchor =
+      bottomAnchor.querySelector<HTMLElement>(COMPOSER_FRAME_SELECTOR) ?? bottomAnchor;
+    const anchorRect = visualAnchor.getBoundingClientRect();
     setPosition({
       // Centered on the scroll container's visible width (issue #5 intent).
       left: containerRect.left + containerRect.width / 2,
@@ -164,9 +183,10 @@ export function JumpToLatestPill({
 
   // Measured positioning for the anchored (portaled) variant. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the
-  // composer, moving its top edge).
+  // composer, moving its top edge). The composer frame is observed separately
+  // because expanded mode moves it upward without growing the outer anchor.
   useEffect(() => {
-    if (!anchored || !scrolledAway) {
+    if (!anchored || !scrolledAway || !bottomAnchor) {
       return undefined;
     }
     const resizeSettleRecompute =
@@ -203,9 +223,23 @@ export function JumpToLatestPill({
     if (container) {
       resizeObserver?.observe(container);
     }
-    if (bottomAnchor) {
+    const observeAnchorTargets = (): void => {
       resizeObserver?.observe(bottomAnchor);
-    }
+      const visualAnchor =
+        bottomAnchor.querySelector<HTMLElement>(COMPOSER_FRAME_SELECTOR);
+      if (visualAnchor) {
+        resizeObserver?.observe(visualAnchor);
+      }
+    };
+    observeAnchorTargets();
+    const anchorChildObserver =
+      typeof MutationObserver !== "undefined"
+        ? new MutationObserver(() => {
+            observeAnchorTargets();
+            schedule();
+          })
+        : undefined;
+    anchorChildObserver?.observe(bottomAnchor, { childList: true, subtree: true });
     return () => {
       resizeSettleRecompute.cancel();
       if (frame) {
@@ -213,6 +247,7 @@ export function JumpToLatestPill({
       }
       container?.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
+      anchorChildObserver?.disconnect();
       resizeObserver?.disconnect();
     };
   }, [anchored, bottomAnchor, scrolledAway, recomputePosition, containerRef]);
@@ -251,7 +286,7 @@ export function JumpToLatestPill({
   );
 
   if (anchored) {
-    if (!position) {
+    if (!bottomAnchor || !position) {
       return null;
     }
     return createPortal(

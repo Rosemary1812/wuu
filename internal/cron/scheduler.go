@@ -118,6 +118,9 @@ func (s *Scheduler) catchUpStore(kind string, store schedulerStore, sessionOnly 
 		return
 	}
 	for _, task := range FindMissedOneShots(tasks, now) {
+		if task.Paused {
+			continue
+		}
 		if s.shouldStopWork() {
 			return
 		}
@@ -181,6 +184,9 @@ func (s *Scheduler) checkStore(kind string, store schedulerStore, sessionOnly bo
 	for _, task := range tasks {
 		if s.shouldStopWork() {
 			return
+		}
+		if task.Paused {
+			continue
 		}
 		if task.Recurring && IsExpired(task, now.UnixMilli()) {
 			if _, err := store.RemoveIfUnchanged(task); err != nil {

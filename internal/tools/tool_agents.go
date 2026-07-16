@@ -505,11 +505,11 @@ func extractHelpMeParentJournal(ctx context.Context, env *Env, history []provide
 	}
 	jctx, cancel := context.WithTimeout(ctx, helpMeJournalTimeout)
 	defer cancel()
-	journal, err := compact.BuildHelpMeParentJournal(jctx, defaults.Client, defaults.Model, compact.Budget{
+	journal, err := compact.BuildHelpMeParentJournalWithOptions(jctx, defaults.Client, defaults.Model, compact.Budget{
 		ContextTokens:       defaults.ContextWindow,
 		InputTokens:         defaults.MaxInputTokens,
 		OutputReserveTokens: defaults.OutputReserveTokens,
-	}, history)
+	}, defaults.ProviderOptions, history)
 	if err != nil {
 		providers.DebugLogf("helpme: parent journal extraction degraded to self-reported brief: %v", err)
 		return ""

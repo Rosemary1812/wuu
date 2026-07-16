@@ -37,6 +37,7 @@ var (
 
 type threadState struct {
 	ID        string
+	Source    string
 	ParentID  string
 	AgentPath string
 	History   []providers.ChatMessage
@@ -382,6 +383,12 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		}
 	}
 	s.startInferenceJournalMaintenance()
+	if rt != nil && rt.AutomationManager != nil {
+		if err := rt.AutomationManager.Start(s); err != nil {
+			s.startupErr = fmt.Errorf("start automation manager: %w", err)
+			return s
+		}
+	}
 	return s
 }
 
@@ -553,6 +560,9 @@ func (s *Server) Close() {
 	}
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
+		if s.rt != nil && s.rt.AutomationManager != nil {
+			s.rt.AutomationManager.Stop()
+		}
 		s.cancelSideThreads()
 		// Synchronize with startBackground so no new owned goroutine can be
 		// added after the shutdown waiter begins.
@@ -801,6 +811,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleSkillList(req)
 	case MethodAgentTemplateList:
 		return s.handleAgentTemplateList(req)
+	case MethodAutomationList:
+		return s.handleAutomationList(req)
+	case MethodAutomationRuns:
+		return s.handleAutomationRuns(req)
+	case MethodAutomationUpdate:
+		return s.handleAutomationUpdate(req)
+	case MethodAutomationRemove:
+		return s.handleAutomationRemove(req)
 	case MethodGoalActiveSummary:
 		return s.handleGoalActiveSummary(req)
 	case MethodGoalPause:

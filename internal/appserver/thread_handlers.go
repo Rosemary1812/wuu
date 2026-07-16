@@ -989,6 +989,7 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 		th.CWD = metadata.CWD
 	}
 	th.Title = metadata.Title
+	th.Source = metadata.Source
 	th.ForkedFromID = metadata.ForkedFromID
 	th.ForkedFromTurnID = metadata.ForkedFromTurnID
 	th.ForkedFromItemID = metadata.ForkedFromItemID
@@ -1010,6 +1011,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 	return threadListEntry{
 		thread: Thread{
 			ID:               sess.ID,
+			Source:           sess.Source,
 			Preview:          firstNonEmpty(sess.Title, sess.Summary),
 			Title:            sess.Title,
 			ModelProvider:    provider,

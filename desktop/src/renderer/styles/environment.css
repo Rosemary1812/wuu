@@ -117,32 +117,14 @@
 }
 
 .environment-panel-header {
+  position: absolute;
+  top: 15px;
+  right: 14px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 2px 8px;
-}
-
-.environment-panel-header h2 {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: var(--font-title);
-  font-weight: var(--weight-semibold);
-}
-
-.environment-panel-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.environment-panel-counter {
-  color: var(--ink-muted);
-  font-size: var(--font-title);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
+  justify-content: flex-end;
+  padding: 0;
 }
 
 .environment-panel-actions {
@@ -160,6 +142,10 @@
 .environment-panel-body {
   display: grid;
   gap: 3px;
+}
+
+.environment-panel-header + .environment-panel-body .environment-row:first-child {
+  padding-right: 40px;
 }
 
 .environment-side-stack > .environment-panel .environment-panel-body {
@@ -476,6 +462,10 @@
   animation: environment-plan-item-in var(--motion-base) var(--ease-out) both;
 }
 
+.environment-plan-item:first-child {
+  padding-right: 34px;
+}
+
 .environment-plan-item:nth-child(1) { animation-delay: 0ms; }
 .environment-plan-item:nth-child(2) { animation-delay: 40ms; }
 .environment-plan-item:nth-child(3) { animation-delay: 80ms; }
@@ -524,13 +514,6 @@
   .environment-plan-item {
     animation: none;
   }
-}
-
-.environment-section-heading {
-  color: var(--ink-muted);
-  font-size: var(--font-title);
-  font-weight: var(--weight-semibold);
-  padding: 0 8px 8px;
 }
 
 .environment-row,
@@ -714,12 +697,17 @@
   background: transparent;
   border: 0;
   border-radius: inherit;
-  padding: 0 8px 0 12px;
+  padding: 0 8px;
   text-align: left;
   cursor: pointer;
   color: inherit;
   font: inherit;
   transition: padding-right var(--motion-fast) var(--ease-out);
+}
+
+.subagent-row .participant-chip-avatar {
+  width: 20px;
+  height: 20px;
 }
 
 .subagent-row-main:focus-visible {
@@ -769,7 +757,6 @@
 
 .subagent-row.running .subagent-row-status::before {
   display: block;
-  animation: subagent-status-pulse 1600ms ease-in-out infinite;
 }
 
 .subagent-row.failed .subagent-row-status {
@@ -830,23 +817,6 @@
   .subagent-row-main,
   .subagent-row-actions {
     transition: none;
-  }
-
-  .subagent-row.running .subagent-row-status::before {
-    animation: none;
-  }
-}
-
-@keyframes subagent-status-pulse {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.9);
-  }
-
-  50% {
-    opacity: 0.9;
-    transform: scale(1);
   }
 }
 
