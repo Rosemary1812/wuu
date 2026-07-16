@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/blueberrycongee/wuu/internal/gitattribution"
 )
 
 const gitTimeout = 30 * time.Second
@@ -474,6 +476,9 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	} else if invocation.Subcommand == "commit" {
 		if err := rejectSensitiveStagedCommitPaths(env, ctx); err != nil {
 			return "", err
+		}
+		if env.gitAttributionEnabled() {
+			gitArgs, _ = gitattribution.AddToCommitArgs(gitArgs)
 		}
 	}
 

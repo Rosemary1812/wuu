@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
+	"github.com/blueberrycongee/wuu/internal/gitattribution"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/securefs"
@@ -28,6 +29,9 @@ import (
 )
 
 func main() {
+	if handled, exitCode := gitattribution.Dispatch(os.Args[1:]); handled {
+		os.Exit(exitCode)
+	}
 	lockProcessUmask()
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

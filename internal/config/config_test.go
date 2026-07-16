@@ -1105,6 +1105,25 @@ func TestConfig_DisableAutoCompact(t *testing.T) {
 	}
 }
 
+func TestAgentConfigGitAttributionDefaultsEnabledAndSupportsOptOut(t *testing.T) {
+	var agent AgentConfig
+	if !agent.GitAttributionEnabledValue() {
+		t.Fatal("git attribution should default to enabled")
+	}
+
+	disabled := false
+	agent.GitAttributionEnabled = &disabled
+	if agent.GitAttributionEnabledValue() {
+		t.Fatal("explicit false should disable git attribution")
+	}
+
+	enabled := true
+	agent.GitAttributionEnabled = &enabled
+	if !agent.GitAttributionEnabledValue() {
+		t.Fatal("explicit true should enable git attribution")
+	}
+}
+
 func TestConfig_DisableAutoCompactDefaultsFalse(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

@@ -1445,7 +1445,7 @@ func TestServerConfigGeneralUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	srv := New(rt, out)
 	srv.threads[th.ID] = th
 
-	req := `{"id":"1","method":"config/general/update","params":{"append_system_prompt":"默认用中文回答。","memory_disable":true,"mcp_enabled_toggles":{"docs":false,"search":true}}}`
+	req := `{"id":"1","method":"config/general/update","params":{"append_system_prompt":"默认用中文回答。","git_attribution_enabled":false,"memory_disable":true,"mcp_enabled_toggles":{"docs":false,"search":true}}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/general/update: %v", err)
 	}
@@ -1453,6 +1453,7 @@ func TestServerConfigGeneralUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	msgs := parseOutput(t, out.String())
 	result := remarshal[ConfigGeneralUpdateResult](t, responseByID(t, msgs, "1")["result"])
 	if result.GeneralSettings.AppendSystemPrompt != "默认用中文回答。" ||
+		result.GeneralSettings.GitAttributionEnabled ||
 		!result.GeneralSettings.MemoryDisabled ||
 		result.GeneralSettings.MCPServerEnabled["docs"] ||
 		!result.GeneralSettings.MCPServerEnabled["search"] {
@@ -1462,7 +1463,10 @@ func TestServerConfigGeneralUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload config: %v", err)
 	}
-	if cfg.Agent.AppendSystemPrompt != "默认用中文回答。" || !cfg.Memory.Disable {
+	if cfg.Agent.AppendSystemPrompt != "默认用中文回答。" ||
+		cfg.Agent.GitAttributionEnabled == nil ||
+		*cfg.Agent.GitAttributionEnabled ||
+		!cfg.Memory.Disable {
 		t.Fatalf("config general settings not persisted: %+v", cfg)
 	}
 	if cfg.MCPServers["docs"].Enabled == nil || *cfg.MCPServers["docs"].Enabled {

@@ -4900,6 +4900,8 @@ func TestToolkit_RunShellSetsNonInteractiveEnv(t *testing.T) {
 
 func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 	kit, root := setupGitRepo(t)
+	kit.env.GitWrapperExecutable = buildWuuForGitWrapper(t)
+	kit.SetSessionDir(t.TempDir())
 
 	for _, command := range []string{
 		"git status --short",

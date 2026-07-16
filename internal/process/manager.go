@@ -86,6 +86,7 @@ type Process struct {
 
 type StartOptions struct {
 	Command               string
+	CommandPrefix         string
 	CWD                   string
 	OwnerKind             OwnerKind
 	OwnerID               string
@@ -237,7 +238,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		m.publish(Event{Type: EventFailed, Process: *p})
 		return p, err
 	}
-	cmd, err := managedCommand(opt.Command, cwd)
+	cmd, err := managedCommand(opt.Command, cwd, opt.CommandPrefix)
 	if err != nil {
 		_ = logf.Close()
 		p.Status = StatusFailed
@@ -375,12 +376,15 @@ func resolveStartCWD(rootDir, cwd string, allowOutsideWorkspace bool) (string, e
 	return evaluated, nil
 }
 
-func managedCommand(command, cwd string) (*exec.Cmd, error) {
+func managedCommand(command, cwd, commandPrefix string) (*exec.Cmd, error) {
 	shell, err := shellpath.LoginBash()
 	if err != nil {
 		return nil, err
 	}
 	command = shellpath.NormalizeBashCommand(command)
+	if commandPrefix != "" {
+		command = commandPrefix + command
+	}
 	cmd := exec.Command(shell.Path, shell.CommandArgs(command)...)
 	cmd.Dir = cwd
 	cmd.Env = shellpath.CommandEnv(os.Environ())

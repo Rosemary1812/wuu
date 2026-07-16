@@ -309,6 +309,7 @@ describe("createRuntimeSettingsActions", () => {
     });
     await harness.actions.updateGeneralSettings({
       append_system_prompt: "Stay concise.",
+      git_attribution_enabled: false,
       memory_disable: true,
     });
 
@@ -318,6 +319,7 @@ describe("createRuntimeSettingsActions", () => {
     });
     expect(api.updateGeneralSettings).toHaveBeenCalledWith({
       append_system_prompt: "Stay concise.",
+      git_attribution_enabled: false,
       memory_disable: true,
     });
     expect(harness.getAppState().initialized?.advanced_settings?.max_steps).toBe(

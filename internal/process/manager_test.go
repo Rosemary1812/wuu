@@ -16,7 +16,7 @@ import (
 
 func mustManagedCommand(t *testing.T, command, cwd string) *exec.Cmd {
 	t.Helper()
-	cmd, err := managedCommand(command, cwd)
+	cmd, err := managedCommand(command, cwd, "")
 	if err != nil {
 		t.Fatal(err)
 	}

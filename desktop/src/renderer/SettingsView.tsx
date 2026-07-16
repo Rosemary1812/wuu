@@ -1423,6 +1423,8 @@ function SettingsGeneralPage({
   const [mcpAuthCodes, setMCPAuthCodes] = useState<Record<string, string>>({});
   const [codexPetBusy, setCodexPetBusy] = useState(false);
   const [codexPetLocalError, setCodexPetLocalError] = useState("");
+  const [gitAttributionBusy, setGitAttributionBusy] = useState(false);
+  const [gitAttributionError, setGitAttributionError] = useState("");
   const [generalError, setGeneralError] = useState("");
   const [generalSaved, setGeneralSaved] = useState(false);
 
@@ -1465,6 +1467,25 @@ function SettingsGeneralPage({
     }
   }
 
+  async function toggleGitAttribution(): Promise<void> {
+    if (!initialized || gitAttributionBusy) {
+      return;
+    }
+    setGitAttributionBusy(true);
+    setGitAttributionError("");
+    try {
+      await onGeneralSave({
+        git_attribution_enabled: !gitAttributionEnabled,
+      });
+    } catch (error) {
+      setGitAttributionError(
+        error instanceof Error ? error.message : t("settings.saveGitAttributionFailed"),
+      );
+    } finally {
+      setGitAttributionBusy(false);
+    }
+  }
+
   async function beginMCPAuth(name: string): Promise<void> {
     const result = await onMCPAuthStart(name);
     if (!result) {
@@ -1495,6 +1516,7 @@ function SettingsGeneralPage({
   const codexPetEnabled = Boolean(codexPets?.enabled);
   const codexPetStatus = codexPetLocalError || codexPetsError;
   const extensionInventory = initialized?.extension_inventory ?? [];
+  const gitAttributionEnabled = generalSettings?.git_attribution_enabled ?? true;
 
   async function refreshCodexPets(): Promise<void> {
     setCodexPetBusy(true);
@@ -1642,6 +1664,30 @@ function SettingsGeneralPage({
               <span className="settings-switch-thumb" aria-hidden="true" />
               <span className="sr-only">{memoryDisabledDraft ? t("settings.enableMemory") : t("settings.disableMemory")}</span>
             </button>
+          </SettingsRow>
+          <SettingsRow
+            title={t("settings.gitAttribution")}
+            description={t("settings.gitAttributionDescription")}
+          >
+            <button
+              className="settings-switch"
+              type="button"
+              role="switch"
+              aria-checked={gitAttributionEnabled}
+              data-testid="settings-git-attribution"
+              disabled={running || !initialized || gitAttributionBusy}
+              onClick={() => void toggleGitAttribution()}
+            >
+              <span className="settings-switch-thumb" aria-hidden="true" />
+              <span className="sr-only">
+                {gitAttributionEnabled ? t("settings.disableGitAttribution") : t("settings.enableGitAttribution")}
+              </span>
+            </button>
+            {gitAttributionError ? (
+              <small className="settings-muted-line settings-error">
+                {gitAttributionError}
+              </small>
+            ) : null}
           </SettingsRow>
         </form>
       </SettingsSection>

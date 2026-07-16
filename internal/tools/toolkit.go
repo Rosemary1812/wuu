@@ -152,7 +152,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	// sync.RWMutex, and the sync package contract forbids copying a Mutex or
 	// RWMutex after first use (go vet's copylocks analyzer enforces this).
 	// The lock-bearing per-session state fields (readState, testState,
-	// planState, webState, toolTelemetry) stay zero so each cloned session
+	// planState, webState, toolTelemetry, gitAttributionShell) stay zero so each cloned session
 	// owns independent mutable state, matching the original intent.
 	env := Env{
 		RootDir:                     abs,
@@ -169,6 +169,8 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		ConversationSessionDir:      t.env.ConversationSessionDir,
 		ToolSearchEnabled:           t.env.ToolSearchEnabled,
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
+		GitAttributionDisabled:      t.env.GitAttributionDisabled,
+		GitWrapperExecutable:        t.env.GitWrapperExecutable,
 		ProcessMgr:                  t.env.ProcessMgr,
 		AgentControl:                t.env.AgentControl,
 		AutomationManager:           t.env.AutomationManager,
@@ -510,6 +512,15 @@ func (t *Toolkit) SetHelpMeEnabled(enabled bool) {
 	t.activeProfileMu.Lock()
 	t.publishActiveSurfaceLocked()
 	t.activeProfileMu.Unlock()
+}
+
+// SetGitAttributionEnabled controls automatic WUU Agent co-author trailers
+// for commits created through both the structured git tool and bash.
+func (t *Toolkit) SetGitAttributionEnabled(enabled bool) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.GitAttributionDisabled = !enabled
 }
 
 func (t *Toolkit) isToolDisabled(name string) bool {

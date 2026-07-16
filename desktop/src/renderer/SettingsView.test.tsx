@@ -609,6 +609,47 @@ describe("SettingsView advanced settings", () => {
 });
 
 describe("SettingsView general settings", () => {
+  it("loads and toggles WUU Agent commit attribution", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onGeneralSave = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      locale: "en-US",
+      initialized: baseInitialized({
+        general_settings: {
+          append_system_prompt: "",
+          git_attribution_enabled: true,
+          memory_disabled: false,
+          mcp_server_enabled: {},
+        },
+      }),
+      initialPage: "general",
+      onGeneralSave,
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const attributionSwitch = container.querySelector<HTMLButtonElement>(
+      '[data-testid="settings-git-attribution"]',
+    );
+    expect(attributionSwitch?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).toContain("Agent commit attribution");
+    expect(container.textContent).toContain("wuu-agent[bot]");
+
+    await act(async () => {
+      attributionSwitch?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onGeneralSave).toHaveBeenCalledWith({
+      git_attribution_enabled: false,
+    });
+  });
+
   it("renders and saves prompt, memory, and MCP toggles", async () => {
     installBuildInfoStub({
       core: undefined,

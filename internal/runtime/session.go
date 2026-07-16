@@ -342,6 +342,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
+		kit.SetGitAttributionEnabled(cfg.Agent.GitAttributionEnabledValue())
 		kit.SetActivityRegistry(activityRegistry)
 		var fileScopeExtras []string
 		// User memory is a file-directory notebook injected into the prompt
@@ -1775,6 +1776,7 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 		s.DreamIntervalDays = 0
 	}
 	if s.Toolkit != nil {
+		s.Toolkit.SetGitAttributionEnabled(cfg.Agent.GitAttributionEnabledValue())
 		fileScopeExtras := []string{}
 		if s.MemdirEnabled {
 			userNotebook := memdir.UserMemdir(s.WuuHome)

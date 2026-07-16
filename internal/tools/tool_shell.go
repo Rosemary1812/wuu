@@ -130,8 +130,15 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	if err != nil {
 		return shellExecutionResult{}, err
 	}
-	command = shellpath.NormalizeBashCommand(command)
-	cmd := exec.CommandContext(runCtx, shell.Path, shell.CommandArgs(command)...)
+	executedCommand := shellpath.NormalizeBashCommand(command)
+	if env.gitAttributionEnabled() {
+		prefix, prefixErr := env.gitAttributionShellPrefix()
+		if prefixErr != nil {
+			return shellExecutionResult{}, prefixErr
+		}
+		executedCommand = prefix + executedCommand
+	}
+	cmd := exec.CommandContext(runCtx, shell.Path, shell.CommandArgs(executedCommand)...)
 	cmd.Dir = workDir
 	cmd.Env = shellpath.CommandEnv(shellCommandEnv(os.Environ()))
 

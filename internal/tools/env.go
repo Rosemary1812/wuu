@@ -237,10 +237,18 @@ type Env struct {
 	// schemas discovered by ordinary tool results without requiring an
 	// explicit tool_search call first.
 	NativeDeferredToolDiscovery bool
-	ProcessMgr                  *proc.Manager
-	AgentControl                *agentcontrol.AgentControl
-	AutomationManager           *automation.Manager
-	ParticipantSpeech           ParticipantSpeech
+	// GitAttributionDisabled is the opt-out bit for WUU's commit trailer.
+	// The zero value intentionally means enabled so ordinary toolkits inherit
+	// the product default without extra initialization.
+	GitAttributionDisabled bool
+	// GitWrapperExecutable overrides the WUU executable used by the private
+	// bash git launcher. Production resolves os.Executable when this is empty.
+	GitWrapperExecutable string
+	gitAttributionShell  gitAttributionShellState
+	ProcessMgr           *proc.Manager
+	AgentControl         *agentcontrol.AgentControl
+	AutomationManager    *automation.Manager
+	ParticipantSpeech    ParticipantSpeech
 	// GroupManager backs the resident-only create_group / add_member actions
 	// of manage_participant. Nil means group management is unavailable in this
 	// environment (those actions return an execute-time error).

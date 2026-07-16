@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/gitattribution"
+	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -51,6 +55,210 @@ func setupGitRemoteRepo(t *testing.T) (*Toolkit, string, string) {
 		}
 	}
 	return kit, root, remote
+}
+
+func TestGitCommitAttributionPreservesIdentityAndExistingCoauthors(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'updated\n' > hello.txt")
+	gitCall(t, kit, "add", "hello.txt")
+	gitCall(
+		t,
+		kit,
+		"commit",
+		"-m",
+		"Update hello",
+		"-m",
+		"Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+	)
+
+	identity := strings.TrimSpace(runBash(t, root, "git log -1 --format='%an <%ae>|%cn <%ce>'"))
+	if identity != "tester <test@test.com>|tester <test@test.com>" {
+		t.Fatalf("commit identity changed: %q", identity)
+	}
+	message := runBash(t, root, "git log -1 --format=%B")
+	if !strings.Contains(message, "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>") {
+		t.Fatalf("existing Claude co-author missing:\n%s", message)
+	}
+	if strings.Count(message, gitattribution.Email) != 1 {
+		t.Fatalf("WUU co-author count = %d, want 1:\n%s", strings.Count(message, gitattribution.Email), message)
+	}
+}
+
+func TestBashCommitAttributionPreservesMessageFileTrailersAndDeduplicates(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	kit.env.GitWrapperExecutable = buildWuuForGitWrapper(t)
+	kit.SetSessionDir(t.TempDir())
+	runBash(t, root, "printf 'updated\n' > hello.txt")
+	runBash(t, root, "printf 'Update hello\n\nCo-Authored-By: WUU Agent <305930189+wuu-agent[bot]@users.noreply.github.com>\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n' > commit-message.txt")
+
+	args, _ := json.Marshal(map[string]any{
+		"command": "git add hello.txt && git -C . commit -F commit-message.txt -- hello.txt 2>&1",
+	})
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: string(args),
+	}); err != nil {
+		t.Fatalf("bash commit: %v", err)
+	}
+
+	message := runBash(t, root, "git log -1 --format=%B")
+	if !strings.Contains(message, "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>") {
+		t.Fatalf("existing Claude co-author missing:\n%s", message)
+	}
+	if strings.Count(message, gitattribution.Email) != 1 {
+		t.Fatalf("WUU co-author count = %d, want 1:\n%s", strings.Count(message, gitattribution.Email), message)
+	}
+	if _, err := os.Stat(filepath.Join(root, "--trailer")); !os.IsNotExist(err) {
+		t.Fatalf("redirection created a --trailer file: %v", err)
+	}
+}
+
+func TestBashGitAttributionDoesNotRewriteHeredocAndCoversNestedShell(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	kit.env.GitWrapperExecutable = buildWuuForGitWrapper(t)
+	kit.SetSessionDir(t.TempDir())
+	script := "#!/bin/sh\nprintf 'nested\\n' > hello.txt\ngit add hello.txt\ngit commit -m 'Nested commit'\n"
+	command := "cat > deploy.sh <<'EOF'\n" + script + "EOF\nsh -c 'sh deploy.sh'"
+	args, _ := json.Marshal(map[string]any{"command": command})
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)}); err != nil {
+		t.Fatalf("bash nested commit: %v", err)
+	}
+	written, err := os.ReadFile(filepath.Join(root, "deploy.sh"))
+	if err != nil {
+		t.Fatalf("read heredoc output: %v", err)
+	}
+	if string(written) != script {
+		t.Fatalf("heredoc body was rewritten:\n%s", written)
+	}
+	message := runBash(t, root, "git log -1 --format=%B")
+	if strings.Count(message, gitattribution.Email) != 1 {
+		t.Fatalf("nested shell WUU co-author count = %d, want 1:\n%s", strings.Count(message, gitattribution.Email), message)
+	}
+}
+
+func TestBashGitAttributionRejectsWrapperSelfResolution(t *testing.T) {
+	kit, _ := setupGitRepo(t)
+	kit.env.GitWrapperExecutable = buildWuuForGitWrapper(t)
+	kit.SetSessionDir(t.TempDir())
+	args, _ := json.Marshal(map[string]any{
+		"command":         `env -i PATH="$PATH" git status`,
+		"timeout_seconds": 10,
+	})
+	response, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)})
+	if err != nil {
+		t.Fatalf("bash self-resolution check: %v", err)
+	}
+	var result shellExecutionResult
+	if err := json.Unmarshal([]byte(response), &result); err != nil {
+		t.Fatalf("parse bash response: %v\n%s", err, response)
+	}
+	if result.ExitCode != 127 || !strings.Contains(result.StderrTail, "resolved to the WUU git wrapper itself") {
+		t.Fatalf("self-resolving wrapper result = %+v", result)
+	}
+}
+
+func TestBashBackgroundGitAttributionUsesWrapper(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	kit.env.GitWrapperExecutable = buildWuuForGitWrapper(t)
+	kit.SetSessionDir(t.TempDir())
+	manager, err := proc.NewManager(root, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("create process manager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+	runBash(t, root, "printf 'background\\n' > hello.txt")
+	args, _ := json.Marshal(map[string]any{
+		"action":          "start_background",
+		"command":         "git add hello.txt && git commit -m 'Background commit'",
+		"completion_mode": "detached",
+		"wait_ms":         10000,
+	})
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)}); err != nil {
+		t.Fatalf("start background commit: %v", err)
+	}
+	message := runBash(t, root, "git log -1 --format=%B")
+	if strings.Count(message, gitattribution.Email) != 1 {
+		t.Fatalf("background WUU co-author count = %d, want 1:\n%s", strings.Count(message, gitattribution.Email), message)
+	}
+}
+
+func TestGitAttributionSkipsAmend(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	kit.env.GitWrapperExecutable = buildWuuForGitWrapper(t)
+	kit.SetSessionDir(t.TempDir())
+	runBash(t, root, "printf 'human\\n' > hello.txt && git add hello.txt && git commit -qm human")
+
+	args, _ := json.Marshal(map[string]any{"command": "git commit --amend -m 'amended through bash'"})
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)}); err != nil {
+		t.Fatalf("bash amend: %v", err)
+	}
+	message := runBash(t, root, "git log -1 --format=%B")
+	if strings.Contains(message, gitattribution.Email) {
+		t.Fatalf("bash amend added WUU attribution:\n%s", message)
+	}
+
+	gitCall(t, kit, "commit", "--amend", "-m", "amended through structured git")
+	message = runBash(t, root, "git log -1 --format=%B")
+	if strings.Contains(message, gitattribution.Email) {
+		t.Fatalf("structured amend added WUU attribution:\n%s", message)
+	}
+}
+
+func TestGitCommitRejectsCallerSuppliedTrailer(t *testing.T) {
+	kit, _ := setupGitRepo(t)
+	arguments, _ := json.Marshal(map[string]any{
+		"subcommand": "commit",
+		"args":       []string{"-m", "message", "--trailer", "Signed-off-by: Some Human <human@example.com>"},
+	})
+	_, err := kit.Execute(context.Background(), providers.ToolCall{Name: "git", Arguments: string(arguments)})
+	if err == nil {
+		t.Fatalf("expected caller-supplied trailer rejection, got %v", err)
+	}
+}
+
+func TestGitCommitAttributionCanBeDisabled(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	kit.SetGitAttributionEnabled(false)
+	runBash(t, root, "printf 'updated\n' > hello.txt")
+	gitCall(t, kit, "add", "hello.txt")
+	gitCall(t, kit, "commit", "-m", "Update hello", "-m", "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>")
+
+	message := runBash(t, root, "git log -1 --format=%B")
+	if !strings.Contains(message, "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>") {
+		t.Fatalf("existing Claude co-author missing:\n%s", message)
+	}
+	if strings.Contains(message, gitattribution.Trailer) {
+		t.Fatalf("disabled WUU co-author was added:\n%s", message)
+	}
+
+	runBash(t, root, "printf 'disabled bash\\n' > hello.txt")
+	args, _ := json.Marshal(map[string]any{"command": "git add hello.txt && git commit -m 'Disabled bash attribution'"})
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)}); err != nil {
+		t.Fatalf("disabled bash commit: %v", err)
+	}
+	message = runBash(t, root, "git log -1 --format=%B")
+	if strings.Contains(message, gitattribution.Email) {
+		t.Fatalf("disabled bash attribution was added:\n%s", message)
+	}
+}
+
+func buildWuuForGitWrapper(t *testing.T) string {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repository root: %v", err)
+	}
+	binaryName := "wuu"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), binaryName)
+	cmd := exec.Command("go", "build", "-o", binary, "./cmd/wuu")
+	cmd.Dir = repoRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build WUU git wrapper: %v\n%s", err, output)
+	}
+	return binary
 }
 
 func gitCall(t *testing.T, kit *Toolkit, subcmd string, args ...string) map[string]any {

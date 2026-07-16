@@ -286,6 +286,10 @@ type AgentConfig struct {
 	// AppendSystemPrompt is the preferred field for user or project-specific
 	// instructions that should customize, not replace, wuu's base behavior.
 	AppendSystemPrompt string `json:"append_system_prompt,omitempty"`
+	// GitAttributionEnabled controls whether commits created through WUU's
+	// agent tool surface receive the WUU Agent co-author trailer. Nil defaults
+	// to enabled; an explicit false is the user opt-out.
+	GitAttributionEnabled *bool `json:"git_attribution_enabled,omitempty"`
 	// PermissionMode selects the authority boundary. Empty resolves to standard.
 	PermissionMode string `json:"permission_mode,omitempty"`
 	// Effort controls reasoning depth. Valid: "low", "medium", "high",
@@ -380,9 +384,14 @@ type AdvancedRuntimeUpdate struct {
 }
 
 type GeneralSettingsUpdate struct {
-	AppendSystemPrompt *string
-	MemoryDisable      *bool
-	MCPEnabledToggles  map[string]*bool // server name → enabled; nil = skip
+	AppendSystemPrompt    *string
+	GitAttributionEnabled *bool
+	MemoryDisable         *bool
+	MCPEnabledToggles     map[string]*bool // server name → enabled; nil = skip
+}
+
+func (a AgentConfig) GitAttributionEnabledValue() bool {
+	return a.GitAttributionEnabled == nil || *a.GitAttributionEnabled
 }
 
 // LoadFrom reads config from deterministic directories (test-friendly).
@@ -1162,6 +1171,22 @@ func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) erro
 			raw["agent"] = agent
 		}
 		setOptionalString(agent, "append_system_prompt", update.AppendSystemPrompt)
+		if len(agent) == 0 {
+			delete(raw, "agent")
+		}
+	}
+
+	if update.GitAttributionEnabled != nil {
+		agent, _ := raw["agent"].(map[string]any)
+		if agent == nil {
+			agent = make(map[string]any)
+			raw["agent"] = agent
+		}
+		if *update.GitAttributionEnabled {
+			delete(agent, "git_attribution_enabled")
+		} else {
+			agent["git_attribution_enabled"] = false
+		}
 		if len(agent) == 0 {
 			delete(raw, "agent")
 		}

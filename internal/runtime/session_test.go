@@ -835,6 +835,8 @@ func TestApplyGeneralConfigRefreshesPromptAndMemory(t *testing.T) {
 	}
 
 	baseConfig.Agent.AppendSystemPrompt = "默认用中文回答。"
+	gitAttributionEnabled := false
+	baseConfig.Agent.GitAttributionEnabled = &gitAttributionEnabled
 	baseConfig.Memory.Disable = true
 	prompt := rt.ApplyGeneralConfig(baseConfig, home)
 
@@ -849,6 +851,52 @@ func TestApplyGeneralConfigRefreshesPromptAndMemory(t *testing.T) {
 	}
 	if rt.DreamIntervalDays != 0 {
 		t.Fatalf("DreamIntervalDays = %d, want disabled", rt.DreamIntervalDays)
+	}
+
+	for _, args := range [][]string{
+		{"init", "-q", root},
+		{"-C", root, "config", "user.name", "Runtime Test"},
+		{"-C", root, "config", "user.email", "runtime@example.com"},
+	} {
+		if output, commandErr := exec.Command("git", args...).CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %v\n%s", args, commandErr, output)
+		}
+	}
+	commitThroughToolkit := func(message, content string) string {
+		t.Helper()
+		gitTool := rt.Toolkit.LookupTool("git")
+		if gitTool == nil {
+			t.Fatal("git tool is not registered")
+		}
+		if writeErr := os.WriteFile(filepath.Join(root, "attribution.txt"), []byte(content), 0o644); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		for _, invocation := range []map[string]any{
+			{"subcommand": "add", "args": []string{"attribution.txt"}},
+			{"subcommand": "commit", "args": []string{"-m", message}},
+		} {
+			arguments, _ := json.Marshal(invocation)
+			if _, executeErr := gitTool.Execute(context.Background(), string(arguments)); executeErr != nil {
+				t.Fatalf("commit through toolkit: %v", executeErr)
+			}
+		}
+		output, commandErr := exec.Command("git", "-C", root, "log", "-1", "--format=%B").Output()
+		if commandErr != nil {
+			t.Fatalf("read commit: %v", commandErr)
+		}
+		return string(output)
+	}
+
+	disabledMessage := commitThroughToolkit("Disabled attribution", "disabled\n")
+	if strings.Contains(disabledMessage, "wuu-agent[bot]") {
+		t.Fatalf("disabled attribution added a WUU trailer:\n%s", disabledMessage)
+	}
+	gitAttributionEnabled = true
+	baseConfig.Agent.GitAttributionEnabled = &gitAttributionEnabled
+	rt.ApplyGeneralConfig(baseConfig, home)
+	enabledMessage := commitThroughToolkit("Enabled attribution", "enabled\n")
+	if !strings.Contains(enabledMessage, "wuu-agent[bot]") {
+		t.Fatalf("enabled attribution did not add a WUU trailer:\n%s", enabledMessage)
 	}
 }
 

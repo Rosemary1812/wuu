@@ -171,6 +171,7 @@ func (s *Server) currentGeneralSettingsSummary() GeneralSettingsSummary {
 	}
 	if cfg, _, err := s.rt.LoadEffectiveConfig(); err == nil {
 		summary.AppendSystemPrompt = cfg.Agent.AppendSystemPrompt
+		summary.GitAttributionEnabled = cfg.Agent.GitAttributionEnabledValue()
 		summary.MemoryDisabled = cfg.Memory.Disable
 		activePluginServers := make(map[string]bool)
 		for _, item := range s.rt.Plugins {
@@ -671,9 +672,10 @@ func (s *Server) handleConfigGeneralUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
 	}
 	if err := config.UpdateGeneralSettings(s.rt.ConfigPath, config.GeneralSettingsUpdate{
-		AppendSystemPrompt: params.AppendSystemPrompt,
-		MemoryDisable:      params.MemoryDisable,
-		MCPEnabledToggles:  params.MCPEnabledToggles,
+		AppendSystemPrompt:    params.AppendSystemPrompt,
+		GitAttributionEnabled: params.GitAttributionEnabled,
+		MemoryDisable:         params.MemoryDisable,
+		MCPEnabledToggles:     params.MCPEnabledToggles,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}

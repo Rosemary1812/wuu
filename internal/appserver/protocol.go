@@ -495,9 +495,10 @@ type ConfigAdvancedUpdateResult struct {
 }
 
 type ConfigGeneralUpdateParams struct {
-	AppendSystemPrompt *string          `json:"append_system_prompt,omitempty"`
-	MemoryDisable      *bool            `json:"memory_disable,omitempty"`
-	MCPEnabledToggles  map[string]*bool `json:"mcp_enabled_toggles,omitempty"`
+	AppendSystemPrompt    *string          `json:"append_system_prompt,omitempty"`
+	GitAttributionEnabled *bool            `json:"git_attribution_enabled,omitempty"`
+	MemoryDisable         *bool            `json:"memory_disable,omitempty"`
+	MCPEnabledToggles     map[string]*bool `json:"mcp_enabled_toggles,omitempty"`
 }
 
 type ConfigGeneralUpdateResult struct {
@@ -505,9 +506,10 @@ type ConfigGeneralUpdateResult struct {
 }
 
 type GeneralSettingsSummary struct {
-	AppendSystemPrompt string          `json:"append_system_prompt"`
-	MemoryDisabled     bool            `json:"memory_disabled"`
-	MCPServerEnabled   map[string]bool `json:"mcp_server_enabled"`
+	AppendSystemPrompt    string          `json:"append_system_prompt"`
+	GitAttributionEnabled bool            `json:"git_attribution_enabled"`
+	MemoryDisabled        bool            `json:"memory_disabled"`
+	MCPServerEnabled      map[string]bool `json:"mcp_server_enabled"`
 }
 
 type AdvancedSettingsSummary struct {
