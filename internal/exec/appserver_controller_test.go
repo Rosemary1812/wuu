@@ -160,6 +160,59 @@ func TestLocalAppServerControllerIgnoreUserConfigReloadsProjectLayers(t *testing
 	}
 }
 
+func TestNewLocalAppServerControllerMarksExplicitPermissionOverride(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
+	configPath := filepath.Join(root, ".wuu.json")
+	if err := os.WriteFile(configPath, []byte(`{
+		"default_provider": "test",
+		"providers": {
+			"test": {
+				"type": "openai-compatible",
+				"base_url": "https://example.test/v1",
+				"api_key": "sk-test",
+				"model": "gpt-test"
+			}
+		},
+		"agent": {
+			"permission_mode": "unconfined"
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	flagged, err := NewLocalAppServerController(ctx, Options{
+		Workdir:        root,
+		ConfigPath:     configPath,
+		PermissionMode: "read_only",
+		NoTools:        true,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalAppServerController: %v", err)
+	}
+	defer flagged.Shutdown(context.Background())
+	flaggedRT := flagged.(*localAppServerController).rt
+	if !flaggedRT.PermissionModeExplicit || flaggedRT.Permissions.Mode != config.PermissionModeReadOnly {
+		t.Fatalf("--permission-mode should become the explicit override: explicit=%t mode=%q", flaggedRT.PermissionModeExplicit, flaggedRT.Permissions.Mode)
+	}
+
+	unflagged, err := NewLocalAppServerController(ctx, Options{
+		Workdir:    root,
+		ConfigPath: configPath,
+		NoTools:    true,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalAppServerController without flag: %v", err)
+	}
+	defer unflagged.Shutdown(context.Background())
+	unflaggedRT := unflagged.(*localAppServerController).rt
+	if unflaggedRT.PermissionModeExplicit || unflaggedRT.Permissions.Mode != config.PermissionModeUnconfined {
+		t.Fatalf("config-sourced mode must not count as explicit: explicit=%t mode=%q", unflaggedRT.PermissionModeExplicit, unflaggedRT.Permissions.Mode)
+	}
+}
+
 func TestApplyConfigOverridesEffortClearsConfiguredVariant(t *testing.T) {
 	cfg := config.Config{
 		Agent: config.AgentConfig{

@@ -93,3 +93,24 @@ func TestAgentFromSnapshotParticipantFallback(t *testing.T) {
 		t.Fatalf("legacy snapshot fallback participant = %+v, want non-nil with name", agent.Participant)
 	}
 }
+
+func TestAgentThreadModelInheritsRootUnlessSnapshotIsPinned(t *testing.T) {
+	s := New(&runtime.Session{ProviderName: "workspace-provider", Model: "workspace-model", RootDir: t.TempDir()}, nil)
+	now := time.Now().UTC()
+	root := newThreadState("root", nil, "kimi", "k3", s.rt.RootDir, false, now)
+	s.threads[root.ID] = root
+
+	inherited, _ := s.ensureAgentThreadState(root.ID, nil, subagent.SubAgentSnapshot{ID: "agent-inherited"}, now)
+	if inherited.ModelProvider != "kimi" || inherited.Model != "k3" {
+		t.Fatalf("inherited model = %s/%s, want kimi/k3", inherited.ModelProvider, inherited.Model)
+	}
+
+	pinned, _ := s.ensureAgentThreadState(root.ID, nil, subagent.SubAgentSnapshot{
+		ID:       "agent-pinned",
+		Model:    "sonnet-4",
+		ModelPin: "anthropic:sonnet-4",
+	}, now)
+	if pinned.ModelProvider != "anthropic" || pinned.Model != "sonnet-4" {
+		t.Fatalf("pinned model = %s/%s, want anthropic/sonnet-4", pinned.ModelProvider, pinned.Model)
+	}
+}

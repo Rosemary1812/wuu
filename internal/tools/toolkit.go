@@ -468,6 +468,16 @@ func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
 	}
 }
 
+// Boundary returns the currently installed authority gate. Worker wake
+// paths use it to re-copy the parent runtime's live boundary onto a woken
+// worker's toolkit, the same inheritance CloneForRoot performs at spawn.
+func (t *Toolkit) Boundary() WorkspaceBoundary {
+	if t == nil {
+		return WorkspaceBoundary{}
+	}
+	return t.boundary
+}
+
 // AgentControl returns the attached agent control runtime, or nil.
 func (t *Toolkit) AgentControl() *agentcontrol.AgentControl {
 	return t.env.AgentControl

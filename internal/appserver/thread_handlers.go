@@ -12,6 +12,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -124,6 +125,9 @@ func (s *Server) handleThreadStart(req Request) error {
 		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
+		if _, err := session.SetRuntimeSelection(s.rt.SessionDir, id, s.currentSessionRuntimeSelection()); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 		// Bind the thread to the active workspace's stable id (registered
 		// projects) so its state and listing survive the project moving; DM
 		// and scratch runtimes carry no id and stay matched by cwd.
@@ -140,6 +144,7 @@ func (s *Server) handleThreadStart(req Request) error {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, persistHistory, time.Now().UTC())
+	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
 	th.WorkspaceKind = workspaceKind
 	th.Ephemeral = params.Ephemeral
 
@@ -188,6 +193,9 @@ func (s *Server) createResidentDMThreadState(p participant.Participant, id strin
 	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 		return nil, err
 	}
+	if _, err := session.SetRuntimeSelection(s.rt.SessionDir, id, s.currentSessionRuntimeSelection()); err != nil {
+		return nil, err
+	}
 	if _, err := session.BindDMParticipant(s.rt.SessionDir, id, p.ID); err != nil {
 		return nil, err
 	}
@@ -196,6 +204,7 @@ func (s *Server) createResidentDMThreadState(p participant.Participant, id strin
 	}
 	history := []providers.ChatMessage{{Role: "system", Content: prompt}}
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, true, now)
+	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
 	th.WorkspaceKind = WorkspaceKindDM
 	th.DMParticipantID = p.ID
 	th.Title = p.Name
@@ -480,11 +489,14 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 }
 
 type forkSourceThread struct {
-	history       []providers.ChatMessage
-	modelProvider string
-	model         string
-	cwd           string
-	thread        Thread
+	history        []providers.ChatMessage
+	modelProvider  string
+	model          string
+	modelVariant   string
+	modelEffort    string
+	permissionMode string
+	cwd            string
+	thread         Thread
 }
 
 func (s *Server) handleThreadFork(req Request) error {
@@ -558,6 +570,19 @@ func (s *Server) handleThreadFork(req Request) error {
 		cleanupWorktree()
 		return s.writeResponse(req.ID, nil, err)
 	}
+	updatedSession, err := session.SetRuntimeSelection(s.rt.SessionDir, sess.ID, session.RuntimeSelection{
+		Provider:       source.modelProvider,
+		Model:          source.model,
+		Variant:        source.modelVariant,
+		Effort:         source.modelEffort,
+		PermissionMode: source.permissionMode,
+	})
+	if err != nil {
+		_, _ = session.Delete(s.rt.SessionDir, sess.ID)
+		cleanupWorktree()
+		return s.writeResponse(req.ID, nil, err)
+	}
+	sess = &updatedSession
 	// A fork belongs to the same workspace as its source, so it inherits the
 	// active workspace's stable id (empty for scratch/DM/group runtimes).
 	if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" {
@@ -695,11 +720,14 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 		th.mu.Lock()
 		defer th.mu.Unlock()
 		return forkSourceThread{
-			history:       cloneHistory(th.History),
-			modelProvider: th.ModelProvider,
-			model:         th.Model,
-			cwd:           th.CWD,
-			thread:        th.snapshotLocked(),
+			history:        cloneHistory(th.History),
+			modelProvider:  th.ModelProvider,
+			model:          th.Model,
+			modelVariant:   th.ModelVariant,
+			modelEffort:    th.ModelEffort,
+			permissionMode: th.PermissionMode,
+			cwd:            th.CWD,
+			thread:         th.snapshotLocked(),
 		}, nil
 	}
 
@@ -734,11 +762,14 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
 	return forkSourceThread{
-		history:       cloneHistory(th.History),
-		modelProvider: th.ModelProvider,
-		model:         th.Model,
-		cwd:           th.CWD,
-		thread:        thread,
+		history:        cloneHistory(th.History),
+		modelProvider:  th.ModelProvider,
+		model:          th.Model,
+		modelVariant:   th.ModelVariant,
+		modelEffort:    th.ModelEffort,
+		permissionMode: th.PermissionMode,
+		cwd:            th.CWD,
+		thread:         thread,
 	}, nil
 }
 
@@ -991,6 +1022,9 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	}
 	th.Title = metadata.Title
 	th.Source = metadata.Source
+	if selection := runtimeSelectionFromSession(metadata); selection.Provider != "" && selection.Model != "" {
+		applyThreadRuntimeSelection(th, selection)
+	}
 	th.ForkedFromID = metadata.ForkedFromID
 	th.ForkedFromTurnID = metadata.ForkedFromTurnID
 	th.ForkedFromItemID = metadata.ForkedFromItemID
@@ -1004,10 +1038,42 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.FocusWorkspace = metadata.FocusWorkspace
 }
 
+// runtimeSelectionFromSession is the one conversion from a persisted session
+// row to its runtime selection. List entries, resident restores, and legacy
+// migration all read the row through it so they cannot diverge on which
+// selection fields a session carries.
+func runtimeSelectionFromSession(sess session.Session) session.RuntimeSelection {
+	return session.RuntimeSelection{
+		Provider:       strings.TrimSpace(sess.Provider),
+		Model:          strings.TrimSpace(sess.Model),
+		Variant:        strings.TrimSpace(sess.Variant),
+		Effort:         strings.TrimSpace(sess.Effort),
+		PermissionMode: strings.TrimSpace(sess.PermissionMode),
+	}
+}
+
+func applyThreadRuntimeSelection(th *threadState, selection session.RuntimeSelection) {
+	if th == nil {
+		return
+	}
+	th.ModelProvider = strings.TrimSpace(selection.Provider)
+	th.Model = strings.TrimSpace(selection.Model)
+	th.ModelVariant = strings.TrimSpace(selection.Variant)
+	th.ModelEffort = strings.TrimSpace(selection.Effort)
+	if mode := strings.TrimSpace(selection.PermissionMode); mode != "" {
+		th.PermissionMode = config.NormalizePermissionMode(mode)
+	}
+}
+
 func threadEntryFromSession(sess session.Session, provider, model string) threadListEntry {
 	updatedAt := sess.UpdatedAt
 	if updatedAt.IsZero() {
 		updatedAt = sess.CreatedAt
+	}
+	selection := runtimeSelectionFromSession(sess)
+	permissionMode := ""
+	if selection.PermissionMode != "" {
+		permissionMode = config.NormalizePermissionMode(selection.PermissionMode)
 	}
 	return threadListEntry{
 		thread: Thread{
@@ -1015,8 +1081,11 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 			Source:           sess.Source,
 			Preview:          firstNonEmpty(sess.Title, sess.Summary),
 			Title:            sess.Title,
-			ModelProvider:    provider,
-			Model:            model,
+			ModelProvider:    firstNonEmpty(selection.Provider, provider),
+			Model:            firstNonEmpty(selection.Model, model),
+			ModelVariant:     selection.Variant,
+			ModelEffort:      selection.Effort,
+			PermissionMode:   permissionMode,
 			CWD:              sess.CWD,
 			Status:           ThreadStatusIdle,
 			Pinned:           sess.PinnedAt != nil,

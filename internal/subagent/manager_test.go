@@ -60,11 +60,15 @@ func TestManagerUpdateDefaultsPreservesInferenceJournal(t *testing.T) {
 // stashes the most recent request payload so tests can assert what
 // the runner actually sent (used by the fork-with-history test).
 type fakeClient struct {
-	response    providers.ChatResponse
-	err         error
-	calls       atomic.Int32
-	delay       time.Duration
-	lastRequest atomic.Pointer[providers.ChatRequest]
+	response providers.ChatResponse
+	err      error
+	calls    atomic.Int32
+	delay    time.Duration
+	// providerItemID, when set, is attached to the streamed content delta
+	// so the turn produces provider-native state (as a Responses-style
+	// gateway would) and tests can assert its persisted provenance.
+	providerItemID string
+	lastRequest    atomic.Pointer[providers.ChatRequest]
 }
 
 type terminalBoundaryClient struct {
@@ -148,7 +152,7 @@ func (f *fakeClient) StreamChat(ctx context.Context, req providers.ChatRequest) 
 			}
 		}
 		if f.response.Content != "" {
-			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: f.response.Content}
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: f.response.Content, ProviderItemID: f.providerItemID}
 		}
 		ch <- providers.StreamEvent{
 			Type:       providers.EventDone,
@@ -337,6 +341,177 @@ func TestSpawn_UsesManagerDefaultRequestOptions(t *testing.T) {
 	if got := req.ProviderOptions["reasoningEffort"]; got != "high" {
 		t.Fatalf("ProviderOptions = %#v", req.ProviderOptions)
 	}
+}
+
+// A worker turn must send the manager's default provider identity with every
+// request and persist provider-native state (Responses item ids) stamped with
+// that provider, so a later provider switch can recognize it as foreign.
+func TestSpawn_StampsDefaultProviderOnNativeState(t *testing.T) {
+	client := &fakeClient{
+		response:       providers.ChatResponse{Content: "all done"},
+		providerItemID: "resp-alpha-1",
+	}
+	mgr := NewManagerWithOptions(client, "worker-model", ManagerOptions{DefaultProviderName: "alpha"})
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{Type: "worker", Prompt: "do thing", Toolkit: fakeToolkit{}})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	req := client.lastRequest.Load()
+	if req == nil {
+		t.Fatal("expected a provider request")
+	}
+	if req.Provider != "alpha" {
+		t.Fatalf("request Provider = %q, want %q", req.Provider, "alpha")
+	}
+	history, ok := mgr.History(sa.ID)
+	if !ok {
+		t.Fatalf("no history for %s", sa.ID)
+	}
+	assistant := lastAssistantMessageForTest(t, history)
+	if assistant.ProviderItemID != "resp-alpha-1" {
+		t.Fatalf("ProviderItemID = %q, want resp-alpha-1", assistant.ProviderItemID)
+	}
+	if assistant.ProviderItemProvider != "alpha" {
+		t.Fatalf("ProviderItemProvider = %q, want %q", assistant.ProviderItemProvider, "alpha")
+	}
+	if assistant.ProviderItemModel != "worker-model" {
+		t.Fatalf("ProviderItemModel = %q, want %q", assistant.ProviderItemModel, "worker-model")
+	}
+}
+
+// A pinned spawn that carries its own client must stamp the pinned provider,
+// not the manager default's.
+func TestSpawn_PinnedClientStampsPinnedProvider(t *testing.T) {
+	defaultClient := &fakeClient{response: providers.ChatResponse{Content: "unused"}}
+	pinned := &fakeClient{
+		response:       providers.ChatResponse{Content: "pinned done"},
+		providerItemID: "resp-gamma-1",
+	}
+	mgr := NewManagerWithOptions(defaultClient, "worker-model", ManagerOptions{DefaultProviderName: "beta"})
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:         "worker",
+		Prompt:       "do thing",
+		Toolkit:      fakeToolkit{},
+		Model:        "pinned-model",
+		Client:       pinned,
+		ProviderName: "gamma",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	req := pinned.lastRequest.Load()
+	if req == nil {
+		t.Fatal("expected the pinned client to receive the request")
+	}
+	if req.Provider != "gamma" {
+		t.Fatalf("request Provider = %q, want %q", req.Provider, "gamma")
+	}
+	history, _ := mgr.History(sa.ID)
+	assistant := lastAssistantMessageForTest(t, history)
+	if assistant.ProviderItemProvider != "gamma" {
+		t.Fatalf("ProviderItemProvider = %q, want %q", assistant.ProviderItemProvider, "gamma")
+	}
+}
+
+// A restored run resumed on the manager defaults must run under the defaults'
+// provider identity, so the request-preparation machinery drops native state
+// minted by a different provider instead of replaying its item ids.
+func TestRestore_DefaultProviderDropsForeignItemIDs(t *testing.T) {
+	client := &fakeClient{
+		response:       providers.ChatResponse{Content: "resumed"},
+		providerItemID: "resp-beta-9",
+	}
+	mgr := NewManagerWithOptions(client, "worker-model", ManagerOptions{DefaultProviderName: "beta"})
+
+	sa, err := mgr.Restore(RestoreOptions{
+		Run: PersistedRun{
+			Version: ResumeSnapshotVersion,
+			ID:      "wk-cross",
+			Type:    "general-purpose",
+			Status:  StatusCompleted,
+			Model:   "worker-model",
+			CWD:     os.TempDir(),
+			Messages: []providers.ChatMessage{
+				{Role: "system", Content: "sys"},
+				{Role: "user", Content: "do it"},
+				{
+					Role:                 "assistant",
+					Content:              "earlier answer",
+					ProviderItemID:       "resp-alpha-1",
+					ProviderItemProvider: "alpha",
+					ProviderItemModel:    "worker-model",
+				},
+			},
+		},
+		Toolkit: fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if _, err := mgr.Followup(context.Background(), sa.ID, "carry on"); err != nil {
+		t.Fatalf("Followup: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	req := client.lastRequest.Load()
+	if req == nil {
+		t.Fatal("expected a provider request")
+	}
+	if req.Provider != "beta" {
+		t.Fatalf("request Provider = %q, want defaults provider %q", req.Provider, "beta")
+	}
+	// Run the same request preparation a provider adapter applies: with the
+	// provider identity stamped, the foreign item id must be dropped.
+	prepared, err := providers.PrepareMessagesForProviderRequest(req.Provider, req.Model, req.Messages)
+	if err != nil {
+		t.Fatalf("PrepareMessagesForProviderRequest: %v", err)
+	}
+	for _, msg := range prepared {
+		if msg.Role == "assistant" && msg.Content == "earlier answer" && msg.ProviderItemID != "" {
+			t.Fatalf("foreign ProviderItemID %q survived request preparation", msg.ProviderItemID)
+		}
+	}
+	// Contrapositive: with the provider identity missing (the pre-fix
+	// state), the same preparation would have replayed the foreign id.
+	unstamped, err := providers.PrepareMessagesForProviderRequest("", req.Model, req.Messages)
+	if err != nil {
+		t.Fatalf("PrepareMessagesForProviderRequest (unstamped): %v", err)
+	}
+	replayed := false
+	for _, msg := range unstamped {
+		if msg.Role == "assistant" && msg.ProviderItemID == "resp-alpha-1" {
+			replayed = true
+		}
+	}
+	if !replayed {
+		t.Fatal("expected the unstamped preparation to replay the foreign item id (guards the test's premise)")
+	}
+	// The resume turn's own native state carries the defaults' provider.
+	history, _ := mgr.History(sa.ID)
+	assistant := lastAssistantMessageForTest(t, history)
+	if assistant.ProviderItemID != "resp-beta-9" || assistant.ProviderItemProvider != "beta" {
+		t.Fatalf("resumed native state = (%q, %q), want (resp-beta-9, beta)", assistant.ProviderItemID, assistant.ProviderItemProvider)
+	}
+}
+
+func lastAssistantMessageForTest(t *testing.T, history []providers.ChatMessage) providers.ChatMessage {
+	t.Helper()
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "assistant" {
+			return history[i]
+		}
+	}
+	t.Fatal("no assistant message in history")
+	return providers.ChatMessage{}
 }
 
 // scriptedStreamClient returns a queued sequence of responses, one per model

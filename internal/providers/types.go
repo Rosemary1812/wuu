@@ -121,13 +121,14 @@ func NormalizeFinishReason(stopReason string, truncated bool, hasToolCalls bool)
 
 // ToolCall is a model requested tool execution.
 type ToolCall struct {
-	ID                string           `json:"id,omitempty"`
-	ProviderItemID    string           `json:"provider_item_id,omitempty"`
-	ProviderItemModel string           `json:"provider_item_model,omitempty"`
-	Name              string           `json:"name,omitempty"`
-	Arguments         string           `json:"arguments,omitempty"`
-	Kind              ToolCallKind     `json:"kind,omitempty"`
-	Display           *ToolCallDisplay `json:"display,omitempty"`
+	ID                   string           `json:"id,omitempty"`
+	ProviderItemID       string           `json:"provider_item_id,omitempty"`
+	ProviderItemProvider string           `json:"provider_item_provider,omitempty"`
+	ProviderItemModel    string           `json:"provider_item_model,omitempty"`
+	Name                 string           `json:"name,omitempty"`
+	Arguments            string           `json:"arguments,omitempty"`
+	Kind                 ToolCallKind     `json:"kind,omitempty"`
+	Display              *ToolCallDisplay `json:"display,omitempty"`
 }
 
 // InputImage carries one user-provided image in base64 form.
@@ -192,8 +193,9 @@ type ChatMessage struct {
 	Hidden bool
 	// ProviderItemID preserves provider-native assistant output item identity,
 	// such as OpenAI Responses msg_* ids, for same-model replay.
-	ProviderItemID    string
-	ProviderItemModel string
+	ProviderItemID       string
+	ProviderItemProvider string
+	ProviderItemModel    string
 	// Steered marks user input that was injected into an already-running turn.
 	// Providers ignore this; app-server history uses it to restore turn items.
 	Steered bool
@@ -296,6 +298,10 @@ type CacheHint struct {
 
 // ChatRequest is the normalized request payload for providers.
 type ChatRequest struct {
+	// Provider is Wuu's configured provider identity. It is request metadata
+	// used to prevent provider-native state from crossing endpoints and is
+	// never serialized by provider adapters.
+	Provider    string
 	Model       string
 	Messages    []ChatMessage
 	Tools       []ToolDefinition

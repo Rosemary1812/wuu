@@ -174,6 +174,7 @@ func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
 	}
 	if existing := r.byID[call.ID]; existing != nil {
 		existing.call.ProviderItemID = call.ProviderItemID
+		existing.call.ProviderItemProvider = call.ProviderItemProvider
 		existing.call.ProviderItemModel = call.ProviderItemModel
 		existing.call.Name = call.Name
 		existing.call.Kind = call.Kind
@@ -183,11 +184,12 @@ func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
 	}
 	run := &toolRun{
 		call: providers.ToolCall{
-			ID:                call.ID,
-			ProviderItemID:    call.ProviderItemID,
-			ProviderItemModel: call.ProviderItemModel,
-			Name:              call.Name,
-			Kind:              call.Kind,
+			ID:                   call.ID,
+			ProviderItemID:       call.ProviderItemID,
+			ProviderItemProvider: call.ProviderItemProvider,
+			ProviderItemModel:    call.ProviderItemModel,
+			Name:                 call.Name,
+			Kind:                 call.Kind,
 		},
 		order: len(r.runs),
 		done:  make(chan struct{}),
@@ -220,9 +222,10 @@ func (r *TurnToolRuntime) finalizeStreamTool(ctx context.Context, call *provider
 	if run == nil {
 		run = &toolRun{
 			call: providers.ToolCall{
-				ID:                call.ID,
-				ProviderItemID:    call.ProviderItemID,
-				ProviderItemModel: call.ProviderItemModel,
+				ID:                   call.ID,
+				ProviderItemID:       call.ProviderItemID,
+				ProviderItemProvider: call.ProviderItemProvider,
+				ProviderItemModel:    call.ProviderItemModel,
 			},
 			order: len(r.runs),
 			done:  make(chan struct{}),
@@ -232,6 +235,7 @@ func (r *TurnToolRuntime) finalizeStreamTool(ctx context.Context, call *provider
 	}
 	if call.ProviderItemID != "" {
 		run.call.ProviderItemID = call.ProviderItemID
+		run.call.ProviderItemProvider = call.ProviderItemProvider
 		run.call.ProviderItemModel = call.ProviderItemModel
 	}
 	run.call.Name = call.Name
@@ -642,14 +646,16 @@ func toolResultMessage(
 	ok bool,
 ) providers.ChatMessage {
 	return providers.ChatMessage{
-		Role:             "tool",
-		Name:             call.Name,
-		ToolCallID:       call.ID,
-		ToolInvocationID: invocationID,
-		ToolResultKind:   call.Kind,
-		Content:          result.TextProjection(),
-		ToolResult:       resultPointer(result),
-		DiscoveredTools:  discoveredToolsForCall(provider, ok, call),
+		Role:                 "tool",
+		Name:                 call.Name,
+		ProviderItemProvider: call.ProviderItemProvider,
+		ProviderItemModel:    call.ProviderItemModel,
+		ToolCallID:           call.ID,
+		ToolInvocationID:     invocationID,
+		ToolResultKind:       call.Kind,
+		Content:              result.TextProjection(),
+		ToolResult:           resultPointer(result),
+		DiscoveredTools:      discoveredToolsForCall(provider, ok, call),
 	}
 }
 

@@ -19,7 +19,6 @@ import type {
   InputFile,
   InputImage,
   PopOutInitResult,
-  PermissionSummary,
   RuntimeContext,
   ServerEvent,
   Thread,
@@ -50,7 +49,6 @@ import {
   type CodexModelLoadState,
   type CodexRuntimeMenu,
   type ComposerVariant,
-  type PermissionMode,
 } from "./ComposerView";
 import {
   QueryHistoryPopover,
@@ -243,23 +241,6 @@ import {
   SettingsShellRenderer,
 } from "./ConversationShellRenderers";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
-
-function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
-  return { mode };
-}
-
-function initializedForSelectedPermissionMode(
-  initialized: InitializeResult | undefined,
-  mode: PermissionMode | undefined,
-): InitializeResult | undefined {
-  if (!initialized || mode === undefined) {
-    return initialized;
-  }
-  return {
-    ...initialized,
-    permissions: permissionSummaryForMode(mode),
-  };
-}
 
 const ENVIRONMENT_PANEL_MOTION_MS = motionDurationMs(
   "--environment-panel-motion-duration",
@@ -515,8 +496,6 @@ export function App(): JSX.Element {
   });
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
-  const [selectedPermissionMode, setSelectedPermissionMode] =
-    useState<PermissionMode | undefined>(undefined);
   // Per-thread chat-style "work focus" chip selections made this session.
   // Keyed by thread ID; absence means the chip was never touched, so the
   // composer echoes Thread.focus_workspace and turn/start carries no
@@ -1060,12 +1039,24 @@ export function App(): JSX.Element {
   // subthread-scoped notification lands; opening a reply bumps the nonce.)
   const activeThreadTurnCount = activeThread?.turns?.length ?? 0;
   const composerInitialized = useMemo(
-    () =>
-      initializedForSelectedPermissionMode(
-        state.initialized,
-        selectedPermissionMode,
-      ),
-    [state.initialized, selectedPermissionMode],
+    () => {
+      const initialized = state.initialized;
+      return initialized && activeThread
+        ? {
+            ...initialized,
+            provider: activeThread.model_provider,
+            model: activeThread.model,
+            variant: activeThread.model_variant ?? initialized.variant,
+            effort: activeThread.model_effort ?? initialized.effort,
+            permissions: {
+              ...initialized.permissions,
+              mode:
+                activeThread.permission_mode || initialized.permissions?.mode,
+            },
+          }
+        : initialized;
+    },
+    [state.initialized, activeThread],
   );
   // Per-thread keep-alive for the main conversation pane. We keep the active
   // thread and a small recency buffer mounted so switching back does not
@@ -3145,7 +3136,6 @@ export function App(): JSX.Element {
     setAccessMenuOpen,
     setBranchMenuOpen,
     setCodexRuntimeMenu,
-    setSelectedPermissionMode,
     clearThreadPendingComposerMessages,
   });
 
@@ -3494,7 +3484,7 @@ export function App(): JSX.Element {
         images,
         message.id,
         files,
-        selectedPermissionMode,
+        targetThread.permission_mode || currentState.initialized.permissions?.mode,
       );
       enqueueComposerMessage(targetThread.id, {
         ...message,
@@ -3638,7 +3628,7 @@ export function App(): JSX.Element {
         text,
         images,
         files,
-        selectedPermissionMode,
+        thread.permission_mode || currentState.initialized.permissions?.mode,
         mentionedParticipantIDsFromText(text, participants),
         // Only defined when the chat-focus chip changed this session and
         // differs from the thread's last-known focus_workspace; plain
@@ -3836,7 +3826,7 @@ export function App(): JSX.Element {
         text,
         images,
         files,
-        selectedPermissionMode,
+        targetThread.permission_mode || currentState.initialized.permissions?.mode,
         mentionedParticipantIDsFromText(text, participants),
         focusWorkspaceSendValue(
           targetThread,
@@ -3971,7 +3961,7 @@ export function App(): JSX.Element {
         text,
         images,
         files,
-        selectedPermissionMode,
+        targetThread.permission_mode || currentState.initialized.permissions?.mode,
         mentionedParticipantIDsFromText(text, participants),
         focusWorkspaceSendValue(
           targetThread,
@@ -4059,7 +4049,7 @@ export function App(): JSX.Element {
       <>
         {archiveTipNode}
         <SettingsShellRenderer
-          initialized={state.initialized}
+          initialized={composerInitialized}
           initialPage={settingsInitialPage}
           memoryFocusParticipantID={settingsMemoryFocusID}
           running={viewContextSwitchPending}

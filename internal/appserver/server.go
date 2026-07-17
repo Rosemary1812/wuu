@@ -51,6 +51,9 @@ type threadState struct {
 	Title            string
 	ModelProvider    string
 	Model            string
+	ModelVariant     string
+	ModelEffort      string
+	PermissionMode   string
 	CWD              string
 	WorkspaceKind    WorkspaceKind
 	ForkedFromID     string
@@ -80,10 +83,10 @@ type threadState struct {
 	Ephemeral             bool
 	BrowserState          ThreadBrowserState
 
-	execRuntime          *runtime.ThreadRuntime
-	pendingRuntimeUpdate *threadRuntimeUpdate
-	pendingRuntimeReset  bool
-	runtimeSubscription  *threadRuntimeSubscription
+	execRuntime              *runtime.ThreadRuntime
+	pendingRuntimeReset      bool
+	runtimeSelectionMutation bool
+	runtimeSubscription      *threadRuntimeSubscription
 
 	mu                  sync.Mutex
 	running             bool
@@ -135,14 +138,6 @@ func (sub *threadRuntimeSubscription) stop() {
 		close(sub.done)
 	})
 	sub.wg.Wait()
-}
-
-type threadRuntimeUpdate struct {
-	ProviderName     string
-	RuleProviderName string
-	Model            string
-	APIModel         string
-	SystemPrompt     string
 }
 
 type backgroundLaunch struct {

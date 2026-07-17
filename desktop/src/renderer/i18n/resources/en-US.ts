@@ -400,6 +400,7 @@ export const enUS = {
   "error.networkDetail": "The request did not complete. Try again later or check the current provider status.",
   "error.authDetail": "The provider credentials or permissions are insufficient. Check Settings → Providers.",
   "error.providerDetail": "The context window may be exceeded, the model may be rate limited, or the upstream connection may have stopped.",
+  "error.invalidRequestDetail": "The provider rejected the request parameters. The original error remains in the debug information.",
   "error.toolDetail": "A tool did not complete. The original error remains in the debug information.",
   "error.localDetail": "A local file, command, or permission operation could not be completed.",
   "error.internalDetail": "The request did not complete. Debug information is available for investigation.",

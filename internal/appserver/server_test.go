@@ -1080,6 +1080,44 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
+func TestResidentThreadRestoresPersistedModelSelection(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "test-key",
+      "model": "fake-model"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "persisted-model-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.SetModelSelection(rt.SessionDir, "persisted-model-thread", rt.ProviderName, "persisted-model", ""); err != nil {
+		t.Fatal(err)
+	}
+	srv := New(rt, &lockedBuffer{})
+	th, err := srv.ensureResidentThread("persisted-model-thread")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if th.ModelProvider != rt.ProviderName || th.Model != "persisted-model" {
+		t.Fatalf("restored thread model = %s/%s", th.ModelProvider, th.Model)
+	}
+	threadRuntime, err := srv.ensureThreadRuntime(th)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if threadRuntime.StreamRunner.Model != "persisted-model" {
+		t.Fatalf("restored runtime model = %q", threadRuntime.StreamRunner.Model)
+	}
+}
+
 func TestServerConfigModelUpdateSupportsUltraOnly(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
@@ -1173,14 +1211,17 @@ func TestServerConfigModelUpdateCombinesUltraAndPreservesNil(t *testing.T) {
 	}
 }
 
-func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
+func TestServerConfigModelUpdateRejectsRunningTargetThread(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "default_provider": "fake-provider",
+  "agent": {"permission_mode": "read_only"},
   "providers": {
     "fake-provider": {
       "type": "openai-compatible",
       "base_url": "https://example.test/v1",
+      "api_key": "test-key",
       "model": "fake-model"
     }
   }
@@ -1193,98 +1234,529 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	now := time.Now().UTC()
 
 	running := newThreadState("running-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
-	runningKit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("tools.New running: %v", err)
-	}
-	readOnlyPermissions := config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
-	runtime.ConfigureToolkitPermissions(runningKit, readOnlyPermissions)
-	running.execRuntime = &runtime.ThreadRuntime{
-		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
-		Toolkit:      runningKit,
-	}
+	running.PermissionMode = config.PermissionModeReadOnly
 	running.startTurnLocked("running-turn", providers.ChatMessage{Role: "user", Content: "keep running"}, now)
-	idle := newThreadState("idle-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
-	idleKit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("tools.New idle: %v", err)
-	}
-	runtime.ConfigureToolkitPermissions(idleKit, readOnlyPermissions)
-	idle.execRuntime = &runtime.ThreadRuntime{
-		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
-		Toolkit:      idleKit,
-	}
 	srv.threads[running.ID] = running
-	srv.threads[idle.ID] = idle
 
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model","permission_mode":"unconfined"}}`)); err != nil {
+	if _, err := session.CreateWithMetadata(rt.SessionDir, running.ID, rt.RootDir); err != nil {
+		t.Fatalf("create running session: %v", err)
+	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, running.ID, session.RuntimeSelection{
+		Provider:       rt.ProviderName,
+		Model:          rt.Model,
+		PermissionMode: config.PermissionModeReadOnly,
+	}); err != nil {
+		t.Fatalf("pin running selection: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"running-thread","model":"new-model","permission_mode":"unconfined"}}`)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] == nil || !strings.Contains(fmt.Sprint(response["error"]), "cannot change model or permission mode") {
+		t.Fatalf("expected running-thread rejection, got %+v", response["error"])
+	}
+	if rt.Model != "fake-model" || rt.Permissions.Mode != config.PermissionModeReadOnly {
+		t.Fatalf("failed update changed workspace defaults: model=%q permission=%q", rt.Model, rt.Permissions.Mode)
+	}
+	metadata, ok, err := session.Find(rt.SessionDir, running.ID)
+	if err != nil || !ok {
+		t.Fatalf("find running session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "fake-model" || metadata.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("failed update changed running session: %+v", metadata)
+	}
+}
 
-	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if result.Provider != "fake-provider" || result.Model != "new-model" {
-		t.Fatalf("unexpected update result: %+v", result)
+func TestServerConfigModelUpdateRejectsTargetOwnedByAnotherServer(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "leased-thread", rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, "leased-thread", session.RuntimeSelection{
+		Provider:       rt.ProviderName,
+		Model:          rt.Model,
+		PermissionMode: config.PermissionModeStandard,
+	}); err != nil {
+		t.Fatalf("pin selection: %v", err)
+	}
+	lease, acquired, err := session.TryAcquireThreadExecutionLease(rt.SessionDir, "leased-thread")
+	if err != nil || !acquired {
+		t.Fatalf("acquire external lease: acquired=%v err=%v", acquired, err)
+	}
+	defer func() {
+		if err := lease.Release(); err != nil {
+			t.Fatalf("release external lease: %v", err)
+		}
+	}()
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"leased-thread","model":"new-model"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] == nil || !strings.Contains(fmt.Sprint(response["error"]), "cannot change model or permission mode") {
+		t.Fatalf("expected external running-thread rejection, got %+v", response["error"])
+	}
+	if rt.Model != "fake-model" {
+		t.Fatalf("failed external update changed workspace default to %q", rt.Model)
+	}
+}
+
+func TestServerConfigModelUpdateScopesSelectionToTargetAndFutureThreads(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "agent": {"permission_mode": "read_only"},
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "test-key",
+      "model": "fake-model"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	now := time.Now().UTC()
+	target := newThreadState("target-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	other := newThreadState("other-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	for _, th := range []*threadState{target, other} {
+		th.PermissionMode = config.PermissionModeReadOnly
+		srv.threads[th.ID] = th
+		if _, err := session.CreateWithMetadata(rt.SessionDir, th.ID, rt.RootDir); err != nil {
+			t.Fatalf("create %s: %v", th.ID, err)
+		}
+		if _, err := session.SetRuntimeSelection(rt.SessionDir, th.ID, session.RuntimeSelection{
+			Provider:       rt.ProviderName,
+			Model:          rt.Model,
+			PermissionMode: config.PermissionModeReadOnly,
+		}); err != nil {
+			t.Fatalf("pin %s: %v", th.ID, err)
+		}
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"target-thread","model":"new-model","effort":"xhigh","permission_mode":"unconfined"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected update error: %+v", response["error"])
+	}
+	if rt.Model != "new-model" || rt.Permissions.Mode != config.PermissionModeUnconfined {
+		t.Fatalf("workspace defaults not updated: model=%q permission=%q", rt.Model, rt.Permissions.Mode)
+	}
+	target.mu.Lock()
+	if target.Model != "new-model" || target.ModelEffort != "xhigh" || target.PermissionMode != config.PermissionModeUnconfined {
+		t.Fatalf("target selection not updated: model=%q effort=%q permission=%q", target.Model, target.ModelEffort, target.PermissionMode)
+	}
+	target.mu.Unlock()
+	other.mu.Lock()
+	if other.Model != "fake-model" || other.ModelEffort != "" || other.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("non-target selection changed: model=%q effort=%q permission=%q", other.Model, other.ModelEffort, other.PermissionMode)
+	}
+	other.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, other.ID)
+	if err != nil || !ok {
+		t.Fatalf("find non-target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "fake-model" || metadata.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("non-target persisted selection changed: %+v", metadata)
+	}
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start after default update: %v", err)
+	}
+	created := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"]).Thread
+	if created.Model != "new-model" || created.ModelEffort != "xhigh" || created.PermissionMode != config.PermissionModeUnconfined {
+		t.Fatalf("future thread did not inherit updated defaults: %+v", created)
+	}
+}
+
+func newTargetedUpdateFixture(t *testing.T, rt *runtime.Session, srv *Server) *threadState {
+	t.Helper()
+	target := newThreadState("target-thread", nil, rt.ProviderName, "thread-model", rt.RootDir, true, time.Now().UTC())
+	target.ModelEffort = "low"
+	target.PermissionMode = config.PermissionModeReadOnly
+	srv.threads[target.ID] = target
+	if _, err := session.CreateWithMetadata(rt.SessionDir, target.ID, rt.RootDir); err != nil {
+		t.Fatalf("create target session: %v", err)
+	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, target.ID, session.RuntimeSelection{
+		Provider:       rt.ProviderName,
+		Model:          "thread-model",
+		Effort:         "low",
+		PermissionMode: config.PermissionModeReadOnly,
+	}); err != nil {
+		t.Fatalf("pin target selection: %v", err)
+	}
+	return target
+}
+
+func writeTargetedUpdateConfig(t *testing.T, rt *runtime.Session) {
+	t.Helper()
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "agent": {"permission_mode": "read_only", "effort": "high"},
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "test-key",
+      "model": "fake-model"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+func TestServerConfigModelUpdatePermissionOnlyTargetKeepsModelSelection(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.StreamRunner.Effort = "high"
+	writeTargetedUpdateConfig(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	target := newTargetedUpdateFixture(t, rt, srv)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"target-thread","permission_mode":"unconfined"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected update error: %+v", response["error"])
+	}
+	if rt.Permissions.Mode != config.PermissionModeUnconfined {
+		t.Fatalf("workspace permission not updated: %q", rt.Permissions.Mode)
+	}
+	if rt.Model != "fake-model" || rt.StreamRunner.Model != "fake-model" ||
+		rt.StreamRunner.Effort != "high" || rt.StreamRunner.Variant != "" {
+		t.Fatalf("permission-only update changed workspace selection: model=%q runner=%q effort=%q variant=%q",
+			rt.Model, rt.StreamRunner.Model, rt.StreamRunner.Effort, rt.StreamRunner.Variant)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"permission_mode": "unconfined"`) ||
+		!strings.Contains(string(data), `"model": "fake-model"`) ||
+		!strings.Contains(string(data), `"effort": "high"`) {
+		t.Fatalf("persisted config drifted beyond permission mode: %s", data)
+	}
+	target.mu.Lock()
+	if target.Model != "thread-model" || target.ModelEffort != "low" || target.ModelVariant != "" ||
+		target.PermissionMode != config.PermissionModeUnconfined {
+		t.Fatalf("target selection wrong: model=%q effort=%q variant=%q permission=%q",
+			target.Model, target.ModelEffort, target.ModelVariant, target.PermissionMode)
+	}
+	target.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, target.ID)
+	if err != nil || !ok {
+		t.Fatalf("find target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "thread-model" || metadata.Effort != "low" || metadata.PermissionMode != config.PermissionModeUnconfined {
+		t.Fatalf("persisted target selection wrong: %+v", metadata)
+	}
+}
+
+func TestServerConfigModelUpdateModelOnlyTargetKeepsEffortAndPermission(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.StreamRunner.Effort = "high"
+	writeTargetedUpdateConfig(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	target := newTargetedUpdateFixture(t, rt, srv)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"target-thread","model":"new-model"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected update error: %+v", response["error"])
 	}
 	if rt.Model != "new-model" || rt.StreamRunner.Model != "new-model" {
-		t.Fatalf("runtime model not updated: runtime=%q stream_runner=%q", rt.Model, rt.StreamRunner.Model)
+		t.Fatalf("workspace model not updated: model=%q runner=%q", rt.Model, rt.StreamRunner.Model)
 	}
+	if rt.StreamRunner.Effort != "high" || rt.StreamRunner.Variant != "" || rt.Permissions.Mode != config.PermissionModeReadOnly {
+		t.Fatalf("model-only update changed workspace effort/variant/permission: effort=%q variant=%q permission=%q",
+			rt.StreamRunner.Effort, rt.StreamRunner.Variant, rt.Permissions.Mode)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"model": "new-model"`) ||
+		!strings.Contains(string(data), `"effort": "high"`) ||
+		!strings.Contains(string(data), `"permission_mode": "read_only"`) {
+		t.Fatalf("persisted config drifted beyond model: %s", data)
+	}
+	target.mu.Lock()
+	if target.Model != "new-model" || target.ModelEffort != "low" || target.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("target selection wrong: model=%q effort=%q permission=%q",
+			target.Model, target.ModelEffort, target.PermissionMode)
+	}
+	target.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, target.ID)
+	if err != nil || !ok {
+		t.Fatalf("find target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "new-model" || metadata.Effort != "low" || metadata.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("persisted target selection wrong: %+v", metadata)
+	}
+}
 
-	running.mu.Lock()
-	if running.ModelProvider != "fake-provider" || running.Model != "new-model" {
-		t.Fatalf("running thread next model should update: provider=%q model=%q", running.ModelProvider, running.Model)
-	}
-	if turn := running.Turns[0]; turn.ModelProvider != "fake-provider" || turn.Model != "fake-model" {
-		t.Fatalf("running turn should keep its model snapshot: provider=%q model=%q", turn.ModelProvider, turn.Model)
-	}
-	if running.execRuntime.StreamRunner.Model != "fake-model" || running.execRuntime.StreamRunner.APIModel != "fake-model" {
-		t.Fatalf("running turn runtime should stay put: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
-	}
-	if running.pendingRuntimeUpdate == nil {
-		t.Fatal("running thread should defer runtime refresh until the turn finishes")
-	}
-	if _, err := running.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
-		ID:        "running-still-read-only",
-		Name:      "write_file",
-		Arguments: `{"path":"running-still-read-only.txt","content":"nope\n","create_only":true}`,
-	}); err == nil || !strings.Contains(err.Error(), "boundary_denied") {
-		t.Fatalf("running turn should keep read-only boundary before pending update applies, err=%v", err)
-	}
-	running.mu.Unlock()
+func TestServerConfigModelUpdateExplicitEmptyVariantClearsSelection(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.StreamRunner.Effort = "high"
+	writeTargetedUpdateConfig(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	target := newTargetedUpdateFixture(t, rt, srv)
 
-	running.mu.Lock()
-	running.completeTurnLocked("running-turn", TurnStatusCompleted, nil, now.Add(time.Second), "", "", false)
-	running.mu.Unlock()
-	srv.applyPendingThreadRuntime(running)
-	running.mu.Lock()
-	if running.pendingRuntimeUpdate != nil {
-		t.Fatal("pending runtime update should be applied after the turn finishes")
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"target-thread","variant":""}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
 	}
-	if running.execRuntime.StreamRunner.Model != "new-model" || running.execRuntime.StreamRunner.APIModel != "new-model" {
-		t.Fatalf("running thread runtime should update for next turn: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected update error: %+v", response["error"])
 	}
-	if _, err := running.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
-		ID:        "running-next-full-access",
-		Name:      "write_file",
-		Arguments: `{"path":"running-next-full-access.txt","content":"ok\n","create_only":true}`,
+	if rt.StreamRunner.Effort != "" || rt.StreamRunner.Variant != "" {
+		t.Fatalf("explicit empty variant did not clear workspace selection: effort=%q variant=%q",
+			rt.StreamRunner.Effort, rt.StreamRunner.Variant)
+	}
+	if rt.Model != "fake-model" {
+		t.Fatalf("variant-only update changed workspace model: %q", rt.Model)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"effort"`) || strings.Contains(string(data), `"variant"`) {
+		t.Fatalf("cleared selection still persisted: %s", data)
+	}
+	target.mu.Lock()
+	if target.Model != "thread-model" || target.ModelEffort != "" || target.ModelVariant != "" {
+		t.Fatalf("target selection wrong: model=%q effort=%q variant=%q",
+			target.Model, target.ModelEffort, target.ModelVariant)
+	}
+	target.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, target.ID)
+	if err != nil || !ok {
+		t.Fatalf("find target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "thread-model" || metadata.Effort != "" || metadata.Variant != "" {
+		t.Fatalf("persisted target selection wrong: %+v", metadata)
+	}
+}
+
+func writeForeignProviderUpdateConfig(t *testing.T, rt *runtime.Session) {
+	t.Helper()
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "agent": {"permission_mode": "read_only", "effort": "high"},
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "test-key",
+      "model": "fake-model"
+    },
+    "xiaomi": {
+      "type": "openai-compatible",
+      "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+      "api_key": "test-key",
+      "model": "mimo-v2.5-pro"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+func newForeignProviderTargetFixture(t *testing.T, rt *runtime.Session, srv *Server) *threadState {
+	t.Helper()
+	target := newThreadState("foreign-thread", nil, "xiaomi", "mimo-v2.5-pro", rt.RootDir, true, time.Now().UTC())
+	target.PermissionMode = config.PermissionModeReadOnly
+	srv.threads[target.ID] = target
+	if _, err := session.CreateWithMetadata(rt.SessionDir, target.ID, rt.RootDir); err != nil {
+		t.Fatalf("create target session: %v", err)
+	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, target.ID, session.RuntimeSelection{
+		Provider:       "xiaomi",
+		Model:          "mimo-v2.5-pro",
+		PermissionMode: config.PermissionModeReadOnly,
 	}); err != nil {
-		t.Fatalf("running thread should use full-access boundary after pending update applies: %v", err)
+		t.Fatalf("pin target selection: %v", err)
 	}
-	running.mu.Unlock()
+	return target
+}
 
-	idle.mu.Lock()
-	defer idle.mu.Unlock()
-	if idle.ModelProvider != "fake-provider" || idle.Model != "new-model" {
-		t.Fatalf("idle thread model should update: provider=%q model=%q", idle.ModelProvider, idle.Model)
+// A targeted model-only update on a thread pinned to a different provider is
+// thread-scoped: grafting the new model onto the workspace provider would
+// persist an incoherent (provider, model) pair the workspace provider cannot
+// serve.
+func TestServerConfigModelUpdateTargetedModelOnlyForeignProviderStaysThreadScoped(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.StreamRunner.Effort = "high"
+	writeForeignProviderUpdateConfig(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	target := newForeignProviderTargetFixture(t, rt, srv)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"foreign-thread","model":"mimo-v2.5"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
 	}
-	if idle.execRuntime.StreamRunner.Model != "new-model" || idle.execRuntime.StreamRunner.APIModel != "new-model" {
-		t.Fatalf("idle thread runtime should update: model=%q api=%q", idle.execRuntime.StreamRunner.Model, idle.execRuntime.StreamRunner.APIModel)
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected update error: %+v", response["error"])
 	}
-	if _, err := idle.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
-		ID:        "idle-full-access",
-		Name:      "write_file",
-		Arguments: `{"path":"idle-full-access.txt","content":"ok\n","create_only":true}`,
-	}); err != nil {
-		t.Fatalf("idle thread should use full-access boundary immediately: %v", err)
+	result := remarshal[ConfigModelUpdateResult](t, response["result"])
+	if result.Provider != "fake-provider" || result.Model != "fake-model" {
+		t.Fatalf("result should stay workspace-effective: %+v", result)
+	}
+	if rt.ProviderName != "fake-provider" || rt.Model != "fake-model" || rt.StreamRunner.Model != "fake-model" {
+		t.Fatalf("workspace runtime drifted: provider=%q model=%q runner=%q",
+			rt.ProviderName, rt.Model, rt.StreamRunner.Model)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"model": "fake-model"`) ||
+		!strings.Contains(string(data), `"model": "mimo-v2.5-pro"`) ||
+		!strings.Contains(string(data), `"default_provider": "fake-provider"`) {
+		t.Fatalf("workspace config drifted: %s", data)
+	}
+	target.mu.Lock()
+	if target.ModelProvider != "xiaomi" || target.Model != "mimo-v2.5" {
+		t.Fatalf("target pin wrong: provider=%q model=%q", target.ModelProvider, target.Model)
+	}
+	target.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, target.ID)
+	if err != nil || !ok {
+		t.Fatalf("find target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Provider != "xiaomi" || metadata.Model != "mimo-v2.5" {
+		t.Fatalf("persisted target selection wrong: %+v", metadata)
+	}
+}
+
+// A targeted variant/effort-only update validates against the thread's pinned
+// model, not the workspace model, and on a foreign-provider thread the
+// variant stays out of the workspace config entirely.
+func TestServerConfigModelUpdateTargetedVariantOnlyValidatesAgainstThreadModel(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.StreamRunner.Effort = "high"
+	writeForeignProviderUpdateConfig(t, rt)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	target := newForeignProviderTargetFixture(t, rt, srv)
+
+	// "high" is a mimo-v2.5-pro variant; the workspace fake-model has no
+	// variants, so validating against the workspace model would hard-reject
+	// this update.
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"foreign-thread","variant":"high"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("variant must validate against the thread model, got %+v", response["error"])
+	}
+	if rt.StreamRunner.Variant != "" || rt.StreamRunner.Effort != "high" || rt.Model != "fake-model" {
+		t.Fatalf("thread-scoped variant leaked into the workspace: variant=%q effort=%q model=%q",
+			rt.StreamRunner.Variant, rt.StreamRunner.Effort, rt.Model)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"variant"`) || !strings.Contains(string(data), `"effort": "high"`) {
+		t.Fatalf("workspace selection drifted: %s", data)
+	}
+	target.mu.Lock()
+	if target.ModelProvider != "xiaomi" || target.Model != "mimo-v2.5-pro" || target.ModelVariant != "high" {
+		t.Fatalf("target pin wrong: provider=%q model=%q variant=%q",
+			target.ModelProvider, target.Model, target.ModelVariant)
+	}
+	target.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, target.ID)
+	if err != nil || !ok {
+		t.Fatalf("find target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "mimo-v2.5-pro" || metadata.Variant != "high" {
+		t.Fatalf("persisted target selection wrong: %+v", metadata)
+	}
+}
+
+func TestServerConfigModelUpdateConnectionOnlyTargetAllowedWhileRunning(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.StreamRunner.Effort = "high"
+	writeTargetedUpdateConfig(t, rt)
+	oldClient := rt.StreamRunner.Client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	target := newTargetedUpdateFixture(t, rt, srv)
+	target.mu.Lock()
+	target.startTurnLocked("running-turn", providers.ChatMessage{Role: "user", Content: "keep running"}, time.Now().UTC())
+	target.mu.Unlock()
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"target-thread","base_url":"https://custom.example.test/v1","api_key":"new-key"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("connection-only targeted update should succeed while running, got %+v", response["error"])
+	}
+	if rt.StreamRunner.Client == oldClient {
+		t.Fatal("expected stream runner client to be rebuilt")
+	}
+	if rt.Model != "fake-model" || rt.StreamRunner.Model != "fake-model" ||
+		rt.StreamRunner.Effort != "high" || rt.Permissions.Mode != config.PermissionModeReadOnly {
+		t.Fatalf("connection-only update changed workspace selection: model=%q runner=%q effort=%q permission=%q",
+			rt.Model, rt.StreamRunner.Model, rt.StreamRunner.Effort, rt.Permissions.Mode)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"base_url": "https://custom.example.test/v1"`) ||
+		!strings.Contains(string(data), `"model": "fake-model"`) ||
+		!strings.Contains(string(data), `"effort": "high"`) {
+		t.Fatalf("connection change not persisted or selection drifted: %s", data)
+	}
+	target.mu.Lock()
+	if target.Model != "thread-model" || target.ModelEffort != "low" || target.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("connection-only update touched target selection: model=%q effort=%q permission=%q",
+			target.Model, target.ModelEffort, target.PermissionMode)
+	}
+	target.mu.Unlock()
+	metadata, ok, err := session.Find(rt.SessionDir, target.ID)
+	if err != nil || !ok {
+		t.Fatalf("find target session: ok=%v err=%v", ok, err)
+	}
+	if metadata.Model != "thread-model" || metadata.Effort != "low" || metadata.PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("connection-only update touched persisted target selection: %+v", metadata)
 	}
 }
 
@@ -1321,10 +1793,9 @@ func TestRunningTurnUsesModelSnapshotAfterConfigUpdate(t *testing.T) {
 	th.mu.Unlock()
 	srv.threads[th.ID] = th
 
-	rt.Model = "new-model"
-	rt.StreamRunner.Model = "new-model"
-	rt.StreamRunner.APIModel = "new-model"
-	srv.updateThreadRuntimeForModelUpdate(rt.ProviderName, rt.ProviderName, "new-model", "new-model", "new system prompt")
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"default-update","method":"config/model/update","params":{"model":"new-model"}}`)); err != nil {
+		t.Fatalf("update workspace default: %v", err)
+	}
 
 	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil, nil)
 
@@ -1332,8 +1803,8 @@ func TestRunningTurnUsesModelSnapshotAfterConfigUpdate(t *testing.T) {
 	if len(th.Turns) != 1 || th.Turns[0].UsageModel != "fake-model" {
 		t.Fatalf("turn should keep original usage model: %+v", th.Turns)
 	}
-	if th.Model != "new-model" || th.execRuntime.StreamRunner.Model != "new-model" {
-		t.Fatalf("thread should be ready for next model: thread=%q runner=%q", th.Model, th.execRuntime.StreamRunner.Model)
+	if th.Model != "fake-model" || th.execRuntime.StreamRunner.Model != "fake-model" || th.pendingRuntimeReset {
+		t.Fatalf("workspace default update changed running thread: thread=%q runner=%q pending=%v", th.Model, th.execRuntime.StreamRunner.Model, th.pendingRuntimeReset)
 	}
 	th.mu.Unlock()
 	metas, err := loadMetaMessages(rt.SessionDir, th.ID)
@@ -1714,7 +2185,7 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	if defs := toolDefinitionNames(rt.Toolkit.Definitions()); defs["apply_patch"] || !defs["edit_file"] {
 		t.Fatalf("fixture should start in text edit mode: %+v", defs)
 	}
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"gpt-5.5"}}`)); err != nil {
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"thread_id":"thread-1","model":"gpt-5.5"}}`)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
 	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
@@ -1741,6 +2212,9 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	}
 	if rt.Toolkit.ActiveSurface().ProfileName == "" {
 		t.Fatal("runtime toolkit should install active model surface")
+	}
+	if _, err := srv.ensureThreadRuntime(thread); err != nil {
+		t.Fatalf("rebuild target thread runtime: %v", err)
 	}
 	thread.mu.Lock()
 	defer thread.mu.Unlock()
@@ -1852,6 +2326,9 @@ func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
 	oldClient := rt.StreamRunner.Client
 	out := &lockedBuffer{}
 	srv := New(rt, out)
+	idle := newThreadState("idle-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
+	idle.execRuntime = &runtime.ThreadRuntime{StreamRunner: &agent.StreamRunner{Model: rt.Model}}
+	srv.threads[idle.ID] = idle
 
 	req := `{"id":"1","method":"config/model/update","params":{"provider":"fake-provider","model":"new-model","base_url":"https://custom.example.test/v1","api_key":"new-key"}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
@@ -1870,6 +2347,12 @@ func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
 	if rt.StreamRunner.Client == oldClient {
 		t.Fatal("expected stream runner client to be rebuilt")
 	}
+	idle.mu.Lock()
+	if idle.execRuntime != nil {
+		idle.mu.Unlock()
+		t.Fatal("idle thread runtime should be released after provider connection changes")
+	}
+	idle.mu.Unlock()
 	data, err := os.ReadFile(rt.ConfigPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
@@ -2459,8 +2942,62 @@ func TestServerConfigProviderRemoveRejectsProviderUsedByRunningTurn(t *testing.T
 		t.Fatalf("running turn runtime changed after rejected removal: model=%q api=%q",
 			running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
 	}
-	if running.pendingRuntimeUpdate != nil {
-		t.Fatal("running thread should not receive a pending runtime update after rejected removal")
+}
+
+// Removing a provider must not be blocked by idle sessions that still pin it:
+// those pins heal lazily to the workspace defaults on their next turn
+// (TestEnsureThreadRuntimeHealsRemovedProviderPin), so an archived thread in a
+// drawer somewhere can never hold the provider list hostage.
+func TestServerConfigProviderRemoveAllowsProviderPinnedByIdleArchivedSession(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "keep",
+  "providers": {
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.test/v1",
+      "api_key": "keep-key",
+      "model": "keep-model"
+    },
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.test/v1",
+      "api_key": "drop-key",
+      "model": "drop-model"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "pinned-thread", rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, "pinned-thread", session.RuntimeSelection{
+		Provider: "drop",
+		Model:    "drop-model",
+	}); err != nil {
+		t.Fatalf("pin session to provider: %v", err)
+	}
+	if _, err := session.UpdateArchived(rt.SessionDir, "pinned-thread", true); err != nil {
+		t.Fatalf("archive session: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/provider/remove","params":{"provider":"drop"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/provider/remove: %v", err)
+	}
+
+	if got := responseByID(t, parseOutput(t, out.String()), "1")["error"]; got != nil {
+		t.Fatalf("idle pinned session must not block removal: %+v", got)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"drop"`) {
+		t.Fatalf("pinned-but-idle provider was not removed: %s", data)
 	}
 }
 
@@ -2844,6 +3381,28 @@ func TestServerThreadStartEphemeralDoesNotPersistSession(t *testing.T) {
 	listed := remarshal[ThreadListResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
 	if len(listed.Threads) != 0 {
 		t.Fatalf("ephemeral thread should not appear in thread list: %+v", listed.Threads)
+	}
+}
+
+func TestServerThreadStartPersistsInitialModelSelection(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Variant = "high"
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	thread := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread
+	stored, ok, err := session.Find(rt.SessionDir, thread.ID)
+	if err != nil || !ok {
+		t.Fatalf("find session: ok=%v err=%v", ok, err)
+	}
+	if stored.Provider != rt.ProviderName || stored.Model != rt.Model || stored.Variant != "high" {
+		t.Fatalf("initial model selection not persisted: %+v", stored)
+	}
+	if thread.ModelVariant != "high" {
+		t.Fatalf("thread variant = %q, want high", thread.ModelVariant)
 	}
 }
 
@@ -3390,6 +3949,18 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 	}
 	rt := newTestRuntime(t, client)
 	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeStandard}
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
@@ -3402,25 +3973,37 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 		t.Fatalf("thread/start: %v", err)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	startTurn := func(id, prompt, mode string) {
+	updatePermission := func(id, mode string) {
 		t.Helper()
-		permissionMode := mode
-		raw, err := json.Marshal(map[string]any{
-			"id":     id,
-			"method": MethodTurnStart,
-			"params": TurnStartParams{ThreadID: threadID, Prompt: prompt, PermissionMode: &permissionMode},
-		})
-		if err != nil {
-			t.Fatalf("marshal turn/start: %v", err)
+		raw := fmt.Sprintf(`{"id":%q,"method":"config/model/update","params":{"thread_id":%q,"model":"fake-model","permission_mode":%q}}`, id, threadID, mode)
+		if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+			t.Fatalf("config/model/update %s: %v", id, err)
 		}
-		if err := srv.handleLine(context.Background(), raw); err != nil {
+		response := responseByID(t, parseOutput(t, out.String()), id)
+		if response["error"] != nil {
+			t.Fatalf("config/model/update %s returned error: %+v", id, response["error"])
+		}
+		th := srv.thread(threadID)
+		th.mu.Lock()
+		gotMode := th.PermissionMode
+		th.mu.Unlock()
+		if gotMode != mode {
+			t.Fatalf("thread permission after %s = %q, want %q", id, gotMode, mode)
+		}
+	}
+	startTurn := func(id, prompt string) {
+		t.Helper()
+		raw := fmt.Sprintf(`{"id":%q,"method":"turn/start","params":{"thread_id":%q,"prompt":%q}}`, id, threadID, prompt)
+		if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 			t.Fatalf("turn/start %s: %v", id, err)
 		}
 	}
 
-	startTurn("2", "try a read-only write", config.PermissionModeReadOnly)
+	updatePermission("permission-read-only", config.PermissionModeReadOnly)
+	startTurn("2", "try a read-only write")
 	waitForTurnCompletedCountForThread(t, out, threadID, 1)
-	startTurn("3", "try an unconfined write", config.PermissionModeUnconfined)
+	updatePermission("permission-unconfined", config.PermissionModeUnconfined)
+	startTurn("3", "try an unconfined write")
 	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
 
 	completed := make([]TurnCompletedNotification, 0, 2)
@@ -3499,7 +4082,7 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 	}
 }
 
-func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
+func TestServerQueuedTurnReResolvesPermissionsAtStart(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{
 			{ToolCalls: []providers.ToolCall{{
@@ -3511,7 +4094,7 @@ func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
 		},
 	}
 	rt := newTestRuntime(t, client)
-	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeUnconfined}
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
@@ -3524,11 +4107,14 @@ func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
 		t.Fatalf("thread/start: %v", err)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	readOnly := config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	// The snapshot froze the broader mode that governed when the turn was
+	// queued; the thread has since been tightened to read-only. Start-time
+	// re-resolution must ignore the frozen mode and run the turn read-only.
+	unconfined := config.ResolvedPermissions{Mode: config.PermissionModeUnconfined}
 	started, err := srv.startQueuedTurn(context.Background(), threadID, queuedTurn{
-		id:       "queued-read-only",
+		id:       "queued-stale-unconfined",
 		msg:      providers.ChatMessage{Role: "user", Content: "queued write"},
-		snapshot: turnRuntimeSnapshot{}.withPermissions(readOnly),
+		snapshot: turnRuntimeSnapshot{}.withPermissions(unconfined),
 	})
 	if err != nil {
 		t.Fatalf("startQueuedTurn: %v", err)
@@ -3543,7 +4129,7 @@ func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
 		t.Fatalf("replay trace: %v", err)
 	}
 	if len(traceSummary.Turns) == 0 || traceSummary.Turns[len(traceSummary.Turns)-1].PermissionMode != config.PermissionModeReadOnly {
-		t.Fatalf("queued turn should record read-only snapshot: %+v", traceSummary.Turns)
+		t.Fatalf("queued turn should re-resolve to the tightened mode: %+v", traceSummary.Turns)
 	}
 	if _, err := os.Stat(filepath.Join(rt.RootDir, "queued-blocked.txt")); !os.IsNotExist(err) {
 		t.Fatalf("queued read-only turn should not create file, stat err=%v", err)
@@ -5686,6 +6272,15 @@ func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
 	if err := session.UpdateIndex(rt.SessionDir, "old-thread", 2, "old summary"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, "old-thread", session.RuntimeSelection{
+		Provider:       "anthropic",
+		Model:          "claude-sonnet-4-6",
+		Variant:        "high",
+		Effort:         "medium",
+		PermissionMode: config.PermissionModeUnconfined,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := session.CreateWithMetadata(rt.SessionDir, "new-thread", rt.RootDir); err != nil {
 		t.Fatal(err)
 	}
@@ -5718,6 +6313,12 @@ func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
 	}
 	if result.Threads[0].ID != "old-thread" || !result.Threads[0].Pinned || result.Threads[0].Preview != "old summary" {
 		t.Fatalf("expected pinned old thread first, got %+v", result.Threads)
+	}
+	if result.Threads[0].ModelProvider != "anthropic" || result.Threads[0].Model != "claude-sonnet-4-6" || result.Threads[0].ModelVariant != "high" {
+		t.Fatalf("persisted model selection not restored: %+v", result.Threads[0])
+	}
+	if result.Threads[0].ModelEffort != "medium" || result.Threads[0].PermissionMode != config.PermissionModeUnconfined {
+		t.Fatalf("persisted effort/permission not restored: %+v", result.Threads[0])
 	}
 	if result.Threads[1].ID != "new-thread" || result.Threads[1].Archived {
 		t.Fatalf("unexpected second thread: %+v", result.Threads[1])
@@ -6436,6 +7037,51 @@ func TestServerRejectsUnknownTurnParams(t *testing.T) {
 	}
 }
 
+func TestServerHTTP400EmitsSingleTerminalErrorWithoutRetry(t *testing.T) {
+	client := &fakeClient{err: &providers.HTTPError{
+		StatusCode: 400,
+		Body:       `{"error":{"type":"invalid_request_error","message":"Invalid request"}}`,
+	}}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	raw, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "trigger invalid request"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	messages := waitForMethod(t, out, NotificationTurnError)
+	errors := notificationsByMethod(messages, NotificationTurnError)
+	if len(errors) != 1 {
+		t.Fatalf("turn/error notifications = %d, want 1", len(errors))
+	}
+	if completed := notificationsByMethod(messages, NotificationTurnCompleted); len(completed) != 0 {
+		t.Fatalf("turn/completed notifications = %d, want 0", len(completed))
+	}
+	failed := remarshal[TurnErrorNotification](t, errors[0]["params"])
+	if failed.Category != "invalid_request" || failed.StatusCode != 400 || failed.Turn.Status != TurnStatusFailed {
+		t.Fatalf("unexpected HTTP 400 terminal notification: %+v", failed)
+	}
+	client.mu.Lock()
+	requestCount := len(client.requests)
+	client.mu.Unlock()
+	if requestCount != 1 {
+		t.Fatalf("provider requests = %d, want 1", requestCount)
+	}
+}
+
 func TestServerFailedTurnPersistsPairedToolHistoryAndReloadsFailure(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{{
@@ -6989,15 +7635,16 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	}
 
 	msg := providers.ChatMessage{
-		Role:              "assistant",
-		ClientID:          "client-msg-1",
-		Content:           "done",
-		Phase:             providers.MessagePhaseFinalAnswer,
-		Hidden:            true,
-		ProviderItemID:    "msg_1",
-		ProviderItemModel: "gpt-test",
-		Steered:           true,
-		ReasoningContent:  "inspect before answering",
+		Role:                 "assistant",
+		ClientID:             "client-msg-1",
+		Content:              "done",
+		Phase:                providers.MessagePhaseFinalAnswer,
+		Hidden:               true,
+		ProviderItemID:       "msg_1",
+		ProviderItemProvider: "openai-gateway",
+		ProviderItemModel:    "gpt-test",
+		Steered:              true,
+		ReasoningContent:     "inspect before answering",
 		ReasoningBlocks: []providers.ReasoningBlock{{
 			Type:      "thinking",
 			Thinking:  "step one",
@@ -7016,12 +7663,13 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 			Filename:  "brief.pdf",
 		}},
 		ToolCalls: []providers.ToolCall{{
-			ID:                "call_1",
-			ProviderItemID:    "fc_1",
-			ProviderItemModel: "gpt-test",
-			Name:              "read_file",
-			Arguments:         `{"path":"README.md"}`,
-			Display:           &providers.ToolCallDisplay{Kind: "read", Text: "README.md"},
+			ID:                   "call_1",
+			ProviderItemID:       "fc_1",
+			ProviderItemProvider: "openai-gateway",
+			ProviderItemModel:    "gpt-test",
+			Name:                 "read_file",
+			Arguments:            `{"path":"README.md"}`,
+			Display:              &providers.ToolCallDisplay{Kind: "read", Text: "README.md"},
 		}},
 		DiscoveredTools: []providers.LoadableToolDefinition{{
 			Type:        "function",
@@ -7042,7 +7690,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		t.Fatalf("expected one message, got %+v", history)
 	}
 	got := history[0]
-	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || !got.Hidden || got.ProviderItemID != "msg_1" || got.ProviderItemModel != "gpt-test" || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
+	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || !got.Hidden || got.ProviderItemID != "msg_1" || got.ProviderItemProvider != "openai-gateway" || got.ProviderItemModel != "gpt-test" || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
 		t.Fatalf("message scalar fields did not round-trip: %+v", got)
 	}
 	if len(got.ReasoningBlocks) != 1 || got.ReasoningBlocks[0].Signature != "sig-1" || got.ReasoningBlocks[0].Data != "opaque" {
@@ -7054,7 +7702,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	if len(got.Files) != 1 || got.Files[0].MediaType != "application/pdf" || got.Files[0].Data != "file-data" || got.Files[0].Filename != "brief.pdf" {
 		t.Fatalf("files did not round-trip: %+v", got.Files)
 	}
-	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].ProviderItemID != "fc_1" || got.ToolCalls[0].ProviderItemModel != "gpt-test" || got.ToolCalls[0].Display == nil || got.ToolCalls[0].Display.Text != "README.md" {
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].ProviderItemID != "fc_1" || got.ToolCalls[0].ProviderItemProvider != "openai-gateway" || got.ToolCalls[0].ProviderItemModel != "gpt-test" || got.ToolCalls[0].Display == nil || got.ToolCalls[0].Display.Text != "README.md" {
 		t.Fatalf("tool calls did not round-trip: %+v", got.ToolCalls)
 	}
 	if len(got.DiscoveredTools) != 1 || got.DiscoveredTools[0].Name != "mcp_docs_search" || got.DiscoveredTools[0].InputSchema["type"] != "object" {

@@ -129,6 +129,13 @@ type SpawnOptions struct {
 	// single spawn; the manager defaults are not modified.
 	Client providers.StreamClient
 
+	// ProviderName names the provider Client belongs to, so worker-produced
+	// native state (Responses item ids, reasoning signatures) is persisted
+	// with the provider that minted it. Ignored when Client is nil — the
+	// spawn then inherits the manager defaults' client and provider name as
+	// a pair.
+	ProviderName string
+
 	// MaxSteps caps how many tool-use rounds the sub-agent can run
 	// before being forced to wrap up. Zero uses the runner default.
 	MaxSteps int
@@ -221,8 +228,12 @@ type SubAgent struct {
 	// the interactive main agent — most importantly, they avoid the
 	// short idle timeouts that proxies tend to apply to non-stream
 	// HTTP requests during long worker runs.
-	client     providers.StreamClient
-	toolLedger *toolledger.Ledger
+	client providers.StreamClient
+	// providerName names the provider client belongs to; it is stamped on
+	// the runner so persisted native state carries its provider of origin.
+	// Immutable after construction, like client.
+	providerName string
+	toolLedger   *toolledger.Ledger
 
 	// Lifecycle plumbing.
 	cancelFunc context.CancelFunc

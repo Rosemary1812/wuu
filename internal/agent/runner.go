@@ -75,6 +75,7 @@ type ToolDiscoveryProvider interface {
 // path; unary clients are adapted underneath via AdaptStreamClient.
 type Runner struct {
 	Client               providers.Client
+	ProviderName         string
 	Tools                ToolExecutor
 	Model                string
 	SystemPrompt         string
@@ -153,6 +154,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 	cfg := LoopConfig{
 		Tools:                       r.Tools,
 		Model:                       r.Model,
+		ProviderName:                r.ProviderName,
 		InferenceOperationKind:      providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile:    providers.InferenceProfileInteractive,
 		Temperature:                 r.Temperature,

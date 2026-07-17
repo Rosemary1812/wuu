@@ -398,6 +398,7 @@ export const zhCN = {
   "error.networkDetail": "没有完成这次请求。可以稍后再发，或检查当前 provider 状态。",
   "error.authDetail": "Provider 凭据或权限不足，请在 Settings → Providers 检查。",
   "error.providerDetail": "可能是上下文超出窗口、模型限流或上游中断。",
+  "error.invalidRequestDetail": "Provider 认为这次请求参数无效。原始错误已留在调试信息中。",
   "error.toolDetail": "某个工具没有完成。原始错误已留在调试信息中。",
   "error.localDetail": "无法完成本地文件、命令或权限相关操作。",
   "error.internalDetail": "没有完成这次请求。调试信息可用于排查。",

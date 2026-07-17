@@ -1,11 +1,21 @@
-export type UserFacingErrorCategory =
-  | "cancelled"
-  | "network"
-  | "auth"
-  | "provider"
-  | "tool"
-  | "local"
-  | "internal";
+// Single source for the categories this renderer knows how to display;
+// runtime membership checks (unknown wire values degrade to "internal")
+// and the union type both derive from it.
+const USER_FACING_ERROR_CATEGORIES = [
+  "cancelled",
+  "network",
+  "auth",
+  "provider",
+  "invalid_request",
+  "tool",
+  "local",
+  "internal",
+] as const;
+export type UserFacingErrorCategory = (typeof USER_FACING_ERROR_CATEGORIES)[number];
+
+function isUserFacingErrorCategory(value: string): value is UserFacingErrorCategory {
+  return (USER_FACING_ERROR_CATEGORIES as readonly string[]).includes(value);
+}
 export type UserFacingErrorTone = "neutral" | "warning" | "auth" | "error";
 export type UserFacingErrorContext = "turn" | "tool" | "status";
 
@@ -141,6 +151,11 @@ function extractSpecificDisplay(
       if (lower.includes("invalid_request_error")) return { title: t("error.invalidRequest") };
       return {};
     }
+    case "invalid_request": {
+      const code = extractHttpCode(message);
+      if (code) return { title: httpTitle(code) };
+      return {};
+    }
     case "tool": {
       const first = message.split(/[.\n]/)[0]?.trim();
       if (!first) return {};
@@ -187,11 +202,16 @@ export function userFacingErrorForMessage(
   ).trim();
 
   // Category: prefer the wire value, fall back to the legacy classifier.
-  // The Go side's 7 categories match UserFacingErrorCategory 1:1, so
-  // the cast is safe.
+  // A wire value we do not recognize (a newer Go core added a category
+  // before this renderer learned it) degrades to the internal-error
+  // rendering instead of producing a blank, tone-less display.
+  const wireCategory = structured?.category;
   const category: UserFacingErrorCategory =
-    (structured?.category as UserFacingErrorCategory | undefined) ??
-    classifyUserFacingError(message, context);
+    wireCategory !== undefined
+      ? isUserFacingErrorCategory(wireCategory)
+        ? wireCategory
+        : "internal"
+      : classifyUserFacingError(message, context);
 
   // Title: always a localized label — keyword extraction from the raw
   // message (or from the structured code, when the code itself is a
@@ -251,6 +271,7 @@ function toneForCategory(category: UserFacingErrorCategory): UserFacingErrorTone
       return "auth";
     case "network":
     case "provider":
+    case "invalid_request":
     case "tool":
     case "local":
     case "internal":
@@ -268,6 +289,8 @@ function defaultTitleForCategory(category: UserFacingErrorCategory): string {
       return t("error.authTitle");
     case "provider":
       return t("error.providerTitle");
+    case "invalid_request":
+      return t("error.invalidRequest");
     case "tool":
       return t("error.toolTitle");
     case "local":
@@ -287,6 +310,8 @@ function defaultDetailForCategory(category: UserFacingErrorCategory): string {
       return t("error.authDetail");
     case "provider":
       return t("error.providerDetail");
+    case "invalid_request":
+      return t("error.invalidRequestDetail");
     case "tool":
       return t("error.toolDetail");
     case "local":

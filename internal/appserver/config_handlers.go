@@ -24,12 +24,14 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
 
 func (s *Server) handleInitialize(req Request) error {
+	s.pinLegacyRuntimeSelections()
 	core := version.Info()
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	status := "ready"
@@ -705,12 +707,30 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		return s.writeResponse(req.ID, s.currentConfigModelUpdateResult(), nil)
 	}
 	providerName := strings.TrimSpace(params.Provider)
+	model := strings.TrimSpace(params.Model)
+	threadID := strings.TrimSpace(params.ThreadID)
+	// Provider/model/variant/effort/permission are selection state and
+	// dual-write (target thread + workspace defaults) when explicitly
+	// provided. base_url/api_key/auth_token are workspace connection
+	// configuration and never thread-scoped.
+	explicitSelection := providerName != "" || model != "" ||
+		params.Effort != nil || params.Variant != nil || params.PermissionMode != nil
+	if model == "" && (threadID == "" || params.CreateProvider) {
+		return s.writeResponse(req.ID, nil, errors.New("model is required"))
+	}
+	var targetThread *threadState
+	if threadID != "" && explicitSelection {
+		// Only selection changes race turn admission; a connection-only
+		// update stays allowed while the target thread runs.
+		th, releaseTarget, err := s.beginThreadRuntimeSelectionMutation(threadID)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		defer releaseTarget()
+		targetThread = th
+	}
 	if providerName == "" {
 		providerName = s.rt.ProviderName
-	}
-	model := strings.TrimSpace(params.Model)
-	if model == "" {
-		return s.writeResponse(req.ID, nil, errors.New("model is required"))
 	}
 	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
@@ -771,6 +791,49 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 		providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
+	}
+	if model == "" {
+		// Targeted request without an explicit model: the workspace side
+		// keeps its current selection; the thread layers its own below.
+		if resolvedName == s.rt.ProviderName {
+			model = strings.TrimSpace(s.rt.Model)
+		}
+		if model == "" {
+			model = strings.TrimSpace(providerCfg.Model)
+		}
+		if model == "" {
+			return s.writeResponse(req.ID, nil, errors.New("model is required"))
+		}
+	}
+	// A targeted update inherits omitted provider/model from the target
+	// conversation, so validation and the thread write run against that
+	// effective pair. The workspace dual-write only stays coherent when the
+	// effective provider is the workspace provider itself: a model repin on
+	// a foreign-provider thread must not graft its model onto the workspace
+	// provider's config. An explicit provider param still moves the
+	// workspace pair together, exactly as before.
+	effectiveProvider, effectiveModel := resolvedName, model
+	if targetThread != nil {
+		targetThread.mu.Lock()
+		pinnedProvider := strings.TrimSpace(targetThread.ModelProvider)
+		pinnedModel := strings.TrimSpace(targetThread.Model)
+		targetThread.mu.Unlock()
+		if strings.TrimSpace(params.Provider) == "" && pinnedProvider != "" {
+			effectiveProvider = pinnedProvider
+		}
+		if strings.TrimSpace(params.Model) == "" && pinnedModel != "" {
+			effectiveModel = pinnedModel
+		}
+	}
+	dualWriteWorkspace := strings.TrimSpace(params.Provider) != "" || effectiveProvider == resolvedName
+	if !dualWriteWorkspace {
+		// Thread-scoped selection update: every workspace-side write below
+		// keeps the workspace's current model; the thread write layers the
+		// explicit params over the thread's own pins.
+		model = strings.TrimSpace(s.rt.Model)
+		if model == "" {
+			model = strings.TrimSpace(providerCfg.Model)
+		}
 	}
 	previousProviderCfg := providerCfg
 	previousModel := strings.TrimSpace(providerCfg.Model)
@@ -843,19 +906,42 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, model)
 	_, previousRuleProviderCfg := modelcatalog.EnrichProvider(resolvedName, previousProviderCfg, previousModel)
 	modelHeadersChanged := !reflect.DeepEqual(previousRuleProviderCfg.Headers, ruleProviderCfg.Headers)
+	// Variant/effort params validate against the effective model they will
+	// pin, not the workspace model: rejecting an effort change on a thread
+	// pinned to a different model against the workspace model would break
+	// the documented inherit-from-target-conversation contract.
+	validationRuleName, validationRuleCfg := ruleProviderName, ruleProviderCfg
+	if effectiveProvider != resolvedName || effectiveModel != model {
+		if effectiveProviderCfg, effectiveResolvedName, resolveErr := cfg.ResolveProvider(effectiveProvider); resolveErr == nil {
+			effectiveProviderCfg = s.withCachedCodexModels(effectiveResolvedName, effectiveProviderCfg)
+			validationRuleName, validationRuleCfg = modelcatalog.EnrichProvider(effectiveResolvedName, effectiveProviderCfg, effectiveModel)
+		}
+	}
 	if params.Variant != nil && variant != "" {
-		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support variant %s", model, variant))
+		if _, ok := modelvariant.OptionsForProvider(validationRuleName, validationRuleCfg, effectiveModel, variant); !ok {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support variant %s", effectiveModel, variant))
 		}
 	}
-	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.SummariesForProvider(ruleProviderName, ruleProviderCfg, model)) > 0 {
-		if _, ok := modelvariant.OptionsForProvider(ruleProviderName, ruleProviderCfg, model, variant); !ok {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support effort %s", model, variant))
+	if params.Effort != nil && params.Variant == nil && variant != "" && len(modelvariant.SummariesForProvider(validationRuleName, validationRuleCfg, effectiveModel)) > 0 {
+		if _, ok := modelvariant.OptionsForProvider(validationRuleName, validationRuleCfg, effectiveModel, variant); !ok {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("model %s does not support effort %s", effectiveModel, variant))
 		}
 	}
-	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, model, variant, legacyEffort)
+	workspaceVariant, workspaceEffort := variant, legacyEffort
+	if !dualWriteWorkspace {
+		// The selection params stay thread-scoped; the workspace keeps its
+		// current variant/effort in the resolved selection, the runtime
+		// writes, and the workspace-effective result payload.
+		workspaceVariant, workspaceEffort = s.currentVariant(), s.currentEffort()
+	}
+	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, model, workspaceVariant, workspaceEffort)
 	effort := selection.DisplayEffort
 	effortForConfig, variantForConfig := selectionConfigPointers(selection, selectionTouched, s.currentVariant())
+	if !explicitSelection || !dualWriteWorkspace {
+		// Connection-only or thread-scoped update: leave the persisted
+		// workspace selection untouched.
+		effortForConfig, variantForConfig = nil, nil
+	}
 
 	var client providers.StreamClient
 	if resolvedName != s.rt.ProviderName || connectionChanged || modelHeadersChanged {
@@ -903,8 +989,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 
 	previousRuntimeProvider := s.rt.ProviderName
-	s.rt.ProviderName = resolvedName
-	s.rt.Model = model
+	if explicitSelection {
+		s.rt.ProviderName = resolvedName
+		s.rt.Model = model
+	}
 	if client != nil || len(s.rt.ReadinessIssues) == 0 {
 		s.rt.ReadinessIssues = nil
 	}
@@ -938,7 +1026,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 		s.rt.WorkerClient = workerClient
 	}
-	if s.rt.Toolkit != nil {
+	if explicitSelection && s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 	}
 	if params.PermissionMode != nil {
@@ -948,27 +1036,86 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			runtime.ConfigureToolkitPermissions(s.rt.Toolkit, s.rt.Permissions)
 		}
 	}
-	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
-	modelBudget := runtime.ResolveModelBudget(model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
-	s.rt.ModelBudget = modelBudget
-	workerBudget := runtime.ResolveModelBudget(roleSelections.Worker.Model, roleSelections.Worker.RuleProviderConfig, cfg.Agent.MaxContextTokens)
-	s.rt.WorkerModelBudget = workerBudget
-	if s.rt.StreamRunner != nil {
-		if client != nil {
-			s.rt.StreamRunner.Client = client
+	if s.rt.StreamRunner != nil && client != nil {
+		s.rt.StreamRunner.Client = client
+	}
+	if explicitSelection {
+		s.rt.RefreshSystemPrompt(resolvedName, apiModel)
+		modelBudget := runtime.ResolveModelBudget(model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
+		s.rt.ModelBudget = modelBudget
+		s.rt.WorkerModelBudget = runtime.ResolveModelBudget(roleSelections.Worker.Model, roleSelections.Worker.RuleProviderConfig, cfg.Agent.MaxContextTokens)
+		if s.rt.StreamRunner != nil {
+			s.rt.StreamRunner.ProviderName = resolvedName
+			s.rt.StreamRunner.Model = model
+			s.rt.StreamRunner.APIModel = apiModel
+			s.rt.StreamRunner.Effort = selection.LegacyEffort
+			s.rt.StreamRunner.Variant = selection.Variant
+			s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
+			s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
+			s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
+			s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
+			s.rt.StreamRunner.CompactThresholdTokens = modelBudget.CompactThresholdTokens
 		}
-		s.rt.StreamRunner.Model = model
-		s.rt.StreamRunner.APIModel = apiModel
-		s.rt.StreamRunner.Effort = selection.LegacyEffort
-		s.rt.StreamRunner.Variant = selection.Variant
-		s.rt.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
-		s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
-		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
-		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
-		s.rt.StreamRunner.CompactThresholdTokens = modelBudget.CompactThresholdTokens
 	}
 	s.updateRootAgentControlWorkerDefaults()
-	s.updateThreadRuntimeForModelUpdate(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
+	if connectionChanged {
+		// Connection credentials/endpoints are workspace configuration, so every
+		// resident runtime must rebuild before its next
+		// turn. Running turns keep their admitted snapshot until they settle.
+		s.resetThreadRuntimesForGeneralSettings("")
+	}
+	if targetThread != nil {
+		// The thread pins explicit params layered over its own current
+		// selection, never over workspace-derived values.
+		targetThread.mu.Lock()
+		threadProvider := strings.TrimSpace(targetThread.ModelProvider)
+		threadModel := strings.TrimSpace(targetThread.Model)
+		threadVariant := strings.TrimSpace(targetThread.ModelVariant)
+		threadEffort := strings.TrimSpace(targetThread.ModelEffort)
+		threadPermission := strings.TrimSpace(targetThread.PermissionMode)
+		targetThread.mu.Unlock()
+		if strings.TrimSpace(params.Provider) != "" || threadProvider == "" {
+			threadProvider = resolvedName
+		}
+		if strings.TrimSpace(params.Model) != "" || threadModel == "" {
+			// effectiveModel, not model: on a thread-scoped update the
+			// workspace-side model variable stays the workspace's own model.
+			threadModel = effectiveModel
+		}
+		if params.Variant != nil {
+			threadVariant = strings.TrimSpace(*params.Variant)
+			if threadVariant == "" && params.Effort == nil {
+				threadEffort = ""
+			}
+		}
+		if params.Effort != nil {
+			threadEffort = strings.TrimSpace(*params.Effort)
+			if params.Variant == nil {
+				threadVariant = threadEffort
+			}
+		}
+		if selectionTouched {
+			threadRuleName, threadRuleCfg := ruleProviderName, ruleProviderCfg
+			if threadProvider != resolvedName || threadModel != model {
+				if threadProviderCfg, threadResolvedName, resolveErr := cfg.ResolveProvider(threadProvider); resolveErr == nil {
+					threadProviderCfg = s.withCachedCodexModels(threadResolvedName, threadProviderCfg)
+					threadRuleName, threadRuleCfg = modelcatalog.EnrichProvider(threadResolvedName, threadProviderCfg, threadModel)
+				}
+			}
+			threadSelection := modelvariant.ResolveForProvider(threadRuleName, threadRuleCfg, threadModel, threadVariant, threadEffort)
+			threadVariant = threadSelection.Variant
+			threadEffort = threadSelection.LegacyEffort
+		}
+		if threadPermission == "" {
+			threadPermission = config.NormalizePermissionMode(s.rt.Permissions.Mode)
+		}
+		if params.PermissionMode != nil {
+			threadPermission = config.NormalizePermissionMode(*params.PermissionMode)
+		}
+		if err := s.updateThreadRuntimeForModelUpdate(targetThread, threadProvider, threadModel, threadVariant, threadEffort, threadPermission); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
@@ -1213,21 +1360,85 @@ func skillSummaries(items []skills.Skill) []SkillSummary {
 	return out
 }
 
-func (s *Server) updateThreadRuntimeForModelUpdate(providerName, ruleProviderName, model, apiModel, systemPrompt string) {
-	update := threadRuntimeUpdate{
-		ProviderName:     providerName,
-		RuleProviderName: ruleProviderName,
-		Model:            model,
-		APIModel:         apiModel,
-		SystemPrompt:     systemPrompt,
+func (s *Server) beginThreadRuntimeSelectionMutation(threadID string) (*threadState, func(), error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil, func() {}, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, th := range s.threads {
+	th, err := s.ensureResidentThread(threadID)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	th.mu.Lock()
+	busy := th.running || th.admissionReserved || th.runtimeSelectionMutation ||
+		(th.execRuntime != nil && threadRuntimeHasOutstandingAgentWork(th.execRuntime))
+	if busy {
+		th.mu.Unlock()
+		return nil, func() {}, fmt.Errorf("cannot change model or permission mode while thread %q is running", threadID)
+	}
+	th.runtimeSelectionMutation = true
+	persist := th.PersistHistory
+	th.mu.Unlock()
+
+	var mutationLease *session.ThreadExecutionLease
+	if persist {
+		mutationLease, err = s.tryAcquireThreadMutationLease(threadID)
+		if err != nil {
+			th.mu.Lock()
+			th.runtimeSelectionMutation = false
+			th.mu.Unlock()
+			if errors.Is(err, errThreadExecutionBusy) {
+				return nil, func() {}, fmt.Errorf("cannot change model or permission mode while thread %q is running", threadID)
+			}
+			return nil, func() {}, err
+		}
+	}
+	release := func() {
+		releaseThreadMutationLease(threadID, mutationLease)
 		th.mu.Lock()
-		s.updateThreadRuntimeLocked(th, update)
+		th.runtimeSelectionMutation = false
 		th.mu.Unlock()
 	}
+	return th, release, nil
+}
+
+func (s *Server) updateThreadRuntimeForModelUpdate(th *threadState, providerName, model, variant, effort, permissionMode string) error {
+	if th == nil {
+		return nil
+	}
+	selection := session.RuntimeSelection{
+		Provider:       providerName,
+		Model:          model,
+		Variant:        variant,
+		Effort:         effort,
+		PermissionMode: permissionMode,
+	}
+	if th.PersistHistory {
+		if _, err := session.SetRuntimeSelection(s.rt.SessionDir, th.ID, selection); err != nil {
+			return err
+		}
+	}
+	var detached detachedThreadRuntime
+	th.mu.Lock()
+	modelSelectionChanged := th.ModelProvider != strings.TrimSpace(selection.Provider) ||
+		th.Model != strings.TrimSpace(selection.Model) ||
+		th.ModelVariant != strings.TrimSpace(selection.Variant) ||
+		th.ModelEffort != strings.TrimSpace(selection.Effort)
+	applyThreadRuntimeSelection(th, selection)
+	if modelSelectionChanged && s.rt.StreamRunner != nil {
+		if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
+			th.History = replaceBaseSystemPrompt(th.History, prompt)
+		}
+	}
+	if modelSelectionChanged && th.execRuntime != nil {
+		detached = detachThreadRuntimeLocked(th)
+	}
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	if detached.runtime != nil || detached.subscription != nil {
+		releaseDetachedThreadRuntime(detached)
+	}
+	return s.notifyThreadUpdated(thread)
 }
 
 func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
@@ -1265,85 +1476,6 @@ func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
 	s.mu.Unlock()
 	for _, detached := range releases {
 		releaseDetachedThreadRuntime(detached)
-	}
-}
-
-func (s *Server) updateThreadRuntimeLocked(th *threadState, update threadRuntimeUpdate) {
-	th.ModelProvider = update.ProviderName
-	th.Model = update.Model
-	if strings.TrimSpace(update.SystemPrompt) != "" {
-		th.History = replaceBaseSystemPrompt(th.History, update.SystemPrompt)
-		if th.PersistHistory {
-			if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
-				providers.DebugLogf("rewrite thread %q system prompt after model update: %v", th.ID, err)
-			}
-		}
-	}
-	if th.running {
-		pending := update
-		th.pendingRuntimeUpdate = &pending
-		return
-	}
-	s.applyThreadRuntimeUpdateLocked(th, update)
-}
-
-func (s *Server) applyPendingThreadRuntime(th *threadState) {
-	if th == nil {
-		return
-	}
-	th.mu.Lock()
-	defer th.mu.Unlock()
-	if th.running || th.pendingRuntimeUpdate == nil {
-		return
-	}
-	s.applyPendingThreadRuntimeLocked(th)
-}
-
-func (s *Server) applyPendingThreadRuntimeLocked(th *threadState) {
-	if th == nil || th.pendingRuntimeUpdate == nil {
-		return
-	}
-	update := *th.pendingRuntimeUpdate
-	s.applyThreadRuntimeUpdateLocked(th, update)
-}
-
-func (s *Server) applyThreadRuntimeUpdateLocked(th *threadState, update threadRuntimeUpdate) {
-	th.pendingRuntimeUpdate = nil
-	if th.execRuntime == nil {
-		return
-	}
-	if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
-		th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
-		th.execRuntime.StreamRunner.Model = update.Model
-		th.execRuntime.StreamRunner.APIModel = update.APIModel
-		th.execRuntime.StreamRunner.UpdateSystemPromptWithSections(update.SystemPrompt, s.rt.StreamRunner.SystemPromptSections)
-		th.execRuntime.StreamRunner.Effort = s.currentEffort()
-		th.execRuntime.StreamRunner.Variant = s.currentVariant()
-		th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
-		th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
-		th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
-		th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
-		th.execRuntime.StreamRunner.CompactThresholdTokens = s.rt.StreamRunner.CompactThresholdTokens
-		th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
-		th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
-		th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
-		th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
-		th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
-	}
-	th.execRuntime.ModelBudget = s.rt.ModelBudget
-	th.execRuntime.WorkerModelBudget = s.rt.WorkerModelBudget
-	if th.execRuntime.AgentControl != nil {
-		th.execRuntime.AgentControl.UpdateWorkerDefaults(
-			s.rt.WorkerClient,
-			s.rt.ModelRoles.Worker.APIModel,
-			s.currentWorkerManagerOptions(),
-		)
-	}
-	if th.execRuntime.Toolkit != nil {
-		th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(update.RuleProviderName, update.APIModel, true)
-		if s.rt != nil {
-			runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.Permissions)
-		}
 	}
 }
 
@@ -1406,6 +1538,7 @@ func (s *Server) currentWorkerManagerOptions() subagent.ManagerOptions {
 		temperature = s.rt.StreamRunner.Temperature
 	}
 	return subagent.ManagerOptions{
+		DefaultProviderName:     workerProviderName(s.rt),
 		DefaultEffort:           s.rt.ModelRoles.Worker.LegacyEffort,
 		DefaultProviderOptions:  s.rt.ModelRoles.Worker.ProviderOptions,
 		ContextWindowOverride:   s.rt.WorkerModelBudget.ContextWindowTokens,
@@ -1440,11 +1573,78 @@ func (s *Server) currentDisplayEffort() string {
 	return s.currentEffort()
 }
 
-func (s *Server) currentProviderOptions() map[string]any {
-	if s == nil || s.rt == nil || s.rt.StreamRunner == nil {
-		return nil
+func (s *Server) currentSessionRuntimeSelection() session.RuntimeSelection {
+	selection := session.RuntimeSelection{}
+	if s != nil && s.rt != nil {
+		selection.Provider = s.rt.ProviderName
+		selection.Model = s.rt.Model
+		selection.Variant = s.currentVariant()
+		selection.Effort = s.currentEffort()
+		selection.PermissionMode = config.NormalizePermissionMode(s.rt.Permissions.Mode)
 	}
-	return modelvariant.CloneOptions(s.rt.StreamRunner.ProviderOptions)
+	return selection
+}
+
+// pinLegacyRuntimeSelections backfills this workspace's persisted sessions
+// that predate per-session runtime selection. Defaults come from the durable
+// config rather than live runtime state so transient process overrides (e.g.
+// a one-shot CLI permission mode) are never pinned. Pinning is best-effort:
+// a bad row is logged and skipped instead of blocking initialization.
+func (s *Server) pinLegacyRuntimeSelections() {
+	if s == nil || s.rt == nil {
+		return
+	}
+	cfg, _, err := s.rt.LoadEffectiveConfig()
+	if err != nil {
+		providers.DebugLogf("load config to pin legacy runtime selections: %v", err)
+		return
+	}
+	providerCfg, providerName, err := cfg.ResolveProvider("")
+	if err != nil {
+		providers.DebugLogf("resolve default provider to pin legacy runtime selections: %v", err)
+		return
+	}
+	defaults := session.RuntimeSelection{
+		Provider:       strings.TrimSpace(providerName),
+		Model:          strings.TrimSpace(providerCfg.Model),
+		Variant:        strings.TrimSpace(cfg.Agent.Variant),
+		Effort:         strings.TrimSpace(cfg.Agent.Effort),
+		PermissionMode: config.NormalizePermissionMode(cfg.Agent.PermissionMode),
+	}
+	if defaults.Provider == "" || defaults.Model == "" {
+		return
+	}
+	// Strict workspace scoping: DM and group sessions of other workspaces
+	// must keep their own defaults, so the DM-inclusive listing is wrong here.
+	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
+	if err != nil {
+		providers.DebugLogf("list sessions to pin legacy runtime selections: %v", err)
+		return
+	}
+	for _, sess := range sessions {
+		selection := runtimeSelectionFromSession(sess)
+		legacySelection := selection.PermissionMode == ""
+		changed := false
+		if selection.Provider == "" || selection.Model == "" {
+			selection.Provider = defaults.Provider
+			selection.Model = defaults.Model
+			changed = true
+		}
+		if legacySelection && selection.Variant == "" && selection.Effort == "" {
+			selection.Variant = defaults.Variant
+			selection.Effort = defaults.Effort
+			changed = true
+		}
+		if selection.PermissionMode == "" {
+			selection.PermissionMode = defaults.PermissionMode
+			changed = true
+		}
+		if changed {
+			if _, err := session.SetRuntimeSelection(s.rt.SessionDir, sess.ID, selection); err != nil {
+				providers.DebugLogf("pin runtime selection for session %q: %v", sess.ID, err)
+			}
+		}
+	}
 }
 
 func selectionConfigPointers(selection modelvariant.Selection, touched bool, previousVariant string) (*string, *string) {

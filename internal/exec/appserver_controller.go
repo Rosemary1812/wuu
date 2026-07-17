@@ -50,7 +50,10 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 		Config:         cfg,
 		ProviderName:   opts.Provider,
 		ModelOverride:  opts.Model,
-		NoTools:        opts.NoTools,
+		// Only a --permission-mode flag actually passed to exec becomes the
+		// process-scoped override that beats a resumed session's pinned mode.
+		PermissionModeExplicit: strings.TrimSpace(opts.PermissionMode) != "",
+		NoTools:                opts.NoTools,
 	})
 	if err != nil {
 		return nil, err

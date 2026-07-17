@@ -128,6 +128,35 @@ func TestStreamRunnerUsesAPIModelForProviderRequest(t *testing.T) {
 	}
 }
 
+func TestStreamRunnerRecordsProviderProvenanceForNativeState(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "ok", ProviderItemID: "msg_1"},
+			{Type: providers.EventDone},
+		},
+	}
+	runner := &StreamRunner{
+		Client:       client,
+		ProviderName: "gateway-a",
+		Model:        "shared-model",
+	}
+
+	result, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hello"}}, nil)
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if len(client.requests) != 1 || client.requests[0].Provider != "gateway-a" {
+		t.Fatalf("request provider provenance missing: %+v", client.requests)
+	}
+	if len(result.NewMessages) != 1 {
+		t.Fatalf("new messages = %+v", result.NewMessages)
+	}
+	got := result.NewMessages[0]
+	if got.ProviderItemID != "msg_1" || got.ProviderItemProvider != "gateway-a" || got.ProviderItemModel != "shared-model" {
+		t.Fatalf("native-state provenance missing: %+v", got)
+	}
+}
+
 func TestStreamRunner_AfterTurnRunsAfterSuccess(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "ok"}, {Type: providers.EventDone}},

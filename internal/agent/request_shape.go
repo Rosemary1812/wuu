@@ -213,6 +213,7 @@ func messageBytesForRequestShape(messages []providers.ChatMessage) int {
 		for _, call := range msg.ToolCalls {
 			total += len([]byte(call.ID))
 			total += len([]byte(call.ProviderItemID))
+			total += len([]byte(call.ProviderItemProvider))
 			total += len([]byte(call.ProviderItemModel))
 			total += len([]byte(call.Name))
 			total += len([]byte(call.Arguments))

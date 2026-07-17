@@ -2600,6 +2600,131 @@ func TestNewThreadRuntimeWorkerInheritsCurrentPermissionBoundary(t *testing.T) {
 	}
 }
 
+// TestThreadWorkerWakeAppliesCurrentPermissionBoundary locks the wake side of
+// permission propagation: a COMPLETED worker woken by a follow-up must run
+// under the permissions in force at wake time, in both directions.
+// Regression: the worker toolkit used to keep the boundary captured at spawn,
+// so tightening the thread to read-only left a woken worker writable.
+func TestThreadWorkerWakeAppliesCurrentPermissionBoundary(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	writeCall := func(id, path string) []providers.StreamEvent {
+		patch := `{"patchText":"*** Begin Patch\n*** Add File: ` + path + `\n+payload\n*** End Patch\n"}`
+		return []providers.StreamEvent{
+			{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: id, Name: "apply_patch"}},
+			{Type: providers.EventToolUseDelta, Content: patch},
+			{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: id, Name: "apply_patch"}},
+			{Type: providers.EventDone},
+		}
+	}
+	turnDone := []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "done"},
+		{Type: providers.EventDone},
+	}
+	client := &sessionRecordingClient{
+		streamBatches: [][]providers.StreamEvent{
+			turnDone,                              // spawn turn: complete without touching files
+			writeCall("call-w1", "tightened.txt"), // wake 1 under read-only: must be denied
+			turnDone,
+			writeCall("call-w2", "loosened.txt"), // wake 2 under standard: must succeed
+			turnDone,
+		},
+	}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-wake-permissions")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+
+	// Spawn under the standard boundary and let the worker complete.
+	spawned, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "wake_permissions",
+		Prompt:      "idle worker",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	// Tighten the thread to read-only AFTER the worker completed — the same
+	// reapply the app-server performs on the thread toolkit at turn start.
+	ConfigureToolkitPermissions(threadRT.Toolkit, config.ResolvedPermissions{Mode: config.PermissionModeReadOnly})
+
+	if _, err := threadRT.AgentControl.FollowupTask(context.Background(), spawned.AgentID, "write tightened.txt"); err != nil {
+		t.Fatalf("FollowupTask (read-only): %v", err)
+	}
+	snap, err := threadRT.AgentControl.Wait(context.Background(), spawned.AgentID)
+	if err != nil {
+		t.Fatalf("Wait (read-only wake): %v", err)
+	}
+	if snap.Status != subagent.StatusCompleted {
+		t.Fatalf("read-only wake turn = %+v, want completed", snap)
+	}
+	req := client.LastRequest()
+	var joined strings.Builder
+	for _, msg := range req.Messages {
+		joined.WriteString(msg.Content)
+		joined.WriteByte('\n')
+	}
+	content := joined.String()
+	if !strings.Contains(content, "boundary_denied") ||
+		!strings.Contains(content, "this agent is read-only") {
+		t.Fatalf("woken worker kept its spawn-time writable boundary:\n%s", content)
+	}
+	if _, err := os.Stat(filepath.Join(root, "tightened.txt")); !os.IsNotExist(err) {
+		t.Fatalf("woken read-only worker should not create tightened.txt, stat err=%v", err)
+	}
+
+	// Loosen back to standard — waking must propagate that direction too.
+	ConfigureToolkitPermissions(threadRT.Toolkit, config.ResolvedPermissions{Mode: config.PermissionModeStandard})
+
+	if _, err := threadRT.AgentControl.FollowupTask(context.Background(), spawned.AgentID, "write loosened.txt"); err != nil {
+		t.Fatalf("FollowupTask (standard): %v", err)
+	}
+	snap, err = threadRT.AgentControl.Wait(context.Background(), spawned.AgentID)
+	if err != nil {
+		t.Fatalf("Wait (standard wake): %v", err)
+	}
+	if snap.Status != subagent.StatusCompleted {
+		t.Fatalf("standard wake turn = %+v, want completed", snap)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "loosened.txt"))
+	if err != nil {
+		t.Fatalf("woken worker kept the tightened boundary after loosening: %v", err)
+	}
+	if !strings.Contains(string(data), "payload") {
+		t.Fatalf("loosened.txt content = %q, want it to contain %q", string(data), "payload")
+	}
+}
+
 func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	root := t.TempDir()
 	kit, err := tools.New(root)

@@ -3,6 +3,7 @@ package appserver
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,6 +28,28 @@ func TestBuildTurnError_SerializesFactsWithoutActions(t *testing.T) {
 	for _, fact := range []string{`"code":"internal_error"`, `"provider":"compatible"`, `"status_code":404`} {
 		if !strings.Contains(wire, fact) {
 			t.Errorf("turn error lost diagnostic fact %s: %s", fact, wire)
+		}
+	}
+}
+
+func TestBuildTurnError_InvalidRequestIsNotRetryable(t *testing.T) {
+	tests := []error{
+		&providers.HTTPError{StatusCode: 400},
+		&providers.HTTPError{
+			StatusCode: 400,
+			Body:       `{"error":{"type":"invalid_request_error","message":"Invalid request Error"},"type":"error"}`,
+		},
+		&providers.StreamError{Code: "400", Message: "bad request", Retryable: true},
+		fmt.Errorf("HTTP 400: malformed request"),
+	}
+	for _, err := range tests {
+		out := BuildTurnError(err, "kimi-code")
+		if out.Category != "invalid_request" {
+			t.Fatalf("%T category = %q, want invalid_request", err, out.Category)
+		}
+		turn := Turn{Status: TurnStatusFailed, Error: &out}
+		if isRetryableTurnFailure(turn) {
+			t.Fatalf("%T invalid request must not be retried", err)
 		}
 	}
 }

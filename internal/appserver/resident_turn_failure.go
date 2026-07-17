@@ -14,9 +14,9 @@ import (
 // runtime failure worth retrying the plan node against its budget (plan §T8).
 // It is deliberately narrow: only a genuinely failed turn whose classified
 // category is network or provider (a dropped connection, a rate-limit, an
-// overloaded provider) is retryable. Cancelled (the user interrupted), auth
-// (needs a human to re-auth), and local/internal (a logic bug in our own code
-// or tools) are NEVER retried — re-running the same node would not fix them.
+// overloaded provider) is retryable. Invalid requests, cancelled turns, auth
+// failures, and local/internal errors are NEVER retried — re-running the same
+// node would not fix them.
 // There are no timeouts in this decision (red line §4.7): only the turn's own
 // terminal error classifies it.
 func isRetryableTurnFailure(turn Turn) bool {

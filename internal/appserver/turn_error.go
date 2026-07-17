@@ -117,6 +117,8 @@ func categoryFromHTTPError(httpErr *providers.HTTPError) string {
 		return "provider"
 	}
 	switch httpErr.StatusCode {
+	case 400:
+		return "invalid_request"
 	case 401, 403:
 		return "auth"
 	case 429, 529:
@@ -144,6 +146,9 @@ func categoryFromStreamError(streamErr *providers.StreamError) string {
 	// before the retry classification runs, so detect these from the
 	// code without depending on Retryable.
 	code := strings.ToLower(strings.TrimSpace(streamErr.Code))
+	if code == "400" || code == "invalid_request" || code == "invalid_request_error" {
+		return "invalid_request"
+	}
 	if code == "429" || code == "529" || code == "1305" ||
 		code == "rate_limit_error" || code == "overloaded_error" ||
 		code == "throttling" || code == "resource_exhausted" ||
@@ -181,6 +186,8 @@ func categoryFromMessage(message string) string {
 	switch {
 	case isCancellationMessage(lower):
 		return "cancelled"
+	case strings.Contains(lower, "invalid_request_error"), strings.Contains(lower, "invalid request error"), strings.Contains(lower, "http 400"):
+		return "invalid_request"
 	// Local comes BEFORE auth: a "permission denied: file /etc/hosts"
 	// string has both "permission denied" and "file" tokens, and the
 	// local check is the more specific match (auth + file → local).
@@ -246,7 +253,6 @@ func isProviderBusinessMessage(lower string) bool {
 		strings.Contains(lower, "model returned") ||
 		strings.Contains(lower, "response failed") ||
 		strings.Contains(lower, "response error") ||
-		strings.Contains(lower, "invalid_request_error") ||
 		strings.Contains(lower, "previous_response_not_found")
 }
 

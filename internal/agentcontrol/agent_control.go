@@ -210,7 +210,12 @@ type Config struct {
 	// agent control runtime will share. It must be a StreamClient (not just a
 	// Client) so workers run through the same streaming transport as
 	// the interactive main agent.
-	Client                         providers.StreamClient
+	Client providers.StreamClient
+	// ProviderName names the provider Client belongs to. It is stamped on
+	// worker runners so worker-produced native state carries its provider
+	// of origin, and it seeds the worker-provider identity used by
+	// model-pin comparisons.
+	ProviderName                   string
 	DefaultModel                   string
 	DefaultEffort                  string
 	DefaultOptions                 map[string]any
@@ -233,6 +238,12 @@ type Config struct {
 	WorkerSysPrompt                string
 	WorkerFactory                  WorkerToolkitFactory
 	WorkerPrompt                   WorkerSystemPromptFactory
+	// WorkerWakeAuthority reapplies the current thread authority to a
+	// dormant worker's tool executor when a follow-up wakes it. Waking is an
+	// execution admission: the woken turn must run under the permissions in
+	// force now, not the ones captured at spawn. Nil keeps spawn-time
+	// authority. Running workers keep their admitted snapshot either way.
+	WorkerWakeAuthority func(agent.ToolExecutor)
 	// ParticipantStore, when set, persists the ephemeral participant
 	// identity created for each spawned worker. Optional: when nil,
 	// participant IDs are still generated in-memory but not persisted.
@@ -266,6 +277,7 @@ func New(cfg Config) (*AgentControl, error) {
 	}
 
 	mgr := subagent.NewManagerWithOptions(cfg.Client, cfg.DefaultModel, subagent.ManagerOptions{
+		DefaultProviderName:     cfg.ProviderName,
 		DefaultEffort:           cfg.DefaultEffort,
 		DefaultProviderOptions:  cfg.DefaultOptions,
 		ContextWindowOverride:   cfg.DefaultContextWindow,
@@ -291,6 +303,7 @@ func New(cfg Config) (*AgentControl, error) {
 	}
 	c := &AgentControl{
 		manager:                  mgr,
+		workerProviderName:       strings.TrimSpace(cfg.ProviderName),
 		worktrees:                wt,
 		parentRepo:               cfg.ParentRepo,
 		worktreeRoot:             cfg.WorktreeRoot,
@@ -315,6 +328,7 @@ func New(cfg Config) (*AgentControl, error) {
 	}
 	mgr.SetTerminalPrepareObserver(c.prepareWorkerTerminal)
 	mgr.SetTerminalObserver(c.consumeWorkerTerminal)
+	mgr.SetWakeAuthority(cfg.WorkerWakeAuthority)
 	c.restoreAgentResultDeliveries()
 	c.registerRootThread()
 	if err := c.restoreQueuedSpawns(); err != nil {
@@ -344,6 +358,13 @@ func (c *AgentControl) Manager() *subagent.Manager {
 func (c *AgentControl) UpdateWorkerDefaults(client providers.StreamClient, defaultModel string, opts subagent.ManagerOptions) {
 	if c == nil || c.manager == nil {
 		return
+	}
+	if client != nil {
+		// Keep the pin-comparison identity in lockstep with the new default
+		// client so a pin naming the old provider is treated as
+		// cross-provider (fresh client) rather than silently routed to the
+		// new default.
+		c.SetWorkerProviderName(opts.DefaultProviderName)
 	}
 	c.manager.UpdateDefaults(client, defaultModel, opts)
 }
@@ -656,21 +677,25 @@ func (c *AgentControl) currentModelPinResolver() ModelPinClientResolver {
 	return c.modelPinResolver
 }
 
+// pinProviderName returns the provider part of a raw participant pin
+// ("p:model" → "p"). A bare model pin has no provider part and yields "".
+// Mirrors appserver.parseParticipantModelPin so agentcontrol does not
+// depend on the appserver package.
+func pinProviderName(rawPin string) string {
+	value := strings.TrimSpace(rawPin)
+	idx := strings.Index(value, ":")
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(value[:idx])
+}
+
 // pinTargetsDifferentProvider reports whether the raw participant pin
 // (e.g. "alt:model") names a provider that is not the worker's current
 // default provider. A bare model (no colon) and a same-provider pin
-// both return false. Mirrors appserver.parseParticipantModelPin so
-// agentcontrol does not depend on the appserver package.
+// both return false.
 func pinTargetsDifferentProvider(rawPin, workerProvider string) bool {
-	value := strings.TrimSpace(rawPin)
-	if value == "" {
-		return false
-	}
-	idx := strings.Index(value, ":")
-	if idx < 0 {
-		return false
-	}
-	pinProvider := strings.TrimSpace(value[:idx])
+	pinProvider := pinProviderName(rawPin)
 	if pinProvider == "" {
 		return false
 	}
@@ -1082,6 +1107,12 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if wt.RequiresReport {
 		c.markReportSettlementPending(workerID)
 	}
+	// ClientOverride is only ever built for a cross-provider pin, so the
+	// pin's provider part names the provider that client belongs to.
+	spawnProviderName := ""
+	if req.ClientOverride != nil {
+		spawnProviderName = pinProviderName(req.ModelPin)
+	}
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
 		ID:            workerID,
 		ParticipantID: participantID,
@@ -1100,6 +1131,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 		ModelPin:      strings.TrimSpace(req.ModelPin),
 		Ultra:         threadMeta.Ultra,
 		Client:        req.ClientOverride,
+		ProviderName:  spawnProviderName,
 	})
 	if err != nil {
 		c.clearReportSettlement(workerID)
@@ -2706,38 +2738,44 @@ func (c *AgentControl) restoreQueuedSpawns() error {
 }
 
 // resolveSpawnModelPin turns a raw participant model pin into the concrete
-// (model, client) pair a spawn or resume should run with. It applies the
-// cross-provider safety policy shared by queued-spawn restore and
-// lazy-resume rehydration: an empty pin passes the given override through, a
-// same-provider or bare-model pin only overrides the model, and a pin that
-// targets a different provider MUST resolve to a fresh client via the
-// registered resolver. A missing/erroring resolver, an empty resolved
-// model, or a nil cross-provider client fails explicitly rather than
-// silently using the worker default client. label names the caller for the
-// error text.
-func (c *AgentControl) resolveSpawnModelPin(label, modelOverride, rawPin string, clientOverride providers.StreamClient) (string, providers.StreamClient, error) {
+// (model, client, provider) triple a spawn or resume should run with. It
+// applies the cross-provider safety policy shared by queued-spawn restore
+// and lazy-resume rehydration: an empty pin passes the given override
+// through, a same-provider or bare-model pin only overrides the model, and
+// a pin that targets a different provider MUST resolve to a fresh client
+// via the registered resolver. A missing/erroring resolver, an empty
+// resolved model, or a nil cross-provider client fails explicitly rather
+// than silently using the worker default client. label names the caller
+// for the error text. The returned provider names the provider of the
+// returned client ("" when the client is nil or its provider is unknown)
+// so the runner can stamp provenance onto the worker's native state.
+func (c *AgentControl) resolveSpawnModelPin(label, modelOverride, rawPin string, clientOverride providers.StreamClient) (string, providers.StreamClient, string, error) {
 	rawPin = strings.TrimSpace(rawPin)
 	if rawPin == "" {
-		return modelOverride, clientOverride, nil
+		return modelOverride, clientOverride, "", nil
 	}
 	resolver := c.currentModelPinResolver()
 	if resolver == nil {
-		return "", nil, fmt.Errorf("%s has model pin %q but no model-pin resolver is installed; refusing to fall back to the worker default client", label, rawPin)
+		return "", nil, "", fmt.Errorf("%s has model pin %q but no model-pin resolver is installed; refusing to fall back to the worker default client", label, rawPin)
 	}
 	resolvedModel, resolvedClient, resolveErr := resolver(rawPin)
 	if resolveErr != nil {
-		return "", nil, fmt.Errorf("%s model pin %q could not be resolved: %w", label, rawPin, resolveErr)
+		return "", nil, "", fmt.Errorf("%s model pin %q could not be resolved: %w", label, rawPin, resolveErr)
 	}
 	if strings.TrimSpace(resolvedModel) == "" {
-		return "", nil, fmt.Errorf("%s model pin %q resolved to an empty model", label, rawPin)
+		return "", nil, "", fmt.Errorf("%s model pin %q resolved to an empty model", label, rawPin)
 	}
 	if pinTargetsDifferentProvider(rawPin, c.WorkerProviderName()) {
 		if resolvedClient == nil {
-			return "", nil, fmt.Errorf("%s model pin %q targets a different provider but resolver returned no client; refusing to use the worker default client", label, rawPin)
+			return "", nil, "", fmt.Errorf("%s model pin %q targets a different provider but resolver returned no client; refusing to use the worker default client", label, rawPin)
 		}
 		clientOverride = resolvedClient
 	}
-	return resolvedModel, clientOverride, nil
+	providerName := ""
+	if clientOverride != nil {
+		providerName = pinProviderName(rawPin)
+	}
+	return resolvedModel, clientOverride, providerName, nil
 }
 
 func (c *AgentControl) resolveQueuedWorktreeBase(baseRepo string) (worktree.ResolvedBase, error) {
@@ -2908,7 +2946,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	// rebuild the client for any cross-provider pin before the runner picks
 	// one; otherwise the subagent.Manager would fall back to defaults.client
 	// and route the request to the wrong provider.
-	modelOverride, clientOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("queued spawn %s", prepared.WorkerID), prepared.ModelOverride, prepared.ModelPin, prepared.ClientOverride)
+	modelOverride, clientOverride, providerOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("queued spawn %s", prepared.WorkerID), prepared.ModelOverride, prepared.ModelPin, prepared.ClientOverride)
 	if err != nil {
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
@@ -2960,6 +2998,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 			ModelPin:       prepared.ModelPin,
 			Ultra:          prepared.ThreadMeta.Ultra,
 			Client:         clientOverride,
+			ProviderName:   providerOverride,
 		})
 		// Manager.Spawn publishes the worker synchronously. Close turn admission
 		// before storage acknowledgement so BeginShutdown can acquire its writer
@@ -4277,16 +4316,17 @@ func (c *AgentControl) rehydrateAgent(id string) (*subagent.SubAgent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot resume agent %q: worker toolkit: %w", id, err)
 	}
-	model, clientOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("resumed agent %s", id), run.Model, run.ModelPin, nil)
+	model, clientOverride, providerOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("resumed agent %s", id), run.Model, run.ModelPin, nil)
 	if err != nil {
 		return nil, err
 	}
 	sa, err := c.manager.Restore(subagent.RestoreOptions{
-		Run:         run,
-		Toolkit:     workerKit,
-		Model:       model,
-		Client:      clientOverride,
-		HistoryPath: path,
+		Run:          run,
+		Toolkit:      workerKit,
+		Model:        model,
+		Client:       clientOverride,
+		ProviderName: providerOverride,
+		HistoryPath:  path,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cannot resume agent %q: %w", id, err)

@@ -22,7 +22,7 @@ func (s *Server) tryAcquireThreadExecutionLeaseLocked(th *threadState) (bool, er
 	if th == nil {
 		return false, errors.New("thread is required")
 	}
-	if th.admissionReserved || th.executionLease != nil {
+	if th.admissionReserved || th.executionLease != nil || th.runtimeSelectionMutation {
 		// The same server may be between durable admission and startTurnLocked,
 		// where running is intentionally still false but the lease is already a
 		// local reservation. Treat it exactly like an external owner.

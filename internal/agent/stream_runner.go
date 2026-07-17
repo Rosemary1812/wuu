@@ -29,6 +29,7 @@ const maxConsecutiveProactiveCompactFailures = 3
 // context-overflow auto-compact — comes from the same code as Runner.
 type StreamRunner struct {
 	Client       providers.StreamClient
+	ProviderName string
 	Tools        ToolExecutor
 	ToolLedger   *toolledger.Ledger
 	Model        string
@@ -262,6 +263,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	cfg := LoopConfig{
 		Tools:                    r.Tools,
 		Model:                    requestModel,
+		ProviderName:             r.ProviderName,
 		InferenceOperationKind:   operationKind,
 		InferenceWorkloadProfile: workloadProfile,
 		Temperature:              r.Temperature,
@@ -320,13 +322,14 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			}
 			textResult := result.TextProjection()
 			toolCall := enrichToolCallDisplay(r.Tools, providers.ToolCall{
-				ID:                call.ID,
-				ProviderItemID:    call.ProviderItemID,
-				ProviderItemModel: call.ProviderItemModel,
-				Name:              call.Name,
-				Arguments:         call.Arguments,
-				Kind:              call.Kind,
-				Display:           call.Display,
+				ID:                   call.ID,
+				ProviderItemID:       call.ProviderItemID,
+				ProviderItemProvider: call.ProviderItemProvider,
+				ProviderItemModel:    call.ProviderItemModel,
+				Name:                 call.Name,
+				Arguments:            call.Arguments,
+				Kind:                 call.Kind,
+				Display:              call.Display,
 			})
 			effectiveOnEvent(providers.StreamEvent{
 				Type:             providers.EventToolUseEnd,
@@ -951,6 +954,11 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 		fbToolCalls := make([]providers.ToolCall, len(resp.ToolCalls))
 		copy(fbToolCalls, resp.ToolCalls)
+		for i := range fbToolCalls {
+			if strings.TrimSpace(fbToolCalls[i].ProviderItemID) != "" {
+				fbToolCalls[i].ProviderItemProvider = req.Provider
+			}
+		}
 		enrichToolCallsDisplay(s.tools, fbToolCalls)
 		// Emit the fallback content through the streaming callback so
 		// live clients can render it.
@@ -969,18 +977,24 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			})
 		}
 		fbFinishReason := normalizedChatResponseFinish(resp)
+		fbProvider := providerNameForNativeState(req.Provider, resp.ProviderItemID, resp.ReasoningContent, resp.ReasoningBlocks, fbToolCalls)
+		fbModel := resp.ProviderItemModel
+		if fbProvider != "" && strings.TrimSpace(fbModel) == "" {
+			fbModel = req.Model
+		}
 		return StepResult{
-			Content:           resp.Content,
-			Phase:             resp.Phase,
-			ProviderItemID:    resp.ProviderItemID,
-			ProviderItemModel: resp.ProviderItemModel,
-			ReasoningContent:  resp.ReasoningContent,
-			ReasoningBlocks:   cloneReasoningBlocks(resp.ReasoningBlocks),
-			ToolCalls:         fbToolCalls,
-			Usage:             resp.Usage,
-			FinishReason:      fbFinishReason,
-			StopReason:        resp.StopReason,
-			Truncated:         resp.Truncated,
+			Content:              resp.Content,
+			Phase:                resp.Phase,
+			ProviderItemID:       resp.ProviderItemID,
+			ProviderItemProvider: fbProvider,
+			ProviderItemModel:    fbModel,
+			ReasoningContent:     resp.ReasoningContent,
+			ReasoningBlocks:      cloneReasoningBlocks(resp.ReasoningBlocks),
+			ToolCalls:            fbToolCalls,
+			Usage:                resp.Usage,
+			FinishReason:         fbFinishReason,
+			StopReason:           resp.StopReason,
+			Truncated:            resp.Truncated,
 		}, nil
 	}
 	finalToolRuntime := currentToolRuntime()
@@ -992,20 +1006,41 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		return StepResult{}, fmt.Errorf("complete inference operation: %w", err)
 	}
 
+	providerItemProvider := providerNameForNativeState(req.Provider, providerItemID, thinkingBuf.String(), reasoningBlocks, toolCalls)
+	if providerItemProvider != "" && strings.TrimSpace(providerItemModel) == "" {
+		providerItemModel = req.Model
+	}
 	return StepResult{
-		Content:           contentBuf.String(),
-		Phase:             messagePhase,
-		ProviderItemID:    providerItemID,
-		ProviderItemModel: providerItemModel,
-		ReasoningContent:  thinkingBuf.String(),
-		ReasoningBlocks:   cloneReasoningBlocks(reasoningBlocks),
-		ToolCalls:         toolCalls,
-		Usage:             usage,
-		FinishReason:      finishReason,
-		StopReason:        stopReason,
-		Truncated:         truncated,
-		ToolRuntime:       finalToolRuntime,
+		Content:              contentBuf.String(),
+		Phase:                messagePhase,
+		ProviderItemID:       providerItemID,
+		ProviderItemProvider: providerItemProvider,
+		ProviderItemModel:    providerItemModel,
+		ReasoningContent:     thinkingBuf.String(),
+		ReasoningBlocks:      cloneReasoningBlocks(reasoningBlocks),
+		ToolCalls:            toolCalls,
+		Usage:                usage,
+		FinishReason:         finishReason,
+		StopReason:           stopReason,
+		Truncated:            truncated,
+		ToolRuntime:          finalToolRuntime,
 	}, nil
+}
+
+func providerNameForNativeState(providerName, providerItemID, reasoningContent string, reasoningBlocks []providers.ReasoningBlock, toolCalls []providers.ToolCall) string {
+	hasNativeState := strings.TrimSpace(providerItemID) != "" || strings.TrimSpace(reasoningContent) != "" || len(reasoningBlocks) > 0
+	if !hasNativeState {
+		for _, call := range toolCalls {
+			if strings.TrimSpace(call.ProviderItemID) != "" {
+				hasNativeState = true
+				break
+			}
+		}
+	}
+	if !hasNativeState {
+		return ""
+	}
+	return strings.TrimSpace(providerName)
 }
 
 func normalizedChatResponseFinish(resp providers.ChatResponse) providers.FinishReason {
@@ -1214,15 +1249,17 @@ func (s *streamStep) runReliableStream(
 			case providers.EventToolUseStart:
 				if event.ToolCall != nil {
 					if strings.TrimSpace(event.ToolCall.ProviderItemID) != "" {
+						event.ToolCall.ProviderItemProvider = req.Provider
 						event.ToolCall.ProviderItemModel = req.Model
 					}
 					idx := len(pendingTools)
 					toolCall := enrichToolCallDisplay(s.tools, providers.ToolCall{
-						ID:                event.ToolCall.ID,
-						ProviderItemID:    event.ToolCall.ProviderItemID,
-						ProviderItemModel: event.ToolCall.ProviderItemModel,
-						Name:              event.ToolCall.Name,
-						Kind:              event.ToolCall.Kind,
+						ID:                   event.ToolCall.ID,
+						ProviderItemID:       event.ToolCall.ProviderItemID,
+						ProviderItemProvider: event.ToolCall.ProviderItemProvider,
+						ProviderItemModel:    event.ToolCall.ProviderItemModel,
+						Name:                 event.ToolCall.Name,
+						Kind:                 event.ToolCall.Kind,
 					})
 					pendingTools[idx] = &toolCall
 					event.ToolCall = &toolCall
@@ -1237,6 +1274,7 @@ func (s *streamStep) runReliableStream(
 			case providers.EventToolUseEnd:
 				if event.ToolCall != nil {
 					if strings.TrimSpace(event.ToolCall.ProviderItemID) != "" {
+						event.ToolCall.ProviderItemProvider = req.Provider
 						event.ToolCall.ProviderItemModel = req.Model
 					}
 					toolCall := enrichToolCallDisplay(s.tools, *event.ToolCall)
@@ -1244,6 +1282,7 @@ func (s *streamStep) runReliableStream(
 						if tc.ID == toolCall.ID {
 							if strings.TrimSpace(toolCall.ProviderItemID) != "" {
 								tc.ProviderItemID = toolCall.ProviderItemID
+								tc.ProviderItemProvider = toolCall.ProviderItemProvider
 								tc.ProviderItemModel = toolCall.ProviderItemModel
 							}
 							if strings.TrimSpace(toolCall.Name) != "" {

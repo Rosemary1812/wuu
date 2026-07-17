@@ -127,6 +127,9 @@ func (s *Server) createGroupThreadState(id, title string, now time.Time) (*threa
 	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir); err != nil {
 		return nil, err
 	}
+	if _, err := session.SetRuntimeSelection(s.rt.SessionDir, id, s.currentSessionRuntimeSelection()); err != nil {
+		return nil, err
+	}
 	if _, err := session.SetGroupThread(s.rt.SessionDir, id, true); err != nil {
 		return nil, err
 	}
@@ -138,6 +141,7 @@ func (s *Server) createGroupThreadState(id, title string, now time.Time) (*threa
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
+	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
 	th.Group = true
 	th.Title = title
 	return th, nil

@@ -161,12 +161,13 @@ const api: WuuDesktopApi = {
   loadCodexModels: (provider?: string) =>
     ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (
-    provider: string,
-    model: string,
+    provider?: string,
+    model?: string,
     effort?: string,
     connection?: Parameters<WuuDesktopApi["updateRuntimeSettings"]>[3],
     variant?: string,
     permissionMode?: string,
+    threadId?: string,
   ) =>
     ipcRenderer.invoke(
       "wuu:config-model-update",
@@ -176,6 +177,7 @@ const api: WuuDesktopApi = {
       connection,
       variant,
       permissionMode,
+      threadId,
     ),
   updateUltraMode: (enabled: boolean) =>
     ipcRenderer.invoke("wuu:config-ultra-update", enabled),

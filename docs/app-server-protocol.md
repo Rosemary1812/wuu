@@ -85,8 +85,30 @@ Returns the current runtime configuration summary. Its result includes
 
 `config/model/update`
 
-Updates the active provider/model settings. It also accepts an optional
-`ultra` field and returns the effective `ultra` and `max_parallel` values.
+Updates the workspace defaults for provider, model, variant/effort, and
+permission mode. `model` is required for a request without `thread_id`, which
+changes only the defaults inherited by threads created after the update.
+
+When `thread_id` is present, only the explicitly provided selection fields are
+applied: they are pinned to that conversation and become the workspace
+defaults for future threads. Omitted selection fields inherit from the target
+conversation's current selection (so `model` is optional), and no other
+existing conversation changes. A permission-mode-only update, for example,
+never rewrites the workspace's default model or the conversation's
+variant/effort.
+
+A targeted update that changes selection fields is rejected while that thread
+owns an active turn, including when another app-server process owns its
+execution lease. Model and permission mode are immutable for the admitted
+turn; after it settles, the user may update that thread and the defaults for
+future threads. Existing non-target threads retain their persisted selections.
+
+The method also accepts an optional `ultra` field and returns the effective
+workspace-level `ultra` and `max_parallel` values. Provider connection fields
+such as `base_url`, `api_key`, and `auth_token` are always workspace provider
+configuration, never thread-scoped selection; a targeted request carrying only
+connection fields is processed as a workspace connection update and is allowed
+while the target thread runs.
 
 `thread/start`
 
@@ -106,7 +128,11 @@ the text entrypoint surface through `wuu exec fork`.
 
 `turn/start`
 
-Starts a user turn with prompt text and optional attachments.
+Starts a user turn with prompt text and optional attachments. The turn snapshots
+the target thread's persisted model and permission mode at admission. The
+legacy optional `permission_mode` request field must match the thread selection;
+clients change the selection through `config/model/update` before starting the
+turn rather than overriding one turn in isolation.
 
 `turn/interrupt`
 

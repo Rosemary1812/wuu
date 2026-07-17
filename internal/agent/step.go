@@ -25,8 +25,9 @@ type StepResult struct {
 	Phase providers.MessagePhase
 	// ProviderItemID preserves provider-native assistant output item identity
 	// for same-model replay on APIs such as OpenAI Responses.
-	ProviderItemID    string
-	ProviderItemModel string
+	ProviderItemID       string
+	ProviderItemProvider string
+	ProviderItemModel    string
 	// ReasoningContent is provider-emitted hidden reasoning for this
 	// round. Some OpenAI-compatible providers require replaying it
 	// verbatim on follow-up assistant tool-call messages.
@@ -203,6 +204,9 @@ type LoopConfig struct {
 	Tools ToolExecutor
 	// Model is the model identifier passed through to the provider.
 	Model string
+	// ProviderName is Wuu's configured provider identity. It never goes on the
+	// wire; provider adapters use it to filter provider-native replay state.
+	ProviderName string
 	// InferenceOperationKind and InferenceWorkloadProfile classify each
 	// provider request for the shared retry lifecycle.
 	InferenceOperationKind   providers.InferenceOperationKind

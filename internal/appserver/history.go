@@ -16,13 +16,14 @@ import (
 )
 
 type persistedToolCall struct {
-	ID                string                     `json:"id"`
-	ProviderItemID    string                     `json:"provider_item_id,omitempty"`
-	ProviderItemModel string                     `json:"provider_item_model,omitempty"`
-	Name              string                     `json:"name"`
-	Arguments         string                     `json:"arguments"`
-	Kind              string                     `json:"kind,omitempty"`
-	Display           *providers.ToolCallDisplay `json:"display,omitempty"`
+	ID                   string                     `json:"id"`
+	ProviderItemID       string                     `json:"provider_item_id,omitempty"`
+	ProviderItemProvider string                     `json:"provider_item_provider,omitempty"`
+	ProviderItemModel    string                     `json:"provider_item_model,omitempty"`
+	Name                 string                     `json:"name"`
+	Arguments            string                     `json:"arguments"`
+	Kind                 string                     `json:"kind,omitempty"`
+	Display              *providers.ToolCallDisplay `json:"display,omitempty"`
 }
 
 type persistedImage struct {
@@ -72,10 +73,9 @@ type persistedMessage struct {
 	ContextTokens       int                                `json:"context_tokens,omitempty"`
 	CacheCreationTokens int                                `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int                                `json:"cache_read_tokens,omitempty"`
-	// Provider and Model carry which provider/model produced this row's
-	// token_usage. Only populated when Role=="meta" and Content=="token_usage";
-	// empty for chat records and for legacy token_usage rows written before
-	// this field was added.
+	// Provider carries native-state provenance for chat rows and token-usage
+	// provenance for meta rows. Model is currently used by token-usage rows;
+	// provider-native chat state keeps its model in ProviderItemModel.
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 
@@ -139,32 +139,33 @@ func chatMessagesFromPersistedMessages(records []persistedMessage) []providers.C
 			continue
 		}
 		msg := providers.ChatMessage{
-			Seq:               rec.Seq,
-			Role:              role,
-			Name:              rec.Name,
-			ClientID:          rec.ClientID,
-			Content:           rec.Content,
-			DisplayContent:    rec.DisplayContent,
-			Phase:             providers.NormalizeMessagePhase(rec.Phase),
-			Hidden:            rec.Hidden,
-			ProviderItemID:    rec.ProviderItemID,
-			ProviderItemModel: rec.ProviderItemModel,
-			Steered:           rec.Steered,
-			ReasoningContent:  rec.ReasoningContent,
-			ReasoningBlocks:   append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
-			ToolCallID:        rec.ToolCallID,
-			ToolInvocationID:  rec.ToolInvocationID,
-			ToolResultKind:    providers.NormalizeToolCallKind(rec.ToolResultKind),
-			ToolResult:        cloneToolResult(rec.ToolResult),
-			FinishReason:      providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
-			StopReason:        strings.ToLower(strings.TrimSpace(rec.StopReason)),
-			Truncated:         rec.Truncated,
-			DiscoveredTools:   providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
-			ParticipantID:     rec.ParticipantID,
-			ParticipantName:   rec.Name,
-			PostKind:          rec.PostKind,
-			EnvelopeMeta:      append(json.RawMessage(nil), rec.EnvelopeMeta...),
-			FocusMeta:         append(json.RawMessage(nil), rec.FocusMeta...),
+			Seq:                  rec.Seq,
+			Role:                 role,
+			Name:                 rec.Name,
+			ClientID:             rec.ClientID,
+			Content:              rec.Content,
+			DisplayContent:       rec.DisplayContent,
+			Phase:                providers.NormalizeMessagePhase(rec.Phase),
+			Hidden:               rec.Hidden,
+			ProviderItemID:       rec.ProviderItemID,
+			ProviderItemProvider: rec.Provider,
+			ProviderItemModel:    rec.ProviderItemModel,
+			Steered:              rec.Steered,
+			ReasoningContent:     rec.ReasoningContent,
+			ReasoningBlocks:      append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
+			ToolCallID:           rec.ToolCallID,
+			ToolInvocationID:     rec.ToolInvocationID,
+			ToolResultKind:       providers.NormalizeToolCallKind(rec.ToolResultKind),
+			ToolResult:           cloneToolResult(rec.ToolResult),
+			FinishReason:         providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
+			StopReason:           strings.ToLower(strings.TrimSpace(rec.StopReason)),
+			Truncated:            rec.Truncated,
+			DiscoveredTools:      providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
+			ParticipantID:        rec.ParticipantID,
+			ParticipantName:      rec.Name,
+			PostKind:             rec.PostKind,
+			EnvelopeMeta:         append(json.RawMessage(nil), rec.EnvelopeMeta...),
+			FocusMeta:            append(json.RawMessage(nil), rec.FocusMeta...),
 		}
 		msg.Content = syncIncomingMessageSourceSeqs(msg.Content, msg.EnvelopeMeta, rec.Seq)
 		for _, image := range rec.Images {
@@ -190,13 +191,14 @@ func chatMessagesFromPersistedMessages(records []persistedMessage) []providers.C
 		}
 		for _, tc := range rec.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, providers.ToolCall{
-				ID:                tc.ID,
-				ProviderItemID:    tc.ProviderItemID,
-				ProviderItemModel: tc.ProviderItemModel,
-				Name:              tc.Name,
-				Arguments:         tc.Arguments,
-				Kind:              providers.NormalizeToolCallKind(tc.Kind),
-				Display:           cloneToolCallDisplay(tc.Display),
+				ID:                   tc.ID,
+				ProviderItemID:       tc.ProviderItemID,
+				ProviderItemProvider: tc.ProviderItemProvider,
+				ProviderItemModel:    tc.ProviderItemModel,
+				Name:                 tc.Name,
+				Arguments:            tc.Arguments,
+				Kind:                 providers.NormalizeToolCallKind(tc.Kind),
+				Display:              cloneToolCallDisplay(tc.Display),
 			})
 		}
 		messages = append(messages, msg)
@@ -603,6 +605,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		Hidden:            msg.Hidden,
 		ProviderItemID:    msg.ProviderItemID,
 		ProviderItemModel: msg.ProviderItemModel,
+		Provider:          msg.ProviderItemProvider,
 		ClientID:          msg.ClientID,
 		Steered:           msg.Steered,
 		ReasoningContent:  msg.ReasoningContent,
@@ -647,13 +650,14 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 	}
 	for _, tc := range msg.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, persistedToolCall{
-			ID:                tc.ID,
-			ProviderItemID:    tc.ProviderItemID,
-			ProviderItemModel: tc.ProviderItemModel,
-			Name:              tc.Name,
-			Arguments:         tc.Arguments,
-			Kind:              string(tc.Kind),
-			Display:           cloneToolCallDisplay(tc.Display),
+			ID:                   tc.ID,
+			ProviderItemID:       tc.ProviderItemID,
+			ProviderItemProvider: tc.ProviderItemProvider,
+			ProviderItemModel:    tc.ProviderItemModel,
+			Name:                 tc.Name,
+			Arguments:            tc.Arguments,
+			Kind:                 string(tc.Kind),
+			Display:              cloneToolCallDisplay(tc.Display),
 		})
 	}
 	return out

@@ -367,6 +367,7 @@ func RunToolLoop(
 		operation.ParentOperationID = nextOperationParentID
 		nextOperationParentID = ""
 		req := providers.ChatRequest{
+			Provider:                    cfg.ProviderName,
 			Model:                       cfg.Model,
 			Messages:                    requestMessages,
 			Temperature:                 cfg.Temperature,
@@ -541,17 +542,18 @@ func RunToolLoop(
 		}
 
 		assistant := providers.ChatMessage{
-			Role:              "assistant",
-			Content:           result.Content,
-			Phase:             result.Phase,
-			ProviderItemID:    result.ProviderItemID,
-			ProviderItemModel: result.ProviderItemModel,
-			ReasoningContent:  result.ReasoningContent,
-			ReasoningBlocks:   cloneReasoningBlocks(result.ReasoningBlocks),
-			ToolCalls:         result.ToolCalls,
-			FinishReason:      finishReason,
-			StopReason:        result.StopReason,
-			Truncated:         result.Truncated,
+			Role:                 "assistant",
+			Content:              result.Content,
+			Phase:                result.Phase,
+			ProviderItemID:       result.ProviderItemID,
+			ProviderItemProvider: result.ProviderItemProvider,
+			ProviderItemModel:    result.ProviderItemModel,
+			ReasoningContent:     result.ReasoningContent,
+			ReasoningBlocks:      cloneReasoningBlocks(result.ReasoningBlocks),
+			ToolCalls:            result.ToolCalls,
+			FinishReason:         finishReason,
+			StopReason:           result.StopReason,
+			Truncated:            result.Truncated,
 		}
 		if shouldPersistAssistantMessage(assistant) {
 			appendMessage(assistant)

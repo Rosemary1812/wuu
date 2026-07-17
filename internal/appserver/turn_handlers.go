@@ -139,11 +139,11 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	permissions, err := s.resolveTurnPermissions(params.PermissionMode)
+	th, err := s.ensureResidentThread(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	permissions, err := s.resolveThreadTurnPermissions(th, params.PermissionMode)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -247,6 +247,11 @@ func (s *Server) ensureThreadRuntimeAfterAdmission(th *threadState) (*runtime.Th
 		return threadRuntime, err
 	}
 	th.mu.Lock()
+	if threadRuntime.StreamRunner != nil {
+		if prompt := strings.TrimSpace(threadRuntime.StreamRunner.SystemPrompt); prompt != "" {
+			th.History = replaceBaseSystemPrompt(th.History, prompt)
+		}
+	}
 	history := cloneHistory(th.History)
 	threadID := th.ID
 	th.mu.Unlock()
@@ -448,11 +453,11 @@ func (s *Server) handleTurnQueue(req Request) error {
 		}
 		return s.writeResponse(req.ID, nil, errors.New("compact cannot be queued; wait for the current turn to finish"))
 	}
-	permissions, err := s.resolveTurnPermissions(params.PermissionMode)
+	th, err := s.ensureResidentThread(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	permissions, err := s.resolveThreadTurnPermissions(th, params.PermissionMode)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -669,12 +674,32 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	existing := th.execRuntime
 	running := th.running
 	var detached detachedThreadRuntime
-	if existing != nil && th.pendingRuntimeReset && !running && !threadRuntimeHasOutstandingAgentWork(existing) {
-		detached = detachThreadRuntimeLocked(th)
-		existing = nil
+	if existing != nil && !running {
+		selectionMismatch := !s.threadRuntimeMatchesSelectionLocked(th, existing)
+		if th.pendingRuntimeReset || selectionMismatch {
+			if !threadRuntimeHasOutstandingAgentWork(existing) {
+				detached = detachThreadRuntimeLocked(th)
+				existing = nil
+			} else if selectionMismatch {
+				// The idle runtime was built for a different selection and
+				// cannot be rebuilt while background agents still depend on
+				// it. Failing admission is honest; silently running the old
+				// model is not. A pending general-settings reset alone stays
+				// deferred instead: the next admission that finds no
+				// outstanding work consumes it.
+				threadID := th.ID
+				th.mu.Unlock()
+				return nil, fmt.Errorf("model selection for thread %q changed while background agents are running; retry after they settle", threadID)
+			}
+		}
 	}
 	history := cloneHistory(th.History)
 	rootDir := th.CWD
+	modelProvider := th.ModelProvider
+	model := th.Model
+	modelVariant := th.ModelVariant
+	modelEffort := th.ModelEffort
+	permissionMode := th.PermissionMode
 	th.mu.Unlock()
 	if detached.runtime != nil || detached.subscription != nil {
 		releaseDetachedThreadRuntime(detached)
@@ -691,7 +716,27 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		return nil, errors.New("runtime session is required")
 	}
 	browserWorkdir := firstNonEmpty(rootDir, s.rt.RootDir)
-	threadRuntime, err := s.rt.NewThreadRuntimeForRoot(th.ID, browserWorkdir)
+	threadRuntime, err := s.rt.NewThreadRuntimeForRootModel(th.ID, browserWorkdir, runtime.ThreadModelSelection{
+		Provider:       modelProvider,
+		Model:          model,
+		Variant:        modelVariant,
+		Effort:         modelEffort,
+		PermissionMode: permissionMode,
+	})
+	if errors.Is(err, runtime.ErrThreadProviderUnavailable) {
+		// The pinned provider was removed from config after this session
+		// selected it. Self-heal the dead provider/model pair to the
+		// workspace defaults so the turn proceeds instead of every send
+		// failing on the dead pin.
+		healed := s.healThreadSelectionForRemovedProvider(th)
+		threadRuntime, err = s.rt.NewThreadRuntimeForRootModel(th.ID, browserWorkdir, runtime.ThreadModelSelection{
+			Provider:       healed.Provider,
+			Model:          healed.Model,
+			Variant:        healed.Variant,
+			Effort:         healed.Effort,
+			PermissionMode: healed.PermissionMode,
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +792,71 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	th.mu.Unlock()
 	releaseThreadRuntimeSubscription(threadRuntime, sub)
 	return existing, nil
+}
+
+// healThreadSelectionForRemovedProvider repins a thread whose stored
+// selection can no longer be built (its provider was removed from config) to
+// the workspace default provider/model, persists the heal, and broadcasts the
+// new selection so the composer stops showing the dead provider. Only the
+// dead provider/model pair is healed: the thread's own variant/effort/
+// permission pins survive, because sourcing them from the live workspace
+// would silently widen a read_only pin to the workspace mode and, under an
+// exec --permission-mode override, persist the never-persisted process
+// override into the session row. Persist and notify are best-effort: the heal
+// exists to unblock the turn, so it must not introduce new failure modes of
+// its own.
+func (s *Server) healThreadSelectionForRemovedProvider(th *threadState) session.RuntimeSelection {
+	defaults := s.currentSessionRuntimeSelection()
+	th.mu.Lock()
+	healed := session.RuntimeSelection{
+		Provider:       defaults.Provider,
+		Model:          defaults.Model,
+		Variant:        strings.TrimSpace(th.ModelVariant),
+		Effort:         strings.TrimSpace(th.ModelEffort),
+		PermissionMode: strings.TrimSpace(th.PermissionMode),
+	}
+	applyThreadRuntimeSelection(th, healed)
+	persist := th.PersistHistory
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	if persist {
+		if _, err := session.SetRuntimeSelection(s.rt.SessionDir, th.ID, healed); err != nil {
+			providers.DebugLogf("persist healed runtime selection for thread %q: %v", th.ID, err)
+		}
+	}
+	if err := s.notifyThreadUpdated(thread); err != nil {
+		providers.DebugLogf("notify healed runtime selection for thread %q: %v", th.ID, err)
+	}
+	return healed
+}
+
+// threadRuntimeMatchesSelectionLocked reports whether an idle resident runtime
+// was built for the thread's current model selection. Another app-server
+// process can repin the session between turns; admission refreshes th.* from
+// disk, and this single chokepoint keeps a reused runtime from ever running a
+// model it was not built for. Permission mode is deliberately not compared:
+// it is re-resolved and applied to the toolkit on every turn, so a stale
+// runtime never runs stale permissions and a permission-only rebuild would
+// churn the prompt cache for nothing. Callers hold th.mu.
+func (s *Server) threadRuntimeMatchesSelectionLocked(th *threadState, existing *runtime.ThreadRuntime) bool {
+	if th == nil || existing == nil {
+		return false
+	}
+	got := existing.Selection
+	if got == (runtime.ThreadModelSelection{}) {
+		// An unstamped runtime was hand-wired (test fixtures) rather than
+		// built through NewThreadRuntimeForRootModel; there is no build-time
+		// selection to compare against.
+		return true
+	}
+	got.PermissionMode = ""
+	want := runtime.ThreadModelSelection{
+		Provider: strings.TrimSpace(th.ModelProvider),
+		Model:    strings.TrimSpace(th.Model),
+		Variant:  strings.TrimSpace(th.ModelVariant),
+		Effort:   strings.TrimSpace(th.ModelEffort),
+	}
+	return got == want
 }
 
 func (s *Server) replayPendingAgentCompletions(threadID string, threadRuntime *runtime.ThreadRuntime) {
@@ -844,6 +954,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		if client != nil {
 			threadRuntime.StreamRunner.Client = client
 		}
+		threadRuntime.StreamRunner.ProviderName = providerName
 		if modelName != "" {
 			threadRuntime.StreamRunner.Model = modelName
 		}
@@ -1021,7 +1132,6 @@ func detachThreadRuntimeLocked(th *threadState) detachedThreadRuntime {
 	}
 	th.execRuntime = nil
 	th.runtimeSubscription = nil
-	th.pendingRuntimeUpdate = nil
 	th.pendingRuntimeReset = false
 	return detached
 }
@@ -1371,8 +1481,9 @@ func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
 		return turnRuntimeSnapshot{}
 	}
 	return turnRuntimeSnapshot{
-		ProviderName: th.ModelProvider,
-		Model:        th.Model,
+		ProviderName:   th.ModelProvider,
+		Model:          th.Model,
+		PermissionMode: th.PermissionMode,
 	}
 }
 
@@ -1402,6 +1513,43 @@ func (s *Server) resolveTurnPermissions(permissionMode *string) (config.Resolved
 		return normalizeTurnPermissions(s.rt.Permissions), nil
 	}
 	return normalizeTurnPermissions(config.ResolvedPermissions{}), nil
+}
+
+func (s *Server) resolveThreadTurnPermissions(th *threadState, requested *string) (config.ResolvedPermissions, error) {
+	if s != nil && s.rt != nil && s.rt.PermissionModeExplicit {
+		// A process-scoped explicit override (exec --permission-mode) beats
+		// the thread pin and persisted session metadata: a user asking for
+		// read_only must never silently run with a resumed session's broader
+		// pinned mode. The override is never written back into the session.
+		permissions := normalizeTurnPermissions(s.rt.Permissions)
+		if requested != nil && config.NormalizePermissionMode(*requested) != permissions.Mode {
+			return config.ResolvedPermissions{}, errors.New("permission mode does not match this process's explicit permission override")
+		}
+		return permissions, nil
+	}
+	mode := ""
+	if th != nil {
+		th.mu.Lock()
+		mode = strings.TrimSpace(th.PermissionMode)
+		persist := th.PersistHistory
+		threadID := th.ID
+		th.mu.Unlock()
+		if mode == "" && persist && s != nil && s.rt != nil {
+			if metadata, ok, err := session.Find(s.rt.SessionDir, threadID); err != nil {
+				return config.ResolvedPermissions{}, err
+			} else if ok {
+				mode = strings.TrimSpace(metadata.PermissionMode)
+			}
+		}
+	}
+	if mode == "" && s != nil && s.rt != nil {
+		mode = s.rt.Permissions.Mode
+	}
+	permissions := normalizeTurnPermissions(config.ResolvedPermissions{Mode: mode})
+	if requested != nil && config.NormalizePermissionMode(*requested) != permissions.Mode {
+		return config.ResolvedPermissions{}, errors.New("permission mode does not match the thread selection; refresh the thread before starting a turn")
+	}
+	return permissions, nil
 }
 
 func usageContextWindowTokens(runner *agent.StreamRunner) int {
@@ -1875,14 +2023,12 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if structured != nil {
 		th.replaceTurnLocked(turn)
 	}
-	// Keep the execution lease through trace persistence and runner cleanup.
-	// Applying deferred runtime updates and releasing the lease under the same
-	// lock prevents the next turn from observing a half-restored runtime.
+	// Keep the execution lease through trace persistence and runner cleanup so
+	// the next turn cannot observe a half-restored runtime.
 	unconsumedSteers := th.drainPendingSteersLocked()
 	if len(unconsumedSteers) > 0 {
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
 	}
-	s.applyPendingThreadRuntimeLocked(th)
 	completionClaimFailed := len(turnRuntime.AgentCompletionResultIDs) > 0
 	if err == nil && completionAnswerReady && persistErr == nil && threadRuntime != nil && threadRuntime.AgentControl != nil {
 		completionClaimFailed = false
@@ -2679,13 +2825,12 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		return false, errors.New("group threads do not support queued turns")
 	}
 	var threadRuntime *runtime.ThreadRuntime
-	var err error
-	permissions := entry.snapshot.permissions()
-	if !entry.snapshot.hasPermissions() {
-		permissions, err = s.resolveTurnPermissions(nil)
-		if err != nil {
-			return false, err
-		}
+	// Permissions are re-resolved at start time, never trusted from the
+	// queue-time snapshot: a permission change landing while the turn waited
+	// in the queue must govern the turn that actually runs.
+	permissions, err := s.resolveThreadTurnPermissions(th, nil)
+	if err != nil {
+		return false, err
 	}
 
 	snapshot := entry.snapshot.withPermissions(permissions)

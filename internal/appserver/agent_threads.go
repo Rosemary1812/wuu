@@ -477,7 +477,17 @@ func (s *Server) ensureAgentThreadState(rootThreadID string, control *agentcontr
 	}
 
 	history := s.agentSnapshotHistory(control, snap)
-	th := newThreadState(snap.ID, history, s.rt.ProviderName, s.rt.Model, firstNonEmpty(snapCWD(rootThreadID, s), s.rt.RootDir), false, now)
+	providerName, inheritedModel := s.rt.ProviderName, s.rt.Model
+	if root := s.thread(rootThreadID); root != nil {
+		root.mu.Lock()
+		providerName = firstNonEmpty(root.ModelProvider, providerName)
+		inheritedModel = firstNonEmpty(root.Model, inheritedModel)
+		root.mu.Unlock()
+	}
+	if pinnedProvider, _ := parseParticipantModelPin(snap.ModelPin); strings.TrimSpace(pinnedProvider) != "" {
+		providerName = strings.TrimSpace(pinnedProvider)
+	}
+	th := newThreadState(snap.ID, history, providerName, firstNonEmpty(snap.Model, inheritedModel), firstNonEmpty(snapCWD(rootThreadID, s), s.rt.RootDir), false, now)
 	th.ParentID = strings.TrimSpace(rootThreadID)
 	th.AgentPath = snap.AgentPath
 	th.ReadOnly = true

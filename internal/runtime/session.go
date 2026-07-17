@@ -69,7 +69,13 @@ type Options struct {
 	Config         config.Config
 	ProviderName   string
 	ModelOverride  string
-	NoTools        bool
+	// PermissionModeExplicit marks Config's permission mode as an explicit
+	// process-scoped execution override (a CLI --permission-mode flag). The
+	// override wins over per-thread pinned modes and persisted session
+	// metadata for every turn this process runs, and is never written back
+	// into sessions.
+	PermissionModeExplicit bool
+	NoTools                bool
 }
 
 // ConfigLoadMode identifies the three supported config source models. It is
@@ -128,9 +134,13 @@ type Session struct {
 	// a long-lived session that crosses a day boundary keeps its start date
 	// instead of churning the prompt cache. Real-time clock reads belong in the
 	// per-turn message stream, never in this cached prefix.
-	SessionDate                 string
-	WuuHome                     string
-	Permissions                 config.ResolvedPermissions
+	SessionDate string
+	WuuHome     string
+	Permissions config.ResolvedPermissions
+	// PermissionModeExplicit reports that Permissions carries an explicit
+	// process-scoped override (see Options.PermissionModeExplicit): it beats
+	// thread pins and session metadata and is never persisted into sessions.
+	PermissionModeExplicit      bool
 	ultraMode                   atomic.Bool
 	maxParallel                 int
 	CoordinatorPreamble         string
@@ -169,6 +179,67 @@ func (s *Session) MaxParallel() int {
 	return s.maxParallel
 }
 
+// cloneForThreadModel copies the shared, immutable session dependencies used
+// to build a thread runtime without copying ultraMode's atomic noCopy marker.
+// Thread-specific mutable dependencies are replaced by the caller below.
+func (s *Session) cloneForThreadModel() *Session {
+	if s == nil {
+		return nil
+	}
+	clone := &Session{
+		ProviderName:                s.ProviderName,
+		Model:                       s.Model,
+		RootDir:                     s.RootDir,
+		WorkspaceID:                 s.WorkspaceID,
+		StateDir:                    s.StateDir,
+		ConfigPath:                  s.ConfigPath,
+		HomeDir:                     s.HomeDir,
+		ConfigLoadMode:              s.ConfigLoadMode,
+		SessionDir:                  s.SessionDir,
+		StreamRunner:                s.StreamRunner,
+		TitleClient:                 s.TitleClient,
+		HookDispatcher:              s.HookDispatcher,
+		Skills:                      s.Skills,
+		AgentTemplates:              s.AgentTemplates,
+		AgentTemplateDiagnostics:    s.AgentTemplateDiagnostics,
+		Plugins:                     s.Plugins,
+		PluginHost:                  s.PluginHost,
+		Memory:                      s.Memory,
+		MemdirEnabled:               s.MemdirEnabled,
+		DreamIntervalDays:           s.DreamIntervalDays,
+		AgentControl:                s.AgentControl,
+		ProcessManager:              s.ProcessManager,
+		Toolkit:                     s.Toolkit,
+		ActivityRegistry:            s.ActivityRegistry,
+		WorkerClient:                s.WorkerClient,
+		ModelRoles:                  s.ModelRoles,
+		ModelBudget:                 s.ModelBudget,
+		WorkerModelBudget:           s.WorkerModelBudget,
+		BaseSystemPrompt:            s.BaseSystemPrompt,
+		BaseSystemPromptSections:    s.BaseSystemPromptSections,
+		UserSystemPrompt:            s.UserSystemPrompt,
+		SessionDate:                 s.SessionDate,
+		WuuHome:                     s.WuuHome,
+		Permissions:                 s.Permissions,
+		PermissionModeExplicit:      s.PermissionModeExplicit,
+		maxParallel:                 s.maxParallel,
+		CoordinatorPreamble:         s.CoordinatorPreamble,
+		ExperimentalCoordinatorMode: s.ExperimentalCoordinatorMode,
+		ToolLoadingPreference:       s.ToolLoadingPreference,
+		ToolLoadingMode:             s.ToolLoadingMode,
+		ToolSearchEnabled:           s.ToolSearchEnabled,
+		NativeDeferredToolDiscovery: s.NativeDeferredToolDiscovery,
+		ExperimentalDeferredBundles: s.ExperimentalDeferredBundles,
+		ExperimentalHelpMe:          s.ExperimentalHelpMe,
+		DeferredToolCatalogPrompt:   s.DeferredToolCatalogPrompt,
+		AutomationManager:           s.AutomationManager,
+		ReadinessIssues:             s.ReadinessIssues,
+		InferenceJournalRuntime:     s.InferenceJournalRuntime,
+	}
+	clone.ultraMode.Store(s.ultraMode.Load())
+	return clone
+}
+
 type ReadinessIssue struct {
 	Code     string
 	Provider string
@@ -187,6 +258,24 @@ type ThreadRuntime struct {
 	ActivityRegistry  *activity.Registry
 	ModelBudget       modelbudget.Budget
 	WorkerModelBudget modelbudget.Budget
+	// Selection is the (trimmed, unresolved) thread model selection this
+	// runtime was built for, with PermissionMode always carrying the
+	// effective normalized mode so a constructor-built stamp is never the
+	// zero value. It is the reuse invariant's comparison key: a resident
+	// runtime must never run a turn after the thread's selection changed
+	// behind its back (e.g. another app-server process repinned the
+	// session), so callers compare this stamp before reusing an idle runtime.
+	Selection ThreadModelSelection
+}
+
+// ThreadModelSelection is the model choice persisted with one conversation.
+// Empty fields mean the workspace runtime defaults should be used.
+type ThreadModelSelection struct {
+	Provider       string
+	Model          string
+	Variant        string
+	Effort         string
+	PermissionMode string
 }
 
 // resolveWorkspaceStateDir returns the workspace state directory, keyed by the
@@ -438,6 +527,7 @@ func NewSession(opts Options) (*Session, error) {
 
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:                         workerClient,
+			ProviderName:                   roleSelections.Worker.Provider,
 			DefaultModel:                   roleSelections.Worker.APIModel,
 			DefaultEffort:                  roleSelections.Worker.LegacyEffort,
 			DefaultOptions:                 modelvariant.CloneOptions(roleSelections.Worker.ProviderOptions),
@@ -499,9 +589,10 @@ func NewSession(opts Options) (*Session, error) {
 				}
 				return wkit, nil
 			},
-			ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
-			MaxParallel:      cfg.Agent.MaxParallelValue(),
-			InferenceJournal: workspaceJournal,
+			WorkerWakeAuthority: workerWakeAuthority(toolkit),
+			ParticipantStore:    sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
+			MaxParallel:         cfg.Agent.MaxParallelValue(),
+			InferenceJournal:    workspaceJournal,
 			ToolLedgerFactory: func(ownerID string) (*toolledger.Ledger, error) {
 				return toolledger.New(sessionDir, ownerID)
 			},
@@ -532,6 +623,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	streamRunner := &agent.StreamRunner{
 		Client:                      client,
+		ProviderName:                resolvedName,
 		Tools:                       toolExecutor,
 		Model:                       providerCfg.Model,
 		APIModel:                    modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
@@ -601,6 +693,7 @@ func NewSession(opts Options) (*Session, error) {
 		SessionDate:                 sessionDate,
 		WuuHome:                     wuuHome,
 		Permissions:                 permissions,
+		PermissionModeExplicit:      opts.PermissionModeExplicit,
 		maxParallel:                 cfg.Agent.MaxParallelValue(),
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
@@ -718,6 +811,148 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	return s.NewThreadRuntimeForRoot(sessionID, s.RootDir)
 }
 
+// ErrThreadProviderUnavailable marks a thread-runtime build that failed
+// because the thread's pinned provider is no longer configured. Callers can
+// self-heal by rebuilding on the workspace defaults instead of failing every
+// turn on the dead pin.
+var ErrThreadProviderUnavailable = errors.New("thread provider unavailable")
+
+// NewThreadRuntimeForRootModel creates a thread runtime from a conversation's
+// persisted model selection without mutating the workspace-wide defaults.
+func (s *Session) NewThreadRuntimeForRootModel(sessionID, rootDir string, selected ThreadModelSelection) (*ThreadRuntime, error) {
+	if s == nil {
+		return nil, fmt.Errorf("runtime session is required")
+	}
+	providerName := strings.TrimSpace(selected.Provider)
+	model := strings.TrimSpace(selected.Model)
+	requested := ThreadModelSelection{
+		Provider:       providerName,
+		Model:          model,
+		Variant:        strings.TrimSpace(selected.Variant),
+		Effort:         strings.TrimSpace(selected.Effort),
+		PermissionMode: strings.TrimSpace(selected.PermissionMode),
+	}
+	permissionMode := requested.PermissionMode
+	// An explicit process-scoped override (exec --permission-mode) wins over
+	// the thread's pinned mode; it also keeps the fast path viable when only
+	// the pinned mode differs, so the override never forces a shadow rebuild.
+	if permissionMode == "" || s.PermissionModeExplicit {
+		permissionMode = s.Permissions.Mode
+	}
+	permissions := config.ResolvedPermissions{Mode: config.NormalizePermissionMode(permissionMode)}
+	requested.PermissionMode = permissions.Mode
+	currentVariant := ""
+	currentEffort := ""
+	if s.StreamRunner != nil {
+		currentVariant = strings.TrimSpace(s.StreamRunner.Variant)
+		currentEffort = strings.TrimSpace(s.StreamRunner.Effort)
+	}
+	if providerName == "" || model == "" || (providerName == s.ProviderName && model == s.Model && requested.Variant == currentVariant && requested.Effort == currentEffort && permissions.Mode == config.NormalizePermissionMode(s.Permissions.Mode)) {
+		threadRuntime, err := s.NewThreadRuntimeForRoot(sessionID, rootDir)
+		if err != nil {
+			return nil, err
+		}
+		threadRuntime.Selection = requested
+		return threadRuntime, nil
+	}
+	cfg, _, err := s.LoadEffectiveConfig()
+	if err != nil {
+		return nil, err
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrThreadProviderUnavailable, err)
+	}
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, model)
+	variant := strings.TrimSpace(selected.Variant)
+	effort := strings.TrimSpace(selected.Effort)
+	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, model, variant, effort)
+	client, err := providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
+	if err != nil {
+		return nil, fmt.Errorf("build thread model client: %w", err)
+	}
+	roles, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{
+		ProviderName: resolvedName, ProviderConfig: providerCfg, Model: model,
+		Effort: selection.LegacyEffort, Variant: selection.Variant,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	shadow := s.cloneForThreadModel()
+	shadow.Permissions = permissions
+	shadow.ProviderName = resolvedName
+	shadow.Model = model
+	shadow.ModelRoles = roles
+	shadow.ModelBudget = ResolveModelBudget(model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
+	shadow.WorkerModelBudget = ResolveModelBudget(roles.Worker.Model, roles.Worker.RuleProviderConfig, cfg.Agent.MaxContextTokens)
+	shadow.StreamRunner = cloneStreamRunnerForThread(s.StreamRunner, nil)
+	if shadow.StreamRunner == nil {
+		return nil, fmt.Errorf("stream runner is required")
+	}
+	apiModel := modelcatalog.APIModel(ruleProviderCfg, model)
+	shadow.StreamRunner.Client = client
+	shadow.StreamRunner.ProviderName = resolvedName
+	shadow.StreamRunner.Model = model
+	shadow.StreamRunner.APIModel = apiModel
+	shadow.StreamRunner.Effort = selection.LegacyEffort
+	shadow.StreamRunner.Variant = selection.Variant
+	shadow.StreamRunner.ProviderOptions = modelvariant.CloneOptions(selection.ProviderOptions)
+	shadow.StreamRunner.ContextWindowOverride = shadow.ModelBudget.ContextWindowTokens
+	shadow.StreamRunner.MaxInputTokens = shadow.ModelBudget.InputLimitTokens
+	shadow.StreamRunner.OutputReserveTokens = shadow.ModelBudget.OutputReserveTokens
+	shadow.StreamRunner.CompactThresholdTokens = shadow.ModelBudget.CompactThresholdTokens
+	shadow.ToolLoadingMode, shadow.ToolSearchEnabled, shadow.NativeDeferredToolDiscovery = resolveToolLoadingForProvider(cfg.Agent, ruleProviderCfg, apiModel, selection.ProviderOptions)
+
+	threadRoot := strings.TrimSpace(rootDir)
+	if threadRoot == "" {
+		threadRoot = s.RootDir
+	}
+	if s.Toolkit != nil {
+		kit, cloneErr := s.Toolkit.CloneForRoot(threadRoot)
+		if cloneErr != nil {
+			return nil, cloneErr
+		}
+		kit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
+		kit.SetToolSearchEnabled(shadow.ToolSearchEnabled)
+		kit.SetNativeDeferredToolDiscovery(shadow.NativeDeferredToolDiscovery)
+		shadow.Toolkit = kit
+		catalog, catalogErr := deferredToolCatalogPromptForToolkit(kit)
+		if catalogErr != nil {
+			return nil, catalogErr
+		}
+		shadow.DeferredToolCatalogPrompt = catalog
+	}
+	workerClient, err := providerfactory.BuildStreamClient(roles.Worker.RuleProviderConfig, roles.Worker.Provider)
+	if err != nil {
+		return nil, fmt.Errorf("build thread worker client: %w", err)
+	}
+	shadow.WorkerClient = workerClient
+
+	var memdirTeaching, memdirIndex string
+	if shadow.MemdirEnabled {
+		userNotebook := memdir.UserMemdir(shadow.WuuHome)
+		memdirTeaching = memdir.SessionTeaching(userNotebook)
+		if snap, readErr := memdir.ReadIndex(userNotebook); readErr == nil {
+			memdirIndex = snap.Content
+		}
+	}
+	promptResult := buildBaseSystemPromptResult(
+		threadRoot, shadow.SessionDate, config.DefaultSystemPrompt(), shadow.UserSystemPrompt,
+		resolvedName, apiModel, activeSurfaceWithDeferredToolCatalog(shadow.Toolkit, shadow.DeferredToolCatalogPrompt),
+		shadow.Memory, memdirTeaching, memdirIndex, shadow.Skills,
+	)
+	shadow.BaseSystemPrompt = promptResult.Content
+	shadow.BaseSystemPromptSections = promptResult.Sections
+	shadow.StreamRunner.UpdateSystemPromptWithSections(promptResult.Content, agentPromptSections(promptResult.Sections))
+	threadRuntime, err := shadow.NewThreadRuntimeForRoot(sessionID, threadRoot)
+	if err != nil {
+		return nil, err
+	}
+	threadRuntime.Selection = requested
+	return threadRuntime, nil
+}
+
 // NewThreadRuntimeForRoot creates a per-conversation execution runtime whose
 // tools are rooted at rootDir while durable artifacts stay in the parent
 // workspace state directory.
@@ -820,8 +1055,12 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 
 	if s.Toolkit != nil {
 		workerClient := s.WorkerClient
+		workerClientProvider := strings.TrimSpace(s.ModelRoles.Worker.Provider)
 		if workerClient == nil {
+			// Falling back to the main-thread client means the worker's
+			// provider identity is the main provider, not the worker role's.
 			workerClient = s.StreamRunner.Client
+			workerClientProvider = strings.TrimSpace(s.ProviderName)
 		}
 		if workerClient != nil {
 			var control *agentcontrol.AgentControl
@@ -857,6 +1096,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			)
 			control, controlErr := agentcontrol.New(agentcontrol.Config{
 				Client:                         workerClient,
+				ProviderName:                   workerClientProvider,
 				DefaultModel:                   workerModel,
 				DefaultEffort:                  s.ModelRoles.Worker.LegacyEffort,
 				DefaultOptions:                 modelvariant.CloneOptions(s.ModelRoles.Worker.ProviderOptions),
@@ -930,9 +1170,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					}
 					return workerKit, nil
 				},
-				ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
-				MaxParallel:      s.MaxParallel(),
-				InferenceJournal: s.InferenceJournalForOwner(id),
+				WorkerWakeAuthority: workerWakeAuthority(kit),
+				ParticipantStore:    sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
+				MaxParallel:         s.MaxParallel(),
+				InferenceJournal:    s.InferenceJournalForOwner(id),
 				ToolLedgerFactory: func(ownerID string) (*toolledger.Ledger, error) {
 					return toolledger.New(s.SessionDir, ownerID)
 				},
@@ -974,6 +1215,16 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		ActivityRegistry:  s.ActivityRegistry,
 		ModelBudget:       s.ModelBudget,
 		WorkerModelBudget: s.WorkerModelBudget,
+		// Direct callers get the session's own identity as the stamp;
+		// NewThreadRuntimeForRootModel overwrites it with the thread's
+		// requested selection so reuse comparisons stay in thread terms.
+		Selection: ThreadModelSelection{
+			Provider:       s.ProviderName,
+			Model:          s.Model,
+			Variant:        strings.TrimSpace(runner.Variant),
+			Effort:         strings.TrimSpace(runner.Effort),
+			PermissionMode: config.NormalizePermissionMode(s.Permissions.Mode),
+		},
 	}, nil
 }
 
@@ -983,6 +1234,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 	}
 	return &agent.StreamRunner{
 		Client:                      base.Client,
+		ProviderName:                base.ProviderName,
 		Tools:                       toolExecutor,
 		ToolLedger:                  base.ToolLedger,
 		Model:                       base.Model,
@@ -1679,6 +1931,23 @@ func ConfigureToolkitPermissions(kit *tools.Toolkit, permissions config.Resolved
 		return
 	}
 	kit.SetBoundary(BoundaryForMode(permissions.Mode))
+}
+
+// workerWakeAuthority builds the wake-time authority refresher for workers
+// cloned from the given parent toolkit. Waking a dormant worker is a new
+// execution admission, so the woken worker re-copies the parent's CURRENT
+// workspace boundary — the same inheritance a fresh spawn performs via
+// CloneForRoot — instead of keeping the boundary captured when it was
+// spawned. The parent toolkit is the permission anchor kept fresh by
+// ConfigureToolkitPermissions at turn starts and permission updates.
+func workerWakeAuthority(parent *tools.Toolkit) func(agent.ToolExecutor) {
+	return func(executor agent.ToolExecutor) {
+		workerKit, ok := executor.(*tools.Toolkit)
+		if !ok || workerKit == nil || parent == nil {
+			return
+		}
+		workerKit.SetBoundary(parent.Boundary())
+	}
 }
 
 func BoundaryForMode(mode string) tools.WorkspaceBoundary {

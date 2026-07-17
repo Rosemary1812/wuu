@@ -1190,8 +1190,8 @@ app.whenReady().then(async () => {
     "wuu:config-model-update",
     (
       event,
-      provider: string,
-      model: string,
+      provider?: string,
+      model?: string,
       effort?: string,
       connection?: {
         base_url?: string;
@@ -1202,10 +1202,17 @@ app.whenReady().then(async () => {
       },
       variant?: string,
       permissionMode?: string,
+      threadID?: string,
     ) =>
       appServerRequest<ConfigModelUpdateResult>(event, "config/model/update", {
-        provider,
-        model,
+        // Omitted provider/model are inherited from the target thread, so
+        // their empties are dropped instead of sent. Effort/variant/permission
+        // forward whenever explicitly provided: an explicit empty variant is
+        // the reset-to-model-default signal (the server clears the stored
+        // selection), so it must not be truthy-dropped.
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
+        ...(threadID ? { thread_id: threadID } : {}),
         ...(connection?.base_url === undefined
           ? {}
           : { base_url: connection.base_url }),

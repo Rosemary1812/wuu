@@ -200,7 +200,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
 
-	prepared, err := providers.PrepareMessagesForModelRequest(req.Model, req.Messages)
+	prepared, err := providers.PrepareMessagesForProviderRequest(req.Provider, req.Model, req.Messages)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -355,7 +355,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
-	prepared, err := providers.PrepareMessagesForModelRequest(req.Model, req.Messages)
+	prepared, err := providers.PrepareMessagesForProviderRequest(req.Provider, req.Model, req.Messages)
 	if err != nil {
 		return nil, err
 	}

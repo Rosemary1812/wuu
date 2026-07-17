@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { ThreadItem, Turn } from "../shared/protocol";
+import type { ThreadItem, Turn, TurnError } from "../shared/protocol";
 import { turnEventForItem, turnEventForTurn } from "./TurnEvents";
 import {
   userFacingErrorForMessage,
@@ -141,6 +141,57 @@ describe("userFacingErrorForMessage", () => {
       expect(display).not.toHaveProperty("code");
       expect(display.category).toBe("provider");
       expect(display.detail).toContain("这次回答可能不完整");
+    });
+
+    it("renders an HTTP-sourced invalid_request with the status phrase and error tone", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: 'HTTP 400: {"error":{"type":"invalid_request_error","message":"max_tokens must be positive"}}',
+          code: "invalid_request_error",
+          category: "invalid_request",
+          provider: "compatible",
+          status_code: 400,
+        },
+        "turn",
+      );
+
+      expect(display.category).toBe("invalid_request");
+      expect(display.tone).toBe("error");
+      expect(display.title).toBe("400 请求无效");
+      expect(display.detail).toBe("Provider 认为这次请求参数无效。原始错误已留在调试信息中。");
+    });
+
+    it("falls back to the localized invalid-request title for stream-sourced 400s", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "stream request failed: stream error (invalid_request_error)",
+          code: "invalid_request_error",
+          category: "invalid_request",
+        },
+        "turn",
+      );
+
+      expect(display.category).toBe("invalid_request");
+      expect(display.tone).toBe("error");
+      expect(display.title).toBe("请求参数无效");
+      expect(display.detail).toBe("Provider 认为这次请求参数无效。原始错误已留在调试信息中。");
+    });
+
+    it("degrades an unknown wire category to the internal-error rendering", () => {
+      // A newer Go core may emit a category this renderer has not
+      // learned yet; it must never produce a blank, tone-less display.
+      const display = userFacingErrorForMessage(
+        {
+          message: "some future failure mode",
+          category: "quota_exhausted" as unknown as TurnError["category"],
+        },
+        "turn",
+      );
+
+      expect(display.category).toBe("internal");
+      expect(display.tone).toBe("error");
+      expect(display.title).toBe("wuu 内部错误");
+      expect(display.detail).toBe("没有完成这次请求。调试信息可用于排查。");
     });
 
     it("falls back to the string classifier when the structured input omits `category`", () => {
