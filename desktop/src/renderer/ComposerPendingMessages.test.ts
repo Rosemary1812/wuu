@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Thread, ThreadItem } from "../shared/protocol";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import {
+  appendPendingComposerMessage,
+  applyHeldComposerSnapshot,
   findPendingComposerMessage,
   materializedComposerMessageIDs,
   pendingComposerMessageCount,
@@ -24,6 +26,53 @@ function threadWithItems(id: string, items: ThreadItem[]): Thread {
 }
 
 describe("composer pending messages", () => {
+  it("does not append an optimistic message whose id already exists", () => {
+    const previous = {
+      queued: [message("queue-1", "Held queue")],
+      guides: [message("guide-1", "Held guide")],
+    };
+
+    expect(
+      appendPendingComposerMessage(
+        previous,
+        "queue",
+        message("queue-1", "Late response"),
+      ),
+    ).toBe(previous);
+    expect(
+      appendPendingComposerMessage(
+        previous,
+        "queue",
+        message("guide-1", "Late cross-list response"),
+      ),
+    ).toBe(previous);
+  });
+
+  it("lets a held snapshot replace matching optimistic state across both lists", () => {
+    const heldQueue = {
+      ...message("shared-id", "Server snapshot"),
+      held: true,
+      heldPosition: 0,
+      origin: "queue" as const,
+    };
+    const previous = {
+      queued: [
+        message("shared-id", "Optimistic queue"),
+        message("queue-in-flight", "Still in flight"),
+        { ...message("stale-held", "Stale"), held: true },
+      ],
+      guides: [message("shared-id", "Optimistic guide")],
+    };
+
+    const next = applyHeldComposerSnapshot(previous, [heldQueue]);
+
+    expect(next.queued).toEqual([
+      message("queue-in-flight", "Still in flight"),
+      heldQueue,
+    ]);
+    expect(next.guides).toEqual([]);
+  });
+
   it("returns only the pending messages for the requested thread", () => {
     const byThread: PendingComposerMessagesByThread = {
       "thread-a": {

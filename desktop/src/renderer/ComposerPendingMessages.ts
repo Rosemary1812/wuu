@@ -18,6 +18,7 @@ export type LocatedPendingComposerMessage = {
 };
 
 export type PendingComposerMessageRemovalScope = "queue" | "guide" | "all";
+export type PendingComposerMessageKind = "queue" | "guide";
 
 export function emptyThreadPendingComposerMessages(): ThreadPendingComposerMessages {
   return { queued: [], guides: [] };
@@ -37,6 +38,53 @@ export function threadPendingComposerMessagesIsEmpty(
   pending: ThreadPendingComposerMessages,
 ): boolean {
   return pending.queued.length === 0 && pending.guides.length === 0;
+}
+
+/**
+ * Append an optimistic pending message without duplicating a server-confirmed
+ * entry. Queue ids identify a message across both queue and guide states, so a
+ * late IPC response must not recreate an item already supplied by a snapshot.
+ */
+export function appendPendingComposerMessage(
+  previous: ThreadPendingComposerMessages,
+  kind: PendingComposerMessageKind,
+  message: QueuedComposerMessage,
+): ThreadPendingComposerMessages {
+  if (
+    previous.queued.some((candidate) => candidate.id === message.id) ||
+    previous.guides.some((candidate) => candidate.id === message.id)
+  ) {
+    return previous;
+  }
+  return kind === "queue"
+    ? { ...previous, queued: [...previous.queued, message] }
+    : { ...previous, guides: [...previous.guides, message] };
+}
+
+/**
+ * Reconcile the authoritative held snapshot with optimistic pending state.
+ * The snapshot replaces all prior held entries and wins over a non-held entry
+ * with the same id, while unrelated in-flight optimistic messages survive.
+ */
+export function applyHeldComposerSnapshot(
+  previous: ThreadPendingComposerMessages,
+  snapshot: QueuedComposerMessage[],
+): ThreadPendingComposerMessages {
+  const snapshotIDs = new Set(snapshot.map((message) => message.id));
+  return {
+    queued: [
+      ...previous.queued.filter(
+        (message) => !message.held && !snapshotIDs.has(message.id),
+      ),
+      ...snapshot.filter((message) => message.origin === "queue"),
+    ],
+    guides: [
+      ...previous.guides.filter(
+        (message) => !message.held && !snapshotIDs.has(message.id),
+      ),
+      ...snapshot.filter((message) => message.origin === "steer"),
+    ],
+  };
 }
 
 export function removePendingComposerMessagesByID(

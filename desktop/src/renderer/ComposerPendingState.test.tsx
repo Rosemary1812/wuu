@@ -140,6 +140,74 @@ describe("useComposerPendingState", () => {
     ).toEqual([message("queue-1", "First")]);
   });
 
+  it("deduplicates a held snapshot that arrives after the queue response", async () => {
+    const hook = await renderComposerPendingState();
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "One send"));
+      hook.get().syncPendingComposerMessagesFromServerEvent({
+        kind: "notification",
+        message: {
+          method: "turn/held",
+          params: {
+            thread_id: "thread-a",
+            messages: [
+              {
+                id: "queue-1",
+                origin: "queue",
+                prompt: "One send",
+                images: [],
+                files: [],
+              },
+            ],
+          },
+        },
+      } as ServerEvent);
+    });
+
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"]?.queued,
+    ).toEqual([
+      expect.objectContaining({ id: "queue-1", held: true, origin: "queue" }),
+    ]);
+  });
+
+  it("does not recreate an optimistic row when the held snapshot arrives first", async () => {
+    const hook = await renderComposerPendingState();
+
+    act(() => {
+      hook.get().syncPendingComposerMessagesFromServerEvent({
+        kind: "notification",
+        message: {
+          method: "turn/held",
+          params: {
+            thread_id: "thread-a",
+            messages: [
+              {
+                id: "queue-1",
+                origin: "queue",
+                prompt: "One send",
+                images: [],
+                files: [],
+              },
+            ],
+          },
+        },
+      } as ServerEvent);
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "One send"));
+    });
+
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"]?.queued,
+    ).toEqual([
+      expect.objectContaining({ id: "queue-1", held: true, origin: "queue" }),
+    ]);
+  });
+
   it("syncs server events by removing materialized queue and guide messages", async () => {
     const hook = await renderComposerPendingState();
 

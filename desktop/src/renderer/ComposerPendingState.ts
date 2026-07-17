@@ -16,6 +16,8 @@ import {
   type QueuedComposerMessage,
 } from "./ComposerMessages";
 import {
+  appendPendingComposerMessage,
+  applyHeldComposerSnapshot,
   emptyThreadPendingComposerMessages,
   findPendingComposerMessage,
   pendingComposerMessagesForThread,
@@ -244,16 +246,9 @@ export function useComposerPendingState({
       if (!snapshot) {
         return;
       }
-      updateThreadPendingComposerMessages(snapshot.threadID, (previous) => ({
-        queued: [
-          ...previous.queued.filter((message) => !message.held),
-          ...snapshot.messages.filter((message) => message.origin === "queue"),
-        ],
-        guides: [
-          ...previous.guides.filter((message) => !message.held),
-          ...snapshot.messages.filter((message) => message.origin === "steer"),
-        ],
-      }));
+      updateThreadPendingComposerMessages(snapshot.threadID, (previous) =>
+        applyHeldComposerSnapshot(previous, snapshot.messages),
+      );
       return;
     }
     if (event.message.method === "turn/started") {
@@ -296,10 +291,9 @@ export function useComposerPendingState({
     threadID: string,
     message: QueuedComposerMessage,
   ): void {
-    updateThreadPendingComposerMessages(threadID, (previous) => ({
-      ...previous,
-      queued: [...previous.queued, message],
-    }));
+    updateThreadPendingComposerMessages(threadID, (previous) =>
+      appendPendingComposerMessage(previous, "queue", message),
+    );
   }
 
   async function removeQueuedMessage(id: string): Promise<boolean> {
