@@ -267,9 +267,9 @@
   --participants-roster-focus-ring: rgba(228, 232, 235, 0.25);
 
   /* sidebar.css */
-  /* macOS's `sidebar` vibrancy material can remain light even when the
-     renderer is dark. Keep a little depth from the native material, but make
-     the dark surface dense enough that navigation text always has contrast.
+  /* macOS's `under-window` vibrancy material can remain light even when the
+     renderer is dark. Keep a little wallpaper depth from the native material,
+     but make the dark surface dense enough that navigation text has contrast.
      After the 2026-07-15 neutral rewrite, glass shadows + the dev-fixture
      text + the resizer overlay ride on the shared ink-overlay ladder; their
      hue now follows --ink-* instead of carrying its own green or blue cast. */

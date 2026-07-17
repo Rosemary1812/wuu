@@ -13,8 +13,8 @@ const themeCSS = readFileSync(
 );
 
 describe("macOS sidebar material", () => {
-  it("lets the native sidebar material sample the wallpaper without a white veil", () => {
-    expect(mainSource).toContain('vibrancy: "sidebar"');
+  it("uses the under-window material to preserve wallpaper tint without a white veil", () => {
+    expect(mainSource).toContain('vibrancy: "under-window"');
     expect(sidebarCSS).toMatch(
       /--sidebar-material-fill:\s*rgba\(255, 255, 255, 0\.025\);/,
     );
@@ -29,7 +29,7 @@ describe("macOS sidebar material", () => {
     );
   });
 
-  it("uses a stable dark surface when the native sidebar material is light", () => {
+  it("uses a stable dark surface above the wallpaper material", () => {
     expect(themeCSS).toMatch(
       /:root\[data-theme="dark"\][\s\S]*?--sidebar-material-fill:\s*rgba\(16, 18, 21, 0\.88\);/,
     );

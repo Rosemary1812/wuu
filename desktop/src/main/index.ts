@@ -540,7 +540,7 @@ function mainWindowMaterialOptions(): Pick<
   return {
     backgroundColor: "#00000000",
     transparent: true,
-    vibrancy: "sidebar",
+    vibrancy: "under-window",
     visualEffectState: "active",
   };
 }
