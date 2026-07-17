@@ -218,9 +218,11 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
     if (!win || win.isDestroyed()) return;
     if (visible) {
       this.mount();
+      if (this.win !== win || win.isDestroyed()) return;
       win.showInactive();
     } else {
       this.unmount();
+      if (this.win !== win || win.isDestroyed()) return;
       win.hide();
     }
   }
@@ -276,7 +278,7 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
     const { workdir, tabID, host } = this.deps;
     const bounds = host.tabBounds(workdir, tabID);
     if (!bounds) {
-      this.deps.sink.onGone();
+      this.reportTabGoneUnlessStarting();
       return;
     }
     this.viewport = {
@@ -292,7 +294,7 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
       fit.scale,
     );
     if (!restore) {
-      this.deps.sink.onGone();
+      this.reportTabGoneUnlessStarting();
       return;
     }
     this.restoreBounds = restore;
@@ -303,6 +305,13 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
       this.announced = true;
       this.deps.sink.onEvent({ event: "ready" });
     }
+  }
+
+  private reportTabGoneUnlessStarting(): void {
+    // Activity creation precedes the first browser/open_tab request. Keep the
+    // placeholder alive until the post-action update retries the mount; only a
+    // missing tab after startup means that the observed target is truly gone.
+    if (this.activity.state !== "starting") this.deps.sink.onGone();
   }
 
   private unmount(): void {

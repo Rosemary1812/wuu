@@ -57,9 +57,11 @@ class FakePipWindow {
   setAlwaysOnTop(): void {}
   setVisibleOnAllWorkspaces(): void {}
   showInactive(): void {
+    if (this.destroyed) throw new Error("Object has been destroyed");
     this.visible = true;
   }
   hide(): void {
+    if (this.destroyed) throw new Error("Object has been destroyed");
     this.visible = false;
   }
   isDestroyed(): boolean {
@@ -292,6 +294,43 @@ describe("BrowserPiPSurface", () => {
     expect(host.mounts).toHaveLength(0);
     expect(sink.gone).toBe(1);
     surface.stop();
+  });
+
+  it("waits for a starting browser tab to become mountable", () => {
+    const host = new FakeHost();
+    host.bounds = undefined;
+    const { surface, win, sink } = makeSurface({ host });
+    surface.updateActivity({ ...makeActivity(), state: "starting" });
+    surface.start();
+    surface.setVisible(true);
+
+    expect(sink.gone).toBe(0);
+    expect(win.visible).toBe(true);
+    expect(host.mounts).toHaveLength(0);
+
+    host.bounds = { x: 0, y: 0, width: 1000, height: 500 };
+    surface.updateActivity({ ...makeActivity(), state: "background_controlled" });
+    surface.setVisible(true);
+
+    expect(host.mounts).toHaveLength(1);
+    expect(sink.gone).toBe(0);
+    surface.stop();
+  });
+
+  it("does not reuse a window synchronously destroyed by a gone callback", () => {
+    const host = new FakeHost();
+    host.bounds = undefined;
+    const { surface, win, sink } = makeSurface({ host });
+    const countGone = sink.onGone.bind(sink);
+    sink.onGone = () => {
+      countGone();
+      surface.stop();
+    };
+    surface.start();
+
+    expect(() => surface.setVisible(true)).not.toThrow();
+    expect(sink.gone).toBe(1);
+    expect(win.destroyed).toBe(true);
   });
 
   it("shows the placeholder again when a takeover adopts the mounted tab", async () => {
