@@ -45,24 +45,70 @@ export function nativePiPInitialBounds(mainBounds: Rectangle | undefined, workAr
   return { x, y, width: PIP_WIDTH, height: PIP_HEIGHT };
 }
 
+// Activities worth a live observation surface: the CUA mac backend and every
+// embedded-browser activity. Other plugins/kinds never reach the PiP.
+export function isObservableActivity(activity: ActivitySession): boolean {
+  if (activity.kind === "browser") return true;
+  return activity.kind === "cua" && activity.plugin_id === "cua-mac";
+}
+
+// While the user watches the real page full-size (browser visibility takeover
+// in the workspace panel), mirroring the same page into the PiP is redundant —
+// hide the surface but keep the observation so agent control restores it.
+// CUA surfaces stay up: there the user controls the target app itself, not a
+// Wuu panel showing the same pixels.
+export function pipVisibleForActivity(activity: ActivitySession): boolean {
+  if (activity.kind !== "browser") return true;
+  return activity.state !== "foreground_controlled" && activity.state !== "user_controlled";
+}
+
 type ActivitySnapshot = (threadID: string) => Promise<ActivitySession[]>;
-type PiPHandle = Pick<CUANativePiP, "start" | "setVisible" | "animateInteraction" | "stop">;
-type PiPFactory = (activity: ActivitySession, key: string) => PiPHandle | undefined;
+
+// The observation-surface contract shared by the native CUA helper and the
+// Electron browser preview: lifecycle + visibility + pointer animation. The
+// optional hooks let a surface reflect fresh activity state on its chrome
+// (updateActivity) and freeze frame production while the activity is stopped
+// (setLive) — both no-ops on surfaces that do not implement them.
+export type ObservationPiPHandle = Pick<CUANativePiP, "start" | "setVisible" | "animateInteraction" | "stop"> & {
+  updateActivity?(activity: ActivitySession): void;
+  setLive?(live: boolean): void;
+};
+
+// Surface→coordinator reporting. onEvent carries ready/user_close/geometry
+// style events; onFailure is a retryable stream failure; onGone means the
+// capture target disappeared for good (tab closed, view crashed) and must not
+// be retried.
+export type ObservationPiPEventSink = {
+  onEvent(event: CUANativePiPEvent): void;
+  onFailure(message: string): void;
+  onGone(): void;
+};
+
+export type ObservationPiPFactory = (
+  activity: ActivitySession,
+  key: string,
+  sink: ObservationPiPEventSink,
+  bounds: () => Rectangle,
+) => ObservationPiPHandle | undefined;
+
 type PiPEntry = {
   key: string;
   threadID: string;
   activity: ActivitySession;
-  pip: PiPHandle;
+  pip: ObservationPiPHandle;
   // "preparing" = frosted placeholder shown, no live frame yet.
   // "live" = first real frame presented (native `ready`).
   phase: "preparing" | "live";
 };
 
 /**
- * Owns one user-visible CUA observation surface. Activity events update the
- * target, but an individual action ending never owns the PiP lifetime.
+ * Owns the single user-visible observation surface across activity kinds
+ * (CUA windows, embedded-browser tabs). Activity events update the target,
+ * but an individual action ending never owns the surface lifetime — the
+ * surface follows the latest observable target of the active thread, one at
+ * a time, no matter which backend produces it.
  */
-export class CUAObservationCoordinator {
+export class ObservationCoordinator {
   private readonly observations = new Map<string, ActivitySession>();
   private readonly dismissedAt = new Map<string, string>();
   private readonly lastInteractionRevisions = new Map<string, number>();
@@ -79,11 +125,11 @@ export class CUAObservationCoordinator {
   constructor(
     private readonly registry: WindowRegistry,
     private readonly snapshot?: ActivitySnapshot,
-    private readonly pipFactory?: PiPFactory,
+    private readonly pipFactory?: ObservationPiPFactory,
   ) {}
 
   handleServerEvent(event: ServerEvent): void {
-    const activity = cuaActivityFromServerEvent(event);
+    const activity = observationActivityFromServerEvent(event);
     if (activity) {
       this.update(activity);
       return;
@@ -100,11 +146,18 @@ export class CUAObservationCoordinator {
   }
 
   update(activity: ActivitySession): void {
-    if (activity.kind !== "cua" || activity.plugin_id !== "cua-mac") return;
-    // A stopped control lease is not the end of the user's observation. Keep
-    // the last target until the session changes, the user closes it, or a new
-    // target replaces it.
-    if (activity.state === "stopped" || !activity.target?.trim()) return;
+    if (!isObservableActivity(activity)) return;
+    if (activity.state === "stopped" || !activity.target?.trim()) {
+      // A stopped control lease is not the end of the user's observation: the
+      // surface keeps the last target until the session changes, the user
+      // closes it, or a new target replaces it. A live surface is still told
+      // to freeze frame production so a finished page stops burning captures.
+      if (activity.state === "stopped" && this.current && observationKey(activity) === this.current.key) {
+        this.current.pip.setLive?.(false);
+        this.current.pip.updateActivity?.(activity);
+      }
+      return;
+    }
     const current = this.observations.get(activity.thread_id);
     if (!current || current.updated_at <= activity.updated_at) {
       this.observations.set(activity.thread_id, activity);
@@ -112,6 +165,17 @@ export class CUAObservationCoordinator {
     const dismissed = this.dismissedAt.get(activity.thread_id);
     if (dismissed && dismissed < activity.updated_at) this.dismissedAt.delete(activity.thread_id);
     if (activity.thread_id === this.activeThreadID) this.syncActiveObservation();
+  }
+
+  // Core teardown for a workdir: drop its observations and tear down a
+  // current surface showing one of its tabs, so no ghost preview can outlive
+  // the core that owned the page.
+  dropWorkdir(workdir: string): void {
+    for (const [threadID, activity] of [...this.observations]) {
+      if (activity.workdir === workdir) this.observations.delete(threadID);
+    }
+    if (this.replacement?.activity.workdir === workdir) this.replacement = undefined;
+    if (this.current?.activity.workdir === workdir) this.stopCurrent();
   }
 
   private syncActiveObservation(): void {
@@ -127,7 +191,10 @@ export class CUAObservationCoordinator {
     }
     const key = observationKey(activity);
     if (this.current?.key === key) {
-      this.current.pip.setVisible(true);
+      this.current.activity = activity;
+      this.current.pip.setVisible(pipVisibleForActivity(activity));
+      this.current.pip.setLive?.(true);
+      this.current.pip.updateActivity?.(activity);
       this.animateInteractionIfNew(activity, this.current.pip);
       return;
     }
@@ -147,7 +214,8 @@ export class CUAObservationCoordinator {
     if (!pip) return;
     this.current = { key, threadID: activity.thread_id, activity, pip, phase: "preparing" };
     pip.start();
-    pip.setVisible(true);
+    pip.setVisible(pipVisibleForActivity(activity));
+    pip.updateActivity?.(activity);
     this.animateInteractionIfNew(activity, pip);
   }
 
@@ -185,8 +253,15 @@ export class CUAObservationCoordinator {
     this.startImmediate(replacement.activity, replacement.key);
   }
 
-  private spawnPiP(activity: ActivitySession, key: string): PiPHandle | undefined {
-    if (this.pipFactory) return this.pipFactory(activity, key);
+  private spawnPiP(activity: ActivitySession, key: string): ObservationPiPHandle | undefined {
+    const sink: ObservationPiPEventSink = {
+      onEvent: (event) => this.handlePiPEvent(key, event),
+      onFailure: (message) => this.handlePiPFailure(key, message),
+      onGone: () => this.handlePiPGone(key),
+    };
+    if (this.pipFactory) return this.pipFactory(activity, key, sink, () => this.initialBounds());
+    // No factory: the historical default is the native CUA helper only.
+    if (activity.kind !== "cua") return undefined;
     const helper = resolveCUAFrameHelper();
     const target = activity.target?.trim();
     if (!helper || !target) return undefined;
@@ -197,18 +272,18 @@ export class CUAObservationCoordinator {
       activity.process_id,
       activity.window_id,
       this.initialBounds(),
-      (event) => this.handleNativePiPEvent(key, event),
-      () => this.handleNativePiPFailure(key),
+      sink.onEvent,
+      sink.onFailure,
     );
   }
 
-  private handleNativePiPEvent(key: string, event: CUANativePiPEvent): void {
+  private handlePiPEvent(key: string, event: CUANativePiPEvent): void {
     const entry = this.current?.key === key ? this.current : undefined;
     if (!entry) return;
     switch (event.event) {
       case "ready":
-        // A placeholder-first current reached its first live frame; the native
-        // side already cross-faded from the frosted placeholder to the capture.
+        // A placeholder-first current reached its first live frame; the
+        // surface itself already cross-faded from the frosted placeholder.
         entry.phase = "live";
         this.retryAttempts.delete(entry.threadID);
         return;
@@ -228,7 +303,7 @@ export class CUAObservationCoordinator {
     }
   }
 
-  private handleNativePiPFailure(key: string): void {
+  private handlePiPFailure(key: string, _message: string): void {
     const entry = this.current?.key === key ? this.current : undefined;
     if (!entry) return;
     if (this.current?.key === key) this.stopCurrent();
@@ -243,7 +318,21 @@ export class CUAObservationCoordinator {
     this.retryTimers.set(entry.threadID, timer);
   }
 
-  private animateInteractionIfNew(activity: ActivitySession, pip: PiPHandle): void {
+  // The capture target disappeared (tab closed, view crashed, workdir torn
+  // down). Unlike a transient stream failure this is never retried: the
+  // surface comes down and the observation is forgotten so a later reconcile
+  // cannot resurrect a dead target.
+  private handlePiPGone(key: string): void {
+    const entry = this.current?.key === key ? this.current : undefined;
+    if (!entry) return;
+    const observed = this.observations.get(entry.threadID);
+    if (observed && observationKey(observed) === key) {
+      this.observations.delete(entry.threadID);
+    }
+    if (this.current?.key === key) this.stopCurrent();
+  }
+
+  private animateInteractionIfNew(activity: ActivitySession, pip: ObservationPiPHandle): void {
     const interaction = activity.interaction;
     if (!interaction) return;
     const previous = this.lastInteractionRevisions.get(activity.thread_id);
@@ -285,22 +374,24 @@ export class CUAObservationCoordinator {
 }
 
 export function observationKey(activity: ActivitySession): string {
-  // Key the PiP lifecycle by session + target only. A single CUA call emits
-  // `started` with no window identity (0/0) and then `updated` with the resolved
-  // process/window id; including those here changed the key mid-call and spawned
-  // a second helper, so two ScreenCaptureKit streams raced for the same window
-  // and tripped "application connection interrupted". One target = one helper =
-  // one stream. The exact identity is still passed to the helper as a hint.
+  // Key the surface lifecycle by session + target only. A single CUA call
+  // emits `started` with no window identity (0/0) and then `updated` with the
+  // resolved process/window id; including those here changed the key mid-call
+  // and spawned a second helper, so two ScreenCaptureKit streams raced for
+  // the same window and tripped "application connection interrupted". One
+  // target = one surface = one stream. For browser activities the target is
+  // the tab id, so a tab switch swaps the surface the same way an app switch
+  // does for CUA. The exact identity is still passed to the surface as a hint.
   return [activity.thread_id, activity.target?.trim()].join(":");
 }
 
-export function cuaActivityFromServerEvent(event: ServerEvent): ActivitySession | undefined {
+export function observationActivityFromServerEvent(event: ServerEvent): ActivitySession | undefined {
   if (event.kind !== "notification") return undefined;
   const method = event.message.method;
   if (method !== "activity/started" && method !== "activity/updated" && method !== "activity/control_changed" && method !== "activity/stopped") return undefined;
   const value = event.message.params;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const activity = value as Partial<ActivitySession>;
-  if (activity.kind !== "cua" || typeof activity.id !== "string" || typeof activity.thread_id !== "string") return undefined;
+  if ((activity.kind !== "cua" && activity.kind !== "browser") || typeof activity.id !== "string" || typeof activity.thread_id !== "string") return undefined;
   return value as ActivitySession;
 }

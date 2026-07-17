@@ -106,6 +106,30 @@ export interface BrowserReplyPort {
   reject(id: string, message: string): void;
 }
 
+// A single captured frame of an agent tab, in the CSS-pixel coordinate space
+// the model's click/type actions already use (capturePage DIP size).
+export interface BrowserTabFrame {
+  png: Buffer;
+  width: number;
+  height: number;
+}
+
+// Page identity shown on the preview surface chrome.
+export interface BrowserTabSurfaceMeta {
+  url: string;
+  title: string;
+}
+
+// Live pointer hint for the preview surface. Coordinates are page CSS pixels,
+// the same space click/scroll dispatch in. Emitted only after the input event
+// was actually dispatched — a hint never precedes the action it visualizes.
+export type BrowserInteractionHint = {
+  kind: "click" | "scroll" | "type";
+  x: number;
+  y: number;
+  direction?: string;
+};
+
 type TabEntry = {
   view: BrowserViewHandle;
   workdir: string;
@@ -163,6 +187,13 @@ export class BrowserHostCoordinator {
   // sends its next request (proof the core is back).
   private readonly downWorkdirs = new Set<string>();
   private hostWindow: BrowserHostWindowHandle | undefined;
+  // Preview-surface listeners. Interaction hints flow main-side only (never
+  // through the core protocol): they mirror actions this coordinator already
+  // dispatched, so no model-visible data crosses a new channel.
+  private readonly interactionListeners = new Set<
+    (workdir: string, tabID: string, hint: BrowserInteractionHint) => void
+  >();
+  private readonly tabClosedListeners = new Set<(workdir: string, tabID: string) => void>();
 
   constructor(
     private readonly registry: WindowRegistry,
@@ -228,6 +259,60 @@ export class BrowserHostCoordinator {
 
   ownsWebContents(webContentsID: number): boolean {
     return this.agentWebContentsIds.has(webContentsID);
+  }
+
+  // -------------------------------------------------------------------------
+  // Preview-surface accessors (browser PiP). All read-only against the tab;
+  // returning undefined signals "tab gone" so the surface can tear down
+  // without retrying.
+  // -------------------------------------------------------------------------
+  addInteractionListener(
+    listener: (workdir: string, tabID: string, hint: BrowserInteractionHint) => void,
+  ): () => void {
+    this.interactionListeners.add(listener);
+    return () => this.interactionListeners.delete(listener);
+  }
+
+  addTabClosedListener(listener: (workdir: string, tabID: string) => void): () => void {
+    this.tabClosedListeners.add(listener);
+    return () => this.tabClosedListeners.delete(listener);
+  }
+
+  // One fresh frame of the tab, or undefined when the tab/view is gone. Uses
+  // the same stayHidden capture as observe screenshots, so a hidden tab keeps
+  // producing real frames for the preview without being promoted on-screen.
+  async captureTabFrame(workdir: string, tabID: string): Promise<BrowserTabFrame | undefined> {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    if (!entry || entry.view.webContents.isDestroyed()) return undefined;
+    const image = await entry.view.webContents.capturePage(undefined, { stayHidden: true });
+    const size = image.getSize();
+    return { png: image.toPNG(), width: size.width, height: size.height };
+  }
+
+  tabSurfaceMeta(workdir: string, tabID: string): BrowserTabSurfaceMeta | undefined {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    if (!entry || entry.view.webContents.isDestroyed()) return undefined;
+    return { url: entry.view.webContents.getURL(), title: entry.view.webContents.getTitle() };
+  }
+
+  private emitInteraction(entry: TabEntry, hint: BrowserInteractionHint): void {
+    for (const listener of this.interactionListeners) {
+      try {
+        listener(entry.workdir, entry.tabID, hint);
+      } catch {
+        // A broken preview listener must never fail the action it mirrors.
+      }
+    }
+  }
+
+  private emitTabClosed(entry: TabEntry): void {
+    for (const listener of this.tabClosedListeners) {
+      try {
+        listener(entry.workdir, entry.tabID);
+      } catch {
+        // Listener teardown races are harmless here.
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -486,17 +571,21 @@ export class BrowserHostCoordinator {
       buttons: 1,
       clickCount: 1,
     });
+    this.emitInteraction(entry, { kind: "click", x: point[0], y: point[1] });
     return { ok: true };
   }
 
   private async typeText(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
     const dbg = entry.view.webContents.debugger;
+    let point: [number, number] | undefined;
     if (typeof params.node_id === "number") {
       const backendNodeId = this.requireBackendNode(entry, params.node_id);
       await dbg.sendCommand("DOM.focus", { backendNodeId });
+      point = await this.pointForNode(entry, params.node_id).catch(() => undefined);
     }
     const text = String(params.text ?? "");
     await dbg.sendCommand("Input.insertText", { text });
+    if (point) this.emitInteraction(entry, { kind: "type", x: point[0], y: point[1] });
     return { ok: true };
   }
 
@@ -516,6 +605,7 @@ export class BrowserHostCoordinator {
       deltaX: dx,
       deltaY: dy,
     });
+    this.emitInteraction(entry, { kind: "scroll", x, y, direction: scrollDirection(dx, dy) });
     return { ok: true };
   }
 
@@ -622,6 +712,7 @@ export class BrowserHostCoordinator {
 
   private destroyEntry(entry: TabEntry): void {
     this.agentWebContentsIds.delete(entry.view.webContents.id);
+    this.emitTabClosed(entry);
     if (entry.debuggerAttached) {
       try {
         if (entry.view.webContents.debugger.isAttached()) {
@@ -691,6 +782,12 @@ export function boxModelCenter(box: unknown): [number, number] | undefined {
   const x = (xs as number[]).reduce((a, b) => a + b, 0) / 4;
   const y = (ys as number[]).reduce((a, b) => a + b, 0) / 4;
   return [Math.round(x), Math.round(y)];
+}
+
+// Dominant-axis direction for a scroll hint; page-space dy>0 scrolls down.
+export function scrollDirection(dx: number, dy: number): string {
+  if (Math.abs(dy) >= Math.abs(dx)) return dy >= 0 ? "down" : "up";
+  return dx >= 0 ? "right" : "left";
 }
 
 const INTERACTABLE_TAGS = new Set([

@@ -584,3 +584,88 @@ describe("pure helpers", () => {
     expect(nodes[0]).toMatchObject({ backendNodeId: 9, role: "button" });
   });
 });
+
+describe("BrowserHostCoordinator preview surface accessors", () => {
+  it("captures a frame for a live tab and reports undefined once it is gone", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const frame = await harness.coordinator.captureTabFrame("/repo", "t1");
+    expect(frame?.png.toString()).toBe("fake-png");
+    expect(frame?.width).toBe(800);
+    expect(frame?.height).toBe(600);
+
+    expect(await harness.coordinator.captureTabFrame("/repo", "missing")).toBeUndefined();
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/close_tab", { workdir: "/repo", tab_id: "t1" }, "close-1"),
+    );
+    expect(await harness.coordinator.captureTabFrame("/repo", "t1")).toBeUndefined();
+  });
+
+  it("reads surface meta for a live tab only", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    harness.views[0].url = "https://meta.test/page";
+    harness.views[0].title = "Meta";
+    expect(harness.coordinator.tabSurfaceMeta("/repo", "t1")).toEqual({
+      url: "https://meta.test/page",
+      title: "Meta",
+    });
+    expect(harness.coordinator.tabSurfaceMeta("/repo", "missing")).toBeUndefined();
+  });
+
+  it("emits interaction hints after click, scroll, and type dispatch", async () => {
+    const harness = makeHarness();
+    const hints: Array<{ workdir: string; tabID: string; hint: unknown }> = [];
+    harness.coordinator.addInteractionListener((workdir, tabID, hint) => {
+      hints.push({ workdir, tabID, hint });
+    });
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/cdp", { workdir: "/repo", tab_id: "t1", method: "click", params: { x: 40, y: 60 } }, "click-1"),
+    );
+    // scroll without a node_id dispatches at 0,0 (existing behavior), and the
+    // hint must mirror the point the event was actually dispatched at.
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/cdp", { workdir: "/repo", tab_id: "t1", method: "scroll", params: { x: 10, y: 10, dx: 0, dy: 240 } }, "scroll-1"),
+    );
+
+    // type needs an observe-built node map, then resolves the node center.
+    view.responders.set("DOMSnapshot.captureSnapshot", () => twoNodeSnapshot());
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/cdp", { workdir: "/repo", tab_id: "t1", method: "observe", params: { screenshot: false } }, "obs-1"),
+    );
+    view.responders.set("DOM.getBoxModel", () => ({ model: { content: [10, 20, 30, 20, 30, 40, 10, 40] } }));
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/cdp", { workdir: "/repo", tab_id: "t1", method: "type", params: { node_id: 1, text: "hi" } }, "type-1"),
+    );
+
+    expect(hints).toEqual([
+      { workdir: "/repo", tabID: "t1", hint: { kind: "click", x: 40, y: 60 } },
+      { workdir: "/repo", tabID: "t1", hint: { kind: "scroll", x: 0, y: 0, direction: "down" } },
+      { workdir: "/repo", tabID: "t1", hint: { kind: "type", x: 20, y: 30 } },
+    ]);
+  });
+
+  it("notifies tab-closed listeners on close_tab and workdir teardown", async () => {
+    const harness = makeHarness();
+    const closed: Array<{ workdir: string; tabID: string }> = [];
+    harness.coordinator.addTabClosedListener((workdir, tabID) => {
+      closed.push({ workdir, tabID });
+    });
+    await openTab(harness, "/repo", "t1");
+    await openTab(harness, "/repo", "t2");
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/close_tab", { workdir: "/repo", tab_id: "t1" }, "close-1"),
+    );
+    expect(closed).toEqual([{ workdir: "/repo", tabID: "t1" }]);
+
+    harness.coordinator.onClientTorndown("/repo");
+    expect(closed).toEqual([
+      { workdir: "/repo", tabID: "t1" },
+      { workdir: "/repo", tabID: "t2" },
+    ]);
+  });
+});

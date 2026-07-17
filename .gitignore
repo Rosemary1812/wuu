@@ -10,6 +10,8 @@ dist/
 node_modules/
 .vite/
 desktop/out/
+# Browser PiP E2E bundles its entry here before launching Electron.
+desktop/out-e2e/
 # Desktop release packaging writes the generated Go core and installer
 # artifacts under tracked icon resources.
 desktop/build/bin/

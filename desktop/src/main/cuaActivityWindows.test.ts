@@ -3,12 +3,12 @@ import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import type { CUANativePiPEvent } from "./cuaFrameStreams";
 import type { WindowRegistry } from "./windowRegistry";
 import {
-  CUAObservationCoordinator,
+  ObservationCoordinator,
   activityControlMethod,
   activityVisibleForThread,
-  cuaActivityFromServerEvent,
   frameStreamRetryDelay,
   nativePiPInitialBounds,
+  observationActivityFromServerEvent,
   observationKey,
 } from "./cuaActivityWindows";
 
@@ -55,15 +55,15 @@ describe("CUA native picture-in-picture", () => {
     expect(frameStreamRetryDelay(6)).toBe(16000);
   });
 
-  it("accepts only CUA lifecycle notifications", () => {
+  it("accepts CUA and browser lifecycle notifications", () => {
     const event: ServerEvent = {
       workdir: "/repo",
       kind: "notification",
       message: { method: "activity/updated", params: activity() },
     };
-    expect(cuaActivityFromServerEvent(event)?.id).toBe("activity-1");
-    expect(cuaActivityFromServerEvent({ ...event, message: { method: "activity/updated", params: activity({ kind: "browser" }) } }))
-      .toBeUndefined();
+    expect(observationActivityFromServerEvent(event)?.id).toBe("activity-1");
+    expect(observationActivityFromServerEvent({ ...event, message: { method: "activity/updated", params: activity({ kind: "browser" }) } })?.id)
+      .toBe("activity-1");
   });
 
   it("maps Activity controls onto RPC methods", () => {
@@ -85,7 +85,7 @@ describe("CUA native picture-in-picture", () => {
   it("waits for the outgoing helper to close and coalesces replacements", () => {
     const events: string[] = [];
     const helpers: Array<{ target: string; finishStop?: () => void }> = [];
-    const coordinator = new CUAObservationCoordinator(
+    const coordinator = new ObservationCoordinator(
       { mainWindow: () => undefined } as unknown as WindowRegistry,
       undefined,
       (next) => {
@@ -120,7 +120,7 @@ describe("CUA native picture-in-picture", () => {
     vi.setSystemTime("2026-07-10T10:00:01.500Z");
     const events: string[] = [];
     const helpers: Array<{ target: string; finishStop?: () => void }> = [];
-    const coordinator = new CUAObservationCoordinator(
+    const coordinator = new ObservationCoordinator(
       { mainWindow: () => undefined } as unknown as WindowRegistry,
       undefined,
       (next) => {
@@ -141,9 +141,9 @@ describe("CUA native picture-in-picture", () => {
     coordinator.setActiveThread("thread-1");
     coordinator.update(initial);
     const testCoordinator = coordinator as unknown as {
-      handleNativePiPEvent: (key: string, event: CUANativePiPEvent) => void;
+      handlePiPEvent: (key: string, event: CUANativePiPEvent) => void;
     };
-    testCoordinator.handleNativePiPEvent(observationKey(initial), { event: "user_close" });
+    testCoordinator.handlePiPEvent(observationKey(initial), { event: "user_close" });
     coordinator.update(activity({ target: "app-b", updated_at: "2026-07-10T10:00:02Z" }));
 
     expect(events).toEqual(["start:app-a", "stop:app-a"]);
@@ -152,5 +152,129 @@ describe("CUA native picture-in-picture", () => {
     helpers[0].finishStop?.();
     expect(events).toEqual(["start:app-a", "stop:app-a", "start:app-b"]);
     expect(helpers.map((helper) => helper.target)).toEqual(["app-a", "app-b"]);
+  });
+});
+
+describe("browser observation surface", () => {
+  function browserActivity(overrides: Partial<ActivitySession> = {}): ActivitySession {
+    return {
+      id: "activity-1",
+      kind: "browser",
+      thread_id: "thread-1",
+      workdir: "/repo",
+      plugin_id: "embedded-browser",
+      target: "tab-1",
+      state: "background_controlled",
+      controller: "agent",
+      created_at: "2026-07-10T10:00:00Z",
+      updated_at: "2026-07-10T10:00:01Z",
+      ...overrides,
+    };
+  }
+
+  type FakeSurface = {
+    start: ReturnType<typeof vi.fn>;
+    setVisible: ReturnType<typeof vi.fn>;
+    setLive: ReturnType<typeof vi.fn>;
+    updateActivity: ReturnType<typeof vi.fn>;
+    animateInteraction: ReturnType<typeof vi.fn>;
+    stop: (onStopped?: () => void) => void;
+  };
+
+  function makeCoordinator(): {
+    coordinator: ObservationCoordinator;
+    surfaces: FakeSurface[];
+    stops: string[];
+  } {
+    const surfaces: FakeSurface[] = [];
+    const stops: string[] = [];
+    const coordinator = new ObservationCoordinator(
+      { mainWindow: () => undefined } as unknown as WindowRegistry,
+      undefined,
+      (next) => {
+        const surface: FakeSurface = {
+          start: vi.fn(),
+          setVisible: vi.fn(),
+          setLive: vi.fn(),
+          updateActivity: vi.fn(),
+          animateInteraction: vi.fn(),
+          stop: (onStopped?: () => void) => {
+            stops.push(next.target ?? "");
+            onStopped?.();
+          },
+        };
+        surfaces.push(surface);
+        return surface;
+      },
+    );
+    return { coordinator, surfaces, stops };
+  }
+
+  it("starts the surface for a browser activity and hides it while the user watches the real page", () => {
+    const { coordinator, surfaces } = makeCoordinator();
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(browserActivity());
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0].start).toHaveBeenCalledTimes(1);
+    expect(surfaces[0].setVisible).toHaveBeenLastCalledWith(true);
+
+    // Visibility takeover: the real page is on screen full-size — the mirror hides.
+    coordinator.update(browserActivity({ state: "foreground_controlled", controller: "user", updated_at: "2026-07-10T10:00:02Z" }));
+    expect(surfaces[0].setVisible).toHaveBeenLastCalledWith(false);
+    expect(surfaces[0].stop).toBeDefined();
+    expect(surfaces).toHaveLength(1); // same surface, not replaced
+
+    coordinator.update(browserActivity({ state: "background_controlled", controller: "agent", updated_at: "2026-07-10T10:00:03Z" }));
+    expect(surfaces[0].setVisible).toHaveBeenLastCalledWith(true);
+  });
+
+  it("freezes frame production on stop without tearing the surface down, and resumes on new activity", () => {
+    const { coordinator, surfaces } = makeCoordinator();
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(browserActivity());
+    coordinator.update(browserActivity({ state: "stopped", controller: "none", updated_at: "2026-07-10T10:00:02Z" }));
+    expect(surfaces[0].setLive).toHaveBeenLastCalledWith(false);
+    expect(surfaces).toHaveLength(1); // kept, CUA observation semantics
+
+    coordinator.update(browserActivity({ updated_at: "2026-07-10T10:00:03Z" }));
+    expect(surfaces[0].setLive).toHaveBeenLastCalledWith(true);
+    expect(surfaces[0].updateActivity).toHaveBeenCalled();
+  });
+
+  it("swaps the surface on tab switch through the serialized replacement", () => {
+    const { coordinator, surfaces, stops } = makeCoordinator();
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(browserActivity({ target: "tab-1" }));
+    coordinator.update(browserActivity({ target: "tab-2", updated_at: "2026-07-10T10:00:02Z" }));
+    expect(stops).toEqual(["tab-1"]);
+    expect(surfaces).toHaveLength(2);
+    expect(surfaces[1].start).toHaveBeenCalledTimes(1);
+  });
+
+  it("tears the surface down when the tab is gone and does not retry", () => {
+    vi.useFakeTimers();
+    const { coordinator, surfaces, stops } = makeCoordinator();
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(browserActivity());
+    const testCoordinator = coordinator as unknown as {
+      handlePiPGone: (key: string) => void;
+    };
+    testCoordinator.handlePiPGone(observationKey(browserActivity()));
+    expect(stops).toEqual(["tab-1"]);
+    vi.advanceTimersByTime(60_000);
+    expect(surfaces).toHaveLength(1); // no retry respawn
+  });
+
+  it("drops the surface and observation on workdir teardown", () => {
+    const { coordinator, surfaces, stops } = makeCoordinator();
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(browserActivity());
+    coordinator.dropWorkdir("/repo");
+    expect(stops).toEqual(["tab-1"]);
+    // A later reconcile/update for the same workdir's stale activity cannot
+    // resurrect it — the observation was forgotten. A genuinely new update
+    // (same timestamps as a fresh event) starts a new surface as usual.
+    coordinator.update(browserActivity({ updated_at: "2026-07-10T10:00:05Z" }));
+    expect(surfaces).toHaveLength(2);
   });
 });
