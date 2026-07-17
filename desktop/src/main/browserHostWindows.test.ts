@@ -1,0 +1,586 @@
+import type { Rectangle } from "electron";
+import type { ServerEvent } from "../shared/protocol";
+import { describe, expect, it, vi } from "vitest";
+import type { WindowRegistry } from "./windowRegistry";
+import {
+  BrowserHostCoordinator,
+  type BrowserDebuggerHandle,
+  type BrowserHostDeps,
+  type BrowserHostWindowHandle,
+  type BrowserNativeImageHandle,
+  type BrowserParentWindowHandle,
+  type BrowserReplyPort,
+  type BrowserViewHandle,
+  type BrowserWebContentsHandle,
+  boxModelCenter,
+  browserPermissionDecision,
+  interactableNodesFromSnapshot,
+  tabKey,
+  valueFor,
+} from "./browserHostWindows";
+
+let nextWebContentsID = 1;
+
+class FakeView implements BrowserViewHandle {
+  readonly wcID = nextWebContentsID++;
+  attached = false;
+  url = "https://example.com/";
+  title = "Example";
+  readonly sentCommands: Array<{ method: string; params?: Record<string, unknown> }> = [];
+  readonly responders = new Map<string, (params?: Record<string, unknown>) => Record<string, unknown>>();
+  readonly loadedURLs: string[] = [];
+  captureCount = 0;
+  boundsSet: Rectangle | undefined;
+  visibleState: boolean | undefined;
+  closed = false;
+
+  readonly debuggerHandle: BrowserDebuggerHandle = {
+    attach: () => {
+      this.attached = true;
+    },
+    detach: () => {
+      this.attached = false;
+    },
+    isAttached: () => this.attached,
+    sendCommand: async (method, params) => {
+      this.sentCommands.push({ method, params });
+      const responder = this.responders.get(method);
+      return responder ? responder(params) : {};
+    },
+  };
+
+  readonly webContents: BrowserWebContentsHandle = {
+    id: this.wcID,
+    debugger: this.debuggerHandle,
+    setBackgroundThrottling: () => undefined,
+    setWindowOpenHandler: () => undefined,
+    loadURL: async (url: string) => {
+      this.loadedURLs.push(url);
+      this.url = url;
+    },
+    getURL: () => this.url,
+    getTitle: () => this.title,
+    capturePage: async (): Promise<BrowserNativeImageHandle> => {
+      this.captureCount += 1;
+      return {
+        toPNG: () => Buffer.from("fake-png"),
+        getSize: () => ({ width: 800, height: 600 }),
+      };
+    },
+    close: () => {
+      this.closed = true;
+    },
+    isDestroyed: () => this.closed,
+  };
+
+  setBounds(rect: Rectangle): void {
+    this.boundsSet = rect;
+  }
+
+  setVisible(visible: boolean): void {
+    this.visibleState = visible;
+  }
+}
+
+class FakeWindow implements BrowserHostWindowHandle {
+  destroyed = false;
+  readonly added: BrowserViewHandle[] = [];
+  readonly removed: BrowserViewHandle[] = [];
+  readonly contentView = {
+    addChildView: (view: BrowserViewHandle): void => {
+      this.added.push(view);
+    },
+    removeChildView: (view: BrowserViewHandle): void => {
+      this.removed.push(view);
+    },
+  };
+
+  isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+  }
+}
+
+type Harness = {
+  coordinator: BrowserHostCoordinator;
+  views: FakeView[];
+  hostWindows: FakeWindow[];
+  reply: BrowserReplyPort & { respond: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn> };
+  invalidations: string[];
+  writtenPng: Map<string, Buffer>;
+  writtenJson: Map<string, string>;
+  mainWindow: FakeWindow;
+};
+
+function makeHarness(): Harness {
+  const views: FakeView[] = [];
+  const hostWindows: FakeWindow[] = [];
+  const writtenPng = new Map<string, Buffer>();
+  const writtenJson = new Map<string, string>();
+  const invalidations: string[] = [];
+  const mainWindow = new FakeWindow();
+
+  const reply = {
+    respond: vi.fn(),
+    reject: vi.fn(),
+  };
+
+  const deps: BrowserHostDeps = {
+    createHostWindow: () => {
+      const host = new FakeWindow();
+      hostWindows.push(host);
+      return host;
+    },
+    createView: () => {
+      const view = new FakeView();
+      views.push(view);
+      return view;
+    },
+    writePng: (destPath, data) => {
+      writtenPng.set(destPath, data);
+    },
+    writeJson: (destPath, data) => {
+      writtenJson.set(destPath, data);
+    },
+  };
+
+  const registry = { mainWindow: () => mainWindow } as unknown as WindowRegistry;
+  const coordinator = new BrowserHostCoordinator(registry, reply, deps, (workdir) => {
+    invalidations.push(workdir);
+  });
+
+  return { coordinator, views, hostWindows, reply, invalidations, writtenPng, writtenJson, mainWindow };
+}
+
+function serverRequest(
+  method: string,
+  params: Record<string, unknown>,
+  id = "server-request-1",
+): Extract<ServerEvent, { kind: "server-request" }> {
+  return {
+    workdir: typeof params.workdir === "string" ? params.workdir : "/repo",
+    kind: "server-request",
+    message: { id, method, params },
+  };
+}
+
+async function openTab(harness: Harness, workdir: string, tabID: string): Promise<void> {
+  await harness.coordinator.handleServerRequest(
+    serverRequest("browser/open_tab", { workdir, tab_id: tabID }, `open-${workdir}-${tabID}`),
+  );
+}
+
+// A minimal DOMSnapshot.captureSnapshot response with one button (backend 100)
+// and one link (backend 200). The string table is index-referenced by the node
+// arrays, matching the real CDP wire shape.
+function twoNodeSnapshot(): Record<string, unknown> {
+  return {
+    strings: [
+      "BUTTON", // 0 nodeName for node 0
+      "A", // 1 nodeName for node 1
+      "aria-label", // 2
+      "Submit", // 3
+      "href", // 4
+      "https://x.test/", // 5
+    ],
+    documents: [
+      {
+        nodes: {
+          nodeName: [0, 1],
+          backendNodeId: [100, 200],
+          attributes: [
+            [2, 3], // node 0: aria-label=Submit
+            [4, 5], // node 1: href=https://x.test/
+          ],
+        },
+        layout: {
+          nodeIndex: [0, 1],
+          bounds: [
+            [5, 6, 50, 20],
+            [7, 8, 60, 18],
+          ],
+        },
+      },
+    ],
+  };
+}
+
+describe("BrowserHostCoordinator CDP routing", () => {
+  it("translates navigate to loadURL and returns url + title", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    view.title = "Landing";
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "navigate", params: { url: "https://landing.test/" } },
+        "nav-1",
+      ),
+    );
+
+    expect(view.loadedURLs).toEqual(["https://landing.test/"]);
+    expect(harness.reply.respond).toHaveBeenLastCalledWith("nav-1", {
+      result: { url: "https://landing.test/", title: "Landing" },
+    });
+  });
+
+  it("assigns node_ids on observe and resolves click(node_id) through the map", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    view.responders.set("DOMSnapshot.captureSnapshot", () => twoNodeSnapshot());
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "observe", params: { screenshot: false } },
+        "obs-1",
+      ),
+    );
+
+    const observeResult = harness.reply.respond.mock.calls.at(-1)?.[1] as { result: { nodes: Array<Record<string, unknown>> } };
+    expect(observeResult.result.nodes).toHaveLength(2);
+    expect(observeResult.result.nodes[0]).toMatchObject({ node_id: 1, role: "button", name: "Submit", bounds: [5, 6, 50, 20] });
+    expect(observeResult.result.nodes[1]).toMatchObject({ node_id: 2, role: "link" });
+
+    // node_id 2 must resolve to backendNodeId 200 via the per-tab map.
+    let requestedBackend: unknown;
+    view.responders.set("DOM.getBoxModel", (params) => {
+      requestedBackend = params?.backendNodeId;
+      return { model: { content: [10, 20, 30, 20, 30, 40, 10, 40] } };
+    });
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "click", params: { node_id: 2 } },
+        "click-1",
+      ),
+    );
+
+    expect(requestedBackend).toBe(200);
+    const mouseCommands = view.sentCommands.filter((c) => c.method === "Input.dispatchMouseEvent");
+    expect(mouseCommands[0]?.params).toMatchObject({ type: "mousePressed", x: 20, y: 30, button: "left" });
+    expect(mouseCommands[1]?.params).toMatchObject({ type: "mouseReleased", x: 20, y: 30 });
+    expect(harness.reply.respond).toHaveBeenLastCalledWith("click-1", { result: { ok: true } });
+  });
+
+  it("rejects click(node_id) when the tab has not been observed", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "click", params: { node_id: 7 } },
+        "click-miss",
+      ),
+    );
+
+    expect(harness.reply.reject).toHaveBeenLastCalledWith("click-miss", expect.stringContaining("node_id 7 not found"));
+  });
+
+  it("dispatches click at raw coordinates without a map lookup", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "click", params: { x: 42, y: 84 } },
+        "click-xy",
+      ),
+    );
+
+    const mouseCommands = view.sentCommands.filter((c) => c.method === "Input.dispatchMouseEvent");
+    expect(mouseCommands[0]?.params).toMatchObject({ type: "mousePressed", x: 42, y: 84 });
+    expect(view.sentCommands.some((c) => c.method === "DOM.getBoxModel")).toBe(false);
+  });
+
+  it("reports tab_not_found for an unknown tab so the tool can rebuild it", async () => {
+    const harness = makeHarness();
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "ghost", method: "navigate", params: { url: "https://x/" } },
+        "ghost-1",
+      ),
+    );
+    expect(harness.reply.reject).toHaveBeenLastCalledWith("ghost-1", "tab_not_found");
+  });
+});
+
+describe("BrowserHostCoordinator large-response gate", () => {
+  it("spills an over-1MB observe result to dest_path.json instead of inlining", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    const hugeName = "x".repeat(1_200_000);
+    view.responders.set("DOMSnapshot.captureSnapshot", () => ({
+      strings: ["INPUT", "aria-label", hugeName],
+      documents: [
+        {
+          nodes: {
+            nodeName: [0],
+            backendNodeId: [500],
+            attributes: [[1, 2]],
+          },
+          layout: { nodeIndex: [0], bounds: [[1, 1, 200, 30]] },
+        },
+      ],
+    }));
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        {
+          workdir: "/repo",
+          tab_id: "t1",
+          method: "observe",
+          params: { screenshot: false, dest_path: "/artifacts/preview.png" },
+        },
+        "obs-big",
+      ),
+    );
+
+    const result = harness.reply.respond.mock.calls.at(-1)?.[1] as { result?: unknown; path?: string; size?: number };
+    expect(result.result).toBeUndefined();
+    expect(result.path).toBe("/artifacts/preview.png.json");
+    expect(result.size).toBeGreaterThan(1024 * 1024);
+    expect(harness.writtenJson.has("/artifacts/preview.png.json")).toBe(true);
+  });
+
+  it("inlines a small result", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    harness.views[0].responders.set("DOMSnapshot.captureSnapshot", () => twoNodeSnapshot());
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "observe", params: { screenshot: false, dest_path: "/artifacts/preview.png" } },
+        "obs-small",
+      ),
+    );
+
+    const result = harness.reply.respond.mock.calls.at(-1)?.[1] as { result?: unknown; path?: string };
+    expect(result.path).toBeUndefined();
+    expect(result.result).toBeDefined();
+    expect(harness.writtenJson.size).toBe(0);
+  });
+});
+
+describe("BrowserHostCoordinator screenshot", () => {
+  it("captures with stayHidden and writes the PNG to dest_path", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/screenshot",
+        { workdir: "/repo", tab_id: "t1", dest_path: "/artifacts/shot.png" },
+        "shot-1",
+      ),
+    );
+
+    expect(harness.views[0].captureCount).toBe(1);
+    expect(harness.writtenPng.has("/artifacts/shot.png")).toBe(true);
+    expect(harness.reply.respond).toHaveBeenLastCalledWith("shot-1", {
+      width: 800,
+      height: 600,
+      path: "/artifacts/shot.png",
+    });
+  });
+});
+
+describe("BrowserHostCoordinator lifecycle", () => {
+  it("onClientTorndown only destroys the given workdir's views", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repoA", "a1");
+    await openTab(harness, "/repoB", "b1");
+    const [viewA, viewB] = harness.views;
+
+    harness.coordinator.onClientTorndown("/repoA");
+
+    expect(viewA.closed).toBe(true);
+    expect(viewB.closed).toBe(false);
+    expect(harness.coordinator.hasAgentTabs("/repoA")).toBe(false);
+    expect(harness.coordinator.hasAgentTabs("/repoB")).toBe(true);
+    expect(harness.invalidations).toEqual(["/repoA"]);
+  });
+
+  it("drops a reply when the core dies mid-request so it is not respawned", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    harness.reply.respond.mockClear();
+    // Simulate the core crashing while the CDP action is in flight: the
+    // server-exit lands before the reply would go out.
+    view.webContents.loadURL = async (url: string) => {
+      view.loadedURLs.push(url);
+      harness.coordinator.markServerExit("/repo");
+    };
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest(
+        "browser/cdp",
+        { workdir: "/repo", tab_id: "t1", method: "navigate", params: { url: "https://x/" } },
+        "mid-crash",
+      ),
+    );
+
+    expect(view.loadedURLs).toEqual(["https://x/"]);
+    expect(harness.reply.respond).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent on close of an unknown tab", async () => {
+    const harness = makeHarness();
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/close_tab", { workdir: "/repo", tab_id: "missing" }, "close-1"),
+    );
+    expect(harness.reply.respond).toHaveBeenLastCalledWith("close-1", { ok: true });
+  });
+
+  it("lists only the requesting workdir's tabs", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repoA", "a1");
+    await openTab(harness, "/repoA", "a2");
+    await openTab(harness, "/repoB", "b1");
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/list_tabs", { workdir: "/repoA" }, "list-1"),
+    );
+    expect(harness.reply.respond).toHaveBeenLastCalledWith("list-1", { tab_ids: ["a1", "a2"] });
+  });
+
+  it("destroyAll tears down every view and the host window", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    harness.coordinator.destroyAll();
+    expect(harness.views[0].closed).toBe(true);
+    expect(harness.hostWindows[0].destroyed).toBe(true);
+  });
+});
+
+describe("BrowserHostCoordinator visibility takeover", () => {
+  it("reparents the view onto the reported window and applies the reported bounds", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    const rect = { x: 12, y: 34, width: 640, height: 480 };
+    harness.coordinator.reportBounds("/repo", "t1", harness.mainWindow as unknown as BrowserParentWindowHandle, rect);
+
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/set_visibility", { workdir: "/repo", tab_id: "t1", visible: true }, "vis-1"),
+    );
+
+    expect(harness.mainWindow.added).toContain(view);
+    expect(view.boundsSet).toEqual(rect);
+    expect(view.visibleState).toBe(true);
+  });
+
+  it("overlay suppression hides then restores the view", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+
+    harness.coordinator.setOverlaySuppressed("/repo", "t1", true);
+    expect(view.visibleState).toBe(false);
+    harness.coordinator.setOverlaySuppressed("/repo", "t1", false);
+    expect(view.visibleState).toBe(true);
+  });
+});
+
+describe("BrowserHostCoordinator permission ownership", () => {
+  it("owns its agent views and sorts permissions by ownership", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+
+    expect(harness.coordinator.ownsWebContents(view.webContents.id)).toBe(true);
+    expect(harness.coordinator.ownsWebContents(987654)).toBe(false);
+
+    // Agent view: sensitive denied, benign allowed.
+    expect(browserPermissionDecision(true, "media")).toBe(false);
+    expect(browserPermissionDecision(true, "geolocation")).toBe(false);
+    // clipboard-read is denied for agent tabs: the OS clipboard often holds secrets.
+    expect(browserPermissionDecision(true, "clipboard-read")).toBe(false);
+    // A capability not in the denylist stays allowed for agent tabs.
+    expect(browserPermissionDecision(true, "fullscreen")).toBe(true);
+    // User webview (not owned): always passthrough.
+    expect(browserPermissionDecision(false, "media")).toBe(true);
+    expect(browserPermissionDecision(false, "clipboard-read")).toBe(true);
+  });
+});
+
+describe("pure helpers", () => {
+  it("keys tabs by workdir + tab_id with a NUL separator", () => {
+    expect(tabKey("/a", "t1")).toBe("/a t1");
+    // Different cores can mint the same tab_id; the workdir must disambiguate.
+    expect(tabKey("/a", "t1")).not.toBe(tabKey("/b", "t1"));
+  });
+
+  it("never surfaces password / hidden / credential field values to the model", () => {
+    expect(valueFor({ type: "password", value: "hunter2" }, "hunter2")).toBe("");
+    expect(valueFor({ type: "hidden", value: "csrf-token" }, "")).toBe("");
+    expect(valueFor({ autocomplete: "current-password", value: "x" }, "x")).toBe("");
+    expect(valueFor({ autocomplete: "cc-number" }, "4111111111111111")).toBe("");
+    // Ordinary inputs still surface their value so the model can read the page.
+    expect(valueFor({ type: "text" }, "hello")).toBe("hello");
+    expect(valueFor({ type: "email" }, "a@b.com")).toBe("a@b.com");
+  });
+
+  it("computes the center of a CDP box-model content quad", () => {
+    expect(boxModelCenter({ model: { content: [10, 20, 30, 20, 30, 40, 10, 40] } })).toEqual([20, 30]);
+    expect(boxModelCenter({ model: {} })).toBeUndefined();
+    expect(boxModelCenter({})).toBeUndefined();
+  });
+
+  it("trims a DOM snapshot to visible interactable nodes", () => {
+    const nodes = interactableNodesFromSnapshot(twoNodeSnapshot());
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]).toMatchObject({ backendNodeId: 100, role: "button", name: "Submit", bounds: [5, 6, 50, 20] });
+    expect(nodes[1]).toMatchObject({ backendNodeId: 200, role: "link" });
+  });
+
+  it("drops zero-area and non-interactable nodes", () => {
+    const snapshot = {
+      strings: ["DIV", "BUTTON", "SPAN"],
+      documents: [
+        {
+          nodes: { nodeName: [0, 1, 2], backendNodeId: [1, 2, 3], attributes: [[], [], []] },
+          layout: {
+            nodeIndex: [0, 1, 2],
+            bounds: [
+              [0, 0, 100, 40], // div — not interactable
+              [0, 0, 0, 0], // button — zero area, dropped
+              [0, 0, 50, 50], // span — not interactable
+            ],
+          },
+        },
+      ],
+    };
+    expect(interactableNodesFromSnapshot(snapshot)).toHaveLength(0);
+  });
+
+  it("treats an explicit interactable role on a generic tag as interactable", () => {
+    const snapshot = {
+      strings: ["DIV", "role", "button"],
+      documents: [
+        {
+          nodes: { nodeName: [0], backendNodeId: [9], attributes: [[1, 2]] },
+          layout: { nodeIndex: [0], bounds: [[1, 2, 30, 30]] },
+        },
+      ],
+    };
+    const nodes = interactableNodesFromSnapshot(snapshot);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]).toMatchObject({ backendNodeId: 9, role: "button" });
+  });
+});

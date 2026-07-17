@@ -40,7 +40,7 @@ func classifyToolRisk(name string, kind ToolKind, readOnly bool) ToolRisk {
 			return ToolRiskLow
 		}
 		return ToolRiskHigh
-	case ToolKindProcess, ToolKindSchedule, ToolKindAgent, ToolKindMCP:
+	case ToolKindProcess, ToolKindSchedule, ToolKindAgent, ToolKindMCP, ToolKindBrowser:
 		if readOnly {
 			return ToolRiskMedium
 		}

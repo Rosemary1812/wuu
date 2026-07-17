@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeTextFileAtomicSync } from "./atomicFile";
+import { writeBufferFileAtomicSync, writeTextFileAtomicSync } from "./atomicFile";
 
 let directory: string;
 
@@ -56,5 +56,27 @@ describe("writeTextFileAtomicSync", () => {
 
     expect(await readFile(path, "utf8")).toBe("old\n");
     expect(await readdir(directory)).toEqual(["settings.json"]);
+  });
+});
+
+describe("writeBufferFileAtomicSync", () => {
+  it("writes binary payloads byte-for-byte and leaves no temp file", async () => {
+    const path = join(directory, "shots", "preview.png");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x10]);
+
+    writeBufferFileAtomicSync(path, png);
+
+    expect(await readFile(path)).toEqual(png);
+    expect(await readdir(join(directory, "shots"))).toEqual(["preview.png"]);
+  });
+
+  it("removes the temporary file when the rename fails", async () => {
+    const path = join(directory, "preview.png");
+    vi.spyOn(fs, "renameSync").mockImplementationOnce(() => {
+      throw new Error("rename failed");
+    });
+
+    expect(() => writeBufferFileAtomicSync(path, Buffer.from("x"))).toThrow("rename failed");
+    expect(await readdir(directory)).toEqual([]);
   });
 });

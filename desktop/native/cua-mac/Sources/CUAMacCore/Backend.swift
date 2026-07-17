@@ -426,32 +426,72 @@ public final class MacComputerBackend: ComputerBackend {
         ]
         var screenshot: Data?
         do {
-            let capture = try captureWindowWithForegroundFallback(command, app: app)
-            screenshot = capture.data
-            if lastScreenshotData[app.processIdentifier] != capture.data {
-                visualRevisions[app.processIdentifier, default: 0] += 1
-                lastScreenshotData[app.processIdentifier] = capture.data
+            if command.scope == .window {
+                // Legacy single-window path: unchanged so scope=window (the default)
+                // stays byte-for-byte identical to the pre-composite behaviour.
+                let capture = try captureWindowWithForegroundFallback(command, app: app)
+                screenshot = capture.data
+                if lastScreenshotData[app.processIdentifier] != capture.data {
+                    visualRevisions[app.processIdentifier, default: 0] += 1
+                    lastScreenshotData[app.processIdentifier] = capture.data
+                }
+                lastCaptureGeometry[app.processIdentifier] = capture.geometry
+                lastWindowIDs[app.processIdentifier] = capture.windowID
+                structured["window_id"] = Int(capture.windowID)
+                structured["screenshot"] = [
+                    "width": capture.geometry.imageWidth,
+                    "height": capture.geometry.imageHeight,
+                    "window_frame": [
+                        "x": capture.geometry.windowFrame.origin.x,
+                        "y": capture.geometry.windowFrame.origin.y,
+                        "width": capture.geometry.windowFrame.width,
+                        "height": capture.geometry.windowFrame.height,
+                    ],
+                    "coordinate_space": "latest_screenshot_pixels",
+                    "visible_image_frame": [
+                        "x": capture.geometry.visibleImageFrame.origin.x,
+                        "y": capture.geometry.visibleImageFrame.origin.y,
+                        "width": capture.geometry.visibleImageFrame.width,
+                        "height": capture.geometry.visibleImageFrame.height,
+                    ],
+                ]
+            } else {
+                let (capture, windows) = try captureCompositeForScope(command, app: app)
+                screenshot = capture.data
+                if lastScreenshotData[app.processIdentifier] != capture.data {
+                    visualRevisions[app.processIdentifier, default: 0] += 1
+                    lastScreenshotData[app.processIdentifier] = capture.data
+                }
+                // observe defines the coordinate space for the model's subsequent
+                // clicks. For a composite the union rect replaces the single-window
+                // frame, so screenshot/normalized/screen coordinates now resolve
+                // against the whole composited image (CaptureGeometry's affine map
+                // only needs the union frame and the image size).
+                lastCaptureGeometry[app.processIdentifier] = capture.geometry
+                lastWindowIDs[app.processIdentifier] = capture.windowID
+                structured["window_id"] = Int(capture.windowID)
+                var screenshotDict: [String: Any] = [
+                    "width": capture.geometry.imageWidth,
+                    "height": capture.geometry.imageHeight,
+                    "window_frame": [
+                        "x": capture.geometry.windowFrame.origin.x,
+                        "y": capture.geometry.windowFrame.origin.y,
+                        "width": capture.geometry.windowFrame.width,
+                        "height": capture.geometry.windowFrame.height,
+                    ],
+                    "coordinate_space": "latest_screenshot_pixels",
+                    "visible_image_frame": [
+                        "x": capture.geometry.visibleImageFrame.origin.x,
+                        "y": capture.geometry.visibleImageFrame.origin.y,
+                        "width": capture.geometry.visibleImageFrame.width,
+                        "height": capture.geometry.visibleImageFrame.height,
+                    ],
+                    "scope": command.scope.rawValue,
+                ]
+                // z-ordered window rectangles inside the composite (z_index 0 frontmost).
+                screenshotDict["windows"] = windows.map(\.dictionary)
+                structured["screenshot"] = screenshotDict
             }
-            lastCaptureGeometry[app.processIdentifier] = capture.geometry
-            lastWindowIDs[app.processIdentifier] = capture.windowID
-            structured["window_id"] = Int(capture.windowID)
-            structured["screenshot"] = [
-                "width": capture.geometry.imageWidth,
-                "height": capture.geometry.imageHeight,
-                "window_frame": [
-                    "x": capture.geometry.windowFrame.origin.x,
-                    "y": capture.geometry.windowFrame.origin.y,
-                    "width": capture.geometry.windowFrame.width,
-                    "height": capture.geometry.windowFrame.height,
-                ],
-                "coordinate_space": "latest_screenshot_pixels",
-                "visible_image_frame": [
-                    "x": capture.geometry.visibleImageFrame.origin.x,
-                    "y": capture.geometry.visibleImageFrame.origin.y,
-                    "width": capture.geometry.visibleImageFrame.width,
-                    "height": capture.geometry.visibleImageFrame.height,
-                ],
-            ]
         } catch {
             structured["screenshot_error"] = error.localizedDescription
         }
@@ -461,7 +501,10 @@ public final class MacComputerBackend: ComputerBackend {
             header += " Screenshot=\(geometry.imageWidth)×\(geometry.imageHeight) pixels maps to window_frame=(\(Int(geometry.windowFrame.origin.x)),\(Int(geometry.windowFrame.origin.y)),\(Int(geometry.windowFrame.width)),\(Int(geometry.windowFrame.height))). Prefer coordinate_space=\"normalized\" (0-1000) for visual targets so provider image resizing does not affect clicks; use coordinate_space=\"screenshot\" only for original image pixels."
         }
         let changes = previousText.map { snapshotChanges(from: $0, to: snapshot.text) } ?? []
-        let returnDiff = previousText != nil && !changes.isEmpty && changes.count <= 120
+        // disable_diff only suppresses the compact diff in the returned text body; the
+        // structured changes array below is still populated so wait_for_change can keep
+        // deriving `changed` from it.
+        let returnDiff = !command.disableDiff && previousText != nil && !changes.isEmpty && changes.count <= 120
         structured["ax_revision"] = axRevisions[app.processIdentifier] ?? 0
         structured["visual_revision"] = visualRevisions[app.processIdentifier] ?? 0
         structured["full_snapshot"] = !returnDiff
@@ -473,6 +516,18 @@ public final class MacComputerBackend: ComputerBackend {
             screenshotMIMEType: screenshot == nil ? nil : "image/png",
             structured: structured
         )
+    }
+
+    // scope=app / scope=screen capture path. Kept separate from the single-window
+    // fallback so the default path is untouched. All new ScreenCaptureKit / CGWindow
+    // work stays inside the MCP server process (this executable); it must never move
+    // into the PiP helper, which replayd tracks as a distinct capture client by its
+    // separate executable path.
+    private func captureCompositeForScope(_ command: ComputerCommand, app: NSRunningApplication) throws -> (WindowCapture, [WindowScreenshotInfo]) {
+        guard #available(macOS 14.0, *) else {
+            throw ComputerError.unsupported("multi-window composite capture requires macOS 14 or newer")
+        }
+        return try captureAppCompositePNG(processID: app.processIdentifier, scope: command.scope)
     }
 
     private func captureWindowWithForegroundFallback(_ command: ComputerCommand, app: NSRunningApplication) throws -> WindowCapture {

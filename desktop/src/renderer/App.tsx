@@ -184,6 +184,7 @@ import { SkillsCatalog } from "./SkillsCatalog";
 import { TaskBoardView } from "./TaskBoardView";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
+import { useBrowserVisibility } from "./BrowserVisibility";
 import { useSideThreadController } from "./SideThreadController";
 import {
   rawErrorMessage,
@@ -210,6 +211,7 @@ import {
 import { useViewSwitchState } from "./ViewSwitchState";
 import {
   activitiesForThread,
+  clearActivitiesForWorkdir,
   emptyActivitySessions,
   mergeActivityList,
   reduceActivitySessionEvent,
@@ -1272,6 +1274,28 @@ export function App(): JSX.Element {
     activeThread,
     activeThreadID,
     onOpenBrowser: () => openWorkspaceTool("browser"),
+  });
+  // A visible agent browser view is a main-owned WebContentsView that floats
+  // above the DOM; any full-window overlay would occlude it, so we tell main to
+  // hide the view while one is open. This covers the common full-window
+  // surfaces: settings (which replaces the whole app), the commit / PR
+  // dialogs, the fork dialog, and the conversation search overlay. TODO: other
+  // ad-hoc modals/portals (e.g. participant/subthread panels) are not yet
+  // enumerated here; extend this predicate as more full-window overlays land.
+  const browserOverlaySuppressed =
+    settingsOpen ||
+    environmentDialog !== null ||
+    Boolean(pendingFork) ||
+    conversationSearch.open;
+  useBrowserVisibility({
+    activeThreadID,
+    activeBrowserActivity,
+    overlaySuppressed: browserOverlaySuppressed,
+    onOpenBrowser: () => openWorkspaceTool("browser"),
+    onInvalidateWorkdir: (workdir) =>
+      setActivitySessions((current) =>
+        clearActivitiesForWorkdir(current, workdir),
+      ),
   });
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
   // Distinct from `activePlanUpdate` above: the floating "jump to latest /

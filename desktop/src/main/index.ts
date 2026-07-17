@@ -11,6 +11,7 @@ import {
   session as electronSession,
   type OpenDialogOptions,
   shell,
+  WebContentsView,
 } from "electron";
 import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -136,6 +137,15 @@ import {
 } from "./appShellGuards";
 import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
 import {
+  BrowserHostCoordinator,
+  BROWSER_PARTITION,
+  type BrowserHostWindowHandle,
+  type BrowserParentWindowHandle,
+  type BrowserViewHandle,
+  defaultBrowserHostDeps,
+  installBrowserSessionHandlers,
+} from "./browserHostWindows";
+import {
   computeDefaultMainWindowBounds,
   loadMainWindowBounds,
   saveMainWindowBounds,
@@ -202,6 +212,50 @@ const cuaObservationCoordinator = new CUAObservationCoordinator(
     );
     return result.activities ?? [];
   },
+);
+// Owns every agent-driven embedded browser tab (hidden WebContentsView + CDP
+// bridge). Reverse-RPC browser/* requests are intercepted in emitServerEvent
+// (below) and answered here via the pool's single-shot reply channel. The view
+// factory keeps real Electron out of unit tests.
+const browserHostCoordinator = new BrowserHostCoordinator(
+  windowRegistry,
+  {
+    respond: (id, result) => appServerClientPool.respondToServerRequest(id, result),
+    reject: (id, message) => appServerClientPool.rejectServerRequest(id, message),
+  },
+  defaultBrowserHostDeps(
+    () =>
+      new BrowserWindow({
+        show: false,
+        skipTaskbar: true,
+        frame: false,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+        },
+      }) as unknown as BrowserHostWindowHandle,
+    () =>
+      new WebContentsView({
+        webPreferences: {
+          partition: BROWSER_PARTITION,
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      }) as unknown as BrowserViewHandle,
+  ),
+  (workdir) => broadcastToAll("wuu:browser-invalidate", { workdir }),
+);
+// A workdir with a live agent tab counts as busy so pool idle-eviction cannot
+// yank the page out mid user-takeover (isBusy only sees pending requests +
+// running turns, not outstanding core→desktop browser work).
+appServerClientPool.setWorkdirPinnedCheck((workdir) =>
+  browserHostCoordinator.hasAgentTabs(workdir),
+);
+// Client teardown sink: destroy that workdir's views. Not server-exit driven —
+// the disposing/eviction path suppresses server-exit, so this is the authority.
+appServerClientPool.setClientTorndownHandler((workdir) =>
+  browserHostCoordinator.onClientTorndown(workdir),
 );
 // The pet is a standalone always-on-top window owned by the main process, so
 // it stays on the desktop when the main window is hidden or minimized. Its
@@ -319,6 +373,26 @@ function workspaceFilesForEvent(event: IpcMainInvokeEvent): WorkspaceFileService
 }
 
 function emitServerEvent(event: ServerEvent): void {
+  // Intercept core→desktop browser/* requests BEFORE broadcastToAll: the
+  // renderer auto-rejects every server-request ("unsupported server request"),
+  // and server-request routes are single-shot, so letting the renderer race
+  // would reject the route before the main-process handler can answer it. Cheap
+  // prefix test on the hot stdout path.
+  if (event.kind === "server-request" && event.message.method.startsWith("browser/")) {
+    void browserHostCoordinator.handleServerRequest(event);
+    return;
+  }
+  // A crashed core (server-exit that still emits, i.e. not the disposing path)
+  // tears down that workdir's browser views here. markServerExit alone would
+  // only stop a late reply from respawning the core, leaking the hidden
+  // WebContentsViews — and because a workdir with live tabs is pinned
+  // non-evictable, the dead client would never reach disposeClient's teardown.
+  // onClientTorndown destroys the views (clearing the pin), marks the workdir
+  // down so respondSafe drops late replies, and broadcasts invalidation.
+  // Idempotent with a later disposeClient.
+  if (event.kind === "server-exit") {
+    browserHostCoordinator.onClientTorndown(event.workdir);
+  }
   cuaObservationCoordinator.handleServerEvent(event);
   const sideThreadEvent = sideThreadEventFromServerEvent(event);
   if (sideThreadEvent) {
@@ -817,6 +891,13 @@ app.whenReady().then(async () => {
   await removeLegacyDesktopCliLink().catch(() => false);
   projectManager.load();
   registerRenderableFileProtocol();
+  // Sort permission/download traffic on the shared browser partition by
+  // webContents ownership: only agent-driven views are denied sensitive
+  // capabilities, the user's own <webview> on the same partition is untouched.
+  installBrowserSessionHandlers(
+    electronSession.fromPartition(BROWSER_PARTITION),
+    browserHostCoordinator,
+  );
   // Pick up the user's chosen size before the pet window is created, so the
   // initial BrowserWindow and the inline data: URL are sized right the first
   // time. setSize is a no-op when the persisted size equals the default. A
@@ -1776,6 +1857,44 @@ app.whenReady().then(async () => {
       appServerClientPool.rejectServerRequest(id, message);
     },
   );
+  // Embedded browser: the renderer reports the on-screen bounds of the host div
+  // while an agent view is taken over (rAF-polled — pure motion isn't caught by
+  // ResizeObserver), so main can position the reparented WebContentsView. The
+  // target window is derived from event.sender, not trusted from the payload.
+  ipcMain.handle(
+    "wuu:browser-report-bounds",
+    (
+      event,
+      payload: {
+        workdir: string;
+        tabID: string;
+        rect: { x: number; y: number; width: number; height: number };
+      },
+    ) => {
+      const senderWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!senderWindow || senderWindow.isDestroyed()) return { ok: false };
+      browserHostCoordinator.reportBounds(
+        payload.workdir,
+        payload.tabID,
+        senderWindow as unknown as BrowserParentWindowHandle,
+        payload.rect,
+      );
+      return { ok: true };
+    },
+  );
+  // Renderer full-window overlay/modal appeared over the agent view — hide the
+  // WebContentsView so it does not paint over the dialog, restore when clear.
+  ipcMain.handle(
+    "wuu:browser-overlay-suppress",
+    (_event, payload: { workdir: string; tabID: string; suppressed: boolean }) => {
+      browserHostCoordinator.setOverlaySuppressed(
+        payload.workdir,
+        payload.tabID,
+        payload.suppressed === true,
+      );
+      return { ok: true };
+    },
+  );
   // Composer goal banner surface. The renderer only needs a lightweight
   // summary plus explicit runtime controls; the full GoalSnapshot and
   // workflow/agent run detail stay on the agent tool loop.
@@ -1828,6 +1947,9 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   terminalSessionManager.cleanup();
+  // Destroy every agent view + the hidden host window before the pool shuts
+  // down so no WebContentsView leaks past quit.
+  browserHostCoordinator.destroyAll();
   appServerClientPool.shutdown();
   // SIGTERM goes out synchronously; the daemon's own signal handling shuts
   // the relay connection down cleanly.

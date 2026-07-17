@@ -31,6 +31,7 @@ import (
 
 const (
 	helpMeToolName             = "helpme"
+	browserToolName            = "browser"
 	defaultShellTimeoutSeconds = 300
 	maxShellTimeoutSeconds     = 3600
 	defaultMaxFileBytes        = 256 * 1024
@@ -119,7 +120,7 @@ func New(rootDir string) (*Toolkit, error) {
 	}
 	t := &Toolkit{
 		env:               env,
-		disabledTools:     map[string]struct{}{helpMeToolName: {}},
+		disabledTools:     map[string]struct{}{helpMeToolName: {}, browserToolName: {}},
 		toolSearchEnabled: true,
 		boundary:          StandardBoundary(),
 	}
@@ -177,10 +178,16 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		ParticipantSpeech:           t.env.ParticipantSpeech,
 		GroupManager:                t.env.GroupManager,
 		TaskManager:                 t.env.TaskManager,
-		FileScopeRoots:              append([]string(nil), t.env.FileScopeRoots...),
-		Skills:                      t.env.Skills,
-		OnFileChanged:               t.env.OnFileChanged,
-		OnPlanUpdated:               t.env.OnPlanUpdated,
+		// Browser dependencies must be copied explicitly: every desktop thread
+		// runs through CloneForRoot, so omitting these here silently strips the
+		// bridge/tab store from every cloned session (the mcpActivityBindings
+		// precedent below is the same hazard).
+		BrowserBridge:  t.env.BrowserBridge,
+		BrowserTabs:    t.env.BrowserTabs,
+		FileScopeRoots: append([]string(nil), t.env.FileScopeRoots...),
+		Skills:         t.env.Skills,
+		OnFileChanged:  t.env.OnFileChanged,
+		OnPlanUpdated:  t.env.OnPlanUpdated,
 	}
 
 	clone := &Toolkit{
@@ -269,6 +276,9 @@ func (t *Toolkit) rebuildRegistry() {
 		NewManageTaskTool(e),
 		// Cron scheduling
 		NewCronTool(e),
+		// Embedded browser automation (default-disabled in New(); enabled per
+		// session by SetBrowserEnabled off WUU_ENABLE_BROWSER).
+		NewBrowserTool(e),
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
@@ -508,6 +518,43 @@ func (t *Toolkit) SetHelpMeEnabled(enabled bool) {
 		t.EnableTools(helpMeToolName)
 	} else {
 		t.DisableTools(helpMeToolName)
+	}
+	t.activeProfileMu.Lock()
+	t.publishActiveSurfaceLocked()
+	t.activeProfileMu.Unlock()
+}
+
+// SetBrowserBridge attaches the desktop transport for the embedded browser
+// backend. Nil leaves the tool dependency-less so it returns a clear
+// execute-time error instead of panicking.
+func (t *Toolkit) SetBrowserBridge(bridge BrowserBridge) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.BrowserBridge = bridge
+}
+
+// SetBrowserTabs attaches the durable per-thread tab store. Nil keeps tab
+// addressing in-memory only.
+func (t *Toolkit) SetBrowserTabs(store BrowserTabStore) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.BrowserTabs = store
+}
+
+// SetBrowserEnabled gates the embedded browser tool. New toolkits keep it
+// disabled; the runtime opts in per session (WUU_ENABLE_BROWSER). Mirrors
+// SetHelpMeEnabled: toggle disabledTools then republish the surface so the
+// deferred catalog reflects availability.
+func (t *Toolkit) SetBrowserEnabled(enabled bool) {
+	if t == nil {
+		return
+	}
+	if enabled {
+		t.EnableTools(browserToolName)
+	} else {
+		t.DisableTools(browserToolName)
 	}
 	t.activeProfileMu.Lock()
 	t.publishActiveSurfaceLocked()
@@ -1059,6 +1106,11 @@ func (t *Toolkit) ExecuteResult(ctx context.Context, call providers.ToolCall) (t
 			}
 		}
 		return toolresult.Result{}, fmt.Errorf("unknown tool %q", call.Name)
+	}
+	// The built-in browser tool binds its tab-addressed actions to a KindBrowser
+	// activity lease, the same discipline MCP CUA tools get, via the shared spine.
+	if call.Name == browserToolName {
+		return t.executeBrowserToolResult(ctx, call, tool)
 	}
 	return t.executeKnownToolResult(ctx, call, tool)
 }

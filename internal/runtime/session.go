@@ -201,6 +201,14 @@ func resolveWorkspaceStateDir(wuuHome, workspaceID, rootDir string) (string, err
 }
 
 // NewSession builds the shared runtime for an interactive agent surface.
+// browserEnabledFromEnv reports whether the embedded browser tool is switched
+// on for this process. It follows the bundled-plugin gate convention (see
+// plugin.EnableCUAMacEnv): enabled only when WUU_ENABLE_BROWSER trims to
+// exactly "1", so an unset or any other value keeps the tool off.
+func browserEnabledFromEnv() bool {
+	return strings.TrimSpace(os.Getenv("WUU_ENABLE_BROWSER")) == "1"
+}
+
 func NewSession(opts Options) (*Session, error) {
 	rootDir := strings.TrimSpace(opts.RootDir)
 	if rootDir == "" {
@@ -339,6 +347,7 @@ func NewSession(opts Options) (*Session, error) {
 		ConfigureToolkitPermissions(kit, permissions)
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
 		kit.SetHelpMeEnabled(cfg.Agent.ExperimentalHelpMe)
+		kit.SetBrowserEnabled(browserEnabledFromEnv())
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
@@ -747,6 +756,12 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	}
 	artifactDir := statepath.SessionArtifactDir(stateDir, id)
 	goalRuntime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(stateDir, id)))
+	// The embedded-browser tab registry is durable per-thread state, spawned at
+	// the same point as the goal runtime and reclaimed with the thread's artifact
+	// directory on delete. Recovery after a core restart is driven by the desktop
+	// host's tab_not_found signal (the tool rebuilds by URL), and by the tabs-list
+	// reconciliation against the live host set.
+	browserTabs := tools.NewBrowserTabStore(statepath.ThreadBrowserTabsPath(stateDir, id))
 	wuuHome := strings.TrimSpace(s.WuuHome)
 	if wuuHome == "" {
 		if home, err := statepath.Home(""); err == nil {
@@ -786,6 +801,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetSessionDir(artifactDir)
 		kit.SetConversationSessionDir(s.SessionDir)
 		kit.SetGoalRuntime(goalRuntime)
+		kit.SetBrowserTabs(browserTabs)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
 		fileScopeExtras := []string{artifactDir}
 		if s.MemdirEnabled {

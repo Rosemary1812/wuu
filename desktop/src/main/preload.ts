@@ -480,4 +480,28 @@ const api: WuuDesktopApi = {
 (api as WuuDesktopApi & { setActiveCUAThread: (threadID?: string) => void }).setActiveCUAThread =
   (threadID?: string) => { void ipcRenderer.invoke("wuu:cua-active-thread", threadID); };
 
+// Embedded browser takeover surface. These are added via cast (not in the
+// frozen WuuDesktopApi) so the renderer can position/hide an agent's
+// WebContentsView and drop ghost activity UI on core teardown. The invoke
+// channels are paired with ipcMain.handle in index.ts (IpcChannelParity).
+type BrowserBoundsRect = { x: number; y: number; width: number; height: number };
+type BrowserTakeoverApi = {
+  reportBrowserBounds: (workdir: string, tabID: string, rect: BrowserBoundsRect) => void;
+  suppressBrowserOverlay: (workdir: string, tabID: string, suppressed: boolean) => void;
+  onBrowserInvalidate: (handler: (payload: { workdir: string }) => void) => () => void;
+};
+const browserApi = api as WuuDesktopApi & BrowserTakeoverApi;
+browserApi.reportBrowserBounds = (workdir, tabID, rect) => {
+  void ipcRenderer.invoke("wuu:browser-report-bounds", { workdir, tabID, rect });
+};
+browserApi.suppressBrowserOverlay = (workdir, tabID, suppressed) => {
+  void ipcRenderer.invoke("wuu:browser-overlay-suppress", { workdir, tabID, suppressed });
+};
+browserApi.onBrowserInvalidate = (handler) => {
+  const listener = (_event: Electron.IpcRendererEvent, payload: { workdir: string }) =>
+    handler(payload);
+  ipcRenderer.on("wuu:browser-invalidate", listener);
+  return () => ipcRenderer.removeListener("wuu:browser-invalidate", listener);
+};
+
 contextBridge.exposeInMainWorld("wuu", api);

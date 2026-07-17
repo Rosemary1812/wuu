@@ -86,78 +86,31 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 	if binding.Kind == activity.KindCUA {
 		target = t.canonicalCUATarget(ctx, tool, target)
 	}
-	session, lease, err := t.activityRegistry.Acquire(activity.StartOptions{
-		Kind:     binding.Kind,
-		ThreadID: threadID,
-		Workdir:  workdir,
-		PluginID: binding.PluginID,
-		Target:   target,
-	})
-	if err != nil {
-		return toolresult.Result{}, err
-	}
-	if err := t.activityRegistry.CheckControl(threadID, session.ID, lease.Token); err != nil {
-		return toolresult.Result{}, err
-	}
-	if target != "" && target != session.Target {
-		updated, updateErr := t.activityRegistry.Update(threadID, session.ID, activity.UpdateOptions{
-			Target: target, ClearWindowIdentity: true,
-		})
-		if updateErr != nil {
-			return toolresult.Result{}, updateErr
-		}
-		session = updated
-	}
-
 	sequence, isSequence := parseCUASequence(call.Arguments)
-	var result toolresult.Result
-	var callErr error
-	sequenceStatus := ""
-	if isSequence {
-		result, sequenceStatus, callErr = t.executeCUASequence(ctx, tool, threadID, session.ID, lease.Token, sequence)
-	} else {
-		result, callErr = t.executeKnownToolResult(ctx, call, tool)
+
+	// The lease lifecycle (Acquire, before/after CheckControl, re-target, and the
+	// state/preview/error Update) is the shared spine in runActivityBoundAction.
+	// Only the CUA-specific derivations stay here as hooks.
+	spec := activitySpec{Kind: binding.Kind, ThreadID: threadID, Workdir: workdir, PluginID: binding.PluginID, Target: target}
+	hooks := activityHooks{
+		run: func(ctx context.Context, session activity.Session, lease activity.Lease) (toolresult.Result, string, error) {
+			if isSequence {
+				return t.executeCUASequence(ctx, tool, threadID, session.ID, lease.Token, sequence)
+			}
+			result, err := t.executeKnownToolResult(ctx, call, tool)
+			return result, "", err
+		},
+		controlState: func(result toolresult.Result) activity.State {
+			return cuaActivityControlState(call.Arguments, result)
+		},
+		identity:    cuaActivityWindowIdentity,
+		interaction: cuaActivityInteraction,
+		preview: func(session activity.Session, result toolresult.Result) (string, error) {
+			return t.persistActivityPreview(session.ID, result)
+		},
 	}
-	// Re-check the lease before publishing success. A takeover that happened
-	// while the helper was running invalidates the result and prevents the
-	// agent from chaining another action from stale UI state.
-	if controlErr := t.activityRegistry.CheckControl(threadID, session.ID, lease.Token); controlErr != nil {
-		return toolresult.Result{}, controlErr
-	}
-	state := cuaActivityControlState(call.Arguments, result)
-	if sequenceStatus == "policy_paused" {
-		state = activity.StateWaitingConfirmation
-	}
-	update := activity.UpdateOptions{State: state}
-	update.ProcessID, update.WindowID = cuaActivityWindowIdentity(result)
-	if callErr == nil {
-		previewURI, previewErr := t.persistActivityPreview(session.ID, result)
-		if previewErr != nil {
-			callErr = previewErr
-		} else {
-			update.Preview = previewURI
-		}
-	}
-	if callErr != nil {
-		update.State = activity.StateError
-		update.Error = callErr.Error()
-	} else {
-		update.ClearError = true
-		update.Interaction = cuaActivityInteraction(result)
-	}
-	if updated, updateErr := t.activityRegistry.Update(threadID, session.ID, update); updateErr == nil {
-		session = updated
-	} else if callErr == nil {
-		callErr = fmt.Errorf("update activity: %w", updateErr)
-	}
-	result.Activity = &toolresult.ActivityRef{
-		ID:         session.ID,
-		Kind:       string(session.Kind),
-		State:      string(session.State),
-		ThreadID:   session.ThreadID,
-		PreviewURI: session.Preview,
-	}
-	if callErr == nil && cuaActionIsDeliveryOnly(call.Arguments) {
+	result, err := t.runActivityBoundAction(ctx, spec, hooks)
+	if err == nil && cuaActionIsDeliveryOnly(call.Arguments) {
 		// Input delivery is intentionally not treated as proof that the app
 		// accepted the action. Keep the model-facing result non-empty, though:
 		// provider protocols require every tool call to have a result payload.
@@ -167,9 +120,8 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		}}
 		result.StructuredContent = nil
 		result.Meta = nil
-		return result, nil
 	}
-	return result, callErr
+	return result, err
 }
 
 func cuaActivityWindowIdentity(result toolresult.Result) (int, uint32) {
@@ -342,73 +294,42 @@ func parseCUASequence(arguments string) (cuaSequenceRequest, bool) {
 }
 
 func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, activityID, leaseToken string, request cuaSequenceRequest) (toolresult.Result, string, error) {
-	if len(request.Steps) == 0 || len(request.Steps) > 64 {
-		return toolresult.Result{}, "failed", errors.New("CUA sequence requires 1 to 64 steps")
-	}
-	completed := make([]map[string]any, 0, len(request.Steps))
-	var lastImage *toolresult.ContentPart
 	// Track the most-disruptive control level any step actually used so the whole
 	// sequence maps to an honest activity state (a background sequence must not look
-	// foreground just because foreground_policy was allowed).
+	// foreground just because foreground_policy was allowed). The generic risk
+	// machine lives in runRiskSequence; only the CUA-specific envelope inheritance,
+	// mechanism accumulation, per-step interaction publish, and result shape stay.
 	control := sequenceControl{}
-	for index, source := range request.Steps {
-		if err := t.activityRegistry.CheckControl(threadID, activityID, leaseToken); err != nil {
-			return cuaSequenceResult("control_revoked", completed, index, lastImage, control), "control_revoked", err
-		}
-		step := make(map[string]any, len(source)+2)
-		for key, value := range source {
-			step[key] = value
-		}
-		action, _ := step["action"].(string)
-		if strings.TrimSpace(action) == "" || action == "sequence" {
-			return cuaSequenceResult("failed", completed, index, lastImage, control), "failed", fmt.Errorf("CUA sequence step %d has an invalid action", index)
-		}
-		risk, _ := step["risk"].(string)
-		if risk != "safe" && risk != "external_side_effect" && risk != "destructive" {
-			return cuaSequenceResult("failed", completed, index, lastImage, control), "failed", fmt.Errorf("CUA sequence step %d must declare risk", index)
-		}
-		confirmed, _ := step["confirmed"].(bool)
-		if risk != "safe" && !confirmed {
-			return cuaSequenceResult("policy_paused", completed, index, lastImage, control), "policy_paused", nil
-		}
-		delete(step, "risk")
-		delete(step, "confirmed")
-		if _, ok := step["app"]; !ok && request.App != "" {
-			step["app"] = request.App
-		}
-		if _, ok := step["foreground_policy"]; !ok && request.ForegroundPolicy != "" {
-			step["foreground_policy"] = request.ForegroundPolicy
-		}
-		encoded, err := json.Marshal(step)
-		if err != nil {
-			return cuaSequenceResult("failed", completed, index, lastImage, control), "failed", err
-		}
-		stepResult, err := t.executeKnownToolResult(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(encoded)}, tool)
-		control.observe(string(encoded), stepResult)
-		if err != nil || stepResult.IsError {
-			completed = append(completed, map[string]any{"index": index, "action": action, "status": "failed"})
-			if err == nil {
-				err = errors.New(stepResult.TextProjection())
+	hooks := riskSequenceHooks{
+		augment: func(step map[string]any) {
+			if _, ok := step["app"]; !ok && request.App != "" {
+				step["app"] = request.App
 			}
-			return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", err
-		}
-		for i := range stepResult.Content {
-			if stepResult.Content[i].Type == toolresult.ContentTypeImage {
-				copy := stepResult.Content[i]
-				lastImage = &copy
+			if _, ok := step["foreground_policy"]; !ok && request.ForegroundPolicy != "" {
+				step["foreground_policy"] = request.ForegroundPolicy
 			}
-		}
-		completed = append(completed, map[string]any{"index": index, "action": action, "status": "completed"})
-		if interaction := cuaActivityInteraction(stepResult); interaction != nil {
-			if controlErr := t.activityRegistry.CheckControl(threadID, activityID, leaseToken); controlErr != nil {
-				return cuaSequenceResult("control_revoked", completed, index+1, lastImage, control), "control_revoked", controlErr
+		},
+		observe: func(stepArgs string, result toolresult.Result) {
+			control.observe(stepArgs, result)
+		},
+		afterStep: func(_ int, stepResult toolresult.Result) (string, error) {
+			interaction := cuaActivityInteraction(stepResult)
+			if interaction == nil {
+				return "", nil
 			}
-			if _, updateErr := t.activityRegistry.Update(threadID, activityID, activity.UpdateOptions{Interaction: interaction}); updateErr != nil {
-				return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", updateErr
+			if err := t.activityRegistry.CheckControl(threadID, activityID, leaseToken); err != nil {
+				return "control_revoked", err
 			}
-		}
+			if _, err := t.activityRegistry.Update(threadID, activityID, activity.UpdateOptions{Interaction: interaction}); err != nil {
+				return "partial", err
+			}
+			return "", nil
+		},
+		build: func(status string, completed []map[string]any, nextStep int, lastImage *toolresult.ContentPart) toolresult.Result {
+			return cuaSequenceResult(status, completed, nextStep, lastImage, control)
+		},
 	}
-	return cuaSequenceResult("completed", completed, len(request.Steps), lastImage, control), "completed", nil
+	return t.runRiskSequence(ctx, tool, threadID, activityID, leaseToken, "CUA sequence", request.Steps, hooks)
 }
 
 // sequenceControl accumulates the highest control level reached across a CUA

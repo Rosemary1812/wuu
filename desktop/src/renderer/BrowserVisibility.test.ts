@@ -1,0 +1,155 @@
+import { describe, expect, it } from "vitest";
+import type { ActivitySession } from "../shared/protocol";
+import {
+  boundsChanged,
+  browserTabIDForActivity,
+  computeForegroundPromotion,
+  isForegroundControlled,
+  isMeasurableRect,
+  pickBoundsRect,
+  roundRect,
+  type ForegroundSnapshot,
+} from "./BrowserVisibility";
+
+function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
+  return {
+    id: "activity-1",
+    kind: "browser",
+    thread_id: "thread-1",
+    workdir: "/repo-a",
+    target: "tab-abc",
+    state: "foreground_controlled",
+    controller: "agent",
+    created_at: "2026-07-10T10:00:00Z",
+    updated_at: "2026-07-10T10:00:01Z",
+    ...overrides,
+  };
+}
+
+describe("isForegroundControlled", () => {
+  it("is true only for a foreground-controlled browser activity", () => {
+    expect(isForegroundControlled(activity())).toBe(true);
+  });
+
+  it("is false for other states, kinds, or when absent", () => {
+    expect(isForegroundControlled(activity({ state: "background_controlled" }))).toBe(false);
+    expect(isForegroundControlled(activity({ state: "user_controlled" }))).toBe(false);
+    expect(isForegroundControlled(activity({ state: "stopped" }))).toBe(false);
+    expect(isForegroundControlled(activity({ kind: "cua" }))).toBe(false);
+    expect(isForegroundControlled(undefined)).toBe(false);
+  });
+});
+
+describe("browserTabIDForActivity", () => {
+  it("uses the activity target as the tab id", () => {
+    expect(browserTabIDForActivity(activity({ target: "tab-xyz" }))).toBe("tab-xyz");
+  });
+
+  it("falls back to the activity id when target is missing or empty", () => {
+    expect(browserTabIDForActivity(activity({ target: undefined }))).toBe("activity-1");
+    expect(browserTabIDForActivity(activity({ target: "" }))).toBe("activity-1");
+  });
+});
+
+describe("rect math", () => {
+  it("rounds fractional rects to integers", () => {
+    expect(roundRect({ x: 10.4, y: 20.6, width: 300.5, height: 199.49 })).toEqual({
+      x: 10,
+      y: 21,
+      width: 301,
+      height: 199,
+    });
+  });
+
+  it("treats only positive-area rects as measurable", () => {
+    expect(isMeasurableRect({ x: 0, y: 0, width: 100, height: 50 })).toBe(true);
+    expect(isMeasurableRect({ x: 0, y: 0, width: 0, height: 50 })).toBe(false);
+    expect(isMeasurableRect({ x: 0, y: 0, width: 100, height: 0 })).toBe(false);
+  });
+
+  it("reports when any dimension changed and skips identical rects", () => {
+    const base = { x: 1, y: 2, width: 3, height: 4 };
+    expect(boundsChanged(undefined, base)).toBe(true);
+    expect(boundsChanged(base, { ...base })).toBe(false);
+    expect(boundsChanged(base, { ...base, x: 2 })).toBe(true);
+    expect(boundsChanged(base, { ...base, y: 3 })).toBe(true);
+    expect(boundsChanged(base, { ...base, width: 5 })).toBe(true);
+    expect(boundsChanged(base, { ...base, height: 5 })).toBe(true);
+  });
+});
+
+describe("pickBoundsRect", () => {
+  const host = { x: 4, y: 4, width: 200, height: 100 };
+  const frame = { x: 0, y: 0, width: 220, height: 140 };
+
+  it("prefers a measurable host rect", () => {
+    expect(pickBoundsRect(host, frame)).toBe(host);
+  });
+
+  it("falls back to the frame when the host is hidden (zero area)", () => {
+    expect(pickBoundsRect({ x: 0, y: 0, width: 0, height: 0 }, frame)).toBe(frame);
+    expect(pickBoundsRect(undefined, frame)).toBe(frame);
+  });
+
+  it("returns whatever exists when neither is measurable", () => {
+    const zeroHost = { x: 0, y: 0, width: 0, height: 0 };
+    expect(pickBoundsRect(zeroHost, undefined)).toBe(zeroHost);
+    expect(pickBoundsRect(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("computeForegroundPromotion", () => {
+  const thread = "thread-1";
+
+  it("opens on a background→foreground transition of the same activity", () => {
+    const prev: ForegroundSnapshot = {
+      threadID: thread,
+      activityID: "activity-1",
+      state: "background_controlled",
+    };
+    const result = computeForegroundPromotion(prev, thread, activity());
+    expect(result.open).toBe(true);
+    expect(result.snapshot).toEqual({
+      threadID: thread,
+      activityID: "activity-1",
+      state: "foreground_controlled",
+    });
+  });
+
+  it("opens when a new foreground activity appears within the same thread", () => {
+    const prev: ForegroundSnapshot = { threadID: thread, activityID: undefined, state: undefined };
+    expect(computeForegroundPromotion(prev, thread, activity()).open).toBe(true);
+  });
+
+  it("does not open on a thread switch even if the activity is already foreground (restore, not force)", () => {
+    const prev: ForegroundSnapshot = {
+      threadID: "thread-0",
+      activityID: "activity-1",
+      state: "foreground_controlled",
+    };
+    expect(computeForegroundPromotion(prev, thread, activity()).open).toBe(false);
+  });
+
+  it("does not re-open while the activity stays foreground across merges", () => {
+    const prev: ForegroundSnapshot = {
+      threadID: thread,
+      activityID: "activity-1",
+      state: "foreground_controlled",
+    };
+    expect(computeForegroundPromotion(prev, thread, activity()).open).toBe(false);
+  });
+
+  it("does not open for non-foreground states and still advances the snapshot", () => {
+    const prev: ForegroundSnapshot = { threadID: thread, activityID: "activity-1", state: "active" };
+    const result = computeForegroundPromotion(prev, thread, activity({ state: "user_controlled" }));
+    expect(result.open).toBe(false);
+    expect(result.snapshot.state).toBe("user_controlled");
+  });
+
+  it("does not open when there is no activity", () => {
+    const prev: ForegroundSnapshot = { threadID: thread };
+    const result = computeForegroundPromotion(prev, thread, undefined);
+    expect(result.open).toBe(false);
+    expect(result.snapshot).toEqual({ threadID: thread, activityID: undefined, state: undefined });
+  });
+});

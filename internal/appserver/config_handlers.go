@@ -65,7 +65,9 @@ func (s *Server) handleInitialize(req Request) error {
 		Providers:          s.providerSummaries(),
 		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
 		GeneralSettings:    s.currentGeneralSettingsSummary(),
-		Features:           FeatureFlags{HelpMe: s.rt.ExperimentalHelpMe},
+		// Browser stays false in this skeleton; a later layer wires the real
+		// "this client hosts the embedded browser backend" state through here.
+		Features: FeatureFlags{HelpMe: s.rt.ExperimentalHelpMe, Browser: false},
 	}, nil)
 }
 

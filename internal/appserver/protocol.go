@@ -113,6 +113,21 @@ const (
 	MethodDevicePushRegister   = "device/push_register"
 	MethodDevicePushUnregister = "device/push_unregister"
 
+	// browser/* are server-initiated requests: the core sends them TO the
+	// desktop client and awaits a Response over the reverse-RPC channel
+	// (Server.callClient). They are deliberately NOT registered in
+	// handleLine's method switch — that switch dispatches client→core
+	// requests, whereas these travel core→desktop. The desktop host owns the
+	// hidden WebContentsView backing each tab and answers these on its main
+	// process. tab_id is minted core-side (browserBridge.randomID) so parallel
+	// cores never collide on a tab identifier.
+	MethodBrowserCDP           = "browser/cdp"
+	MethodBrowserScreenshot    = "browser/screenshot"
+	MethodBrowserOpenTab       = "browser/open_tab"
+	MethodBrowserCloseTab      = "browser/close_tab"
+	MethodBrowserSetVisibility = "browser/set_visibility"
+	MethodBrowserListTabs      = "browser/list_tabs"
+
 	NotificationThreadStarted          = "thread/started"
 	NotificationThreadResumed          = "thread/resumed"
 	NotificationThreadUpdated          = "thread/updated"
@@ -221,6 +236,82 @@ type InitializeResult struct {
 
 type FeatureFlags struct {
 	HelpMe bool `json:"helpme"`
+	// Browser advertises that this client can host the embedded browser
+	// backend (hidden WebContentsView + CDP bridge). Mirrored by
+	// desktop/src/shared/protocol.ts. Filled by config_handlers.handleInitialize.
+	Browser bool `json:"browser"`
+}
+
+// clientResponse is the inbound envelope for a Response the desktop client
+// writes back to a server-initiated request. It exists separately from Response
+// only because Response.Result is `any` (an outbound-encode shape) while the
+// reverse-RPC delivery path must re-decode Result as raw JSON without losing it.
+// handleLine second-unmarshals a Method=="" line into this before routing it to
+// the waiting caller. Mirrored by desktop/src/shared/protocol.ts.
+type clientResponse struct {
+	ID     json.RawMessage `json:"id,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *ResponseError  `json:"error,omitempty"`
+}
+
+// Browser* are the wire payloads for the core→desktop browser/* requests.
+// All field names are snake_case and mirrored field-for-field by
+// packages/protocol/src/index.ts. None carry an activity_id: the desktop client
+// auto-rejects server requests whose activity_id names a stopped activity
+// (activityServerRequestRejection), which would wedge a CDP call the moment a
+// tab's activity is torn down. Tab addressing is by tab_id alone.
+type BrowserCDPParams struct {
+	Workdir string          `json:"workdir"`
+	TabID   string          `json:"tab_id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+type BrowserCDPResult struct {
+	// Result is the raw CDP command result when small enough to inline. When
+	// the desktop size gate spills the payload to disk, Result is empty and
+	// Path/Size describe the on-disk artifact instead.
+	Result json.RawMessage `json:"result,omitempty"`
+	Path   string          `json:"path,omitempty"`
+	Size   int             `json:"size,omitempty"`
+}
+
+type BrowserScreenshotParams struct {
+	Workdir  string `json:"workdir"`
+	TabID    string `json:"tab_id"`
+	DestPath string `json:"dest_path"`
+	Format   string `json:"format,omitempty"`
+}
+
+type BrowserScreenshotResult struct {
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	Path   string `json:"path"`
+}
+
+type BrowserOpenTabParams struct {
+	Workdir    string `json:"workdir"`
+	TabID      string `json:"tab_id"`
+	InitialURL string `json:"initial_url,omitempty"`
+}
+
+type BrowserCloseTabParams struct {
+	Workdir string `json:"workdir"`
+	TabID   string `json:"tab_id"`
+}
+
+type BrowserSetVisibilityParams struct {
+	Workdir string `json:"workdir"`
+	TabID   string `json:"tab_id"`
+	Visible bool   `json:"visible"`
+}
+
+type BrowserListTabsParams struct {
+	Workdir string `json:"workdir"`
+}
+
+type BrowserListTabsResult struct {
+	TabIDs []string `json:"tab_ids"`
 }
 
 type RuntimeIssue struct {

@@ -70,7 +70,10 @@ func mutates(info ToolInfo) bool {
 	switch info.Kind {
 	case ToolKindFile, ToolKindShell, ToolKindTest, ToolKindGit, ToolKindMemory,
 		ToolKindAgent, ToolKindProcess, ToolKindSchedule,
-		ToolKindMCP:
+		ToolKindMCP, ToolKindBrowser:
+		// ToolKindBrowser is mutating unless the specific call classifies
+		// read-only (info.ReadOnly short-circuits above): a read-only session
+		// must block navigate/click/type but still allow observe/screenshot.
 		return true
 	default:
 		return false

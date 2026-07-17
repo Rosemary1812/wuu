@@ -225,6 +225,7 @@ func compileOpenAICodex(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
+	addBrowserTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -240,6 +241,7 @@ func compileOpenAIGPT(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
+	addBrowserTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -255,6 +257,7 @@ func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
+	addBrowserTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -270,6 +273,7 @@ func compileGeneric(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
+	addBrowserTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -306,6 +310,16 @@ func addBashFirstTools(b *surfaceBuilder, p Profile) {
 func addWebTools(b *surfaceBuilder) {
 	b.addVisible("web_search", capability.CapabilityWebSearch)
 	b.addVisible("web_fetch", capability.CapabilityWebFetch)
+}
+
+// addBrowserTools defers the embedded browser tool on every profile. It is
+// registered unconditionally and never reads the environment: the compiler must
+// stay pure so surface tests do not drift with WUU_ENABLE_BROWSER. Runtime
+// gating lives entirely in the toolkit's disabledTools (default off, flipped by
+// SetBrowserEnabled), so a deferred entry here is inert until both the surface
+// exposes it AND the toolkit enables it.
+func addBrowserTools(b *surfaceBuilder) {
+	b.addDeferred("browser", capability.CapabilityBrowser)
 }
 
 // addTaskTools registers the orchestration suite: spawn_agent as a visible

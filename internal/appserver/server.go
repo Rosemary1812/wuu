@@ -169,6 +169,16 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
+	// clientCalls is the pending table for server-initiated requests (the
+	// core→desktop reverse-RPC channel used by browser/*). Keyed by the
+	// "srv-<seq>" id the core mints; each value is a buffered(1) chan that the
+	// scanner goroutine delivers exactly one clientResponse into. clientCallMu
+	// guards both the map and clientCallSeq; see callClient for the strict
+	// register/deliver/delete deadlock discipline these fields require.
+	clientCallMu  sync.Mutex
+	clientCalls   map[string]chan clientResponse
+	clientCallSeq uint64
+
 	// pushRegistrar is the host-side hook invoked by the device/push_*
 	// methods. The desktop main pipeline leaves it nil so the methods
 	// respond with "remote-only" errors; the remote-host package binds
@@ -319,6 +329,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
 		inferenceMaintenanceStop:     make(chan struct{}),
 		sideTurns:                    make(map[string]*sideThreadTurn),
+		clientCalls:                  make(map[string]chan clientResponse),
 	}
 	bootOwner := false
 	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
@@ -604,10 +615,26 @@ func (s *Server) Close() {
 		}
 
 		s.stopInferenceJournalMaintenance()
+
+		// Stop every browser activity this process owns BEFORE dropping the
+		// activity subscription below. Stop emits an EventStopped that
+		// notifyActivityEvent forwards to the desktop so it can tear down the
+		// backing WebContentsView; stdout is still writable here. Ordered after
+		// unsubscribe the event would have no listener and the desktop would
+		// leak a hidden view plus a ghost activity in the UI.
+		s.stopBrowserActivitiesAndEmit()
+
 		if s.activityUnsubscribe != nil {
 			s.activityUnsubscribe()
 			s.activityUnsubscribe = nil
 		}
+
+		// Release any in-flight server-initiated calls. Turn-context
+		// cancellation above already unblocks callClient waiters via ctx.Done;
+		// this is the belt-and-suspenders sweep for calls whose ctx outlives
+		// Close. Delivery is non-blocking (buffered chans) so closeOnce can
+		// never wedge the process on a shutdown drain.
+		s.failPendingClientCalls()
 
 		s.idleUnreadWakeMu.Lock()
 		for threadID, timer := range s.idleUnreadWakeTimers {
@@ -792,6 +819,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 	var req Request
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return s.writeResponse(nil, nil, fmt.Errorf("parse request: %w", err))
+	}
+	// A line with an id but no method is the desktop client's Response to a
+	// server-initiated request (browser/*). Route it to the waiting caller
+	// before the method switch, otherwise it falls through to default and gets
+	// answered with an "unknown method" error, silently dropping the reply.
+	if req.Method == "" && len(req.ID) > 0 {
+		s.deliverClientResponse(raw)
+		return nil
 	}
 	switch req.Method {
 	case MethodInitialize:

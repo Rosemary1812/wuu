@@ -1,0 +1,917 @@
+import type { Rectangle, Session } from "electron";
+import type { JsonValue, ServerEvent } from "../shared/protocol";
+import { writeBufferFileAtomicSync, writeTextFileAtomicSync } from "./atomicFile";
+import type { WindowRegistry } from "./windowRegistry";
+
+// The shared partition every agent tab and the user-facing <webview> live on,
+// so a login the agent performs is visible to the user's manual browsing and
+// vice-versa. Also the reason the session permission handler must sort by
+// webContents ownership: a blanket deny on this partition would regress the
+// user's own browsing surface.
+export const BROWSER_PARTITION = "persist:wuu-browser";
+
+// Conservative overflow gate. The core stdin scanner enforces a 4MB line
+// limit; a DOM snapshot on a large page is 5-50MB before trimming. We trim to
+// interactable nodes desktop-side, then still gate the serialized result at
+// 1MB and spill to the core-designated dest_path so a pathological page can
+// never wedge the whole protocol by overrunning the line limit.
+export const MAX_INLINE_RESULT_BYTES = 1024 * 1024;
+
+// Sensitive capabilities we refuse for agent-driven tabs. The user's own
+// <webview> on the same partition is never touched (see browserPermissionDecision).
+export const BROWSER_AGENT_DENIED_PERMISSIONS = new Set<string>([
+  "media", // camera + microphone
+  "geolocation",
+  "notifications",
+  "midi",
+  "midiSysex",
+  "pointerLock",
+  "openExternal",
+  "hid",
+  "serial",
+  "usb",
+  "display-capture",
+  "idle-detection",
+  "window-management",
+  "keyboardLock",
+  "speaker-selection",
+  "clipboard-read", // the OS clipboard frequently holds the user's secrets
+  "clipboard-sanitized-write",
+]);
+
+// ---------------------------------------------------------------------------
+// Injected handle surface. Real Electron types are structurally compatible;
+// tests supply vi.fn-backed fakes so the coordinator never touches a real
+// WebContentsView / BrowserWindow / debugger / capturer.
+// ---------------------------------------------------------------------------
+
+export interface BrowserDebuggerHandle {
+  attach(protocolVersion?: string): void;
+  detach(): void;
+  isAttached(): boolean;
+  sendCommand(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
+}
+
+export interface BrowserNativeImageHandle {
+  toPNG(): Buffer;
+  getSize(): { width: number; height: number };
+}
+
+export interface BrowserWebContentsHandle {
+  readonly id: number;
+  readonly debugger: BrowserDebuggerHandle;
+  setBackgroundThrottling(allowed: boolean): void;
+  setWindowOpenHandler(handler: () => { action: "deny" } | { action: "allow" }): void;
+  loadURL(url: string): Promise<unknown>;
+  getURL(): string;
+  getTitle(): string;
+  capturePage(rect?: Rectangle, opts?: { stayHidden?: boolean }): Promise<BrowserNativeImageHandle>;
+  close(): void;
+  isDestroyed(): boolean;
+}
+
+export interface BrowserViewHandle {
+  readonly webContents: BrowserWebContentsHandle;
+  setBounds(bounds: Rectangle): void;
+  setVisible(visible: boolean): void;
+}
+
+// A parent for a WebContentsView: either the hidden host window or a real
+// application window during visibility takeover. Only the contentView surface
+// (reparent) plus a liveness check are needed here.
+export interface BrowserParentWindowHandle {
+  readonly contentView: {
+    addChildView(view: BrowserViewHandle): void;
+    removeChildView(view: BrowserViewHandle): void;
+  };
+  isDestroyed(): boolean;
+}
+
+export interface BrowserHostWindowHandle extends BrowserParentWindowHandle {
+  destroy(): void;
+}
+
+export interface BrowserHostDeps {
+  createHostWindow(): BrowserHostWindowHandle;
+  createView(): BrowserViewHandle;
+  writePng(destPath: string, data: Buffer): void;
+  writeJson(destPath: string, data: string): void;
+  now?(): number;
+}
+
+// The single-shot reply channel back to the core. index.ts wires this to
+// appServerClientPool.respondToServerRequest / rejectServerRequest.
+export interface BrowserReplyPort {
+  respond(id: string, result: unknown): void;
+  reject(id: string, message: string): void;
+}
+
+type TabEntry = {
+  view: BrowserViewHandle;
+  workdir: string;
+  tabID: string;
+  debuggerAttached: boolean;
+  // node_id -> backendNodeId, rebuilt on every observe. node_id is a small
+  // incrementing int handed to the model; backendNodeId is the CDP identity we
+  // resolve boxes/focus against.
+  nodeMap: Map<number, number>;
+  // The contentView this tab is currently parented under. Tracked so a reparent
+  // can explicitly detach from the previous parent (belt-and-suspenders around
+  // Electron's implicit re-parenting).
+  currentParent: BrowserParentWindowHandle["contentView"] | undefined;
+  // Whether a renderer full-window overlay is currently suppressing this tab's
+  // visibility. setVisibility must respect it so an agent promotion cannot paint
+  // over a modal; cleared back to visible when the overlay goes away.
+  suppressed: boolean;
+};
+
+type BoundsReport = {
+  window: BrowserParentWindowHandle;
+  rect: Rectangle;
+};
+
+type RawInteractableNode = {
+  backendNodeId: number;
+  role: string;
+  name: string;
+  value: string;
+  bounds: [number, number, number, number];
+};
+
+/**
+ * Owns every agent-driven browser tab: a hidden host BrowserWindow plus one
+ * WebContentsView per (workdir, tab_id). Requests arrive from the core over the
+ * reverse-RPC channel (browser/*), are translated to CDP, and replied to via
+ * the injected reply port.
+ *
+ * Deliberately has NO stop-before-replace lock / retry backoff (unlike the CUA
+ * observation coordinator): those exist because replayd groups screen-capture
+ * clients by executable and two overlapping helpers fight over one exclusive
+ * capture stream. A WebContentsView owns no exclusive OS resource and has no
+ * child-process crash surface, so there is nothing to serialize.
+ */
+export class BrowserHostCoordinator {
+  private readonly tabs = new Map<string, TabEntry>();
+  private readonly lastBounds = new Map<string, BoundsReport>();
+  // webContents ids of every live agent view — the session permission handler
+  // consults this to sort agent traffic (deny/controlled) from the user's own
+  // <webview> traffic (untouched).
+  private readonly agentWebContentsIds = new Set<number>();
+  // Workdirs whose core is known-down (crash or teardown). A reply issued here
+  // would hit AppServerClient.respond → ensureStarted and RESPAWN a dead core to
+  // answer a request nobody awaits, so we swallow it. Cleared when that workdir
+  // sends its next request (proof the core is back).
+  private readonly downWorkdirs = new Set<string>();
+  private hostWindow: BrowserHostWindowHandle | undefined;
+
+  constructor(
+    private readonly registry: WindowRegistry,
+    private readonly reply: BrowserReplyPort,
+    private readonly deps: BrowserHostDeps,
+    // Synthetic invalidation fired when a workdir's core is torn down: the
+    // renderer clears that workdir's activitySessions to drop ghost UI. Kept
+    // separate from server-exit because the disposing/eviction path suppresses
+    // server-exit entirely (appServerClients.ts finalizeChild).
+    private readonly broadcastInvalidation: (workdir: string) => void,
+  ) {}
+
+  // -------------------------------------------------------------------------
+  // Request entry point (index.ts emitServerEvent interception).
+  // -------------------------------------------------------------------------
+  async handleServerRequest(event: Extract<ServerEvent, { kind: "server-request" }>): Promise<void> {
+    const id = event.message.id;
+    const method = event.message.method;
+    const params = asRecord(event.message.params);
+    const workdir = typeof params.workdir === "string" && params.workdir ? params.workdir : event.workdir;
+    // Receiving a request is proof this workdir's core is alive again.
+    this.downWorkdirs.delete(workdir);
+    try {
+      const result = await this.dispatch(method, workdir, params);
+      this.respondSafe(id, workdir, result);
+    } catch (error) {
+      this.rejectSafe(id, workdir, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  // Called from index.ts on a server-exit event so a reply that lands after the
+  // core died is dropped instead of respawning it.
+  markServerExit(workdir: string): void {
+    this.downWorkdirs.add(workdir);
+  }
+
+  // Pool client-teardown sink. NOT server-exit driven: the disposing flag
+  // suppresses server-exit on the eviction path, so this hook is the authority
+  // for tearing down a workdir's views. Only touches the given workdir's tabs —
+  // the pool mints up to 3 cores, each with its own tab_ids, so a global sweep
+  // would kill a sibling core's live tab.
+  onClientTorndown(workdir: string): void {
+    this.downWorkdirs.add(workdir);
+    for (const [key, entry] of [...this.tabs]) {
+      if (entry.workdir === workdir) {
+        this.destroyEntry(entry);
+        this.tabs.delete(key);
+        this.lastBounds.delete(key);
+      }
+    }
+    this.broadcastInvalidation(workdir);
+  }
+
+  // Pool eviction guard: a workdir with a live agent tab (especially mid user
+  // takeover) must count as busy, or an idle-evict would yank the page out from
+  // under the user with no warning.
+  hasAgentTabs(workdir: string): boolean {
+    for (const entry of this.tabs.values()) {
+      if (entry.workdir === workdir) return true;
+    }
+    return false;
+  }
+
+  ownsWebContents(webContentsID: number): boolean {
+    return this.agentWebContentsIds.has(webContentsID);
+  }
+
+  // -------------------------------------------------------------------------
+  // Renderer-reported geometry (visibility takeover positioning).
+  // -------------------------------------------------------------------------
+  reportBounds(workdir: string, tabID: string, window: BrowserParentWindowHandle, rect: Rectangle): void {
+    const key = tabKey(workdir, tabID);
+    this.lastBounds.set(key, { window, rect });
+    const entry = this.tabs.get(key);
+    // Only re-position while this tab is actually parented under the reporting
+    // window; otherwise the bounds are stashed for the next set_visibility.
+    if (entry && entry.currentParent === window.contentView) {
+      entry.view.setBounds(rect);
+    }
+  }
+
+  setOverlaySuppressed(workdir: string, tabID: string, suppressed: boolean): void {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    if (!entry) return;
+    // Persist the flag so a concurrent set_visibility promotion respects it
+    // instead of painting the agent view back over the modal.
+    entry.suppressed = suppressed;
+    entry.view.setVisible(!suppressed);
+  }
+
+  // -------------------------------------------------------------------------
+  // Teardown (before-quit).
+  // -------------------------------------------------------------------------
+  destroyAll(): void {
+    for (const entry of this.tabs.values()) this.destroyEntry(entry);
+    this.tabs.clear();
+    this.lastBounds.clear();
+    if (this.hostWindow && !this.hostWindow.isDestroyed()) {
+      this.hostWindow.destroy();
+    }
+    this.hostWindow = undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // Method dispatch.
+  // -------------------------------------------------------------------------
+  private async dispatch(method: string, workdir: string, params: Record<string, JsonValue>): Promise<unknown> {
+    switch (method) {
+      case "browser/open_tab":
+        return this.openTab(workdir, params);
+      case "browser/close_tab":
+        return this.closeTab(workdir, params);
+      case "browser/list_tabs":
+        return this.listTabs(workdir);
+      case "browser/set_visibility":
+        return this.setVisibility(workdir, params);
+      case "browser/screenshot":
+        return this.screenshot(workdir, params);
+      case "browser/cdp":
+        return this.cdpWithGate(workdir, params);
+      default:
+        throw new Error(`unsupported browser method: ${method}`);
+    }
+  }
+
+  private async openTab(workdir: string, params: Record<string, JsonValue>): Promise<{ ok: true; tab_id: string }> {
+    const tabID = String(params.tab_id ?? "");
+    if (!tabID) throw new Error("open_tab requires tab_id");
+    const key = tabKey(workdir, tabID);
+    let entry = this.tabs.get(key);
+    if (!entry) {
+      const view = this.deps.createView();
+      // Hidden views default to throttled rAF/timers; disable so a background
+      // SPA keeps ticking for the agent.
+      view.webContents.setBackgroundThrottling(false);
+      // Agent tabs never spawn popups; deny window.open. (A future revision may
+      // adopt them as hidden tabs instead of denying.)
+      view.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      this.ensureHostWindow().contentView.addChildView(view);
+      if (!view.webContents.debugger.isAttached()) {
+        view.webContents.debugger.attach("1.3");
+      }
+      entry = {
+        view,
+        workdir,
+        tabID,
+        debuggerAttached: true,
+        nodeMap: new Map(),
+        currentParent: this.ensureHostWindow().contentView,
+        suppressed: false,
+      };
+      this.tabs.set(key, entry);
+      this.agentWebContentsIds.add(view.webContents.id);
+    }
+    const initialURL = typeof params.initial_url === "string" ? params.initial_url : "";
+    if (initialURL) {
+      await entry.view.webContents.loadURL(initialURL);
+    }
+    return { ok: true, tab_id: tabID };
+  }
+
+  private closeTab(workdir: string, params: Record<string, JsonValue>): { ok: true } {
+    const tabID = String(params.tab_id ?? "");
+    const key = tabKey(workdir, tabID);
+    const entry = this.tabs.get(key);
+    if (!entry) return { ok: true }; // idempotent — close of an unknown tab is a no-op
+    this.destroyEntry(entry);
+    this.tabs.delete(key);
+    this.lastBounds.delete(key);
+    return { ok: true };
+  }
+
+  private listTabs(workdir: string): { tab_ids: string[] } {
+    const ids: string[] = [];
+    for (const entry of this.tabs.values()) {
+      if (entry.workdir === workdir) ids.push(entry.tabID);
+    }
+    return { tab_ids: ids };
+  }
+
+  private setVisibility(workdir: string, params: Record<string, JsonValue>): { ok: true } {
+    const tabID = String(params.tab_id ?? "");
+    const entry = this.requireTab(workdir, tabID);
+    const visible = params.visible === true;
+    if (visible) {
+      // Reparent onto the takeover window and overlay it. Bounds come from the
+      // renderer's last report; if none yet, it lands at 0,0 and the first
+      // report repositions it.
+      const target = this.resolveTargetWindow(workdir, tabID) ?? this.ensureHostWindow();
+      this.reparent(entry, target);
+      entry.view.setVisible(!entry.suppressed);
+      const rect = this.lastBounds.get(tabKey(workdir, tabID))?.rect;
+      if (rect) entry.view.setBounds(rect);
+    } else {
+      // Park back on the hidden host. Keep the view "visible" so capturePage
+      // keeps producing frames while the tab runs in the background.
+      this.reparent(entry, this.ensureHostWindow());
+      entry.view.setVisible(!entry.suppressed);
+    }
+    return { ok: true };
+  }
+
+  private async screenshot(workdir: string, params: Record<string, JsonValue>): Promise<{ width: number; height: number; path: string }> {
+    const entry = this.requireTab(workdir, String(params.tab_id ?? ""));
+    const destPath = String(params.dest_path ?? "");
+    if (!destPath) throw new Error("screenshot requires dest_path");
+    return this.captureToFile(entry, destPath);
+  }
+
+  // browser/cdp with the >1MB overflow gate applied to the semantic result.
+  private async cdpWithGate(
+    workdir: string,
+    params: Record<string, JsonValue>,
+  ): Promise<{ result?: JsonValue; path?: string; size?: number }> {
+    const entry = this.requireTab(workdir, String(params.tab_id ?? ""));
+    const semanticMethod = String(params.method ?? "");
+    const semanticParams = asRecord(params.params);
+    const output = await this.runSemantic(entry, semanticMethod, semanticParams);
+    const json = JSON.stringify(output ?? null);
+    const size = Buffer.byteLength(json, "utf8");
+    if (size > MAX_INLINE_RESULT_BYTES) {
+      const destPath = typeof semanticParams.dest_path === "string" ? semanticParams.dest_path : "";
+      if (destPath) {
+        // observe already wrote its PNG to dest_path, so spill the JSON to a
+        // sibling to avoid clobbering the screenshot. The core reads whatever
+        // path we return, so a derived name is transparent to it.
+        const spill = semanticMethod === "observe" ? `${destPath}.json` : destPath;
+        this.deps.writeJson(spill, json);
+        return { path: spill, size };
+      }
+      // No dest_path to spill to: inline anyway (still under the 4MB core line
+      // limit; the 1MB gate is the conservative early cut).
+    }
+    return { result: output };
+  }
+
+  private async runSemantic(
+    entry: TabEntry,
+    method: string,
+    params: Record<string, JsonValue>,
+  ): Promise<JsonValue> {
+    switch (method) {
+      case "navigate":
+        return this.navigate(entry, params);
+      case "observe":
+        return this.observe(entry, params);
+      case "click":
+        return this.click(entry, params);
+      case "type":
+        return this.typeText(entry, params);
+      case "scroll":
+        return this.scroll(entry, params);
+      case "key":
+        return this.key(entry, params);
+      case "wait":
+        return this.wait(params);
+      default:
+        throw new Error(`unsupported browser action: ${method}`);
+    }
+  }
+
+  private async navigate(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
+    const url = String(params.url ?? "");
+    if (!url) throw new Error("navigate requires url");
+    // loadURL natively resolves on did-finish-load (and rejects on
+    // did-fail-load), which is far more robust than racing Page.loadEventFired
+    // over the debugger on a hidden view. The wire contract is about the
+    // {url,title} result, not the exact CDP verb used to get there.
+    await entry.view.webContents.loadURL(url);
+    return { url: entry.view.webContents.getURL(), title: entry.view.webContents.getTitle() };
+  }
+
+  private async observe(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
+    const snapshot = await entry.view.webContents.debugger.sendCommand("DOMSnapshot.captureSnapshot", {
+      computedStyles: [],
+    });
+    const raw = interactableNodesFromSnapshot(snapshot);
+    // Rebuild the node map from scratch: node_ids are only valid until the next
+    // observe.
+    entry.nodeMap = new Map();
+    const nodes: JsonValue[] = raw.map((node, index) => {
+      const nodeID = index + 1;
+      entry.nodeMap.set(nodeID, node.backendNodeId);
+      return {
+        node_id: nodeID,
+        role: node.role,
+        name: node.name,
+        value: node.value,
+        bounds: node.bounds,
+      };
+    });
+    const result: Record<string, JsonValue> = {
+      url: entry.view.webContents.getURL(),
+      title: entry.view.webContents.getTitle(),
+      nodes,
+    };
+    const destPath = typeof params.dest_path === "string" ? params.dest_path : "";
+    if (params.screenshot === true && destPath) {
+      const shot = await this.captureToFile(entry, destPath);
+      result.screenshot_path = shot.path;
+    }
+    return result;
+  }
+
+  private async click(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
+    const point = await this.resolvePoint(entry, params);
+    const dbg = entry.view.webContents.debugger;
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: point[0],
+      y: point[1],
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: point[0],
+      y: point[1],
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    return { ok: true };
+  }
+
+  private async typeText(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
+    const dbg = entry.view.webContents.debugger;
+    if (typeof params.node_id === "number") {
+      const backendNodeId = this.requireBackendNode(entry, params.node_id);
+      await dbg.sendCommand("DOM.focus", { backendNodeId });
+    }
+    const text = String(params.text ?? "");
+    await dbg.sendCommand("Input.insertText", { text });
+    return { ok: true };
+  }
+
+  private async scroll(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
+    let x = 0;
+    let y = 0;
+    if (typeof params.node_id === "number") {
+      const point = await this.pointForNode(entry, params.node_id);
+      [x, y] = point;
+    }
+    const dx = typeof params.dx === "number" ? params.dx : 0;
+    const dy = typeof params.dy === "number" ? params.dy : 0;
+    await entry.view.webContents.debugger.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x,
+      y,
+      deltaX: dx,
+      deltaY: dy,
+    });
+    return { ok: true };
+  }
+
+  private async key(entry: TabEntry, params: Record<string, JsonValue>): Promise<JsonValue> {
+    const keys = String(params.keys ?? "");
+    if (!keys) throw new Error("key requires keys");
+    const dbg = entry.view.webContents.debugger;
+    await dbg.sendCommand("Input.dispatchKeyEvent", { type: "rawKeyDown", key: keys });
+    await dbg.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: keys });
+    return { ok: true };
+  }
+
+  private async wait(params: Record<string, JsonValue>): Promise<JsonValue> {
+    // Go splits long waits into <=10s polling slices, so a single slice is
+    // bounded here too — never a 30s call that would collide with the
+    // per-call reverse-RPC timeout.
+    const requested = typeof params.timeout_ms === "number" ? params.timeout_ms : 0;
+    const timeout = Math.max(0, Math.min(10_000, requested));
+    if (timeout > 0) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, timeout);
+        timer.unref?.();
+      });
+    }
+    return { ok: true, changed: false };
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers.
+  // -------------------------------------------------------------------------
+  private async captureToFile(
+    entry: TabEntry,
+    destPath: string,
+  ): Promise<{ width: number; height: number; path: string }> {
+    // capturePage with stayHidden temporarily bumps the capturer count so a
+    // hidden host actually produces a real frame — Page.captureScreenshot over
+    // CDP on a non-visible view returns a blank/stale image.
+    const image = await entry.view.webContents.capturePage(undefined, { stayHidden: true });
+    const size = image.getSize();
+    this.deps.writePng(destPath, image.toPNG());
+    return { width: size.width, height: size.height, path: destPath };
+  }
+
+  private async resolvePoint(entry: TabEntry, params: Record<string, JsonValue>): Promise<[number, number]> {
+    if (typeof params.node_id === "number") {
+      return this.pointForNode(entry, params.node_id);
+    }
+    if (typeof params.x === "number" && typeof params.y === "number") {
+      return [params.x, params.y];
+    }
+    throw new Error("action requires node_id or x,y");
+  }
+
+  private async pointForNode(entry: TabEntry, nodeID: number): Promise<[number, number]> {
+    const backendNodeId = this.requireBackendNode(entry, nodeID);
+    const box = await entry.view.webContents.debugger.sendCommand("DOM.getBoxModel", { backendNodeId });
+    const center = boxModelCenter(box);
+    if (!center) throw new Error(`node_id ${nodeID} has no layout box; observe again`);
+    return center;
+  }
+
+  private requireBackendNode(entry: TabEntry, nodeID: number): number {
+    const backendNodeId = entry.nodeMap.get(nodeID);
+    if (backendNodeId === undefined) {
+      throw new Error(`node_id ${nodeID} not found; observe before referencing nodes`);
+    }
+    return backendNodeId;
+  }
+
+  private requireTab(workdir: string, tabID: string): TabEntry {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    // Exact sentinel the Go tool matches on to rebuild the tab from its store.
+    if (!entry) throw new Error("tab_not_found");
+    return entry;
+  }
+
+  private ensureHostWindow(): BrowserHostWindowHandle {
+    if (!this.hostWindow || this.hostWindow.isDestroyed()) {
+      this.hostWindow = this.deps.createHostWindow();
+    }
+    return this.hostWindow;
+  }
+
+  private resolveTargetWindow(workdir: string, tabID: string): BrowserParentWindowHandle | undefined {
+    const reported = this.lastBounds.get(tabKey(workdir, tabID))?.window;
+    if (reported && !reported.isDestroyed()) return reported;
+    const main = this.registry.mainWindow();
+    return main && !main.isDestroyed()
+      ? (main as unknown as BrowserParentWindowHandle)
+      : undefined;
+  }
+
+  private reparent(entry: TabEntry, target: BrowserParentWindowHandle): void {
+    if (entry.currentParent && entry.currentParent !== target.contentView) {
+      try {
+        entry.currentParent.removeChildView(entry.view);
+      } catch {
+        // Previous parent may already be gone; addChildView below re-homes it.
+      }
+    }
+    target.contentView.addChildView(entry.view);
+    entry.currentParent = target.contentView;
+  }
+
+  private destroyEntry(entry: TabEntry): void {
+    this.agentWebContentsIds.delete(entry.view.webContents.id);
+    if (entry.debuggerAttached) {
+      try {
+        if (entry.view.webContents.debugger.isAttached()) {
+          entry.view.webContents.debugger.detach();
+        }
+      } catch {
+        // Debugger auto-detaches on crash/navigation; ignore.
+      }
+      entry.debuggerAttached = false;
+    }
+    if (entry.currentParent) {
+      try {
+        entry.currentParent.removeChildView(entry.view);
+      } catch {
+        // Parent may already be destroyed.
+      }
+      entry.currentParent = undefined;
+    }
+    try {
+      if (!entry.view.webContents.isDestroyed()) {
+        entry.view.webContents.close();
+      }
+    } catch {
+      // Already closing.
+    }
+  }
+
+  private respondSafe(id: string, workdir: string, result: unknown): void {
+    if (this.downWorkdirs.has(workdir)) return; // core gone — a reply would respawn it
+    try {
+      this.reply.respond(id, result);
+    } catch {
+      // The route was dropped (client disposed/evicted mid-flight). Nothing to answer.
+    }
+  }
+
+  private rejectSafe(id: string, workdir: string, message: string): void {
+    if (this.downWorkdirs.has(workdir)) return;
+    try {
+      this.reply.reject(id, message);
+    } catch {
+      // Route already gone.
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers (unit-tested directly).
+// ---------------------------------------------------------------------------
+
+// Composite (workdir, tab_id) key. The pool mints up to 3 cores, each of which
+// generates its own tab_ids independently, so a bare tab_id can collide across
+// cores; the workdir disambiguates. NUL separator can't appear in either part.
+export function tabKey(workdir: string, tabID: string): string {
+  return `${workdir} ${tabID}`;
+}
+
+// Center of a CDP DOM.getBoxModel content quad. quad is
+// [x1,y1,x2,y2,x3,y3,x4,y4]; the center is the mean of the four corners.
+export function boxModelCenter(box: unknown): [number, number] | undefined {
+  const model = isRecord(box) ? box.model : undefined;
+  const content = isRecord(model) ? model.content : undefined;
+  if (!Array.isArray(content) || content.length < 8) return undefined;
+  const xs = [content[0], content[2], content[4], content[6]];
+  const ys = [content[1], content[3], content[5], content[7]];
+  if (![...xs, ...ys].every((n) => typeof n === "number")) return undefined;
+  const x = (xs as number[]).reduce((a, b) => a + b, 0) / 4;
+  const y = (ys as number[]).reduce((a, b) => a + b, 0) / 4;
+  return [Math.round(x), Math.round(y)];
+}
+
+const INTERACTABLE_TAGS = new Set([
+  "a",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "summary",
+  "option",
+]);
+
+const INTERACTABLE_ROLES = new Set([
+  "button",
+  "link",
+  "textbox",
+  "checkbox",
+  "radio",
+  "combobox",
+  "listbox",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "option",
+  "switch",
+  "tab",
+  "searchbox",
+  "slider",
+  "spinbutton",
+]);
+
+// Trim a raw DOMSnapshot.captureSnapshot response to interactable, visible
+// nodes. Exported and pure so the (large, flattened, string-table) parse is
+// unit-tested without a live page. The desktop-side trim is what keeps the
+// observe result under the core's line limit.
+export function interactableNodesFromSnapshot(snapshot: unknown): RawInteractableNode[] {
+  if (!isRecord(snapshot)) return [];
+  const strings = Array.isArray(snapshot.strings) ? (snapshot.strings as unknown[]) : [];
+  const str = (index: unknown): string =>
+    typeof index === "number" && index >= 0 && index < strings.length && typeof strings[index] === "string"
+      ? (strings[index] as string)
+      : "";
+  const documents = Array.isArray(snapshot.documents) ? snapshot.documents : [];
+  const out: RawInteractableNode[] = [];
+  for (const document of documents) {
+    if (!isRecord(document)) continue;
+    const nodes = isRecord(document.nodes) ? document.nodes : {};
+    const layout = isRecord(document.layout) ? document.layout : {};
+    const nodeIndex = numberArray(layout.nodeIndex);
+    const bounds = Array.isArray(layout.bounds) ? layout.bounds : [];
+    const nodeName = numberArray(nodes.nodeName);
+    const backendNodeId = numberArray(nodes.backendNodeId);
+    const attributes = Array.isArray(nodes.attributes) ? nodes.attributes : [];
+    const inputValueByNode = new Map<number, string>();
+    const iv = nodes.inputValue;
+    if (isRecord(iv)) {
+      const ivIndex = numberArray(iv.index);
+      const ivValue = numberArray(iv.value);
+      for (let k = 0; k < ivIndex.length; k++) {
+        inputValueByNode.set(ivIndex[k], str(ivValue[k]));
+      }
+    }
+    for (let i = 0; i < nodeIndex.length; i++) {
+      const idx = nodeIndex[i];
+      const rect = bounds[i];
+      if (!Array.isArray(rect) || rect.length < 4) continue;
+      const [x, y, w, h] = rect as number[];
+      if (typeof w !== "number" || typeof h !== "number" || w <= 0 || h <= 0) continue;
+      const tag = str(nodeName[idx]).toLowerCase();
+      const attrs = parseSnapshotAttributes(attributes[idx], str);
+      if (!isInteractable(tag, attrs)) continue;
+      const backend = backendNodeId[idx];
+      if (typeof backend !== "number") continue;
+      out.push({
+        backendNodeId: backend,
+        role: roleFor(tag, attrs),
+        name: nameFor(tag, attrs, inputValueByNode.get(idx) ?? ""),
+        value: valueFor(attrs, inputValueByNode.get(idx) ?? ""),
+        bounds: [Math.round(x), Math.round(y), Math.round(w), Math.round(h)],
+      });
+    }
+  }
+  return out;
+}
+
+// Permission verdict for the persist:wuu-browser session. A non-agent
+// webContents (the user's own <webview>) is always granted — the point of
+// sorting by ownership is zero regression for the user surface. Agent tabs are
+// denied the sensitive capability set.
+export function browserPermissionDecision(isAgentOwned: boolean, permission: string): boolean {
+  if (!isAgentOwned) return true;
+  return !BROWSER_AGENT_DENIED_PERMISSIONS.has(permission);
+}
+
+// Wire the persist:wuu-browser session handlers. Called once from
+// app.whenReady with the real partition session; the ownership sort keeps the
+// user's <webview> untouched.
+export function installBrowserSessionHandlers(session: Session, coordinator: BrowserHostCoordinator): void {
+  session.setPermissionRequestHandler((webContents, permission, callback) => {
+    const owned = webContents ? coordinator.ownsWebContents(webContents.id) : false;
+    callback(browserPermissionDecision(owned, permission));
+  });
+  session.setPermissionCheckHandler((webContents, permission) => {
+    const owned = webContents ? coordinator.ownsWebContents(webContents.id) : false;
+    return browserPermissionDecision(owned, permission);
+  });
+  session.on("will-download", (event, _item, webContents) => {
+    // Agent tabs never trigger silent downloads to disk; the user's own webview
+    // downloads flow through untouched.
+    if (webContents && coordinator.ownsWebContents(webContents.id)) {
+      event.preventDefault();
+    }
+  });
+}
+
+export function defaultBrowserHostDeps(
+  createHostWindow: () => BrowserHostWindowHandle,
+  createView: () => BrowserViewHandle,
+): BrowserHostDeps {
+  return {
+    createHostWindow,
+    createView,
+    writePng: (destPath, data) => writeBufferFileAtomicSync(destPath, data),
+    writeJson: (destPath, data) => writeTextFileAtomicSync(destPath, data),
+  };
+}
+
+function isInteractable(tag: string, attrs: Record<string, string>): boolean {
+  if (INTERACTABLE_TAGS.has(tag)) return true;
+  const role = attrs.role?.toLowerCase();
+  if (role && INTERACTABLE_ROLES.has(role)) return true;
+  if (attrs.onclick !== undefined) return true;
+  if (attrs.tabindex !== undefined && attrs.tabindex !== "-1") return true;
+  if (attrs.contenteditable === "" || attrs.contenteditable === "true") return true;
+  return false;
+}
+
+function roleFor(tag: string, attrs: Record<string, string>): string {
+  const explicit = attrs.role?.toLowerCase();
+  if (explicit) return explicit;
+  switch (tag) {
+    case "a":
+      return "link";
+    case "button":
+    case "summary":
+      return "button";
+    case "textarea":
+      return "textbox";
+    case "select":
+      return "combobox";
+    case "option":
+      return "option";
+    case "input": {
+      const type = (attrs.type ?? "text").toLowerCase();
+      if (type === "button" || type === "submit" || type === "reset" || type === "image") return "button";
+      if (type === "checkbox") return "checkbox";
+      if (type === "radio") return "radio";
+      if (type === "search") return "searchbox";
+      return "textbox";
+    }
+    default:
+      return tag || "generic";
+  }
+}
+
+function nameFor(tag: string, attrs: Record<string, string>, inputValue: string): string {
+  return (
+    attrs["aria-label"] ||
+    attrs.placeholder ||
+    attrs.alt ||
+    attrs.title ||
+    attrs.name ||
+    (tag === "input" && attrs.type === "submit" ? inputValue : "") ||
+    ""
+  );
+}
+
+export function valueFor(attrs: Record<string, string>, inputValue: string): string {
+  // Never surface secret field contents to the model (design section 6 hard
+  // boundary). A pattern-based redactor downstream cannot catch an arbitrary
+  // password, so the value is dropped at the source: password/hidden inputs and
+  // the credential / one-time-code / payment autofill hints.
+  const type = (attrs.type || "").toLowerCase();
+  const autocomplete = (attrs.autocomplete || "").toLowerCase();
+  if (
+    type === "password" ||
+    type === "hidden" ||
+    autocomplete.includes("current-password") ||
+    autocomplete.includes("new-password") ||
+    autocomplete.includes("one-time-code") ||
+    autocomplete.includes("cc-")
+  ) {
+    return "";
+  }
+  return inputValue || attrs.value || "";
+}
+
+function parseSnapshotAttributes(
+  raw: unknown,
+  str: (index: unknown) => string,
+): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  if (!Array.isArray(raw)) return attrs;
+  for (let i = 0; i + 1 < raw.length; i += 2) {
+    const name = str(raw[i]).toLowerCase();
+    if (name) attrs[name] = str(raw[i + 1]);
+  }
+  return attrs;
+}
+
+// CDP flattened arrays are index-aligned (nodeName[idx], backendNodeId[idx]),
+// so positions must be preserved — filtering out a stray non-number would shift
+// every later index. Callers guard element types at the point of use.
+function numberArray(value: unknown): number[] {
+  return Array.isArray(value) ? (value as number[]) : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, JsonValue> {
+  return isRecord(value) ? (value as Record<string, JsonValue>) : {};
+}

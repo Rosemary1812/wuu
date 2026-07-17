@@ -27,6 +27,15 @@ public enum ForegroundPolicy: String, Sendable {
     case require
 }
 
+// Capture scope for observe. window keeps the legacy single-window behaviour and
+// coordinate space; app and screen composite multiple on-screen windows back-to-front
+// into one image whose union frame defines the coordinate space for later clicks.
+public enum CaptureScope: String, Sendable {
+    case window
+    case app
+    case screen
+}
+
 public struct ComputerCommand: @unchecked Sendable {
     public let action: ComputerAction
     public let app: String?
@@ -52,6 +61,8 @@ public struct ComputerCommand: @unchecked Sendable {
     public let title: String?
     public let description: String?
     public let foregroundPolicy: ForegroundPolicy
+    public let scope: CaptureScope
+    public let disableDiff: Bool
 
     public init(arguments: [String: Any]) throws {
         guard let rawAction = arguments["action"] as? String,
@@ -89,6 +100,17 @@ public struct ComputerCommand: @unchecked Sendable {
         } else {
             foregroundPolicy = .avoid
         }
+        // Same validation shape as foreground_policy: an unknown enum value is an
+        // invalid_arguments error, an omitted value defaults to the legacy behaviour.
+        if let rawScope = arguments["scope"] as? String {
+            guard let parsedScope = CaptureScope(rawValue: rawScope) else {
+                throw ComputerError.invalidArguments("scope must be window, app, or screen")
+            }
+            scope = parsedScope
+        } else {
+            scope = .window
+        }
+        disableDiff = arguments["disable_diff"] as? Bool ?? false
     }
 
     private static func int(_ value: Any?) -> Int? {
@@ -303,6 +325,17 @@ public final class MCPServer {
                         "enum": ["avoid", "allow", "require"],
                         "default": "avoid",
                         "description": "Foreground escalation policy. avoid (default) keeps everything in the background: level-1 Accessibility and level-2 directed input both run without activating the app, moving the user's pointer, or changing focus. allow and require perform a visible level-3 foreground takeover for this action (activating the app and posting global input); require additionally brings the app forward before observing. Use allow when a background attempt did not achieve the goal and a takeover is acceptable; use require only when the user asked to show or drive the app.",
+                    ],
+                    "scope": [
+                        "type": "string",
+                        "enum": ["window", "app", "screen"],
+                        "default": "window",
+                        "description": "Capture scope for observe. window (default) captures the single most relevant window and keeps the established coordinate space. app composites every on-screen window of the target app into one image, drawn back-to-front in true z-order so overlapping and secondary windows are all visible; screen composites every on-screen window across all apps. For app and screen the returned screenshot and click mapping cover the whole composited region (its union frame), and structured screenshot.windows lists each window's pixel rectangle and z_index (0 is frontmost). Concealed (off-screen) windows are not part of a composite.",
+                    ],
+                    "disable_diff": [
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, observe returns the full accessibility snapshot text every time instead of a compact diff against the previous observe. The structured changes list is still populated, so wait_for_change is unaffected. Use only when the whole tree is needed regardless of how little changed.",
                     ],
                     "steps": [
                         "type": "array",

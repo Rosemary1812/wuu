@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import {
   activitiesForThread,
+  clearActivitiesForWorkdir,
   emptyActivitySessions,
   mergeActivityList,
   reduceActivitySessionEvent,
@@ -59,5 +60,26 @@ describe("ActivitySessions", () => {
     state = mergeActivityList(state, "/repo-a", "thread-1", [session({ updated_at: "2026-07-10T10:00:04Z" })]);
 
     expect(activitiesForThread(state, "/repo-a", "thread-1")[0]).toMatchObject({ controller: "user", state: "user_controlled" });
+  });
+
+  it("hard-clears a torn-down workdir, bypassing stopped stickiness", () => {
+    let state = emptyActivitySessions();
+    state = reduceActivitySessionEvent(state, notification("activity/started", session()));
+    state = reduceActivitySessionEvent(state, notification("activity/started", session({ id: "activity-2", thread_id: "thread-2" })));
+    state = reduceActivitySessionEvent(state, notification("activity/started", session({ id: "activity-3", workdir: "/repo-b" })));
+    // A stopped activity is normally sticky; the invalidate path still drops it.
+    state = reduceActivitySessionEvent(state, notification("activity/stopped", session({ id: "activity-2", thread_id: "thread-2", state: "stopped", controller: "none", updated_at: "2026-07-10T10:00:09Z" })));
+
+    const cleared = clearActivitiesForWorkdir(state, "/repo-a");
+    expect(activitiesForThread(cleared, "/repo-a", "thread-1")).toEqual([]);
+    expect(activitiesForThread(cleared, "/repo-a", "thread-2")).toEqual([]);
+    // Other workdirs are untouched.
+    expect(activitiesForThread(cleared, "/repo-b", "thread-1").map((item) => item.id)).toEqual(["activity-3"]);
+  });
+
+  it("returns the same state object when nothing matched", () => {
+    let state = emptyActivitySessions();
+    state = reduceActivitySessionEvent(state, notification("activity/started", session()));
+    expect(clearActivitiesForWorkdir(state, "/repo-unknown")).toBe(state);
   });
 });

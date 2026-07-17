@@ -223,6 +223,31 @@ func (r *Registry) List(threadID string) []Session {
 	return out
 }
 
+// ListByKind returns a snapshot of every live session of the given kind across
+// all threads. Shutdown paths use it to stop a whole class of activities (for
+// example every embedded-browser tab owned by this process) without knowing the
+// owning thread ids in advance; ordinary UI queries stay scoped to List.
+func (r *Registry) ListByKind(kind Kind) []Session {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]Session, 0)
+	for _, entry := range r.entries {
+		if entry.session.Kind == kind {
+			out = append(out, entry.session)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
 func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (Session, error) {
 	r.mu.Lock()
 	entry, err := r.entryLocked(threadID, activityID)

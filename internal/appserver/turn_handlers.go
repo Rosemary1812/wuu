@@ -690,11 +690,18 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	if s.rt == nil {
 		return nil, errors.New("runtime session is required")
 	}
-	threadRuntime, err := s.rt.NewThreadRuntimeForRoot(th.ID, firstNonEmpty(rootDir, s.rt.RootDir))
+	browserWorkdir := firstNonEmpty(rootDir, s.rt.RootDir)
+	threadRuntime, err := s.rt.NewThreadRuntimeForRoot(th.ID, browserWorkdir)
 	if err != nil {
 		return nil, err
 	}
 	if threadRuntime.Toolkit != nil {
+		// Inject the embedded-browser bridge for every thread here (not only
+		// resident participants in configureResidentThreadRuntime): the bridge
+		// closure must carry this thread's id + workdir so tab operations route
+		// to the desktop views keyed by (workdir, tab_id). Set once at runtime
+		// creation; the existing-runtime fast path above keeps it attached.
+		threadRuntime.Toolkit.SetBrowserBridge(s.browserBridgeForThread(browserWorkdir, th.ID))
 		if _, restoreErr := threadRuntime.Toolkit.RestorePlanFromHistory(history); restoreErr != nil {
 			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
 		}

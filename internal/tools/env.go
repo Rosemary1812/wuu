@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -257,6 +258,15 @@ type Env struct {
 	// that workflow is unavailable in this
 	// environment (every action returns an execute-time error).
 	TaskManager TaskManager
+	// BrowserBridge routes the browser tool's actions to the desktop host that
+	// owns the hidden WebContentsView + CDP session. Nil means no embedded
+	// browser backend is attached (for example the CLI/headless runtime), and
+	// the browser tool returns a clear execute-time error rather than panicking.
+	BrowserBridge BrowserBridge
+	// BrowserTabs persists this thread's tab records (url/title/status/activity)
+	// so tabs survive core restarts and can be rebuilt on the first observe.
+	// Nil means tab state is not durable in this environment.
+	BrowserTabs BrowserTabStore
 	// FileScopeRoots, when non-empty, replaces the single-RootDir file
 	// boundary with a whitelist: file tools (read/write/edit/glob/grep/…)
 	// may only touch paths inside one of these roots — the agent home,
@@ -288,6 +298,55 @@ type Env struct {
 	inceptionState inceptionFailureState
 
 	toolTelemetry toolTelemetry
+}
+
+// BrowserScreenshotResult reports the persisted screenshot geometry and on-disk
+// path returned by BrowserBridge.Screenshot. Declared in the tools package so
+// tool_browser never imports the appserver wire types; the bridge implementation
+// translates the protocol result into this shape.
+type BrowserScreenshotResult struct {
+	Width  int
+	Height int
+	Path   string
+}
+
+// BrowserBridge is the transport the browser tool uses to reach the desktop
+// host process that owns each tab's hidden WebContentsView. Every method blocks
+// on a server-initiated request and honors ctx (the turn context); a nil bridge
+// on Env means the backend is unavailable and the tool must surface a clear
+// error. Call is the general CDP escape hatch; the typed methods cover the
+// lifecycle operations the tool needs without hand-rolling CDP for each.
+type BrowserBridge interface {
+	Call(ctx context.Context, method string, params any) (json.RawMessage, error)
+	Screenshot(ctx context.Context, tabID, destPath, format string) (BrowserScreenshotResult, error)
+	OpenTab(ctx context.Context, tabID, url string) error
+	CloseTab(ctx context.Context, tabID string) error
+	SetVisibility(ctx context.Context, tabID string, visible bool) error
+	ListTabs(ctx context.Context) ([]string, error)
+}
+
+// BrowserTabRecord is the durable per-tab state the tool persists between turns
+// and across core restarts. Dead marks a record whose backing WebContentsView
+// was lost (core restart) and that must be rebuilt by initial_url on next use.
+type BrowserTabRecord struct {
+	TabID      string    `json:"tab_id"`
+	URL        string    `json:"url,omitempty"`
+	Title      string    `json:"title,omitempty"`
+	Status     string    `json:"status,omitempty"`
+	ActivityID string    `json:"activity_id,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	Dead       bool      `json:"dead,omitempty"`
+}
+
+// BrowserTabStore is the minimal CRUD contract the browser tool needs over the
+// thread's tab records. The concrete atomic-file store lands in a later layer;
+// this interface freezes the shape the tool codes against. A nil store means
+// tab persistence is unavailable and the tool degrades to in-memory addressing.
+type BrowserTabStore interface {
+	List() ([]BrowserTabRecord, error)
+	Get(tabID string) (BrowserTabRecord, bool, error)
+	Put(rec BrowserTabRecord) error
+	Delete(tabID string) error
 }
 
 type PostedMessage struct {

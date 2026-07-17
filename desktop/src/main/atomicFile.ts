@@ -6,10 +6,15 @@ type AtomicWriteOptions = {
   defaultMode?: number;
 };
 
-export function writeTextFileAtomicSync(
+// Shared crash-safe write core: mkdir -p, create an O_EXCL temp sibling,
+// fsync, then rename over the target. Text and binary variants only differ
+// in the payload handed to writeFileSync, so both funnel through here to keep
+// the durability guarantees (exclusive temp, fsync-before-rename) identical.
+function writeFileAtomicSyncCore(
   path: string,
-  text: string,
-  options: AtomicWriteOptions = {},
+  payload: string | Buffer,
+  encoding: BufferEncoding | undefined,
+  options: AtomicWriteOptions,
 ): void {
   const directory = dirname(path);
   fs.mkdirSync(directory, { recursive: true });
@@ -35,7 +40,11 @@ export function writeTextFileAtomicSync(
       mode,
     );
     fs.fchmodSync(descriptor, mode);
-    fs.writeFileSync(descriptor, text, "utf8");
+    if (typeof payload === "string") {
+      fs.writeFileSync(descriptor, payload, encoding ?? "utf8");
+    } else {
+      fs.writeFileSync(descriptor, payload);
+    }
     fs.fsyncSync(descriptor);
     fs.closeSync(descriptor);
     descriptor = undefined;
@@ -55,6 +64,26 @@ export function writeTextFileAtomicSync(
     }
     throw error;
   }
+}
+
+export function writeTextFileAtomicSync(
+  path: string,
+  text: string,
+  options: AtomicWriteOptions = {},
+): void {
+  writeFileAtomicSyncCore(path, text, "utf8", options);
+}
+
+// Binary variant used by the embedded browser CDP bridge to spill PNG
+// screenshots (and >1MB CDP result overflow) to a core-designated dest_path.
+// A partially written screenshot must never be observable, so it reuses the
+// same exclusive-temp + fsync + rename path as the text writer.
+export function writeBufferFileAtomicSync(
+  path: string,
+  data: Buffer,
+  options: AtomicWriteOptions = {},
+): void {
+  writeFileAtomicSyncCore(path, data, undefined, options);
 }
 
 function isMissingFileError(error: unknown): boolean {

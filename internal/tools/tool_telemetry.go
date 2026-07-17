@@ -285,6 +285,20 @@ func isRepeatablePollingTool(call providers.ToolCall) bool {
 			return true
 		}
 	}
+	if name == browserToolName {
+		// Re-observing/re-screenshotting the same tab is the browser's polling
+		// idiom (a page settles between identical calls), so exempt it from the
+		// repeated-input guard the way CUA observe is exempt.
+		var args struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil {
+			switch args.Action {
+			case "observe", "screenshot", "wait_for", "tabs":
+				return true
+			}
+		}
+	}
 	if name == "bash" {
 		var args bashArgs
 		if err := decodeArgs(call.Arguments, &args); err == nil {

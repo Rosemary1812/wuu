@@ -82,6 +82,69 @@ export type InitializeResult = {
 
 export type FeatureFlags = {
   helpme: boolean;
+  // Advertises that this client can host the embedded browser backend
+  // (hidden WebContentsView + CDP bridge). Mirrors appserver.FeatureFlags.
+  browser?: boolean;
+};
+
+// Browser* are the core→desktop server-initiated request payloads. The core
+// sends these TO the desktop over the reverse-RPC channel and awaits a Response;
+// they are not client→core requests. Mirrored field-for-field from
+// internal/appserver/protocol.go. No payload carries an activity_id: the client
+// auto-rejects server requests naming a stopped activity, which would wedge a
+// CDP call the moment a tab's activity is torn down. Tabs are addressed by
+// tab_id, minted core-side.
+export type BrowserCDPParams = {
+  workdir: string;
+  tab_id: string;
+  method: string;
+  params?: JsonValue;
+};
+
+export type BrowserCDPResult = {
+  // Present when the desktop inlines the CDP result. When the >1MB size gate
+  // spills it to disk, result is omitted and path/size describe the file.
+  result?: JsonValue;
+  path?: string;
+  size?: number;
+};
+
+export type BrowserScreenshotParams = {
+  workdir: string;
+  tab_id: string;
+  dest_path: string;
+  format?: string;
+};
+
+export type BrowserScreenshotResult = {
+  width: number;
+  height: number;
+  path: string;
+};
+
+export type BrowserOpenTabParams = {
+  workdir: string;
+  tab_id: string;
+  initial_url?: string;
+};
+
+export type BrowserCloseTabParams = {
+  workdir: string;
+  tab_id: string;
+};
+
+export type BrowserSetVisibilityParams = {
+  workdir: string;
+  tab_id: string;
+  visible: boolean;
+};
+
+export type BrowserListTabsParams = {
+  workdir: string;
+};
+
+export type BrowserListTabsResult = {
+  tab_ids: string[];
 };
 
 export type RuntimeIssue = {
@@ -426,6 +489,18 @@ export type ActivityActionResult = {
 export type ActivityReleaseResult = {
   activity: ActivitySession;
   lease_token: string;
+};
+
+// Embedded-browser visibility takeover (M3). When an agent-owned browser
+// activity is promoted to a foreground (visible) state the renderer streams
+// the on-screen position + size of the browser panel so the main process can
+// keep its (main-owned) WebContentsView aligned over it. Values are CSS
+// pixels relative to the window's top-left corner.
+export type BrowserBoundsRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 export type RuntimeConnectionUpdate = {
@@ -2372,6 +2447,30 @@ export type WuuDesktopApi = {
   // Streamed side-thread output forwarded by the Electron main process.
   onSideThreadEvent?: (
     handler: (envelope: SideThreadEventEnvelope) => void,
+  ) => () => void;
+  // Embedded-browser visibility takeover (M3). These are wired only by the
+  // Electron desktop preload; non-Electron hosts omit them, so the renderer
+  // guards each call with `typeof window.wuu.x === "function"`.
+  //
+  // Renderer→main: report where the browser panel sits on screen so the main
+  // process can overlay the agent's WebContentsView on it (polled via rAF).
+  reportBrowserBounds?: (
+    workdir: string,
+    tabID: string,
+    rect: BrowserBoundsRect,
+  ) => void;
+  // Renderer→main: hide the agent view while a full-window overlay (settings,
+  // dialogs, search) is open so it can't occlude the modal; false restores it.
+  suppressBrowserOverlay?: (
+    workdir: string,
+    tabID: string,
+    suppressed: boolean,
+  ) => void;
+  // Main→renderer: the core owning `workdir` was torn down / evicted, so any
+  // browser activity for it is dead. Lets the renderer drop ghost activity UI
+  // even when the Close-time "stopped" events were lost. Returns unsubscribe.
+  onBrowserInvalidate?: (
+    handler: (payload: { workdir: string }) => void,
   ) => () => void;
 };
 

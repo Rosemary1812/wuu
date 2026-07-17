@@ -60,6 +60,28 @@ export function activitiesForThread(
     });
 }
 
+// Hard-drop every activity for a workdir whose core was torn down / evicted.
+// This deliberately bypasses mergeActivity's "stopped" stickiness and
+// monotonic updated_at guard: the core is gone, so its (possibly lost)
+// Close-time stopped events can never arrive, and leaving the entries would
+// pin ghost browser activity UI forever. Identity is preserved when nothing
+// matched so callers don't re-render on unrelated invalidate signals.
+export function clearActivitiesForWorkdir(
+  state: ActivitySessionsState,
+  workdir: string,
+): ActivitySessionsState {
+  const kept: Record<string, ActivitySession> = {};
+  let removed = false;
+  for (const [key, activity] of Object.entries(state.byKey)) {
+    if (activity.workdir === workdir) {
+      removed = true;
+      continue;
+    }
+    kept[key] = activity;
+  }
+  return removed ? { byKey: kept } : state;
+}
+
 function mergeActivity(state: ActivitySessionsState, incoming: ActivitySession): ActivitySessionsState {
   const key = activityKey(incoming);
   const current = state.byKey[key];

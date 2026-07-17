@@ -90,6 +90,13 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect((coordinateProperty?["enum"] as? [String])?.contains("normalized") == true, "coordinate space supports resize-independent normalized points")
     let foregroundPolicy = properties?["foreground_policy"] as? [String: Any]
     try expect(foregroundPolicy?["default"] as? String == "avoid", "foreground policy defaults to avoid")
+    let scope = properties?["scope"] as? [String: Any]
+    try expect((scope?["enum"] as? [String]) == ["window", "app", "screen"], "scope enumerates window, app, and screen")
+    try expect(scope?["default"] as? String == "window", "scope defaults to window")
+    try expect((scope?["description"] as? String)?.contains("z-order") == true, "scope documents composite z-ordering")
+    let disableDiff = properties?["disable_diff"] as? [String: Any]
+    try expect(disableDiff?["type"] as? String == "boolean", "disable_diff is a boolean")
+    try expect(disableDiff?["default"] as? Bool == false, "disable_diff defaults to false")
     let timeout = properties?["timeout"] as? [String: Any]
     try expect((timeout?["description"] as? String)?.contains("changed=false") == true, "wait timeout is documented as a normal result")
     let x = properties?["x"] as? [String: Any]
@@ -138,6 +145,41 @@ private func testCoordinateAndKeyboardFallbackReachBackend() throws {
     try expect(backend.commands[1].action == .pressKey, "press key action")
     try expect(backend.commands[1].key == "command+a", "key value")
     try expect(backend.commands[0].foregroundPolicy == .avoid, "omitted foreground policy is avoid")
+}
+
+private func testScopeAndDisableDiffParseAndReachBackend() throws {
+    let backend = FakeBackend()
+    let server = MCPServer(backend: backend)
+    _ = try server.handle([
+        "jsonrpc": "2.0", "id": 20, "method": "tools/call",
+        "params": [
+            "name": "computer",
+            "arguments": [
+                "action": "observe",
+                "app": "com.apple.TextEdit",
+                "scope": "app",
+                "disable_diff": true,
+            ],
+        ],
+    ])
+    try expect(backend.commands.count == 1, "observe reached backend once")
+    try expect(backend.commands.first?.scope == .app, "scope=app reaches the backend command")
+    try expect(backend.commands.first?.disableDiff == true, "disable_diff reaches the backend command")
+
+    // Omitting both keeps the legacy defaults, so scope=window observe stays identical.
+    let defaults = try ComputerCommand(arguments: ["action": "observe", "app": "com.apple.TextEdit"])
+    try expect(defaults.scope == .window, "omitted scope defaults to window")
+    try expect(defaults.disableDiff == false, "omitted disable_diff defaults to false")
+
+    let screen = try ComputerCommand(arguments: ["action": "observe", "app": "com.apple.TextEdit", "scope": "screen"])
+    try expect(screen.scope == .screen, "scope=screen parses")
+
+    do {
+        _ = try ComputerCommand(arguments: ["action": "observe", "app": "com.apple.TextEdit", "scope": "monitor"])
+        throw TestFailure.assertion("invalid scope should fail")
+    } catch let error as ComputerError {
+        try expect(error.errorDescription?.hasPrefix("invalid_arguments:") == true, "invalid scope is an invalid_arguments error")
+    }
 }
 
 private func testForegroundPolicyParsingAndErrors() throws {
@@ -251,15 +293,36 @@ private func testScreenshotCoordinatesMapToGlobalWindowCoordinates() throws {
     try expect(paddedPoint.x == 500 && paddedPoint.y == 350, "transparent screenshot padding preserves full-image mapping")
 }
 
+private func testCompositeUnionGeometryMapsClicksAcrossWindows() throws {
+    // A scope=app composite of two windows: union covers global (100,50)..(1400,650),
+    // rendered at scale 2 → 2600×1200 px. CaptureGeometry uses the union as its
+    // window frame, so a click anywhere in the composite maps to the right global
+    // point without any composite-specific math.
+    let geometry = CaptureGeometry(
+        windowFrame: CGRect(x: 100, y: 50, width: 1300, height: 600),
+        imageWidth: 2600,
+        imageHeight: 1200
+    )
+    let center = try geometry.screenPoint(x: 1300, y: 600)
+    try expect(center.x == 750 && center.y == 350, "composite midpoint maps to the union midpoint")
+    // A pixel over the second window (its global x starts at 1000) resolves inside it.
+    let secondWindow = try geometry.screenPoint(x: 2200, y: 0)
+    try expect(secondWindow.x == 1200 && secondWindow.y == 50, "composite pixel over the second window maps to its global position")
+    let normalized = try geometry.screenPoint(normalizedX: 500, normalizedY: 500)
+    try expect(normalized.x == 750 && normalized.y == 350, "normalized center maps to the union center regardless of composite resolution")
+}
+
 do {
     try testInitializesAndAdvertisesFullComputerTool()
     try testPreservesAccessibilityAndScreenshotContent()
     try testCoordinateAndKeyboardFallbackReachBackend()
+    try testScopeAndDisableDiffParseAndReachBackend()
     try testForegroundPolicyParsingAndErrors()
     try testKeyChordParserSupportsSkyStyleAliases()
     try testNativePermissionAndAppDiscoveryAreInspectable()
     try testWaitForChangeReturnsAConsistentNormalResultWhenAccessibilityIsAvailable()
     try testScreenshotCoordinatesMapToGlobalWindowCoordinates()
+    try testCompositeUnionGeometryMapsClicksAcrossWindows()
     print("cua-mac protocol tests passed")
 } catch {
     FileHandle.standardError.write(Data("cua-mac protocol tests failed: \(error)\n".utf8))

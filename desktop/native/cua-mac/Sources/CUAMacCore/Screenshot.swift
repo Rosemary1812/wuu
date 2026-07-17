@@ -244,3 +244,209 @@ private func captureSystemWindowPNG(_ windowID: CGWindowID, frame: CGRect, timeo
         windowID: windowID
     )
 }
+
+// One on-screen window's metadata, kept in front-to-back z-order.
+struct AppWindowInfo {
+    let windowID: CGWindowID
+    // Global, top-left (Core Graphics) coordinates in points, as reported by
+    // kCGWindowBounds.
+    let frame: CGRect
+    // kCGWindowLayer: the window level (0 for ordinary document windows, higher
+    // for floating panels). Kept for diagnostics; the array position, not the
+    // layer, is the source of intra-layer z-order.
+    let layer: Int
+    // Position within the on-screen list: 0 is frontmost. This array order is the
+    // only reliable z-order source — SCWindow exposes windowLayer but no
+    // within-layer ordering, and SCShareableContent.windows makes no order promise.
+    let zIndex: Int
+    let shareable: Bool
+}
+
+// One window's placement inside a composite image, in composite pixel coordinates.
+struct WindowScreenshotInfo {
+    let id: Int
+    let zIndex: Int
+    let originX: Int
+    let originY: Int
+    let width: Int
+    let height: Int
+
+    var dictionary: [String: Any] {
+        [
+            "id": id,
+            "z_index": zIndex,
+            "origin_x": originX,
+            "origin_y": originY,
+            "width": width,
+            "height": height,
+        ]
+    }
+}
+
+// Enumerate on-screen windows for compositing. processID == nil selects every
+// app's windows (scope=screen); a concrete pid selects one app (scope=app).
+//
+// .optionOnScreenOnly is deliberate: its array order (front to back) is the only
+// dependable z-order signal, and it excludes off-screen (e.g. concealed) windows,
+// which therefore never appear in a composite. .excludeDesktopElements drops the
+// wallpaper/desktop backing so the union frame is not inflated to the full screen.
+func appWindowInfos(processID: pid_t?) -> [AppWindowInfo] {
+    guard let windowList = CGWindowListCopyWindowInfo(
+        [.optionOnScreenOnly, .excludeDesktopElements],
+        kCGNullWindowID
+    ) as? [[String: Any]] else {
+        return []
+    }
+    var infos: [AppWindowInfo] = []
+    for info in windowList {
+        if let processID,
+           (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value != processID {
+            continue
+        }
+        guard let number = info[kCGWindowNumber as String] as? NSNumber,
+              let bounds = info[kCGWindowBounds as String] as? [String: Any],
+              let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+              frame.width > 1,
+              frame.height > 1 else {
+            continue
+        }
+        let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
+        let shareable = (info[kCGWindowSharingState as String] as? NSNumber)?.intValue != 0
+        // zIndex is dense over the matched windows so it stays a valid 0..n-1
+        // back-to-front index even when other apps' windows are filtered out.
+        infos.append(AppWindowInfo(
+            windowID: CGWindowID(number.uint32Value),
+            frame: frame,
+            layer: layer,
+            zIndex: infos.count,
+            shareable: shareable
+        ))
+    }
+    return infos
+}
+
+// Single-window capture primitive: the Core Graphics window image when the window
+// is shareable, else the /usr/sbin/screencapture -l fallback for windows that opt
+// out of sharing. This is a standalone copy of captureForegroundWindowPNG's
+// per-window path so the legacy single-window observe path stays byte-for-byte
+// unchanged while the composite path reuses the same primitive.
+@available(macOS 14.0, *)
+func captureWindowImage(windowID: CGWindowID, frame: CGRect, shareable: Bool) throws -> CGImage {
+    if shareable,
+       let image = CGWindowListCreateImage(.null, .optionIncludingWindow, windowID, [.boundsIgnoreFraming, .bestResolution]) {
+        return image
+    }
+    let capture = try captureSystemWindowPNG(windowID, frame: frame)
+    guard let rep = NSBitmapImageRep(data: capture.data),
+          let image = rep.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        throw ComputerError.operationFailed("could not decode system window screenshot for composite")
+    }
+    return image
+}
+
+// Every composited window is redrawn at one shared scale. A mixed-DPI, multi-display
+// arrangement otherwise yields per-window pixel densities that misalign the placement
+// math and break click mapping. Use the densest display so no window loses detail.
+func unifiedCaptureScale() -> CGFloat {
+    let densest = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
+    return densest > 0 ? densest : 2
+}
+
+// Pure layout math for a composite: the union of all window frames, plus each
+// window's placement in composite pixel coordinates (top-left origin, y-down, to
+// match the screenshot pixel convention CaptureGeometry uses). Kept free of AppKit
+// so it can be unit-tested without a display.
+func compositeLayout(frames: [CGRect], scale: CGFloat) -> (union: CGRect, placements: [CGRect]) {
+    let safeScale = scale > 0 ? scale : 1
+    let unionRaw = frames.reduce(CGRect.null) { $0.union($1) }
+    let union = unionRaw.isNull ? .zero : unionRaw
+    let placements = frames.map { frame in
+        CGRect(
+            x: (frame.origin.x - union.origin.x) * safeScale,
+            y: (frame.origin.y - union.origin.y) * safeScale,
+            width: frame.width * safeScale,
+            height: frame.height * safeScale
+        )
+    }
+    return (union, placements)
+}
+
+// Composite every selected on-screen window into one image, drawn back-to-front so
+// the frontmost window (z_index 0) wins overlaps. windowFrame is the union rect, so
+// CaptureGeometry's affine map turns a click anywhere in the composite into the right
+// global point with no other change. visiblePixelBounds is intentionally skipped: it
+// is an O(W×H) per-pixel scan and a multi-window composite is large; the union rect
+// already bounds the content.
+@available(macOS 14.0, *)
+func captureAppCompositePNG(processID: pid_t, scope: CaptureScope) throws -> (capture: WindowCapture, windows: [WindowScreenshotInfo]) {
+    guard CGPreflightScreenCaptureAccess() else {
+        throw ComputerError.permissionDenied("Screen Recording permission is required for window screenshots")
+    }
+    let infos = appWindowInfos(processID: scope == .screen ? nil : processID)
+    guard !infos.isEmpty else {
+        throw ComputerError.operationFailed("no capturable on-screen window found for composite capture")
+    }
+    let scale = unifiedCaptureScale()
+    let layout = compositeLayout(frames: infos.map(\.frame), scale: scale)
+    let widthPixels = max(1, Int((layout.union.width * scale).rounded()))
+    let heightPixels = max(1, Int((layout.union.height * scale).rounded()))
+    guard let context = CGContext(
+        data: nil,
+        width: widthPixels,
+        height: heightPixels,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        throw ComputerError.operationFailed("could not allocate composite image context")
+    }
+    context.interpolationQuality = .high
+
+    let placed: [(info: AppWindowInfo, placement: CGRect)] = infos.indices.map { index in
+        (info: infos[index], placement: layout.placements[index])
+    }
+    // Draw from back to front: highest zIndex first so a lower zIndex (nearer the
+    // front) paints over it. The CGContext origin is bottom-left, so the top-left
+    // placement rect is flipped into a bottom-left draw rect; the resulting image is
+    // therefore top-down, matching the screenshot pixel convention.
+    for entry in placed.sorted(by: { $0.info.zIndex > $1.info.zIndex }) {
+        guard let image = try? captureWindowImage(
+            windowID: entry.info.windowID,
+            frame: entry.info.frame,
+            shareable: entry.info.shareable
+        ) else { continue }
+        let drawRect = CGRect(
+            x: entry.placement.origin.x,
+            y: CGFloat(heightPixels) - entry.placement.origin.y - entry.placement.height,
+            width: entry.placement.width,
+            height: entry.placement.height
+        )
+        context.draw(image, in: drawRect)
+    }
+    guard let composite = context.makeImage(),
+          let data = NSBitmapImageRep(cgImage: composite).representation(using: .png, properties: [:]) else {
+        throw ComputerError.operationFailed("composite screenshot produced no image")
+    }
+    let windows = placed.map { entry in
+        WindowScreenshotInfo(
+            id: Int(entry.info.windowID),
+            zIndex: entry.info.zIndex,
+            originX: Int(entry.placement.origin.x.rounded()),
+            originY: Int(entry.placement.origin.y.rounded()),
+            width: Int(entry.placement.width.rounded()),
+            height: Int(entry.placement.height.rounded())
+        )
+    }
+    let capture = WindowCapture(
+        data: data,
+        geometry: CaptureGeometry(
+            windowFrame: layout.union,
+            imageWidth: composite.width,
+            imageHeight: composite.height
+        ),
+        // infos[0] is the frontmost window; keep its id for lastWindowIDs continuity.
+        windowID: infos[0].windowID
+    )
+    return (capture, windows)
+}
