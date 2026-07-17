@@ -284,7 +284,7 @@ export function JumpToLatestPill({
           strokeLinejoin="round"
         />
       </svg>
-      <span>{label}</span>
+      <span>{accessibleLabel}</span>
     </>
   );
 
@@ -296,7 +296,7 @@ export function JumpToLatestPill({
       <button
         type="button"
         className="jump-to-latest-pill jump-to-latest-pill-anchored"
-        aria-label={label}
+        aria-label={accessibleLabel}
         style={{
           left: `${position.left}px`,
           bottom: `${position.bottom}px`,

@@ -198,6 +198,10 @@ describe("JumpToLatestPill", () => {
     const pill = host.querySelector<HTMLButtonElement>(".jump-to-latest-pill");
     expect(pill).not.toBeNull();
     expect(pill?.className).toContain("jump-to-latest-pill-sticky-centered");
+    expect(pill?.querySelector("span")?.textContent).toBeTruthy();
+    expect(pill?.querySelector("span")?.textContent).toBe(
+      pill?.getAttribute("aria-label"),
+    );
   });
 
   it("shows immediately when mounted into an already scrolled-away container", () => {
@@ -340,6 +344,10 @@ describe("JumpToLatestPill", () => {
       ".jump-to-latest-pill-anchored",
     );
     expect(pill).not.toBeNull();
+    expect(pill?.querySelector("span")?.textContent).toBeTruthy();
+    expect(pill?.querySelector("span")?.textContent).toBe(
+      pill?.getAttribute("aria-label"),
+    );
     // left = container.left + container.width / 2 = 100 + 300
     expect(pill?.style.left).toBe("400px");
     // Expanded composers move their frame above the outer footer. Position
