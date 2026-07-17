@@ -12,6 +12,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolerrors"
 )
 
 // EmptyAnswerError is returned when the model completes a turn without
@@ -994,7 +995,11 @@ func errorJSON(err error) string {
 		"error":            message,
 		"next_suggestions": toolErrorNextSuggestions(message),
 	}
-	if kind := extractToolErrorKind(message); kind != "" {
+	kind := toolerrors.Kind(err)
+	if kind == "" {
+		kind = extractToolErrorKind(message)
+	}
+	if kind != "" {
 		payload["error_kind"] = kind
 	}
 	b, marshalErr := json.Marshal(payload)

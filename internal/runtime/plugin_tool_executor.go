@@ -11,6 +11,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/pluginhost"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolerrors"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
@@ -86,7 +87,10 @@ func (e *pluginToolExecutor) toolInput(ctx context.Context, call providers.ToolC
 		arguments = "{}"
 	}
 	if !json.Valid([]byte(arguments)) {
-		return pluginhost.ToolExecuteInput{}, fmt.Errorf("tool %q arguments are invalid JSON", call.Name)
+		return pluginhost.ToolExecuteInput{}, toolerrors.New(
+			toolerrors.InvalidArguments,
+			fmt.Sprintf("tool %q arguments are invalid JSON", call.Name),
+		)
 	}
 	stepIndex, _ := toolctx.StepIndex(ctx)
 	return pluginhost.ToolExecuteInput{

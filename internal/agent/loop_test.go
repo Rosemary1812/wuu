@@ -2805,7 +2805,6 @@ func TestRunToolLoop_ReturnsInvalidToolArgumentsToModel(t *testing.T) {
 		{ID: "call_1", Name: "update_plan", Arguments: `{"plan": `},
 	}}, {Content: "recovered"}}}
 	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "update_plan"}}}
-	tools.err = errors.New("invalid tool arguments: unexpected EOF")
 	var persisted []providers.ChatMessage
 	result, err := RunToolLoop(context.Background(), nil, LoopConfig{
 		Model: "m",
@@ -2826,11 +2825,11 @@ func TestRunToolLoop_ReturnsInvalidToolArgumentsToModel(t *testing.T) {
 	if len(persisted[0].ToolCalls) != 1 || persisted[0].ToolCalls[0].Arguments != `{"plan": ` {
 		t.Fatalf("invalid tool call should be persisted for pairing, got %+v", persisted[0])
 	}
-	if persisted[1].Role != "tool" || persisted[1].ToolCallID != "call_1" || !strings.Contains(persisted[1].Content, "invalid tool arguments") {
+	if persisted[1].Role != "tool" || persisted[1].ToolCallID != "call_1" || !strings.Contains(persisted[1].Content, `"error_kind":"invalid_tool_arguments"`) {
 		t.Fatalf("expected invalid tool arguments result, got %+v", persisted[1])
 	}
-	if calls := tools.recordedCalls(); len(calls) != 1 {
-		t.Fatalf("invalid tool call should execute through tool error path, got %+v", calls)
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("invalid tool call must not reach the executor, got %+v", calls)
 	}
 	if len(step.calls) != 2 {
 		t.Fatalf("expected model retry after tool error, got %d calls", len(step.calls))

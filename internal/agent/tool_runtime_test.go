@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -180,6 +181,18 @@ func (panickingTool) Execute(context.Context, providers.ToolCall) (string, error
 	panic("kaboom")
 }
 
+type fileWritingTool struct {
+	path string
+}
+
+func (t fileWritingTool) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{Name: "write_file"}}
+}
+
+func (t fileWritingTool) Execute(context.Context, providers.ToolCall) (string, error) {
+	return "", os.WriteFile(t.path, []byte("partial output"), 0o600)
+}
+
 func TestTurnToolRuntimeRecoversFromToolPanic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -201,6 +214,26 @@ func TestTurnToolRuntimeRecoversFromToolPanic(t *testing.T) {
 	}
 	if msgs[0].ToolResult == nil || !msgs[0].ToolResult.IsError {
 		t.Fatalf("panic result should be marked as error: %+v", msgs[0].ToolResult)
+	}
+}
+
+func TestTurnToolRuntimeRejectsTruncatedWriteFileBeforeSideEffects(t *testing.T) {
+	target := t.TempDir() + "/page.html"
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: fileWritingTool{path: target}})
+
+	msgs, err := runtime.ExecuteFinalCalls(context.Background(), []providers.ToolCall{{
+		ID:        "call_write",
+		Name:      "write_file",
+		Arguments: `{"path":"page.html","content":"truncated`,
+	}}, nil)
+	if err != nil {
+		t.Fatalf("ExecuteFinalCalls: %v", err)
+	}
+	if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("truncated write_file modified target: %v", err)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Content, `"error_kind":"invalid_tool_arguments"`) {
+		t.Fatalf("expected structured invalid arguments result, got %+v", msgs)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/pluginhost"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolerrors"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
@@ -124,5 +125,27 @@ func TestPluginToolExecutorKeepsConcurrentCallsIsolated(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Fatal(err)
+	}
+}
+
+func TestPluginToolExecutorRejectsInvalidArgumentsBeforeHooksOrExecution(t *testing.T) {
+	inner := &recordingToolExecutor{}
+	plugin := &toolPluginClient{}
+	executor := newPluginToolExecutor(inner, pluginhost.New(plugin), "thread", "/workspace")
+
+	_, err := executor.Execute(context.Background(), providers.ToolCall{
+		ID: "call-write", Name: "write_file", Arguments: `{"path":"page.html","content":"truncated`,
+	})
+	if err == nil {
+		t.Fatal("expected invalid arguments error")
+	}
+	if got := toolerrors.Kind(err); got != toolerrors.InvalidArguments {
+		t.Fatalf("error kind = %q, want %q: %v", got, toolerrors.InvalidArguments, err)
+	}
+	if len(inner.calls) != 0 {
+		t.Fatalf("inner executor must not be called, got %+v", inner.calls)
+	}
+	if len(plugin.inputs) != 0 {
+		t.Fatalf("hooks must not be called for invalid input, got %+v", plugin.inputs)
 	}
 }

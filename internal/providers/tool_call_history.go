@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/toolerrors"
 )
 
 // ValidateAssistantToolCalls rejects malformed provider tool-call metadata
@@ -114,23 +116,35 @@ func validateToolCallArguments(call ToolCall) error {
 
 func invalidToolArgumentsContent(err error) string {
 	payload, marshalErr := json.Marshal(map[string]any{
-		"error": "invalid tool arguments: " + err.Error(),
-		"ok":    false,
+		"error":      "invalid tool arguments: " + err.Error(),
+		"error_kind": toolerrors.InvalidArguments,
+		"ok":         false,
 	})
 	if marshalErr != nil {
-		return `{"error":"invalid tool arguments","ok":false}`
+		return `{"error":"invalid tool arguments","error_kind":"invalid_tool_arguments","ok":false}`
 	}
 	return string(payload)
 }
 
 func isInvalidToolArgumentsResult(content string) bool {
 	var payload struct {
-		Error string `json:"error"`
+		OK        *bool  `json:"ok"`
+		Error     string `json:"error"`
+		ErrorKind string `json:"error_kind"`
 	}
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
 		return false
 	}
-	return strings.HasPrefix(payload.Error, "invalid tool arguments")
+	if payload.OK == nil || *payload.OK || strings.TrimSpace(payload.Error) == "" {
+		return false
+	}
+	if payload.ErrorKind != "" {
+		return payload.ErrorKind == toolerrors.InvalidArguments
+	}
+	// Older persisted tool errors did not carry error_kind. A paired,
+	// explicitly failed result is sufficient to prove that malformed arguments
+	// were rejected; its human-readable wording is not part of the protocol.
+	return true
 }
 
 func hasInvalidToolArgumentsResultInCurrentBlock(msgs []ChatMessage, assistantIndex int, callID string) bool {

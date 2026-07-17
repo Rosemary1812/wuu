@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolerrors"
 	"github.com/blueberrycongee/wuu/internal/toolledger"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
@@ -727,6 +729,13 @@ func (r *TurnToolRuntime) awaitRunResult(ctx context.Context, run *toolRun) (too
 func executeToolResult(ctx context.Context, executor ToolExecutor, call providers.ToolCall) (result toolresult.Result, err error) {
 	if executor == nil {
 		return toolresult.Result{}, context.Canceled
+	}
+	arguments := strings.TrimSpace(call.Arguments)
+	if arguments != "" && !json.Valid([]byte(arguments)) {
+		return toolresult.Result{}, toolerrors.New(
+			toolerrors.InvalidArguments,
+			fmt.Sprintf("tool %q arguments are invalid JSON", call.Name),
+		)
 	}
 	// A panic in a tool executor must not crash the whole process: convert it
 	// into an error result so the turn survives and the model sees the failure.

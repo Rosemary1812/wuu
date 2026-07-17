@@ -118,7 +118,7 @@ func TestRepairToolCallHistory_keepsRecoverableInvalidToolArguments(t *testing.T
 			Role:       "tool",
 			Name:       "update_plan",
 			ToolCallID: "call_plan",
-			Content:    `{"error":"invalid tool arguments: unexpected EOF","ok":false}`,
+			Content:    `{"error":"request body ended before the object closed","error_kind":"invalid_tool_arguments","ok":false}`,
 		},
 		{Role: "user", Content: "continue again"},
 	}
@@ -134,6 +134,29 @@ func TestRepairToolCallHistory_keepsRecoverableInvalidToolArguments(t *testing.T
 	}
 	if got[2].ToolCallID != "call_plan" || got[3].Content != "continue again" {
 		t.Fatalf("unexpected repaired messages: %+v", got)
+	}
+}
+
+func TestRepairToolCallHistory_keepsLegacyFailedResultForInvalidToolArguments(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "continue"},
+		{Role: "assistant", ToolCalls: []ToolCall{{
+			ID: "call_write", Name: "write_file", Arguments: `{"path":"page.html","content":"truncated`,
+		}}},
+		{
+			Role:       "tool",
+			Name:       "write_file",
+			ToolCallID: "call_write",
+			Content:    `{"error":"tool \"write_file\" arguments are invalid JSON","ok":false}`,
+		},
+	}
+
+	got, err := RepairAndValidateToolCallHistory(msgs)
+	if err != nil {
+		t.Fatalf("RepairAndValidateToolCallHistory: %v", err)
+	}
+	if len(got) != 3 || got[2].ToolCallID != "call_write" {
+		t.Fatalf("expected paired legacy failure to remain recoverable, got %+v", got)
 	}
 }
 
@@ -159,7 +182,7 @@ func TestRepairToolCallHistory_synthesizesInvalidToolArgumentsOutput(t *testing.
 	if got[2].Role != "tool" || got[2].ToolCallID != "call_plan" {
 		t.Fatalf("expected synthetic tool result, got %+v", got[2])
 	}
-	if !strings.Contains(got[2].Content, "invalid tool arguments") {
+	if !strings.Contains(got[2].Content, `"error_kind":"invalid_tool_arguments"`) {
 		t.Fatalf("expected invalid arguments content, got %q", got[2].Content)
 	}
 }
@@ -175,7 +198,7 @@ func TestRepairToolCallHistory_keepsInvalidToolArgumentsWithoutMatchingToolError
 				Arguments: `{"plan": `,
 			}},
 		},
-		{Role: "tool", Name: "update_plan", ToolCallID: "call_plan", Content: `{"error":"different failure"}`},
+		{Role: "tool", Name: "update_plan", ToolCallID: "call_plan", Content: `{"error":"different failure","error_kind":"tool","ok":false}`},
 	}
 	_, err := RepairAndValidateToolCallHistory(msgs)
 	if err == nil {
