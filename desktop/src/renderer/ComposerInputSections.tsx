@@ -282,7 +282,16 @@ function buildQueueRows(
       message,
       kind: "queue" as const
     }))
-  ];
+  ].sort((left, right) => {
+    const leftPosition = left.message.heldPosition;
+    const rightPosition = right.message.heldPosition;
+    if (leftPosition !== undefined && rightPosition !== undefined) {
+      return leftPosition - rightPosition;
+    }
+    if (leftPosition !== undefined) return -1;
+    if (rightPosition !== undefined) return 1;
+    return 0;
+  });
 }
 
 export function ComposerQueueStrip({
@@ -308,8 +317,15 @@ export function ComposerQueueStrip({
     return null;
   }
 
+  const hasHeldMessages = rows.some((row) => row.message.held);
   return (
-    <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
+    <>
+      {hasHeldMessages ? (
+        <div className="composer-held-notice" role="status">
+          {t("composer.heldNotice")}
+        </div>
+      ) : null}
+      <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
       {rows.map((row, index) => (
         <ComposerQueueItem
           key={row.key}
@@ -317,7 +333,9 @@ export function ComposerQueueStrip({
           message={row.message}
           kind={row.kind}
           onGuide={
-            row.kind === "queue" ? () => onGuideQueuedMessage(row.message.id) : undefined
+            row.kind === "queue" || row.message.held
+              ? () => onGuideQueuedMessage(row.message.id)
+              : undefined
           }
           onEdit={() =>
             row.kind === "queue"
@@ -331,7 +349,8 @@ export function ComposerQueueStrip({
           }
         />
       ))}
-    </ol>
+      </ol>
+    </>
   );
 }
 
@@ -381,7 +400,25 @@ function ComposerQueueItem({
         >
           <PencilLine className="icon-sm" aria-hidden="true" />
         </button>
-        {kind === "guide" ? (
+        {onGuide ? (
+          <button
+            type="button"
+            className="composer-queue-action composer-input-header-action"
+            aria-label={
+              message.held
+                ? t("composer.continueHeld", { position })
+                : t("composer.convertToGuide", { position })
+            }
+            title={
+              message.held
+                ? t("composer.continueHeldTitle")
+                : t("composer.convertToGuideTitle")
+            }
+            onClick={onGuide}
+          >
+            <CornerDownRight className="icon-sm" aria-hidden="true" />
+          </button>
+        ) : kind === "guide" ? (
           <button
             type="button"
             className="composer-queue-action composer-input-header-action"
@@ -390,16 +427,6 @@ function ComposerQueueItem({
             onClick={onRemove}
           >
             <CornerUpLeft className="icon-sm" aria-hidden="true" />
-          </button>
-        ) : onGuide ? (
-          <button
-            type="button"
-            className="composer-queue-action composer-input-header-action"
-            aria-label={t("composer.convertToGuide", { position })}
-            title={t("composer.convertToGuideTitle")}
-            onClick={onGuide}
-          >
-            <CornerDownRight className="icon-sm" aria-hidden="true" />
           </button>
         ) : null}
         <button

@@ -2634,11 +2634,14 @@ export function App(): JSX.Element {
         setPrompt={setPrompt}
         files={composerFiles}
         images={composerImages}
-        // Chat-style threads (DM/group) never surface the queue strip —
-        // pending sends render as chat bubbles in ChatThreadView instead —
-        // and the send button stays a send button while the agent replies
-        // (chat semantics, issue #10). Work threads keep the queue UI.
-        queuedMessages={activeThreadIsChatStyle ? [] : queuedMessages}
+        // Chat-style threads keep normal pending sends as bubbles, but surface
+        // interrupted held work here so the user can explicitly continue,
+        // edit, or remove it. Work threads always keep the queue UI.
+        queuedMessages={
+          activeThreadIsChatStyle
+            ? queuedMessages.filter((message) => message.held)
+            : queuedMessages
+        }
         guideMessages={guideMessages}
         running={
           activeThreadIsChatStyle

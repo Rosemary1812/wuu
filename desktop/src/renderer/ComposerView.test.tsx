@@ -1447,6 +1447,64 @@ describe("Composer queue strip", () => {
     expect(rows[2]?.querySelector(".composer-queue-index")?.textContent).toBe("3");
   });
 
+  it("shows interrupted held work in server order with per-item continue controls", () => {
+    const onGuideQueuedMessage = vi.fn();
+    renderComposer({
+      running: false,
+      queuedMessages: [
+        {
+          id: "queue-1",
+          text: "第一个",
+          images: [],
+          files: [],
+          held: true,
+          heldPosition: 1,
+          origin: "queue",
+        },
+        {
+          id: "queue-2",
+          text: "第二个",
+          images: [],
+          files: [],
+          held: true,
+          heldPosition: 2,
+          origin: "queue",
+        },
+      ],
+      guideMessages: [
+        {
+          id: "guide-1",
+          text: "先前引导",
+          images: [],
+          files: [],
+          held: true,
+          heldPosition: 0,
+          origin: "steer",
+        },
+      ],
+      onGuideQueuedMessage,
+    });
+
+    expect(container.querySelector(".composer-held-notice")?.textContent).toBe(
+      "当前回复已中断，排队任务暂不发送",
+    );
+    const rows = Array.from(
+      container.querySelectorAll<HTMLLIElement>(".composer-queue-row"),
+    );
+    expect(rows.map((row) => row.querySelector(".composer-queue-preview")?.textContent)).toEqual([
+      "先前引导",
+      "第一个",
+      "第二个",
+    ]);
+    const continueGuide = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="继续暂存任务 1"]',
+    );
+    act(() => {
+      continueGuide?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onGuideQueuedMessage).toHaveBeenCalledWith("guide-1");
+  });
+
   it("lives inside the composer shell so the queue spans the input width", () => {
     renderComposer({
       running: true,

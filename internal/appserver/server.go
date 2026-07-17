@@ -103,6 +103,7 @@ type threadState struct {
 	// operation deliberately handed to boot recovery.
 	compensationDeferred bool
 	pendingSteers        []providers.ChatMessage
+	interrupting         bool
 	// Worker-tree freeze (turn/interrupt): while set, agent-completion drains
 	// hold their pending synthetic turns. The next user-initiated turn folds
 	// the whole-tree snapshot into its request (frozenTreeContext) and marks
@@ -193,6 +194,7 @@ type Server struct {
 	queuedTurnMu        sync.Mutex
 	pendingQueuedTurns  map[string][]queuedTurn
 	drainingQueuedTurns map[string]bool
+	heldUserWorkMu      sync.Mutex
 
 	goalContinuationMu       sync.Mutex
 	drainingGoalContinuation map[string]bool

@@ -680,7 +680,7 @@ describe("createRuntimeSettingsActions", () => {
     expect(harness.getRuntimeMenus().accessMenuOpen).toBe(false);
   });
 
-  it("interrupts active and pane-specific threads and clears queued messages", async () => {
+  it("interrupts active and pane-specific threads without clearing pending messages", async () => {
     const api = installWuuApi();
     const primary = thread("primary-thread");
     const secondary = thread("secondary-thread");
@@ -699,13 +699,6 @@ describe("createRuntimeSettingsActions", () => {
 
     expect(api.interruptTurn).toHaveBeenNthCalledWith(1, "secondary-thread");
     expect(api.interruptTurn).toHaveBeenNthCalledWith(2, "primary-thread");
-    expect(harness.clearThreadPendingComposerMessages).toHaveBeenNthCalledWith(
-      1,
-      "secondary-thread",
-    );
-    expect(harness.clearThreadPendingComposerMessages).toHaveBeenNthCalledWith(
-      2,
-      "primary-thread",
-    );
+    expect(harness.clearThreadPendingComposerMessages).not.toHaveBeenCalled();
   });
 });

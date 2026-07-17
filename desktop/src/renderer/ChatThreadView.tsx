@@ -672,7 +672,9 @@ function PendingChatRow({
           {message.files.length ? <MessageFileList files={message.files} /> : null}
           {message.text.trim() ? <RichContent text={message.text} cwd={cwd} /> : null}
         </div>
-        <div className="chat-pending-hint">{t("chat.sending")}</div>
+        <div className="chat-pending-hint">
+          {message.held ? t("chat.held") : t("chat.sending")}
+        </div>
       </div>
     </div>
   );

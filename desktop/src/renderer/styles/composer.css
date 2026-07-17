@@ -649,6 +649,13 @@
   list-style: none;
 }
 
+.composer-held-notice {
+  padding: 8px var(--composer-input-header-inline-padding, 8px);
+  color: var(--turn-warning-text, var(--warning));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .composer-queue-row {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;

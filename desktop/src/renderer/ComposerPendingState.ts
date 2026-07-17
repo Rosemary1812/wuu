@@ -29,6 +29,85 @@ import {
 import { isRecord, recordValue, stringValue } from "./ToolActivity";
 import { localizedText, translateCurrent } from "./i18n";
 
+function heldComposerMessage(
+  value: unknown,
+  position: number,
+): QueuedComposerMessage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const id = stringValue(value, "id");
+  const origin = stringValue(value, "origin");
+  if (!id || (origin !== "queue" && origin !== "steer")) {
+    return undefined;
+  }
+  const images = (Array.isArray(value.images) ? value.images : []).flatMap(
+    (candidate, index) => {
+      if (!isRecord(candidate)) {
+        return [];
+      }
+      const mediaType = stringValue(candidate, "media_type");
+      const data = stringValue(candidate, "data");
+      return mediaType && data
+        ? [{ id: `${id}-held-image-${index}`, media_type: mediaType, data }]
+        : [];
+    },
+  );
+  const files = (Array.isArray(value.files) ? value.files : []).flatMap(
+    (candidate, index) => {
+      if (!isRecord(candidate)) {
+        return [];
+      }
+      const mediaType = stringValue(candidate, "media_type");
+      const data = stringValue(candidate, "data");
+      if (!mediaType || !data) {
+        return [];
+      }
+      const filename = stringValue(candidate, "filename");
+      return [
+        {
+          id: `${id}-held-file-${index}`,
+          media_type: mediaType,
+          data,
+          ...(filename ? { filename } : {}),
+        },
+      ];
+    },
+  );
+  return {
+    id,
+    text: stringValue(value, "prompt") ?? "",
+    images,
+    files,
+    held: true,
+    heldPosition: position,
+    origin,
+  };
+}
+
+function heldComposerMessagesFromParams(
+  params: Record<string, unknown>,
+  method: string,
+): { threadID: string; messages: QueuedComposerMessage[] } | undefined {
+  const thread = recordValue(params, "thread");
+  const threadID =
+    stringValue(params, "thread_id") ||
+    (isRecord(thread) ? stringValue(thread, "id") : "");
+  if (!threadID) {
+    return undefined;
+  }
+  const key = method === "thread/resumed" ? "held_user_messages" : "messages";
+  const raw = params[key];
+  if (method !== "thread/resumed" && !Array.isArray(raw)) {
+    return undefined;
+  }
+  const messages = (Array.isArray(raw) ? raw : []).flatMap((value, position) => {
+    const message = heldComposerMessage(value, position);
+    return message ? [message] : [];
+  });
+  return { threadID, messages };
+}
+
 export type ComposerPendingStateController = {
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   pendingComposerMessagesByThreadRef: MutableRefObject<PendingComposerMessagesByThread>;
@@ -154,10 +233,33 @@ export function useComposerPendingState({
       return;
     }
     const threadID = stringValue(params, "thread_id");
+    if (
+      event.message.method === "turn/held" ||
+      event.message.method === "thread/resumed"
+    ) {
+      const snapshot = heldComposerMessagesFromParams(
+        params,
+        event.message.method,
+      );
+      if (!snapshot) {
+        return;
+      }
+      updateThreadPendingComposerMessages(snapshot.threadID, (previous) => ({
+        queued: [
+          ...previous.queued.filter((message) => !message.held),
+          ...snapshot.messages.filter((message) => message.origin === "queue"),
+        ],
+        guides: [
+          ...previous.guides.filter((message) => !message.held),
+          ...snapshot.messages.filter((message) => message.origin === "steer"),
+        ],
+      }));
+      return;
+    }
     if (event.message.method === "turn/started") {
       const queueID = stringValue(params, "queue_id");
       if (queueID) {
-        removePendingComposerMessageByID(threadID, queueID, "queue");
+        removePendingComposerMessageByID(threadID, queueID);
       }
       return;
     }
@@ -347,7 +449,13 @@ export function useComposerPendingState({
       id,
       "queue",
       activeThreadIDForState(getAppState()),
-    );
+    ) ??
+      findPendingComposerMessage(
+        pendingComposerMessagesByThreadRef.current,
+        id,
+        "guide",
+        activeThreadIDForState(getAppState()),
+      );
     if (!target) {
       return;
     }
@@ -356,7 +464,7 @@ export function useComposerPendingState({
     if (!targetThread) {
       return;
     }
-    if (!isThreadRunning(targetThread)) {
+    if (!isThreadRunning(targetThread) && !target.message.held) {
       if (!(await removeQueuedMessage(id))) {
         return;
       }
@@ -365,8 +473,8 @@ export function useComposerPendingState({
       }
       return;
     }
-    const turnID = activeTurnIDForThread(targetThread);
-    if (!turnID) {
+    const turnID = activeTurnIDForThread(targetThread) ?? "";
+    if (!turnID && !target.message.held) {
       setStatus(localizedText("composer.noActiveTurnToGuide"));
       return;
     }
@@ -382,7 +490,9 @@ export function useComposerPendingState({
       );
       updateThreadPendingComposerMessages(target.threadID, (previous) => ({
         queued: previous.queued.filter((message) => message.id !== id),
-        guides: [...previous.guides, target.message],
+        guides: target.message.held
+          ? previous.guides.filter((message) => message.id !== id)
+          : [...previous.guides, target.message],
       }));
     } catch (error) {
       setStatus(

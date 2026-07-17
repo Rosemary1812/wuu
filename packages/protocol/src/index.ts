@@ -1800,6 +1800,20 @@ export type QueuedTurn = {
   file_count?: number;
 };
 
+export type HeldUserMessage = {
+  id: string;
+  thread_id: string;
+  origin: "queue" | "steer";
+  prompt?: string;
+  images?: InputImage[];
+  files?: InputFile[];
+};
+
+export type ThreadResumeResult = {
+  thread: Thread;
+  held_user_messages?: HeldUserMessage[];
+};
+
 export type ServerEvent = {
   workdir: string;
 } & (
@@ -2168,7 +2182,7 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   listAgentTemplates: () => Promise<AgentTemplateListResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
-  resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
+  resumeThread: (sessionId?: string) => Promise<ThreadResumeResult>;
   startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;
   forkThread: (
     threadId: string,

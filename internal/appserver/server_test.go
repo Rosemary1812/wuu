@@ -5000,7 +5000,7 @@ func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
 	}
 }
 
-func TestServerInterruptDiscardsPendingUserWorkBeforeHistoryEdit(t *testing.T) {
+func TestServerInterruptHoldsPendingUserWorkInOrderAndReleasesOne(t *testing.T) {
 	client := newBlockingStreamClient("done")
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StreamRunner.Client = client
@@ -5023,6 +5023,10 @@ func TestServerInterruptDiscardsPendingUserWorkBeforeHistoryEdit(t *testing.T) {
 	if err := srv.handleLine(context.Background(), []byte(queueReq)); err != nil {
 		t.Fatalf("turn/queue: %v", err)
 	}
+	queueReq = fmt.Sprintf(`{"id":"3b","method":"turn/queue","params":{"thread_id":%q,"prompt":"second follow-up","client_id":"queued-2"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(queueReq)); err != nil {
+		t.Fatalf("second turn/queue: %v", err)
+	}
 
 	steerReq := fmt.Sprintf(`{"id":"4","method":"turn/steer","params":{"thread_id":%q,"expected_turn_id":%q,"prompt":"guide now","client_id":"guide-1"}}`, threadID, started.Turn.ID)
 	if err := srv.handleLine(context.Background(), []byte(steerReq)); err != nil {
@@ -5038,17 +5042,61 @@ func TestServerInterruptDiscardsPendingUserWorkBeforeHistoryEdit(t *testing.T) {
 		t.Fatalf("turn/interrupt returned error: %+v", interruptResponse["error"])
 	}
 	if srv.hasQueuedUserTurns(threadID) {
-		t.Fatal("interrupt should discard queued user turns")
+		t.Fatal("held turns must not remain in the runnable queue")
 	}
 	th := srv.thread(threadID)
 	th.mu.Lock()
 	pendingSteers := len(th.pendingSteers)
 	th.mu.Unlock()
 	if pendingSteers != 0 {
-		t.Fatalf("interrupt should discard pending steers, got %d", pendingSteers)
+		t.Fatalf("interrupt should move pending steers out of the active turn, got %d", pendingSteers)
+	}
+	held, err := srv.loadHeldUserTurns(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 3 || held[0].id != "guide-1" || held[1].id != "queued-1" || held[2].id != "queued-2" {
+		t.Fatalf("interrupt did not preserve steer-before-queue order: %+v", held)
+	}
+	if held[0].origin != session.HeldUserWorkOriginSteer || held[1].origin != session.HeldUserWorkOriginQueue {
+		t.Fatalf("held origins were not preserved: %+v", held)
 	}
 
 	waitForMethod(t, out, NotificationTurnError)
+
+	resumeReq := fmt.Sprintf(`{"id":"5b","method":"thread/resume","params":{"session_id":%q}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(resumeReq)); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+	resumed := remarshal[ThreadResumeResult](t, responseByID(t, parseOutput(t, out.String()), "5b")["result"])
+	if len(resumed.HeldUserMessages) != 3 || resumed.HeldUserMessages[0].ID != "guide-1" || resumed.HeldUserMessages[2].ID != "queued-2" {
+		t.Fatalf("resume did not return held messages in order: %+v", resumed.HeldUserMessages)
+	}
+
+	releaseReq := fmt.Sprintf(`{"id":"5c","method":"turn/steer","params":{"thread_id":%q,"prompt":"queued follow-up","client_id":"queued-1"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(releaseReq)); err != nil {
+		t.Fatalf("idle held turn/steer: %v", err)
+	}
+	releaseResponse := responseByID(t, parseOutput(t, out.String()), "5c")
+	if releaseResponse["error"] != nil {
+		t.Fatalf("idle held turn/steer returned error: %+v", releaseResponse["error"])
+	}
+	held, err = srv.loadHeldUserTurns(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 2 || held[0].id != "guide-1" || held[1].id != "queued-2" {
+		t.Fatalf("releasing queued-1 changed other held messages: %+v", held)
+	}
+	close(client.release)
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	held, err = srv.loadHeldUserTurns(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 2 {
+		t.Fatalf("held messages auto-drained after released turn completed: %+v", held)
+	}
 
 	target := started.Turn.Items[0]
 	editReq := fmt.Sprintf(`{"id":"6","method":"thread/edit-message","params":{"thread_id":%q,"turn_id":%q,"item_id":%q}}`, threadID, started.Turn.ID, target.ID)

@@ -181,6 +181,110 @@ describe("useComposerPendingState", () => {
     ).toBeUndefined();
   });
 
+  it("reconciles held messages in server order and releases only the selected idle item", async () => {
+    const steerTurn = vi.fn().mockResolvedValue({ turn_id: "turn-released" });
+    installWuuStub({ steerTurn });
+    const hook = await renderComposerPendingState();
+    const heldMessages = [
+      {
+        id: "guide-1",
+        thread_id: "thread-a",
+        origin: "steer",
+        prompt: "Guide",
+        images: [],
+        files: [],
+      },
+      {
+        id: "queue-1",
+        thread_id: "thread-a",
+        origin: "queue",
+        prompt: "First",
+        images: [{ media_type: "image/png", data: "aW1hZ2U=" }],
+        files: [],
+      },
+      {
+        id: "queue-2",
+        thread_id: "thread-a",
+        origin: "queue",
+        prompt: "Second",
+        images: [],
+        files: [],
+      },
+    ];
+
+    act(() => {
+      hook.get().syncPendingComposerMessagesFromServerEvent({
+        kind: "notification",
+        message: {
+          method: "turn/held",
+          params: { thread_id: "thread-a", messages: heldMessages },
+        },
+      } as ServerEvent);
+    });
+
+    const pending = hook.get().pendingComposerMessagesByThread["thread-a"];
+    expect(pending?.guides).toEqual([
+      expect.objectContaining({
+        id: "guide-1",
+        held: true,
+        heldPosition: 0,
+        origin: "steer",
+      }),
+    ]);
+    expect(pending?.queued).toEqual([
+      expect.objectContaining({
+        id: "queue-1",
+        held: true,
+        heldPosition: 1,
+        images: [
+          expect.objectContaining({ media_type: "image/png", data: "aW1hZ2U=" }),
+        ],
+      }),
+      expect.objectContaining({ id: "queue-2", heldPosition: 2 }),
+    ]);
+
+    await act(async () => {
+      await hook.get().guideQueuedMessage("queue-1");
+    });
+
+    expect(steerTurn).toHaveBeenCalledWith(
+      "thread-a",
+      "",
+      "First",
+      [{ media_type: "image/png", data: "aW1hZ2U=" }],
+      "queue-1",
+      [],
+    );
+    expect(
+      hook
+        .get()
+        .pendingComposerMessagesByThread["thread-a"]?.queued.map((item) => item.id),
+    ).toEqual(["queue-2"]);
+    expect(
+      hook
+        .get()
+        .pendingComposerMessagesByThread["thread-a"]?.guides.map((item) => item.id),
+    ).toEqual(["guide-1"]);
+
+    act(() => {
+      hook.get().syncPendingComposerMessagesFromServerEvent({
+        kind: "notification",
+        message: {
+          method: "thread/resumed",
+          params: {
+            thread: { id: "thread-a" },
+            held_user_messages: [heldMessages[0], heldMessages[2]],
+          },
+        },
+      } as ServerEvent);
+    });
+    expect(
+      hook
+        .get()
+        .pendingComposerMessagesByThread["thread-a"]?.queued.map((item) => item.id),
+    ).toEqual(["queue-2"]);
+  });
+
   it("restores a queued message into the primary composer for editing", async () => {
     const dequeueTurn = vi.fn().mockResolvedValue({ ok: true });
     installWuuStub({ dequeueTurn });

@@ -525,7 +525,6 @@ export function createRuntimeSettingsActions(
       return;
     }
     await window.wuu.interruptTurn(thread.id);
-    deps.clearThreadPendingComposerMessages(thread.id);
   }
 
   async function interruptPane(pane: ConversationPaneID): Promise<void> {
@@ -534,7 +533,6 @@ export function createRuntimeSettingsActions(
       return;
     }
     await window.wuu.interruptTurn(thread.id);
-    deps.clearThreadPendingComposerMessages(thread.id);
   }
 
   return {

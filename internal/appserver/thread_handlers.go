@@ -267,12 +267,17 @@ func (s *Server) handleThreadResume(req Request) error {
 }
 
 func (s *Server) writeThreadResumeResult(req Request, thread Thread) error {
-	result := ThreadResumeResult{Thread: thread}
+	held, err := s.loadHeldUserTurns(thread.ID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	heldMessages := heldUserMessageSummaries(thread.ID, held)
+	result := ThreadResumeResult{Thread: thread, HeldUserMessages: heldMessages}
 	if err := s.writeResponse(req.ID, result, nil); err != nil {
 		return err
 	}
 	if err := s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
-		Thread: thread,
+		Thread: thread, HeldUserMessages: heldMessages,
 	}); err != nil {
 		return err
 	}

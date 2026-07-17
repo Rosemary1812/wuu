@@ -972,6 +972,17 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
+		`CREATE TABLE IF NOT EXISTS held_user_work (
+				session_id TEXT NOT NULL,
+				position INTEGER NOT NULL,
+				id TEXT NOT NULL,
+				origin TEXT NOT NULL,
+				message_json TEXT NOT NULL,
+				runtime_json TEXT NOT NULL,
+				PRIMARY KEY(session_id, id),
+				UNIQUE(session_id, position),
+				FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+			)`,
 		`CREATE TABLE IF NOT EXISTS session_history_checkpoints (
 			session_id      TEXT NOT NULL,
 			version         INTEGER NOT NULL,

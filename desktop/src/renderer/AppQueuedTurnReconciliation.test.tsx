@@ -19,6 +19,18 @@ vi.mock("./ComposerView", async (importOriginal) => {
         data-queued-ids={props.queuedMessages
           .map((message) => message.id)
           .join(",")}
+        data-guide-ids={props.guideMessages
+          .map((message) => message.id)
+          .join(",")}
+        data-held-order={[...props.queuedMessages, ...props.guideMessages]
+          .filter((message) => message.held)
+          .sort(
+            (left, right) =>
+              (left.heldPosition ?? Number.MAX_SAFE_INTEGER) -
+              (right.heldPosition ?? Number.MAX_SAFE_INTEGER),
+          )
+          .map((message) => message.id)
+          .join(",")}
       >
         <textarea
           aria-label="composer-probe-input"
@@ -330,5 +342,54 @@ describe("queued turn reconciliation", () => {
     await flushAsync();
 
     expect(composerProbe().dataset.queuedIds).toBe("");
+  });
+
+  it("restores the authoritative held order from a resumed thread notification", async () => {
+    installWuuApi();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    await act(async () => {
+      for (const handler of serverEventHandlers) {
+        handler({
+          kind: "notification",
+          workdir: workspace,
+          message: {
+            method: "thread/resumed",
+            params: {
+              thread: runningThread(),
+              held_user_messages: [
+                {
+                  id: "guide-1",
+                  thread_id: threadID,
+                  origin: "steer",
+                  prompt: "Guide",
+                },
+                {
+                  id: "queue-1",
+                  thread_id: threadID,
+                  origin: "queue",
+                  prompt: "First",
+                },
+                {
+                  id: "queue-2",
+                  thread_id: threadID,
+                  origin: "queue",
+                  prompt: "Second",
+                },
+              ],
+            },
+          },
+        } as ServerEvent);
+      }
+    });
+    await flushAsync();
+
+    expect(composerProbe().dataset.guideIds).toBe("guide-1");
+    expect(composerProbe().dataset.queuedIds).toBe("queue-1,queue-2");
+    expect(composerProbe().dataset.heldOrder).toBe("guide-1,queue-1,queue-2");
   });
 });

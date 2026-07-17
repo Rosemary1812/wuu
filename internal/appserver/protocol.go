@@ -135,6 +135,7 @@ const (
 	NotificationTurnStarted            = "turn/started"
 	NotificationTurnQueued             = "turn/queued"
 	NotificationTurnDequeued           = "turn/dequeued"
+	NotificationTurnHeld               = "turn/held"
 	NotificationTurnEvent              = "turn/event"
 	NotificationTurnError              = "turn/error"
 	NotificationTurnCompleted          = "turn/completed"
@@ -865,7 +866,8 @@ type ThreadResumeParams struct {
 }
 
 type ThreadResumeResult struct {
-	Thread Thread `json:"thread"`
+	Thread           Thread            `json:"thread"`
+	HeldUserMessages []HeldUserMessage `json:"held_user_messages,omitempty"`
 }
 
 type ThreadForkParams struct {
@@ -1621,6 +1623,15 @@ type TurnSteerResult struct {
 	TurnID string `json:"turn_id"`
 }
 
+type HeldUserMessage struct {
+	ID       string           `json:"id"`
+	ThreadID string           `json:"thread_id"`
+	Origin   string           `json:"origin"`
+	Prompt   string           `json:"prompt,omitempty"`
+	Images   []TurnStartImage `json:"images,omitempty"`
+	Files    []TurnStartFile  `json:"files,omitempty"`
+}
+
 type TurnUnsteerParams struct {
 	ThreadID string `json:"thread_id"`
 	SteerID  string `json:"steer_id"`
@@ -1639,7 +1650,8 @@ type ThreadStartedNotification struct {
 }
 
 type ThreadResumedNotification struct {
-	Thread Thread `json:"thread"`
+	Thread           Thread            `json:"thread"`
+	HeldUserMessages []HeldUserMessage `json:"held_user_messages,omitempty"`
 }
 
 type ThreadUpdatedNotification struct {
@@ -1690,6 +1702,11 @@ type TurnQueuedNotification struct {
 type TurnDequeuedNotification struct {
 	ThreadID string `json:"thread_id"`
 	QueueID  string `json:"queue_id"`
+}
+
+type TurnHeldNotification struct {
+	ThreadID string            `json:"thread_id"`
+	Messages []HeldUserMessage `json:"messages"`
 }
 
 type TurnEventNotification struct {

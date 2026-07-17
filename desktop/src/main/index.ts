@@ -78,6 +78,7 @@ import type {
   MessagePostSubthreadResult,
   ThreadOpenSubResult,
   ThreadResolveSubResult,
+  ThreadResumeResult,
   ThreadTaskEventsResult,
   ThreadStartParams,
   Turn,
@@ -1382,7 +1383,7 @@ app.whenReady().then(async () => {
       appServerRequest<{ thread: Thread }>(event, "thread/start", params ?? {}),
   );
   ipcMain.handle("wuu:thread-resume", (event, sessionId?: string) =>
-    appServerRequest<{ thread: Thread }>(event, "thread/resume", {
+    appServerRequest<ThreadResumeResult>(event, "thread/resume", {
       session_id: sessionId ?? "",
     }),
   );

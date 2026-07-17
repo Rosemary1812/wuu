@@ -41,6 +41,7 @@ type queuedTurn struct {
 	id       string
 	msg      providers.ChatMessage
 	snapshot turnRuntimeSnapshot
+	origin   string
 }
 
 type agentCompletionTurn struct {
@@ -481,11 +482,25 @@ func (s *Server) handleTurnQueue(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	msg.ClientID = queueID
-	entry := queuedTurn{id: queueID, msg: msg, snapshot: turnRuntimeSnapshot{}.withPermissions(permissions)}
+	entry := queuedTurn{id: queueID, msg: msg, snapshot: turnRuntimeSnapshot{}.withPermissions(permissions), origin: session.HeldUserWorkOriginQueue}
 	entry.snapshot.PermissionExplicit = params.PermissionMode != nil
 	entry.snapshot.ForceCompact = isManualCompactPrompt(params.Prompt)
 	queued := queuedTurnSummary(params.ThreadID, entry)
+	th.mu.Lock()
+	if th.interrupting {
+		held, holdErr := s.appendHeldUserTurns(params.ThreadID, []queuedTurn{entry})
+		th.mu.Unlock()
+		if holdErr != nil {
+			return s.writeResponse(req.ID, nil, holdErr)
+		}
+		if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
+			return err
+		}
+		s.notifyHeldUserTurns(params.ThreadID, held)
+		return nil
+	}
 	s.enqueueQueuedUserTurn(params.ThreadID, entry)
+	th.mu.Unlock()
 	if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
 		return err
 	}
@@ -535,12 +550,22 @@ func (s *Server) handleTurnUpdateQueued(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	updated, ok := s.replaceQueuedUserTurn(params.ThreadID, params.QueueID, msg)
+	var held []queuedTurn
+	if !ok {
+		updated, held, ok, err = s.updateHeldUserTurn(params.ThreadID, params.QueueID, msg)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	result := TurnUpdateQueuedResult{OK: ok}
 	if ok {
 		result.Queued = queuedTurnSummary(params.ThreadID, updated)
 	}
 	if err := s.writeResponse(req.ID, result, nil); err != nil {
 		return err
+	}
+	if ok && held != nil {
+		s.notifyHeldUserTurns(params.ThreadID, held)
 	}
 	return nil
 }
@@ -559,6 +584,14 @@ func (s *Server) handleTurnDequeue(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("queue_id is required"))
 	}
 	removed := s.removeQueuedUserTurn(threadID, queueID)
+	var held []queuedTurn
+	if !removed {
+		var err error
+		_, held, removed, err = s.removeHeldUserTurn(threadID, queueID)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	if err := s.writeResponse(req.ID, OKResult{OK: removed}, nil); err != nil {
 		return err
 	}
@@ -568,6 +601,9 @@ func (s *Server) handleTurnDequeue(req Request) error {
 			ThreadID: threadID,
 			QueueID:  queueID,
 		})
+		if held != nil {
+			s.notifyHeldUserTurns(threadID, held)
+		}
 	}
 	return nil
 }
@@ -582,9 +618,6 @@ func (s *Server) handleTurnSteer(req Request) error {
 	params.ExpectedTurnID = strings.TrimSpace(params.ExpectedTurnID)
 	if params.ThreadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
-	}
-	if params.ExpectedTurnID == "" {
-		return s.writeResponse(req.ID, nil, errors.New("expected_turn_id is required"))
 	}
 	images, err := normalizeTurnStartImages(params.Images)
 	if err != nil {
@@ -605,11 +638,43 @@ func (s *Server) handleTurnSteer(req Request) error {
 	if clientID == "" {
 		clientID = session.NewID()
 	}
+	heldTurn, isHeld, err := s.findHeldUserTurn(params.ThreadID, clientID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 
 	th.mu.Lock()
+	if isHeld && th.interrupting {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, errors.New("interrupted turn is still stopping"))
+	}
 	if !th.running || th.currentTurn == "" {
 		th.mu.Unlock()
-		return s.writeResponse(req.ID, nil, errors.New("no active turn to steer"))
+		if !isHeld {
+			return s.writeResponse(req.ID, nil, errors.New("no active turn to steer"))
+		}
+		heldTurn.msg.Steered = false
+		started, startErr := s.startQueuedTurn(context.Background(), params.ThreadID, heldTurn)
+		if startErr != nil {
+			return s.writeResponse(req.ID, nil, startErr)
+		}
+		if !started {
+			return s.writeResponse(req.ID, nil, errors.New("held message could not start"))
+		}
+		th.mu.Lock()
+		turnID := th.currentTurn
+		th.mu.Unlock()
+		_, remaining, removed, removeErr := s.removeHeldUserTurn(params.ThreadID, clientID)
+		if removeErr != nil {
+			providers.DebugLogf("remove started held message %q: %v", clientID, removeErr)
+		} else if removed {
+			s.notifyHeldUserTurns(params.ThreadID, remaining)
+		}
+		return s.writeResponse(req.ID, TurnSteerResult{TurnID: turnID}, nil)
+	}
+	if params.ExpectedTurnID == "" {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, errors.New("expected_turn_id is required"))
 	}
 	if params.ExpectedTurnID != th.currentTurn {
 		actual := th.currentTurn
@@ -621,10 +686,27 @@ func (s *Server) handleTurnSteer(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("cannot steer a compact turn"))
 	}
 	turnID := th.currentTurn
-	steerMsg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
-	if err != nil {
-		th.mu.Unlock()
-		return s.writeResponse(req.ID, nil, err)
+	var steerMsg providers.ChatMessage
+	var remaining []queuedTurn
+	if isHeld {
+		var removed bool
+		var removedTurn queuedTurn
+		removedTurn, remaining, removed, err = s.removeHeldUserTurn(params.ThreadID, clientID)
+		if err != nil {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if !removed {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, errors.New("held message no longer exists"))
+		}
+		steerMsg = removedTurn.msg
+	} else {
+		steerMsg, err = userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
+		if err != nil {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
 	}
 	steerMsg.ClientID = clientID
 	steerMsg.Steered = true
@@ -636,6 +718,9 @@ func (s *Server) handleTurnSteer(req Request) error {
 			ThreadID: params.ThreadID,
 			QueueID:  clientID,
 		})
+	}
+	if isHeld {
+		s.notifyHeldUserTurns(params.ThreadID, remaining)
 	}
 	return s.writeResponse(req.ID, TurnSteerResult{TurnID: turnID}, nil)
 }
@@ -660,6 +745,17 @@ func (s *Server) handleTurnUnsteer(req Request) error {
 	th.mu.Lock()
 	removed := th.removePendingSteerLocked(steerID)
 	th.mu.Unlock()
+	var held []queuedTurn
+	if !removed {
+		var err error
+		_, held, removed, err = s.removeHeldUserTurn(threadID, steerID)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if removed && held != nil {
+		s.notifyHeldUserTurns(threadID, held)
+	}
 	return s.writeResponse(req.ID, OKResult{OK: removed}, nil)
 }
 
@@ -1325,12 +1421,39 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 		th.mu.Unlock()
 		return s.writeResponse(req.ID, nil, errors.New("thread has no running turn"))
 	}
+	pendingSteers := queuedTurnsFromSteers(th.pendingSteers)
+	for index := range pendingSteers {
+		pendingSteers[index].origin = session.HeldUserWorkOriginSteer
+	}
+	s.queuedTurnMu.Lock()
+	queued := append([]queuedTurn(nil), s.pendingQueuedTurns[threadID]...)
+	delete(s.pendingQueuedTurns, threadID)
+	s.queuedTurnMu.Unlock()
+	userQueued := make([]queuedTurn, 0, len(queued))
+	var automationIDs []string
+	for _, entry := range queued {
+		if strings.TrimSpace(entry.snapshot.AutomationRunID) != "" {
+			automationIDs = append(automationIDs, entry.id)
+			continue
+		}
+		entry.origin = session.HeldUserWorkOriginQueue
+		userQueued = append(userQueued, entry)
+	}
+	toHold := append(pendingSteers, userQueued...)
+	held, err := s.appendHeldUserTurns(threadID, toHold)
+	if err != nil {
+		s.queuedTurnMu.Lock()
+		s.pendingQueuedTurns[threadID] = append(queued, s.pendingQueuedTurns[threadID]...)
+		s.queuedTurnMu.Unlock()
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, err)
+	}
 	th.pendingSteers = nil
+	th.interrupting = true
 	th.workerTreeFrozen = true
 	control := threadAgentControlLocked(th)
 	th.mu.Unlock()
-	discardedQueueIDs := s.discardQueuedUserWork(threadID)
-	s.failQueuedAutomationRuns(discardedQueueIDs, "queued automation was interrupted")
+	s.failQueuedAutomationRuns(automationIDs, "queued automation was interrupted")
 	cancel()
 	// turn/interrupt means "freeze this work", not "leave background workers
 	// running": cancel the whole anonymous-worker tree, clear its queued
@@ -1342,7 +1465,8 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 		return err
 	}
-	s.notifyQueuedTurnsDequeued(threadID, discardedQueueIDs)
+	s.notifyQueuedTurnsDequeued(threadID, automationIDs)
+	s.notifyHeldUserTurns(threadID, held)
 	return nil
 }
 
@@ -2025,6 +2149,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	}
 	// Keep the execution lease through trace persistence and runner cleanup so
 	// the next turn cannot observe a half-restored runtime.
+	th.interrupting = false
 	unconsumedSteers := th.drainPendingSteersLocked()
 	if len(unconsumedSteers) > 0 {
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))

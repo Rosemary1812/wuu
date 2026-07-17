@@ -49,6 +49,9 @@ export type QueuedComposerMessage = {
   text: string;
   images: ComposerImage[];
   files: ComposerFile[];
+  held?: boolean;
+  heldPosition?: number;
+  origin?: "queue" | "steer";
 };
 
 export function clipboardAttachmentFiles(event: ReactClipboardEvent<HTMLTextAreaElement>): File[] {
