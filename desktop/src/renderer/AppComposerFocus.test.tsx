@@ -301,6 +301,28 @@ function mainComposer(variant: "hero" | "dock"): HTMLTextAreaElement {
   return textarea;
 }
 
+async function waitForMainComposerFocus(
+  variant: "hero" | "dock",
+): Promise<void> {
+  await act(async () => {
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(mainComposer(variant));
+    });
+  });
+}
+
+async function waitForSideComposerFocus(): Promise<void> {
+  await act(async () => {
+    await vi.waitFor(() => {
+      const side = container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="side composer"]',
+      );
+      expect(side).not.toBeNull();
+      expect(document.activeElement).toBe(side);
+    });
+  });
+}
+
 async function enterCommand(
   textarea: HTMLTextAreaElement,
   command: string,
@@ -346,7 +368,7 @@ describe("main composer focus continuity", () => {
 
     await enterCommand(dock, "/new");
 
-    expect(document.activeElement).toBe(mainComposer("hero"));
+    await waitForMainComposerFocus("hero");
   });
 
   it("focuses the hero composer from the new-tab button", async () => {
@@ -360,7 +382,7 @@ describe("main composer focus continuity", () => {
     await act(async () => button.click());
     await flushAsync();
 
-    expect(document.activeElement).toBe(mainComposer("hero"));
+    await waitForMainComposerFocus("hero");
   });
 
   it("focuses the hero composer from a project's new-conversation button", async () => {
@@ -374,7 +396,7 @@ describe("main composer focus continuity", () => {
     await act(async () => button.click());
     await flushAsync();
 
-    expect(document.activeElement).toBe(mainComposer("hero"));
+    await waitForMainComposerFocus("hero");
   });
 
   it("waits for the destination hero before focusing across projects", async () => {
@@ -394,7 +416,7 @@ describe("main composer focus continuity", () => {
     releaseProjectSelection();
     await flushAsync();
 
-    expect(document.activeElement).toBe(mainComposer("hero"));
+    await waitForMainComposerFocus("hero");
   });
 
   it("does not focus the old hero when project selection fails", async () => {
@@ -477,11 +499,7 @@ describe("main composer focus continuity", () => {
 
     await enterCommand(dock, "/side");
 
-    const side = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="side composer"]',
-    );
-    expect(side).not.toBeNull();
-    expect(document.activeElement).toBe(side);
+    await waitForSideComposerFocus();
   });
 
   it("hands focus from the hero composer to the dock on the first query", async () => {
@@ -491,7 +509,7 @@ describe("main composer focus continuity", () => {
 
     await enterCommand(hero, "first query");
 
-    expect(document.activeElement).toBe(mainComposer("dock"));
+    await waitForMainComposerFocus("dock");
   });
 
   it("restores focus to the hero when the first query fails", async () => {
@@ -501,7 +519,7 @@ describe("main composer focus continuity", () => {
 
     await enterCommand(hero, "first query");
 
-    expect(document.activeElement).toBe(mainComposer("hero"));
+    await waitForMainComposerFocus("hero");
   });
 
   it("does not hand focus to the dock after the user focuses another control", async () => {

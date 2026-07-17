@@ -1931,11 +1931,12 @@ export function App(): JSX.Element {
     (
       target: ComposerVariant,
       origin: Element | null = document.activeElement,
+      interactionVersion: number = userInteractionVersionRef.current,
     ): MainComposerFocusRequest => {
       const request = {
         target,
         origin,
-        interactionVersion: userInteractionVersionRef.current,
+        interactionVersion,
       };
       setMainComposerFocusRequest(request);
       return request;
@@ -3050,7 +3051,12 @@ export function App(): JSX.Element {
           activeSessionTab(current)?.kind === "draft" &&
           matchesDestination(current)
         ) {
-          focusMainComposer("hero", origin, interactionVersion);
+          // Queue the focus through the layout effect instead of making a
+          // one-shot attempt in this frame. React may not have committed the
+          // destination hero composer yet, so the request must survive until
+          // that element is mounted. Preserve the interaction version from
+          // the original click so later user input still cancels the handoff.
+          requestMainComposerFocus("hero", origin, interactionVersion);
         }
       });
     });
