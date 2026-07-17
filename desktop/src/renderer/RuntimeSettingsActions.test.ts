@@ -565,6 +565,31 @@ describe("createRuntimeSettingsActions", () => {
     expect(api.loadCodexModels).toHaveBeenCalledWith("codex");
   });
 
+  it("loads models for the active session instead of the workspace default", () => {
+    const api = installWuuApi();
+    const primary = thread();
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        initialized: initialized({
+          provider: "anthropic",
+          model: "claude-sonnet",
+          providers: [
+            { name: "anthropic", type: "anthropic", model: "claude-sonnet" },
+            { name: "codex", type: "chatgpt-codex", model: "gpt-5" },
+          ],
+        }),
+        thread: primary,
+        threads: [primary],
+        status: "ready",
+      },
+    });
+
+    harness.actions.toggleCodexRuntimeMenu("model");
+
+    expect(api.loadCodexModels).toHaveBeenCalledWith("codex");
+  });
+
   it("persists permission mode for the active thread and future threads", async () => {
     const api = installWuuApi();
     const harness = buildActions();

@@ -19,6 +19,7 @@ import {
   turnFromRecord,
   type AppState,
 } from "./AppState";
+import { runtimeViewForConversation } from "./SessionRuntimeState";
 import {
   streamTextKey,
   streamTextStore,
@@ -92,10 +93,11 @@ export function RunDebugPanel({
   useI18n();
   const thread = activeThreadForState(state);
   const turn = phase.turn ?? activeDebugTurn(thread);
+  const runtime = runtimeViewForConversation(state.initialized, thread, turn);
   const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
   const turnStartedAt = turn ? parseTurnTimestampMs(turn.started_at) : NaN;
-  const model = state.initialized
-    ? `${state.initialized.provider} / ${state.initialized.model}${state.initialized.variant || state.initialized.effort ? ` / ${state.initialized.variant || state.initialized.effort}` : ""}`
+  const model = runtime
+    ? `${runtime.provider} / ${runtime.model}${runtime.variant || runtime.effort ? ` / ${runtime.variant || runtime.effort}` : ""}`
     : t("runDebug.notInitialized");
   const queueDetail = [
     queuedMessages.length > 0
@@ -891,15 +893,16 @@ export function buildRunDebugSnapshot({
   const phase = runDebugPhaseForState(state);
   const thread = activeThreadForState(state);
   const turn = phase.turn ?? activeDebugTurn(thread);
+  const runtime = runtimeViewForConversation(state.initialized, thread, turn);
   const streamStats = streamTextStore.stats();
   const lines = [
     `phase: ${phase.label} (${phase.detail})`,
     `status: ${state.status}`,
     `running: ${String(state.running)}`,
-    `provider: ${state.initialized?.provider ?? "none"}`,
-    `model: ${state.initialized?.model ?? "none"}`,
-    `effort: ${state.initialized?.effort ?? ""}`,
-    `variant: ${state.initialized?.variant ?? ""}`,
+    `provider: ${runtime?.provider ?? "none"}`,
+    `model: ${runtime?.model ?? "none"}`,
+    `effort: ${runtime?.effort ?? ""}`,
+    `variant: ${runtime?.variant ?? ""}`,
     `cwd: ${state.activeContext?.cwd ?? thread?.cwd ?? ""}`,
     `thread: ${thread?.id ?? ""}`,
     `turn: ${turn?.id ?? ""}`,

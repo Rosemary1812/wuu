@@ -240,6 +240,10 @@ import {
   ConversationTitleContent,
   SettingsShellRenderer,
 } from "./ConversationShellRenderers";
+import {
+  runtimeViewForConversation,
+  runtimeViewForSession,
+} from "./SessionRuntimeState";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 const ENVIRONMENT_PANEL_MOTION_MS = motionDurationMs(
@@ -1038,25 +1042,13 @@ export function App(): JSX.Element {
   // turns, so this misses live reply-count growth — acceptable until a
   // subthread-scoped notification lands; opening a reply bumps the nonce.)
   const activeThreadTurnCount = activeThread?.turns?.length ?? 0;
-  const composerInitialized = useMemo(
-    () => {
-      const initialized = state.initialized;
-      return initialized && activeThread
-        ? {
-            ...initialized,
-            provider: activeThread.model_provider,
-            model: activeThread.model,
-            variant: activeThread.model_variant ?? initialized.variant,
-            effort: activeThread.model_effort ?? initialized.effort,
-            permissions: {
-              ...initialized.permissions,
-              mode:
-                activeThread.permission_mode || initialized.permissions?.mode,
-            },
-          }
-        : initialized;
-    },
+  const sessionRuntime = useMemo(
+    () => runtimeViewForSession(state.initialized, activeThread),
     [state.initialized, activeThread],
+  );
+  const visibleConversationRuntime = useMemo(
+    () => runtimeViewForConversation(state.initialized, activeThread, activeTurn),
+    [state.initialized, activeThread, activeTurn],
   );
   // Per-thread keep-alive for the main conversation pane. We keep the active
   // thread and a small recency buffer mounted so switching back does not
@@ -2680,8 +2672,7 @@ export function App(): JSX.Element {
             : streamStatus?.liveProgress
         }
         readOnly={activeThreadReadOnly}
-        activeTurn={activeTurn}
-        initialized={composerInitialized}
+        initialized={visibleConversationRuntime}
         gitStatus={state.gitStatus}
         projects={state.projects}
         activeContext={state.activeContext}
@@ -4052,7 +4043,7 @@ export function App(): JSX.Element {
       <>
         {archiveTipNode}
         <SettingsShellRenderer
-          initialized={composerInitialized}
+          initialized={sessionRuntime}
           initialPage={settingsInitialPage}
           memoryFocusParticipantID={settingsMemoryFocusID}
           running={viewContextSwitchPending}
@@ -4417,7 +4408,7 @@ export function App(): JSX.Element {
           subthreadComposer={{
             draft: subthreadComposerDraft,
             setDraft: setSubthreadComposerDraft,
-            initialized: composerInitialized,
+            initialized: sessionRuntime,
             projects: state.projects,
             activeContext: state.activeContext,
             activeProject,

@@ -18,6 +18,7 @@ import type {
   PermissionMode,
 } from "./ComposerTypes";
 import { isCodexProvider } from "./RuntimeHelpers";
+import { runtimeViewForSession } from "./SessionRuntimeState";
 import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
@@ -427,8 +428,12 @@ export function createRuntimeSettingsActions(
     deps.setAccessMenuOpen(false);
     deps.setBranchMenuOpen(false);
     deps.setCodexRuntimeMenu((current) => (current === menu ? null : menu));
-    if (isCodexProvider(state.initialized)) {
-      void loadCodexModelsForProvider(state.initialized.provider);
+    const runtime = runtimeViewForSession(
+      state.initialized,
+      activeThreadForState(state),
+    );
+    if (runtime && isCodexProvider(runtime)) {
+      void loadCodexModelsForProvider(runtime.provider);
     }
   }
 

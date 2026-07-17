@@ -61,12 +61,11 @@ export type InitializeResult = {
   max_parallel?: number;
   workspace_root: string;
   permissions?: PermissionSummary;
-  // model_profile + tool_surface summarise the per-model tool
-  // surface the runtime compiled for the active session. The
-  // renderer uses these to drive capability-first activity and the
-  // debug surface view; the runtime side owns the values so the UI never
-  // has to re-derive the
-  // bash-first / patch-first split.
+  // model_profile + tool_surface summarise the workspace-default runtime.
+  // Existing sessions expose their persisted provider/model selection on
+  // Thread, and an in-progress Turn exposes the admitted provider/model. A
+  // shell must not present InitializeResult.provider/model as the active
+  // session after those selections diverge.
   model_profile?: ModelProfileSummary;
   tool_surface?: ToolSurfaceSummary;
   extension_trust?: ExtensionTrustSummary;

@@ -77,12 +77,13 @@ function deferred<T>(): Deferred<T> {
 function initialized(): InitializeResult {
   return {
     protocol_version: "wuu-app-server/v0.1",
-    provider: "fake",
-    model: "fake-model",
+    provider: "provider-b",
+    model: "model-b",
     workspace_root: workspace,
     permissions: { mode: "standard" },
     providers: [
-      { name: "fake", type: "openai-compatible", model: "fake-model" },
+      { name: "provider-a", type: "openai-compatible", model: "model-a" },
+      { name: "provider-b", type: "openai-compatible", model: "model-b" },
     ],
     advanced_settings: {
       max_steps: 64,
@@ -98,17 +99,21 @@ function completedThread({
   preview,
   updatedAt,
   turns = 1,
+  provider,
+  model,
 }: {
   id: string;
   preview: string;
   updatedAt: string;
   turns?: number;
+  provider: string;
+  model: string;
 }): Thread {
   return {
     id,
     preview,
-    model_provider: "fake",
-    model: "fake-model",
+    model_provider: provider,
+    model,
     cwd: workspace,
     status: "idle",
     created_at: "2026-01-01T00:00:00Z",
@@ -139,6 +144,8 @@ function threadA(turns = 1): Thread {
     preview: "session switch A",
     updatedAt: "2026-01-02T00:00:00Z",
     turns,
+    provider: "provider-a",
+    model: "model-a",
   });
 }
 
@@ -147,6 +154,8 @@ function threadB(): Thread {
     id: threadBID,
     preview: "session switch B",
     updatedAt: "2026-01-01T00:00:00Z",
+    provider: "provider-b",
+    model: "model-b",
   });
 }
 
@@ -257,6 +266,24 @@ function activeThreadProbe(): HTMLElement | null {
   return container.querySelector('[data-testid="turn-list-probe"]');
 }
 
+function visibleRuntimeModel(): string {
+  return (
+    container.querySelector<HTMLButtonElement>(".codex-runtime-trigger")
+      ?.textContent ?? ""
+  );
+}
+
+function emitNotification(method: string, params: Record<string, unknown>): void {
+  const event = {
+    kind: "notification",
+    workdir: workspace,
+    message: { method, params },
+  } as ServerEvent;
+  for (const handler of serverEventHandlers) {
+    handler(event);
+  }
+}
+
 describe("session tab switch latency", () => {
   beforeEach(() => {
     installWindowStubs();
@@ -288,6 +315,7 @@ describe("session tab switch latency", () => {
     expect(resumeThread).toHaveBeenCalledWith(threadAID);
     expect(activeSessionTabLabel()).toContain("session switch A");
     expect(activeThreadProbe()?.dataset.threadId).toBe(threadAID);
+    expect(visibleRuntimeModel()).toContain("model-a");
 
     const rowB = threadRowButton("session switch B");
     expect(rowB).toBeDefined();
@@ -298,6 +326,7 @@ describe("session tab switch latency", () => {
 
     expect(activeSessionTabLabel()).toContain("session switch B");
     expect(activeThreadProbe()?.dataset.threadId).toBe(threadBID);
+    expect(visibleRuntimeModel()).toContain("model-b");
 
     const delayedResumeA = deferred<{ thread: Thread }>();
     resumeThread.mockClear();
@@ -319,6 +348,7 @@ describe("session tab switch latency", () => {
     expect(activeSessionTabLabel()).toContain("session switch A");
     expect(activeThreadProbe()?.dataset.threadId).toBe(threadAID);
     expect(activeThreadProbe()?.dataset.turnCount).toBe("1");
+    expect(visibleRuntimeModel()).toContain("model-a");
 
     delayedResumeA.resolve({ thread: threadA(2) });
     await flushAsync();
@@ -326,5 +356,43 @@ describe("session tab switch latency", () => {
     expect(activeSessionTabLabel()).toContain("session switch A");
     expect(activeThreadProbe()?.dataset.threadId).toBe(threadAID);
     expect(activeThreadProbe()?.dataset.turnCount).toBe("2");
+  });
+
+  it("shows the admitted model during a turn and the session pin after it settles", async () => {
+    installWuuApi();
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    expect(visibleRuntimeModel()).toContain("model-a");
+
+    const runningTurn = {
+      id: "thread-switch-a-running-turn",
+      model_provider: "turn-provider",
+      model: "turn-model",
+      items_view: "full",
+      status: "in_progress",
+      items: [],
+    };
+    await act(async () => {
+      emitNotification("turn/started", {
+        thread_id: threadAID,
+        turn: runningTurn,
+      });
+    });
+
+    expect(visibleRuntimeModel()).toContain("turn-model");
+
+    await act(async () => {
+      emitNotification("turn/completed", {
+        thread_id: threadAID,
+        turn: { ...runningTurn, status: "completed" },
+      });
+    });
+
+    expect(visibleRuntimeModel()).toContain("model-a");
   });
 });

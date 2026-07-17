@@ -25,8 +25,7 @@ import type {
   PermissionSummary,
   ProviderModelSummary,
   ProviderSummary,
-  RuntimeContext,
-  Turn
+  RuntimeContext
 } from "../shared/protocol";
 import { FloatingMenuPortal, isInsideFloatingMenu } from "./ComposerFloatingMenu";
 import type {
@@ -114,7 +113,6 @@ export function permissionModeOption(mode: PermissionModeState): Omit<Permission
 export function RuntimePicker({
   variant,
   initialized,
-  activeTurn,
   state,
   openMenu,
   anchorRef,
@@ -125,7 +123,6 @@ export function RuntimePicker({
 }: {
   variant: ComposerVariant;
   initialized: InitializeResult;
-  activeTurn?: Pick<Turn, "model_provider" | "model">;
   state: CodexModelLoadState;
   openMenu: CodexRuntimeMenu;
   anchorRef: RefObject<HTMLDivElement | null>;
@@ -134,18 +131,17 @@ export function RuntimePicker({
   onSelectModel: (provider: string, model: string, variant?: string) => void;
   onSelectEffort: (variant: string) => void;
 }): JSX.Element {
-  const runtimeInitialized = initializedForActiveTurn(initialized, activeTurn);
-  const currentProvider = runtimeInitialized.providers?.find((provider) => provider.name === runtimeInitialized.provider);
-  const codexProvider = isCodexProvider(runtimeInitialized);
-  const currentCodexModel = codexProvider ? state.models.find((model) => model.slug === runtimeInitialized.model) : undefined;
-  const currentProviderModel = currentProvider?.models?.find((model) => model.id === runtimeInitialized.model);
-  const currentVariant = runtimeInitialized.variant ?? runtimeInitialized.effort ?? "";
+  const currentProvider = initialized.providers?.find((provider) => provider.name === initialized.provider);
+  const codexProvider = isCodexProvider(initialized);
+  const currentCodexModel = codexProvider ? state.models.find((model) => model.slug === initialized.model) : undefined;
+  const currentProviderModel = currentProvider?.models?.find((model) => model.id === initialized.model);
+  const currentVariant = initialized.variant ?? initialized.effort ?? "";
   const variantOptions = codexProvider
     ? codexEffortOptions(currentCodexModel, currentVariant)
-    : providerModelVariantOptions(currentProvider, runtimeInitialized.model, currentVariant);
+    : providerModelVariantOptions(currentProvider, initialized.model, currentVariant);
   const reasoningMode = codexProvider
     ? "levels"
-    : providerModelReasoningMode(currentProvider, runtimeInitialized.model);
+    : providerModelReasoningMode(currentProvider, initialized.model);
   const placement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   return (
     <div className="codex-runtime-anchor" ref={anchorRef}>
@@ -157,7 +153,7 @@ export function RuntimePicker({
         aria-expanded={openMenu !== null}
         onClick={() => onToggleMenu("main")}
       >
-        <span>{runtimeTriggerLabel(runtimeInitialized, currentProviderModel, currentCodexModel)}</span>
+        <span>{runtimeTriggerLabel(initialized, currentProviderModel, currentCodexModel)}</span>
         <span className="codex-runtime-effort">{variantLabel(currentVariant)}</span>
         <ChevronDown className="icon" />
       </button>
@@ -173,7 +169,7 @@ export function RuntimePicker({
             selectedVariant={currentVariant}
             options={variantOptions}
             reasoningMode={reasoningMode}
-            currentLabel={runtimeModelLabel(runtimeInitialized, currentProviderModel, currentCodexModel)}
+            currentLabel={runtimeModelLabel(initialized, currentProviderModel, currentCodexModel)}
             onOpenEffortMenu={() => onToggleMenu("effort")}
             onOpenModelMenu={() => onToggleMenu("model")}
           />
@@ -203,10 +199,10 @@ export function RuntimePicker({
           width={286}
         >
           <RuntimeModelMenu
-            initialized={runtimeInitialized}
+            initialized={initialized}
             state={state}
-            selectedProvider={runtimeInitialized.provider}
-            selectedModel={runtimeInitialized.model}
+            selectedProvider={initialized.provider}
+            selectedModel={initialized.model}
             selectedVariant={currentVariant}
             onSelectModel={onSelectModel}
           />
@@ -214,20 +210,6 @@ export function RuntimePicker({
       ) : null}
     </div>
   );
-}
-
-function initializedForActiveTurn(
-  initialized: InitializeResult,
-  activeTurn?: Pick<Turn, "model_provider" | "model">
-): InitializeResult {
-  if (!activeTurn?.model_provider || !activeTurn.model) {
-    return initialized;
-  }
-  return {
-    ...initialized,
-    provider: activeTurn.model_provider,
-    model: activeTurn.model
-  };
 }
 
 function RuntimeMainMenu({

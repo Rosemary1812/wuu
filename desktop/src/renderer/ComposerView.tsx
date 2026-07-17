@@ -53,8 +53,7 @@ import type {
   ParticipantProfile,
   ParticipantSummary,
   RuntimeContext,
-  SkillSummary,
-  Turn
+  SkillSummary
 } from "../shared/protocol";
 import {
   buildComposerSlashCommands,
@@ -137,7 +136,6 @@ export function Composer({
   running,
   ultraEnabled = false,
   runtimeControlsDisabled = running,
-  activeTurn,
   status,
   statusLiveProgress,
   readOnly,
@@ -220,7 +218,6 @@ export function Composer({
   running: boolean;
   ultraEnabled?: boolean;
   runtimeControlsDisabled?: boolean;
-  activeTurn?: Pick<Turn, "model_provider" | "model">;
   status: string;
   statusLiveProgress?: boolean;
   readOnly: boolean;
@@ -1222,7 +1219,6 @@ export function Composer({
                       <RuntimePicker
                         variant={variant}
                         initialized={initialized}
-                        activeTurn={activeTurn}
                         state={codexModels}
                         openMenu={codexRuntimeMenu}
                         anchorRef={codexRuntimeRef}

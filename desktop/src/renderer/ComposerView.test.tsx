@@ -21,7 +21,6 @@ import type {
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
-  Turn,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -94,7 +93,6 @@ function renderComposer(props: {
   statusLiveProgress?: boolean;
   runtimeControlsDisabled?: boolean;
   initialized?: InitializeResult;
-  activeTurn?: Pick<Turn, "model_provider" | "model">;
   readOnly?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
@@ -148,7 +146,6 @@ function renderComposer(props: {
           ultraEnabled={props.ultraEnabled}
           onToggleUltra={props.onToggleUltra}
           runtimeControlsDisabled={props.runtimeControlsDisabled}
-          activeTurn={props.activeTurn}
           status={props.status ?? "ready"}
           statusLiveProgress={props.statusLiveProgress}
           readOnly={props.readOnly ?? false}
@@ -921,19 +918,18 @@ describe("Composer send control", () => {
     expect(sendButton?.disabled).toBe(false);
   });
 
-  it("shows the active turn model instead of the later global default", () => {
-    const globalDefault = initialized();
-    globalDefault.provider = "provider-b";
-    globalDefault.model = "model-b";
-    globalDefault.providers = [
+  it("renders the conversation runtime selected by the app", () => {
+    const runtime = initialized();
+    runtime.provider = "provider-a";
+    runtime.model = "model-a";
+    runtime.providers = [
       { name: "provider-a", type: "openai-compatible", model: "model-a" },
       { name: "provider-b", type: "openai-compatible", model: "model-b" }
     ];
 
     renderComposer({
       variant: "dock",
-      initialized: globalDefault,
-      activeTurn: { model_provider: "provider-a", model: "model-a" },
+      initialized: runtime,
       runtimeControlsDisabled: true
     });
 
@@ -942,18 +938,18 @@ describe("Composer send control", () => {
     expect(runtimeButton?.disabled).toBe(true);
   });
 
-  it("falls back to the global default once the active turn snapshot is gone", () => {
-    const globalDefault = initialized();
-    globalDefault.provider = "provider-b";
-    globalDefault.model = "model-b";
-    globalDefault.providers = [
+  it("renders the next-turn session runtime when controls unlock", () => {
+    const runtime = initialized();
+    runtime.provider = "provider-b";
+    runtime.model = "model-b";
+    runtime.providers = [
       { name: "provider-a", type: "openai-compatible", model: "model-a" },
       { name: "provider-b", type: "openai-compatible", model: "model-b" }
     ];
 
     renderComposer({
       variant: "dock",
-      initialized: globalDefault,
+      initialized: runtime,
       runtimeControlsDisabled: false
     });
 
