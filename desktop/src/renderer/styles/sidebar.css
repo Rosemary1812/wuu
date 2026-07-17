@@ -255,6 +255,18 @@
   pointer-events: none;
 }
 
+/* Parked transform: the collapsed rail carries the hover drawer's off-canvas
+ * start value, so opening the drawer is a plain transform transition with no
+ * arming frame. Invisible while collapsed — the grid column is 0-width and
+ * overflow-clipped, and -100% of a 0-width box is a 0px shift. Excluded
+ * while .sidebar-animating runs the dock<->collapse grid animation so the
+ * rail keeps its squish-fade instead of flinging off-screen. Specificity
+ * ties the drawer overlay rules below; it sits earlier in source order so
+ * every open/closing/focus-within state wins over it. */
+.sidebar-collapsed:not(.sidebar-animating) :is(.sidebar, .settings-sidebar) {
+  transform: translate3d(-100%, 0, 0);
+}
+
 .sidebar-content {
   --sidebar-row-pad-x: 8px;
   --sidebar-nav-icon-col: 22px;
@@ -351,6 +363,16 @@
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
   opacity: 1;
+  /* The drawer slides in from the parked off-canvas transform on the
+   * collapsed rail (see above). The transition declared here is the one used
+   * to REACH the open/pinned state; the closing rule below declares the
+   * faster exit. Chrome (background/border/shadow) intentionally does NOT
+   * fade in separately — it rides the panel's transform, so the whole drawer
+   * moves as one piece instead of a white slab popping in ahead of the
+   * content. */
+  transition: transform var(--sidebar-drawer-enter-duration)
+    var(--sidebar-drawer-enter-easing);
+  will-change: transform;
 }
 
 .sidebar-collapsed.sidebar-drawer-open :is(.sidebar, .settings-sidebar) .sidebar-content,
@@ -383,6 +405,9 @@
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
   opacity: 1;
+  transition: transform var(--sidebar-drawer-enter-duration)
+    var(--sidebar-drawer-enter-easing);
+  will-change: transform;
 }
 
 .sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content,
@@ -392,14 +417,26 @@
 }
 
 /* Closing keeps the drawer mounted as an overlay (position/width above) so
-   there is room for the exit motion, but lets the content fall back to the
-   collapsed values (opacity 0, slide left) and fades the panel chrome with
-   it. When the closing phase ends the overlay rules drop with everything
-   already invisible. Shared with the settings rail via `:is()`. */
+   there is room for the exit motion, and slides the whole panel back
+   off-screen left — the reverse of the enter slide, in the sheet's
+   enter-heavy/exit-light timing (shorter, accelerating away). The panel
+   chrome stays opaque the whole way; only the inner content falls back to
+   the collapsed fade/slide values. When the closing phase ends the overlay
+   rules drop onto the collapsed parked transform — the same -100% value — so
+   nothing jumps. Shared with the settings rail via `:is()`. */
 .sidebar-collapsed.sidebar-drawer-closing .sidebar,
 .sidebar-collapsed.sidebar-drawer-closing .settings-sidebar {
-  opacity: 0;
-  transition: opacity var(--sidebar-motion-duration) var(--sidebar-motion-ease);
+  transform: translate3d(-100%, 0, 0);
+  transition: transform var(--sidebar-drawer-exit-duration)
+    var(--sidebar-drawer-exit-easing);
+}
+
+/* The content layer follows the panel's exit timing instead of the slower
+   enter curve, so the fade finishes as the panel leaves the stage. */
+.sidebar-collapsed.sidebar-drawer-closing :is(.sidebar, .settings-sidebar) .sidebar-content {
+  transition:
+    opacity var(--sidebar-drawer-exit-duration) var(--sidebar-drawer-exit-easing),
+    transform var(--sidebar-drawer-exit-duration) var(--sidebar-drawer-exit-easing);
 }
 
 .sidebar-resizer {

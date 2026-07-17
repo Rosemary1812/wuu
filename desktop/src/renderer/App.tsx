@@ -148,6 +148,7 @@ import {
 } from "./AppState";
 import {
   RIGHT_PANEL_MOTION_MS,
+  SIDEBAR_DRAWER_EXIT_MS,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MOTION_MS,
@@ -474,7 +475,7 @@ export function App(): JSX.Element {
     sidebarCollapsed: sidebarDrawerMode,
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
-    motionMs: SIDEBAR_MOTION_MS,
+    motionMs: SIDEBAR_DRAWER_EXIT_MS,
   });
   const {
     collapsedSidebarSectionIDs,

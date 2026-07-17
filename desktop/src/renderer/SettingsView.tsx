@@ -37,6 +37,7 @@ import {
 } from "react";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { useSidebarDrawerState } from "./SidebarDrawerState";
+import { SIDEBAR_DRAWER_EXIT_MS } from "./AppLayoutState";
 import { SelectMenu } from "./SelectMenu";
 import type {
   CodexPetsSnapshot,
@@ -563,7 +564,7 @@ export function SettingsView({
     sidebarCollapsed,
     resizingSidebar,
     activeSessionTabID: activeSessionTabID || activePage,
-    motionMs: sidebarMotionMs,
+    motionMs: SIDEBAR_DRAWER_EXIT_MS,
     closeOnWindowResize: true
   });
   const shellClassName = `settings-shell${resizingSidebar ? " resizing-sidebar" : ""}${

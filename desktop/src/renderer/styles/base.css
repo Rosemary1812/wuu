@@ -172,6 +172,14 @@
   --sheet-enter-easing: var(--ease-out);
   --sheet-exit-duration: 220ms;
   --sheet-exit-easing: var(--ease-in);
+  /* Collapsed-sidebar hover drawer: same enter-heavy/exit-light pairing as
+   * the sheet. Enter rides the ladder (so prefers-reduced-motion zeroes it);
+   * exit is pinned shorter and accelerates off-screen. JS reads the exit
+   * token for the closing-phase timer (SIDEBAR_DRAWER_EXIT_MS). */
+  --sidebar-drawer-enter-duration: var(--motion-slow);
+  --sidebar-drawer-enter-easing: var(--ease-out);
+  --sidebar-drawer-exit-duration: 220ms;
+  --sidebar-drawer-exit-easing: var(--ease-in);
   --sidebar-motion-duration: var(--motion-slow);
   --sidebar-motion-ease: var(--ease-out);
   --workspace-panel-motion-duration: var(--motion-slow);

@@ -18,6 +18,10 @@ export const SIDEBAR_MOTION_MS = motionDurationMs(
   "--sidebar-motion-duration",
   280,
 );
+export const SIDEBAR_DRAWER_EXIT_MS = motionDurationMs(
+  "--sidebar-drawer-exit-duration",
+  220,
+);
 export const RIGHT_PANEL_MOTION_MS = motionDurationMs(
   "--workspace-panel-motion-duration",
   280,

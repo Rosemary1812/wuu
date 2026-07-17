@@ -199,6 +199,23 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toContain(
       ".sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content",
     );
+    // The collapsed rail carries the drawer's off-canvas start transform
+    // (excluded while the dock<->collapse grid animation runs), so the open
+    // transition is a real slide-in instead of an instant pop.
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed:not\(\.sidebar-animating\) :is\(\.sidebar, \.settings-sidebar\)\s*\{\s*transform:\s*translate3d\(-100%, 0, 0\);/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed\.sidebar-drawer-open :is\(\.sidebar, \.settings-sidebar\)[\s\S]*?transition:\s*transform\s+var\(--sidebar-drawer-enter-duration\)\s+var\(--sidebar-drawer-enter-easing\);/,
+    );
+    // Closing slides the panel back off-screen with the exit tokens; the old
+    // whole-panel opacity fade must not come back.
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed\.sidebar-drawer-closing \.sidebar,\s*\.sidebar-collapsed\.sidebar-drawer-closing \.settings-sidebar\s*\{\s*transform:\s*translate3d\(-100%, 0, 0\);\s*transition:\s*transform\s+var\(--sidebar-drawer-exit-duration\)\s+var\(--sidebar-drawer-exit-easing\);/,
+    );
+    expect(sidebarCSS).not.toMatch(
+      /\.sidebar-collapsed\.sidebar-drawer-closing \.settings-sidebar\s*\{[^}]*opacity:\s*0/,
+    );
   });
 
   it("keeps primary actions outside the scrollable sidebar list", () => {
