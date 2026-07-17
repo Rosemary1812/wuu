@@ -1029,6 +1029,11 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if explicitSelection && s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 	}
+	if explicitSelection {
+		if err := s.rt.ReconfigureToolLoading(cfg.Agent, ruleProviderCfg, apiModel, selection.ProviderOptions); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("reconfigure tool loading: %w", err))
+		}
+	}
 	if params.PermissionMode != nil {
 		permissions := config.ResolvedPermissions{Mode: config.NormalizePermissionMode(*params.PermissionMode)}
 		s.rt.Permissions = permissions

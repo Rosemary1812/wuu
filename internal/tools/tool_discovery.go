@@ -185,6 +185,11 @@ func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMat
 	seen := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		name = strings.TrimSpace(name)
+		// Keep discovery prompts written before the provider-safe rename working
+		// without exposing the reserved name itself to model providers.
+		if name == "browser" {
+			name = browserToolName
+		}
 		if name == "" {
 			continue
 		}

@@ -2130,6 +2130,50 @@ func TestNewSessionAutoUsesNativeDeferredForFirstPartyOpenAIResponses(t *testing
 	}
 }
 
+func TestReconfigureToolLoadingClearsNativeDiscoveryForCompatibleProvider(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "openai",
+			Providers: map[string]config.ProviderConfig{
+				"openai": {
+					Type:    "openai-compatible",
+					BaseURL: "https://api.openai.com/v1",
+					APIKey:  "abc",
+					Model:   "gpt-5.4",
+					WireAPI: "responses",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if !rt.NativeDeferredToolDiscovery || rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("fixture must start with OpenAI native deferred discovery")
+	}
+
+	kimi := config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.kimi.com/coding", Model: "k3"}
+	if err := rt.ReconfigureToolLoading(config.AgentConfig{}, kimi, "k3", nil); err != nil {
+		t.Fatalf("ReconfigureToolLoading: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingFlat || rt.ToolSearchEnabled || rt.NativeDeferredToolDiscovery {
+		t.Fatalf("compatible provider should reset to flat loading, mode=%q search=%v native=%v", rt.ToolLoadingMode, rt.ToolSearchEnabled, rt.NativeDeferredToolDiscovery)
+	}
+	if rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() || rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("toolkit and runner retained native discovery after provider switch")
+	}
+	if rt.DeferredToolCatalogPrompt != "" {
+		t.Fatalf("flat loading retained deferred catalog: %q", rt.DeferredToolCatalogPrompt)
+	}
+}
+
 func TestNewSessionAutoFallsBackToWuuToolSearchForUnsupportedFirstPartyOpenAIResponsesModel(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

@@ -32,6 +32,8 @@ class FakeView implements BrowserViewHandle {
   captureCount = 0;
   boundsSet: Rectangle | undefined;
   visibleState: boolean | undefined;
+  zoomFactor = 1;
+  readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>();
   closed = false;
 
   readonly debuggerHandle: BrowserDebuggerHandle = {
@@ -54,6 +56,14 @@ class FakeView implements BrowserViewHandle {
     debugger: this.debuggerHandle,
     setBackgroundThrottling: () => undefined,
     setWindowOpenHandler: () => undefined,
+    setZoomFactor: (factor: number) => {
+      this.zoomFactor = factor;
+    },
+    on: (event: string, listener: (...args: unknown[]) => void) => {
+      const list = this.listeners.get(event) ?? [];
+      list.push(listener);
+      this.listeners.set(event, list);
+    },
     loadURL: async (url: string) => {
       this.loadedURLs.push(url);
       this.url = url;
@@ -72,6 +82,15 @@ class FakeView implements BrowserViewHandle {
     },
     isDestroyed: () => this.closed,
   };
+
+  emitNavigate(url: string): void {
+    this.url = url;
+    for (const listener of this.listeners.get("did-navigate") ?? []) listener({}, url);
+  }
+
+  getBounds(): Rectangle {
+    return this.boundsSet ?? { x: 0, y: 0, width: 0, height: 0 };
+  }
 
   setBounds(rect: Rectangle): void {
     this.boundsSet = rect;
@@ -586,19 +605,123 @@ describe("pure helpers", () => {
 });
 
 describe("BrowserHostCoordinator preview surface accessors", () => {
-  it("captures a frame for a live tab and reports undefined once it is gone", async () => {
+  it("reports tab bounds for a live tab and undefined once it is gone", async () => {
     const harness = makeHarness();
     await openTab(harness, "/repo", "t1");
-    const frame = await harness.coordinator.captureTabFrame("/repo", "t1");
-    expect(frame?.png.toString()).toBe("fake-png");
-    expect(frame?.width).toBe(800);
-    expect(frame?.height).toBe(600);
+    harness.views[0].setBounds({ x: 0, y: 0, width: 1280, height: 800 });
+    expect(harness.coordinator.tabBounds("/repo", "t1")).toEqual({
+      x: 0,
+      y: 0,
+      width: 1280,
+      height: 800,
+    });
 
-    expect(await harness.coordinator.captureTabFrame("/repo", "missing")).toBeUndefined();
+    expect(harness.coordinator.tabBounds("/repo", "missing")).toBeUndefined();
     await harness.coordinator.handleServerRequest(
       serverRequest("browser/close_tab", { workdir: "/repo", tab_id: "t1" }, "close-1"),
     );
-    expect(await harness.coordinator.captureTabFrame("/repo", "t1")).toBeUndefined();
+    expect(harness.coordinator.tabBounds("/repo", "t1")).toBeUndefined();
+  });
+
+  it("mounts a tab onto an observation window with zoom-fit and restores it on unmount", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    view.setBounds({ x: 0, y: 0, width: 1280, height: 800 });
+    const hostWindow = harness.hostWindows[0];
+    const pip = new FakeWindow();
+
+    const restore = harness.coordinator.mountTabOnWindow(
+      "/repo",
+      "t1",
+      pip,
+      { x: 0, y: 0, width: 260, height: 163 },
+      0.203,
+    );
+    expect(restore).toEqual({ x: 0, y: 0, width: 1280, height: 800 });
+    expect(pip.added).toContain(view);
+    expect(hostWindow.removed).toContain(view);
+    expect(view.zoomFactor).toBeCloseTo(0.203);
+    expect(view.boundsSet).toEqual({ x: 0, y: 0, width: 260, height: 163 });
+    expect(view.visibleState).toBe(true);
+
+    expect(harness.coordinator.mountTabOnWindow("/repo", "missing", pip, { x: 0, y: 0, width: 1, height: 1 }, 1)).toBeUndefined();
+
+    harness.coordinator.unmountTabIfOwner(
+      "/repo",
+      "t1",
+      pip.contentView,
+      { x: 0, y: 0, width: 1280, height: 800 },
+    );
+    expect(view.zoomFactor).toBe(1);
+    expect(pip.removed).toContain(view);
+    expect(view.boundsSet).toEqual({ x: 0, y: 0, width: 1280, height: 800 });
+  });
+
+  it("normalizes zoom when a takeover adopts a PiP-mounted tab, and refuses to yank it back", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    view.setBounds({ x: 0, y: 0, width: 1280, height: 800 });
+    const pip = new FakeWindow();
+    harness.coordinator.mountTabOnWindow("/repo", "t1", pip, { x: 0, y: 0, width: 260, height: 163 }, 0.203);
+
+    // Visibility takeover adopts the view onto the main window.
+    await harness.coordinator.handleServerRequest(
+      serverRequest("browser/set_visibility", { workdir: "/repo", tab_id: "t1", visible: true }, "vis-1"),
+    );
+    expect(view.zoomFactor).toBe(1);
+    expect(harness.mainWindow.added).toContain(view);
+
+    // The PiP's unmount must not tear the adopted view out of the panel.
+    harness.coordinator.unmountTabIfOwner(
+      "/repo",
+      "t1",
+      pip.contentView,
+      { x: 0, y: 0, width: 1280, height: 800 },
+    );
+    expect(harness.mainWindow.removed).not.toContain(view);
+  });
+
+  it("refits a mounted tab only while the observation window owns it", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const view = harness.views[0];
+    view.setBounds({ x: 0, y: 0, width: 1280, height: 800 });
+    const pip = new FakeWindow();
+    harness.coordinator.mountTabOnWindow("/repo", "t1", pip, { x: 0, y: 0, width: 260, height: 163 }, 0.203);
+
+    harness.coordinator.relayoutMountedTab(
+      "/repo",
+      "t1",
+      pip.contentView,
+      { x: 10, y: 5, width: 300, height: 200 },
+      0.234,
+    );
+    expect(view.zoomFactor).toBeCloseTo(0.234);
+    expect(view.boundsSet).toEqual({ x: 10, y: 5, width: 300, height: 200 });
+
+    const stale = new FakeWindow();
+    view.setBounds({ x: 0, y: 0, width: 1280, height: 800 });
+    harness.coordinator.relayoutMountedTab(
+      "/repo",
+      "t1",
+      stale.contentView,
+      { x: 0, y: 0, width: 1, height: 1 },
+      1,
+    );
+    expect(view.boundsSet).toEqual({ x: 0, y: 0, width: 1280, height: 800 });
+  });
+
+  it("emits navigation events for the observation surface chrome", async () => {
+    const harness = makeHarness();
+    await openTab(harness, "/repo", "t1");
+    const seen: Array<{ workdir: string; tabID: string; url: string }> = [];
+    harness.coordinator.addNavigateListener((workdir, tabID, url) => {
+      seen.push({ workdir, tabID, url });
+    });
+    harness.views[0].emitNavigate("https://next.test/path");
+    expect(seen).toEqual([{ workdir: "/repo", tabID: "t1", url: "https://next.test/path" }]);
   });
 
   it("reads surface meta for a live tab only", async () => {

@@ -803,6 +803,37 @@ func resolveToolLoadingModeForProvider(mode config.ToolLoadingMode, providerCfg 
 	}
 }
 
+// ReconfigureToolLoading reapplies every mutable tool-loading field after the
+// workspace provider or model changes. Provider switching updates a live
+// Session in place, so leaving any of these fields behind can send one
+// provider's native discovery protocol to a different compatible endpoint.
+func (s *Session) ReconfigureToolLoading(agentCfg config.AgentConfig, providerCfg config.ProviderConfig, model string, providerOptions map[string]any) error {
+	if s == nil {
+		return nil
+	}
+	preference := agentCfg.ToolLoadingPreference()
+	mode, toolSearchEnabled, nativeDeferredDiscovery := resolveToolLoadingModeForProvider(preference, providerCfg, model, providerOptions)
+	s.ToolLoadingPreference = preference
+	s.ToolLoadingMode = mode
+	s.ToolSearchEnabled = toolSearchEnabled
+	s.NativeDeferredToolDiscovery = nativeDeferredDiscovery
+	if s.Toolkit != nil {
+		s.Toolkit.SetToolSearchEnabled(toolSearchEnabled)
+		s.Toolkit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
+		catalog, err := deferredToolCatalogPromptForToolkit(s.Toolkit)
+		if err != nil {
+			return err
+		}
+		s.DeferredToolCatalogPrompt = catalog
+	} else {
+		s.DeferredToolCatalogPrompt = ""
+	}
+	if s.StreamRunner != nil {
+		s.StreamRunner.NativeDeferredToolDiscovery = nativeDeferredDiscovery
+	}
+	return nil
+}
+
 // NewThreadRuntime creates a per-conversation execution runtime from the
 // shared workspace runtime. It intentionally does not mutate Session.Toolkit or
 // Session.AgentControl; those remain the legacy single-session runtime used by

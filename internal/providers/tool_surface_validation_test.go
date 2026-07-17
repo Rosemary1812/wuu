@@ -20,6 +20,22 @@ func TestValidateToolDefinitionsForProviderRejectsOpenAIInvalidName(t *testing.T
 	}
 }
 
+func TestValidateToolDefinitionsForProviderRejectsReservedName(t *testing.T) {
+	err := ValidateToolDefinitionsForProvider(ToolSurfaceValidationTarget{
+		ProviderKind:      "openai-compatible",
+		ProviderName:      "openai",
+		Model:             "gpt-test",
+		ReservedToolNames: []string{"browser"},
+	}, []ToolDefinition{{
+		Name:        "Browser",
+		Description: "Drive a browser",
+		InputSchema: map[string]any{"type": "object"},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "reserved by this provider") {
+		t.Fatalf("expected reserved provider name error, got %v", err)
+	}
+}
+
 func TestValidateToolDefinitionsForProviderAllowsLocalGatewayNames(t *testing.T) {
 	if err := ValidateToolDefinitionsForProvider(ToolSurfaceValidationTarget{
 		ProviderKind: "local",

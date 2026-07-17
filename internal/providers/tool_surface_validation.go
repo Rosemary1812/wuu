@@ -17,9 +17,10 @@ const (
 var providerToolNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 type ToolSurfaceValidationTarget struct {
-	ProviderKind string
-	ProviderName string
-	Model        string
+	ProviderKind      string
+	ProviderName      string
+	Model             string
+	ReservedToolNames []string
 }
 
 type ToolSurfaceValidationProblem struct {
@@ -63,6 +64,12 @@ func (e *ToolSurfaceValidationError) Error() string {
 func ValidateToolDefinitionsForProvider(target ToolSurfaceValidationTarget, defs []ToolDefinition) error {
 	var problems []ToolSurfaceValidationProblem
 	seen := make(map[string]struct{}, len(defs))
+	reservedNames := make(map[string]struct{}, len(target.ReservedToolNames))
+	for _, reserved := range target.ReservedToolNames {
+		if reserved = strings.ToLower(strings.TrimSpace(reserved)); reserved != "" {
+			reservedNames[reserved] = struct{}{}
+		}
+	}
 	for _, def := range defs {
 		name := strings.TrimSpace(def.Name)
 		if name == "" {
@@ -82,6 +89,14 @@ func ValidateToolDefinitionsForProvider(target ToolSurfaceValidationTarget, defs
 			})
 		}
 		seen[name] = struct{}{}
+		if _, reserved := reservedNames[strings.ToLower(name)]; reserved {
+			problems = append(problems, ToolSurfaceValidationProblem{
+				ToolName: name,
+				Field:    "name",
+				Code:     "reserved_provider_tool_name",
+				Message:  "uses a tool name reserved by this provider",
+			})
+		}
 		if requiresProviderToolNamePattern(target) && !providerToolNamePattern.MatchString(name) {
 			problems = append(problems, ToolSurfaceValidationProblem{
 				ToolName: name,

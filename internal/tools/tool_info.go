@@ -235,7 +235,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindAgent
 	case "cron":
 		return ToolKindSchedule
-	case "browser":
+	case "browser", browserToolName:
 		return ToolKindBrowser
 	default:
 		if strings.HasPrefix(name, "mcp_") {

@@ -1,14 +1,13 @@
-import { BrowserWindow, type Rectangle } from "electron";
+import { BrowserWindow, WebContentsView, type Rectangle } from "electron";
 import type { ActivitySession } from "../shared/protocol";
 import { appShellWebPreferences } from "./appShellGuards";
 import type {
   BrowserHostCoordinator,
   BrowserInteractionHint,
-  BrowserTabFrame,
-  BrowserTabSurfaceMeta,
+  BrowserParentWindowHandle,
+  BrowserViewHandle,
 } from "./browserHostWindows";
 import {
-  frameStreamRetryDelay,
   type ObservationPiPEventSink,
   type ObservationPiPFactory,
   type ObservationPiPHandle,
@@ -18,59 +17,34 @@ import { CUANativePiP, resolveCUAFrameHelper } from "./cuaFrameStreams";
 // The protocol carries interaction inline on ActivitySession; reuse that shape.
 type Interaction = NonNullable<ActivitySession["interaction"]>;
 
-// ---------------------------------------------------------------------------
-// Frame source. The surface reads frames + page identity through this narrow
-// interface; the production adapter binds a (workdir, tabID) pair of the
-// BrowserHostCoordinator, tests bind fakes.
-// ---------------------------------------------------------------------------
-export interface BrowserFrameSource {
-  // One fresh frame; undefined means the tab/view is gone for good.
-  capture(): Promise<BrowserTabFrame | undefined>;
-  meta(): BrowserTabSurfaceMeta | undefined;
-  onClosed(listener: () => void): () => void;
-  onInteraction(listener: (hint: BrowserInteractionHint) => void): () => void;
-}
-
-export function browserFrameSourceFor(
-  host: BrowserHostCoordinator,
-  workdir: string,
-  tabID: string,
-): BrowserFrameSource {
-  return {
-    capture: () => host.captureTabFrame(workdir, tabID),
-    meta: () => host.tabSurfaceMeta(workdir, tabID),
-    onClosed: (listener) =>
-      host.addTabClosedListener((w, t) => {
-        if (w === workdir && t === tabID) listener();
-      }),
-    onInteraction: (listener) =>
-      host.addInteractionListener((w, t, hint) => {
-        if (w === workdir && t === tabID) listener(hint);
-      }),
-  };
-}
+// The host surface the PiP needs from the BrowserHostCoordinator: mount and
+// geometry for the real tab view, chrome metadata, and lifecycle listeners.
+export type BrowserPiPTabHost = Pick<
+  BrowserHostCoordinator,
+  | "tabBounds"
+  | "tabSurfaceMeta"
+  | "mountTabOnWindow"
+  | "unmountTabIfOwner"
+  | "relayoutMountedTab"
+  | "addInteractionListener"
+  | "addTabClosedListener"
+  | "addNavigateListener"
+  | "addTabReparentedListener"
+>;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested).
 // ---------------------------------------------------------------------------
-
-// FNV-1a 32-bit. Frame dedupe only needs change detection, not crypto.
-export function pipFrameHash(buffer: Buffer): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < buffer.length; i++) {
-    hash ^= buffer[i];
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16);
-}
 
 export function pipHostname(url: string): string {
   const match = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/.exec(url);
   return match?.[1] ?? (url.trim() || "about:blank");
 }
 
-// object-fit: contain geometry for mapping page CSS coordinates into the
-// surface's content box.
+// Contain-fit geometry: shrink the tab's layout viewport into the PiP content
+// box without changing it. scale doubles as the UI zoom factor — view DIP
+// size = viewport × scale, so CSS layout stays at viewport size and every
+// CDP coordinate the agent uses keeps its meaning.
 export function pipContainRect(
   contentW: number,
   contentH: number,
@@ -86,177 +60,75 @@ export function pipContainRect(
   return { x: (boxW - width) / 2, y: (boxH - height) / 2, width, height, scale };
 }
 
-export function pipMapPoint(
-  pointX: number,
-  pointY: number,
-  contentW: number,
-  contentH: number,
-  boxW: number,
-  boxH: number,
-): { x: number; y: number } {
-  const rect = pipContainRect(contentW, contentH, boxW, boxH);
-  return { x: rect.x + pointX * rect.scale, y: rect.y + pointY * rect.scale };
+// A tab whose real bounds were never established (hidden host, zero-size
+// view) still gets a deterministic viewport for contain math.
+const PIP_FALLBACK_VIEWPORT = { width: 1280, height: 800 };
+
+// ---------------------------------------------------------------------------
+// The browser PiP surface: an Electron panel window presenting the REAL tab
+// view, reparented off the hidden host and zoom-fitted into the window —
+// the same surface the agent acts on, never a re-encoded frame stream. A
+// transparent overlay view above it draws the chrome strip, the interaction
+// effects, and the frosted placeholder, and swallows pointer input so the
+// preview can never steal focus or become an input target.
+// ---------------------------------------------------------------------------
+
+export type BrowserPiPWindowHandle = BrowserParentWindowHandle & {
+  setAlwaysOnTop(flag: boolean, level?: string): void;
+  setVisibleOnAllWorkspaces(visible: boolean, options?: { visibleOnFullScreen?: boolean }): void;
+  showInactive(): void;
+  hide(): void;
+  isVisible(): boolean;
+  getBounds(): Rectangle;
+  on(
+    event: "close" | "closed" | "moved" | "resized" | "ready-to-show",
+    listener: (...args: unknown[]) => void,
+  ): void;
+  destroy(): void;
+};
+
+// The overlay is a transparent WebContentsView stacked above the content
+// view. It is the only page the PiP loads; updates arrive through the
+// window.wuuPip* hooks, user actions leave through wuu-pip:// navigations.
+export interface BrowserPiPOverlayHandle {
+  readonly webContents: {
+    loadURL(url: string): Promise<unknown>;
+    executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>;
+    setWindowOpenHandler(handler: () => { action: "deny" }): void;
+    on(event: "will-navigate", listener: (event: unknown, url: string) => void): void;
+    isDestroyed(): boolean;
+  };
+  setBounds(bounds: Rectangle): void;
 }
-
-// ---------------------------------------------------------------------------
-// Frame pump. Owns the capture cadence for one tab: ~3fps with a single
-// in-flight capture (that is the backpressure — a slow capture simply delays
-// the next tick), PNG-hash dedupe so a static page stops producing sends, and
-// exponential backoff on transient capture errors. A missing tab is fatal and
-// reported exactly once; the pump never touches the browser control path.
-// ---------------------------------------------------------------------------
-export const BROWSER_PIP_FRAME_INTERVAL_MS = 333;
-
-export type BrowserPipFrame = BrowserTabFrame & BrowserTabSurfaceMeta;
-
-export class BrowserFramePump {
-  private timer: NodeJS.Timeout | undefined;
-  private inFlight = false;
-  private running = false;
-  private failures = 0;
-  private lastHash: string | undefined;
-  private lastMetaKey: string | undefined;
-  private firstFrameSent = false;
-
-  constructor(
-    private readonly source: Pick<BrowserFrameSource, "capture" | "meta">,
-    private readonly callbacks: {
-      onFrame(frame: BrowserPipFrame): void;
-      onGone(): void;
-      onFirstFrame?(): void;
-    },
-    private readonly intervalMs: number = BROWSER_PIP_FRAME_INTERVAL_MS,
-  ) {}
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.schedule(0);
-  }
-
-  pause(): void {
-    this.running = false;
-    this.clearTimer();
-  }
-
-  stop(): void {
-    this.pause();
-  }
-
-  isRunning(): boolean {
-    return this.running;
-  }
-
-  private schedule(delay: number): void {
-    this.clearTimer();
-    if (!this.running) return;
-    this.timer = setTimeout(() => {
-      void this.tick();
-    }, delay);
-    this.timer.unref?.();
-  }
-
-  private clearTimer(): void {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = undefined;
-    }
-  }
-
-  private async tick(): Promise<void> {
-    if (!this.running) return;
-    if (this.inFlight) {
-      // Previous capture still running: skip this beat, keep the cadence.
-      this.schedule(this.intervalMs);
-      return;
-    }
-    this.inFlight = true;
-    try {
-      const frame = await this.source.capture();
-      if (frame === undefined) {
-        this.running = false;
-        this.callbacks.onGone();
-        return;
-      }
-      this.failures = 0;
-      const meta = this.source.meta() ?? { url: "", title: "" };
-      const hash = pipFrameHash(frame.png);
-      const metaKey = `${meta.url}\n${meta.title}`;
-      if (hash !== this.lastHash || metaKey !== this.lastMetaKey) {
-        this.lastHash = hash;
-        this.lastMetaKey = metaKey;
-        this.callbacks.onFrame({ ...frame, ...meta });
-        if (!this.firstFrameSent) {
-          this.firstFrameSent = true;
-          this.callbacks.onFirstFrame?.();
-        }
-      }
-      this.schedule(this.intervalMs);
-    } catch {
-      this.failures += 1;
-      this.schedule(frameStreamRetryDelay(this.failures));
-    } finally {
-      this.inFlight = false;
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// The browser PiP surface: an Electron panel window presenting pumped frames
-// with the CUA PiP's visual language — same default size and corner parking,
-// frosted placeholder until the first frame, synthetic pointer overlay, hover
-// close. It shows pixels only; the page itself never leaves the hidden host,
-// so the preview can never steal focus or become an input target.
-// ---------------------------------------------------------------------------
 
 type BrowserPiPSurfaceDeps = {
   activity: ActivitySession;
   bounds: Rectangle;
   sink: ObservationPiPEventSink;
-  source: BrowserFrameSource;
+  host: BrowserPiPTabHost;
+  workdir: string;
+  tabID: string;
   isPackaged: boolean;
-  // Injectable for tests; production uses the real BrowserWindow.
+  // Injectable for tests; production uses real Electron views/windows.
   createWindow?: (bounds: Rectangle) => BrowserPiPWindowHandle;
-};
-
-export type BrowserPiPWindowHandle = {
-  webContents: {
-    executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>;
-    setWindowOpenHandler(handler: () => { action: "deny" }): void;
-    on(event: "will-navigate" | "did-finish-load", listener: (...args: unknown[]) => void): void;
-  };
-  setAlwaysOnTop(flag: boolean, level?: string): void;
-  setVisibleOnAllWorkspaces(visible: boolean, options?: { visibleOnFullScreen?: boolean }): void;
-  showInactive(): void;
-  hide(): void;
-  isDestroyed(): boolean;
-  isVisible(): boolean;
-  getBounds(): Rectangle;
-  on(event: "moved" | "resized" | "closed" | "ready-to-show", listener: (...args: unknown[]) => void): void;
-  loadURL(url: string): Promise<unknown>;
-  destroy(): void;
+  createOverlay?: () => BrowserPiPOverlayHandle;
 };
 
 export class BrowserPiPSurface implements ObservationPiPHandle {
   private win: BrowserPiPWindowHandle | undefined;
-  private loaded = false;
-  private readonly pump: BrowserFramePump;
-  private readonly unsubs: Array<() => void> = [];
+  private overlay: BrowserPiPOverlayHandle | undefined;
+  private mounted = false;
+  private announced = false;
+  private restoreBounds: Rectangle | undefined;
+  private viewport: { width: number; height: number } = PIP_FALLBACK_VIEWPORT;
   private visible = false;
-  private live = true;
   private stopped = false;
   private activity: ActivitySession;
   private lastInteractionRevision = 0;
-  private frameSeq = 0;
-  private pendingFrame: (BrowserPipFrame & { dataUrl: string }) | undefined;
+  private readonly unsubs: Array<() => void> = [];
 
   constructor(private readonly deps: BrowserPiPSurfaceDeps) {
     this.activity = deps.activity;
-    this.pump = new BrowserFramePump(deps.source, {
-      onFrame: (frame) => this.presentFrame(frame),
-      onGone: () => deps.sink.onGone(),
-      onFirstFrame: () => deps.sink.onEvent({ event: "ready" }),
-    });
   }
 
   start(): void {
@@ -265,60 +137,79 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
       ? this.deps.createWindow(this.deps.bounds)
       : this.createElectronWindow(this.deps.bounds);
     this.win = win;
-    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    win.webContents.on("will-navigate", (event: unknown, rawURL: unknown) => {
+    const overlay = this.deps.createOverlay ? this.deps.createOverlay() : this.createElectronOverlay();
+    this.overlay = overlay;
+    const bounds = win.getBounds();
+    win.contentView.addChildView(overlay as unknown as BrowserViewHandle);
+    overlay.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height });
+    overlay.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    overlay.webContents.on("will-navigate", (event: unknown, rawURL: string) => {
       if (typeof rawURL === "string" && rawURL.startsWith("wuu-pip://")) {
         (event as { preventDefault?: () => void }).preventDefault?.();
         if (rawURL === "wuu-pip://close") this.deps.sink.onEvent({ event: "user_close" });
       }
     });
-    win.webContents.on("did-finish-load", () => {
-      if (win.isDestroyed() || this.win !== win) return;
-      this.loaded = true;
-      const pending = this.pendingFrame;
-      this.pendingFrame = undefined;
-      if (pending) this.pushFrame(pending);
-      this.pushActivityState();
-      if (!win.isVisible() && this.visible) win.showInactive();
-    });
-    win.on("ready-to-show", () => {
-      if (win.isDestroyed() || this.win !== win) return;
-      if (this.visible) win.showInactive();
-    });
+    const initialLabel = pipHostname(
+      this.deps.host.tabSurfaceMeta(this.deps.workdir, this.deps.tabID)?.url ?? "",
+    );
+    void overlay.webContents
+      .loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(browserPiPOverlayHTML(initialLabel))}`,
+      )
+      .then(() => {
+        if (this.overlay !== overlay || this.win !== win || win.isDestroyed()) return;
+        // The hooks only exist after the page loads; replay the state that
+        // mount/state pushes before this moment silently dropped.
+        this.syncOverlayMode();
+        this.pushActivityState();
+        this.pushHostLabel();
+      })
+      .catch(() => undefined);
     const reportGeometry = (): void => {
       if (win.isDestroyed() || this.win !== win) return;
       const b = win.getBounds();
       this.deps.sink.onEvent({ event: "geometry", x: b.x, y: b.y, width: b.width, height: b.height });
     };
     win.on("moved", reportGeometry);
-    win.on("resized", reportGeometry);
+    win.on("resized", () => {
+      reportGeometry();
+      this.refit();
+    });
+    win.on("ready-to-show", () => {
+      if (win.isDestroyed() || this.win !== win) return;
+      if (this.visible) win.showInactive();
+    });
+    // Reparent the agent tab out before the window dies: a child
+    // WebContentsView would be destroyed with the window and kill the tab.
+    win.on("close", () => this.unmount());
     win.on("closed", () => {
       if (this.win !== win) return;
       this.win = undefined;
-      this.loaded = false;
-      // The window is gone (app quit, or an external close): stop producing
-      // frames even if the coordinator never called stop().
+      this.overlay = undefined;
+      this.mounted = false;
       this.visible = false;
-      this.syncPump();
     });
-    void win.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(
-        browserPiPWindowHTML(pipHostname(this.deps.source.meta()?.url ?? "")),
-      )}`,
-    );
     this.unsubs.push(
-      this.deps.source.onClosed(() => this.deps.sink.onGone()),
-      this.deps.source.onInteraction((hint) =>
-        this.forwardInteraction({
-          kind: hint.kind,
-          x: hint.x,
-          y: hint.y,
-          direction: hint.direction,
-          revision: ++this.lastInteractionRevision,
-        }),
-      ),
+      this.deps.host.addTabClosedListener((workdir, tabID) => {
+        if (this.matches(workdir, tabID)) this.deps.sink.onGone();
+      }),
+      this.deps.host.addInteractionListener((workdir, tabID, hint) => {
+        if (this.matches(workdir, tabID)) this.forwardInteraction(hint);
+      }),
+      this.deps.host.addNavigateListener((workdir, tabID, url) => {
+        if (this.matches(workdir, tabID)) this.pushHostLabel(url);
+      }),
+      this.deps.host.addTabReparentedListener((workdir, tabID, parent) => {
+        if (!this.matches(workdir, tabID) || !this.mounted) return;
+        if (parent !== this.win?.contentView) {
+          // A visibility takeover adopted the tab. Do not fight for it — the
+          // placeholder covers the empty PiP until the coordinator hides us.
+          this.mounted = false;
+          this.restoreBounds = undefined;
+          this.syncOverlayMode();
+        }
+      }),
     );
-    this.syncPump();
   }
 
   setVisible(visible: boolean): void {
@@ -326,19 +217,18 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
     const win = this.win;
     if (!win || win.isDestroyed()) return;
     if (visible) {
+      this.mount();
       win.showInactive();
     } else {
+      this.unmount();
       win.hide();
     }
-    this.syncPump();
   }
 
-  // Freeze/resume frame production. A stopped activity keeps its last frame
-  // on screen (CUA observation semantics) without burning captures.
-  setLive(live: boolean): void {
-    this.live = live;
-    this.syncPump();
-  }
+  // A live view has no frame production to freeze: a stopped activity simply
+  // leaves its (static) page on screen — the same observation semantics as
+  // the CUA PiP's frozen last frame, at zero capture cost.
+  setLive(): void {}
 
   updateActivity(activity: ActivitySession): void {
     this.activity = activity;
@@ -348,7 +238,12 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
   animateInteraction(interaction: Interaction): void {
     if (interaction.revision <= this.lastInteractionRevision) return;
     this.lastInteractionRevision = interaction.revision;
-    this.forwardInteraction(interaction);
+    this.forwardInteraction({
+      kind: interaction.kind as BrowserInteractionHint["kind"],
+      x: interaction.x,
+      y: interaction.y,
+      direction: interaction.direction,
+    });
   }
 
   stop(onStopped?: () => void): void {
@@ -357,10 +252,11 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
       return;
     }
     this.stopped = true;
-    this.pump.stop();
     for (const unsub of this.unsubs.splice(0)) unsub();
+    this.unmount();
     const win = this.win;
     this.win = undefined;
+    this.overlay = undefined;
     if (win && !win.isDestroyed()) {
       try {
         win.destroy();
@@ -371,43 +267,89 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
     onStopped?.();
   }
 
-  private syncPump(): void {
-    if (this.stopped) return;
-    if (this.visible && this.live) {
-      this.pump.start();
-    } else {
-      this.pump.pause();
-    }
-  }
-
-  private presentFrame(frame: BrowserPipFrame): void {
-    const payload = {
-      ...frame,
-      dataUrl: `data:image/png;base64,${frame.png.toString("base64")}`,
-      seq: ++this.frameSeq,
-    };
-    if (!this.loaded) {
-      this.pendingFrame = payload;
+  // -------------------------------------------------------------------------
+  // Mount lifecycle.
+  // -------------------------------------------------------------------------
+  private mount(): void {
+    const win = this.win;
+    if (!win || win.isDestroyed() || this.mounted) return;
+    const { workdir, tabID, host } = this.deps;
+    const bounds = host.tabBounds(workdir, tabID);
+    if (!bounds) {
+      this.deps.sink.onGone();
       return;
     }
-    this.pushFrame(payload);
+    this.viewport = {
+      width: bounds.width > 0 ? bounds.width : PIP_FALLBACK_VIEWPORT.width,
+      height: bounds.height > 0 ? bounds.height : PIP_FALLBACK_VIEWPORT.height,
+    };
+    const fit = this.containRect();
+    const restore = host.mountTabOnWindow(
+      workdir,
+      tabID,
+      win,
+      { x: fit.x, y: fit.y, width: fit.width, height: fit.height },
+      fit.scale,
+    );
+    if (!restore) {
+      this.deps.sink.onGone();
+      return;
+    }
+    this.restoreBounds = restore;
+    this.mounted = true;
+    this.syncOverlayMode();
+    this.pushHostLabel();
+    if (!this.announced) {
+      this.announced = true;
+      this.deps.sink.onEvent({ event: "ready" });
+    }
   }
 
-  private pushFrame(payload: BrowserPipFrame & { dataUrl: string; seq?: number }): void {
-    this.execute(
-      `window.wuuPipFrame?.(${JSON.stringify({
-        dataUrl: payload.dataUrl,
-        url: payload.url,
-        title: payload.title,
-        cssW: payload.width,
-        cssH: payload.height,
-        seq: payload.seq ?? 0,
-      })})`,
+  private unmount(): void {
+    if (!this.mounted) return;
+    this.mounted = false;
+    const win = this.win;
+    const restore = this.restoreBounds;
+    this.restoreBounds = undefined;
+    if (win && !win.isDestroyed() && restore) {
+      this.deps.host.unmountTabIfOwner(this.deps.workdir, this.deps.tabID, win.contentView, restore);
+    }
+    this.syncOverlayMode();
+  }
+
+  private refit(): void {
+    const win = this.win;
+    if (!win || win.isDestroyed()) return;
+    const b = win.getBounds();
+    this.overlay?.setBounds({ x: 0, y: 0, width: b.width, height: b.height });
+    if (!this.mounted) return;
+    const fit = this.containRect();
+    this.deps.host.relayoutMountedTab(
+      this.deps.workdir,
+      this.deps.tabID,
+      win.contentView,
+      { x: fit.x, y: fit.y, width: fit.width, height: fit.height },
+      fit.scale,
     );
   }
 
+  private containRect(): { x: number; y: number; width: number; height: number; scale: number } {
+    const b = this.win?.getBounds() ?? this.deps.bounds;
+    return pipContainRect(this.viewport.width, this.viewport.height, b.width, b.height);
+  }
+
+  private matches(workdir: string, tabID: string): boolean {
+    return workdir === this.deps.workdir && tabID === this.deps.tabID;
+  }
+
+  // -------------------------------------------------------------------------
+  // Overlay pushes.
+  // -------------------------------------------------------------------------
+  private syncOverlayMode(): void {
+    this.execute(`window.wuuPipMount?.(${JSON.stringify({ mounted: this.mounted })})`);
+  }
+
   private pushActivityState(): void {
-    if (!this.loaded) return;
     this.execute(
       `window.wuuPipState?.(${JSON.stringify({
         state: this.activity.state,
@@ -416,23 +358,30 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
     );
   }
 
-  private forwardInteraction(interaction: Interaction): void {
-    if (!this.loaded) return;
+  private pushHostLabel(url?: string): void {
+    const meta = this.deps.host.tabSurfaceMeta(this.deps.workdir, this.deps.tabID);
+    const label = pipHostname(url ?? meta?.url ?? "");
+    this.execute(`window.wuuPipHost?.(${JSON.stringify({ label })})`);
+  }
+
+  private forwardInteraction(hint: BrowserInteractionHint): void {
+    if (!this.mounted) return;
+    const fit = this.containRect();
     this.execute(
       `window.wuuPipInteract?.(${JSON.stringify({
-        kind: interaction.kind,
-        x: interaction.x,
-        y: interaction.y,
-        direction: interaction.direction ?? "",
-        revision: interaction.revision,
+        kind: hint.kind,
+        x: fit.x + hint.x * fit.scale,
+        y: fit.y + hint.y * fit.scale,
+        direction: hint.direction ?? "",
       })})`,
     );
   }
 
   private execute(code: string): void {
+    const overlay = this.overlay;
     const win = this.win;
-    if (!win || win.isDestroyed()) return;
-    void win.webContents.executeJavaScript(code, true).catch(() => undefined);
+    if (!overlay || !win || win.isDestroyed()) return;
+    void overlay.webContents.executeJavaScript(code, true).catch(() => undefined);
   }
 
   private createElectronWindow(bounds: Rectangle): BrowserPiPWindowHandle {
@@ -467,11 +416,24 @@ export class BrowserPiPSurface implements ObservationPiPHandle {
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     return win;
   }
+
+  private createElectronOverlay(): BrowserPiPOverlayHandle {
+    const view = new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        ...appShellWebPreferences(this.deps.isPackaged),
+      },
+    });
+    view.setBackgroundColor("#00000000");
+    return view as unknown as BrowserPiPOverlayHandle;
+  }
 }
 
 // Factory covering both observation backends: CUA keeps its native helper,
 // browser activities get the Electron surface. One coordinator, one surface,
-// two frame sources.
+// two presentation paths.
 export function createObservationPiPFactory(deps: {
   browserHost: BrowserHostCoordinator;
   isPackaged: boolean;
@@ -484,7 +446,9 @@ export function createObservationPiPFactory(deps: {
         activity,
         bounds: bounds(),
         sink,
-        source: browserFrameSourceFor(deps.browserHost, activity.workdir, tabID),
+        host: deps.browserHost,
+        workdir: activity.workdir,
+        tabID,
         isPackaged: deps.isPackaged,
       });
     }
@@ -505,13 +469,14 @@ export function createObservationPiPFactory(deps: {
 }
 
 // ---------------------------------------------------------------------------
-// Surface page. Sandboxed data: URL like the pet window; all updates arrive
+// Overlay page. Sandboxed data: URL like the pet window; all updates arrive
 // through window.wuuPip* hooks via executeJavaScript, user actions leave
-// through wuu-pip:// navigations. The page never draws error text into the
-// frame area — without fresh frames it simply keeps the last one (or the
-// placeholder), matching the CUA PiP's "never paint failure" rule.
+// through wuu-pip:// navigations. The page draws no content of its own while
+// mounted — the pixels below it are the real tab. Without a mounted view it
+// shows the frosted placeholder, matching the CUA PiP's "never paint
+// failure" rule.
 // ---------------------------------------------------------------------------
-export function browserPiPWindowHTML(initialLabel: string): string {
+export function browserPiPOverlayHTML(initialLabel: string): string {
   const label = JSON.stringify(initialLabel);
   return `<!doctype html>
 <html><head><meta charset="utf-8" />
@@ -519,15 +484,10 @@ export function browserPiPWindowHTML(initialLabel: string): string {
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;
   font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
-#root{position:relative;width:100%;height:100%;border-radius:12px;overflow:hidden;
-  background:rgba(24,24,27,.92);box-shadow:0 8px 28px rgba(0,0,0,.35);
-  -webkit-app-region:drag}
-#view{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
-  opacity:0;transition:opacity .25s ease}
-#view.live{opacity:1}
+#root{position:relative;width:100%;height:100%;-webkit-app-region:drag}
 #ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   background:rgba(28,28,32,.72);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  transition:opacity .25s ease;color:rgba(255,255,255,.55)}
+  border-radius:12px;transition:opacity .25s ease;color:rgba(255,255,255,.55)}
 #ph.gone{opacity:0;pointer-events:none}
 #strip{position:absolute;top:0;left:0;right:0;height:26px;display:flex;align-items:center;
   gap:6px;padding:0 8px;background:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,0));
@@ -555,7 +515,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;
 </style></head>
 <body>
 <div id="root">
-  <img id="view" alt="" draggable="false" />
   <div id="ph"><svg width="30" height="30" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
     <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.9 5.7 3.9 9s-1.3 6.4-3.9 9c-2.6-2.6-3.9-5.7-3.9-9S9.4 5.6 12 3z"/>
@@ -567,62 +526,50 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;
 <script>
 (function(){
   var host=document.getElementById("host");
-  var view=document.getElementById("view");
   var ph=document.getElementById("ph");
   var dot=document.getElementById("dot");
   var ptr=document.getElementById("ptr");
   var ring=document.getElementById("ring");
   var caret=document.getElementById("caret");
   var scrollEl=document.getElementById("scroll");
-  var page={w:0,h:0};
-  var lastSeq=0;
   var hideTimer=0;
   host.textContent=${label};
   document.getElementById("close").addEventListener("click",function(){
     window.location.href="wuu-pip://close";
   });
-  function fit(px,py){
-    if(!page.w||!page.h)return{x:0,y:0};
-    var w=window.innerWidth,h=window.innerHeight;
-    var s=Math.min(w/page.w,h/page.h);
-    return{x:(w-page.w*s)/2+px*s,y:(h-page.h*s)/2+py*s};
-  }
-  function place(el,p){el.style.transform="translate("+p.x+"px,"+p.y+"px)";}
-  function ping(el){el.style.opacity="1";}
-  window.wuuPipFrame=function(f){
-    if(f.seq&&f.seq<=lastSeq)return;
-    lastSeq=f.seq||lastSeq;
-    page.w=f.cssW;page.h=f.cssH;
-    view.src=f.dataUrl;
-    view.classList.add("live");
-    ph.classList.add("gone");
-    if(f.url){try{host.textContent=new URL(f.url).host||f.url;}catch(e){host.textContent=f.url;}}
+  function place(el,x,y){el.style.transform="translate("+x+"px,"+y+"px)";}
+  window.wuuPipMount=function(m){
+    ph.classList.toggle("gone",!!(m&&m.mounted));
+  };
+  window.wuuPipHost=function(h){
+    host.textContent=(h&&h.label)||"";
   };
   window.wuuPipState=function(s){
     dot.className=s.state==="waiting_confirmation"?"waiting":
       (s.state==="stopped"||s.controller==="none"?"frozen":"");
   };
   window.wuuPipInteract=function(it){
-    var p=fit(it.x,it.y);
+    var x=it.x||0,y=it.y||0;
     ptr.style.transition="transform .14s ease-out,opacity .2s ease";
-    place(ptr,p);ping(ptr);
+    place(ptr,x,y);
+    ptr.style.opacity="1";
     clearTimeout(hideTimer);
     hideTimer=setTimeout(function(){ptr.style.opacity="0";},1200);
     if(it.kind==="click"){
-      place(ring,p);
+      place(ring,x,y);
       ring.style.opacity="0";
-      ring.animate([{opacity:.9,transform:"translate("+p.x+"px,"+p.y+"px) scale(.4)"},
-        {opacity:0,transform:"translate("+p.x+"px,"+p.y+"px) scale(1.4)"}],
+      ring.animate([{opacity:.9,transform:"translate("+x+"px,"+y+"px) scale(.4)"},
+        {opacity:0,transform:"translate("+x+"px,"+y+"px) scale(1.4)"}],
         {duration:380,easing:"ease-out"});
     }else if(it.kind==="type"){
-      place(caret,p);
+      place(caret,x,y);
       caret.animate([{opacity:1},{opacity:1}],{duration:600});
       caret.animate([{opacity:1},{opacity:0}],{duration:600,delay:600});
     }else if(it.kind==="scroll"){
       var ch={up:"↑",down:"↓",left:"←",right:"→"}[it.direction]||"↕";
       scrollEl.textContent=ch;
-      scrollEl.animate([{opacity:.95,transform:"translate("+p.x+"px,"+p.y+"px)"},
-        {opacity:0,transform:"translate("+p.x+"px,"+(p.y+(it.direction==="up"?10:-10))+"px)"}],
+      scrollEl.animate([{opacity:.95,transform:"translate(-50%,-50%) translate("+x+"px,"+y+"px)"},
+        {opacity:0,transform:"translate(-50%,-50%) translate("+x+"px,"+(y+(it.direction==="up"?10:-10))+"px)"}],
         {duration:520,easing:"ease-out"});
     }
   };

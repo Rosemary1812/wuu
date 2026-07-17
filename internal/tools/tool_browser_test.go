@@ -160,6 +160,17 @@ func browserCall(action string, fields map[string]any) providers.ToolCall {
 	return providers.ToolCall{ID: action + "-1", Name: browserToolName, Arguments: string(args)}
 }
 
+func TestBrowserLegacyDiscoveryNameLoadsProviderSafeTool(t *testing.T) {
+	kit, _, _ := newBrowserKit(t, &fakeBrowserBridge{})
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.SetToolSearchEnabled(true)
+
+	matches := kit.searchDeferredTools("select:browser", 1)
+	if len(matches) != 1 || matches[0].Name != browserToolName {
+		t.Fatalf("select:browser matches = %+v, want %q", matches, browserToolName)
+	}
+}
+
 func TestBrowserObserveBuildsActivityRefAndPreview(t *testing.T) {
 	bridge := &fakeBrowserBridge{
 		onCDP: func(method string, params map[string]any) (any, error) {

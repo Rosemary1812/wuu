@@ -319,7 +319,7 @@ func addWebTools(b *surfaceBuilder) {
 // SetBrowserEnabled), so a deferred entry here is inert until both the surface
 // exposes it AND the toolkit enables it.
 func addBrowserTools(b *surfaceBuilder) {
-	b.addDeferred("browser", capability.CapabilityBrowser)
+	b.addDeferred("wuu_browser", capability.CapabilityBrowser)
 }
 
 // addTaskTools registers the orchestration suite: spawn_agent as a visible

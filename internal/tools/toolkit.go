@@ -31,7 +31,7 @@ import (
 
 const (
 	helpMeToolName             = "helpme"
-	browserToolName            = "browser"
+	browserToolName            = "wuu_browser"
 	defaultShellTimeoutSeconds = 300
 	maxShellTimeoutSeconds     = 3600
 	defaultMaxFileBytes        = 256 * 1024

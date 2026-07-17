@@ -1,209 +1,56 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Rectangle } from "electron";
+import { describe, expect, it, vi } from "vitest";
 import type { ActivitySession } from "../shared/protocol";
-import type { BrowserInteractionHint, BrowserTabFrame } from "./browserHostWindows";
+import type { BrowserInteractionHint } from "./browserHostWindows";
 import {
-  BrowserFramePump,
   BrowserPiPSurface,
-  browserPiPWindowHTML,
+  browserPiPOverlayHTML,
   pipContainRect,
-  pipFrameHash,
   pipHostname,
-  pipMapPoint,
-  type BrowserFrameSource,
+  type BrowserPiPOverlayHandle,
+  type BrowserPiPTabHost,
   type BrowserPiPWindowHandle,
 } from "./browserPiPWindow";
 import type { ObservationPiPEventSink } from "./cuaActivityWindows";
 
-afterEach(() => {
-  vi.useRealTimers();
-});
-
-function png(label: string): Buffer {
-  return Buffer.from(`png:${label}`);
-}
-
-function frame(label: string): BrowserTabFrame {
-  return { png: png(label), width: 1280, height: 800 };
-}
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe("browser PiP pure helpers", () => {
-  it("hashes frames for change detection", () => {
-    expect(pipFrameHash(png("a"))).toBe(pipFrameHash(png("a")));
-    expect(pipFrameHash(png("a"))).not.toBe(pipFrameHash(png("b")));
-  });
-
   it("extracts the host for the surface chrome", () => {
     expect(pipHostname("https://docs.example.com/path?q=1")).toBe("docs.example.com");
-    expect(pipHostname("http://localhost:3000/app")).toBe("localhost:3000");
-    expect(pipHostname("about:blank")).toBe("about:blank");
+    expect(pipHostname("not a url")).toBe("not a url");
+    expect(pipHostname("")).toBe("about:blank");
   });
 
-  it("maps page points through object-fit contain letterboxing", () => {
-    // Page 1000x500 into a 260x170 box: width-limited, vertical letterbox.
+  it("fits the viewport into the window with letterboxing and a zoom scale", () => {
     const rect = pipContainRect(1000, 500, 260, 170);
     expect(rect.scale).toBeCloseTo(0.26);
-    expect(rect.y).toBeCloseTo((170 - 500 * 0.26) / 2);
-    const point = pipMapPoint(500, 250, 1000, 500, 260, 170);
-    expect(point.x).toBeCloseTo(130);
-    expect(point.y).toBeCloseTo(rect.y + 250 * 0.26);
+    expect(rect.width).toBeCloseTo(260);
+    expect(rect.height).toBeCloseTo(130);
+    expect(rect.x).toBeCloseTo(0);
+    expect(rect.y).toBeCloseTo(20);
     expect(pipContainRect(0, 500, 260, 170).scale).toBe(0);
   });
 });
 
-describe("BrowserFramePump", () => {
-  function makePump(overrides: {
-    capture?: () => Promise<BrowserTabFrame | undefined>;
-    meta?: () => { url: string; title: string } | undefined;
-    onFrame?: (frame: BrowserTabFrame & { url: string; title: string }) => void;
-    onGone?: () => void;
-    onFirstFrame?: () => void;
-  }) {
-    const frames: Array<BrowserTabFrame & { url: string; title: string }> = [];
-    const gone = vi.fn(overrides.onGone ?? (() => undefined));
-    const first = vi.fn(overrides.onFirstFrame ?? (() => undefined));
-    const capture = vi.fn(overrides.capture ?? (async () => frame("a")));
-    const meta = vi.fn(overrides.meta ?? (() => ({ url: "https://a.test/", title: "A" })));
-    const pump = new BrowserFramePump(
-      { capture, meta },
-      {
-        onFrame: (f) => {
-          frames.push(f);
-          overrides.onFrame?.(f);
-        },
-        onGone: gone,
-        onFirstFrame: first,
-      },
-      100,
-    );
-    return { pump, frames, gone, first, capture, meta };
-  }
-
-  it("captures at the cadence and dedupes identical frames", async () => {
-    vi.useFakeTimers();
-    const { pump, frames, first, capture } = makePump({});
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(frames).toHaveLength(1);
-    expect(first).toHaveBeenCalledTimes(1);
-
-    // Same pixels + same meta: ticks keep firing but nothing is re-sent.
-    await vi.advanceTimersByTimeAsync(300);
-    expect(frames).toHaveLength(1);
-    expect(capture.mock.calls.length).toBeGreaterThan(1);
-    pump.stop();
-  });
-
-  it("re-sends when only the page identity changed", async () => {
-    vi.useFakeTimers();
-    let metaValue = { url: "https://a.test/", title: "A" };
-    const { pump, frames } = makePump({ meta: () => metaValue });
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    metaValue = { url: "https://b.test/", title: "B" };
-    await vi.advanceTimersByTimeAsync(100);
-    expect(frames.map((f) => f.url)).toEqual(["https://a.test/", "https://b.test/"]);
-    pump.stop();
-  });
-
-  it("keeps a single capture in flight under slow captures", async () => {
-    vi.useFakeTimers();
-    let resolveCapture: ((frame: BrowserTabFrame) => void) | undefined;
-    const { pump, capture } = makePump({
-      capture: () =>
-        new Promise<BrowserTabFrame>((resolve) => {
-          resolveCapture = resolve;
-        }),
-    });
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(500);
-    expect(capture).toHaveBeenCalledTimes(1);
-    resolveCapture?.(frame("slow"));
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(capture).toHaveBeenCalledTimes(2);
-    pump.stop();
-  });
-
-  it("backs off after transient capture failures and recovers", async () => {
-    vi.useFakeTimers();
-    let failures = 1;
-    const { pump, frames, capture } = makePump({
-      capture: async () => {
-        if (failures > 0) {
-          failures -= 1;
-          throw new Error("capture failed");
-        }
-        return frame("ok");
-      },
-    });
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(capture).toHaveBeenCalledTimes(1);
-    // First failure backs off 2s; a tick before that must not happen.
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(capture).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(capture).toHaveBeenCalledTimes(2);
-    expect(frames).toHaveLength(1);
-    pump.stop();
-  });
-
-  it("reports a gone tab exactly once and stops", async () => {
-    vi.useFakeTimers();
-    const { pump, gone, capture } = makePump({ capture: async () => undefined });
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(gone).toHaveBeenCalledTimes(1);
-    expect(capture).toHaveBeenCalledTimes(1);
-    pump.stop();
-  });
-
-  it("pauses without capturing and resumes immediately", async () => {
-    vi.useFakeTimers();
-    const { pump, frames, capture } = makePump({});
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    pump.pause();
-    const callsAtPause = capture.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(500);
-    expect(capture).toHaveBeenCalledTimes(callsAtPause);
-    pump.start();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(frames.length).toBeGreaterThan(0);
-    pump.stop();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Surface lifecycle.
-// ---------------------------------------------------------------------------
-
-class FakePiPWindow implements BrowserPiPWindowHandle {
+class FakePipWindow {
+  bounds: Rectangle;
   destroyed = false;
   visible = false;
-  executed: string[] = [];
-  loadedURL = "";
-  bounds: Rectangle;
-  private listeners = new Map<string, Array<(...args: unknown[]) => void>>();
-  private wcListeners = new Map<string, Array<(...args: unknown[]) => void>>();
+  readonly added: unknown[] = [];
+  readonly removed: unknown[] = [];
+  private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>();
 
   constructor(bounds: Rectangle) {
-    this.bounds = { ...bounds };
+    this.bounds = bounds;
   }
 
-  readonly webContents = {
-    executeJavaScript: async (code: string): Promise<unknown> => {
-      this.executed.push(code);
-      return undefined;
+  readonly contentView = {
+    addChildView: (view: unknown): void => {
+      this.added.push(view);
     },
-    setWindowOpenHandler: () => undefined,
-    on: (event: string, listener: (...args: unknown[]) => void): void => {
-      const list = this.wcListeners.get(event) ?? [];
-      list.push(listener);
-      this.wcListeners.set(event, list);
+    removeChildView: (view: unknown): void => {
+      this.removed.push(view);
     },
   };
 
@@ -229,220 +76,318 @@ class FakePiPWindow implements BrowserPiPWindowHandle {
     list.push(listener);
     this.listeners.set(event, list);
   }
-  async loadURL(url: string): Promise<void> {
-    this.loadedURL = url;
+  emit(event: string, ...args: unknown[]): void {
+    for (const listener of this.listeners.get(event) ?? []) listener(...args);
   }
   destroy(): void {
     this.destroyed = true;
     this.emit("closed");
   }
 
-  emit(event: string, ...args: unknown[]): void {
-    for (const listener of this.listeners.get(event) ?? []) listener(...args);
-  }
-  emitWebContents(event: string, ...args: unknown[]): void {
-    for (const listener of this.wcListeners.get(event) ?? []) listener(...args);
-  }
-  finishLoad(): void {
-    this.emitWebContents("did-finish-load");
+  asHandle(): BrowserPiPWindowHandle {
+    return this as unknown as BrowserPiPWindowHandle;
   }
 }
 
-type FakeSource = BrowserFrameSource & {
-  frames: Array<BrowserTabFrame | undefined>;
-  emitClosed(): void;
-  emitHint(hint: BrowserInteractionHint): void;
-  captureCalls: number;
-};
+class FakeOverlay {
+  readonly executed: string[] = [];
+  readonly boundsSet: Rectangle[] = [];
+  loadedURL = "";
+  destroyed = false;
+  private navigateListener: ((event: unknown, url: string) => void) | undefined;
 
-function makeSource(): FakeSource {
-  const source: FakeSource = {
-    frames: [],
-    captureCalls: 0,
-    capture: async () => {
-      source.captureCalls += 1;
-      return source.frames.length > 0 ? source.frames.shift() : frame("live");
+  readonly webContents = {
+    loadURL: async (url: string) => {
+      this.loadedURL = url;
     },
-    meta: () => ({ url: "https://page.test/", title: "Page" }),
-    onClosed: (listener) => {
-      closedListeners.push(listener);
-      return () => undefined;
+    executeJavaScript: async (code: string) => {
+      this.executed.push(code);
+      return undefined;
     },
-    onInteraction: (listener) => {
-      hintListeners.push(listener);
-      return () => {
-        const index = hintListeners.indexOf(listener);
-        if (index >= 0) hintListeners.splice(index, 1);
-      };
+    setWindowOpenHandler: () => undefined,
+    on: (_event: string, listener: (event: unknown, url: string) => void) => {
+      this.navigateListener = listener;
     },
-    emitClosed: () => {
-      for (const listener of closedListeners) listener();
-    },
-    emitHint: (hint) => {
-      for (const listener of [...hintListeners]) listener(hint);
-    },
+    isDestroyed: () => this.destroyed,
   };
-  const closedListeners: Array<() => void> = [];
-  const hintListeners: Array<(hint: BrowserInteractionHint) => void> = [];
-  return source;
+
+  setBounds(bounds: Rectangle): void {
+    this.boundsSet.push(bounds);
+  }
+
+  navigate(url: string): void {
+    this.navigateListener?.({ preventDefault: vi.fn() }, url);
+  }
+
+  asHandle(): BrowserPiPOverlayHandle {
+    return this as unknown as BrowserPiPOverlayHandle;
+  }
 }
 
-function browserActivity(overrides: Partial<ActivitySession> = {}): ActivitySession {
+class FakeHost {
+  bounds: Rectangle | undefined = { x: 0, y: 0, width: 1000, height: 500 };
+  meta = { url: "https://example.com/page", title: "Example" };
+  readonly mounts: Array<{ rect: Rectangle; zoom: number }> = [];
+  readonly unmounts: Array<{ restore: Rectangle }> = [];
+  readonly relayouts: Array<{ rect: Rectangle; zoom: number }> = [];
+  private readonly listeners = {
+    closed: new Set<(workdir: string, tabID: string) => void>(),
+    interaction: new Set<(workdir: string, tabID: string, hint: BrowserInteractionHint) => void>(),
+    navigate: new Set<(workdir: string, tabID: string, url: string) => void>(),
+    reparented: new Set<(workdir: string, tabID: string, parent: unknown) => void>(),
+  };
+
+  tabBounds(): Rectangle | undefined {
+    return this.bounds;
+  }
+  tabSurfaceMeta(): { url: string; title: string } | undefined {
+    return this.meta;
+  }
+  mountTabOnWindow(_w: string, _t: string, _p: unknown, rect: Rectangle, zoom: number): Rectangle | undefined {
+    if (!this.bounds) return undefined;
+    this.mounts.push({ rect, zoom });
+    return this.bounds;
+  }
+  unmountTabIfOwner(_w: string, _t: string, _o: unknown, restore: Rectangle): void {
+    this.unmounts.push({ restore });
+  }
+  relayoutMountedTab(_w: string, _t: string, _o: unknown, rect: Rectangle, zoom: number): void {
+    this.relayouts.push({ rect, zoom });
+  }
+  addTabClosedListener(listener: (workdir: string, tabID: string) => void): () => void {
+    this.listeners.closed.add(listener);
+    return () => this.listeners.closed.delete(listener);
+  }
+  addInteractionListener(
+    listener: (workdir: string, tabID: string, hint: BrowserInteractionHint) => void,
+  ): () => void {
+    this.listeners.interaction.add(listener);
+    return () => this.listeners.interaction.delete(listener);
+  }
+  addNavigateListener(listener: (workdir: string, tabID: string, url: string) => void): () => void {
+    this.listeners.navigate.add(listener);
+    return () => this.listeners.navigate.delete(listener);
+  }
+  addTabReparentedListener(
+    listener: (workdir: string, tabID: string, parent: unknown) => void,
+  ): () => void {
+    this.listeners.reparented.add(listener);
+    return () => this.listeners.reparented.delete(listener);
+  }
+
+  emitClosed(): void {
+    for (const listener of this.listeners.closed) listener("/repo", "t1");
+  }
+  emitInteraction(hint: BrowserInteractionHint): void {
+    for (const listener of this.listeners.interaction) listener("/repo", "t1", hint);
+  }
+  emitNavigate(url: string): void {
+    for (const listener of this.listeners.navigate) listener("/repo", "t1", url);
+  }
+  emitReparented(parent: unknown): void {
+    for (const listener of this.listeners.reparented) listener("/repo", "t1", parent);
+  }
+
+  asHost(): BrowserPiPTabHost {
+    return this as unknown as BrowserPiPTabHost;
+  }
+}
+
+function makeActivity(): ActivitySession {
   return {
-    id: "activity-1",
+    id: "a1",
+    thread_id: "th1",
     kind: "browser",
-    thread_id: "thread-1",
+    plugin_id: "browser",
+    target: "t1",
     workdir: "/repo",
-    plugin_id: "embedded-browser",
-    target: "tab-1",
-    state: "background_controlled",
+    state: "active",
     controller: "agent",
-    created_at: "2026-07-17T10:00:00Z",
-    updated_at: "2026-07-17T10:00:01Z",
-    ...overrides,
+    created_at: "2026-07-17T00:00:00Z",
+    updated_at: "2026-07-17T00:00:00Z",
+  } as ActivitySession;
+}
+
+function makeSink(): ObservationPiPEventSink & {
+  events: Array<{ event: string }>;
+  gone: number;
+  failures: string[];
+} {
+  const sink = {
+    events: [] as Array<{ event: string }>,
+    gone: 0,
+    failures: [] as string[],
+    onEvent(event: { event: string }): void {
+      this.events.push(event);
+    },
+    onFailure(message: string): void {
+      this.failures.push(message);
+    },
+    onGone(): void {
+      this.gone += 1;
+    },
+  };
+  return sink as unknown as ObservationPiPEventSink & {
+    events: Array<{ event: string }>;
+    gone: number;
+    failures: string[];
   };
 }
 
-function makeSurface(source: FakeSource): {
+function makeSurface(opts?: { host?: FakeHost; bounds?: Rectangle }): {
   surface: BrowserPiPSurface;
-  sink: ObservationPiPEventSink & { onEvent: ReturnType<typeof vi.fn> };
-  windows: FakePiPWindow[];
+  win: FakePipWindow;
+  overlay: FakeOverlay;
+  host: FakeHost;
+  sink: ReturnType<typeof makeSink>;
 } {
-  const windows: FakePiPWindow[] = [];
-  const sink = {
-    onEvent: vi.fn(),
-    onFailure: vi.fn(),
-    onGone: vi.fn(),
-  };
+  const host = opts?.host ?? new FakeHost();
+  const sink = makeSink();
+  const bounds = opts?.bounds ?? { x: 100, y: 100, width: 260, height: 170 };
+  const win = new FakePipWindow(bounds);
+  const overlay = new FakeOverlay();
   const surface = new BrowserPiPSurface({
-    activity: browserActivity(),
-    bounds: { x: 100, y: 100, width: 260, height: 170 },
+    activity: makeActivity(),
+    bounds,
     sink,
-    source,
+    host: host.asHost(),
+    workdir: "/repo",
+    tabID: "t1",
     isPackaged: false,
-    createWindow: (bounds) => {
-      const win = new FakePiPWindow(bounds);
-      windows.push(win);
-      return win;
-    },
+    createWindow: () => win.asHandle(),
+    createOverlay: () => overlay.asHandle(),
   });
-  return { surface, sink: sink as ObservationPiPEventSink & { onEvent: ReturnType<typeof vi.fn> }, windows };
+  return { surface, win, overlay, host, sink };
 }
 
 describe("BrowserPiPSurface", () => {
-  it("presents frames only after the page loaded, then replays the queued frame", async () => {
-    vi.useFakeTimers();
-    const source = makeSource();
-    const { surface, sink, windows } = makeSurface(source);
+  it("mounts the real tab zoom-fitted on show and restores it on hide", async () => {
+    const { surface, win, overlay, host, sink } = makeSurface();
     surface.start();
     surface.setVisible(true);
-    await vi.advanceTimersByTimeAsync(400);
-    const win = windows[0];
-    // Not loaded yet: frames were captured but nothing reached the page.
-    expect(win.executed).toHaveLength(0);
-    expect(sink.onEvent).toHaveBeenCalledWith({ event: "ready" });
+    await settle();
 
-    win.finishLoad();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(win.executed.some((code) => code.includes("wuuPipFrame"))).toBe(true);
-    expect(win.executed.some((code) => code.includes("wuuPipState"))).toBe(true);
-    surface.stop();
-  });
-
-  it("pauses the pump while frozen or hidden and resumes on live+visible", async () => {
-    vi.useFakeTimers();
-    const source = makeSource();
-    const { surface } = makeSurface(source);
-    surface.start();
-    surface.setVisible(true);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(source.captureCalls).toBeGreaterThan(0);
-
-    surface.setLive(false);
-    const callsAtFreeze = source.captureCalls;
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(source.captureCalls).toBe(callsAtFreeze);
-
-    surface.setLive(true);
-    await vi.advanceTimersByTimeAsync(400);
-    expect(source.captureCalls).toBeGreaterThan(callsAtFreeze);
+    // viewport 1000×500 into 260×170: scale 0.26, letterboxed vertically.
+    expect(host.mounts).toHaveLength(1);
+    expect(host.mounts[0].zoom).toBeCloseTo(0.26);
+    expect(host.mounts[0].rect.width).toBeCloseTo(260);
+    expect(host.mounts[0].rect.height).toBeCloseTo(130);
+    expect(host.mounts[0].rect.y).toBeCloseTo(20);
+    expect(win.visible).toBe(true);
+    expect(sink.events.some((e) => e.event === "ready")).toBe(true);
+    expect(overlay.executed.some((code) => code.includes('"mounted":true'))).toBe(true);
 
     surface.setVisible(false);
-    const callsAtHide = source.captureCalls;
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(source.captureCalls).toBe(callsAtHide);
+    expect(host.unmounts).toEqual([{ restore: { x: 0, y: 0, width: 1000, height: 500 } }]);
+    expect(win.visible).toBe(false);
     surface.stop();
   });
 
-  it("forwards page interaction hints with local revisions and dedupes stale ones", async () => {
-    vi.useFakeTimers();
-    const source = makeSource();
-    const { surface, windows } = makeSurface(source);
+  it("reports a missing tab as gone instead of mounting", () => {
+    const host = new FakeHost();
+    host.bounds = undefined;
+    const { surface, sink } = makeSurface({ host });
     surface.start();
     surface.setVisible(true);
-    windows[0].finishLoad();
-
-    source.emitHint({ kind: "click", x: 100, y: 200 });
-    source.emitHint({ kind: "scroll", x: 0, y: 0, direction: "down" });
-    const interactCalls = windows[0].executed.filter((code) => code.includes("wuuPipInteract"));
-    expect(interactCalls).toHaveLength(2);
-    expect(interactCalls[0]).toContain('"revision":1');
-    expect(interactCalls[1]).toContain('"revision":2');
-    expect(interactCalls[1]).toContain('"direction":"down"');
-
-    // A stale protocol interaction (older revision) is ignored.
-    surface.animateInteraction({ kind: "click", x: 1, y: 1, revision: 1 });
-    expect(windows[0].executed.filter((code) => code.includes("wuuPipInteract"))).toHaveLength(2);
-    surface.animateInteraction({ kind: "click", x: 1, y: 1, revision: 3 });
-    expect(windows[0].executed.filter((code) => code.includes("wuuPipInteract"))).toHaveLength(3);
+    expect(host.mounts).toHaveLength(0);
+    expect(sink.gone).toBe(1);
     surface.stop();
   });
 
-  it("reports close navigation and geometry to the sink, and tears down on stop", async () => {
-    vi.useFakeTimers();
-    const source = makeSource();
-    const { surface, sink, windows } = makeSurface(source);
+  it("shows the placeholder again when a takeover adopts the mounted tab", async () => {
+    const { surface, overlay, host } = makeSurface();
     surface.start();
     surface.setVisible(true);
-    const win = windows[0];
-    win.finishLoad();
+    await settle();
+    overlay.executed.length = 0;
 
-    const prevented = vi.fn();
-    win.emitWebContents("will-navigate", { preventDefault: prevented }, "wuu-pip://close");
-    expect(prevented).toHaveBeenCalled();
-    expect(sink.onEvent).toHaveBeenCalledWith({ event: "user_close" });
+    host.emitReparented({ foreign: true });
+    expect(overlay.executed.some((code) => code.includes('"mounted":false'))).toBe(true);
+
+    // Hiding afterwards must not yank the adopted tab back.
+    surface.setVisible(false);
+    expect(host.unmounts).toHaveLength(0);
+    surface.stop();
+  });
+
+  it("refits the overlay and the mounted tab when the window resizes", async () => {
+    const { surface, win, overlay, host } = makeSurface();
+    surface.start();
+    surface.setVisible(true);
+    await settle();
+
+    win.bounds = { ...win.bounds, width: 520, height: 340 };
+    win.emit("resized");
+    expect(overlay.boundsSet.at(-1)).toEqual({ x: 0, y: 0, width: 520, height: 340 });
+    expect(host.relayouts).toHaveLength(1);
+    expect(host.relayouts[0].zoom).toBeCloseTo(0.52);
+    surface.stop();
+  });
+
+  it("maps interaction hints from page CSS pixels into window coordinates", async () => {
+    const { surface, overlay, host } = makeSurface();
+    surface.start();
+    surface.setVisible(true);
+    await settle();
+    overlay.executed.length = 0;
+
+    host.emitInteraction({ kind: "click", x: 500, y: 250 });
+    const push = overlay.executed.find((code) => code.includes("wuuPipInteract"));
+    expect(push).toBeDefined();
+    // contain rect: scale 0.26, offset (0,20) → (130, 85).
+    expect(push).toContain('"x":130');
+    expect(push).toContain('"y":85');
+    surface.stop();
+  });
+
+  it("reports close navigation as user_close and geometry on move", async () => {
+    const { surface, win, overlay, sink } = makeSurface();
+    surface.start();
+    await settle();
+
+    overlay.navigate("wuu-pip://close");
+    expect(sink.events.some((e) => e.event === "user_close")).toBe(true);
 
     win.emit("moved");
-    expect(sink.onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ event: "geometry", width: 260, height: 170 }),
-    );
+    const geometry = sink.events.find((e) => e.event === "geometry");
+    expect(geometry).toMatchObject({ x: 100, y: 100, width: 260, height: 170 });
+    surface.stop();
+  });
 
-    const stopped = vi.fn();
-    surface.stop(stopped);
-    expect(stopped).toHaveBeenCalledTimes(1);
-    expect(win.destroyed).toBe(true);
-    source.emitHint({ kind: "click", x: 1, y: 1 });
-    expect(win.executed.filter((code) => code.includes("wuuPipInteract"))).toHaveLength(0);
-    surface.stop(stopped);
-    expect(stopped).toHaveBeenCalledTimes(2);
+  it("parks the tab back before an external window close destroys the view", () => {
+    const { surface, win, host } = makeSurface();
+    surface.start();
+    surface.setVisible(true);
+    win.emit("close");
+    expect(host.unmounts).toEqual([{ restore: { x: 0, y: 0, width: 1000, height: 500 } }]);
+    surface.stop();
   });
 
   it("reports a closed tab as gone", () => {
-    vi.useFakeTimers();
-    const source = makeSource();
-    const { surface, sink } = makeSurface(source);
+    const { surface, host, sink } = makeSurface();
     surface.start();
-    surface.setVisible(true);
-    source.emitClosed();
-    expect(sink.onGone).toHaveBeenCalledTimes(1);
+    host.emitClosed();
+    expect(sink.gone).toBe(1);
     surface.stop();
   });
 
-  it("never leaks third-party product names into the surface page", () => {
-    const html = browserPiPWindowHTML("example.com");
-    expect(html).toContain("wuuPipFrame");
-    expect(html).toContain("wuuPipInteract");
-    expect(html).toContain("wuu-pip://close");
-    expect(html.toLowerCase()).not.toMatch(/chatgpt|openai|codex(?!Pet)/);
+  it("updates the chrome label when the tab navigates", async () => {
+    const { surface, overlay, host } = makeSurface();
+    surface.start();
+    surface.setVisible(true);
+    await settle();
+    overlay.executed.length = 0;
+
+    host.meta = { url: "https://next.test/path", title: "Next" };
+    host.emitNavigate("https://next.test/path");
+    expect(
+      overlay.executed.some((code) => code.includes("wuuPipHost") && code.includes("next.test")),
+    ).toBe(true);
+    surface.stop();
+  });
+
+  it("never leaks third-party product names into the overlay page", () => {
+    const html = browserPiPOverlayHTML("example.com");
+    expect(html).not.toMatch(/chatgpt|openai|claude|anthropic/i);
   });
 });

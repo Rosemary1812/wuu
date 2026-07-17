@@ -127,6 +127,18 @@ func TestChat_RejectsInvalidToolSurfaceBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestOpenAIToolSurfaceValidationTargetReservesFirstPartyNames(t *testing.T) {
+	firstParty := openAIToolSurfaceValidationTarget("https://chatgpt.com/backend-api/codex/", "gpt-test")
+	if !reflect.DeepEqual(firstParty.ReservedToolNames, []string{"browser"}) {
+		t.Fatalf("first-party reserved names = %v", firstParty.ReservedToolNames)
+	}
+
+	compatible := openAIToolSurfaceValidationTarget("https://openai-compatible.example.com/v1", "gpt-test")
+	if len(compatible.ReservedToolNames) != 0 {
+		t.Fatalf("compatible endpoint inherited first-party reserved names: %v", compatible.ReservedToolNames)
+	}
+}
+
 func TestChat_SendsMaxTokensAndReasoningEffort(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any

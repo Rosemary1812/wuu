@@ -1,12 +1,12 @@
 ---
 name: browser
 description: 嵌入式浏览器自动化：在后台的隐藏网页宿主里导航、观察并操作网页。Use when a task must open, read, or act on a web page and no safer interface or connector can complete it.
-allowed-tools: [browser]
+allowed-tools: [wuu_browser]
 ---
 
 # 嵌入式浏览器自动化
 
-用 `browser` 工具在后台的嵌入式网页宿主里导航、观察并操作网页。
+用 `wuu_browser` 工具在后台的嵌入式网页宿主里导航、观察并操作网页。
 
 ## 控制模型
 

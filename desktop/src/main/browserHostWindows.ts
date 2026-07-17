@@ -62,6 +62,11 @@ export interface BrowserWebContentsHandle {
   readonly debugger: BrowserDebuggerHandle;
   setBackgroundThrottling(allowed: boolean): void;
   setWindowOpenHandler(handler: () => { action: "deny" } | { action: "allow" }): void;
+  // UI zoom scales rendering only. CDP input coordinates and the layout
+  // viewport are CSS-px based and unaffected, so the PiP can shrink the view
+  // for display without disturbing the agent's coordinate space.
+  setZoomFactor(factor: number): void;
+  on(event: string, listener: (...args: unknown[]) => void): void;
   loadURL(url: string): Promise<unknown>;
   getURL(): string;
   getTitle(): string;
@@ -72,6 +77,7 @@ export interface BrowserWebContentsHandle {
 
 export interface BrowserViewHandle {
   readonly webContents: BrowserWebContentsHandle;
+  getBounds(): Rectangle;
   setBounds(bounds: Rectangle): void;
   setVisible(visible: boolean): void;
 }
@@ -104,14 +110,6 @@ export interface BrowserHostDeps {
 export interface BrowserReplyPort {
   respond(id: string, result: unknown): void;
   reject(id: string, message: string): void;
-}
-
-// A single captured frame of an agent tab, in the CSS-pixel coordinate space
-// the model's click/type actions already use (capturePage DIP size).
-export interface BrowserTabFrame {
-  png: Buffer;
-  width: number;
-  height: number;
 }
 
 // Page identity shown on the preview surface chrome.
@@ -194,6 +192,13 @@ export class BrowserHostCoordinator {
     (workdir: string, tabID: string, hint: BrowserInteractionHint) => void
   >();
   private readonly tabClosedListeners = new Set<(workdir: string, tabID: string) => void>();
+  // Navigation and reparent notifications let the observation surface (PiP)
+  // keep its chrome label fresh and notice when a visibility takeover adopts
+  // the tab it is presenting.
+  private readonly navigateListeners = new Set<(workdir: string, tabID: string, url: string) => void>();
+  private readonly tabReparentedListeners = new Set<
+    (workdir: string, tabID: string, parent: BrowserParentWindowHandle["contentView"] | undefined) => void
+  >();
 
   constructor(
     private readonly registry: WindowRegistry,
@@ -278,15 +283,80 @@ export class BrowserHostCoordinator {
     return () => this.tabClosedListeners.delete(listener);
   }
 
-  // One fresh frame of the tab, or undefined when the tab/view is gone. Uses
-  // the same stayHidden capture as observe screenshots, so a hidden tab keeps
-  // producing real frames for the preview without being promoted on-screen.
-  async captureTabFrame(workdir: string, tabID: string): Promise<BrowserTabFrame | undefined> {
+  addNavigateListener(listener: (workdir: string, tabID: string, url: string) => void): () => void {
+    this.navigateListeners.add(listener);
+    return () => this.navigateListeners.delete(listener);
+  }
+
+  addTabReparentedListener(
+    listener: (workdir: string, tabID: string, parent: BrowserParentWindowHandle["contentView"] | undefined) => void,
+  ): () => void {
+    this.tabReparentedListeners.add(listener);
+    return () => this.tabReparentedListeners.delete(listener);
+  }
+
+  // Current DIP bounds of the tab's view — i.e. its layout viewport while the
+  // zoom factor is 1. undefined when the tab is gone.
+  tabBounds(workdir: string, tabID: string): Rectangle | undefined {
     const entry = this.tabs.get(tabKey(workdir, tabID));
     if (!entry || entry.view.webContents.isDestroyed()) return undefined;
-    const image = await entry.view.webContents.capturePage(undefined, { stayHidden: true });
-    const size = image.getSize();
-    return { png: image.toPNG(), width: size.width, height: size.height };
+    return entry.view.getBounds();
+  }
+
+  // Mount the tab onto an observation window (PiP): reparent, then shrink the
+  // rendering into `rect` via UI zoom so the layout viewport — and with it
+  // every CDP coordinate the agent uses — stays exactly what it was. Returns
+  // the pre-mount bounds for restoration on unmount; undefined when the tab
+  // is gone.
+  mountTabOnWindow(
+    workdir: string,
+    tabID: string,
+    parent: BrowserParentWindowHandle,
+    rect: Rectangle,
+    zoom: number,
+  ): Rectangle | undefined {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    if (!entry || entry.view.webContents.isDestroyed()) return undefined;
+    const previous = entry.view.getBounds();
+    this.reparent(entry, parent);
+    entry.view.webContents.setZoomFactor(zoom);
+    entry.view.setBounds(rect);
+    entry.view.setVisible(true);
+    return previous;
+  }
+
+  // Re-fit an already-mounted tab after the observation window resized.
+  // Ownership-checked like unmountTabIfOwner: a takeover-adopted tab keeps
+  // the panel's geometry.
+  relayoutMountedTab(
+    workdir: string,
+    tabID: string,
+    owner: BrowserParentWindowHandle["contentView"],
+    rect: Rectangle,
+    zoom: number,
+  ): void {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    if (!entry || entry.view.webContents.isDestroyed()) return;
+    if (entry.currentParent !== owner) return;
+    entry.view.webContents.setZoomFactor(zoom);
+    entry.view.setBounds(rect);
+  }
+
+  // Park the tab back on the hidden host — but only when the observation
+  // window still owns it. A visibility takeover may have adopted the view in
+  // between, and yanking it back would tear the page out of the user's panel.
+  unmountTabIfOwner(
+    workdir: string,
+    tabID: string,
+    owner: BrowserParentWindowHandle["contentView"],
+    restore: Rectangle,
+  ): void {
+    const entry = this.tabs.get(tabKey(workdir, tabID));
+    if (!entry || entry.view.webContents.isDestroyed()) return;
+    if (entry.currentParent !== owner) return;
+    this.reparent(entry, this.ensureHostWindow());
+    entry.view.setBounds(restore);
+    entry.view.setVisible(!entry.suppressed);
   }
 
   tabSurfaceMeta(workdir: string, tabID: string): BrowserTabSurfaceMeta | undefined {
@@ -309,6 +379,26 @@ export class BrowserHostCoordinator {
     for (const listener of this.tabClosedListeners) {
       try {
         listener(entry.workdir, entry.tabID);
+      } catch {
+        // Listener teardown races are harmless here.
+      }
+    }
+  }
+
+  private emitNavigate(workdir: string, tabID: string, url: string): void {
+    for (const listener of this.navigateListeners) {
+      try {
+        listener(workdir, tabID, url);
+      } catch {
+        // A broken preview listener must never fail navigation.
+      }
+    }
+  }
+
+  private emitTabReparented(entry: TabEntry): void {
+    for (const listener of this.tabReparentedListeners) {
+      try {
+        listener(entry.workdir, entry.tabID, entry.currentParent);
       } catch {
         // Listener teardown races are harmless here.
       }
@@ -401,6 +491,12 @@ export class BrowserHostCoordinator {
       };
       this.tabs.set(key, entry);
       this.agentWebContentsIds.add(view.webContents.id);
+      const onNavigate = (...args: unknown[]): void => {
+        const url = typeof args[1] === "string" ? args[1] : view.webContents.getURL();
+        this.emitNavigate(workdir, tabID, url);
+      };
+      view.webContents.on("did-navigate", onNavigate);
+      view.webContents.on("did-navigate-in-page", onNavigate);
     }
     const initialURL = typeof params.initial_url === "string" ? params.initial_url : "";
     if (initialURL) {
@@ -699,7 +795,8 @@ export class BrowserHostCoordinator {
   }
 
   private reparent(entry: TabEntry, target: BrowserParentWindowHandle): void {
-    if (entry.currentParent && entry.currentParent !== target.contentView) {
+    const changed = entry.currentParent !== target.contentView;
+    if (entry.currentParent && changed) {
       try {
         entry.currentParent.removeChildView(entry.view);
       } catch {
@@ -708,6 +805,13 @@ export class BrowserHostCoordinator {
     }
     target.contentView.addChildView(entry.view);
     entry.currentParent = target.contentView;
+    if (changed) {
+      // A parent change is an ownership handoff: the new owner decides the
+      // display scale. Normalizing here means a visibility takeover never
+      // inherits the PiP's shrink-to-fit zoom.
+      entry.view.webContents.setZoomFactor(1);
+      this.emitTabReparented(entry);
+    }
   }
 
   private destroyEntry(entry: TabEntry): void {

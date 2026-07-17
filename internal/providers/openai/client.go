@@ -73,12 +73,23 @@ func responsesTransportUsesCachedContext(mode providers.StreamTransportMode) boo
 		mode == providers.StreamTransportWebSocketCached
 }
 
-func openAIToolSurfaceValidationTarget(model string) providers.ToolSurfaceValidationTarget {
-	return providers.ToolSurfaceValidationTarget{
+func openAIToolSurfaceValidationTarget(baseURL, model string) providers.ToolSurfaceValidationTarget {
+	target := providers.ToolSurfaceValidationTarget{
 		ProviderKind: "openai-compatible",
 		ProviderName: "openai",
 		Model:        model,
 	}
+	if isFirstPartyOpenAIBaseURL(baseURL) {
+		target.ReservedToolNames = []string{"browser"}
+	}
+	return target
+}
+
+func isFirstPartyOpenAIBaseURL(raw string) bool {
+	baseURL := strings.TrimRight(strings.ToLower(strings.TrimSpace(raw)), "/")
+	return baseURL == "https://api.openai.com" ||
+		baseURL == "https://api.openai.com/v1" ||
+		baseURL == "https://chatgpt.com/backend-api/codex"
 }
 
 // ClientConfig configures an OpenAI-compatible endpoint.
@@ -177,7 +188,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if len(req.Messages) == 0 {
 		return providers.ChatResponse{}, errors.New("messages is required")
 	}
-	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
+	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(c.baseURL, req.Model), req.Tools); err != nil {
 		return providers.ChatResponse{}, err
 	}
 	var err error
@@ -328,7 +339,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	if len(req.Messages) == 0 {
 		return nil, errors.New("messages is required")
 	}
-	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
+	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(c.baseURL, req.Model), req.Tools); err != nil {
 		return nil, err
 	}
 	var err error

@@ -84,7 +84,7 @@ func isKnownSurfaceSkillTool(name string) bool {
 		"session_memory",
 		"update_plan", "goal",
 		"cron",
-		"browser",
+		"wuu_browser",
 		"list_agent_profiles", "create_agent_profile":
 		return true
 	default:
