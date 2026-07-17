@@ -8,10 +8,37 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-17
+
+### Added
+
+- Embedded browser activities can now be automated through a dedicated backend
+  and shown in a live macOS picture-in-picture preview.
+- The desktop interface now supports English and Simplified Chinese.
+- Interrupted turns preserve queued follow-up messages for the next turn.
+- Git commits can optionally include WUU Agent attribution.
+
+### Changed
+
+- Runtime model selection is now conversation-scoped, and side chats and
+  automatic titles inherit the conversation's pinned model.
+- Desktop settings use a grouped-list layout, hover drawers animate in and out,
+  and the macOS sidebar preserves the wallpaper tint.
+- The composer stop control now uses a smaller solid glyph on a neutral surface.
+- The retired `inception` context-rewrite tool has been removed while legacy
+  session artifacts remain readable.
+
 ### Fixed
 
 - OpenAI Responses WebSocket failures now use reason-specific SSE fallback
   windows, allowing transient failures to recover without a ten-minute pin.
+- Truncated tool arguments and empty Anthropic thinking blocks no longer break
+  provider history recovery.
+- Composer focus handoffs, held-message deduplication, and jump-to-latest state
+  remain stable across sends, interrupts, and conversation switches.
+- Embedded browser PiP startup and window reparenting no longer race.
+- Production desktop builds disable reload and developer-tools shortcuts.
+- Git action locks are scoped to the active worktree.
 
 ## [0.5.2] - 2026-07-16
 
