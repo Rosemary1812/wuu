@@ -180,8 +180,10 @@ describe("turns.css message-flow typography", () => {
     expect(lastCssRuleBody(".turn > .assistant-turn-shell")).toMatch(
       /margin-top:\s*calc\(\s*var\(--conversation-user-rule-gap\)\s*-\s*var\(--conversation-turn-item-gap\)\s*-\s*var\(--conversation-user-message-trailing-gap\)\s*\);/,
     );
-    expect(lastCssRuleBody(".turn > .assistant-turn-shell")).toMatch(
-      /padding-top:\s*var\(--conversation-rule-process-gap\);/,
+    // The query -> reply gap is whitespace only now; the old
+    // rule-process padding-top went away with the hairline divider.
+    expect(lastCssRuleBody(".turn > .assistant-turn-shell")).not.toMatch(
+      /padding-top:/,
     );
     expect(lastCssRuleBody(".user-message-block")).toMatch(
       /margin-bottom:\s*var\(--conversation-user-message-trailing-gap\);/,

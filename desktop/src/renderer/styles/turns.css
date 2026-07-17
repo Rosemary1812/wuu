@@ -198,17 +198,15 @@
   font-weight: var(--weight-semibold);
 }
 
-                                                                
-                                                             
-                                                                  
-                                                                
-                                                             
-                                                                
-                                                          
-                
 .turn > .assistant-turn-shell {
-  border-top: 1px solid var(--wuu-hairline);
-  padding-top: var(--conversation-rule-process-gap);
+  /*
+   * User query → assistant reply is separated by whitespace alone — no
+   * hairline. Turn-to-turn separation already owns the single visible
+   * boundary (the 32px --conversation-turn-boundary-gap band on .turn), so a
+   * full-width rule inside a turn duplicated that meaning while splitting one
+   * Q&A pair in two. The gap holds at 24px (--conversation-user-rule-gap),
+   * tighter than the 32px turn boundary: tight within a group, loose between.
+   */
   margin-top: calc(
     var(--conversation-user-rule-gap) - var(--conversation-turn-item-gap) -
       var(--conversation-user-message-trailing-gap)
@@ -764,8 +762,8 @@
 }
 
 /* Hover actions live outside the flow but below the query bubble. The
- * 2px padding is the hover bridge; the 20px controls leave 2px before
- * the divider while staying inside the 24px query -> rule gap. */
+ * 2px padding is the hover bridge; the 20px controls stay inside the 24px
+ * query -> reply gap (--conversation-user-rule-gap). */
 .user-message-block-with-actions {
   position: relative;
 }

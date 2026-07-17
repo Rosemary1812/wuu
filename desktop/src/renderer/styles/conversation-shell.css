@@ -144,9 +144,12 @@
   /*
    * Grouping rhythm: tight within a group, loose between groups.
    * One spacing ladder, one value per meaning. These landmarks match
-   * the visible message flow from top to bottom: user query -> rule,
-   * rule -> process header, process header -> expanded details,
+   * the visible message flow from top to bottom: user query -> assistant
+   * reply (whitespace only, no rule), process header -> expanded details,
    * process cluster -> final answer, final answer -> action row.
+   * `--conversation-user-rule-gap` keeps its name for the query -> reply
+   * gap (there is no longer a hairline rule; the 24px band stays under the
+   * 32px turn boundary so a Q&A pair reads as one group).
    */
   --conversation-user-rule-gap: 24px;
   --conversation-user-message-trailing-gap: 8px;
