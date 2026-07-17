@@ -1152,8 +1152,19 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 	// closure so the resolver sees the same value the original spawn
 	// saw.
 	if s.rt != nil && control != nil {
-		workerProvider := workerProviderName(s.rt)
-		control.SetWorkerProviderName(workerProvider)
+		// The AgentControl was built with this conversation's own worker
+		// provider (NewThreadRuntimeForRoot, from its worker role). Do NOT
+		// overwrite it with the workspace worker provider: a conversation
+		// pinned to a foreign provider would then judge a pin naming the
+		// workspace provider as "same provider" and route that model through
+		// this conversation's connection (issue #81 P3). Keep the construction
+		// value; only seed the workspace worker provider when the control never
+		// recorded one (a conversation that follows the workspace default).
+		workerProvider := strings.TrimSpace(control.WorkerProviderName())
+		if workerProvider == "" {
+			workerProvider = workerProviderName(s.rt)
+			control.SetWorkerProviderName(workerProvider)
+		}
 		ref := newRuntimeSessionReference(s.rt)
 		control.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
 			return resolveParticipantModelOverride(ref, "queued-restore", rawPin, workerProvider)

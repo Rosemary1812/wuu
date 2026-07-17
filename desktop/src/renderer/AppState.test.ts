@@ -33,6 +33,7 @@ import {
   initialState,
   isGroupThread,
   isScratchThread,
+  isStateActiveThreadRunning,
   isThreadRunning,
   isThreadUnread,
   latestCompletedTurnID,
@@ -140,6 +141,46 @@ describe("activeThreadForState", () => {
       sessionTabs: [unresolved],
       activeSessionTabID: unresolved.id,
     })).toBeUndefined();
+  });
+});
+
+// The model button locks whenever the active conversation is running, and a
+// running background agent counts — even with no in-progress turn. This is the
+// load-bearing computation behind runtimeControlsDisabled in App.tsx (issue #81
+// frontend rule 2). A completed-turn thread whose only running signal is a
+// child agent must still report as running.
+describe("isStateActiveThreadRunning with a background agent", () => {
+  const context: RuntimeContext = { kind: "project", project_id: "project-1", cwd: "/repo" };
+
+  function stateWithActiveThread(thread: Thread): AppState {
+    return {
+      ...initialState,
+      activeContext: context,
+      thread,
+      threads: [thread],
+      sessionTabs: [createThreadSessionTab(thread, context)],
+      activeSessionTabID: threadSessionTabID(thread.id),
+    };
+  }
+
+  it("locks the button while a background agent runs on an otherwise idle thread", () => {
+    const thread = {
+      ...threadWithUserTexts(["kick off a worker"]),
+      status: "idle" as const,
+      child_agents: [{ id: "agent-running", status: "running" }],
+    } as unknown as Thread;
+    expect(isThreadRunning(thread)).toBe(true);
+    expect(isStateActiveThreadRunning(stateWithActiveThread(thread))).toBe(true);
+  });
+
+  it("unlocks once the background agent reaches a terminal state", () => {
+    const thread = {
+      ...threadWithUserTexts(["worker finished"]),
+      status: "idle" as const,
+      child_agents: [{ id: "agent-done", status: "completed" }],
+    } as unknown as Thread;
+    expect(isThreadRunning(thread)).toBe(false);
+    expect(isStateActiveThreadRunning(stateWithActiveThread(thread))).toBe(false);
   });
 });
 

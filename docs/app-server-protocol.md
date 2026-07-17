@@ -297,6 +297,84 @@ Persistent runs must create or update normal Wuu sessions so that:
 - Electron sessions can be resumed by `wuu exec`.
 - traces live under workspace-scoped session artifacts.
 
+## Runtime Model Selection
+
+Model selection has one authoritative semantic. This section is the arbitration
+reference for reviews: any new execution surface (background task, derived call,
+display) must resolve its model through the rules below rather than re-guessing
+which state to read.
+
+### Three concepts
+
+1. **Selection** — the `(provider, model, variant, effort, permission)` tuple.
+   It is the only persistent model semantic. Each conversation pins exactly one
+   (stored on its session row). The workspace holds one additional *default*
+   selection whose only jobs are to seed new conversations and to serve
+   surfaces that have no conversation (settings, a new empty tab). An existing
+   conversation never re-reads the workspace default at run time.
+
+2. **Derivation** — worker model, title model, and context budgets are not
+   independent state; they are a pure function `derive(conversation selection,
+   role config)`. Role config (e.g. "titles always use a cheap model") is a
+   workspace-level *function definition*, but its evaluation input is always the
+   owning conversation's selection. Corollary: copying a budget or worker
+   default from one runtime to another is a bug — a derived quantity must be
+   recomputed on the owning conversation. In code this is
+   `runtime.Session.DeriveThreadModel`.
+
+3. **Override** — only two kinds, and no more are added. *Process-scoped* (e.g.
+   `exec --permission-mode`) beats everything and is never persisted.
+   *Call-scoped* (a spawn / participant profile's explicit pin) affects only
+   that one execution and is persisted with the run for recovery. An override
+   resolves its own connection (client); it never borrows the host
+   conversation's connection, and the "same provider as the worker, reuse the
+   connection" check compares against the conversation's own derived worker
+   provider, not workspace state.
+
+### Two global rules
+
+- **Attribution** — every inference request belongs to some conversation (main
+  turn, side thread, subagent, auto-title, compaction). Resolve from the owning
+  conversation's selection; only a request with no owning conversation may read
+  the workspace default.
+- **Dual-write and immutability** — changing a conversation's selection applies
+  immediately to that conversation and makes the explicitly-provided fields the
+  default for future conversations. The reverse never holds: a workspace-default
+  change never edits an existing conversation. A running execution keeps its
+  admission snapshot; a selection change is rejected, not hot-swapped.
+
+### Resolution per surface
+
+| Surface | Resolution |
+|---|---|
+| main turn / side thread / compaction budget | conversation selection (and its derived budget) |
+| subagent (unpinned) / auto-title | `derive_worker` / `derive_title`(conversation selection) |
+| subagent (explicit pin) | call-scoped override, own connection |
+| fork | copy the source conversation's selection |
+| resume / continuation | restore selection from disk |
+| new conversation, automation, group create | seed the workspace default |
+| settings / no-conversation surface | workspace default |
+| exec flag | process-scoped override, not persisted |
+
+### Frontend expression
+
+Display semantics obey attribution too, and the desktop keeps intent and fact
+from diverging without any explanatory copy:
+
+- **One place.** The composer model button (`RuntimePicker`) is the only place a
+  conversation's model semantic appears; it shows the conversation's selection.
+  No-conversation surfaces show the workspace default. No other UI restates the
+  model. (The run-debug panel's model row follows the active conversation, not
+  the global default.)
+- **One lock.** While any execution runs in the conversation — a streaming turn
+  or an unsettled background agent — the model button is disabled. So the value
+  shown is always both "what will run next" and "what is running now"; intent
+  and fact cannot fork, so no second annotation is needed.
+- **Causality from existing elements.** The streaming reply and the background
+  agent cards already show they are running; they are the reason the button is
+  disabled. The backend rejection message is only a cross-process race backstop,
+  not a normal path.
+
 ## Protocol Compatibility
 
 Changes to method names, notification names, field names, stdout/stderr

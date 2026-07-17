@@ -654,7 +654,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		s.rt.StreamRunner.CompactThresholdTokens = modelBudget.CompactThresholdTokens
 	}
 	s.updateRootAgentControlWorkerDefaults()
-	s.updateIdleThreadAdvancedRuntime()
+	s.updateIdleThreadAdvancedRuntime(cfg)
 	if s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 	}
@@ -1484,36 +1484,94 @@ func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
 	}
 }
 
-func (s *Server) updateIdleThreadAdvancedRuntime() {
+// updateIdleThreadAdvancedRuntime propagates an advanced-settings change to
+// idle resident runtimes without rebuilding them (which would churn their
+// prompt-cache prefixes). Advanced settings split into two kinds, and the split
+// is the whole point of this function (issue #81):
+//
+//   - Behavior knobs (MaxSteps, Temperature, compact percentage/keep-recent,
+//     auto-compact toggle) are workspace-uniform and copied verbatim.
+//   - Budgets and worker defaults are DERIVED from a conversation's own
+//     selection, so they are recomputed from each thread's pin — never copied
+//     from the workspace runtime. Copying s.rt's here would, for a thread
+//     pinned to a smaller-window model, swap in the workspace model's window
+//     (miscomputing compaction) and repoint the thread's worker at the
+//     workspace worker provider.
+func (s *Server) updateIdleThreadAdvancedRuntime(cfg config.Config) {
+	if s == nil || s.rt == nil || s.rt.StreamRunner == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, th := range s.threads {
 		th.mu.Lock()
-		if !th.running && th.execRuntime != nil {
-			if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
-				th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
-				th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
-				th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
-				th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
-				th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
-				th.execRuntime.StreamRunner.CompactThresholdTokens = s.rt.StreamRunner.CompactThresholdTokens
-				th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
-				th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
-				th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
-			}
-			if s.rt != nil {
-				th.execRuntime.ModelBudget = s.rt.ModelBudget
-				th.execRuntime.WorkerModelBudget = s.rt.WorkerModelBudget
-				if th.execRuntime.AgentControl != nil {
-					th.execRuntime.AgentControl.UpdateWorkerDefaults(
-						s.rt.WorkerClient,
-						s.rt.ModelRoles.Worker.APIModel,
-						s.currentWorkerManagerOptions(),
-					)
-				}
-			}
+		if th.running || th.execRuntime == nil {
+			th.mu.Unlock()
+			continue
+		}
+		derivation, err := s.rt.DeriveThreadModel(cfg, th.execRuntime.Selection)
+		if err != nil {
+			// The thread pins a model that no longer resolves (e.g. a removed
+			// provider). Leave its existing derived budgets/worker in place;
+			// admission self-heals the dead pin on the next turn.
+			providers.DebugLogf("advanced update: re-derive thread %q model: %v", th.ID, err)
+			th.mu.Unlock()
+			continue
+		}
+		if th.execRuntime.StreamRunner != nil {
+			runner := th.execRuntime.StreamRunner
+			// Workspace behavior knobs: uniform, copied verbatim.
+			runner.MaxSteps = s.rt.StreamRunner.MaxSteps
+			runner.Temperature = s.rt.StreamRunner.Temperature
+			runner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+			runner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
+			runner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
+			// Derived budget: recomputed from this thread's own pin.
+			runner.ContextWindowOverride = derivation.ModelBudget.ContextWindowTokens
+			runner.MaxInputTokens = derivation.ModelBudget.InputLimitTokens
+			runner.OutputReserveTokens = derivation.ModelBudget.OutputReserveTokens
+			runner.CompactThresholdTokens = derivation.ModelBudget.CompactThresholdTokens
+		}
+		th.execRuntime.ModelBudget = derivation.ModelBudget
+		th.execRuntime.WorkerModelBudget = derivation.WorkerModelBudget
+		if th.execRuntime.AgentControl != nil {
+			th.execRuntime.AgentControl.UpdateWorkerDefaults(
+				derivation.WorkerClient,
+				derivation.WorkerAPIModel,
+				s.workerManagerOptionsForDerivation(derivation),
+			)
 		}
 		th.mu.Unlock()
+	}
+}
+
+// workerManagerOptionsForDerivation builds worker manager options from a
+// thread's own derived worker role, layering the workspace behavior knobs
+// (temperature, compaction cadence) that apply uniformly. It is the per-thread
+// analogue of currentWorkerManagerOptions, which serves the workspace runtime.
+func (s *Server) workerManagerOptionsForDerivation(derivation runtime.ThreadModelDerivation) subagent.ManagerOptions {
+	temperature := 0.0
+	compactPct := 0.0
+	keepRecent := 0
+	disableCompact := false
+	if s.rt != nil && s.rt.StreamRunner != nil {
+		temperature = s.rt.StreamRunner.Temperature
+		compactPct = s.rt.StreamRunner.CompactThresholdPct
+		keepRecent = s.rt.StreamRunner.CompactKeepRecentTokens
+		disableCompact = s.rt.StreamRunner.DisableAutoCompact
+	}
+	return subagent.ManagerOptions{
+		DefaultProviderName:     derivation.WorkerProvider,
+		DefaultEffort:           derivation.WorkerEffort,
+		DefaultProviderOptions:  derivation.WorkerOptions,
+		ContextWindowOverride:   derivation.WorkerModelBudget.ContextWindowTokens,
+		MaxInputTokens:          derivation.WorkerModelBudget.InputLimitTokens,
+		OutputReserveTokens:     derivation.WorkerModelBudget.OutputReserveTokens,
+		CompactThresholdTokens:  derivation.WorkerModelBudget.CompactThresholdTokens,
+		Temperature:             temperature,
+		CompactThresholdPct:     compactPct,
+		CompactKeepRecentTokens: keepRecent,
+		DisableAutoCompact:      disableCompact,
 	}
 }
 
