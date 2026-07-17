@@ -152,7 +152,14 @@ describe("SettingsRemotePage devices", () => {
       })
     );
     expect(container!.textContent).toContain("我的手机");
-    expect(container!.textContent).toContain("2579e6ff1255 · 配对于 2026年7月7日");
+    // Format the fixture instant the same way the page does so the expected
+    // date follows the runtime timezone instead of hard-coding one zone's day.
+    const pairedAt = new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    }).format(new Date("2026-07-07T00:00:00Z"));
+    expect(container!.textContent).toContain(`2579e6ff1255 · 配对于 ${pairedAt}`);
     expect(container!.textContent).toContain("未命名设备");
     expect(container!.textContent).toContain("not-a-date");
     const revoke = [...container!.querySelectorAll<HTMLButtonElement>("button")].filter(
