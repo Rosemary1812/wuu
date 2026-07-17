@@ -1562,13 +1562,21 @@
 .composer-stop-button {
                                                                       
                                                                        
-  background: var(--danger);
+  background: var(--ink);
   color: var(--paper);
 }
 
 .composer-stop-button:hover {
-  background: var(--danger);
+  background: var(--ink-strong);
   color: var(--paper);
+}
+
+/* Solid stop glyph: a filled square reads as "stop" better than an outline,
+ * and the extra ink weight means it can sit smaller inside the 28px circle. */
+.composer-stop-button svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
 }
 
 .hero-project-pill-anchor {
