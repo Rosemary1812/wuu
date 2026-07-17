@@ -1010,61 +1010,6 @@ describe("SettingsView About section", () => {
     expect(api.removeMCPAuth).toHaveBeenCalledWith("docs");
   });
 
-  it("renders extension provenance and grant state without credential values", async () => {
-    installBuildInfoStub({
-      core: undefined,
-      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
-    });
-    const { rootText } = renderSettings({
-      initialized: baseInitialized({
-        extension_inventory: [
-          {
-            id: "plugin:project:compose-kit",
-            name: "compose-kit",
-            kind: "plugin",
-            provenance: {
-              kind: "plugin",
-              source: "codex",
-              scope: "project",
-              path: "/tmp/project/.wuu/plugins/compose-kit/.codex-plugin/plugin.json",
-              plugin_id: "compose-kit",
-            },
-            state: "read_only",
-            requested_permissions: ["network.connect"],
-            unsupported_fields: ["commands"],
-          },
-          {
-            id: "mcp:plugin:compose-kit:docs",
-            name: "docs",
-            kind: "mcp",
-            provenance: {
-              kind: "mcp",
-              source: "plugin:compose-kit",
-              scope: "project",
-              plugin_id: "compose-kit",
-            },
-            state: "granted",
-            fingerprint: "abc123",
-            grant_scope: "project",
-            requested_permissions: ["network.connect", "process.spawn"],
-          },
-        ],
-      }),
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(rootText()).toContain("扩展与权限");
-    expect(rootText()).toContain("compose-kit");
-    expect(rootText()).toContain("Codex");
-    expect(rootText()).toContain("只读");
-    expect(rootText()).toContain("已授权");
-    expect(rootText()).toContain("项目授权");
-    expect(rootText()).toContain("network.connect");
-    expect(rootText()).toContain("不支持字段：commands");
-    expect(rootText()).not.toContain("top-secret-value");
-  });
-
   it("switches to the usage page from the settings sidebar", async () => {
     installBuildInfoStub({
       core: undefined,

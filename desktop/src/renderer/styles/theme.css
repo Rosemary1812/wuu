@@ -15,24 +15,45 @@
  */
 
 :root[data-theme="dark"] {
+  /* --- Neutral gray ramp, dark declaration. Same slots as the light
+   *     ramp in base.css: 0-350 surfaces/hairlines (deeper = further
+   *     from the reader), 400-650 text grays, 800-900 strong text. --- */
+  --gray-0: #1d2024;
+  --gray-50: #141618;
+  --gray-100: #1b1e21;
+  --gray-150: #24282c;
+  --gray-200: #2c3136;
+  --gray-250: #2e3237;
+  --gray-300: #33383d;
+  --gray-350: #3a4046;
+  --gray-400: #565c62;
+  --gray-450: #6a7076;
+  --gray-500: #7d8388;
+  --gray-550: #8a9096;
+  --gray-600: #989ea3;
+  --gray-650: #a9aeb3;
+  --gray-700: #c6cacd;
+  --gray-800: #e4e6e8;
+  --gray-900: #f2f3f4;
+
   /* --- Ink scale: light text on dark paper --- */
-  --ink-strong: #f2f3f4;
-  --ink: #e4e6e8;
-  --ink-soft: #a9aeb3;
-  --ink-tertiary: #989ea3;
-  --ink-muted: #7d8388;
-  --ink-faint: #565c62;
+  --ink-strong: var(--gray-900);
+  --ink: var(--gray-800);
+  --ink-soft: var(--gray-650);
+  --ink-tertiary: var(--gray-600);
+  --ink-muted: var(--gray-500);
+  --ink-faint: var(--gray-400);
 
   /* --- Paper & surfaces: elevation gets lighter, not darker --- */
-  --paper: #1d2024;
-  --surface-1: #141618;
-  --surface-2: #1b1e21;
-  --surface-3: #24282c;
-  --surface-4: #2c3136;
+  --paper: var(--gray-0);
+  --surface-1: var(--gray-50);
+  --surface-2: var(--gray-100);
+  --surface-3: var(--gray-150);
+  --surface-4: var(--gray-200);
 
-  --hairline: #2e3237;
-  --hairline-strong: #3a4046;
-  --rule: #33383d;
+  --hairline: var(--gray-250);
+  --hairline-strong: var(--gray-350);
+  --rule: var(--gray-300);
 
   /* Ink overlays flip to white-based veils. */
   --ink-overlay-4: rgba(220, 228, 235, 0.05);
@@ -295,24 +316,24 @@
   --user-message-jump-flash-bg: #3a3527;
   --user-message-jump-shadow-18: rgba(217, 168, 78, 0.22);
   --user-message-jump-shadow-08: rgba(217, 168, 78, 0.1);
-  --user-message-edit-button-primary-hover-bg: #f5f6f7;
+  --user-message-edit-button-primary-hover-bg: var(--gray-900);
   --user-message-edit-button-disabled-fg: rgba(20, 23, 26, 0.7);
   --message-copy-bg: rgba(38, 42, 46, 0.85);
   --message-file-bg: rgba(38, 42, 46, 0.9);
-  --message-file-fg: #dde0e3;
+  --message-file-fg: var(--gray-800);
   --stream-cursor-default-color: #9fc2dd;
-  --reasoning-stream-cursor-color: #8b8f93;
-  --turn-progress-label-color: #9aa0a5;
-  --turn-progress-label-icon-color: #8a8e92;
-  --turn-progress-detail-color: #7d8388;
+  --reasoning-stream-cursor-color: var(--gray-550);
+  --turn-progress-label-color: var(--gray-600);
+  --turn-progress-label-icon-color: var(--gray-550);
+  --turn-progress-detail-color: var(--gray-500);
   --turn-progress-sweep-highlight: #dfe6e2;
   --turn-progress-sweep-base: #79837e;
   --turn-progress-failed-rule-bg: #4a2b26;
-  --turn-process-entry-color: #9aa0a5;
-  --process-control-color-fallback: #6d7276;
-  --activity-toggle-hover-color: #c2c8cc;
-  --activity-toggle-hover-svg-color: #a3a9ad;
-  --activity-toggle-hover-color-alt: #b0b6ba;
+  --turn-process-entry-color: var(--gray-600);
+  --process-control-color-fallback: var(--gray-450);
+  --activity-toggle-hover-color: var(--gray-700);
+  --activity-toggle-hover-svg-color: var(--gray-650);
+  --activity-toggle-hover-color-alt: var(--gray-650);
   --activity-detail-color: #989ea3;
   --activity-detail-error-border: #7a463f;
   --diff-insert-color: #3fb970;
@@ -344,7 +365,7 @@
   --turn-source-icon-hover-shadow: rgba(0, 0, 0, 0.45);
 
   /* conversation-shell.css */
-  --shell-process-control-color: #5c6165;
+  --shell-process-control-color: var(--gray-400);
   --shell-session-tab-hover-border: rgba(228, 232, 235, 0.16);
   --shell-session-tab-active-border: rgba(228, 232, 235, 0.22);
   --shell-session-tab-main-focus-shadow: rgba(228, 232, 235, 0.25);

@@ -84,11 +84,11 @@
 
 /* Settings-page variant: match .settings-select's surface box. */
 .select-menu-trigger.settings-select-trigger {
-  height: 36px;
+  height: 32px;
   padding: 0 12px;
   border-color: transparent;
   background: var(--surface-1);
-  font-weight: var(--weight-medium);
+  font-weight: 400;
 }
 
 .select-menu-trigger.settings-select-trigger:hover:not(:disabled) {

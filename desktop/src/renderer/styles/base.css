@@ -27,26 +27,58 @@
                                                                         
                                                 
                                                                         
-  --ink-strong: #111315;                                           
-  --ink: #1f2328;                                        
-  --ink-soft: #5b6066;                                
-  --ink-tertiary: #6f7478;                                 
-  --ink-muted: #8a8f94;                                      
-  --ink-faint: #b0b6bb;                                           
+  /* ------------------------------------------------------------------
+   * Neutral gray ramp — the single source of every neutral in the app.
+   *
+   * Component CSS must reach for these steps (or the semantic aliases
+   * below) instead of inventing local hex values. The ramp is anchored
+   * to the message-flow neutrals, which are the reference appearance:
+   * surfaces run slightly warm, inks slightly cool — that temperature
+   * split between background and text is intentional, do not "fix" it.
+   *
+   * Slots 400-650 are text grays, 0-350 surfaces/hairlines, 800-900 the
+   * strong text pair. Dark theme re-declares the same slots in
+   * theme.css, so `var(--gray-500)` always means "the muted text gray"
+   * in both themes.
+   * ------------------------------------------------------------------ */
+  --gray-0: #ffffff;
+  --gray-50: #f7f7f5;
+  --gray-100: #f1f2ef;
+  --gray-150: #ececea;
+  --gray-200: #e5e5e1;
+  --gray-250: #e4e4df;
+  --gray-300: #dedfdd;
+  --gray-350: #d9d9d5;
+  --gray-400: #b0b6bb;
+  --gray-450: #9ca1a5;
+  --gray-500: #8a8f94;
+  --gray-550: #777b80;
+  --gray-600: #6f7478;
+  --gray-650: #5b6066;
+  --gray-700: #383d42;
+  --gray-800: #1f2328;
+  --gray-900: #111315;
 
-  --paper: #ffffff;                                   
-  --surface-1: #f7f7f5;                                
-  --surface-2: #f1f2ef;                                              
-  --surface-3: #ececea;                              
-  --surface-4: #e5e5e1;                                          
+  --ink-strong: var(--gray-900);
+  --ink: var(--gray-800);
+  --ink-soft: var(--gray-650);
+  --ink-tertiary: var(--gray-600);
+  --ink-muted: var(--gray-500);
+  --ink-faint: var(--gray-400);
 
-  --hairline: #e4e4df;
-  --hairline-strong: #d9d9d5;
+  --paper: var(--gray-0);
+  --surface-1: var(--gray-50);
+  --surface-2: var(--gray-100);
+  --surface-3: var(--gray-150);
+  --surface-4: var(--gray-200);
+
+  --hairline: var(--gray-250);
+  --hairline-strong: var(--gray-350);
   --hairline-soft: var(--ink-overlay-6);
   /* In-flow horizontal rules inside the conversation (turn progress
      rule, system-event divider). One token so they read as the same
      line everywhere. */
-  --rule: #dedfdd;                              
+  --rule: var(--gray-300);                              
 
                                                                     
                                                     

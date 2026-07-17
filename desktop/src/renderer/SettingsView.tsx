@@ -42,7 +42,6 @@ import { SelectMenu } from "./SelectMenu";
 import type {
   CodexPetsSnapshot,
   DesktopBuildInfo,
-  ExtensionInventoryRecord,
   InitializeResult,
   MCPAuthStartResult,
   MCPServerStatus,
@@ -578,6 +577,7 @@ export function SettingsView({
   }${sidebarAnimating ? " sidebar-animating" : ""}`;
 
   const pageTitle = settingsPageTitle(activePage, t);
+  const pageDescription = settingsPageDescription(activePage, t);
 
   return (
     <div ref={effectiveShellRef} className={shellClassName} style={shellStyle}>
@@ -614,29 +614,38 @@ export function SettingsView({
             <span>{t("settings.backToApp")}</span>
           </button>
           <nav className="settings-nav" aria-label={t("settings.navigation")}>
-            <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
-              {t("settings.providers")}
-            </SettingsNavItem>
-            <SettingsNavItem icon={<Settings className="icon-lg" />} active={activePage === "general"} onClick={() => setActivePage("general")}>
-              {t("settings.general")}
-            </SettingsNavItem>
-            <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
-              {t("settings.memory")}
-            </SettingsNavItem>
-            <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
-              {t("settings.advanced")}
-            </SettingsNavItem>
-            <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
-              {t("settings.usage")}
-            </SettingsNavItem>
-            {ENABLE_REMOTE_CONTROL ? (
-              <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
-                {t("settings.remote")}
+            <div className="settings-nav-group">
+              <div className="settings-nav-group-label">{t("settings.groupModel")}</div>
+              <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
+                {t("settings.providers")}
               </SettingsNavItem>
-            ) : null}
-            <SettingsNavItem icon={<Archive className="icon-lg" />} active={activePage === "archive"} onClick={() => setActivePage("archive")}>
-              {t("settings.archive")}
-            </SettingsNavItem>
+              <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
+                {t("settings.memory")}
+              </SettingsNavItem>
+              <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
+                {t("settings.advanced")}
+              </SettingsNavItem>
+            </div>
+            <div className="settings-nav-group">
+              <div className="settings-nav-group-label">{t("settings.groupApp")}</div>
+              <SettingsNavItem icon={<Settings className="icon-lg" />} active={activePage === "general"} onClick={() => setActivePage("general")}>
+                {t("settings.general")}
+              </SettingsNavItem>
+              {ENABLE_REMOTE_CONTROL ? (
+                <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
+                  {t("settings.remote")}
+                </SettingsNavItem>
+              ) : null}
+            </div>
+            <div className="settings-nav-group">
+              <div className="settings-nav-group-label">{t("settings.groupData")}</div>
+              <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
+                {t("settings.usage")}
+              </SettingsNavItem>
+              <SettingsNavItem icon={<Archive className="icon-lg" />} active={activePage === "archive"} onClick={() => setActivePage("archive")}>
+                {t("settings.archive")}
+              </SettingsNavItem>
+            </div>
           </nav>
         </div>
       </aside>
@@ -675,6 +684,7 @@ export function SettingsView({
             {activePage === "memory" ? null : (
               <header className="settings-page-header">
                 <h1 className="settings-page-title">{pageTitle}</h1>
+                <p className="settings-page-description">{pageDescription}</p>
               </header>
             )}
   
@@ -862,18 +872,21 @@ function SettingsNavItem({
 // 只在个别行的 description 里保留单位、约束或禁用原因。
 function SettingsSection({
   title,
+  description,
   testID,
   children
 }: {
   title?: string;
+  description?: string;
   testID?: string;
   children: ReactNode;
 }): JSX.Element {
   return (
     <section className="settings-section" {...(testID ? { "data-testid": testID } : {})}>
-      {title ? (
+      {title || description ? (
         <header className="settings-section-header">
-          <h2 className="settings-section-title">{title}</h2>
+          {title ? <h2 className="settings-section-title">{title}</h2> : null}
+          {description ? <p className="settings-section-description">{description}</p> : null}
         </header>
       ) : null}
       {children}
@@ -897,7 +910,7 @@ function SettingsRow({
   block?: boolean;
 }): JSX.Element {
   return (
-    <div className="settings-row">
+    <div className={`settings-row${block ? " settings-row-block" : ""}`}>
       <div className="settings-row-label">
         <span className="settings-row-label-title">{title}</span>
         {description ? <span className="settings-row-label-description">{description}</span> : null}
@@ -1072,24 +1085,6 @@ function SettingsProvidersPage({
             ) : (
               <span className="settings-inline-flag">{t("provider.none")}</span>
             )}
-            <button
-              className="settings-button"
-              type="button"
-              onClick={addingProvider ? onCancelAddingProvider : onStartAddingProvider}
-              disabled={running}
-            >
-              {addingProvider ? (
-                <>
-                  <X className="icon" />
-                  <span>{t("common.cancel")}</span>
-                </>
-              ) : (
-                <>
-                  <Plus className="icon" />
-                  <span>{t("provider.add")}</span>
-                </>
-              )}
-            </button>
           </div>
         </SettingsRow>
         {addingProvider ? (
@@ -1181,8 +1176,20 @@ function SettingsProvidersPage({
             onChange={(event) => onAPIKeyDraftChange(event.target.value)}
             disabled={running || connectionLocked}
           />
+        </SettingsRow>
+        <div className="settings-row settings-row-footer">
           {error ? <div className="settings-error">{error}</div> : null}
           {saved && !error ? <div className="settings-saved">{t("settings.saved")}</div> : null}
+          {addingProvider ? (
+            <button
+              className="settings-button settings-button-ghost"
+              type="button"
+              onClick={onCancelAddingProvider}
+              disabled={running}
+            >
+              {t("common.cancel")}
+            </button>
+          ) : null}
           <button
             className="settings-button settings-button-primary"
             type="submit"
@@ -1190,7 +1197,7 @@ function SettingsProvidersPage({
           >
             {addingProvider ? t("provider.addAction") : t("provider.saveConfiguration")}
           </button>
-        </SettingsRow>
+        </div>
       </form>
     </SettingsSection>
   );
@@ -1268,10 +1275,9 @@ function SettingsAdvancedPage({
         <SettingsRow
           title={t("settings.compactThreshold")}
           description={t("settings.compactThresholdDescription")}
-          block
         >
           <input
-            className="settings-input"
+            className="settings-input settings-input-num"
             value={compactThreshold}
             inputMode="numeric"
             placeholder={t("settings.automatic")}
@@ -1282,10 +1288,9 @@ function SettingsAdvancedPage({
         <SettingsRow
           title={t("settings.keepRecentContext")}
           description={t("settings.keepRecentContextDescription")}
-          block
         >
           <input
-            className="settings-input"
+            className="settings-input settings-input-num"
             value={compactKeepRecent}
             inputMode="numeric"
             placeholder="20,000"
@@ -1298,10 +1303,9 @@ function SettingsAdvancedPage({
           description={`${providerContextWindowSource}${
             providerContextWindowCurrent ? `；${t("settings.currentTokenLimit", { count: providerContextWindowCurrent })}` : ""
           }`}
-          block
         >
           <input
-            className="settings-input"
+            className="settings-input settings-input-num"
             value={providerContextWindow}
             inputMode="numeric"
             placeholder={t("settings.detectAutomatically")}
@@ -1312,10 +1316,9 @@ function SettingsAdvancedPage({
         <SettingsRow
           title={t("settings.unknownModelLimit")}
           description={t("settings.unknownModelLimitDescription")}
-          block
         >
           <input
-            className="settings-input"
+            className="settings-input settings-input-num"
             value={maxContextTokens}
             inputMode="numeric"
             placeholder={t("settings.automatic")}
@@ -1326,25 +1329,26 @@ function SettingsAdvancedPage({
         <SettingsRow
           title={t("settings.maxSteps")}
           description={t("settings.unlimitedAtZero")}
-          block
         >
           <input
-            className="settings-input"
+            className="settings-input settings-input-num"
             value={maxSteps}
             inputMode="numeric"
             onChange={(event) => onMaxStepsChange(event.target.value)}
             disabled={running || !initialized}
           />
         </SettingsRow>
-        <SettingsRow title={t("settings.temperature")} description={t("settings.temperatureRange")} block>
+        <SettingsRow title={t("settings.temperature")} description={t("settings.temperatureRange")}>
           <input
-            className="settings-input"
+            className="settings-input settings-input-num"
             value={temperature}
             inputMode="decimal"
             placeholder={t("settings.automatic")}
             onChange={(event) => onTemperatureChange(event.target.value)}
             disabled={running || !initialized}
           />
+        </SettingsRow>
+        <div className="settings-row settings-row-footer">
           {error ? <div className="settings-error">{error}</div> : null}
           {saved && !error ? <div className="settings-saved">{t("settings.saved")}</div> : null}
           <button
@@ -1354,7 +1358,7 @@ function SettingsAdvancedPage({
           >
             {t("settings.save")}
           </button>
-        </SettingsRow>
+        </div>
       </form>
     </SettingsSection>
   );
@@ -1516,7 +1520,6 @@ function SettingsGeneralPage({
   const codexPetSelectedID = codexPets?.selected_id ?? "";
   const codexPetEnabled = Boolean(codexPets?.enabled);
   const codexPetStatus = codexPetLocalError || codexPetsError;
-  const extensionInventory = initialized?.extension_inventory ?? [];
   const gitAttributionEnabled = generalSettings?.git_attribution_enabled ?? true;
 
   async function refreshCodexPets(): Promise<void> {
@@ -1637,15 +1640,6 @@ function SettingsGeneralPage({
               }}
               disabled={running || !initialized}
             />
-            {generalError ? <div className="settings-error">{generalError}</div> : null}
-            {generalSaved && !generalError ? <div className="settings-saved">{t("settings.saved")}</div> : null}
-            <button
-              className="settings-button settings-button-primary"
-              type="submit"
-              disabled={running || !initialized}
-            >
-              {t("settings.save")}
-            </button>
           </SettingsRow>
           <SettingsRow
             title={t("settings.memory")}
@@ -1690,6 +1684,17 @@ function SettingsGeneralPage({
               </small>
             ) : null}
           </SettingsRow>
+        <div className="settings-row settings-row-footer">
+            {generalError ? <div className="settings-error">{generalError}</div> : null}
+            {generalSaved && !generalError ? <div className="settings-saved">{t("settings.saved")}</div> : null}
+            <button
+              className="settings-button settings-button-primary"
+              type="submit"
+              disabled={running || !initialized}
+            >
+              {t("settings.save")}
+            </button>
+          </div>
         </form>
       </SettingsSection>
 
@@ -1827,46 +1832,6 @@ function SettingsGeneralPage({
           )}
           {mcpError ? <div className="settings-mcp-empty settings-mcp-error">{mcpError}</div> : null}
           {mcpToggleError ? <div className="settings-mcp-empty settings-mcp-error">{mcpToggleError}</div> : null}
-        </SettingsCard>
-      </SettingsSection>
-
-      <SettingsSection title={t("settings.extensions")} testID="settings-extensions">
-        <SettingsCard>
-          {extensionInventory.length > 0 ? (
-            extensionInventory.map((record) => (
-              <SettingsRow
-                key={record.id}
-                title={record.name}
-                description={formatExtensionProvenance(record, t)}
-                block
-              >
-                <div className="settings-extension-detail">
-                  <div className="settings-extension-badges">
-                    <span className={`settings-status-pill ${extensionStateTone(record.state)}`}>
-                      {extensionStateLabel(record.state, t)}
-                    </span>
-                    {record.grant_scope ? (
-                      <span className="settings-extension-grant">
-                        {extensionGrantScopeLabel(record.grant_scope, t)}
-                      </span>
-                    ) : null}
-                  </div>
-                  {record.requested_permissions?.length ? (
-                    <small className="settings-extension-meta">
-                      {t("extension.permissions", { permissions: record.requested_permissions.join("、") })}
-                    </small>
-                  ) : null}
-                  {record.unsupported_fields?.length ? (
-                    <small className="settings-extension-meta settings-extension-warning">
-                      {t("extension.unsupportedFields", { fields: record.unsupported_fields.join("、") })}
-                    </small>
-                  ) : null}
-                </div>
-              </SettingsRow>
-            ))
-          ) : (
-            <div className="settings-mcp-empty">{t("settings.noExtensions")}</div>
-          )}
         </SettingsCard>
       </SettingsSection>
 
@@ -2195,16 +2160,16 @@ function SettingsUsagePage({
             </button>
           ))}
         </div>
-        {usage && (
-          <div className="settings-usage-stats">
-            <UsageStat label={t("settings.usageInput")} value={formatNumber(usage.metrics.input_tokens)} />
-            <UsageStat label={t("settings.usageContext")} value={formatNumber(usage.metrics.context_tokens)} />
-            <UsageStat label={t("settings.usageOutput")} value={formatNumber(usage.metrics.output_tokens)} />
-            <UsageStat label={t("settings.cacheHitRate")} value={formatPercent(usage.metrics.cache_hit_rate)} />
-            <UsageStat label={t("settings.activeDays")} value={t("settings.dayCount", { count: formatNumber(usage.metrics.active_days) })} />
-          </div>
-        )}
       </div>
+      {usage && (
+        <div className="settings-usage-stats">
+          <UsageStat label={t("settings.usageInput")} value={formatNumber(usage.metrics.input_tokens)} />
+          <UsageStat label={t("settings.usageContext")} value={formatNumber(usage.metrics.context_tokens)} />
+          <UsageStat label={t("settings.usageOutput")} value={formatNumber(usage.metrics.output_tokens)} />
+          <UsageStat label={t("settings.cacheHitRate")} value={formatPercent(usage.metrics.cache_hit_rate)} />
+          <UsageStat label={t("settings.activeDays")} value={t("settings.dayCount", { count: formatNumber(usage.metrics.active_days) })} />
+        </div>
+      )}
 
       <div className="settings-heatmap-panel">
         {/* Month labels row */}
@@ -2342,6 +2307,25 @@ function settingsPageTitle(page: SettingsPage, t: Translate): string {
       return t("settings.remote");
     case "archive":
       return t("settings.archive");
+  }
+}
+
+function settingsPageDescription(page: SettingsPage, t: Translate): string {
+  switch (page) {
+    case "providers":
+      return t("settings.descriptionProviders");
+    case "advanced":
+      return t("settings.descriptionAdvanced");
+    case "general":
+      return t("settings.descriptionGeneral");
+    case "memory":
+      return "";
+    case "usage":
+      return t("settings.descriptionUsage");
+    case "remote":
+      return t("settings.descriptionRemote");
+    case "archive":
+      return t("settings.descriptionArchive");
   }
 }
 
@@ -2688,98 +2672,6 @@ function formatMCPServerMeta(server: MCPServerStatus, t: Translate): string {
     pieces.push(mcpAuthLabel(server.auth_status, t));
   }
   return pieces.join(" · ");
-}
-
-function formatExtensionProvenance(record: ExtensionInventoryRecord, t: Translate): string {
-  const source = extensionSourceLabel(record.provenance.source, t);
-  const scope = extensionScopeLabel(record.provenance.scope, t);
-  return `${extensionKindLabel(record.kind, t)} · ${source} · ${scope}`;
-}
-
-function extensionKindLabel(kind: ExtensionInventoryRecord["kind"], t: Translate): string {
-  switch (kind) {
-    case "skill":
-      return t("extension.kindSkill");
-    case "agent_template":
-      return t("extension.kindAgentTemplate");
-    case "mcp":
-      return "MCP";
-    case "hook":
-      return t("extension.kindHook");
-    case "plugin":
-      return t("extension.kindPlugin");
-    case "command":
-      return t("extension.kindCommand");
-  }
-}
-
-function extensionSourceLabel(source: string, t: Translate): string {
-  if (source === "codex") return "Codex";
-  if (source === "claude") return "Claude Code";
-  if (source === "wuu" || source === "wuu_config") return "Wuu";
-  if (source === "bundled") return t("extension.bundledSource");
-  if (source.startsWith("plugin:")) {
-    return t("extension.pluginSource", { id: source.slice("plugin:".length) });
-  }
-  return source || t("extension.unknownSource");
-}
-
-function extensionScopeLabel(scope: string, t: Translate): string {
-  switch (scope) {
-    case "project":
-      return t("extension.scopeProject");
-    case "user":
-      return t("extension.scopeUser");
-    case "bundled":
-      return t("extension.scopeBundled");
-    default:
-      return scope || t("extension.unknownScope");
-  }
-}
-
-function extensionStateLabel(state: ExtensionInventoryRecord["state"], t: Translate): string {
-  switch (state) {
-    case "active":
-      return t("extension.stateActive");
-    case "read_only":
-      return t("extension.stateReadOnly");
-    case "pending":
-      return t("extension.statePending");
-    case "granted":
-      return t("extension.stateGranted");
-    case "rejected":
-      return t("extension.stateRejected");
-    case "changed":
-      return t("extension.stateChanged");
-  }
-}
-
-function extensionStateTone(state: ExtensionInventoryRecord["state"]): string {
-  switch (state) {
-    case "active":
-    case "granted":
-      return "success";
-    case "pending":
-    case "changed":
-      return "warning";
-    case "rejected":
-      return "danger";
-    default:
-      return "neutral";
-  }
-}
-
-function extensionGrantScopeLabel(scope: NonNullable<ExtensionInventoryRecord["grant_scope"]>, t: Translate): string {
-  switch (scope) {
-    case "action":
-      return t("extension.grantAction");
-    case "session":
-      return t("extension.grantSession");
-    case "project":
-      return t("extension.grantProject");
-    case "user":
-      return t("extension.grantUser");
-  }
 }
 
 function mcpStateLabel(state: string, t: Translate): string {
