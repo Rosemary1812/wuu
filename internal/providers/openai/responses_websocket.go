@@ -55,6 +55,31 @@ type CodexWebSocketDialer struct {
 	HTTPClient *http.Client
 }
 
+// CodexWebSocketDialError preserves the HTTP upgrade status, when one was
+// returned, without requiring callers to recover it from formatted text.
+type CodexWebSocketDialError struct {
+	URL        string
+	StatusCode int
+	Err        error
+}
+
+func (e *CodexWebSocketDialError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.StatusCode != 0 {
+		return fmt.Sprintf("codex websocket dial %q: status=%d: %v", e.URL, e.StatusCode, e.Err)
+	}
+	return fmt.Sprintf("codex websocket dial %q: %v", e.URL, e.Err)
+}
+
+func (e *CodexWebSocketDialError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 // Opens a Responses-over-WebSocket connection using the standard upgrade
 // flow, forwarding request-specific headers and adding the required beta tag
 // when absent. The returned connection must be closed by the caller; this
@@ -94,11 +119,12 @@ func (d CodexWebSocketDialer) dialCodexWebSocket(
 		HTTPClient: d.HTTPClient,
 	})
 	if err != nil {
+		statusCode := 0
 		if resp != nil {
+			statusCode = resp.StatusCode
 			_ = resp.Body.Close()
-			return nil, fmt.Errorf("codex websocket dial %q: status=%d: %w", wsURL, resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("codex websocket dial %q: %w", wsURL, err)
+		return nil, &CodexWebSocketDialError{URL: wsURL, StatusCode: statusCode, Err: err}
 	}
 	conn.SetReadLimit(codexWebSocketReadLimitBytes)
 	return conn, nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -234,6 +235,117 @@ func TestDialCodexWebSocket_RespectsContextCancel(t *testing.T) {
 	wsURL := strings.Replace(server.URL, "http://", "ws://", 1)
 	if _, err := (CodexWebSocketDialer{}).dialCodexWebSocket(ctx, wsURL, http.Header{}); err == nil {
 		t.Fatal("expected dial to fail when context is already canceled")
+	}
+}
+
+func TestDialCodexWebSocket_PreservesUpgradeStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	wsURL := strings.Replace(server.URL, "http://", "ws://", 1)
+	_, err := (CodexWebSocketDialer{}).dialCodexWebSocket(context.Background(), wsURL, http.Header{})
+	if err == nil {
+		t.Fatal("expected websocket upgrade to fail")
+	}
+	var dialErr *CodexWebSocketDialError
+	if !errors.As(err, &dialErr) {
+		t.Fatalf("dial error type = %T, want *CodexWebSocketDialError", err)
+	}
+	if dialErr.StatusCode != http.StatusForbidden {
+		t.Fatalf("upgrade status = %d, want %d", dialErr.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestResponsesWebSocketFallbackTTLClassification(t *testing.T) {
+	dialStatus := func(status int) error {
+		return &CodexWebSocketDialError{StatusCode: status, Err: errors.New("upgrade failed")}
+	}
+	tests := []struct {
+		name   string
+		reason string
+		err    error
+		want   time.Duration
+	}{
+		{name: "write failure", reason: "websocket_write_failed", err: errors.New("broken pipe"), want: responsesWebSocketTransientFallbackTTL},
+		{name: "network setup failure", reason: "websocket_setup_failed", err: dialStatus(0), want: responsesWebSocketTransientFallbackTTL},
+		{name: "server setup failure", reason: "websocket_setup_failed", err: dialStatus(http.StatusServiceUnavailable), want: responsesWebSocketTransientFallbackTTL},
+		{name: "connection limit", reason: responsesWebSocketConnectionLimitCode, err: errors.New("limit"), want: responsesWebSocketPressureFallbackTTL},
+		{name: "upgrade rate limit", reason: "websocket_setup_failed", err: dialStatus(http.StatusTooManyRequests), want: responsesWebSocketPressureFallbackTTL},
+		{name: "auth rejection", reason: "websocket_setup_failed", err: dialStatus(http.StatusUnauthorized), want: responsesWebSocketLongFallbackTTL},
+		{name: "missing endpoint", reason: "websocket_setup_failed", err: dialStatus(http.StatusNotFound), want: responsesWebSocketLongFallbackTTL},
+		{name: "unsupported upgrade", reason: "websocket_setup_failed", err: dialStatus(http.StatusUpgradeRequired), want: responsesWebSocketLongFallbackTTL},
+		{name: "status text is not parsed", reason: "websocket_setup_failed", err: errors.New("status=401"), want: responsesWebSocketTransientFallbackTTL},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := responsesWebSocketFallbackTTL(test.reason, test.err); got != test.want {
+				t.Fatalf("fallback TTL = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestResponsesStreamChatWebSocket_CanceledSetupDoesNotPinFallback(t *testing.T) {
+	requestStarted := make(chan struct{}, 1)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		select {
+		case requestStarted <- struct{}{}:
+		default:
+		}
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	cache := NewResponsesWebSocketCache()
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesTransport:      providers.StreamTransportAuto,
+		ResponsesWebSocketCache: cache,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.StreamChat(ctx, providers.ChatRequest{
+			Model:     "gpt-test",
+			Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
+			CacheHint: &providers.CacheHint{PromptCacheKey: "thread-canceled-setup"},
+		})
+		done <- err
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("websocket setup did not reach the server")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("StreamChat error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled websocket setup did not return")
+	}
+
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("requests = %d, want websocket attempt only", got)
+	}
+	cache.mu.Lock()
+	_, exists := cache.sessions["thread-canceled-setup"]
+	cache.mu.Unlock()
+	if exists {
+		t.Fatal("caller cancellation must not retain an idle fallback session")
 	}
 }
 
@@ -1713,13 +1825,19 @@ func TestResponsesStreamChatWebSocket_PersistsSSEFallbackAfterConnectionLimit(t 
 		states[0].Transport != "websocket" ||
 		states[1].Transport != "websocket" ||
 		states[1].Diagnostic != "provider_transport_failure" ||
+		states[1].FallbackPinStatus != responsesWebSocketFallbackPinCreated ||
+		states[1].FallbackTTLMS != responsesWebSocketPressureFallbackTTL.Milliseconds() ||
+		states[1].FallbackRetryAfterMS <= 0 ||
 		states[2].Transport != "http" ||
 		states[2].Diagnostic != "provider_transport_failure" ||
 		states[2].TransportFailurePhase != "before_message_stream_start" ||
 		states[2].FallbackTransport != "http" ||
 		states[2].EventsEmitted ||
 		!states[2].FallbackActive ||
-		states[2].FallbackReason != "websocket_connection_limit_reached" {
+		states[2].FallbackReason != "websocket_connection_limit_reached" ||
+		states[2].FallbackPinStatus != responsesWebSocketFallbackPinReused ||
+		states[2].FallbackTTLMS != responsesWebSocketPressureFallbackTTL.Milliseconds() ||
+		states[2].FallbackRetryAfterMS <= 0 {
 		t.Fatalf("unexpected provider states after SSE fallback: %+v", states)
 	}
 	firstFallbackReq := <-sseRequests
@@ -1752,7 +1870,10 @@ func TestResponsesStreamChatWebSocket_PersistsSSEFallbackAfterConnectionLimit(t 
 	if len(laterStates) != 1 ||
 		laterStates[0].Transport != "http" ||
 		!laterStates[0].FallbackActive ||
-		laterStates[0].FallbackReason != "websocket_connection_limit_reached" {
+		laterStates[0].FallbackReason != "websocket_connection_limit_reached" ||
+		laterStates[0].FallbackPinStatus != responsesWebSocketFallbackPinReused ||
+		laterStates[0].FallbackTTLMS != responsesWebSocketPressureFallbackTTL.Milliseconds() ||
+		laterStates[0].FallbackRetryAfterMS <= 0 {
 		t.Fatalf("unexpected later provider states: %+v", laterStates)
 	}
 	laterFallbackReq := <-sseRequests
@@ -2082,12 +2203,27 @@ func TestResponsesWebSocketFallbackPinExpires(t *testing.T) {
 	cache := client.responsesWSCache
 	session := cache.session("thread-pin")
 
-	client.responsesWebSocketMarkFallback(session, "websocket_setup_failed")
+	created := client.responsesWebSocketMarkFallback(session, "websocket_setup_failed", errors.New("temporary dial failure"))
+	if created.pinStatus != responsesWebSocketFallbackPinCreated ||
+		created.ttl != responsesWebSocketTransientFallbackTTL ||
+		created.retryAfter <= 0 {
+		t.Fatalf("created pin telemetry = %+v", created)
+	}
 
 	session.mu.Lock()
-	if !session.fallbackActiveLocked(time.Now()) {
+	now := time.Now()
+	if !session.fallbackActiveLocked(now) {
 		session.mu.Unlock()
 		t.Fatal("fresh fallback pin must be active")
+	}
+	reused := session.responsesWebSocketFallbackMetaLocked(now, responsesWebSocketFallbackPinReused)
+	state := &providers.ProviderStateSummary{}
+	applyResponsesWebSocketFallbackMeta(state, reused)
+	if state.FallbackPinStatus != responsesWebSocketFallbackPinReused ||
+		state.FallbackTTLMS != responsesWebSocketTransientFallbackTTL.Milliseconds() ||
+		state.FallbackRetryAfterMS <= 0 {
+		session.mu.Unlock()
+		t.Fatalf("reused pin telemetry = %+v", state)
 	}
 	if session.fallback.until.IsZero() {
 		session.mu.Unlock()
@@ -2113,5 +2249,104 @@ func TestResponsesWebSocketFallbackPinExpires(t *testing.T) {
 	cache.mu.Unlock()
 	if exists {
 		t.Fatal("expired fallback session entry must be reclaimed")
+	}
+}
+
+func TestResponsesWebSocketFallbackPinReuseKeepsExpiryTimer(t *testing.T) {
+	client, err := New(ClientConfig{
+		BaseURL:            "https://example.test/v1",
+		WireAPI:            "responses",
+		APIKey:             "test-key",
+		ResponsesTransport: providers.StreamTransportWebSocket,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cache := client.responsesWSCache
+	session := cache.session("thread-pin-reuse")
+	session.mu.Lock()
+	session.fallback = responsesWebSocketFallbackState{
+		active: true,
+		reason: "websocket_setup_failed",
+		until:  time.Now().Add(40 * time.Millisecond),
+		ttl:    40 * time.Millisecond,
+	}
+	session.idleTimer = time.AfterFunc(40*time.Millisecond, func() {
+		cache.expireIdleSession("thread-pin-reuse", session)
+	})
+	session.mu.Unlock()
+
+	_, err = client.responsesStreamChatWebSocketAttempt(context.Background(), responsesRequest{
+		Model:          "gpt-test",
+		PromptCacheKey: "thread-pin-reuse",
+	}, providers.StreamTransportWebSocket)
+	var fallbackErr *responsesWebSocketFallbackError
+	if !errors.As(err, &fallbackErr) || fallbackErr.fallback.pinStatus != responsesWebSocketFallbackPinReused {
+		t.Fatalf("fallback error = %#v, want reused pin", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		cache.mu.Lock()
+		_, exists := cache.sessions["thread-pin-reuse"]
+		cache.mu.Unlock()
+		if !exists {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("reused fallback pin did not expire from the session cache")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestResponsesWebSocketFallbackPinKeepsStrongestExpiry(t *testing.T) {
+	client, err := New(ClientConfig{
+		BaseURL:            "https://example.test/v1",
+		WireAPI:            "responses",
+		APIKey:             "test-key",
+		ResponsesTransport: providers.StreamTransportWebSocket,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	session := client.responsesWSCache.session("thread-pin-strength")
+	t.Cleanup(func() {
+		session.mu.Lock()
+		client.responsesWebSocketCancelIdleTimerLocked(session)
+		session.mu.Unlock()
+	})
+
+	created := client.responsesWebSocketMarkFallback(session, "websocket_setup_failed", &CodexWebSocketDialError{
+		StatusCode: http.StatusUnauthorized,
+		Err:        errors.New("unauthorized"),
+	})
+	if created.pinStatus != responsesWebSocketFallbackPinCreated || created.ttl != responsesWebSocketLongFallbackTTL {
+		t.Fatalf("long pin metadata = %+v", created)
+	}
+	session.mu.Lock()
+	longUntil := session.fallback.until
+	session.mu.Unlock()
+
+	reused := client.responsesWebSocketMarkFallback(session, "websocket_write_failed", errors.New("broken pipe"))
+	if reused.pinStatus != responsesWebSocketFallbackPinReused || reused.ttl != responsesWebSocketLongFallbackTTL {
+		t.Fatalf("weaker pin metadata = %+v", reused)
+	}
+	session.mu.Lock()
+	if session.fallback.reason != "websocket_setup_failed" || session.fallback.ttl != responsesWebSocketLongFallbackTTL || session.fallback.until != longUntil {
+		t.Fatalf("weaker failure replaced stronger pin: %+v", session.fallback)
+	}
+	session.mu.Unlock()
+
+	extendedSession := client.responsesWSCache.session("thread-pin-extended")
+	t.Cleanup(func() {
+		extendedSession.mu.Lock()
+		client.responsesWebSocketCancelIdleTimerLocked(extendedSession)
+		extendedSession.mu.Unlock()
+	})
+	client.responsesWebSocketMarkFallback(extendedSession, "websocket_write_failed", errors.New("broken pipe"))
+	extended := client.responsesWebSocketMarkFallback(extendedSession, responsesWebSocketConnectionLimitCode, errors.New("limit"))
+	if extended.pinStatus != responsesWebSocketFallbackPinExtended || extended.ttl != responsesWebSocketPressureFallbackTTL {
+		t.Fatalf("extended pin metadata = %+v", extended)
 	}
 }

@@ -74,16 +74,19 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 		if err == nil {
 			return ch, nil
 		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if len(payload.Attempt.SubmissionSnapshot()) > submissionsBefore {
 			return nil, err
 		}
 		providers.DebugLogf("Responses websocket unavailable before stream start, falling back to SSE: %v", err)
 		reason := responsesWebSocketFallbackReason(err)
 		payload.SubmissionReason = reason
-		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, reason))
+		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, reason, responsesWebSocketFallbackMetaFromError(err)))
 	}
 
-	return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, ""))
+	return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, "", responsesWebSocketFallbackMeta{}))
 }
 
 func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRequest, state *providers.ProviderStateSummary) (<-chan providers.StreamEvent, error) {
@@ -103,7 +106,7 @@ func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRe
 	return ch, nil
 }
 
-func responsesSSEProviderState(payload responsesRequest, configuredTransport providers.StreamTransportMode, fallbackReason string) *providers.ProviderStateSummary {
+func responsesSSEProviderState(payload responsesRequest, configuredTransport providers.StreamTransportMode, fallbackReason string, fallback responsesWebSocketFallbackMeta) *providers.ProviderStateSummary {
 	fallbackReason = strings.TrimSpace(fallbackReason)
 	state := &providers.ProviderStateSummary{
 		Provider:            "openai",
@@ -124,6 +127,7 @@ func responsesSSEProviderState(payload responsesRequest, configuredTransport pro
 		state.FailedTransport = "websocket"
 		state.FallbackTransport = "http"
 		state.EventsEmitted = state.TransportFailurePhase == "after_message_stream_start"
+		applyResponsesWebSocketFallbackMeta(state, fallback)
 	}
 	return state
 }

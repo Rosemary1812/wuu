@@ -221,6 +221,9 @@ type ProviderStateRecord struct {
 	EventsEmitted          bool   `json:"events_emitted,omitempty"`
 	FallbackActive         bool   `json:"fallback_active,omitempty"`
 	FallbackReason         string `json:"fallback_reason,omitempty"`
+	FallbackPinStatus      string `json:"fallback_pin_status,omitempty"`
+	FallbackRetryAfterMS   int64  `json:"fallback_retry_after_ms,omitempty"`
+	FallbackTTLMS          int64  `json:"fallback_ttl_ms,omitempty"`
 	InputItems             int    `json:"input_items,omitempty"`
 	FullInputItems         int    `json:"full_input_items,omitempty"`
 	DeltaInputItems        int    `json:"delta_input_items,omitempty"`

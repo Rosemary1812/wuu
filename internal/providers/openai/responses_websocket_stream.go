@@ -18,12 +18,18 @@ import (
 
 const (
 	defaultResponsesWebSocketCacheTTL = 5 * time.Minute
-	// A fallback pin routes a session's requests to SSE after a websocket
-	// failure. Most pin causes are transient (connection-limit pressure, one
-	// dial hiccup), so the pin expires and the websocket is retried instead
-	// of degrading the session for the whole process lifetime — which also
-	// let pinned map entries accumulate without bound.
-	defaultResponsesWebSocketFallbackTTL  = 10 * time.Minute
+	// Fallback pins prevent every request in a hot session from immediately
+	// retrying a broken websocket path. Transient failures re-probe quickly,
+	// connection pressure backs off longer, and stable compatibility/auth
+	// failures retain the former long pin.
+	responsesWebSocketTransientFallbackTTL = 30 * time.Second
+	responsesWebSocketPressureFallbackTTL  = 2 * time.Minute
+	responsesWebSocketLongFallbackTTL      = 10 * time.Minute
+
+	responsesWebSocketFallbackPinCreated  = "created"
+	responsesWebSocketFallbackPinExtended = "extended"
+	responsesWebSocketFallbackPinReused   = "reused"
+
 	responsesWebSocketConnectionLimitCode = "websocket_connection_limit_reached"
 )
 
@@ -82,6 +88,7 @@ type responsesWebSocketFallbackState struct {
 	active bool
 	reason string
 	until  time.Time
+	ttl    time.Duration
 }
 
 // fallbackActiveLocked reports whether the SSE pin is still in force and
@@ -101,9 +108,16 @@ type responsesWebSocketRequestMeta struct {
 	connectionReused bool
 }
 
+type responsesWebSocketFallbackMeta struct {
+	pinStatus  string
+	retryAfter time.Duration
+	ttl        time.Duration
+}
+
 type responsesWebSocketFallbackError struct {
-	reason string
-	err    error
+	reason   string
+	err      error
+	fallback responsesWebSocketFallbackMeta
 }
 
 func (e *responsesWebSocketFallbackError) Error() string {
@@ -152,13 +166,15 @@ func (c *Client) responsesStreamChatWebSocketAttempt(ctx context.Context, payloa
 	}
 	session := c.responsesWSCache.session(sessionID)
 	session.mu.Lock()
-	c.responsesWebSocketCancelIdleTimerLocked(session)
-	if session.fallbackActiveLocked(time.Now()) {
+	now := time.Now()
+	if session.fallbackActiveLocked(now) {
 		reason := session.fallback.reason
+		fallback := session.responsesWebSocketFallbackMetaLocked(now, responsesWebSocketFallbackPinReused)
 		session.mu.Unlock()
 		lease.Release()
-		return nil, newResponsesWebSocketFallbackError(reason, nil)
+		return nil, newResponsesWebSocketFallbackError(reason, nil, fallback)
 	}
+	c.responsesWebSocketCancelIdleTimerLocked(session)
 	if session.busy {
 		session.mu.Unlock()
 		transient := &responsesWebSocketSession{id: sessionID}
@@ -192,14 +208,25 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 		session.mu.Lock()
 		if dialErr != nil {
 			session.busy = false
+			if ctx.Err() != nil {
+				cache := session.cache
+				sessionID := session.id
+				session.mu.Unlock()
+				if cacheConnection && cache != nil {
+					cache.expireIdleSession(sessionID, session)
+				}
+				lease.FailError(ctx.Err())
+				return nil, ctx.Err()
+			}
+			var fallback responsesWebSocketFallbackMeta
 			if cacheConnection {
-				c.responsesWebSocketActivateFallbackLocked(session, "websocket_setup_failed")
+				fallback = c.responsesWebSocketActivateFallbackLocked(session, "websocket_setup_failed", dialErr)
 			}
 			session.mu.Unlock()
 			if !cacheConnection {
-				c.responsesWebSocketMarkFallback(fallbackSession, "websocket_setup_failed")
+				fallback = c.responsesWebSocketMarkFallback(fallbackSession, "websocket_setup_failed", dialErr)
 			}
-			fallbackErr := newResponsesWebSocketFallbackError("websocket_setup_failed", dialErr)
+			fallbackErr := newResponsesWebSocketFallbackError("websocket_setup_failed", dialErr, fallback)
 			// This transport attempt is being replaced by SSE. Do not open the
 			// account-level circuit for a WebSocket-only compatibility failure.
 			lease.Release()
@@ -261,16 +288,23 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	if err := conn.Write(ctx, websocket.MessageText, body); err != nil {
 		session.mu.Lock()
 		c.responsesWebSocketReleaseLocked(session, readCh)
+		if ctx.Err() != nil {
+			c.responsesWebSocketAbortConnectionLocked(session)
+			session.mu.Unlock()
+			lease.FailError(ctx.Err())
+			return nil, ctx.Err()
+		}
+		var fallback responsesWebSocketFallbackMeta
 		if cacheConnection {
-			c.responsesWebSocketActivateFallbackLocked(session, "websocket_write_failed")
+			fallback = c.responsesWebSocketActivateFallbackLocked(session, "websocket_write_failed", err)
 		} else {
 			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "websocket_write_failed")
 		}
 		session.mu.Unlock()
 		if !cacheConnection {
-			c.responsesWebSocketMarkFallback(fallbackSession, "websocket_write_failed")
+			fallback = c.responsesWebSocketMarkFallback(fallbackSession, "websocket_write_failed", err)
 		}
-		fallbackErr := newResponsesWebSocketFallbackError("websocket_write_failed", err)
+		fallbackErr := newResponsesWebSocketFallbackError("websocket_write_failed", err, fallback)
 		lease.FallbackError(fallbackErr)
 		return nil, fallbackErr
 	}
@@ -454,38 +488,42 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				providers.DebugLogf("Responses websocket failed before first provider event; falling back to SSE: %v", frame.err)
 				session.mu.Lock()
 				c.responsesWebSocketReleaseLocked(session, readCh)
+				var fallback responsesWebSocketFallbackMeta
 				if cacheConnection {
-					c.responsesWebSocketActivateFallbackLocked(session, reason)
+					fallback = c.responsesWebSocketActivateFallbackLocked(session, reason, frame.err)
 				} else {
 					c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, reason)
 				}
 				session.mu.Unlock()
 				if !cacheConnection {
-					c.responsesWebSocketMarkFallback(fallbackSession, reason)
+					fallback = c.responsesWebSocketMarkFallback(fallbackSession, reason, frame.err)
 				}
-				fallbackErr := newResponsesWebSocketFallbackError(reason, frame.err)
+				fallbackErr := newResponsesWebSocketFallbackError(reason, frame.err, fallback)
 				lease.FallbackError(fallbackErr)
 				emit.Send(providers.StreamEvent{
 					Type:          providers.EventProviderState,
-					ProviderState: responsesWebSocketTransportFailureState(state, reason),
+					ProviderState: responsesWebSocketTransportFailureState(state, reason, fallback),
 				})
 				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: fallbackErr})
 				return
 			}
+			streamCause := providers.NewIncompleteStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err))
 			session.mu.Lock()
 			c.responsesWebSocketReleaseLocked(session, readCh)
+			var fallback responsesWebSocketFallbackMeta
 			if cacheConnection {
-				c.responsesWebSocketActivateFallbackLocked(session, "stream_error_after_provider_event")
+				fallback = c.responsesWebSocketActivateFallbackLocked(session, "stream_error_after_provider_event", streamCause)
 			} else {
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "stream_error_after_provider_event")
 			}
 			session.mu.Unlock()
 			if !cacheConnection {
-				c.responsesWebSocketMarkFallback(fallbackSession, "stream_error_after_provider_event")
+				fallback = c.responsesWebSocketMarkFallback(fallbackSession, "stream_error_after_provider_event", streamCause)
 			}
 			streamErr := newResponsesWebSocketFallbackError(
 				"stream_error_after_provider_event",
-				providers.NewIncompleteStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err)),
+				streamCause,
+				fallback,
 			)
 			// The session is pinned to SSE for the next engine attempt. Keep the
 			// replay decision and billable ambiguity in the attempt outcome, but
@@ -493,7 +531,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			lease.FallbackError(streamErr)
 			emit.Send(providers.StreamEvent{
 				Type:          providers.EventProviderState,
-				ProviderState: responsesWebSocketTransportFailureState(state, "stream_error_after_provider_event"),
+				ProviderState: responsesWebSocketTransportFailureState(state, "stream_error_after_provider_event", fallback),
 			})
 			emit.Send(providers.StreamEvent{
 				Type:  providers.EventError,
@@ -519,22 +557,24 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 		if responsesWebSocketConnectionLimitReached(event) && !sawProviderEvent {
 			// Connection capacity is transport-specific. The retry/fallback owns
 			// a new lease, while account-wide rate limits remain shared.
-			fallbackErr := newResponsesWebSocketFallbackError(responsesWebSocketConnectionLimitCode, errors.New("websocket connection limit reached"))
-			lease.FallbackError(fallbackErr)
+			limitErr := errors.New("websocket connection limit reached")
 			session.mu.Lock()
 			c.responsesWebSocketReleaseLocked(session, readCh)
+			var fallback responsesWebSocketFallbackMeta
 			if cacheConnection {
-				c.responsesWebSocketActivateFallbackLocked(session, responsesWebSocketConnectionLimitCode)
+				fallback = c.responsesWebSocketActivateFallbackLocked(session, responsesWebSocketConnectionLimitCode, limitErr)
 			} else {
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, responsesWebSocketConnectionLimitCode)
 			}
 			session.mu.Unlock()
 			if !cacheConnection {
-				c.responsesWebSocketMarkFallback(fallbackSession, responsesWebSocketConnectionLimitCode)
+				fallback = c.responsesWebSocketMarkFallback(fallbackSession, responsesWebSocketConnectionLimitCode, limitErr)
 			}
+			fallbackErr := newResponsesWebSocketFallbackError(responsesWebSocketConnectionLimitCode, limitErr, fallback)
+			lease.FallbackError(fallbackErr)
 			emit.Send(providers.StreamEvent{
 				Type:          providers.EventProviderState,
-				ProviderState: responsesWebSocketTransportFailureState(state, responsesWebSocketConnectionLimitCode),
+				ProviderState: responsesWebSocketTransportFailureState(state, responsesWebSocketConnectionLimitCode, fallback),
 			})
 			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: fallbackErr})
 			return
@@ -695,7 +735,7 @@ func responsesWebSocketProviderState(fullPayload, requestPayload responsesReques
 	}
 }
 
-func responsesWebSocketTransportFailureState(state *providers.ProviderStateSummary, reason string) *providers.ProviderStateSummary {
+func responsesWebSocketTransportFailureState(state *providers.ProviderStateSummary, reason string, fallback responsesWebSocketFallbackMeta) *providers.ProviderStateSummary {
 	if state == nil {
 		return nil
 	}
@@ -711,6 +751,7 @@ func responsesWebSocketTransportFailureState(state *providers.ProviderStateSumma
 	diagnostic.EventsEmitted = diagnostic.TransportFailurePhase == "after_message_stream_start"
 	diagnostic.FallbackActive = true
 	diagnostic.FallbackReason = strings.TrimSpace(reason)
+	applyResponsesWebSocketFallbackMeta(&diagnostic, fallback)
 	return &diagnostic
 }
 
@@ -745,12 +786,12 @@ func responsesErrorCode(event responsesStreamEvent) string {
 	return ""
 }
 
-func newResponsesWebSocketFallbackError(reason string, err error) *responsesWebSocketFallbackError {
+func newResponsesWebSocketFallbackError(reason string, err error, fallback responsesWebSocketFallbackMeta) *responsesWebSocketFallbackError {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "websocket_unavailable_before_start"
 	}
-	return &responsesWebSocketFallbackError{reason: reason, err: err}
+	return &responsesWebSocketFallbackError{reason: reason, err: err, fallback: fallback}
 }
 
 func responsesWebSocketFallbackReason(err error) string {
@@ -759,6 +800,33 @@ func responsesWebSocketFallbackReason(err error) string {
 		return fallbackErr.reason
 	}
 	return "websocket_unavailable_before_start"
+}
+
+func responsesWebSocketFallbackMetaFromError(err error) responsesWebSocketFallbackMeta {
+	var fallbackErr *responsesWebSocketFallbackError
+	if errors.As(err, &fallbackErr) {
+		return fallbackErr.fallback
+	}
+	return responsesWebSocketFallbackMeta{}
+}
+
+func applyResponsesWebSocketFallbackMeta(state *providers.ProviderStateSummary, fallback responsesWebSocketFallbackMeta) {
+	if state == nil {
+		return
+	}
+	state.FallbackPinStatus = fallback.pinStatus
+	state.FallbackRetryAfterMS = durationMillis(fallback.retryAfter)
+	state.FallbackTTLMS = durationMillis(fallback.ttl)
+}
+
+func durationMillis(d time.Duration) int64 {
+	if d <= 0 {
+		return 0
+	}
+	if millis := d.Milliseconds(); millis > 0 {
+		return millis
+	}
+	return 1
 }
 
 func (c *Client) responsesWebSocketReleaseLocked(session *responsesWebSocketSession, readCh chan responsesWebSocketReadEvent) {
@@ -793,43 +861,106 @@ func (c *Client) responsesWebSocketScheduleIdleExpiryLocked(session *responsesWe
 	})
 }
 
-func (c *Client) responsesWebSocketActivateFallbackLocked(session *responsesWebSocketSession, reason string) {
+func (c *Client) responsesWebSocketActivateFallbackLocked(session *responsesWebSocketSession, reason string, err error) responsesWebSocketFallbackMeta {
 	// Invalidate first: it cancels the idle timer, and marking afterwards
 	// installs the pin-expiry timer that reclaims this session.
 	c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, reason)
-	c.responsesWebSocketMarkFallbackLocked(session, reason)
+	return c.responsesWebSocketMarkFallbackLocked(session, reason, err)
 }
 
-func (c *Client) responsesWebSocketMarkFallback(session *responsesWebSocketSession, reason string) {
+func (c *Client) responsesWebSocketMarkFallback(session *responsesWebSocketSession, reason string, err error) responsesWebSocketFallbackMeta {
 	if session == nil {
-		return
+		return responsesWebSocketFallbackMeta{}
 	}
 	session.mu.Lock()
-	c.responsesWebSocketMarkFallbackLocked(session, reason)
+	fallback := c.responsesWebSocketMarkFallbackLocked(session, reason, err)
 	session.mu.Unlock()
+	return fallback
 }
 
-func (c *Client) responsesWebSocketMarkFallbackLocked(session *responsesWebSocketSession, reason string) {
+func (c *Client) responsesWebSocketMarkFallbackLocked(session *responsesWebSocketSession, reason string, err error) responsesWebSocketFallbackMeta {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "websocket_unavailable_before_start"
 	}
+	ttl := responsesWebSocketFallbackTTL(reason, err)
+	now := time.Now()
+	until := now.Add(ttl)
+	pinStatus := responsesWebSocketFallbackPinCreated
+	if session.fallbackActiveLocked(now) {
+		if !until.After(session.fallback.until) {
+			fallback := session.responsesWebSocketFallbackMetaLocked(now, responsesWebSocketFallbackPinReused)
+			c.responsesWebSocketScheduleFallbackExpiryLocked(session, fallback.retryAfter)
+			return fallback
+		}
+		pinStatus = responsesWebSocketFallbackPinExtended
+	}
 	session.fallback = responsesWebSocketFallbackState{
 		active: true,
 		reason: reason,
-		until:  time.Now().Add(defaultResponsesWebSocketFallbackTTL),
+		until:  until,
+		ttl:    ttl,
 	}
 	// A pinned session holds no connection, so the regular idle expiry never
 	// runs for it. Arm a timer so the entry is reclaimed (and the websocket
 	// retried) once the pin lapses instead of accumulating forever.
-	if session.cache != nil {
-		c.responsesWebSocketCancelIdleTimerLocked(session)
-		cache := session.cache
-		sessionID := session.id
-		session.idleTimer = time.AfterFunc(defaultResponsesWebSocketFallbackTTL, func() {
-			cache.expireIdleSession(sessionID, session)
-		})
+	c.responsesWebSocketScheduleFallbackExpiryLocked(session, ttl)
+	return session.responsesWebSocketFallbackMetaLocked(now, pinStatus)
+}
+
+func (c *Client) responsesWebSocketScheduleFallbackExpiryLocked(session *responsesWebSocketSession, after time.Duration) {
+	if session == nil || session.cache == nil {
+		return
 	}
+	if after <= 0 {
+		after = time.Millisecond
+	}
+	c.responsesWebSocketCancelIdleTimerLocked(session)
+	cache := session.cache
+	sessionID := session.id
+	session.idleTimer = time.AfterFunc(after, func() {
+		cache.expireIdleSession(sessionID, session)
+	})
+}
+
+func (s *responsesWebSocketSession) responsesWebSocketFallbackMetaLocked(now time.Time, pinStatus string) responsesWebSocketFallbackMeta {
+	retryAfter := time.Duration(0)
+	if now.Before(s.fallback.until) {
+		retryAfter = s.fallback.until.Sub(now)
+	}
+	return responsesWebSocketFallbackMeta{
+		pinStatus:  pinStatus,
+		retryAfter: retryAfter,
+		ttl:        s.fallback.ttl,
+	}
+}
+
+func responsesWebSocketFallbackTTL(reason string, err error) time.Duration {
+	if strings.TrimSpace(reason) == responsesWebSocketConnectionLimitCode {
+		return responsesWebSocketPressureFallbackTTL
+	}
+
+	var dialErr *CodexWebSocketDialError
+	if errors.As(err, &dialErr) {
+		switch dialErr.StatusCode {
+		case http.StatusTooManyRequests:
+			return responsesWebSocketPressureFallbackTTL
+		case http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusPaymentRequired,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusMethodNotAllowed,
+			http.StatusNotAcceptable,
+			http.StatusProxyAuthRequired,
+			http.StatusGone,
+			http.StatusUnsupportedMediaType,
+			http.StatusUpgradeRequired,
+			http.StatusNotImplemented:
+			return responsesWebSocketLongFallbackTTL
+		}
+	}
+	return responsesWebSocketTransientFallbackTTL
 }
 
 func (c *Client) responsesWebSocketInvalidateConnectionLocked(session *responsesWebSocketSession, status websocket.StatusCode, reason string) {

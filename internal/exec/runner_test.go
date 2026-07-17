@@ -299,6 +299,9 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					ConnectionReused:       true,
 					FallbackActive:         true,
 					FallbackReason:         "websocket_failed_before_first_event",
+					FallbackPinStatus:      "created",
+					FallbackRetryAfterMS:   29950,
+					FallbackTTLMS:          30000,
 					InputItems:             1,
 					FullInputItems:         3,
 					DeltaInputItems:        1,
@@ -384,6 +387,9 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		providerState["connection_reused"] != true ||
 		providerState["fallback_active"] != true ||
 		providerState["fallback_reason"] != "websocket_failed_before_first_event" ||
+		providerState["fallback_pin_status"] != "created" ||
+		providerState["fallback_retry_after_ms"] != float64(29950) ||
+		providerState["fallback_ttl_ms"] != float64(30000) ||
 		providerState["input_items"] != float64(1) ||
 		providerState["full_input_items"] != float64(3) ||
 		providerState["delta_input_items"] != float64(1) {

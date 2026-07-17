@@ -399,10 +399,13 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 	if len(records) == 0 {
 		return wuucontext.Block{}, false
 	}
-	const maxRecords = 8
+	const (
+		maxRenderedRecords  = 4
+		loopDetectionWindow = 8
+	)
 	start := 0
-	if len(records) > maxRecords {
-		start = len(records) - maxRecords
+	if len(records) > maxRenderedRecords {
+		start = len(records) - maxRenderedRecords
 	}
 
 	var b strings.Builder
@@ -447,7 +450,14 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		}
 		b.WriteString("\n")
 	}
-	if repeated := repeatedToolArguments(records[start:]); len(repeated) > 0 {
+	if omitted := len(records) - maxRenderedRecords; omitted > 0 {
+		fmt.Fprintf(&b, "omitted_older_calls: %d\n", omitted)
+	}
+	loopStart := 0
+	if len(records) > loopDetectionWindow {
+		loopStart = len(records) - loopDetectionWindow
+	}
+	if repeated := repeatedToolArguments(records[loopStart:]); len(repeated) > 0 {
 		b.WriteString("repeated_arguments:\n")
 		for _, item := range repeated {
 			fmt.Fprintf(&b, "- name=%s args_sha256=%s count=%d\n", item.ToolName, item.ArgumentsSHA256, item.Count)
@@ -460,7 +470,7 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		Kind:        wuucontext.BlockToolResultSummary,
 		Title:       "Recent tool result summary",
 		Source:      "tool_telemetry",
-		TokenBudget: 800,
+		TokenBudget: 400,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
 }

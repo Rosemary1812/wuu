@@ -3860,6 +3860,40 @@ func TestToolkit_ToolResultSummaryContextBlockShortensArtifactRefs(t *testing.T)
 	}
 }
 
+func TestToolkit_ToolResultSummaryContextBlockLimitsRenderedCalls(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for i := 1; i <= 6; i++ {
+		kit.env.toolTelemetry.record(ToolExecutionRecord{
+			Name:            fmt.Sprintf("tool_%d", i),
+			PolicyAction:    ToolPolicyAllow,
+			Success:         true,
+			ArgumentsSHA256: fmt.Sprintf("args-%d", i),
+		})
+	}
+
+	block, ok := kit.ToolResultSummaryContextBlock()
+	if !ok {
+		t.Fatal("expected tool result summary context block")
+	}
+	if block.TokenBudget != 400 {
+		t.Fatalf("token budget = %d, want 400", block.TokenBudget)
+	}
+	for _, want := range []string{"name=tool_3", "name=tool_4", "name=tool_5", "name=tool_6", "omitted_older_calls: 2"} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("tool summary missing %q:\n%s", want, block.Content)
+		}
+	}
+	for _, omitted := range []string{"name=tool_1", "name=tool_2"} {
+		if strings.Contains(block.Content, omitted) {
+			t.Fatalf("tool summary should omit %q:\n%s", omitted, block.Content)
+		}
+	}
+}
+
 func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "line one\nAPI_KEY=secret-value-1234567890\nline three\nline four\n")

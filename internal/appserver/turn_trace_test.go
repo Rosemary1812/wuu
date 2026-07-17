@@ -117,6 +117,17 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 	}
 }
 
+func TestProviderStateRecordPreservesFallbackPinMetadata(t *testing.T) {
+	record := providerStateRecord(&providers.ProviderStateSummary{
+		FallbackPinStatus:    "created",
+		FallbackRetryAfterMS: 119500,
+		FallbackTTLMS:        120000,
+	})
+	if record.FallbackPinStatus != "created" || record.FallbackRetryAfterMS != 119500 || record.FallbackTTLMS != 120000 {
+		t.Fatalf("fallback pin metadata was not preserved: %+v", record)
+	}
+}
+
 func intPtr(v int) *int {
 	return &v
 }

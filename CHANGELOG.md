@@ -8,6 +8,11 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenAI Responses WebSocket failures now use reason-specific SSE fallback
+  windows, allowing transient failures to recover without a ten-minute pin.
+
 ## [0.5.2] - 2026-07-16
 
 ### Fixed
