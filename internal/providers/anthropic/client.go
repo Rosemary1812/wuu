@@ -1472,22 +1472,28 @@ func mapReasoningBlocks(blocks []providers.ReasoningBlock) []anthropicBlock {
 	out := make([]anthropicBlock, 0, len(blocks))
 	for _, block := range blocks {
 		switch block.Type {
-		case "thinking", "redacted_thinking":
+		case "thinking":
+			thinking := block.Thinking
 			out = append(out, anthropicBlock{
-				Type:      block.Type,
-				Thinking:  block.Thinking,
+				Type:      "thinking",
+				Thinking:  &thinking,
 				Signature: block.Signature,
-				Data:      block.Data,
 			})
+		case "redacted_thinking":
+			out = append(out, anthropicBlock{Type: "redacted_thinking", Data: block.Data})
 		}
 	}
 	return out
 }
 
 func anthropicReasoningBlock(block anthropicBlock) providers.ReasoningBlock {
+	thinking := ""
+	if block.Thinking != nil {
+		thinking = *block.Thinking
+	}
 	return providers.ReasoningBlock{
 		Type:      block.Type,
-		Thinking:  block.Thinking,
+		Thinking:  thinking,
 		Signature: block.Signature,
 		Data:      block.Data,
 	}
@@ -1625,7 +1631,7 @@ type anthropicMessage struct {
 type anthropicBlock struct {
 	Type         string                 `json:"type"`
 	Text         string                 `json:"text,omitempty"`
-	Thinking     string                 `json:"thinking,omitempty"`
+	Thinking     *string                `json:"thinking,omitempty"`
 	Signature    string                 `json:"signature,omitempty"`
 	Data         string                 `json:"data,omitempty"`
 	Source       *anthropicImageSource  `json:"source,omitempty"`

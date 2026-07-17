@@ -220,6 +220,64 @@ func TestChat_AnthropicReplaysReasoningBlocksForAssistantToolUse(t *testing.T) {
 	}
 }
 
+func TestChat_AnthropicReplaysEmptySignedThinkingForAssistantToolUse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		msgs, ok := body["messages"].([]any)
+		if !ok || len(msgs) != 3 {
+			t.Fatalf("expected 3 messages, got %#v", body["messages"])
+		}
+		assistant, ok := msgs[1].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected assistant message: %#v", msgs[1])
+		}
+		content, ok := assistant["content"].([]any)
+		if !ok || len(content) != 2 {
+			t.Fatalf("expected thinking + tool_use content, got %#v", assistant["content"])
+		}
+		thinking, ok := content[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected thinking block: %#v", content[0])
+		}
+		thinkingText, present := thinking["thinking"]
+		if !present || thinkingText != "" || thinking["type"] != "thinking" || thinking["signature"] != "sig_empty" {
+			t.Fatalf("empty signed thinking must be replayed verbatim, got %#v", thinking)
+		}
+
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "inspect repo"},
+			{
+				Role: "assistant",
+				ReasoningBlocks: []providers.ReasoningBlock{
+					{Type: "thinking", Thinking: "", Signature: "sig_empty"},
+				},
+				ToolCalls: []providers.ToolCall{
+					{ID: "call_1", Name: "list_files", Arguments: `{}`},
+				},
+			},
+			{Role: "tool", ToolCallID: "call_1", Name: "list_files", Content: "[]"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_AnthropicFallsBackToReasoningContentReplay(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
