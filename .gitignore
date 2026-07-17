@@ -8,6 +8,10 @@
 /bin/
 dist/
 node_modules/
+# Also ignore a `node_modules` symlink (worktrees sometimes link a shared
+# install): the trailing-slash rule above only matches real directories, so
+# a symlink would otherwise slip past `git add`.
+node_modules
 .vite/
 desktop/out/
 # Browser PiP E2E bundles its entry here before launching Electron.
