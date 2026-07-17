@@ -256,6 +256,7 @@ For another provider, the same config shape applies:
 
 ## Docs
 
+- Browse all maintained documentation: [Documentation index](docs/README.md)
 - Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/exec.md)
 - Parse the streaming output: [JSONL events](docs/jsonl-events.md)
 - Embed the core in a new shell: [`app-server` protocol](docs/app-server-protocol.md)

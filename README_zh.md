@@ -239,6 +239,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## 文档
 
+- 浏览所有持续维护的文档：[文档索引](docs/README.md)
 - 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/exec.md)
 - 解析流式输出：[JSONL 事件](docs/jsonl-events.md)
 - 将核心嵌入新的 Shell：[`app-server` 协议](docs/app-server-protocol.md)

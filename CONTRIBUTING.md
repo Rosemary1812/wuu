@@ -90,5 +90,6 @@ run.
 - `packages/protocol/` — shared app-server protocol types
 - `clients/core/` — remote-control client core
 - `clients/mobile/` — Expo mobile shell
-- `docs/` — Design docs and protocol references
+- `docs/` — Maintained user, protocol, development, and design documentation; see
+  [`docs/README.md`](docs/README.md) for the index
 - `prototypes/` — Throwaway design exploration; not shipped
