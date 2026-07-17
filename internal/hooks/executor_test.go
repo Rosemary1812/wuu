@@ -221,10 +221,10 @@ func TestHookedExecutor_DefinitionsDelegates(t *testing.T) {
 }
 
 func TestHookedExecutor_SupportsToolDelegates(t *testing.T) {
-	inner := &supportStubExecutor{supported: map[string]bool{"inception": true}}
+	inner := &supportStubExecutor{supported: map[string]bool{"deferred_tool": true}}
 	exec := NewHookedExecutor(inner, NewDispatcher(nil), "", "")
 
-	if !exec.SupportsTool("inception") {
+	if !exec.SupportsTool("deferred_tool") {
 		t.Fatal("expected hooked executor to preserve inner deferred tool support")
 	}
 	if exec.SupportsTool("missing") {
@@ -239,7 +239,7 @@ func TestHookedExecutor_SupportsToolFallsBackToDefinitions(t *testing.T) {
 	if !exec.SupportsTool("READ_FILE") {
 		t.Fatal("expected hooked executor to support direct definition names")
 	}
-	if exec.SupportsTool("inception") {
+	if exec.SupportsTool("deferred_tool") {
 		t.Fatal("unlisted tool should not be supported without inner support provider")
 	}
 }

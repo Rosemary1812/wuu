@@ -31,13 +31,16 @@ func TestRenderHelpMeSlashCommandPrompt(t *testing.T) {
 	if display != "/helpme still not fixed after three tries" {
 		t.Fatalf("display = %q", display)
 	}
-	for _, want := range []string{"HelpMe recovery", "helpme tool", "fresh general-purpose helper", "background", "resumes you with its result", "inception", "bounded recovery summary", "raw parent/helper transcripts", "arrays of short strings", "still not fixed"} {
+	for _, want := range []string{"HelpMe recovery", "helpme tool", "fresh general-purpose helper", "background", "resumes you with its result", "bounded recovery summary", "raw parent/helper transcripts", "arrays of short strings", "still not fixed"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("rendered prompt missing %q:\n%s", want, content)
 		}
 	}
 	if strings.Contains(content, "automatically compact") {
 		t.Fatalf("rendered prompt should not promise automatic compact:\n%s", content)
+	}
+	if strings.Contains(strings.ToLower(content), "inception") {
+		t.Fatalf("rendered prompt must not mention retired context-rewrite tool:\n%s", content)
 	}
 	if strings.Contains(content, "/helpme") {
 		t.Fatalf("rendered prompt should not include raw slash command:\n%s", content)

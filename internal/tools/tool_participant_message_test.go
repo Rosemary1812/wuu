@@ -17,7 +17,7 @@ func (heldParticipantSpeech) PostMessage(context.Context, string, string, string
 	}, nil
 }
 
-func TestPostMessageHeldResultSuggestsConsideringInception(t *testing.T) {
+func TestPostMessageHeldResultRequiresReviewBeforeResend(t *testing.T) {
 	tool := NewPostMessageTool(&Env{ParticipantSpeech: heldParticipantSpeech{}})
 	raw, err := tool.Execute(context.Background(), `{"kind":"result","text":"draft","thread_id":"thr-1","basis_seq":7}`)
 	if err != nil {
@@ -28,8 +28,11 @@ func TestPostMessageHeldResultSuggestsConsideringInception(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	reason, _ := result["reason"].(string)
-	if !strings.Contains(reason, "consider inception before deciding whether to revise, resend with force=true, or stay silent") {
-		t.Fatalf("held reason missing inception guidance:\n%s", reason)
+	if !strings.Contains(reason, "Review the arrivals before deciding whether to revise, resend with force=true, or stay silent") {
+		t.Fatalf("held reason missing review guidance:\n%s", reason)
+	}
+	if strings.Contains(strings.ToLower(reason), "inception") {
+		t.Fatalf("held reason must not mention retired context-rewrite tool:\n%s", reason)
 	}
 }
 

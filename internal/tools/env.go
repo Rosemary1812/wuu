@@ -291,11 +291,10 @@ type Env struct {
 	// notifications without coupling the plan tool to either layer.
 	OnPlanUpdated func(snapshot PlanSnapshot)
 
-	readState      *readFileState
-	testState      testRunState
-	planState      planState
-	webState       webEvidenceState
-	inceptionState inceptionFailureState
+	readState *readFileState
+	testState testRunState
+	planState planState
+	webState  webEvidenceState
 
 	toolTelemetry toolTelemetry
 }

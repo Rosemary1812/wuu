@@ -16,7 +16,6 @@ var taskLeadManagementTools = map[string]bool{
 	"fetch_thread_messages": true,
 	"post_message":          true,
 	"react":                 true,
-	"inception":             true,
 }
 
 // taskLeadManagementTurn identifies a system wake that asks the immutable lead

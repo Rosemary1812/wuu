@@ -227,7 +227,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	history = append(history, recoveredToolMessages...)
 	runUsage, baseHistoryLen := r.prepareUsageTracker(history)
 
-	effectiveOnEvent := filterInternalContextStreamEvents(onEvent)
+	effectiveOnEvent := onEvent
 
 	step := &streamStep{
 		client:                  r.Client,
@@ -317,7 +317,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		// clients can render tool output live (the loop itself only
 		// records the tool message into the history).
 		OnToolResultDetail: func(call providers.ToolCall, result toolresult.Result) {
-			if effectiveOnEvent == nil || isInternalContextToolName(call.Name) {
+			if effectiveOnEvent == nil {
 				return
 			}
 			textResult := result.TextProjection()
@@ -344,7 +344,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				})
 			}
 		},
-		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		PostToolRewrite: compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
 		OnCompactStart: func(reason CompactReason) {
 			if effectiveOnEvent == nil {
 				return
@@ -489,45 +489,6 @@ func planUpdateEventFromToolResult(call providers.ToolCall, result string) (*pro
 		return nil, false
 	}
 	return &update, true
-}
-
-func filterInternalContextStreamEvents(next StreamCallback) StreamCallback {
-	if next == nil {
-		return nil
-	}
-	var hiddenTool bool
-	return func(ev providers.StreamEvent) {
-		switch ev.Type {
-		case providers.EventToolUseStart:
-			if ev.ToolCall != nil && isInternalContextToolName(ev.ToolCall.Name) {
-				hiddenTool = true
-				return
-			}
-			hiddenTool = false
-		case providers.EventToolUseDelta:
-			if hiddenTool {
-				return
-			}
-		case providers.EventToolUseEnd:
-			if ev.ToolCall != nil && isInternalContextToolName(ev.ToolCall.Name) {
-				hiddenTool = false
-				return
-			}
-			if hiddenTool {
-				hiddenTool = false
-				return
-			}
-		case providers.EventMessage:
-			if ev.Message != nil && isInternalContextHistoryMessage(*ev.Message) {
-				return
-			}
-		}
-		next(ev)
-	}
-}
-
-func isInternalContextToolName(name string) bool {
-	return strings.EqualFold(strings.TrimSpace(name), compact.InceptionToolName)
 }
 
 func isInternalContextHistoryMessage(msg providers.ChatMessage) bool {
@@ -1064,8 +1025,6 @@ func formatCompactNotice(info CompactInfo) string {
 		verb = "Recovered from context overflow — compacted"
 	case CompactReasonHelpMe:
 		verb = "HelpMe recovered and compacted"
-	case CompactReasonInception:
-		verb = "Inception rewrote"
 	case CompactReasonManual:
 		verb = "Manually compacted"
 	}

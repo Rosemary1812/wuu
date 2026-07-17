@@ -3372,7 +3372,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
 	wt := agentcontrol.WorkerType{
 		Name:         "restricted",
-		AllowedTools: []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"},
+		AllowedTools: []string{"read_file", "grep", "glob", "bash", "agent_report"},
 	}
 
 	applyWorkerToolFilter(kit, wt, false, false)

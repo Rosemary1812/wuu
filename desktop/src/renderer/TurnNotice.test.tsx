@@ -186,23 +186,6 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
-  it("labels inception compaction with an explicit Inception marker", () => {
-    const host = mount(
-      <ContextCompactionNotice
-        status="completed"
-        reason="inception"
-        text="✦ Inception rewrote history: 227 → 3 messages (was ~175k tokens)"
-      />,
-    );
-
-    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "已压缩上下文（Inception）",
-    );
-    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
-      "续接摘要",
-    );
-  });
-
   it("labels HelpMe compaction as merged recovery result", () => {
     const host = mount(
       <ContextCompactionNotice

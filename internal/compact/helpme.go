@@ -194,7 +194,6 @@ func RewriteHistoryWithHelpMeCompact(messages []providers.ChatMessage, content s
 	if content == "" {
 		return providers.CloneChatMessages(messages)
 	}
-	nextAnchorID := NextContextAnchorID(messages)
 	systemPrefix, previousSummary, previousSummaryDiscoveredTools, conversation := splitLeadingSystemMessages(messages)
 	if previousSummary != "" {
 		content = content + "\n\n## Previous compact summary before HelpMe\n" + truncateHelpMeSection(previousSummary)
@@ -209,13 +208,40 @@ func RewriteHistoryWithHelpMeCompact(messages []providers.ChatMessage, content s
 		Content:         content,
 		DiscoveredTools: discovered,
 	})
-	rewritten = append(rewritten, BuildContextAnchorMessage(nextAnchorID))
-	// Align with the inception rewrite: user messages that arrived in the
-	// rewrite window without a visible assistant reply (for example while
-	// awaiting the helper) survive the wholesale replacement instead of
-	// being swallowed with the polluted context.
+	// User messages that arrived in the rewrite window without a visible
+	// assistant reply (for example while awaiting the helper) survive the
+	// wholesale replacement instead of being swallowed with the polluted
+	// context.
 	rewritten = append(rewritten, unansweredVisibleUserSuffix(conversation)...)
 	return rewritten
+}
+
+func unansweredVisibleUserSuffix(messages []providers.ChatMessage) []providers.ChatMessage {
+	start := 0
+	for i, msg := range messages {
+		if isVisibleAssistantTextReply(msg) {
+			start = i + 1
+		}
+	}
+	var out []providers.ChatMessage
+	for _, msg := range messages[start:] {
+		if isVisibleExternalUserMessage(msg) {
+			out = append(out, providers.CloneChatMessage(msg))
+		}
+	}
+	return out
+}
+
+func isVisibleAssistantTextReply(msg providers.ChatMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") &&
+		!msg.Hidden &&
+		strings.TrimSpace(msg.Content) != ""
+}
+
+func isVisibleExternalUserMessage(msg providers.ChatMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(msg.Role), "user") &&
+		!msg.Hidden &&
+		!IsInternalContextMessage(msg)
 }
 
 func writeHelpMeField(b *strings.Builder, label, value string) {

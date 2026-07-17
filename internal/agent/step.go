@@ -92,9 +92,6 @@ const (
 	// CompactReasonHelpMe means a recovery tool produced a validated
 	// replacement context after its tool result was recorded.
 	CompactReasonHelpMe CompactReason = "helpme"
-	// CompactReasonInception means the current agent requested a linear
-	// anchor-based continuation summary after its tool result was recorded.
-	CompactReasonInception CompactReason = "inception"
 	// CompactReasonManual means the user explicitly requested a compact
 	// pass (the /compact slash command); it runs before the first model
 	// request of the turn regardless of the fill-rate threshold.
@@ -123,19 +120,12 @@ type CompactInfo struct {
 // CompactAttemptInfo describes every compact attempt, including failures and
 // no-op results. It is metadata-only and must not include raw prompt text.
 type CompactAttemptInfo struct {
-	Reason                        CompactReason
-	Status                        CompactAttemptStatus
-	TokensBefore                  int
-	MessagesBefore                int
-	MessagesAfter                 int
-	AnchorID                      *int
-	MessagesRemoved               int
-	AnchorDistance                int
-	PreservedUserMessages         int
-	PreservedUserMessageBytes     int
-	PreservedUserSuffixStartIndex int
-	SummaryBytes                  int
-	Error                         string
+	Reason         CompactReason
+	Status         CompactAttemptStatus
+	TokensBefore   int
+	MessagesBefore int
+	MessagesAfter  int
+	Error          string
 }
 
 // ToolBatchRejectionInfo describes a whole assistant tool-call batch that was

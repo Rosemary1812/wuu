@@ -100,7 +100,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	wt, _ := LookupWorkerType(DefaultSubagentType)
 	full := []string{
 		"read_file", "write_file", "edit_file", "bash",
-		"grep", "glob", "spawn_agent", "helpme", "inception", "send_message",
+		"grep", "glob", "spawn_agent", "helpme", "send_message",
 		"close_agent", "agent_report", "post_message",
 	}
 	filtered := FilterToolsForWorker(wt, full, false)
@@ -108,7 +108,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	for _, n := range filtered {
 		allowed[n] = true
 	}
-	for _, expected := range []string{"read_file", "write_file", "edit_file", "bash", "grep", "glob", "inception", "agent_report"} {
+	for _, expected := range []string{"read_file", "write_file", "edit_file", "bash", "grep", "glob", "agent_report"} {
 		if !allowed[expected] {
 			t.Errorf("general-purpose agent missing %s", expected)
 		}
@@ -170,7 +170,7 @@ func TestFilterToolsForWorker_UltraUnlocksOrchestrationButNotHelpme(t *testing.T
 func TestFilterToolsForWorker_AllowlistRespected(t *testing.T) {
 	wt := WorkerType{
 		Name:         "readonly",
-		AllowedTools: []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"},
+		AllowedTools: []string{"read_file", "grep", "glob", "bash", "agent_report"},
 	}
 	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "grep", "glob", "agent_report"}
 	filtered := FilterToolsForWorker(wt, full, false)

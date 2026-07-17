@@ -80,18 +80,13 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		FullInputItems:         4,
 		DeltaInputItems:        1,
 	}}, []sessiontrace.CompactRecord{{
-		Reason:                "proactive",
-		Status:                "failed",
-		TokensBefore:          252001,
-		MessagesBefore:        42,
-		AnchorID:              intPtr(0),
-		MessagesRemoved:       2,
-		AnchorDistance:        2,
-		PreservedUserMessages: 1,
-		SummaryBytes:          123,
+		Reason:         "proactive",
+		Status:         "failed",
+		TokensBefore:   252001,
+		MessagesBefore: 42,
 	}}, []sessiontrace.BarrierToolBatchRejectionRecord{{
 		StepIndex:     0,
-		BarrierTool:   "inception",
+		BarrierTool:   "helpme",
 		SiblingTools:  []string{"run_shell"},
 		ToolCallCount: 2,
 	}})
@@ -107,7 +102,7 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		t.Fatalf("read session trace: %v", err)
 	}
 	trace := string(data)
-	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"barrier_tool_batch_rejected"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"permission_mode":"unconfined"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"transport":"websocket"`, `"connection_reused":true`, `"fallback_reason":"websocket_failed_before_first_event"`, `"previous_response_id_used":true`, `"tokens_before":252001`, `"anchor_id":0`, `"messages_removed":2`, `"anchor_distance":2`, `"preserved_user_messages":1`, `"summary_bytes":123`, `"barrier_tool":"inception"`, `"sibling_tools":["run_shell"]`, `"tool_call_count":2`} {
+	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"barrier_tool_batch_rejected"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"permission_mode":"unconfined"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"transport":"websocket"`, `"connection_reused":true`, `"fallback_reason":"websocket_failed_before_first_event"`, `"previous_response_id_used":true`, `"tokens_before":252001`, `"barrier_tool":"helpme"`, `"sibling_tools":["run_shell"]`, `"tool_call_count":2`} {
 		if !strings.Contains(trace, want) {
 			t.Fatalf("session trace missing %s:\n%s", want, trace)
 		}
@@ -126,8 +121,4 @@ func TestProviderStateRecordPreservesFallbackPinMetadata(t *testing.T) {
 	if record.FallbackPinStatus != "created" || record.FallbackRetryAfterMS != 119500 || record.FallbackTTLMS != 120000 {
 		t.Fatalf("fallback pin metadata was not preserved: %+v", record)
 	}
-}
-
-func intPtr(v int) *int {
-	return &v
 }

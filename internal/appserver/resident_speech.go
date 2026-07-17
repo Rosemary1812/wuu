@@ -257,7 +257,7 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	// past this basis — a teammate or the user posted while the agent was
 	// composing — hold the draft instead of posting it blind (core constraint:
 	// a message generated against an old environment must not land). The agent
-	// then re-reasons against what arrived (rebase, folded via inception) and
+	// then re-reasons against what arrived and
 	// posts again with an updated basis. A decline needs no check (it is already
 	// the silent choice); force skips it (the agent decided to send anyway).
 	if kind != "decline" && !force {

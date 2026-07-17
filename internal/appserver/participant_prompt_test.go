@@ -164,11 +164,14 @@ func TestResidentParticipantSystemPromptGuidesDelayedUnreadBatches(t *testing.T)
 	got := residentParticipantSystemPrompt(p, "", "", "", "", nil)
 	for _, want := range []string{
 		"Delayed unread messages are a chance to catch up, not a summons",
-		"If a delayed batch contains several messages or changes your view of the room, consider inception",
+		"If a delayed batch contains several messages, read all of them before posting",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt missing delayed-unread guidance %q:\n%s", want, got)
 		}
+	}
+	if strings.Contains(strings.ToLower(got), "inception") {
+		t.Fatalf("resident prompt must not mention retired context-rewrite tool:\n%s", got)
 	}
 }
 

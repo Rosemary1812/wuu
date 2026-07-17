@@ -859,19 +859,16 @@ func TestRunToolLoop_PostToolRewriteAfterHelpMeKeepsValidHistory(t *testing.T) {
 	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("rewritten history must be provider-valid: %v\n%+v", err, res.NewMessages)
 	}
-	if got := len(res.NewMessages); got != 5 {
-		t.Fatalf("expected system prompt, HelpMe compact, inherited checkpoint, preserved unanswered ask, and final answer, got %d: %+v", got, res.NewMessages)
+	if got := len(res.NewMessages); got != 4 {
+		t.Fatalf("expected system prompt, HelpMe compact, preserved unanswered ask, and final answer, got %d: %+v", got, res.NewMessages)
 	}
 	if res.NewMessages[1].Role != "system" || !strings.Contains(res.NewMessages[1].Content, compact.HelpMeJointCompactPrefix) {
 		t.Fatalf("expected HelpMe compact system message, got %+v", res.NewMessages[1])
 	}
-	if id, ok := compact.ContextAnchorIDFromMessage(res.NewMessages[2]); !ok || id != 0 || !res.NewMessages[2].Hidden {
-		t.Fatalf("expected inherited HelpMe checkpoint 0 before final answer, got %+v", res.NewMessages[2])
-	}
 	// "please recover" never got a visible assistant reply, so the rewrite
-	// preserves it after the checkpoint instead of swallowing it.
-	if res.NewMessages[3].Role != "user" || res.NewMessages[3].Content != "please recover" {
-		t.Fatalf("expected unanswered user ask preserved after checkpoint, got %+v", res.NewMessages[3])
+	// preserves it after the summary instead of swallowing it.
+	if res.NewMessages[2].Role != "user" || res.NewMessages[2].Content != "please recover" {
+		t.Fatalf("expected unanswered user ask preserved after summary, got %+v", res.NewMessages[2])
 	}
 	for _, msg := range res.NewMessages {
 		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
@@ -881,112 +878,50 @@ func TestRunToolLoop_PostToolRewriteAfterHelpMeKeepsValidHistory(t *testing.T) {
 	if len(step.calls) != 2 {
 		t.Fatalf("expected second request after HelpMe rewrite, got %d calls", len(step.calls))
 	}
-	if got := len(step.calls[1].Messages); got != 4 {
-		t.Fatalf("expected rewritten request to contain two system messages, inherited checkpoint, and preserved ask, got %d: %+v", got, step.calls[1].Messages)
+	if got := len(step.calls[1].Messages); got != 3 {
+		t.Fatalf("expected rewritten request to contain two system messages and preserved ask, got %d: %+v", got, step.calls[1].Messages)
 	}
-	if id, ok := compact.ContextAnchorIDFromMessage(step.calls[1].Messages[2]); !ok || id != 0 {
-		t.Fatalf("expected second request to include inherited HelpMe checkpoint 0, got %+v", step.calls[1].Messages)
-	}
-	if step.calls[1].Messages[3].Role != "user" || step.calls[1].Messages[3].Content != "please recover" {
+	if step.calls[1].Messages[2].Role != "user" || step.calls[1].Messages[2].Content != "please recover" {
 		t.Fatalf("expected second request to end with the preserved unanswered ask, got %+v", step.calls[1].Messages)
 	}
 }
 
-func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing.T) {
-	content := compact.BuildInceptionContinuationContent(0, "## Task state\nCurrent files already include the fix.\n\n## External state\nNo external rollback happened.\n\n## Verification state\nTests still need to run.\n\n## Evidence pointers\n- internal/agent/loop.go\n\n## Next step\nRun focused tests.")
-	rawResult, err := json.Marshal(map[string]any{
-		"action": "inception",
-		"status": "completed",
-		"history_rewrite": map[string]any{
-			"kind":      compact.InceptionHistoryRewriteKind,
-			"anchor_id": 0,
-			"content":   content,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRunToolLoop_StaleContextRewriteCallCannotRewriteHistory(t *testing.T) {
+	const retiredToolName = "inception"
+	legacyResult := `{"action":"inception","status":"completed","history_rewrite":{"kind":"inception_context_rewrite","anchor_id":0,"content":"replacement"}}`
 	step := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":"state"}`}}},
-		{Content: "continued after context rewrite"},
+		{ToolCalls: []providers.ToolCall{{ID: "legacy_1", Name: retiredToolName, Arguments: `{}`}}},
+		{Content: "continued without rewriting"},
 	}}
-	cfg := LoopConfig{
-		Model:           "m",
-		Tools:           &fakeLoopTools{defs: []providers.ToolDefinition{{Name: compact.InceptionToolName}}, results: map[string]string{"inception_1": string(rawResult)}},
-		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
-	}
-	var infos []CompactInfo
-	cfg.OnCompact = func(info CompactInfo) {
-		infos = append(infos, info)
-	}
-	var attempts []CompactAttemptInfo
-	cfg.OnCompactAttempt = func(info CompactAttemptInfo) {
-		attempts = append(attempts, info)
+	tools := &fakeLoopTools{
+		defs:    []providers.ToolDefinition{{Name: "read_file"}},
+		results: map[string]string{"legacy_1": legacyResult},
 	}
 
-	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{
-		{Role: "system", Content: "sys"},
-		{Role: "user", Content: "please continue cleanly"},
-	}, cfg, step)
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("keep this history")}, LoopConfig{
+		Model:           "m",
+		Tools:           tools,
+		PostToolRewrite: compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
+	}, step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.HistoryRewritten {
-		t.Fatal("expected Inception rewrite to replace history")
+	if res.HistoryRewritten {
+		t.Fatal("retired tool result must not rewrite history")
 	}
-	if len(infos) != 1 || infos[0].Reason != CompactReasonInception {
-		t.Fatalf("expected Inception compact event, got %+v", infos)
+	if len(step.calls) != 2 || !containsRoleContent(step.calls[1].Messages, "user", "keep this history") {
+		t.Fatalf("second request must retain original history: %+v", step.calls)
 	}
-	if len(attempts) != 1 {
-		t.Fatalf("expected one compact attempt, got %+v", attempts)
-	}
-	if attempts[0].AnchorID == nil || *attempts[0].AnchorID != 0 {
-		t.Fatalf("expected inception attempt anchor 0, got %+v", attempts[0])
-	}
-	if attempts[0].MessagesRemoved != 2 {
-		t.Fatalf("expected rewrite to remove assistant tool call and tool result, got %+v", attempts[0])
-	}
-	if attempts[0].AnchorDistance != 2 {
-		t.Fatalf("expected anchor distance 2, got %+v", attempts[0])
-	}
-	if attempts[0].PreservedUserMessages != 0 {
-		t.Fatalf("did not expect preserved user suffix in this test, got %+v", attempts[0])
-	}
-	if attempts[0].SummaryBytes != len(content) {
-		t.Fatalf("expected summary bytes %d, got %+v", len(content), attempts[0])
-	}
-	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
-		t.Fatalf("rewritten history must be provider-valid: %v\n%+v", err, res.NewMessages)
-	}
-	if len(step.calls) != 2 {
-		t.Fatalf("expected second request after Inception rewrite, got %d calls", len(step.calls))
-	}
-	if _, ok := compact.FindContextAnchorIndex(step.calls[0].Messages, 0); !ok {
-		t.Fatalf("first request should include automatic anchor 0: %+v", step.calls[0].Messages)
-	}
-	secondMessages := step.calls[1].Messages
-	foundSummary := false
-	for _, msg := range secondMessages {
-		if msg.Name == compact.ContextContinuationName && strings.Contains(msg.Content, compact.InceptionContinuationPrefix) {
-			foundSummary = true
-		}
-		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
-			t.Fatalf("Inception rewrite should remove old tool call chain from second request: %+v", secondMessages)
-		}
-	}
-	if !foundSummary {
-		t.Fatalf("second request missing continuation summary: %+v", secondMessages)
-	}
-	if res.Content != "continued after context rewrite" {
-		t.Fatalf("unexpected final content %q", res.Content)
+	if len(tools.recordedCalls()) != 1 || tools.recordedCalls()[0].Name != retiredToolName {
+		t.Fatalf("expected stale call to be handled as an ordinary unavailable call: %+v", tools.recordedCalls())
 	}
 }
 
-func TestRunToolLoop_ProactiveCompactThenInceptionRewrite(t *testing.T) {
-	rawResult := mustInceptionToolResult(t, 0, "Continue after proactive compact.")
+func TestRunToolLoop_ProactiveCompactThenHelpMeRewrite(t *testing.T) {
+	helpMeResult := `{"action":"helpme","status":"completed","history_rewrite":{"kind":"helpme_joint_compact","content":"[HelpMe joint compact]\nRecovered after proactive compact"}}`
 	step := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["after proactive"],"next_action":"continue"}}`}}},
-		{Content: "done after proactive and inception"},
+		{ToolCalls: []providers.ToolCall{{ID: "helpme_1", Name: "helpme", Arguments: `{}`}}},
+		{Content: "done after proactive and HelpMe"},
 	}}
 	tracker := NewUsageTracker()
 	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 950})
@@ -995,14 +930,11 @@ func TestRunToolLoop_ProactiveCompactThenInceptionRewrite(t *testing.T) {
 	cfg := LoopConfig{
 		Model: "m",
 		Tools: &fakeLoopTools{
-			defs:    []providers.ToolDefinition{{Name: compact.InceptionToolName}},
-			results: map[string]string{"inception_1": rawResult},
+			defs:    []providers.ToolDefinition{{Name: "helpme"}},
+			results: map[string]string{"helpme_1": helpMeResult},
 		},
-		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
+		Compact: func(_ context.Context, _ []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			compactCalled++
-			if _, ok := compact.FindContextAnchorIndex(msgs, 0); ok {
-				t.Fatalf("proactive compact should run before step anchor injection: %+v", msgs)
-			}
 			return []providers.ChatMessage{
 				{Role: "system", Content: compact.BuildSummaryContent("proactive summary")},
 				userMsg("latest after proactive compact"),
@@ -1011,7 +943,7 @@ func TestRunToolLoop_ProactiveCompactThenInceptionRewrite(t *testing.T) {
 		MaxContextTokens: 1000,
 		DefaultMaxTokens: 100,
 		UsageTracker:     tracker,
-		PostToolRewrite:  compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		PostToolRewrite:  compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
 		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
 	}
 
@@ -1027,25 +959,49 @@ func TestRunToolLoop_ProactiveCompactThenInceptionRewrite(t *testing.T) {
 	if compactCalled != 1 {
 		t.Fatalf("expected one proactive compact, got %d", compactCalled)
 	}
-	if len(attempts) != 2 ||
-		attempts[0].Reason != CompactReasonProactive ||
-		attempts[1].Reason != CompactReasonInception ||
-		attempts[1].AnchorID == nil ||
-		*attempts[1].AnchorID != 0 {
-		t.Fatalf("expected proactive then inception attempts, got %+v", attempts)
-	}
-	if _, ok := compact.FindContextAnchorIndex(step.calls[0].Messages, 0); !ok {
-		t.Fatalf("first model request after proactive compact should include anchor 0: %+v", step.calls[0].Messages)
+	if len(attempts) != 2 || attempts[0].Reason != CompactReasonProactive || attempts[1].Reason != CompactReasonHelpMe {
+		t.Fatalf("expected proactive then HelpMe attempts, got %+v", attempts)
 	}
 	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("final history must stay provider-valid: %v\n%+v", err, res.NewMessages)
 	}
-	if res.Content != "done after proactive and inception" || !res.HistoryRewritten {
+	if res.Content != "done after proactive and HelpMe" || !res.HistoryRewritten {
 		t.Fatalf("unexpected result: %+v", res)
 	}
 }
 
-func TestRunToolLoop_InceptionThenOverflowCompactPreservesDiscoveredTools(t *testing.T) {
+func TestRunToolLoop_ManualCompactThenHelpMeRewrite(t *testing.T) {
+	helpMeResult := `{"action":"helpme","status":"completed","history_rewrite":{"kind":"helpme_joint_compact","content":"[HelpMe joint compact]\nRecovered after manual compact"}}`
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "helpme_1", Name: "helpme", Arguments: `{}`}}},
+		{Content: "done after manual compact and HelpMe"},
+	}}
+	var attempts []CompactAttemptInfo
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("please recover")}, LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "helpme"}},
+			results: map[string]string{"helpme_1": helpMeResult},
+		},
+		ForceInitialCompact: true,
+		Compact: func(_ context.Context, _ []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			return []providers.ChatMessage{{Role: "system", Content: compact.BuildSummaryContent("manual summary")}, userMsg("please recover")}, nil
+		},
+		PostToolRewrite:  compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
+		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
+	}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 2 || attempts[0].Reason != CompactReasonManual || attempts[1].Reason != CompactReasonHelpMe {
+		t.Fatalf("expected manual then HelpMe attempts, got %+v", attempts)
+	}
+	if res.Content != "done after manual compact and HelpMe" || !res.HistoryRewritten {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+func TestRunToolLoop_HelpMeThenOverflowCompactPreservesDiscoveredTools(t *testing.T) {
 	discovered := []providers.LoadableToolDefinition{{
 		Type:         "function",
 		Name:         "mcp_docs_search",
@@ -1053,11 +1009,11 @@ func TestRunToolLoop_InceptionThenOverflowCompactPreservesDiscoveredTools(t *tes
 		InputSchema:  map[string]any{"type": "object"},
 		DeferLoading: true,
 	}}
-	rawResult := mustInceptionToolResult(t, 0, "Continue after inception before overflow.")
+	helpMeResult := `{"action":"helpme","status":"completed","history_rewrite":{"kind":"helpme_joint_compact","content":"[HelpMe joint compact]\nRecovered before overflow"}}`
 	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
 	step := &fakeStep{
 		results: []StepResult{
-			{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["after inception"],"next_action":"continue"}}`}}},
+			{ToolCalls: []providers.ToolCall{{ID: "helpme_1", Name: "helpme", Arguments: `{}`}}},
 			{},
 			{Content: "done after overflow retry"},
 		},
@@ -1068,14 +1024,14 @@ func TestRunToolLoop_InceptionThenOverflowCompactPreservesDiscoveredTools(t *tes
 	cfg := LoopConfig{
 		Model: "m",
 		Tools: &fakeLoopTools{
-			defs:       []providers.ToolDefinition{{Name: compact.InceptionToolName}},
-			results:    map[string]string{"inception_1": rawResult},
-			discovered: map[string][]providers.LoadableToolDefinition{"inception_1": discovered},
+			defs:       []providers.ToolDefinition{{Name: "helpme"}},
+			results:    map[string]string{"helpme_1": helpMeResult},
+			discovered: map[string][]providers.LoadableToolDefinition{"helpme_1": discovered},
 		},
 		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			overflowCompacts++
 			if tools := providers.DiscoveredToolsFromMessages(msgs); len(tools) != 1 || tools[0].Name != "mcp_docs_search" {
-				t.Fatalf("overflow compact input should retain discovered tools after inception: %+v", tools)
+				t.Fatalf("overflow compact input should retain discovered tools after HelpMe: %+v", tools)
 			}
 			return []providers.ChatMessage{{
 				Role:            "system",
@@ -1083,7 +1039,7 @@ func TestRunToolLoop_InceptionThenOverflowCompactPreservesDiscoveredTools(t *tes
 				DiscoveredTools: providers.CloneLoadableToolDefinitions(discovered),
 			}}, nil
 		},
-		PostToolRewrite:  compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		PostToolRewrite:  compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
 		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
 	}
 
@@ -1097,131 +1053,14 @@ func TestRunToolLoop_InceptionThenOverflowCompactPreservesDiscoveredTools(t *tes
 	if overflowCompacts != 1 {
 		t.Fatalf("expected one overflow compact, got %d", overflowCompacts)
 	}
-	if len(attempts) != 2 ||
-		attempts[0].Reason != CompactReasonInception ||
-		attempts[1].Reason != CompactReasonOverflow ||
-		attempts[1].Status != CompactAttemptSucceeded {
-		t.Fatalf("expected inception then overflow attempts, got %+v", attempts)
-	}
-	if len(step.calls) != 3 {
-		t.Fatalf("expected initial, overflow, and retry requests, got %d", len(step.calls))
+	if len(attempts) != 2 || attempts[0].Reason != CompactReasonHelpMe || attempts[1].Reason != CompactReasonOverflow || attempts[1].Status != CompactAttemptSucceeded {
+		t.Fatalf("expected HelpMe then overflow attempts, got %+v", attempts)
 	}
 	if tools := providers.CompactedDiscoveredToolsFromMessages(step.calls[2].Messages); len(tools) != 1 || tools[0].Name != "mcp_docs_search" {
 		t.Fatalf("overflow retry request should keep compacted discovered tools: %+v", step.calls[2].Messages)
 	}
 	if res.Content != "done after overflow retry" || !res.HistoryRewritten {
 		t.Fatalf("unexpected result: %+v", res)
-	}
-}
-
-func TestRunToolLoop_InceptionStillWorksAfterPriorOverflowCompactFailure(t *testing.T) {
-	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
-	failingStep := &fakeStep{results: []StepResult{{}}, errs: []error{overflow}}
-	var failedAttempts []CompactAttemptInfo
-	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("too large")}, LoopConfig{
-		Model: "m",
-		Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: compact.InceptionToolName}}},
-		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return nil, errors.New("compact unavailable")
-		},
-		OnCompactAttempt: func(info CompactAttemptInfo) { failedAttempts = append(failedAttempts, info) },
-	}, failingStep)
-	if err == nil || !providers.IsContextOverflow(err) {
-		t.Fatalf("expected overflow after failed compact, got %v", err)
-	}
-	if len(failedAttempts) != 1 || failedAttempts[0].Reason != CompactReasonOverflow || failedAttempts[0].Status != CompactAttemptFailed {
-		t.Fatalf("expected failed overflow compact attempt, got %+v", failedAttempts)
-	}
-
-	rawResult := mustInceptionToolResult(t, 0, "Continue after later inception.")
-	nextStep := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["later"],"next_action":"continue"}}`}}},
-		{Content: "later inception worked"},
-	}}
-	var laterAttempts []CompactAttemptInfo
-	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("recover with inception")}, LoopConfig{
-		Model: "m",
-		Tools: &fakeLoopTools{
-			defs:    []providers.ToolDefinition{{Name: compact.InceptionToolName}},
-			results: map[string]string{"inception_1": rawResult},
-		},
-		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
-			return nil, errors.New("should not compact")
-		},
-		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
-		OnCompactAttempt: func(info CompactAttemptInfo) {
-			laterAttempts = append(laterAttempts, info)
-		},
-	}, nextStep)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(laterAttempts) != 1 || laterAttempts[0].Reason != CompactReasonInception {
-		t.Fatalf("expected later inception attempt, got %+v", laterAttempts)
-	}
-	if res.Content != "later inception worked" || !res.HistoryRewritten {
-		t.Fatalf("unexpected later result: %+v", res)
-	}
-}
-
-func mustInceptionToolResult(t *testing.T, anchorID int, nextAction string) string {
-	t.Helper()
-	content := compact.BuildInceptionContinuationContent(anchorID, "## Task state\nState preserved.\n\n## External state\nNo external changes.\n\n## Verification state\nPending.\n\n## Evidence pointers\n- internal/agent/loop.go\n\n## Next step\n"+nextAction)
-	raw, err := json.Marshal(map[string]any{
-		"action": "inception",
-		"status": "completed",
-		"history_rewrite": map[string]any{
-			"kind":      compact.InceptionHistoryRewriteKind,
-			"anchor_id": anchorID,
-			"content":   content,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
-}
-
-func TestRunToolLoop_RejectsInceptionBatchBeforeSiblingExecution(t *testing.T) {
-	step := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{
-			{ID: "write_1", Name: "run_shell", Arguments: `{}`},
-			{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["x"],"next_action":"continue"}}`},
-		}},
-		{Content: "continued after rejection"},
-	}}
-	tools := &fakeLoopTools{defs: []providers.ToolDefinition{
-		{Name: "run_shell"},
-		{Name: compact.InceptionToolName},
-	}}
-	cfg := LoopConfig{
-		Model:           "m",
-		Tools:           tools,
-		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
-	}
-	var rejections []ToolBatchRejectionInfo
-	cfg.OnToolBatchRejected = func(info ToolBatchRejectionInfo) {
-		rejections = append(rejections, info)
-	}
-
-	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "user", Content: "do it"}}, cfg, step)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HistoryRewritten {
-		t.Fatal("rejected barrier batch must not rewrite history")
-	}
-	if calls := tools.recordedCalls(); len(calls) != 0 {
-		t.Fatalf("rejected barrier batch must not execute any sibling tool, got %+v", calls)
-	}
-	if len(rejections) != 1 || rejections[0].BarrierTool != compact.InceptionToolName || rejections[0].ToolCallCount != 2 {
-		t.Fatalf("unexpected barrier rejection metadata: %+v", rejections)
-	}
-	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
-		t.Fatalf("rejected batch must still produce provider-valid tool results: %v\n%+v", err, res.NewMessages)
-	}
-	if res.Content != "continued after rejection" {
-		t.Fatalf("unexpected final content %q", res.Content)
 	}
 }
 

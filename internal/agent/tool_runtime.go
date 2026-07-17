@@ -497,7 +497,7 @@ func barrierToolBatchRejectionResult(call providers.ToolCall, barrierName string
 
 func isBarrierTool(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case compact.InceptionToolName, compact.HelpMeToolName, compact.AwaitAgentsToolName:
+	case compact.HelpMeToolName, compact.AwaitAgentsToolName:
 		return true
 	default:
 		return false

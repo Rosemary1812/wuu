@@ -140,18 +140,6 @@ function galleryEntries(): GalleryEntry[] {
     ),
   },
   {
-    label: translateCurrent("chipGallery.inception"),
-    kind: "context_inception · gray",
-    description: translateCurrent("chipGallery.inceptionDescription"),
-    render: () => (
-      <ContextCompactionNotice
-        status="completed"
-        reason="inception"
-        text="✦ Inception rewrote history: 227 → 3 messages (was ~175k tokens)"
-      />
-    ),
-  },
-  {
     label: translateCurrent("chipGallery.helpme"),
     kind: "context_helpme · gray",
     description: translateCurrent("chipGallery.helpmeDescription"),

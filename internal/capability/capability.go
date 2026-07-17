@@ -63,11 +63,10 @@ const (
 	// persisted conversation record and history.
 	CapabilitySessionLookup Capability = "session.lookup"
 
-	// Plan / Goal / context rewrite.
-	CapabilityPlan           Capability = "plan"
-	CapabilityGoal           Capability = "goal"
-	CapabilitySkill          Capability = "skill"
-	CapabilityContextRewrite Capability = "context.rewrite"
+	// Plan / Goal / skills.
+	CapabilityPlan  Capability = "plan"
+	CapabilityGoal  Capability = "goal"
+	CapabilitySkill Capability = "skill"
 
 	// Schedule.
 	CapabilitySchedule Capability = "schedule"
@@ -113,7 +112,6 @@ func All() []Capability {
 		CapabilityPlan,
 		CapabilityGoal,
 		CapabilitySkill,
-		CapabilityContextRewrite,
 		CapabilitySchedule,
 		CapabilityMCP,
 		CapabilityDiscovery,

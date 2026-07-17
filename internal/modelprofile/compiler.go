@@ -96,11 +96,10 @@ type Compiler interface {
 // stateless: callers should keep a single instance and reuse it.
 type DefaultCompiler struct{}
 
-// Compile implements Compiler. Both main agents and workers get the context
-// rewrite tool so each agent can compact its own local history. The SurfaceKind
-// controls the orchestration boundary: execution capability is equal on all
-// surfaces, but orchestration belongs to the brain (the session main agent and
-// resident named agents, which clone the main surface). Main and named
+// Compile implements Compiler. The SurfaceKind controls the orchestration
+// boundary: execution capability is equal on all surfaces, but orchestration
+// belongs to the brain (the session main agent and resident named agents,
+// which clone the main surface). Main and named
 // surfaces get the task-orchestration suite plus helpme; ordinary worker
 // surfaces are pure executors and keep only agent_report; Ultra workers get
 // task orchestration plus agent_report without helpme.
@@ -117,7 +116,6 @@ func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	default:
 		compileGeneric(b, p)
 	}
-	addInceptionTool(b)
 	if kind.orchestrates() {
 		addTaskTools(b)
 	}
@@ -340,13 +338,6 @@ func addTaskTools(b *surfaceBuilder) {
 // HelpMeTool.Execute) is unchanged.
 func addHelpmeTool(b *surfaceBuilder) {
 	b.addVisible("helpme", capability.CapabilityTaskSpawn)
-}
-
-// addInceptionTool registers the context rewrite tool directly. It rewrites
-// only the current agent's conversation history, so it is safe for workers to
-// use for their own local context.
-func addInceptionTool(b *surfaceBuilder) {
-	b.addVisible("inception", capability.CapabilityContextRewrite)
 }
 
 func addWorkerReportTool(b *surfaceBuilder) {

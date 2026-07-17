@@ -31,12 +31,12 @@ func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
 	if _, ok := props["wait_ms"]; ok {
 		t.Fatalf("helpme schema should not ask the model to choose wait duration: %#v", def.InputSchema)
 	}
-	for _, want := range []string{"returns immediately", "resumes you", "inception", "bounded HelpMe recovery summary", "raw parent/helper transcripts"} {
+	for _, want := range []string{"returns immediately", "resumes you", "bounded HelpMe recovery summary", "raw parent/helper transcripts"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("helpme description missing %q:\n%s", want, def.Description)
 		}
 	}
-	for _, unwanted := range []string{"waits for it to finish", "joint compact marker"} {
+	for _, unwanted := range []string{"waits for it to finish", "joint compact marker", "inception"} {
 		if strings.Contains(def.Description, unwanted) {
 			t.Fatalf("helpme description should not promise synchronous compact path %q:\n%s", unwanted, def.Description)
 		}

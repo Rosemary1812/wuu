@@ -989,7 +989,7 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 		{Role: "system", Content: "you are helpful"},
 		{Role: "user", Content: "hello"},
 		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: reminder},
-		compact.BuildContextAnchorMessage(7),
+		{Role: "user", Name: "wuu_context_anchor", Content: "<system>CHECKPOINT 7</system>", Hidden: true},
 	}
 
 	var received []providers.StreamEvent
@@ -1022,7 +1022,7 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 	if sent[0].Role != "system" || sent[1].Role != "user" {
 		t.Fatalf("unexpected request messages: %+v", sent)
 	}
-	if sent[2].Name != compact.ContextAnchorMessageName || !sent[2].Hidden {
+	if sent[2].Name != "wuu_context_anchor" || !sent[2].Hidden {
 		t.Fatalf("expected durable checkpoint before request-only context, got %+v", sent)
 	}
 	if sent[3].Name != wuucontext.SystemReminderMessageName || !sent[3].Hidden {

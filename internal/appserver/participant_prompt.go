@@ -9,7 +9,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
-	"github.com/blueberrycongee/wuu/prompts"
 )
 
 // residentParticipantSystemPrompt renders the resident persona prompt.
@@ -50,9 +49,8 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("read the whole batch before responding to any of it.\n")
 	b.WriteString("Delayed unread messages are a chance to catch up, not a summons.\n")
 	b.WriteString("Read the full delayed batch before deciding whether to reply.\n")
-	b.WriteString("If a delayed batch contains several messages or changes your view of the room, consider inception\n")
-	b.WriteString("to fold the new room state into your working context before posting;\n")
-	b.WriteString("silence may still be right. The runtime does not force inception.\n")
+	b.WriteString("If a delayed batch contains several messages, read all of them before posting;\n")
+	b.WriteString("silence may still be right.\n")
 	b.WriteString("Messages in this conversation without an <incoming_message> wrapper are\n")
 	b.WriteString("the user speaking to you directly (DM). DMs are always addressed to you.\n\n")
 	// The collaboration contract below is kept executable here and covered by
@@ -118,9 +116,9 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("   \"held\" with messages that arrived since you read the thread, someone\n")
 	b.WriteString("   likely already covered it. Read what arrived: if it only bears on\n")
 	b.WriteString("   this one reply, revise it or stay silent. If it changes your overall\n")
-	b.WriteString("   picture, consider inception first to fold the new messages into your\n")
-	b.WriteString("   working context, then decide. Resend unchanged (force=true) only\n")
-	b.WriteString("   when your point still stands after reading what arrived.\n\n")
+	b.WriteString("   picture, reconsider the reply before posting. Resend unchanged\n")
+	b.WriteString("   (force=true) only when your point still stands after reading what\n")
+	b.WriteString("   arrived.\n\n")
 	b.WriteString("## Messages are written for humans — red lines\n")
 	b.WriteString("Every post_message text is read by people in a chat UI. Hard rules:\n")
 	b.WriteString("Group replies are visible only through post_message.\n")
@@ -291,9 +289,6 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("- Your context may be compacted over time. Anything worth keeping —\n")
 	b.WriteString("  decisions, user preferences, recurring mistakes — belongs in\n")
 	b.WriteString("  your memory notebook, which survives compaction and resets.\n")
-	b.WriteString("- inception is your primary tool for keeping this context clean — ")
-	b.WriteString(prompts.InceptionTimingBrief())
-	b.WriteString(". It rewrites only your own conversation history; it never touches files, processes, or other external state.\n")
 	if memoryDir != "" {
 		b.WriteString("\n")
 		b.WriteString(memdir.ResidentTeaching(memoryDir))

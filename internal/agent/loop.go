@@ -312,11 +312,6 @@ func RunToolLoop(
 		} else if changed {
 			resetTranscript(repaired)
 		}
-		if toolSurfaceSupports(cfg.Tools, compact.InceptionToolName) {
-			anchor := compact.BuildContextAnchorMessage(compact.NextContextAnchorID(messages))
-			appendMessage(anchor)
-			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
-		}
 		currentSegments := requestContextSegments(cfg.BeforeRequestContext)
 		// Cross-run continuity: on the first round, splice back only the
 		// previous run's retained request-only context at its recorded
@@ -653,7 +648,6 @@ func RunToolLoop(
 		if cfg.PostToolRewrite != nil {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
-			reason := postToolRewriteCompactReason(orderedToolMessages)
 			rewritten, changed, rerr := cfg.PostToolRewrite(ctx, providers.CloneChatMessages(messages), providers.CloneChatMessages(orderedToolMessages))
 			if rerr != nil {
 				return LoopResult{
@@ -667,28 +661,17 @@ func RunToolLoop(
 			}
 			if changed && compactChanged(messages, rewritten) {
 				attempt := CompactAttemptInfo{
-					Reason:         reason,
+					Reason:         CompactReasonHelpMe,
 					Status:         CompactAttemptSucceeded,
 					TokensBefore:   before,
 					MessagesBefore: msgsBefore,
 					MessagesAfter:  len(rewritten),
 				}
-				if reason == CompactReasonInception {
-					if stats, ok, serr := compact.InceptionRewriteStatsFromToolMessages(messages, orderedToolMessages); serr == nil && ok {
-						attempt.AnchorID = intPtr(stats.AnchorID)
-						attempt.MessagesRemoved = stats.MessagesRemoved
-						attempt.AnchorDistance = stats.AnchorDistance
-						attempt.PreservedUserMessages = stats.PreservedUserMessages
-						attempt.PreservedUserMessageBytes = stats.PreservedUserMessageBytes
-						attempt.PreservedUserSuffixStartIndex = stats.PreservedUserSuffixStartIndex
-						attempt.SummaryBytes = stats.SummaryBytes
-					}
-				}
 				resetTranscript(rewritten)
 				emitCompactAttempt(cfg, attempt)
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{
-						Reason:         reason,
+						Reason:         CompactReasonHelpMe,
 						TokensBefore:   before,
 						MessagesBefore: msgsBefore,
 						MessagesAfter:  len(messages),
@@ -761,41 +744,6 @@ func emitCompactAttempt(cfg LoopConfig, info CompactAttemptInfo) {
 	if cfg.OnCompactAttempt != nil {
 		cfg.OnCompactAttempt(info)
 	}
-}
-
-func intPtr(v int) *int {
-	return &v
-}
-
-func toolDefinitionsContain(executor ToolExecutor, name string) bool {
-	if executor == nil || strings.TrimSpace(name) == "" {
-		return false
-	}
-	for _, def := range executor.Definitions() {
-		if strings.EqualFold(strings.TrimSpace(def.Name), name) {
-			return true
-		}
-	}
-	return false
-}
-
-func toolSurfaceSupports(executor ToolExecutor, name string) bool {
-	if executor == nil || strings.TrimSpace(name) == "" {
-		return false
-	}
-	if support, ok := executor.(ToolSupportProvider); ok {
-		return support.SupportsTool(name)
-	}
-	return toolDefinitionsContain(executor, name)
-}
-
-func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactReason {
-	for _, msg := range toolMessages {
-		if strings.EqualFold(strings.TrimSpace(msg.Name), compact.InceptionToolName) {
-			return CompactReasonInception
-		}
-	}
-	return CompactReasonHelpMe
 }
 
 // proactiveCompactThreshold returns the absolute token count at which

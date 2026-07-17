@@ -7,7 +7,7 @@
 // lets the residents reply asynchronously, waits for the round to settle, then
 // dumps what a human would actually see: the ordered final posted messages in
 // the group (session.ChatMessagesSince), plus a per-agent mechanism trace
-// (which tools each turn used — post_message held/sent, inception, pull).
+// (which tools each turn used — post_message held/sent and pull).
 //
 // Gated by build tag `wuu_live_e2e` AND env `WUU_LIVE_E2E=1` so it never runs
 // in CI. No step/time caps beyond a generous safety deadline (a runaway spam
@@ -255,7 +255,7 @@ func dumpLiveTranscript(t *testing.T, rt *runtime.Session, groupID string, names
 
 // dumpLiveMechanismTrace writes each agent's DM-thread turn history (assistant
 // tool calls + tool results) so we can see how often it used post_message
-// (held vs sent), inception, and fetch_thread_messages — the "keep context
+// (held vs sent) and fetch_thread_messages — the "keep context
 // clean" mechanisms.
 func dumpLiveMechanismTrace(t *testing.T, rt *runtime.Session, names map[string]string, outDir string) {
 	t.Helper()

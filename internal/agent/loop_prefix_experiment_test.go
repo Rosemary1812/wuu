@@ -292,6 +292,47 @@ func TestPrefixExperiment_OverflowCompactBreaksOnceThenResumes(t *testing.T) {
 	}
 }
 
+// A HelpMe result deliberately rewrites durable history. The request chain
+// may break for that rewrite, but the compacted continuation must establish a
+// stable prefix that subsequent rounds and turns extend normally.
+func TestPrefixExperiment_HelpMeBreaksOnceThenResumesAcrossTurn(t *testing.T) {
+	sim := &sessionSim{t: t}
+	helpMeResult := `{"action":"helpme","status":"completed","history_rewrite":{"kind":"helpme_joint_compact","content":"[HelpMe joint compact]\nRecovered task state"}}`
+	sim.runTurn("ask 1", &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "helpme_1", Name: "helpme", Arguments: `{}`}}},
+		{Content: "continued from recovery"},
+	}}, func(cfg *LoopConfig) {
+		cfg.Tools = &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "helpme"}},
+			results: map[string]string{"helpme_1": helpMeResult},
+		}
+		cfg.BeforeRequestContext = stableContext()
+		cfg.PostToolRewrite = compact.RewriteHistoryFromHelpMeToolMessagesWithContext
+	})
+	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_2")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = stableContext()
+	})
+
+	breaks := analyzePrefixChain(sim.requests)
+	if len(breaks) != 1 || breaks[0].pair != 0 {
+		t.Fatalf("HelpMe should break the prefix once at its rewrite and then recover, got:\n%s", formatBreaks(sim.requests, breaks))
+	}
+	for i, request := range sim.requests {
+		if err := providers.ValidateToolCallHistory(request); err != nil {
+			t.Fatalf("request %d has invalid tool history: %v\n%+v", i, err, request)
+		}
+	}
+	if err := providers.ValidateToolCallHistory(sim.history); err != nil {
+		t.Fatalf("post-HelpMe durable history is invalid: %v\n%+v", err, sim.history)
+	}
+	for _, msg := range sim.history {
+		if msg.Name == "wuu_context_anchor" {
+			t.Fatalf("HelpMe must not generate retired context anchors: %+v", sim.history)
+		}
+	}
+}
+
 // Scenario 5b: when typed request-only context changes across a turn boundary,
 // the old value stays only as a superseded update in the byte-stable prefix;
 // the latest update carries the fresh value.
@@ -407,63 +448,6 @@ func TestPrefixExperiment_ContextReactivatesAfterInactiveUpdate(t *testing.T) {
 	}
 }
 
-// Scenario 5c: Inception intentionally rewrites durable history. It should
-// cause exactly one explainable prefix break; ordinary tool rounds after the
-// rewrite and the next turn must resume strict append continuity.
-func TestPrefixExperiment_InceptionBreaksOnceThenResumesAcrossTurn(t *testing.T) {
-	sim := &sessionSim{t: t}
-	contextCalls := 0
-	dynamicContext := func() []ContextSegment {
-		contextCalls++
-		return RequestOnlyContextBlocks([]wuucontext.Block{{
-			Kind: wuucontext.BlockToolResultSummary, Title: "Tool state", Source: "tool_telemetry",
-			Content: fmt.Sprintf("tool snapshot %d", contextCalls),
-		}})
-	}
-	tools := &fakeLoopTools{
-		defs: []providers.ToolDefinition{{Name: "read_file"}, {Name: compact.InceptionToolName}},
-		results: map[string]string{
-			"call_1":      `{"content":"one"}`,
-			"call_2":      `{"content":"two"}`,
-			"call_3":      `{"content":"three"}`,
-			"call_4":      `{"content":"four"}`,
-			"inception_1": mustInceptionToolResult(t, 0, "Continue with ordinary tool verification."),
-		},
-	}
-	first := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"one"}`}}},
-		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["continue"],"next_action":"verify"}}`}}},
-		{ToolCalls: []providers.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"two"}`}}},
-		{ToolCalls: []providers.ToolCall{{ID: "call_3", Name: "read_file", Arguments: `{"path":"three"}`}}},
-		{Content: "done after inception"},
-	}}
-	res := sim.runTurn("ask 1", first, func(cfg *LoopConfig) {
-		cfg.Tools = tools
-		cfg.BeforeRequestContext = dynamicContext
-		cfg.PostToolRewrite = compact.RewriteHistoryFromInternalToolMessagesWithContext
-	})
-	if !res.HistoryRewritten {
-		t.Fatal("expected Inception to rewrite history")
-	}
-	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_4")}, func(cfg *LoopConfig) {
-		cfg.Tools = tools
-		cfg.BeforeRequestContext = dynamicContext
-		cfg.PostToolRewrite = compact.RewriteHistoryFromInternalToolMessagesWithContext
-	})
-	breaks := analyzePrefixChain(sim.requests)
-	if len(breaks) != 1 || breaks[0].pair != 1 {
-		t.Fatalf("Inception must cause exactly one break between its request and the rewritten continuation:\n%s", formatBreaks(sim.requests, breaks))
-	}
-	for i, request := range sim.requests {
-		if err := providers.ValidateToolCallHistory(request); err != nil {
-			t.Fatalf("request %d has invalid tool history: %v\n%+v", i, err, request)
-		}
-	}
-	if err := providers.ValidateToolCallHistory(sim.history); err != nil {
-		t.Fatalf("post-Inception durable history is invalid: %v\n%+v", err, sim.history)
-	}
-}
-
 func latestMessageWithName(messages []providers.ChatMessage, name string) providers.ChatMessage {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Name == name {
@@ -473,9 +457,6 @@ func latestMessageWithName(messages []providers.ChatMessage, name string) provid
 	return providers.ChatMessage{}
 }
 
-// Scenario 6: legacy transient junk in the middle of incoming history breaks
-// the retained-state fingerprint. The run must fall back to a fresh
-// transcript (single context copy), never fail or duplicate.
 func TestPrefixExperiment_MidHistoryEditFallsBackSafely(t *testing.T) {
 	sim := &sessionSim{t: t}
 	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1")}, func(cfg *LoopConfig) {

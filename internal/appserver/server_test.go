@@ -3570,7 +3570,6 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		t.Fatalf("request context missing from turn event: %+v", contextParams.Event)
 	}
 	if contextParams.Event.RequestContext.MessageCount == 0 ||
-		contextParams.Event.RequestContext.HiddenMessages == 0 ||
 		contextParams.Event.RequestContext.DynamicBytes != 0 ||
 		contextParams.Event.RequestContext.SystemBytes == 0 ||
 		contextParams.Event.RequestContext.StablePrefixBytes == 0 ||

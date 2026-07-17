@@ -427,8 +427,6 @@ function toolActivitySectionKey(item: ThreadItem): string {
       return "browser";
     case "load_skill":
       return "skill";
-    case "inception":
-      return "context";
     default:
       return "other";
   }

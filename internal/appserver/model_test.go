@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
@@ -443,8 +442,8 @@ func TestThreadPreviewUsesDisplayContent(t *testing.T) {
 
 func TestThreadPreviewSkipsInternalContextMessages(t *testing.T) {
 	preview := threadPreview([]providers.ChatMessage{
-		compact.BuildContextAnchorMessage(0),
-		{Role: "user", Name: compact.ContextContinuationName, Content: compact.BuildInceptionContinuationContent(0, "## Task state\nContinue.")},
+		{Role: "user", Name: "wuu_context_anchor", Content: "<system>CHECKPOINT 0</system>", Hidden: true},
+		{Role: "user", Name: "wuu_context_continuation", Content: "<system-reminder>\n[Wuu context continuation]\nContinue.\n</system-reminder>", Hidden: true},
 		{Role: "user", Name: "wuu_system_reminder", Content: "hidden environment", Hidden: true},
 		{Role: "user", Content: "visible request"},
 	})
@@ -606,21 +605,22 @@ func TestParticipantMessageItemDoesNotInferLegacyTimestampSourceAsAgentID(t *tes
 	}
 }
 
-func TestTurnsFromHistorySurfacesInceptionArtifact(t *testing.T) {
+func TestTurnsFromHistoryLoadsRetiredContextRewriteArtifact(t *testing.T) {
+	const retiredToolName = "inception"
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{
 		{Role: "user", Content: "start"},
-		compact.BuildContextAnchorMessage(0),
+		{Role: "user", Name: "wuu_context_anchor", Content: "<system>CHECKPOINT 0</system>", Hidden: true},
 		{
 			Role: "assistant",
 			ToolCalls: []providers.ToolCall{{
-				ID:        "call_inception",
-				Name:      compact.InceptionToolName,
+				ID:        "call_retired",
+				Name:      retiredToolName,
 				Arguments: `{"anchor_id":0,"summary":"state"}`,
 			}},
 		},
-		{Role: "tool", Name: compact.InceptionToolName, ToolCallID: "call_inception", Content: `{"action":"inception","status":"completed"}`},
-		{Role: "user", Name: compact.ContextContinuationName, Content: compact.BuildInceptionContinuationContent(0, "## Task state\nContinue.")},
+		{Role: "tool", Name: retiredToolName, ToolCallID: "call_retired", Content: `{"action":"inception","status":"completed"}`},
+		{Role: "user", Name: "wuu_context_continuation", Content: "<system-reminder>\n[Wuu context continuation]\nContinue.\n</system-reminder>", Hidden: true},
 		{Role: "assistant", Content: "done"},
 	}, now)
 
@@ -629,65 +629,16 @@ func TestTurnsFromHistorySurfacesInceptionArtifact(t *testing.T) {
 	}
 	items := turns[0].Items
 	if len(items) != 3 {
-		t.Fatalf("expected user, inception tool call, and assistant items, got %+v", items)
+		t.Fatalf("expected user, retired tool call, and assistant items, got %+v", items)
 	}
 	if items[0].Type != ThreadItemUserMessage || items[0].Text != "start" {
 		t.Fatalf("expected visible user item, got %+v", items[0])
 	}
-	if items[1].Name != compact.InceptionToolName {
-		t.Fatalf("expected inception tool call as second item, got %+v", items[1])
+	if items[1].Name != retiredToolName {
+		t.Fatalf("expected retired tool call as second item, got %+v", items[1])
 	}
 	if items[2].Type != ThreadItemAgentMessage || items[2].Text != "done" {
 		t.Fatalf("expected visible assistant item, got %+v", items[2])
-	}
-}
-
-func TestThreadStateSurfacesLiveInceptionEvents(t *testing.T) {
-	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
-	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start"}, now)
-
-	for _, ev := range []providers.StreamEvent{
-		{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: "call_inception", Name: compact.InceptionToolName}},
-		{Type: providers.EventToolUseDelta, Content: `{"anchor_id":0`},
-		{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call_inception", Name: compact.InceptionToolName}, ToolResult: `{"action":"inception"}`},
-	} {
-		th.applyStreamEventLocked("turn", ev, now)
-	}
-	th.applyStreamEventLocked("turn", providers.StreamEvent{
-		Type:     providers.EventToolUseStart,
-		ToolCall: &providers.ToolCall{ID: "call_read", Name: "read_file", Arguments: `{"path":"README.md"}`},
-	}, now)
-
-	turn := th.ensureTurnLocked("turn", now)
-	if len(turn.Items) != 3 {
-		t.Fatalf("expected user, inception, and read_file, got %+v", turn.Items)
-	}
-	if turn.Items[1].Name != compact.InceptionToolName {
-		t.Fatalf("expected inception tool call as second item, got %+v", turn.Items[1])
-	}
-	if turn.Items[2].Name != "read_file" || turn.Items[2].Arguments != `{"path":"README.md"}` {
-		t.Fatalf("expected read_file as third item, got %+v", turn.Items[2])
-	}
-}
-
-func TestThreadStateLabelsInceptionCompactEvent(t *testing.T) {
-	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
-	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start"}, now)
-
-	th.applyStreamEventLocked("turn", providers.StreamEvent{
-		Type:          providers.EventCompact,
-		Content:       "✦ Inception rewrote history: 9 → 3 messages",
-		CompactReason: "inception",
-	}, now)
-
-	turn := th.ensureTurnLocked("turn", now)
-	if len(turn.Items) != 2 {
-		t.Fatalf("expected user and compact item, got %+v", turn.Items)
-	}
-	if turn.Items[1].Type != ThreadItemContextCompaction || turn.Items[1].Reason != "inception" {
-		t.Fatalf("expected inception compact reason on item, got %+v", turn.Items[1])
 	}
 }
 

@@ -469,9 +469,7 @@ func sortedKeys(m map[string]capability.Capability) []string {
 }
 
 // TestCompile_MainOnlyTools locks in the surface-layer contract for tools
-// whose visibility differs between the main agent and workers. Inception is
-// intentionally direct on both surfaces because it rewrites only the current
-// agent's local conversation history. Orchestration belongs to the brain:
+// whose visibility differs between the main agent and workers. Orchestration belongs to the brain:
 // spawn_agent and the subagent management suite exist only on main-agent
 // surfaces; worker surfaces are pure executors whose sole task tool is
 // agent_report.
@@ -493,21 +491,13 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := mainSurface.DeferredTools["helpme"]; ok {
 			t.Errorf("%s/%s main-agent surface must not defer helpme", tt.provider, tt.model)
 		}
-		if mainSurface.Tools["inception"] != capability.CapabilityContextRewrite {
-			t.Errorf("%s/%s main-agent direct inception capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["inception"], capability.CapabilityContextRewrite)
-		}
-		if _, ok := mainSurface.DeferredTools["inception"]; ok {
-			t.Errorf("%s/%s main-agent surface must not defer inception", tt.provider, tt.model)
-		}
-		if _, ok := mainSurface.HiddenTools["inception"]; ok {
-			t.Errorf("%s/%s main-agent surface must not hide inception", tt.provider, tt.model)
-		}
 		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), SurfaceWorker)
-		if workerSurface.Tools["inception"] != capability.CapabilityContextRewrite {
-			t.Errorf("%s/%s worker direct inception capability = %s, want %s", tt.provider, tt.model, workerSurface.Tools["inception"], capability.CapabilityContextRewrite)
-		}
-		if _, ok := workerSurface.DeferredTools["inception"]; ok {
-			t.Errorf("%s/%s worker surface must not defer inception", tt.provider, tt.model)
+		for _, surface := range []capability.Surface{mainSurface, workerSurface} {
+			for _, tools := range []map[string]capability.Capability{surface.Tools, surface.DeferredTools, surface.HiddenTools} {
+				if _, ok := tools["inception"]; ok {
+					t.Errorf("%s/%s surface must not expose retired tool", tt.provider, tt.model)
+				}
+			}
 		}
 		if _, ok := workerSurface.DeferredTools["helpme"]; ok {
 			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)

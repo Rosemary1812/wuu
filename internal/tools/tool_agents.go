@@ -215,8 +215,7 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 			"This launches a fresh general-purpose subagent with a clean context and returns immediately with its agent_id and agent_path. " +
 			"Use this instead of spawn_agent when the purpose is context rescue / second-opinion recovery, especially after user feedback like 'still wrong' or after several unsuccessful local attempts. " +
 			"Include the original goal, the current interpretation, failed attempts, constraints, and concrete evidence so the fresh helper can avoid repeating your mistakes. " +
-			"The helper runs in the background and resumes you with its result when it finishes; when a structured HelpMe report is available, that completion replaces polluted parent context with a bounded HelpMe recovery summary. " +
-			"If you manually use inception after HelpMe, summarize only durable facts, report/result paths, and trace references; do not paste or merge raw parent/helper transcripts.",
+			"The helper runs in the background and resumes you with its result when it finishes; when a structured HelpMe report is available, that completion replaces polluted parent context with a bounded HelpMe recovery summary. Do not paste or merge raw parent/helper transcripts.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

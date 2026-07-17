@@ -836,8 +836,8 @@ func DefaultSystemPrompt() string {
 // spawn_agent, helpme, and the subagent management suite (send_message,
 // close_agent) are compiled out of worker surfaces entirely
 // (internal/modelprofile/compiler.go). Of the
-// other tools the map mentions, update_plan and inception stay visible on
-// worker surfaces and goal stays deferred behind tool_search — their
+// other tools the map mentions, update_plan stays visible on worker surfaces
+// and goal stays deferred behind tool_search — their
 // worker-facing guidance lives in the tool descriptions and the worker's
 // deferred-tool catalog, not in the orchestration map.
 func WorkerSystemPrompt() string {

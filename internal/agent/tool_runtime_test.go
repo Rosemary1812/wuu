@@ -326,7 +326,7 @@ func TestTurnToolRuntimeRejectsBarrierToolBatchBeforeExecutingSiblings(t *testin
 
 	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "call_write", Name: "run_shell"},
-		{ID: "call_inception", Name: "inception"},
+		{ID: "call_helpme", Name: "helpme"},
 	}, func(call providers.ToolCall, _ string) {
 		seen = append(seen, call)
 	}, func(info ToolBatchRejectionInfo) {
@@ -342,14 +342,14 @@ func TestTurnToolRuntimeRejectsBarrierToolBatchBeforeExecutingSiblings(t *testin
 	if msgs[0].ToolCallID != "call_write" || !strings.Contains(msgs[0].Content, "not executed because a barrier tool was called") {
 		t.Fatalf("unexpected sibling rejection result: %+v", msgs[0])
 	}
-	if msgs[1].ToolCallID != "call_inception" || !strings.Contains(msgs[1].Content, "inception must be called alone") {
+	if msgs[1].ToolCallID != "call_helpme" || !strings.Contains(msgs[1].Content, "helpme must be called alone") {
 		t.Fatalf("unexpected barrier rejection result: %+v", msgs[1])
 	}
-	if len(seen) != 2 || seen[0].ID != "call_write" || seen[1].ID != "call_inception" {
+	if len(seen) != 2 || seen[0].ID != "call_write" || seen[1].ID != "call_helpme" {
 		t.Fatalf("OnToolResult should receive synthetic results in order, got %+v", seen)
 	}
 	if len(rejections) != 1 ||
-		rejections[0].BarrierTool != "inception" ||
+		rejections[0].BarrierTool != "helpme" ||
 		rejections[0].ToolCallCount != 2 ||
 		len(rejections[0].SiblingTools) != 1 ||
 		rejections[0].SiblingTools[0] != "run_shell" {
@@ -364,12 +364,12 @@ func TestTurnToolRuntimeExecutesBarrierToolWhenCalledAlone(t *testing.T) {
 	tools := &runtimeTestTools{}
 	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 
-	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call_inception", Name: "inception"}}, nil)
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call_helpme", Name: "helpme"}}, nil)
 
-	if calls := tools.recordedCalls(); len(calls) != 1 || calls[0].ID != "call_inception" {
+	if calls := tools.recordedCalls(); len(calls) != 1 || calls[0].ID != "call_helpme" {
 		t.Fatalf("single barrier tool should execute normally, got %+v", calls)
 	}
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Content, "call_inception") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Content, "call_helpme") {
 		t.Fatalf("unexpected single barrier result: %+v", msgs)
 	}
 }
@@ -599,7 +599,7 @@ func TestTurnToolRuntimeDurablySettlesBeforeReturningResult(t *testing.T) {
 type historyAwareRuntimeTools struct{}
 
 func (historyAwareRuntimeTools) Definitions() []providers.ToolDefinition {
-	return []providers.ToolDefinition{{Name: "inception"}}
+	return []providers.ToolDefinition{{Name: "helpme"}}
 }
 
 func (historyAwareRuntimeTools) Execute(ctx context.Context, _ providers.ToolCall) (string, error) {
@@ -614,7 +614,7 @@ func (historyAwareRuntimeTools) ToolMetadata(_ providers.ToolCall) (ToolMetadata
 }
 
 func TestTurnToolRuntimeFinalOnlyToolUsesFinalHistoryContext(t *testing.T) {
-	call := providers.ToolCall{ID: "call-inception", Name: "inception", Arguments: `{"anchor_id":0}`}
+	call := providers.ToolCall{ID: "call-helpme", Name: "helpme", Arguments: `{}`}
 	runtime := NewTurnToolRuntime(ToolRuntimeConfig{
 		Executor:   historyAwareRuntimeTools{},
 		RunContext: context.Background(),

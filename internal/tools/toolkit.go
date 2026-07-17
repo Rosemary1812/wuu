@@ -262,8 +262,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewCreateAgentProfileTool(e),
 		// Planning
 		NewUpdatePlanTool(e),
-		// Internal context rewrite
-		NewInceptionTool(e),
 		// Agent orchestration
 		NewSpawnAgentTool(e),
 		NewHelpMeTool(e),

@@ -91,16 +91,13 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"helpme",
 		"tool_search",
 		"load_skill",
-		"inception",
 	} {
 		if !containsProfileDef(defs, want) {
 			t.Fatalf("Codex profile should keep core tool %s visible, got %v", want, sortedProfileDefNames(defs))
 		}
 	}
-	if info, ok := kit.ToolInfo("inception"); !ok {
-		t.Fatalf("ToolInfo(%q) not found", "inception")
-	} else if info.Exposure != ToolExposureDirect {
-		t.Fatalf("inception exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	if _, ok := kit.ToolInfo("inception"); ok {
+		t.Fatal("retired tool must not be registered")
 	}
 	if info, ok := kit.ToolInfo("helpme"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "helpme")

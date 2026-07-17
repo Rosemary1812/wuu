@@ -2302,7 +2302,6 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "session_memory", kind: ToolKindMemory, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: false, concurrencySafe: false},
 		{name: "goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
-		{name: "inception", kind: ToolKindContext, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: false},
 		{name: "list_agent_profiles", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "create_agent_profile", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
