@@ -88,7 +88,7 @@ func ProbeTitle(ctx context.Context, opts ProbeTitleOptions) (TitleGenerationRes
 		printProbeHeader(os.Stdout, opts, threadID, synthetic, dryRun, rt)
 	}
 
-	result, err := srv.generateThreadTitleCore(threadID, history, !dryRun, false, true)
+	result, err := srv.generateThreadTitleCore(threadID, history, !dryRun, false, true, nil)
 	if err != nil {
 		if !opts.JSON {
 			fmt.Fprintf(os.Stdout, "\nFAILED: %v\n", err)

@@ -5349,7 +5349,7 @@ func TestServerGeneratesThreadTitleFromFirstTurnSnapshot(t *testing.T) {
 	srv.threads[th.ID] = th
 	srv.mu.Unlock()
 
-	srv.generateThreadTitle(th.ID, firstTurnHistory)
+	srv.generateThreadTitle(th.ID, firstTurnHistory, nil)
 
 	sessions, err := session.List(rt.SessionDir, 1)
 	if err != nil {
@@ -5398,7 +5398,7 @@ func TestServerGeneratesThreadTitleUsesTitleRoleSelection(t *testing.T) {
 	result, err := srv.generateThreadTitleCore("title-role-thread", []providers.ChatMessage{
 		{Role: "system", Content: "system prompt"},
 		{Role: "user", Content: "make the title role explicit"},
-	}, false, false, true)
+	}, false, false, true, nil)
 	if err != nil {
 		t.Fatalf("generateThreadTitleCore: %v", err)
 	}
@@ -5412,6 +5412,58 @@ func TestServerGeneratesThreadTitleUsesTitleRoleSelection(t *testing.T) {
 	}
 	if req := titleClient.requests[0]; req.Model != "gpt-4.1-mini" || req.Effort != "high" {
 		t.Fatalf("title request did not use title role: %+v", req)
+	}
+}
+
+// When the title role inherits the main model, the title must follow the
+// conversation's pinned model — not the workspace default, which drifts to
+// another session's model after a switch. The thread runtime's client serves
+// the request; the workspace title client stays untouched.
+func TestServerGeneratesThreadTitleInheritsPinnedThreadModel(t *testing.T) {
+	workspaceTitleClient := &fakeClient{response: providers.ChatResponse{Content: "Workspace title"}}
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.TitleClient = workspaceTitleClient
+	rt.ModelRoles = modelroles.Set{
+		Title: modelroles.Selection{Inherited: true, Model: "fake-model", APIModel: "fake-model"},
+	}
+	srv := New(rt, &lockedBuffer{})
+
+	threadClient := &fakeClient{response: providers.ChatResponse{Content: "Thread title"}}
+	threadRuntime := &runtime.ThreadRuntime{
+		StreamRunner: &agent.StreamRunner{
+			Client:   providers.AdaptStreamClient(threadClient),
+			Model:    "session-pinned-model",
+			APIModel: "session-pinned-model",
+		},
+	}
+
+	result, err := srv.generateThreadTitleCore("inherit-thread", []providers.ChatMessage{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "pin the session model"},
+	}, false, false, true, threadRuntime)
+	if err != nil {
+		t.Fatalf("generateThreadTitleCore: %v", err)
+	}
+	if result.Model != "session-pinned-model" || result.CleanedTitle != "Thread title" {
+		t.Fatalf("unexpected title result: %+v", result)
+	}
+
+	threadClient.mu.Lock()
+	threadReqs := len(threadClient.requests)
+	gotModel := ""
+	if threadReqs == 1 {
+		gotModel = threadClient.requests[0].Model
+	}
+	threadClient.mu.Unlock()
+	if threadReqs != 1 || gotModel != "session-pinned-model" {
+		t.Fatalf("thread client requests = %d model=%q, want 1 for session-pinned-model", threadReqs, gotModel)
+	}
+
+	workspaceTitleClient.mu.Lock()
+	wsReqs := len(workspaceTitleClient.requests)
+	workspaceTitleClient.mu.Unlock()
+	if wsReqs != 0 {
+		t.Fatalf("workspace title client received %d requests, want 0", wsReqs)
 	}
 }
 

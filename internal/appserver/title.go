@@ -168,8 +168,8 @@ type TitleGenerationResult struct {
 //     final answer (reasoning consumes the entire budget).
 //   - We aggregate text deltas only; thinking deltas (<think>…</think>) are
 //     stripped again post-hoc in cleanGeneratedThreadTitle.
-func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMessage) {
-	_, _ = s.generateThreadTitleCore(threadID, history, true, true, false)
+func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMessage, threadRuntime *runtime.ThreadRuntime) {
+	_, _ = s.generateThreadTitleCore(threadID, history, true, true, false, threadRuntime)
 }
 
 // generateThreadTitleCore is the workhorse behind generateThreadTitle,
@@ -186,7 +186,13 @@ func (s *Server) generateThreadTitle(threadID string, history []providers.ChatMe
 // behavior thread/regenerate-title wants (re-title with the original
 // prompt). The production first-turn path leaves it false so a later
 // turn cannot accidentally re-trigger title generation.
-func (s *Server) generateThreadTitleCore(threadID string, history []providers.ChatMessage, persist, notify, forceFirstUser bool) (res TitleGenerationResult, retErr error) {
+//
+// threadRuntime is the conversation's per-thread runtime. When the title role
+// inherits the main model, the title follows this runtime's pinned model rather
+// than the workspace default (which drifts when another session switches
+// model). It may be nil (probe / regenerate-title / no runtime), in which case
+// the workspace runtime resolves the title model as before.
+func (s *Server) generateThreadTitleCore(threadID string, history []providers.ChatMessage, persist, notify, forceFirstUser bool, threadRuntime *runtime.ThreadRuntime) (res TitleGenerationResult, retErr error) {
 	res.ThreadID = threadID
 	res.StartedAt = time.Now().UTC()
 	defer func() {
@@ -211,6 +217,24 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 		nonEmptyModel(s.rt.StreamRunner),
 		s.rt.Model,
 	)
+	reqEffort := titleRole.LegacyEffort
+	reqProviderOptions := titleRole.ProviderOptions
+	// When the title role inherits the main model, follow the conversation's
+	// pinned model, not the workspace default: another session switching model
+	// repins only the workspace runtime, so a title generated off s.rt would use
+	// that other session's model. An explicit (non-inherited) title model stays
+	// workspace-global by design.
+	if titleRole.Inherited && threadRuntime != nil && threadRuntime.StreamRunner != nil {
+		runner := threadRuntime.StreamRunner
+		if model := firstNonEmpty(runner.APIModel, runner.Model); model != "" {
+			res.Model = model
+			reqEffort = runner.Effort
+			reqProviderOptions = runner.ProviderOptions
+			if runner.Client != nil {
+				client = runner.Client
+			}
+		}
+	}
 	if res.Model == "" {
 		res.SkipReason = "no model resolved"
 		providers.DebugLogf("title[%s]: skipped (%s)", threadID, res.SkipReason)
@@ -247,8 +271,8 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 			{Role: "user", Content: "Generate a title for this conversation:\n" + firstUser},
 		},
 		Operation:       providers.NewInferenceOperation(providers.InferenceOperationTitle, providers.InferenceProfileBestEffort),
-		Effort:          titleRole.LegacyEffort,
-		ProviderOptions: modelvariant.CloneOptions(titleRole.ProviderOptions),
+		Effort:          reqEffort,
+		ProviderOptions: modelvariant.CloneOptions(reqProviderOptions),
 	}
 	if sendTemp {
 		req.Temperature = temp
@@ -461,7 +485,7 @@ func (s *Server) handleThreadRegenerateTitle(ctx context.Context, req Request) e
 		return s.regenerateTitleWithOverride(ctx, req, threadID, history, params)
 	}
 
-	result, err := s.generateThreadTitleCore(threadID, history, !params.DryRun, !params.DryRun, true)
+	result, err := s.generateThreadTitleCore(threadID, history, !params.DryRun, !params.DryRun, true, nil)
 	if err != nil {
 		// Still return the result so the caller can see what went wrong.
 		_ = s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, err)
@@ -494,7 +518,7 @@ func (s *Server) regenerateTitleWithOverride(ctx context.Context, req Request, t
 	defer func() { _, _ = probeRT.Cleanup() }()
 
 	probeSrv := New(probeRT, s.out)
-	result, err := probeSrv.generateThreadTitleCore(threadID, history, !params.DryRun, false, true)
+	result, err := probeSrv.generateThreadTitleCore(threadID, history, !params.DryRun, false, true, nil)
 	if err != nil {
 		_ = s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, err)
 		return nil

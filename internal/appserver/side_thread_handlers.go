@@ -12,6 +12,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/contextbudget"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sidethread"
 )
@@ -186,6 +187,50 @@ func (s *Server) mainTaskSnapshot(mainThreadID string) *MainTaskSnapshot {
 	return snapshot
 }
 
+// mainThreadModelSelection resolves the pinned model selection of the
+// conversation a side chat is attached to. It prefers the resident thread state
+// and falls back to the persisted session row, so a side chat opened on an idle
+// (non-resident) thread still inherits the conversation's model instead of the
+// workspace default. An empty selection means "use the workspace defaults",
+// which NewSideThreadRunner treats as the plain workspace clone.
+func (s *Server) mainThreadModelSelection(mainID string) runtime.ThreadModelSelection {
+	if s == nil {
+		return runtime.ThreadModelSelection{}
+	}
+	s.mu.Lock()
+	th := s.threads[mainID]
+	s.mu.Unlock()
+	if th != nil {
+		th.mu.Lock()
+		sel := runtime.ThreadModelSelection{
+			Provider:       strings.TrimSpace(th.ModelProvider),
+			Model:          strings.TrimSpace(th.Model),
+			Variant:        strings.TrimSpace(th.ModelVariant),
+			Effort:         strings.TrimSpace(th.ModelEffort),
+			PermissionMode: strings.TrimSpace(th.PermissionMode),
+		}
+		th.mu.Unlock()
+		if sel.Provider != "" && sel.Model != "" {
+			return sel
+		}
+	}
+	if s.rt == nil {
+		return runtime.ThreadModelSelection{}
+	}
+	sess, ok, err := session.Find(s.rt.SessionDir, mainID)
+	if err != nil || !ok {
+		return runtime.ThreadModelSelection{}
+	}
+	selection := runtimeSelectionFromSession(sess)
+	return runtime.ThreadModelSelection{
+		Provider:       selection.Provider,
+		Model:          selection.Model,
+		Variant:        selection.Variant,
+		Effort:         selection.Effort,
+		PermissionMode: selection.PermissionMode,
+	}
+}
+
 func lastUserMessage(history []providers.ChatMessage) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		if strings.EqualFold(strings.TrimSpace(history[i].Role), "user") {
@@ -295,7 +340,7 @@ func (s *Server) sendSideThreadMessageWhenReady(mainID, prompt string, start <-c
 			return nil, err
 		}
 	}
-	runner, err := s.rt.NewSideThreadRunner(sideThreadID)
+	runner, err := s.rt.NewSideThreadRunner(sideThreadID, s.mainThreadModelSelection(mainID))
 	if err != nil {
 		return nil, err
 	}

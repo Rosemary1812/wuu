@@ -32,7 +32,7 @@ func TestNewSideThreadRunnerRemovesMutableMainThreadSurface(t *testing.T) {
 		AfterTurn:            func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) { called = true },
 		OnEvent:              func(providers.StreamEvent) { called = true },
 	}
-	runner, err := (&Session{StreamRunner: base}).NewSideThreadRunner("side-actual-id")
+	runner, err := (&Session{StreamRunner: base}).NewSideThreadRunner("side-actual-id", ThreadModelSelection{})
 	if err != nil {
 		t.Fatalf("NewSideThreadRunner: %v", err)
 	}
@@ -47,6 +47,28 @@ func TestNewSideThreadRunnerRemovesMutableMainThreadSurface(t *testing.T) {
 	}
 	if called {
 		t.Fatal("constructing side runner invoked a main-thread callback")
+	}
+}
+
+// A read-only side chat must open even when the conversation's pinned model
+// cannot be resolved (no loadable config, a removed provider). The runner
+// degrades to the workspace model instead of failing the whole side chat.
+func TestNewSideThreadRunnerFallsBackWhenModelUnresolvable(t *testing.T) {
+	base := &agent.StreamRunner{
+		Client: providers.AdaptStreamClient(&staticClient{}),
+		Model:  "workspace-model",
+	}
+	s := &Session{ProviderName: "workspace-provider", Model: "workspace-model", StreamRunner: base}
+
+	runner, err := s.NewSideThreadRunner("side-fallback", ThreadModelSelection{
+		Provider: "ghost-provider",
+		Model:    "ghost-model",
+	})
+	if err != nil {
+		t.Fatalf("NewSideThreadRunner: %v", err)
+	}
+	if runner.Model != "workspace-model" {
+		t.Fatalf("fallback runner model = %q, want workspace-model", runner.Model)
 	}
 }
 

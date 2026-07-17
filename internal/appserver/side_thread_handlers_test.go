@@ -720,3 +720,72 @@ func requestMessagesText(messages []providers.ChatMessage) string {
 	}
 	return body.String()
 }
+
+// A side chat must answer with the model its conversation is locked to, not the
+// workspace default (which drifts when another session switches model). An
+// empty selection keeps the workspace clone; a pinned selection repins the
+// side runner to that model.
+func TestNewSideThreadRunnerInheritsThreadModel(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	writeSelectionTestConfig(t, rt.ConfigPath)
+
+	base, err := rt.NewSideThreadRunner("side-default", runtime.ThreadModelSelection{})
+	if err != nil {
+		t.Fatalf("NewSideThreadRunner default: %v", err)
+	}
+	if base.Model != "fake-model" {
+		t.Fatalf("default side runner model = %q, want fake-model", base.Model)
+	}
+
+	pinned, err := rt.NewSideThreadRunner("side-pinned", runtime.ThreadModelSelection{
+		Provider: "fake-provider",
+		Model:    "pinned-model",
+	})
+	if err != nil {
+		t.Fatalf("NewSideThreadRunner pinned: %v", err)
+	}
+	if pinned.Model != "pinned-model" {
+		t.Fatalf("pinned side runner model = %q, want pinned-model", pinned.Model)
+	}
+	// The model pin must not cost the side chat its read-only isolation.
+	if pinned.Tools != nil || pinned.MaxSteps != 1 {
+		t.Fatalf("pinned side runner not stripped: tools=%v steps=%d", pinned.Tools, pinned.MaxSteps)
+	}
+}
+
+// mainThreadModelSelection sources the conversation's pinned model from the
+// resident thread when present and otherwise from the persisted session row, so
+// a side chat opened on an idle thread still inherits the conversation's model.
+func TestMainThreadModelSelectionPrefersResidentThenSession(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	srv := New(rt, &lockedBuffer{})
+
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "sel-thread", rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, err := session.SetRuntimeSelection(rt.SessionDir, "sel-thread", session.RuntimeSelection{
+		Provider: "fake-provider",
+		Model:    "persisted-model",
+	}); err != nil {
+		t.Fatalf("set runtime selection: %v", err)
+	}
+
+	// Non-resident: fall back to the persisted session row.
+	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "persisted-model" {
+		t.Fatalf("non-resident selection model = %q, want persisted-model", got.Model)
+	}
+
+	// Resident thread state wins over the persisted row.
+	th := newThreadState("sel-thread", nil, "fake-provider", "resident-model", rt.RootDir, true, time.Now().UTC())
+	srv.mu.Lock()
+	srv.threads[th.ID] = th
+	srv.mu.Unlock()
+	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "resident-model" {
+		t.Fatalf("resident selection model = %q, want resident-model", got.Model)
+	}
+
+	// Unknown thread yields an empty (workspace-default) selection.
+	if got := srv.mainThreadModelSelection("missing-thread"); got.Provider != "" || got.Model != "" {
+		t.Fatalf("unknown thread selection = %+v, want empty", got)
+	}
+}
