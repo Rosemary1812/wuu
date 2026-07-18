@@ -23,7 +23,7 @@
     "pack:win": "npm run build:core:win && npm run build && electron-builder --win dir --publish=never",
     "dist:win": "npm run build:core:win && npm run build && electron-builder --win nsis zip --publish=never",
     "release:desktop": "npm run dist:mac",
-    "test": "npm run typecheck && npm run test:dev-launcher && npm run test:unit && npm run test:perf && npm run test:cua-mac",
+    "test": "node scripts/run-parallel.cjs typecheck test:dev-launcher test:unit test:perf && npm run test:cua-mac",
     "test:dev-launcher": "node scripts/test-dev-launcher.cjs",
     "test:unit": "node scripts/env-run.cjs VITE_ENABLE_COLLABORATION=true vitest run --exclude=src/renderer/StreamingMarkdown.perf.test.tsx",
     "test:perf": "vitest run src/renderer/StreamingMarkdown.perf.test.tsx --maxWorkers=1 --minWorkers=1",
