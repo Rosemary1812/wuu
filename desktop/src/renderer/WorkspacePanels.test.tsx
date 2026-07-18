@@ -802,6 +802,7 @@ describe("WorkspaceRightPanel context routing (Bug 3: worktree-fork panel root)"
       />,
     );
 
+    expect(container?.querySelector(".workspace-right-panel.detail.terminal")).not.toBeNull();
     const terminalPanel = container?.querySelector<HTMLElement>('[data-testid="terminal-panel"]');
     expect(terminalPanel?.getAttribute("data-cwd")).toBe(worktreeContext.cwd);
   });
