@@ -2069,13 +2069,10 @@ describe("ComposerTokenGauge", () => {
     expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
   });
 
-  it("renders a live gauge with the speed label inline, no hover required", () => {
+  it("renders a live gauge without scheduling animation frames", () => {
     const requestAnimationFrame = vi
       .spyOn(window, "requestAnimationFrame")
       .mockImplementation(() => 1);
-    const cancelAnimationFrame = vi
-      .spyOn(window, "cancelAnimationFrame")
-      .mockImplementation(() => {});
 
     try {
       renderComposer({ running: true, tokensPerSecond: 18.4 });
@@ -2084,7 +2081,7 @@ describe("ComposerTokenGauge", () => {
       expect(gauge).not.toBeNull();
       expect(gauge?.getAttribute("data-state")).toBe("running");
       expect(gauge?.getAttribute("title")).toBeNull();
-      expect(requestAnimationFrame).toHaveBeenCalled();
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
 
       // Label is inline; no portal, no hover gate. Hovering must not
       // resurrect a tooltip either.
@@ -2108,7 +2105,42 @@ describe("ComposerTokenGauge", () => {
       expect(container.querySelectorAll(".composer-token-gauge-speed-dot")).toHaveLength(0);
     } finally {
       requestAnimationFrame.mockRestore();
-      cancelAnimationFrame.mockRestore();
+    }
+  });
+
+  it("decays a stale token speed without animation frames", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const requestAnimationFrame = vi.spyOn(window, "requestAnimationFrame");
+
+    try {
+      renderComposer({
+        running: true,
+        tokensPerSecond: 20,
+        tokenSpeedSampledAt: Date.now(),
+      });
+
+      expect(container.querySelector(".composer-token-gauge-label")?.textContent).toContain(
+        "20 tok/s",
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(3_800);
+      });
+      expect(container.querySelector(".composer-token-gauge-label")?.textContent).toContain(
+        "10 tok/s",
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(3_000);
+      });
+      expect(container.querySelector(".composer-token-gauge-label")?.textContent).toContain(
+        "0 tok/s",
+      );
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+    } finally {
+      requestAnimationFrame.mockRestore();
+      vi.useRealTimers();
     }
   });
 

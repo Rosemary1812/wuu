@@ -132,13 +132,164 @@ function measureRect(element: Element | null): BrowserBoundsRect | undefined {
   });
 }
 
-function measureBrowserPanelRect(): BrowserBoundsRect | undefined {
-  // A single browser panel is mounted at a time, so querying by class avoids
-  // threading a ref through WorkspaceRightPanel → WorkspacePanels →
-  // WorkspaceBrowserPanel (App.tsx is a high-conflict 4500-line file).
-  const host = document.querySelector(".workspace-browser-host");
-  const frame = document.querySelector(".workspace-browser-frame");
+function measureBrowserPanelRect(
+  host: Element | null,
+  frame: Element | null,
+): BrowserBoundsRect | undefined {
   return pickBoundsRect(measureRect(host), measureRect(frame));
+}
+
+const BOUNDS_TRANSITION_PROPERTIES = new Set([
+  "grid-template-columns",
+  "transform",
+  "width",
+]);
+const BOUNDS_TRANSITION_MAX_MS = 1000;
+
+function transitionAffectsBrowserPanel(
+  event: TransitionEvent,
+  host: Element | null,
+  frame: Element | null,
+): boolean {
+  if (!BOUNDS_TRANSITION_PROPERTIES.has(event.propertyName)) {
+    return false;
+  }
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return [host, frame].some(
+    (element) =>
+      element !== null &&
+      (target === element || target.contains(element) || element.contains(target)),
+  );
+}
+
+// Keep the native WebContentsView aligned without a permanent frame loop.
+// Resize/scroll changes schedule one measurement; the short rAF loop only
+// runs while a geometry-changing CSS transition is active.
+export function observeBrowserPanelBounds(
+  report: (rect: BrowserBoundsRect) => void,
+): () => void {
+  let host: Element | null = null;
+  let frame: Element | null = null;
+  let rafHandle: number | undefined;
+  let activeTransitions = 0;
+  let transitionSafetyTimer: number | undefined;
+  let lastRect: BrowserBoundsRect | undefined;
+  let mountObserver: MutationObserver | undefined;
+  const resizeObserver =
+    typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(() => scheduleMeasure());
+
+  const syncElements = (): void => {
+    const nextHost = host?.isConnected
+      ? host
+      : document.querySelector(".workspace-browser-host");
+    const nextFrame = frame?.isConnected
+      ? frame
+      : document.querySelector(".workspace-browser-frame");
+    if (nextHost === host && nextFrame === frame) {
+      return;
+    }
+    host = nextHost;
+    frame = nextFrame;
+    resizeObserver?.disconnect();
+    if (host) {
+      resizeObserver?.observe(host);
+    }
+    if (frame && frame !== host) {
+      resizeObserver?.observe(frame);
+    }
+    if (host || frame) {
+      mountObserver?.disconnect();
+      mountObserver = undefined;
+    }
+  };
+
+  const measureAndReport = (): void => {
+    syncElements();
+    const rect = measureBrowserPanelRect(host, frame);
+    if (rect && boundsChanged(lastRect, rect)) {
+      lastRect = rect;
+      report(rect);
+    }
+  };
+
+  function flushMeasure(): void {
+    rafHandle = undefined;
+    measureAndReport();
+    if (activeTransitions > 0) {
+      rafHandle = window.requestAnimationFrame(flushMeasure);
+    }
+  }
+
+  function scheduleMeasure(): void {
+    if (rafHandle === undefined) {
+      rafHandle = window.requestAnimationFrame(flushMeasure);
+    }
+  }
+
+  const handleTransitionRun = (rawEvent: Event): void => {
+    const event = rawEvent as TransitionEvent;
+    syncElements();
+    if (!transitionAffectsBrowserPanel(event, host, frame)) {
+      return;
+    }
+    activeTransitions += 1;
+    if (transitionSafetyTimer !== undefined) {
+      window.clearTimeout(transitionSafetyTimer);
+    }
+    transitionSafetyTimer = window.setTimeout(() => {
+      activeTransitions = 0;
+      transitionSafetyTimer = undefined;
+    }, BOUNDS_TRANSITION_MAX_MS);
+    scheduleMeasure();
+  };
+  const handleTransitionStop = (rawEvent: Event): void => {
+    const event = rawEvent as TransitionEvent;
+    if (!transitionAffectsBrowserPanel(event, host, frame)) {
+      return;
+    }
+    activeTransitions = Math.max(0, activeTransitions - 1);
+    if (activeTransitions === 0 && transitionSafetyTimer !== undefined) {
+      window.clearTimeout(transitionSafetyTimer);
+      transitionSafetyTimer = undefined;
+    }
+    scheduleMeasure();
+  };
+
+  syncElements();
+  if (!host && !frame && typeof MutationObserver !== "undefined") {
+    mountObserver = new MutationObserver(() => {
+      syncElements();
+      scheduleMeasure();
+    });
+    mountObserver.observe(document.body, { childList: true, subtree: true });
+  }
+  window.addEventListener("resize", scheduleMeasure);
+  window.addEventListener("scroll", scheduleMeasure, true);
+  document.addEventListener("transitionrun", handleTransitionRun);
+  document.addEventListener("transitionend", handleTransitionStop);
+  document.addEventListener("transitioncancel", handleTransitionStop);
+  scheduleMeasure();
+
+  return () => {
+    if (rafHandle !== undefined) {
+      window.cancelAnimationFrame(rafHandle);
+    }
+    if (transitionSafetyTimer !== undefined) {
+      window.clearTimeout(transitionSafetyTimer);
+    }
+    resizeObserver?.disconnect();
+    mountObserver?.disconnect();
+    window.removeEventListener("resize", scheduleMeasure);
+    window.removeEventListener("scroll", scheduleMeasure, true);
+    document.removeEventListener("transitionrun", handleTransitionRun);
+    document.removeEventListener("transitionend", handleTransitionStop);
+    document.removeEventListener("transitioncancel", handleTransitionStop);
+  };
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────
@@ -200,39 +351,15 @@ export function useBrowserVisibility({
     activeBrowserActivity?.id,
   ]);
 
-  // Bounds reporter: while the agent view is visible, stream the panel's
-  // on-screen rect so main can keep the WebContentsView aligned. rAF polling
-  // (not just ResizeObserver, which does not observe pure translation) so a
-  // window move / scroll / panel drag is tracked too.
+  // Bounds reporter: event-driven while the panel is still, with short rAF
+  // tracking only for geometry-changing CSS transitions.
   useEffect(() => {
     const report = window.wuu.reportBrowserBounds;
     if (!foregroundTarget || typeof report !== "function") {
       return undefined;
     }
     const { workdir, tabID } = foregroundTarget;
-    let rafHandle = 0;
-    let lastRect: BrowserBoundsRect | undefined;
-    const tick = (): void => {
-      const rect = measureBrowserPanelRect();
-      if (rect && boundsChanged(lastRect, rect)) {
-        lastRect = rect;
-        report(workdir, tabID, rect);
-      }
-      rafHandle = window.requestAnimationFrame(tick);
-    };
-    rafHandle = window.requestAnimationFrame(tick);
-    // resize/scroll only force the next frame to re-measure; the rAF loop does
-    // the actual measuring so no change is ever missed between events.
-    const invalidate = (): void => {
-      lastRect = undefined;
-    };
-    window.addEventListener("resize", invalidate);
-    window.addEventListener("scroll", invalidate, true);
-    return () => {
-      window.cancelAnimationFrame(rafHandle);
-      window.removeEventListener("resize", invalidate);
-      window.removeEventListener("scroll", invalidate, true);
-    };
+    return observeBrowserPanelBounds((rect) => report(workdir, tabID, rect));
   }, [foregroundTarget]);
 
   // Overlay suppression: hide the agent view while a full-window overlay is

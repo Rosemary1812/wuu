@@ -1345,6 +1345,16 @@ describe("AssistantTurnShell — turn divider styles", () => {
     );
   });
 
+  it("pauses infinite turn animations while the renderer is hidden", () => {
+    expect(turnsCSS).toContain(
+      ":root[data-renderer-hidden] .turn-progress.in_progress .turn-progress-title",
+    );
+    expect(turnsCSS).toContain(
+      ":root[data-renderer-hidden] .process-surface-row.is-live-gray::after",
+    );
+    expect(turnsCSS).toContain("animation-play-state: paused;");
+  });
+
   it("keeps live bottom content on real layout instead of placeholder layout", () => {
     const liveTurnRule = cssRule('.turn[data-turn-status="in_progress"]');
     expect(liveTurnRule).toContain("content-visibility: visible;");

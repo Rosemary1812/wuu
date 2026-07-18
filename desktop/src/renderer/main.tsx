@@ -3,6 +3,7 @@ import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
 import { App } from "./App";
 import { applyMessageFlowFontSize } from "./MessageFlowFontSizeSection";
 import { applyPlatformStamp } from "./platform";
+import { startRendererVisibilitySync } from "./RendererVisibility";
 import { applyThemePreference, startThemePreferenceSync } from "./Theme";
 import "./styles.css";
 import { I18nProvider } from "./i18n";
@@ -20,6 +21,11 @@ startThemePreferenceSync();
 // Same story for data-platform: the preload stamps it pre-paint; this
 // covers boots whose preload was replaced (e2e mocks).
 applyPlatformStamp();
+
+// Pause ambient infinite animations while the native window is hidden or
+// minimized. Finite UI transitions remain untouched so their lifecycle events
+// can still complete normally.
+startRendererVisibilitySync();
 
 // Re-apply the message-stream font size in case the preload stamp was
 // dropped (e.g. user unset window.wuu during boot, or the file was

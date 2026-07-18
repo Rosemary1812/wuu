@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySession } from "../shared/protocol";
 import {
   boundsChanged,
@@ -6,10 +6,16 @@ import {
   computeForegroundPromotion,
   isForegroundControlled,
   isMeasurableRect,
+  observeBrowserPanelBounds,
   pickBoundsRect,
   roundRect,
   type ForegroundSnapshot,
 } from "./BrowserVisibility";
+
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+});
 
 function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
   return {
@@ -95,6 +101,96 @@ describe("pickBoundsRect", () => {
     const zeroHost = { x: 0, y: 0, width: 0, height: 0 };
     expect(pickBoundsRect(zeroHost, undefined)).toBe(zeroHost);
     expect(pickBoundsRect(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("observeBrowserPanelBounds", () => {
+  it("stops requesting frames after a stable measurement", () => {
+    const frame = document.createElement("div");
+    frame.className = "workspace-browser-frame";
+    const host = document.createElement("div");
+    host.className = "workspace-browser-host";
+    frame.append(host);
+    document.body.append(frame);
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
+      x: 10,
+      y: 20,
+      left: 10,
+      top: 20,
+      right: 310,
+      bottom: 220,
+      width: 300,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    const frames: FrameRequestCallback[] = [];
+    const requestAnimationFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+    const report = vi.fn();
+
+    const cleanup = observeBrowserPanelBounds(report);
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+
+    frames.shift()?.(0);
+
+    expect(report).toHaveBeenCalledWith({
+      x: 10,
+      y: 20,
+      width: 300,
+      height: 200,
+    });
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
+  it("tracks frames only while a panel geometry transition is active", () => {
+    const panel = document.createElement("aside");
+    panel.className = "workspace-right-panel";
+    const frame = document.createElement("div");
+    frame.className = "workspace-browser-frame";
+    panel.append(frame);
+    document.body.append(panel);
+    vi.spyOn(frame, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 200,
+      width: 300,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+
+    const cleanup = observeBrowserPanelBounds(vi.fn());
+    frames.shift()?.(0);
+
+    const run = new Event("transitionrun", { bubbles: true });
+    Object.defineProperty(run, "propertyName", { value: "transform" });
+    panel.dispatchEvent(run);
+    expect(frames).toHaveLength(1);
+    frames.shift()?.(16);
+    expect(frames).toHaveLength(1);
+
+    const end = new Event("transitionend", { bubbles: true });
+    Object.defineProperty(end, "propertyName", { value: "transform" });
+    panel.dispatchEvent(end);
+    frames.shift()?.(32);
+    expect(frames).toHaveLength(0);
+    cleanup();
   });
 });
 

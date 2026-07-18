@@ -2454,6 +2454,19 @@
   z-index: 1;
 }
 
+:root[data-renderer-hidden] .turn-progress.in_progress .turn-progress-title,
+:root[data-renderer-hidden] .turn-process-live-dot,
+:root[data-renderer-hidden] .process-surface-row.is-live-gray::after,
+:root[data-renderer-hidden] .turn-reasoning-summary-text.is-live-gray::after,
+:root[data-renderer-hidden] .turn-process-preview.is-live::after,
+:root[data-renderer-hidden] .live-progress-chip::after,
+:root[data-renderer-hidden] .wuu-launch-glass::after,
+:root[data-renderer-hidden] .wuu-launch-mark::after,
+:root[data-renderer-hidden] .wuu-launch-mark span,
+:root[data-renderer-hidden] .wuu-launch-rail::after {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .process-surface-count.is-changing {
     animation: none;
