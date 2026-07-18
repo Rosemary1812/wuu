@@ -75,6 +75,7 @@ export type CachedConversationPanesProps = {
     files: InputFile[],
   ) => void;
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
+  onOpenTurnRuns?: (thread: Thread, turnID: string) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
   busyParticipantIDs: ReadonlySet<string>;
   activeThreadMarks: readonly MessageMarkWire[];
@@ -108,6 +109,7 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
   onCancelEditMessage,
   onSubmitEditMessage,
   onOpenFileDiff,
+  onOpenTurnRuns,
   turnStreamStatus,
   busyParticipantIDs,
   activeThreadMarks,
@@ -151,6 +153,7 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
             onCancelEditMessage={onCancelEditMessage}
             onSubmitEditMessage={onSubmitEditMessage}
             onOpenFileDiff={onOpenFileDiff}
+            onOpenTurnRuns={onOpenTurnRuns}
             turnStreamStatus={turnStreamStatus}
             busyParticipantIDs={busyParticipantIDs}
             threadMarks={isActive ? activeThreadMarks : undefined}
@@ -202,6 +205,7 @@ const CachedConversationPane = memo(function CachedConversationPane({
   onCancelEditMessage,
   onSubmitEditMessage,
   onOpenFileDiff,
+  onOpenTurnRuns,
   turnStreamStatus,
   busyParticipantIDs,
   threadMarks,
@@ -378,6 +382,9 @@ const CachedConversationPane = memo(function CachedConversationPane({
                   )
                 }
                 onOpenFileDiff={(selection) => onOpenFileDiff(thread, selection)}
+                onOpenRuns={
+                  onOpenTurnRuns ? () => onOpenTurnRuns(thread, turn.id) : undefined
+                }
                 streamStatus={
                   thread.turns[thread.turns.length - 1]?.id === turn.id
                     ? turnStreamStatus[turn.id]

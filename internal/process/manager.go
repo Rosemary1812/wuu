@@ -134,9 +134,10 @@ type Manager struct {
 }
 
 type processHandle struct {
-	mu    sync.Mutex
-	stdin io.WriteCloser
-	done  chan struct{}
+	mu      sync.Mutex
+	stdin   io.WriteCloser
+	ptyFile *os.File
+	done    chan struct{}
 }
 
 func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
@@ -309,7 +310,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	p.Status = StatusRunning
 	p.UpdatedAt = time.Now()
 	_ = m.save(p)
-	handle := &processHandle{stdin: stdin, done: make(chan struct{})}
+	handle := &processHandle{stdin: stdin, ptyFile: ptyFile, done: make(chan struct{})}
 	m.handles[id] = handle
 	m.publish(Event{Type: EventStarted, Process: *p})
 	if opt.TTY {
@@ -479,6 +480,12 @@ func (m *Manager) List() ([]Process, error) {
 	return out, nil
 }
 
+func (m *Manager) Get(id string) (*Process, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.load(id)
+}
+
 func (m *Manager) UpdatePreview(id string, urls []string, primaryURL string) (*Process, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -643,6 +650,44 @@ func (m *Manager) WriteStdin(id string, input string) (*Process, error) {
 	defer handle.mu.Unlock()
 	if _, err := io.WriteString(handle.stdin, input); err != nil {
 		return p, fmt.Errorf("write stdin: %w", err)
+	}
+	return p, nil
+}
+
+func (m *Manager) InputAvailable(id string) bool {
+	m.mu.Lock()
+	handle := m.handles[id]
+	m.mu.Unlock()
+	return handle != nil && handle.stdin != nil
+}
+
+func (m *Manager) ResizeTTY(id string, cols, rows int) (*Process, error) {
+	if cols < 1 || rows < 1 {
+		return nil, errors.New("terminal size must be positive")
+	}
+	m.mu.Lock()
+	p, err := m.load(id)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	if !p.TTY {
+		m.mu.Unlock()
+		return p, fmt.Errorf("process %q is not a tty", id)
+	}
+	if p.Status != StatusRunning && p.Status != StatusStarting {
+		m.mu.Unlock()
+		return p, fmt.Errorf("process %q is not running", id)
+	}
+	handle := m.handles[id]
+	m.mu.Unlock()
+	if handle == nil || handle.ptyFile == nil {
+		return p, fmt.Errorf("tty is not attached for process %q", id)
+	}
+	handle.mu.Lock()
+	defer handle.mu.Unlock()
+	if err := resizePTY(handle.ptyFile, cols, rows); err != nil {
+		return p, fmt.Errorf("resize tty: %w", err)
 	}
 	return p, nil
 }

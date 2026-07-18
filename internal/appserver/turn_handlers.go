@@ -773,7 +773,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	if existing != nil && !running {
 		selectionMismatch := !s.threadRuntimeMatchesSelectionLocked(th, existing)
 		if th.pendingRuntimeReset || selectionMismatch {
-			if !threadRuntimeHasOutstandingAgentWork(existing) {
+			if !threadRuntimeHasOutstandingWork(th.ID, existing) {
 				detached = detachThreadRuntimeLocked(th)
 				existing = nil
 			} else if selectionMismatch {
@@ -1257,6 +1257,30 @@ func threadRuntimeHasOutstandingAgentWork(threadRuntime *runtime.ThreadRuntime) 
 	}
 	for _, snapshot := range control.List() {
 		if !subagent.IsTerminal(snapshot.Status) {
+			return true
+		}
+	}
+	return false
+}
+
+func threadRuntimeHasOutstandingWork(threadID string, threadRuntime *runtime.ThreadRuntime) bool {
+	if threadRuntimeHasOutstandingAgentWork(threadRuntime) {
+		return true
+	}
+	if threadRuntime == nil || threadRuntime.ProcessManager == nil {
+		return false
+	}
+	processes, err := threadRuntime.ProcessManager.List()
+	if err != nil {
+		providers.DebugLogf("inspect live managed processes for thread %q: %v", threadID, err)
+		return true
+	}
+	for _, p := range processes {
+		if p.Lifecycle != process.LifecycleManaged || !processEventBelongsToThread(threadID, threadRuntime.AgentControl, process.Event{Process: p}) {
+			continue
+		}
+		switch p.Status {
+		case process.StatusStarting, process.StatusRunning, process.StatusStopping:
 			return true
 		}
 	}

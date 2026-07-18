@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Copy, FileText, GitFork, PencilLine, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { AlertCircle, Check, Copy, FileText, GitFork, PencilLine, SquareTerminal, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
@@ -8,9 +8,11 @@ import { useI18n } from "./i18n";
 export function AgentMessageActions({
   getText,
   onFork,
+  onOpenRuns,
 }: {
   getText: () => string;
   onFork?: () => void;
+  onOpenRuns?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
@@ -51,6 +53,7 @@ export function AgentMessageActions({
   return (
     <div className="message-actions agent-message-actions" aria-label={t("message.assistantActions")}>
       <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
+      {onOpenRuns ? <TurnRunButton onOpenRuns={onOpenRuns} /> : null}
       <button
         className={`message-action-button message-action-button--like${
           feedback === "liked" ? " is-active" : ""
@@ -97,6 +100,31 @@ export function AgentMessageActions({
         <GitFork className="icon" />
       </button>
     </div>
+  );
+}
+
+export function TurnRunActions({ onOpenRuns }: { onOpenRuns: () => void }): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className="message-actions agent-message-actions turn-run-actions" aria-label={t("message.assistantActions")}>
+      <TurnRunButton onOpenRuns={onOpenRuns} />
+    </div>
+  );
+}
+
+function TurnRunButton({ onOpenRuns }: { onOpenRuns: () => void }): JSX.Element {
+  const { t } = useI18n();
+  const label = t("message.viewTurnRuns");
+  return (
+    <button
+      className="message-action-button"
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onOpenRuns}
+    >
+      <SquareTerminal className="icon" />
+    </button>
   );
 }
 

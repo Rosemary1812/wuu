@@ -43,6 +43,11 @@ import type {
   MCPAuthStartResult,
   MCPAuthStatusResult,
   MCPServerActionResult,
+  ManagedProcessActionResult,
+  ManagedProcessListResult,
+  ManagedProcessReadParams,
+  ManagedProcessReadResult,
+  ManagedProcessWriteResult,
   MemoryChatParams,
   MemoryChatResult,
   MemoryOverviewParams,
@@ -1137,6 +1142,37 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:terminal-stop", (event, id: string) =>
     terminalSessionManager.stop(id, event.sender.id),
+  );
+  ipcMain.handle("wuu:managed-process-list", (event, threadId: string) =>
+    appServerRequest<ManagedProcessListResult>(event, "process/list", { thread_id: threadId }),
+  );
+  ipcMain.handle("wuu:managed-process-read", (event, params: ManagedProcessReadParams) =>
+    appServerRequest<ManagedProcessReadResult>(event, "process/read", params),
+  );
+  ipcMain.handle(
+    "wuu:managed-process-write",
+    (event, threadId: string, processId: string, input: string) =>
+      appServerRequest<ManagedProcessWriteResult>(event, "process/write", {
+        thread_id: threadId,
+        process_id: processId,
+        input,
+      }),
+  );
+  ipcMain.handle(
+    "wuu:managed-process-resize",
+    (event, threadId: string, processId: string, cols: number, rows: number) =>
+      appServerRequest<ManagedProcessActionResult>(event, "process/resize", {
+        thread_id: threadId,
+        process_id: processId,
+        cols,
+        rows,
+      }),
+  );
+  ipcMain.handle("wuu:managed-process-stop", (event, threadId: string, processId: string) =>
+    appServerRequest<ManagedProcessActionResult>(event, "process/stop", {
+      thread_id: threadId,
+      process_id: processId,
+    }),
   );
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({

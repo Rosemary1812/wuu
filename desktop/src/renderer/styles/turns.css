@@ -1348,6 +1348,12 @@
     transform var(--motion-base) var(--ease-out);
 }
 
+.turn-run-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
 .agent-block-with-action-slot:hover .agent-message-actions,
 .agent-block-with-action-slot:focus-within .agent-message-actions,
 .agent-block-with-action-slot.agent-actions-persistent .agent-message-actions,

@@ -62,6 +62,7 @@ export function ThreadItemView({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onOpenRuns,
   onEditMessage,
   editing,
   editSubmitting,
@@ -81,6 +82,7 @@ export function ThreadItemView({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onOpenRuns?: () => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
   editing?: boolean;
   editSubmitting?: boolean;
@@ -223,6 +225,7 @@ export function ThreadItemView({
               onFork={
                 onForkMessage ? () => onForkMessage(turnID, item.id) : undefined
               }
+              onOpenRuns={onOpenRuns}
             />
           ) : null}
         </article>

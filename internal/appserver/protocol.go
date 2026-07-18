@@ -92,6 +92,9 @@ const (
 	MethodTurnUnsteer      = "turn/unsteer"
 	MethodTurnInterrupt    = "turn/interrupt"
 	MethodProcessList      = "process/list"
+	MethodProcessRead      = "process/read"
+	MethodProcessWrite     = "process/write"
+	MethodProcessResize    = "process/resize"
 	MethodProcessStop      = "process/stop"
 	MethodMCPList          = "mcp/list"
 	MethodMCPConnect       = "mcp/connect"
@@ -780,6 +783,11 @@ type ManagedProcessSummary struct {
 	StoppedAt         time.Time `json:"stopped_at,omitempty"`
 	ExitCode          int       `json:"exit_code,omitempty"`
 	LastError         string    `json:"last_error,omitempty"`
+	InputAvailable    bool      `json:"input_available,omitempty"`
+}
+
+type ProcessListParams struct {
+	ThreadID string `json:"thread_id"`
 }
 
 type ProcessListResult struct {
@@ -787,10 +795,51 @@ type ProcessListResult struct {
 }
 
 type ProcessStopParams struct {
+	ThreadID  string `json:"thread_id"`
 	ProcessID string `json:"process_id"`
 }
 
 type ProcessStopResult struct {
+	Process ManagedProcessSummary `json:"process"`
+}
+
+type ProcessReadParams struct {
+	ThreadID   string `json:"thread_id"`
+	ProcessID  string `json:"process_id"`
+	Offset     *int64 `json:"offset_bytes,omitempty"`
+	MaxBytes   int    `json:"max_bytes,omitempty"`
+	WaitMillis int    `json:"wait_ms,omitempty"`
+}
+
+type ProcessReadResult struct {
+	Process     ManagedProcessSummary `json:"process"`
+	Output      string                `json:"output"`
+	Truncated   bool                  `json:"truncated"`
+	StartOffset int64                 `json:"start_offset"`
+	EndOffset   int64                 `json:"end_offset"`
+	TotalBytes  int64                 `json:"total_bytes"`
+	TimedOut    bool                  `json:"timed_out"`
+}
+
+type ProcessWriteParams struct {
+	ThreadID  string `json:"thread_id"`
+	ProcessID string `json:"process_id"`
+	Input     string `json:"input"`
+}
+
+type ProcessWriteResult struct {
+	Process      ManagedProcessSummary `json:"process"`
+	BytesWritten int                   `json:"bytes_written"`
+}
+
+type ProcessResizeParams struct {
+	ThreadID  string `json:"thread_id"`
+	ProcessID string `json:"process_id"`
+	Cols      int    `json:"cols"`
+	Rows      int    `json:"rows"`
+}
+
+type ProcessResizeResult struct {
 	Process ManagedProcessSummary `json:"process"`
 }
 

@@ -50,6 +50,7 @@ export function AssistantTurnShell({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onOpenRuns,
   onCollapseComplete,
 }: {
   turn: Turn;
@@ -62,6 +63,7 @@ export function AssistantTurnShell({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onOpenRuns?: () => void;
   onCollapseComplete?: () => void;
 }): JSX.Element {
   const processEntries = display.entries.filter(
@@ -127,6 +129,7 @@ export function AssistantTurnShell({
     latestAgentMessageID,
     onStreamFrame,
     onForkMessage,
+    onOpenRuns,
     onCollapseComplete,
   };
 
@@ -181,6 +184,7 @@ function TurnProcessFold({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onOpenRuns,
   onCollapseComplete,
 }: {
   turn: Turn;
@@ -197,6 +201,7 @@ function TurnProcessFold({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onOpenRuns?: () => void;
   /**
    * Fires once the fold has finished collapsing so the conversation
    * scroll container can re-anchor `scrollTop = scrollHeight`. The
@@ -379,6 +384,7 @@ return (
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
                     onForkMessage={onForkMessage}
+                    onOpenRuns={onOpenRuns}
                   />
                 </div>
               ))}
@@ -417,6 +423,7 @@ function EntryRenderer({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onOpenRuns,
 }: {
   entry: TurnEntry;
   activeGray?: boolean;
@@ -429,6 +436,7 @@ function EntryRenderer({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onOpenRuns?: () => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
   if (kind === "activity" || kind === "process_group") {
@@ -490,6 +498,7 @@ function EntryRenderer({
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
+        onOpenRuns={onOpenRuns}
       />
     );
   }

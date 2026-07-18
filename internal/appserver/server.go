@@ -960,6 +960,12 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleTurnInterrupt(req)
 	case MethodProcessList:
 		return s.handleProcessList(req)
+	case MethodProcessRead:
+		return s.handleProcessRead(ctx, req)
+	case MethodProcessWrite:
+		return s.handleProcessWrite(req)
+	case MethodProcessResize:
+		return s.handleProcessResize(req)
 	case MethodProcessStop:
 		return s.handleProcessStop(req)
 	case MethodMCPList:

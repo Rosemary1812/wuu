@@ -1,22 +1,39 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeContext, TerminalSessionEvent } from "../shared/protocol";
+import type {
+  ManagedProcessSummary,
+  RuntimeContext,
+  TerminalSessionEvent,
+  Thread,
+} from "../shared/protocol";
 import {
   appendPendingTerminalEvent,
   WorkspaceTerminalPanel,
 } from "./WorkspaceTerminalPanel";
 
-const { terminalConstructorOptions, terminalInstances } = vi.hoisted(() => ({
-  terminalConstructorOptions: [] as Array<{ theme?: Record<string, string> }>,
-  terminalInstances: [] as Array<{ options: { theme?: Record<string, string> } }>,
+const { terminalConstructorOptions, terminalDataHandlers, terminalInstances } = vi.hoisted(() => ({
+  terminalConstructorOptions: [] as Array<{
+    convertEol?: boolean;
+    disableStdin?: boolean;
+    theme?: Record<string, string>;
+  }>,
+  terminalDataHandlers: [] as Array<(data: string) => void>,
+  terminalInstances: [] as Array<{
+    options: { disableStdin?: boolean; theme?: Record<string, string> };
+    write: ReturnType<typeof vi.fn>;
+    writeln: ReturnType<typeof vi.fn>;
+  }>,
 }));
 
 // Stub xterm/the fit addon so mounting the real WorkspaceTerminalPanel
 // doesn't need an actual terminal renderer or ResizeObserver-driven
 // layout — mirrors the pattern used by AppApprovalFlow.test.tsx.
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn().mockImplementation((options: { theme?: Record<string, string> }) => {
+  Terminal: vi.fn().mockImplementation((options: {
+    disableStdin?: boolean;
+    theme?: Record<string, string>;
+  }) => {
     terminalConstructorOptions.push(options);
     const terminal = {
       options: { theme: options.theme },
@@ -26,7 +43,10 @@ vi.mock("@xterm/xterm", () => ({
       write: vi.fn(),
       writeln: vi.fn(),
       dispose: vi.fn(),
-      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onData: vi.fn((handler: (data: string) => void) => {
+        terminalDataHandlers.push(handler);
+        return { dispose: vi.fn() };
+      }),
       cols: 80,
       rows: 24,
     };
@@ -50,10 +70,16 @@ class StubResizeObserver {
 let container: HTMLDivElement;
 let root: Root | null = null;
 let startTerminalSession: ReturnType<typeof vi.fn>;
+let listManagedProcesses: ReturnType<typeof vi.fn>;
+let readManagedProcess: ReturnType<typeof vi.fn>;
+let writeManagedProcess: ReturnType<typeof vi.fn>;
+let resizeManagedProcess: ReturnType<typeof vi.fn>;
+let stopManagedProcess: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   document.documentElement.dataset.theme = "light";
   terminalConstructorOptions.length = 0;
+  terminalDataHandlers.length = 0;
   terminalInstances.length = 0;
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -64,6 +90,11 @@ beforeEach(() => {
     shell: "/bin/zsh",
     started_at: new Date().toISOString(),
   });
+  listManagedProcesses = vi.fn().mockResolvedValue({ processes: [] });
+  readManagedProcess = vi.fn();
+  writeManagedProcess = vi.fn().mockResolvedValue({ bytes_written: 0 });
+  resizeManagedProcess = vi.fn().mockResolvedValue({});
+  stopManagedProcess = vi.fn();
   Object.defineProperty(window, "wuu", {
     configurable: true,
     value: {
@@ -71,6 +102,11 @@ beforeEach(() => {
       writeTerminalSession: vi.fn(),
       resizeTerminalSession: vi.fn(),
       stopTerminalSession: vi.fn(),
+      listManagedProcesses,
+      readManagedProcess,
+      writeManagedProcess,
+      resizeManagedProcess,
+      stopManagedProcess,
       onTerminalEvent: vi.fn(() => () => {}),
     },
   });
@@ -107,9 +143,86 @@ describe("WorkspaceTerminalPanel", () => {
     project_id: "project-1",
     cwd: "/worktrees/fork-1/project",
   };
+  const threadWithRuns = {
+    id: "thread-1",
+    turns: [
+      {
+        id: "turn-1",
+        items_view: "full",
+        status: "completed",
+        items: [
+          {
+            id: "call-ok",
+            type: "tool_call",
+            status: "completed",
+            name: "bash",
+            arguments: JSON.stringify({ command: "npm test" }),
+            display: { kind: "command", capability: "command.bash" },
+            result: JSON.stringify({
+              exit_code: 0,
+              duration_ms: 1234,
+              stdout_tail: "tests passed\n",
+            }),
+          },
+          {
+            id: "call-failed",
+            type: "tool_call",
+            status: "completed",
+            name: "bash",
+            arguments: JSON.stringify({ command: "npm run lint" }),
+            display: { kind: "command", capability: "command.bash" },
+            result: JSON.stringify({
+              exit_code: 2,
+              duration_ms: 2500,
+              stderr_tail: "lint failed\n",
+              stderr_tail_truncated: true,
+            }),
+          },
+        ],
+      },
+    ],
+  } as Thread;
+  const runningProcess: ManagedProcessSummary = {
+    id: "proc-live",
+    owner_kind: "main_agent",
+    owner_id: "thread-1",
+    lifecycle: "managed",
+    status: "running",
+    pid: 123,
+    tty: true,
+    command: "npm run dev",
+    cwd: "/worktrees/fork-1/project",
+    started_at: "2026-07-18T08:00:00Z",
+    updated_at: "2026-07-18T08:00:00Z",
+    input_available: true,
+  };
+  const threadWithLiveRun = {
+    id: "thread-1",
+    turns: [{
+      id: "turn-live",
+      items_view: "full",
+      status: "in_progress",
+      items: [{
+        id: "call-live",
+        type: "tool_call",
+        status: "completed",
+        name: "bash",
+        arguments: JSON.stringify({ action: "start_background", command: "npm run dev", tty: true }),
+        display: { kind: "command", capability: "command.bash" },
+        result: JSON.stringify({
+          action: "start_background",
+          id: "proc-live",
+          status: "running",
+          tty: true,
+        }),
+      }],
+    }],
+  } as Thread;
 
   it("starts the pty session rooted at the workspace context's cwd (Bug 3: worktree-fork panel root)", async () => {
-    await render(<WorkspaceTerminalPanel activeContext={worktreeContext} />);
+    await render(
+      <WorkspaceTerminalPanel activeContext={worktreeContext} thread={threadWithRuns} />,
+    );
 
     expect(startTerminalSession).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: "/worktrees/fork-1/project" }),
@@ -135,6 +248,183 @@ describe("WorkspaceTerminalPanel", () => {
       expect(terminalInstances[0]?.options.theme?.background).toBe("#1d2024");
       expect(terminalInstances[0]?.options.theme?.foreground).toBe("#e4e6e8");
     });
+  });
+
+  it("opens a requested settled run without starting the interactive terminal", async () => {
+    await render(
+      <WorkspaceTerminalPanel
+        activeContext={worktreeContext}
+        thread={threadWithRuns}
+        requestedRun={{
+          threadID: "thread-1",
+          turnID: "turn-1",
+          requestID: 1,
+        }}
+      />,
+    );
+
+    expect(startTerminalSession).not.toHaveBeenCalled();
+    expect(container.querySelector(".workspace-agent-terminal")?.textContent).toContain("npm run lint");
+    expect(container.textContent).toContain("失败");
+    expect(terminalConstructorOptions[0]).toMatchObject({ convertEol: true, disableStdin: true });
+    expect(terminalInstances[0]?.write).toHaveBeenCalledWith("lint failed\n");
+    expect(terminalInstances[0]?.writeln).toHaveBeenCalledWith("[这里只能查看协议保留的输出片段。]");
+
+    const successfulRun = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("npm test"),
+    );
+    await act(async () => {
+      successfulRun?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".workspace-agent-terminal")?.textContent).toContain("npm test");
+    await vi.waitFor(() => {
+      expect(terminalInstances.at(-1)?.write).toHaveBeenCalledWith("tests passed\n");
+    });
+    expect(writeManagedProcess).not.toHaveBeenCalled();
+  });
+
+  it("streams, writes, resizes, and stops a managed tty without starting a user terminal", async () => {
+    listManagedProcesses.mockResolvedValue({ processes: [runningProcess] });
+    readManagedProcess
+      .mockResolvedValueOnce({
+        process: runningProcess,
+        output: "ready\r\n",
+        truncated: false,
+        start_offset: 0,
+        end_offset: 7,
+        total_bytes: 7,
+        timed_out: false,
+      })
+      .mockImplementation(() => new Promise(() => {}));
+    const stoppedProcess: ManagedProcessSummary = {
+      ...runningProcess,
+      status: "stopped",
+      input_available: false,
+      stopped_at: "2026-07-18T08:01:00Z",
+    };
+    stopManagedProcess.mockResolvedValue({ process: stoppedProcess });
+
+    await render(
+      <WorkspaceTerminalPanel
+        activeContext={worktreeContext}
+        thread={threadWithLiveRun}
+        requestedRun={{ threadID: "thread-1", turnID: "turn-live", requestID: 1 }}
+      />,
+    );
+
+    await vi.waitFor(() => {
+      expect(readManagedProcess).toHaveBeenCalledWith(expect.objectContaining({
+        thread_id: "thread-1",
+        process_id: "proc-live",
+        offset_bytes: 0,
+        wait_ms: 10000,
+      }));
+      expect(terminalInstances[0]?.write).toHaveBeenCalledWith("ready\r\n");
+    });
+    expect(startTerminalSession).not.toHaveBeenCalled();
+    expect(terminalInstances).toHaveLength(1);
+    expect(terminalInstances[0]?.options.disableStdin).toBe(false);
+
+    act(() => terminalDataHandlers[0]?.("hello\r"));
+    expect(writeManagedProcess).toHaveBeenCalledWith("thread-1", "proc-live", "hello\r");
+    expect(resizeManagedProcess).toHaveBeenCalledWith("thread-1", "proc-live", 80, 24);
+
+    const stopButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("停止"),
+    );
+    await act(async () => {
+      stopButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(stopManagedProcess).toHaveBeenCalledWith("thread-1", "proc-live");
+    expect(container.textContent).toContain("已停止");
+  });
+
+  it("continues managed output from the durable byte offset and keeps the settled terminal", async () => {
+    const stoppedProcess: ManagedProcessSummary = {
+      ...runningProcess,
+      status: "stopped",
+      input_available: false,
+      stopped_at: "2026-07-18T08:01:00Z",
+      updated_at: "2026-07-18T08:01:00Z",
+    };
+    listManagedProcesses.mockResolvedValue({ processes: [runningProcess] });
+    readManagedProcess
+      .mockResolvedValueOnce({
+        process: runningProcess,
+        output: "one",
+        truncated: false,
+        start_offset: 0,
+        end_offset: 3,
+        total_bytes: 3,
+        timed_out: false,
+      })
+      .mockResolvedValueOnce({
+        process: stoppedProcess,
+        output: "two",
+        truncated: false,
+        start_offset: 3,
+        end_offset: 6,
+        total_bytes: 6,
+        timed_out: false,
+      });
+
+    await render(
+      <WorkspaceTerminalPanel
+        activeContext={worktreeContext}
+        thread={threadWithLiveRun}
+        requestedRun={{ threadID: "thread-1", turnID: "turn-live", requestID: 1 }}
+      />,
+    );
+
+    await vi.waitFor(() => {
+      expect(readManagedProcess).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        offset_bytes: 3,
+      }));
+      expect(terminalInstances[0]?.write).toHaveBeenCalledWith("two");
+      expect(container.textContent).toContain("已停止");
+    });
+    expect(terminalInstances).toHaveLength(1);
+    expect(terminalInstances[0]?.options.disableStdin).toBe(true);
+  });
+
+  it("keeps a non-tty managed process read-only", async () => {
+    const nonTTYProcess: ManagedProcessSummary = {
+      ...runningProcess,
+      tty: false,
+      input_available: false,
+    };
+    listManagedProcesses.mockResolvedValue({ processes: [nonTTYProcess] });
+    readManagedProcess
+      .mockResolvedValueOnce({
+        process: nonTTYProcess,
+        output: "server ready\n",
+        truncated: false,
+        start_offset: 0,
+        end_offset: 13,
+        total_bytes: 13,
+        timed_out: false,
+      })
+      .mockImplementation(() => new Promise(() => {}));
+
+    await render(
+      <WorkspaceTerminalPanel
+        activeContext={worktreeContext}
+        thread={threadWithLiveRun}
+        requestedRun={{ threadID: "thread-1", turnID: "turn-live", requestID: 1 }}
+      />,
+    );
+    await vi.waitFor(() => {
+      expect(terminalInstances[0]?.write).toHaveBeenCalledWith("server ready\n");
+    });
+
+    act(() => terminalDataHandlers[0]?.("ignored"));
+    expect(terminalInstances[0]?.options.disableStdin).toBe(true);
+    expect(writeManagedProcess).not.toHaveBeenCalled();
+    expect(resizeManagedProcess).not.toHaveBeenCalled();
   });
 });
 

@@ -1075,6 +1075,114 @@ html.resizing-workspace-file-split * {
   line-height: 1.45;
 }
 
+.workspace-terminal-workspace {
+  display: grid;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(172px, 212px) minmax(0, 1fr);
+}
+
+.workspace-terminal-navigation {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--surface-3);
+  background: var(--surface-1);
+  padding: 10px 8px;
+}
+
+.workspace-terminal-content {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.workspace-terminal-resource {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.workspace-terminal-resource:hover,
+.workspace-terminal-resource.active {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.workspace-terminal-resource .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-terminal-resource .icon.completed {
+  color: var(--success);
+}
+
+.workspace-terminal-resource .icon.failed {
+  color: var(--danger);
+}
+
+.workspace-terminal-resource .icon.live {
+  color: var(--success);
+  animation: workspace-terminal-live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes workspace-terminal-live-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.workspace-terminal-resource span {
+  overflow: hidden;
+  font-size: var(--font-sm);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-terminal-run-list {
+  margin-top: 14px;
+}
+
+.workspace-terminal-nav-heading,
+.workspace-terminal-turn-heading {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.workspace-terminal-nav-heading {
+  padding: 0 8px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.workspace-terminal-turn-group + .workspace-terminal-turn-group {
+  margin-top: 12px;
+}
+
+.workspace-terminal-turn-heading {
+  padding: 0 8px 4px;
+}
+
+.workspace-terminal-no-runs {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  padding: 4px 8px;
+}
+
 .workspace-terminal-panel {
   position: relative;
   display: grid;
@@ -1084,8 +1192,92 @@ html.resizing-workspace-file-split * {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.workspace-agent-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: var(--ink);
+}
+
+.workspace-agent-terminal-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-3);
+  background: var(--surface-1);
+  padding: 7px 10px 7px 14px;
+}
+
+.workspace-agent-terminal-command {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-agent-terminal-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-agent-run-status {
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+  padding: 4px 8px;
+}
+
+.workspace-agent-run-status.failed {
+  color: var(--danger);
+}
+
+.workspace-agent-terminal-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  padding: 5px 8px;
+}
+
+.workspace-agent-terminal-stop:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--danger);
+}
+
+.workspace-agent-terminal-stop:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.workspace-agent-terminal-error {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--surface-3);
+  background: var(--surface-1);
+  color: var(--danger);
+  font-size: var(--font-xs);
+  padding: 6px 14px;
+}
+
 .workspace-terminal-screen {
   position: relative;
+  flex: 1 1 auto;
   height: 100%;
   min-width: 0;
   min-height: 0;

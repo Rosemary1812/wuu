@@ -23,7 +23,7 @@ import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, PanelLeftOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
-import type { ActivitySession, GitStatusResult, RuntimeContext } from "../shared/protocol";
+import type { ActivitySession, GitStatusResult, RuntimeContext, Thread } from "../shared/protocol";
 import {
   formatWorkspaceFileTarget,
   parseWorkspaceFileTarget,
@@ -38,7 +38,10 @@ import {
   type WorkspaceFileDirtyState,
 } from "./WorkspaceFiles";
 import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
-import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
+import {
+  WorkspaceTerminalPanel,
+  type WorkspaceTerminalRunRequest,
+} from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
@@ -102,6 +105,8 @@ export function WorkspaceRightPanel({
   activeFileTabID,
   activeContext,
   workspaceContext,
+  terminalThread,
+  terminalRunRequest,
   gitStatus,
   selectedFilePath,
   onSelectTab,
@@ -137,6 +142,8 @@ export function WorkspaceRightPanel({
   // terminal; see workspacePanelContext in AppState.ts.
   activeContext?: RuntimeContext;
   workspaceContext?: RuntimeContext;
+  terminalThread?: Thread;
+  terminalRunRequest?: WorkspaceTerminalRunRequest;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onSelectTab: (id: string) => void;
@@ -575,7 +582,11 @@ export function WorkspaceRightPanel({
                 ) : activeTab.kind === "review" ? (
                   <WorkspaceReviewPanel gitStatus={gitStatus} />
                 ) : activeTab.kind === "terminal" ? (
-                  <WorkspaceTerminalPanel activeContext={workspaceContext} />
+                  <WorkspaceTerminalPanel
+                    activeContext={workspaceContext}
+                    thread={terminalThread}
+                    requestedRun={terminalRunRequest}
+                  />
                 ) : activeTab.kind === "browser" ? (
                   <WorkspaceBrowserPanel
                     open={open}

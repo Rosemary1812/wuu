@@ -194,6 +194,7 @@ import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceRightPanel,
 } from "./WorkspacePanels";
+import type { WorkspaceTerminalRunRequest } from "./WorkspaceTerminalPanel";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
@@ -552,6 +553,8 @@ export function App(): JSX.Element {
     rightPanelOpen,
     setRightPanelOpenWithMotion,
   });
+  const [terminalRunRequest, setTerminalRunRequest] =
+    useState<WorkspaceTerminalRunRequest | undefined>(undefined);
   const [environmentPanelOpen, setEnvironmentPanelOpen] = useState(false);
   const [environmentPanelDismissed, setEnvironmentPanelDismissed] =
     useState(false);
@@ -2087,6 +2090,14 @@ export function App(): JSX.Element {
       openTurnFileDiffPanel(thread.id, selection);
     },
   );
+  const handleOpenTurnRuns = useStableCallback((thread: Thread, turnID: string): void => {
+    setTerminalRunRequest((current) => ({
+      threadID: thread.id,
+      turnID,
+      requestID: (current?.requestID ?? 0) + 1,
+    }));
+    openWorkspaceTool("terminal");
+  });
   const openWorkspaceFile = useStableCallback((path: string): void => {
     // Stamp the same derived context the workspace panel's file tree/preview
     // are rooted at (workspacePanelContext), not the raw activeContext — for
@@ -4616,6 +4627,7 @@ export function App(): JSX.Element {
                 pendingChatMessagesByThread={pendingComposerMessagesByThread}
                 turnStreamStatus={state.turnStreamStatus}
                 onOpenFileDiff={handleCachedPaneOpenFileDiff}
+                onOpenTurnRuns={handleOpenTurnRuns}
               />
             )}
               </>
@@ -4701,6 +4713,8 @@ export function App(): JSX.Element {
           activeFileTabID={activeWorkspaceFileTabID}
           activeContext={state.activeContext}
           workspaceContext={workspaceContext}
+          terminalThread={activeThread}
+          terminalRunRequest={terminalRunRequest}
           gitStatus={state.gitStatus}
           selectedFilePath={activeWorkspaceFile}
           onSelectTab={focusWorkspaceViewTab}

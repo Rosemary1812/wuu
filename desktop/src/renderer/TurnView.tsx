@@ -9,6 +9,8 @@ import type {
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
+import { TurnRunActions } from "./MessageActions";
+import { isCommandToolCall } from "./TerminalRuns";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -40,6 +42,7 @@ export function TurnView({
   onSubmitEditMessage,
   onCollapseComplete,
   onOpenFileDiff,
+  onOpenRuns,
   streamStatus,
   isLatestTurn,
 }: {
@@ -63,6 +66,7 @@ export function TurnView({
   ) => void;
   onCollapseComplete?: () => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
+  onOpenRuns?: () => void;
   streamStatus?: TurnStreamStatus;
   isLatestTurn?: boolean;
 }): JSX.Element {
@@ -90,6 +94,7 @@ export function TurnView({
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
+        onOpenRuns={onOpenRuns}
         onEditMessage={onEditMessage}
         editing={
           editingMessage?.turnID === turn.id && editingMessage.itemID === item.id
@@ -116,6 +121,18 @@ export function TurnView({
   const assistantDisplay = useAssistantTurnPresentation(
     turn.id,
     rawAssistantDisplay,
+  );
+  const hasTurnRuns =
+    turn.status !== "in_progress" && turn.items.some(isCommandToolCall);
+  const runActionAttachedToMessage = Boolean(
+    actionableAgentMessageID &&
+      turn.items.some(
+        (item) =>
+          item.id === actionableAgentMessageID &&
+          item.type === "agent_message" &&
+          item.phase !== "commentary" &&
+          item.text?.trim(),
+      ),
   );
   // `buildAssistantTurnDisplay` already classifies "turn completed but
   // only commentary, no `final_answer`" and surfaces it as
@@ -147,10 +164,14 @@ export function TurnView({
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
           onForkMessage={onForkMessage}
+          onOpenRuns={onOpenRuns}
           onCollapseComplete={onCollapseComplete}
           onOpenAgent={onOpenAgent}
           onOpenSubthread={onOpenSubthread}
         />
+      ) : null}
+      {hasTurnRuns && onOpenRuns && !runActionAttachedToMessage ? (
+        <TurnRunActions onOpenRuns={onOpenRuns} />
       ) : null}
       <TurnEditSummaryCard
         turn={turn}

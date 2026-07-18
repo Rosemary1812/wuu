@@ -24,6 +24,10 @@ func startPTYProcess(cmd *exec.Cmd) (*os.File, error) {
 	return nil, errors.New("tty processes are not supported on windows")
 }
 
+func resizePTY(_ *os.File, _, _ int) error {
+	return errors.New("tty processes are not supported on windows")
+}
+
 // configureProcessGroup keeps the child addressable and invisible: a new
 // process group (so console control events cannot propagate back into the
 // daemon) and no flashing console window. Tree termination itself is

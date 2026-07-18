@@ -156,6 +156,16 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:terminal-resize", id, cols, rows),
   stopTerminalSession: (id: string) =>
     ipcRenderer.invoke("wuu:terminal-stop", id),
+  listManagedProcesses: (threadId: string) =>
+    ipcRenderer.invoke("wuu:managed-process-list", threadId),
+  readManagedProcess: (params) =>
+    ipcRenderer.invoke("wuu:managed-process-read", params),
+  writeManagedProcess: (threadId: string, processId: string, input: string) =>
+    ipcRenderer.invoke("wuu:managed-process-write", threadId, processId, input),
+  resizeManagedProcess: (threadId: string, processId: string, cols: number, rows: number) =>
+    ipcRenderer.invoke("wuu:managed-process-resize", threadId, processId, cols, rows),
+  stopManagedProcess: (threadId: string, processId: string) =>
+    ipcRenderer.invoke("wuu:managed-process-stop", threadId, processId),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   getBuildInfo: () => ipcRenderer.invoke("wuu:build-info"),
   loadCodexModels: (provider?: string) =>

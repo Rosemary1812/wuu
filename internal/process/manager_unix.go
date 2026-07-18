@@ -21,6 +21,10 @@ func startPTYProcess(cmd *exec.Cmd) (*os.File, error) {
 	return pty.StartWithAttrs(cmd, &pty.Winsize{Rows: 24, Cols: 80}, &syscall.SysProcAttr{Setsid: true, Setctty: true})
 }
 
+func resizePTY(file *os.File, cols, rows int) error {
+	return pty.Setsize(file, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+}
+
 // configureProcessGroup makes the child lead its own process group so
 // group signals reach every descendant.
 func configureProcessGroup(cmd *exec.Cmd) {

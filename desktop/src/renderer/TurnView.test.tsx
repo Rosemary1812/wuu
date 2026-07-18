@@ -66,7 +66,7 @@ function makeReasoning(text: string, id = "reasoning-1"): ThreadItem {
   };
 }
 
-function render(turn: Turn): HTMLDivElement {
+function render(turn: Turn, onOpenRuns?: () => void): HTMLDivElement {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -75,6 +75,7 @@ function render(turn: Turn): HTMLDivElement {
       <TurnView
         turn={turn}
         onStreamFrame={() => {}}
+        onOpenRuns={onOpenRuns}
       />,
     );
   });
@@ -300,6 +301,57 @@ describe("TurnView", () => {
     // case no longer hand-rolls its own markup.
     expect(view.querySelector(".assistant-turn-missing-reply")).toBeNull();
     expect(view.querySelector(".turn-notice-icon")).toBeNull();
+  });
+
+  it("offers the turn's command runs from the final answer actions", () => {
+    const onOpenRuns = vi.fn();
+    const view = render(
+      makeTurn("completed", [
+        {
+          id: "call-1",
+          type: "tool_call",
+          status: "completed",
+          name: "bash",
+          arguments: JSON.stringify({ command: "npm test" }),
+          display: { kind: "command", capability: "command.bash" },
+          result: JSON.stringify({ exit_code: 0 }),
+        },
+        makeFinalAnswer("done"),
+      ]),
+      onOpenRuns,
+    );
+
+    const button = view.querySelector<HTMLButtonElement>(
+      "button:has(.lucide-square-terminal)",
+    );
+    expect(button).not.toBeNull();
+    act(() => button?.click());
+    expect(onOpenRuns).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the command-run action when a settled turn has no final answer", () => {
+    const onOpenRuns = vi.fn();
+    const view = render(
+      makeTurn("failed", [
+        {
+          id: "call-1",
+          type: "tool_call",
+          status: "failed",
+          name: "bash",
+          arguments: JSON.stringify({ command: "npm test" }),
+          display: { kind: "command", capability: "command.bash" },
+          result: JSON.stringify({ exit_code: 1 }),
+        },
+      ]),
+      onOpenRuns,
+    );
+
+    const button = view.querySelector<HTMLButtonElement>(
+      ".turn-run-actions button",
+    );
+    expect(button).not.toBeNull();
+    act(() => button?.click());
+    expect(onOpenRuns).toHaveBeenCalledTimes(1);
   });
 });
 

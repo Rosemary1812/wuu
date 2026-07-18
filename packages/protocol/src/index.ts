@@ -773,6 +773,63 @@ export type TerminalSessionEvent =
       finished_at: string;
     };
 
+export type ManagedProcessStatus =
+  | "starting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "failed";
+
+export type ManagedProcessSummary = {
+  id: string;
+  owner_kind: string;
+  owner_id: string;
+  lifecycle: string;
+  status: ManagedProcessStatus;
+  pid: number;
+  tty?: boolean;
+  command: string;
+  cwd: string;
+  preview_urls?: string[];
+  primary_preview_url?: string;
+  started_at: string;
+  updated_at: string;
+  stopped_at?: string;
+  exit_code?: number;
+  last_error?: string;
+  input_available?: boolean;
+};
+
+export type ManagedProcessListResult = {
+  processes: ManagedProcessSummary[];
+};
+
+export type ManagedProcessReadParams = {
+  thread_id: string;
+  process_id: string;
+  offset_bytes?: number;
+  max_bytes?: number;
+  wait_ms?: number;
+};
+
+export type ManagedProcessReadResult = {
+  process: ManagedProcessSummary;
+  output: string;
+  truncated: boolean;
+  start_offset: number;
+  end_offset: number;
+  total_bytes: number;
+  timed_out: boolean;
+};
+
+export type ManagedProcessActionResult = {
+  process: ManagedProcessSummary;
+};
+
+export type ManagedProcessWriteResult = ManagedProcessActionResult & {
+  bytes_written: number;
+};
+
 export type ThreadStatus = "idle" | "in_progress";
 export type TurnStatus = "in_progress" | "completed" | "failed" | "interrupted";
 export type TurnKind = "user" | "internal" | "compact";
@@ -2140,6 +2197,23 @@ export type WuuDesktopApi = {
   writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;
   resizeTerminalSession: (id: string, cols: number, rows: number) => Promise<TerminalSessionActionResult>;
   stopTerminalSession: (id: string) => Promise<TerminalSessionActionResult>;
+  listManagedProcesses: (threadId: string) => Promise<ManagedProcessListResult>;
+  readManagedProcess: (params: ManagedProcessReadParams) => Promise<ManagedProcessReadResult>;
+  writeManagedProcess: (
+    threadId: string,
+    processId: string,
+    input: string,
+  ) => Promise<ManagedProcessWriteResult>;
+  resizeManagedProcess: (
+    threadId: string,
+    processId: string,
+    cols: number,
+    rows: number,
+  ) => Promise<ManagedProcessActionResult>;
+  stopManagedProcess: (
+    threadId: string,
+    processId: string,
+  ) => Promise<ManagedProcessActionResult>;
   initialize: () => Promise<InitializeResult>;
   getBuildInfo: () => Promise<BuildInfoResult>;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;

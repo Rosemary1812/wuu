@@ -1376,7 +1376,7 @@ func (s *Server) beginThreadRuntimeSelectionMutation(threadID string) (*threadSt
 	}
 	th.mu.Lock()
 	busy := th.running || th.admissionReserved || th.runtimeSelectionMutation ||
-		(th.execRuntime != nil && threadRuntimeHasOutstandingAgentWork(th.execRuntime))
+		(th.execRuntime != nil && threadRuntimeHasOutstandingWork(th.ID, th.execRuntime))
 	if busy {
 		th.mu.Unlock()
 		return nil, func() {}, fmt.Errorf("cannot change model or permission mode while thread %q is running", threadID)
@@ -1471,7 +1471,7 @@ func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
 		// workers need this runtime's terminal finalizer and notification
 		// forwarding. Keep the runtime installed until no live work depends on
 		// it; the next admission consumes the reset before rebuilding.
-		if th.running || threadRuntimeHasOutstandingAgentWork(th.execRuntime) {
+		if th.running || threadRuntimeHasOutstandingWork(th.ID, th.execRuntime) {
 			th.pendingRuntimeReset = true
 		} else {
 			releases = append(releases, detachThreadRuntimeLocked(th))
