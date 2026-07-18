@@ -20,6 +20,7 @@ afterEach(() => {
   for (const root of roots) {
     act(() => root.unmount());
   }
+  vi.restoreAllMocks();
   roots = [];
   turnListRenders.clear();
   document.body.innerHTML = "";
@@ -141,6 +142,32 @@ describe("CachedConversationPanes Thread wiring", () => {
 });
 
 describe("CachedConversationPanes session switching", () => {
+  it("waits for the mounted message DOM to settle before entering", () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+
+    const { container } = renderPane(chatThread("thread-a", {}));
+    const pane = container.querySelector<HTMLElement>(".cached-conversation-pane");
+
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(false);
+    expect(frameCallbacks).toHaveLength(1);
+
+    act(() => {
+      frameCallbacks.shift()?.(0);
+    });
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(false);
+    expect(frameCallbacks).toHaveLength(1);
+
+    act(() => {
+      frameCallbacks.shift()?.(16);
+    });
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(true);
+  });
+
   it("does not re-render an unrelated hidden conversation", () => {
     const threads = [
       chatThread("thread-a", {}),

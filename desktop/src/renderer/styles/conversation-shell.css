@@ -194,7 +194,11 @@
   grid-column: 1;
 }
 
-.cached-conversation-pane[data-active="true"] > .conversation-width {
+.cached-conversation-pane[data-active="true"]:not([data-layout-settled]) > .conversation-width {
+  opacity: 0;
+}
+
+.cached-conversation-pane[data-active="true"][data-layout-settled] > .conversation-width {
   animation: content-swap-enter var(--content-swap-duration) var(--content-swap-easing) both;
 }
 
@@ -256,7 +260,11 @@
     transition: none;
   }
 
-  .cached-conversation-pane[data-active="true"] > .conversation-width {
+  .cached-conversation-pane[data-active="true"]:not([data-layout-settled]) > .conversation-width {
+    opacity: 1;
+  }
+
+  .cached-conversation-pane[data-active="true"][data-layout-settled] > .conversation-width {
     animation: none;
   }
 }

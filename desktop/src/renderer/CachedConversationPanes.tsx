@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useLayoutEffect, useState } from "react";
 import type {
   Agent,
   ConversationSubthread,
@@ -208,6 +208,7 @@ const CachedConversationPane = memo(function CachedConversationPane({
   subthreadsByAnchor,
   pendingChatMessagesByThread,
 }: CachedConversationPaneProps): JSX.Element {
+  const [layoutSettled, setLayoutSettled] = useState(false);
   const threadTurns = thread.turns ?? [];
   const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
   const threadContextEntries = contextCompositionEntries.filter(
@@ -252,10 +253,31 @@ const CachedConversationPane = memo(function CachedConversationPane({
   const isGroupChat = isGroupThread(thread);
   const isChatStyleThread = isDMThread(thread) || isGroupChat;
 
+  useLayoutEffect(() => {
+    if (!isActive) {
+      setLayoutSettled(false);
+      return undefined;
+    }
+
+    let settleFrame: number | undefined;
+    const layoutFrame = window.requestAnimationFrame(() => {
+      settleFrame = window.requestAnimationFrame(() => {
+        setLayoutSettled(true);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(layoutFrame);
+      if (settleFrame !== undefined) {
+        window.cancelAnimationFrame(settleFrame);
+      }
+    };
+  }, [isActive, thread.id]);
+
   return (
     <div
       className="cached-conversation-pane"
       data-active={isActive}
+      data-layout-settled={isActive && layoutSettled ? "" : undefined}
       data-thread-id={thread.id}
       style={isActive ? undefined : { display: "none" }}
     >
