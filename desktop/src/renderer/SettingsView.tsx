@@ -2163,9 +2163,21 @@ function SettingsUsagePage({
       </div>
       {usage && (
         <div className="settings-usage-stats">
-          <UsageStat label={t("settings.usageInput")} value={formatNumber(usage.metrics.input_tokens)} />
-          <UsageStat label={t("settings.usageContext")} value={formatNumber(usage.metrics.context_tokens)} />
-          <UsageStat label={t("settings.usageOutput")} value={formatNumber(usage.metrics.output_tokens)} />
+          <UsageStat
+            label={t("settings.usageInput")}
+            value={formatCompactUsageNumber(usage.metrics.input_tokens, locale)}
+            title={formatNumber(usage.metrics.input_tokens)}
+          />
+          <UsageStat
+            label={t("settings.usageContext")}
+            value={formatCompactUsageNumber(usage.metrics.context_tokens, locale)}
+            title={formatNumber(usage.metrics.context_tokens)}
+          />
+          <UsageStat
+            label={t("settings.usageOutput")}
+            value={formatCompactUsageNumber(usage.metrics.output_tokens, locale)}
+            title={formatNumber(usage.metrics.output_tokens)}
+          />
           <UsageStat label={t("settings.cacheHitRate")} value={formatPercent(usage.metrics.cache_hit_rate)} />
           <UsageStat label={t("settings.activeDays")} value={t("settings.dayCount", { count: formatNumber(usage.metrics.active_days) })} />
         </div>
@@ -2242,8 +2254,16 @@ function SettingsUsagePage({
                         <strong>{b.provider || t("settings.unknownProvider")}</strong>
                         <small>{b.model || t("settings.unknownModel")}</small>
                       </td>
-                      <td className="settings-usage-num">{formatNumber(b.input_tokens)}</td>
-                      <td className="settings-usage-num">{formatNumber(b.output_tokens)}</td>
+                      <td className="settings-usage-num">
+                        <span className="settings-usage-number" title={formatNumber(b.input_tokens)}>
+                          {formatCompactUsageNumber(b.input_tokens, locale)}
+                        </span>
+                      </td>
+                      <td className="settings-usage-num">
+                        <span className="settings-usage-number" title={formatNumber(b.output_tokens)}>
+                          {formatCompactUsageNumber(b.output_tokens, locale)}
+                        </span>
+                      </td>
                       <td className="settings-usage-num">
                         <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
                           {formatPercent(rate)}
@@ -2265,13 +2285,38 @@ function SettingsUsagePage({
   );
 }
 
-function UsageStat({ label, value }: { label: string; value: string }): JSX.Element {
+function UsageStat({ label, value, title }: { label: string; value: string; title?: string }): JSX.Element {
   return (
     <div className="settings-usage-stat">
-      <span className="settings-usage-stat-value">{value}</span>
+      <span className="settings-usage-stat-value" title={title}>{value}</span>
       <span className="settings-usage-stat-label">{label}</span>
     </div>
   );
+}
+
+function formatCompactUsageNumber(value: number, locale: string): string {
+  const units = [
+    { threshold: 1_000, suffix: "k" },
+    { threshold: 1_000_000, suffix: "M" },
+    { threshold: 1_000_000_000, suffix: "B" },
+  ];
+  const absoluteValue = Math.abs(value);
+  if (absoluteValue < units[0].threshold) {
+    return new Intl.NumberFormat(locale).format(value);
+  }
+
+  let unitIndex = 0;
+  while (unitIndex < units.length - 1 && absoluteValue >= units[unitIndex + 1].threshold) {
+    unitIndex += 1;
+  }
+
+  let scaled = value / units[unitIndex].threshold;
+  if (Math.abs(Math.round(scaled * 10) / 10) >= 1_000 && unitIndex < units.length - 1) {
+    unitIndex += 1;
+    scaled = value / units[unitIndex].threshold;
+  }
+
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(scaled)}${units[unitIndex].suffix}`;
 }
 
 

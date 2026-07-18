@@ -29,4 +29,12 @@ describe("settings usage responsive layout", () => {
       /\.settings-usage-table tbody td:nth-child\(2\)::before\s*\{[\s\S]*?content:\s*"输入";/,
     );
   });
+
+  it("keeps usage values compact and truncates them as a final fallback", () => {
+    expect(cssRule(".settings-usage-stat-value")).toMatch(/font-size:\s*18px;/);
+    expect(cssRule(".settings-usage-stat-value")).toMatch(/text-overflow:\s*ellipsis;/);
+    expect(cssRule(".settings-usage-stat-value")).toMatch(/white-space:\s*nowrap;/);
+    expect(cssRule(".settings-usage-number")).toMatch(/max-width:\s*100%;/);
+    expect(cssRule(".settings-usage-number")).toMatch(/text-overflow:\s*ellipsis;/);
+  });
 });

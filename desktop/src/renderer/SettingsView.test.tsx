@@ -1030,10 +1030,10 @@ describe("SettingsView About section", () => {
       total_sessions: 1,
       generated_at: "2026-06-18T12:00:00Z",
       metrics: {
-        prompt_tokens: 1050,
-        context_tokens: 1250,
-        input_tokens: 1000,
-        output_tokens: 200,
+        prompt_tokens: 12_345_700,
+        context_tokens: 999_999,
+        input_tokens: 12_345_678,
+        output_tokens: 1_234,
         cache_read_tokens: 50,
         cache_creation_tokens: 20,
         cache_hit_rate: 50 / 1050,
@@ -1090,7 +1090,13 @@ describe("SettingsView About section", () => {
       usageButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(container.querySelector("[data-testid=\"settings-usage\"]")).not.toBeNull();
-    expect(rootText()).toContain("1,250");
+    expect(rootText()).toContain("12.3M");
+    expect(rootText()).toContain("1M");
+    expect(rootText()).toContain("1.2k");
+    expect(container.querySelector('[title="12,345,678"]')).not.toBeNull();
+    const modelInput = container.querySelector(".settings-usage-number");
+    expect(modelInput?.textContent).toBe("1k");
+    expect(modelInput?.getAttribute("title")).toBe("1,000");
     expect(rootText()).toContain("模型使用");
     expect(rootText()).toContain("缓存命中率");
     expect(rootText()).toContain("5%");

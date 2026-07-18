@@ -981,11 +981,15 @@
 }
 
 .settings-usage-stat-value {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--ink-strong);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: var(--weight-semibold);
   letter-spacing: -0.02em;
   line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1156,6 +1160,14 @@
 
 .settings-usage-table .settings-usage-num {
   width: 20%;
+}
+
+.settings-usage-number {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-usage-table td:first-child {
