@@ -5,9 +5,14 @@
   --token-gauge-mid: #d48345;
   --token-gauge-high: var(--accent-warm);
   --token-gauge-track: rgba(138, 142, 145, 0.24);
+  --token-gauge-tooltip-bg: var(--paper);
+  --token-gauge-tooltip-border: rgba(15, 17, 21, 0.08);
+  --token-gauge-tooltip-shadow: 0 6px 22px rgba(15, 17, 21, 0.12);
+  --composer-token-gauge-focus-outline: rgba(95, 99, 104, 0.55);
 }
 
 .composer-token-gauge {
+  position: relative;
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -17,9 +22,16 @@
   user-select: none;
   line-height: 1;
   cursor: default;
+  outline: none;
   transition:
     color 420ms var(--ease-out),
     opacity var(--motion-slow) var(--ease-out);
+}
+
+.composer-token-gauge:focus-visible {
+  outline: 2px solid var(--composer-token-gauge-focus-outline);
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 .composer-token-gauge .composer-token-gauge-svg {
@@ -83,6 +95,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: currentColor;
+}
+
+/* Hover/focus tooltip. Mounted in the shared floating-menu layer so the
+   composer toolbar's overflow clipping cannot hide the value when the
+   inline label is collapsed at narrow widths. */
+.composer-token-gauge-tooltip {
+  width: 160px;
+  padding: 6px 10px;
+  background: var(--token-gauge-tooltip-bg);
+  border: 1px solid var(--token-gauge-tooltip-border);
+  border-radius: 8px;
+  box-shadow: var(--token-gauge-tooltip-shadow);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink);
+  text-align: center;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

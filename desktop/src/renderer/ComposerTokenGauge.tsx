@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "./i18n";
+import { FloatingMenuPortal } from "./ComposerFloatingMenu";
 
 // Toolbar gauge. The numeric readout is rendered inline next to the dial
-// so the user can see the current rate without hovering. The needle and
-// the text share the same currentColor so the idle/mid/high color tier
-// applies to both.
+// so the user can see the current rate without hovering when the toolbar is
+// wide enough. When the composer is narrow and the inline label is hidden
+// by the container query, the same value is surfaced through a hover tooltip
+// so the speed remains accessible.
 const MAX_TOKENS_PER_SEC = 100;
 const HIGH_SPEED_THRESHOLD = 70;
 const STALE_HOLD_MS = 1200;
 const STALE_DECAY_MS = 5200;
 const STALE_DECAY_STEP_MS = 100;
+const TOOLTIP_WIDTH = 160;
 
 const GAUGE_ARC_PATH = "M 2.5 17 A 9.5 9.5 0 0 1 21.5 17";
 const GAUGE_ARC_PATH_LENGTH = 100;
@@ -40,6 +43,9 @@ export function ComposerTokenGauge({
   source?: "real" | "estimated" | "none";
 }): JSX.Element {
   const { t, formatNumber } = useI18n();
+  const tooltipID = useId();
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
   // CSS transitions smooth the needle and arc between samples. React only
   // updates when the target changes or a stale sample is winding down, so a
   // stable running turn does not keep the renderer on a permanent rAF loop.
@@ -94,15 +100,23 @@ export function ComposerTokenGauge({
   const rounded = Math.round(displayed);
   const isEstimated = source === "estimated";
   const speedLabel = t(isEstimated ? "composer.speed.estimatedShort" : "composer.speed.short", { speed: formatNumber(rounded) });
+  const tooltipLabel = t(isEstimated ? "composer.speed.estimatedLabel" : "composer.speed.label", { speed: formatNumber(rounded) });
 
   return (
     <div
+      ref={anchorRef}
       className="composer-token-gauge"
       data-state={running ? "running" : "idle"}
       role="status"
       aria-live="polite"
-      aria-label={t(isEstimated ? "composer.speed.estimatedLabel" : "composer.speed.label", { speed: formatNumber(rounded) })}
+      aria-label={tooltipLabel}
+      aria-describedby={tooltipOpen ? tooltipID : undefined}
+      tabIndex={0}
       style={{ color }}
+      onBlur={() => setTooltipOpen(false)}
+      onFocus={() => setTooltipOpen(true)}
+      onMouseEnter={() => setTooltipOpen(true)}
+      onMouseLeave={() => setTooltipOpen(false)}
     >
       <svg
         viewBox="0 0 24 24"
@@ -145,6 +159,24 @@ export function ComposerTokenGauge({
         />
       </svg>
       <span className="composer-token-gauge-label">{speedLabel}</span>
+      {tooltipOpen ? (
+        <FloatingMenuPortal
+          anchorRef={anchorRef}
+          owner="composer-token-gauge"
+          placement="above"
+          align="right"
+          offset={8}
+          width={TOOLTIP_WIDTH}
+        >
+          <div
+            id={tooltipID}
+            className="composer-token-gauge-tooltip"
+            role="tooltip"
+          >
+            {tooltipLabel}
+          </div>
+        </FloatingMenuPortal>
+      ) : null}
     </div>
   );
 }
