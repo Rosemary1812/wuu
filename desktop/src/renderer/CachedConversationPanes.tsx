@@ -33,7 +33,9 @@ import {
   TurnView,
   latestAgentMessageItemID,
 } from "./TurnView";
+import { turnEventForTurn } from "./TurnEvents";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import { turnHasAssistantOutput } from "./TurnViewHelpers";
 import type { HistoryMessageEditState } from "./ConversationHistoryActions";
 
 const CONVERSATION_GRID_COLUMNS = 12;
@@ -251,6 +253,11 @@ const CachedConversationPane = memo(function CachedConversationPane({
     ) : null;
   const isGroupChat = isGroupThread(thread);
   const isChatStyleThread = isDMThread(thread) || isGroupChat;
+  const latestTurn = threadTurns[threadTurns.length - 1];
+  const turnEvents = threadTurns.flatMap((turn) => {
+    const event = turnEventForTurn(turn, turnHasAssistantOutput(turn));
+    return event ? [{ turnID: turn.id, event }] : [];
+  });
 
   return (
     <div
@@ -272,6 +279,8 @@ const CachedConversationPane = memo(function CachedConversationPane({
             readerCount={chatReaderCountForThread(thread, chatReaderCount)}
             threadOwnerCandidates={isGroupChat ? thread.members : undefined}
             subthreadsByAnchor={isGroupChat ? subthreadsByAnchor : undefined}
+            streamStatus={latestTurn ? turnStreamStatus[latestTurn.id] : undefined}
+            turnEvents={turnEvents}
             onOpenSubthread={
               isGroupChat
                 ? (item, ownerID, existingSubthreadID) =>

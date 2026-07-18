@@ -2930,6 +2930,53 @@ describe("chatMessagesFromTurns", () => {
     ]);
   });
 
+  it("coalesces adjacent equivalent system events without crossing user messages", () => {
+    const first: ThreadItem = {
+      id: "handoff-1",
+      type: "user_message",
+      text: handoffText(),
+    };
+    const second: ThreadItem = {
+      id: "handoff-2",
+      type: "user_message",
+      text: handoffText(),
+    };
+    const query: ThreadItem = {
+      id: "query",
+      type: "user_message",
+      text: "继续",
+    };
+    const third: ThreadItem = {
+      id: "handoff-3",
+      type: "user_message",
+      text: handoffText(),
+    };
+
+    const rows = chatMessagesFromTurns([
+      turn("turn-1", [first]),
+      turn("turn-2", [second, query, third]),
+    ]);
+
+    expect(rows).toEqual([
+      {
+        kind: "system",
+        id: "turn-1:handoff-1",
+        turnID: "turn-1",
+        text: "subagent 完成了任务",
+        item: first,
+        count: 2,
+      },
+      { kind: "user", id: "turn-2:query", turnID: "turn-2", item: query },
+      {
+        kind: "system",
+        id: "turn-2:handoff-3",
+        turnID: "turn-2",
+        text: "subagent 完成了任务",
+        item: third,
+      },
+    ]);
+  });
+
   it("hides named and legacy process notifications from chat rows", () => {
     const named: ThreadItem = {
       id: "process-named",

@@ -20,6 +20,7 @@ import {
   chatMessagesFromTurns,
   replyCountBadge,
   type ChatMessageRow,
+  type TurnStreamStatus,
 } from "./AppState";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
@@ -41,7 +42,12 @@ import {
 } from "./MessageMarks";
 import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
-import { SystemEventDivider } from "./TurnNotice";
+import {
+  StreamReconnectNotice,
+  SystemEventDivider,
+  TurnEventNotice,
+} from "./TurnNotice";
+import type { TurnEventDisplay } from "./TurnEvents";
 import { translateCurrent as translate, useI18n } from "./i18n";
 
 // Distance (px) from the bottom of the scroll container within which the
@@ -134,6 +140,8 @@ export function ChatThreadView({
   resolveParticipantName,
   threadOwnerCandidates = [],
   subthreadsByAnchor,
+  streamStatus,
+  turnEvents = [],
   onOpenSubthread,
   onReact,
 }: {
@@ -169,6 +177,8 @@ export function ChatThreadView({
    * been (人点击)升级为 task。Absent = subthreads not loaded / not a group thread.
    */
   subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
+  streamStatus?: TurnStreamStatus;
+  turnEvents?: ReadonlyArray<{ turnID: string; event: TurnEventDisplay }>;
   /**
    * Open the reply/subthread panel for a message. Wired to the same
    * create-or-find-by-anchor path the agent-brain transcript uses. Optional:
@@ -186,7 +196,49 @@ export function ChatThreadView({
    */
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
-  const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
+  const rows = useMemo(() => {
+    const messageRows = chatMessagesFromTurns(turns);
+    if (turnEvents.length === 0) {
+      return messageRows;
+    }
+    const eventsByTurn = new Map(turnEvents.map(({ turnID, event }) => [turnID, event]));
+    const merged: Array<
+      | ChatMessageRow
+      | {
+          kind: "turn-event";
+          id: string;
+          turnID: string;
+          event: TurnEventDisplay;
+          count?: number;
+        }
+    > = [];
+    let messageIndex = 0;
+    for (const turn of turns) {
+      while (messageRows[messageIndex]?.turnID === turn.id) {
+        merged.push(messageRows[messageIndex]!);
+        messageIndex += 1;
+      }
+      const event = eventsByTurn.get(turn.id);
+      if (event) {
+        const previous = merged[merged.length - 1];
+        if (
+          previous?.kind === "turn-event" &&
+          JSON.stringify(previous.event) === JSON.stringify(event)
+        ) {
+          previous.count = (previous.count ?? 1) + 1;
+        } else {
+          merged.push({
+            kind: "turn-event",
+            id: `${turn.id}:turn-event`,
+            turnID: turn.id,
+            event,
+          });
+        }
+      }
+    }
+    merged.push(...messageRows.slice(messageIndex));
+    return merged;
+  }, [turnEvents, turns]);
   // 贴表情 and 开 Thread are one-click affordances on each group bubble's toolbar
   // (ChatBubbleToolbar) — no right-click menu, no hoisted popup state. A bubble
   // inside a cth reply panel receives onReact but not onOpenSubthread, so its
@@ -195,6 +247,9 @@ export function ChatThreadView({
   // never wires the reply handler).
   const containerRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const autoFollowRef = useRef(true);
+  const autoFollowParentRef = useRef<HTMLElement | null>(null);
+  const autoFollowListenerRef = useRef<(() => void) | null>(null);
   const [ownerSelectionItem, setOwnerSelectionItem] = useState<ThreadItem>();
   const namedOwnerCandidates = useMemo(
     () =>
@@ -234,7 +289,15 @@ export function ChatThreadView({
   const closeOwnerSelection = useCallback(() => {
     setOwnerSelectionItem(undefined);
   }, []);
-  const rowCount = rows.length + pendingMessages.length;
+  const autoFollowVersion = [
+    ...rows.map((row) =>
+      row.kind === "turn-event"
+        ? `${row.id}:${row.event.kind}:${row.event.presentation}`
+        : row.id,
+    ),
+    ...pendingMessages.map((message) => `pending:${message.id}`),
+    streamStatus?.liveProgress ? `stream:${streamStatus.text}` : "",
+  ].join("\u0000");
 
   // Count of the oldest rows currently withheld from the DOM. 0 means the
   // whole history is rendered (either it was never longer than the
@@ -335,19 +398,54 @@ export function ChatThreadView({
   }, [hiddenOlderCount, revealOlder]);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
+    const scrollParent = findScrollParent(containerRef.current);
+    if (!scrollParent) {
+      if (autoFollowParentRef.current && autoFollowListenerRef.current) {
+        autoFollowParentRef.current.removeEventListener(
+          "scroll",
+          autoFollowListenerRef.current,
+        );
+      }
+      autoFollowParentRef.current = null;
+      autoFollowListenerRef.current = null;
       return;
     }
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (distanceFromBottom <= AUTO_FOLLOW_THRESHOLD_PX) {
-      container.scrollTop = container.scrollHeight;
+    if (autoFollowParentRef.current !== scrollParent) {
+      if (autoFollowParentRef.current && autoFollowListenerRef.current) {
+        autoFollowParentRef.current.removeEventListener(
+          "scroll",
+          autoFollowListenerRef.current,
+        );
+      }
+      const updateAutoFollow = (): void => {
+        autoFollowRef.current =
+          scrollParent.scrollHeight - scrollParent.scrollTop - scrollParent.clientHeight <=
+          AUTO_FOLLOW_THRESHOLD_PX;
+      };
+      scrollParent.addEventListener("scroll", updateAutoFollow, { passive: true });
+      autoFollowParentRef.current = scrollParent;
+      autoFollowListenerRef.current = updateAutoFollow;
     }
-    // rowCount changes whenever a real chat row is added or removed; that is
-    // the only signal that should trigger auto-follow.
+    if (autoFollowRef.current) {
+      scrollParent.scrollTop = scrollParent.scrollHeight;
+    }
+    autoFollowListenerRef.current?.();
+    // Identity/state changes, rather than only row count, also cover replacing
+    // a reconnect notice with a terminal event in the same render slot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowCount]);
+  }, [autoFollowVersion]);
+
+  useEffect(
+    () => () => {
+      if (autoFollowParentRef.current && autoFollowListenerRef.current) {
+        autoFollowParentRef.current.removeEventListener(
+          "scroll",
+          autoFollowListenerRef.current,
+        );
+      }
+    },
+    [],
+  );
 
   const visibleRows = hiddenOlderCount > 0 ? rows.slice(hiddenOlderCount) : rows;
   const firstVisibleBubbleRowID = visibleRows.find(
@@ -366,36 +464,59 @@ export function ChatThreadView({
         />
       ) : null}
       {visibleRows.map((row) => (
-        <ChatRow
-          key={row.id}
-          isTopBubble={row.id === firstVisibleBubbleRowID}
-          row={row}
-          cwd={cwd}
-          busyParticipantIDs={busyParticipantIDs}
-          marks={
-            row.kind !== "envelope" && typeof row.item.seq === "number"
-              ? marksBySeq?.get(row.item.seq)
-              : undefined
-          }
-          readerCount={readerCount}
-          resolveParticipantName={resolveParticipantName}
-          subthread={
-            row.kind === "user" || row.kind === "participant"
-              ? subthreadsByAnchor?.get(row.item.id) ??
-                (row.item.seq
-                  ? subthreadsByAnchor?.get(`seq:${row.item.seq}`)
-                  : undefined)
-              : undefined
-          }
-          onOpenSubthread={
-            onOpenSubthread ? requestOpenSubthread : undefined
-          }
-          onReact={onReact}
-        />
+        row.kind === "turn-event" ? (
+          <div key={row.id} className="chat-row chat-row--system chat-row--turn-event">
+            <TurnEventNotice
+              event={
+                row.count && row.count > 1 && row.event.presentation === "notice"
+                  ? {
+                      ...row.event,
+                      notice: {
+                        ...row.event.notice,
+                        title: `${row.event.notice.title} ×${row.count}`,
+                      },
+                    }
+                  : row.event
+              }
+            />
+          </div>
+        ) : (
+          <ChatRow
+            key={row.id}
+            isTopBubble={row.id === firstVisibleBubbleRowID}
+            row={row}
+            cwd={cwd}
+            busyParticipantIDs={busyParticipantIDs}
+            marks={
+              row.kind !== "envelope" && typeof row.item.seq === "number"
+                ? marksBySeq?.get(row.item.seq)
+                : undefined
+            }
+            readerCount={readerCount}
+            resolveParticipantName={resolveParticipantName}
+            subthread={
+              row.kind === "user" || row.kind === "participant"
+                ? subthreadsByAnchor?.get(row.item.id) ??
+                  (row.item.seq
+                    ? subthreadsByAnchor?.get(`seq:${row.item.seq}`)
+                    : undefined)
+                : undefined
+            }
+            onOpenSubthread={
+              onOpenSubthread ? requestOpenSubthread : undefined
+            }
+            onReact={onReact}
+          />
+        )
       ))}
       {pendingMessages.map((message) => (
         <PendingChatRow key={`pending-${message.id}`} message={message} cwd={cwd} />
       ))}
+      {streamStatus?.liveProgress ? (
+        <div className="chat-row chat-row--system chat-row--reconnecting">
+          <StreamReconnectNotice text={streamStatus.text} />
+        </div>
+      ) : null}
       {ownerSelectionItem ? (
         <ThreadOwnerDialog
           candidates={namedOwnerCandidates}
@@ -741,10 +862,11 @@ function ChatRow({
     ? ` chat-bubble--long-card ${expanded ? "expanded" : "collapsed"}`
     : "";
   if (row.kind === "system") {
+    const text = row.count && row.count > 1 ? `${row.text} ×${row.count}` : row.text;
     return (
       <div className={`chat-row chat-row--system${topBubbleClass}`}>
         <SystemEventDivider
-          text={row.text}
+          text={text}
           className="chat-system-divider"
         />
       </div>

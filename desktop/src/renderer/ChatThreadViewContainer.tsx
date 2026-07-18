@@ -5,9 +5,11 @@ import type {
   ThreadItem,
   Turn,
 } from "../shared/protocol";
+import type { TurnStreamStatus } from "./AppState";
 import { ChatThreadView } from "./ChatThreadView";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { aggregateMarksBySeq } from "./MessageMarks";
+import type { TurnEventDisplay } from "./TurnEvents";
 import { useThreadMarks } from "./useThreadMarks";
 
 // Feeds ChatThreadView its live read receipts + reactions. Split out because
@@ -25,6 +27,8 @@ export function ChatThreadViewContainer({
   resolveParticipantName,
   threadOwnerCandidates,
   subthreadsByAnchor,
+  streamStatus,
+  turnEvents,
   onOpenSubthread,
   onReact,
 }: {
@@ -40,6 +44,8 @@ export function ChatThreadViewContainer({
     import("../shared/protocol").ParticipantSummary
   >;
   subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
+  streamStatus?: TurnStreamStatus;
+  turnEvents?: ReadonlyArray<{ turnID: string; event: TurnEventDisplay }>;
   onOpenSubthread?: (
     item: ThreadItem,
     threadOwnerParticipantID?: string,
@@ -64,6 +70,8 @@ export function ChatThreadViewContainer({
       resolveParticipantName={resolveParticipantName}
       threadOwnerCandidates={threadOwnerCandidates}
       subthreadsByAnchor={subthreadsByAnchor}
+      streamStatus={streamStatus}
+      turnEvents={turnEvents}
       onOpenSubthread={onOpenSubthread}
       onReact={onReact}
     />

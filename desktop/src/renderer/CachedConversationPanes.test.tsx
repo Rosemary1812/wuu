@@ -2,6 +2,7 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Thread } from "../shared/protocol";
+import type { TurnStreamStatus } from "./AppState";
 import { CachedConversationPanes } from "./CachedConversationPanes";
 import { ImagePreviewProvider } from "./ImagePreview";
 
@@ -60,6 +61,7 @@ function chatThread(
 function renderPane(
   thread: Thread,
   onOpenSubthread = vi.fn(),
+  turnStreamStatus: Record<string, TurnStreamStatus> = {},
 ): { container: HTMLElement; onOpenSubthread: ReturnType<typeof vi.fn> } {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -85,7 +87,7 @@ function renderPane(
     onCancelEditMessage: () => {},
     onSubmitEditMessage: () => {},
     onOpenFileDiff: () => {},
-    turnStreamStatus: {},
+    turnStreamStatus,
     busyParticipantIDs: new Set(),
     activeThreadMarks: [],
     resolveParticipantName: (id) => id,
@@ -105,6 +107,76 @@ function renderPane(
 }
 
 describe("CachedConversationPanes Thread wiring", () => {
+  it("surfaces reconnect progress and terminal failures inside DM streams", () => {
+    const running = chatThread("dm-running", {
+      workspace_kind: "dm",
+      dm_participant_id: "prt-a",
+      turns: [
+        {
+          id: "turn-running",
+          status: "in_progress",
+          items_view: "full",
+          items: [{ id: "human-running", type: "user_message", text: "继续" }],
+        },
+      ],
+    });
+    const reconnecting = renderPane(running, vi.fn(), {
+      "turn-running": {
+        text: "消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）",
+        liveProgress: true,
+      },
+    }).container;
+    expect(
+      reconnecting.querySelector(".chat-row--reconnecting .turn-event-title")
+        ?.textContent,
+    ).toContain("消息流暂时中断");
+
+    const failed = chatThread("dm-failed", {
+      workspace_kind: "dm",
+      dm_participant_id: "prt-a",
+      turns: [
+        {
+          id: "turn-failed",
+          status: "failed",
+          items_view: "full",
+          items: [{ id: "human-failed", type: "user_message", text: "继续" }],
+          error: { message: "stream request failed: context deadline exceeded" },
+        },
+      ],
+    });
+    const terminal = renderPane(failed).container;
+    expect(
+      terminal.querySelector(".chat-row--turn-event .turn-event-title")?.textContent,
+    ).toBe("请求超时");
+  });
+
+  it("keeps a terminal network event after a later turn completes", () => {
+    const thread = chatThread("dm-history", {
+      workspace_kind: "dm",
+      dm_participant_id: "prt-a",
+      turns: [
+        {
+          id: "turn-failed",
+          status: "failed",
+          items_view: "full",
+          items: [{ id: "human-failed", type: "user_message", text: "第一次" }],
+          error: { message: "stream request failed: context deadline exceeded" },
+        },
+        {
+          id: "turn-completed",
+          status: "completed",
+          items_view: "full",
+          items: [{ id: "human-next", type: "user_message", text: "第二次" }],
+        },
+      ],
+    });
+
+    const container = renderPane(thread).container;
+    expect(
+      container.querySelector(".chat-row--turn-event .turn-event-title")?.textContent,
+    ).toBe("请求超时");
+  });
+
   it("does not expose Thread entry points in a DM", () => {
     const { container, onOpenSubthread } = renderPane(
       chatThread("dm-1", {

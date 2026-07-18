@@ -463,6 +463,113 @@ describe("ChatThreadView reply / task affordances", () => {
     ).toBe("subagent 完成了任务");
   });
 
+  it("renders reconnect progress and terminal network events in chat threads", () => {
+    const reconnecting = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "继续处理" },
+        ]),
+        streamStatus: {
+          text: "消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）",
+          liveProgress: true,
+        },
+      }),
+    );
+    expect(
+      reconnecting.querySelector(".chat-row--reconnecting .turn-event-title")
+        ?.textContent,
+    ).toBe("消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）");
+
+    const failed = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "继续处理" },
+        ]),
+        turnEvents: [
+          {
+            turnID: "turn-1",
+            event: {
+              kind: "network_lost",
+              source: "turn",
+              presentation: "notice",
+              notice: {
+                category: "network",
+                tone: "error",
+                title: "网络异常",
+                detail: "请检查网络连接后重试。",
+              },
+            },
+          },
+        ],
+      }),
+    );
+    expect(
+      failed.querySelector(".chat-row--turn-event .turn-event-title")?.textContent,
+    ).toBe("网络异常");
+  });
+
+  it("shows the count for coalesced adjacent system events", () => {
+    const notification = (id: string): ThreadItem => ({
+      id,
+      type: "user_message",
+      text: JSON.stringify({
+        author: "/root/explore",
+        recipient: "/root",
+        content: `<subagent_notification>\n${JSON.stringify({
+          agent_path: "/root/explore",
+          status: {
+            type: "agent_result",
+            agent_id: "worker-1",
+            task_name: "explore",
+            status: "completed",
+          },
+        })}\n</subagent_notification>`,
+        trigger_turn: true,
+      }),
+    });
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([notification("item-1"), notification("item-2")]),
+      }),
+    );
+
+    expect(container.querySelectorAll(".chat-system-divider")).toHaveLength(1);
+    expect(
+      container.querySelector(".chat-system-divider .turn-event-title")?.textContent,
+    ).toBe("subagent 完成了任务 ×2");
+  });
+
+  it("coalesces adjacent equivalent terminal turn events", () => {
+    const event = {
+      kind: "network_lost" as const,
+      source: "turn" as const,
+      presentation: "notice" as const,
+      notice: {
+        category: "network" as const,
+        tone: "error" as const,
+        title: "网络异常",
+        detail: "请检查网络连接后重试。",
+      },
+    };
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: [
+          { id: "turn-1", items: [] },
+          { id: "turn-2", items: [] },
+        ],
+        turnEvents: [
+          { turnID: "turn-1", event },
+          { turnID: "turn-2", event },
+        ],
+      }),
+    );
+
+    expect(container.querySelectorAll(".chat-row--turn-event")).toHaveLength(1);
+    expect(container.querySelector(".chat-row--turn-event .turn-event-title")?.textContent).toBe(
+      "网络异常 ×2",
+    );
+  });
+
   it("hangs a 'N 条回复' badge under a message that anchors a plain reply", () => {
     const map = new Map<string, ConversationSubthread>([
       ["item-1", subthread({ reply_count: 4 })],
@@ -1339,12 +1446,105 @@ describe("ChatThreadView windowing", () => {
       scrollAncestor,
     );
 
+    scrollAncestor.scrollTop = 0;
+    scrollAncestor.dispatchEvent(new Event("scroll"));
     triggerSentinelIntersection(mountPoint);
 
     // 80 rows before -> scrollHeight 3600; 160 rows after -> 6800. The
     // reader was pinned at scrollTop 0, so the compensation must add
     // exactly the height inserted above the viewport.
     expect(scrollAncestor.scrollTop).toBe(3200);
+  });
+
+  it("auto-follows a new turn event on the real scroll ancestor", () => {
+    const scrollAncestor = document.createElement("div");
+    scrollAncestor.style.overflowY = "auto";
+    const mountPoint = document.createElement("div");
+    scrollAncestor.appendChild(mountPoint);
+    document.body.appendChild(scrollAncestor);
+    Object.defineProperty(scrollAncestor, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+    Object.defineProperty(scrollAncestor, "scrollHeight", {
+      get: () =>
+        1000 +
+        mountPoint.querySelectorAll(".chat-row").length * 40 +
+        mountPoint.querySelectorAll(".chat-row--reconnecting").length * 160 +
+        mountPoint.querySelectorAll(".chat-row--turn-event").length * 360,
+      configurable: true,
+    });
+
+    const root = createRoot(mountPoint);
+    act(() => {
+      root.render(
+        createElement(
+          ImagePreviewProvider,
+          null,
+          createElement(ChatThreadView, {
+            turns: turns([
+              { id: "item-1", type: "user_message", text: "继续处理" },
+            ]),
+          }),
+        ),
+      );
+    });
+    mountedRoots.push(root);
+    mountedContainers.push(scrollAncestor);
+
+    scrollAncestor.scrollTop = 620;
+    scrollAncestor.dispatchEvent(new Event("scroll"));
+    act(() => {
+      root.render(
+        createElement(
+          ImagePreviewProvider,
+          null,
+          createElement(ChatThreadView, {
+            turns: turns([
+              { id: "item-1", type: "user_message", text: "继续处理" },
+            ]),
+            streamStatus: {
+              text: "消息流暂时中断，正在恢复（第 2/4 次尝试）",
+              liveProgress: true,
+            },
+          }),
+        ),
+      );
+    });
+
+    expect(scrollAncestor.scrollTop).toBe(scrollAncestor.scrollHeight);
+
+    act(() => {
+      root.render(
+        createElement(
+          ImagePreviewProvider,
+          null,
+          createElement(ChatThreadView, {
+            turns: turns([
+              { id: "item-1", type: "user_message", text: "继续处理" },
+            ]),
+            turnEvents: [
+              {
+                turnID: "turn-1",
+                event: {
+                  kind: "network_lost",
+                  source: "turn",
+                  presentation: "notice",
+                  notice: {
+                    category: "network",
+                    tone: "error",
+                    title: "网络异常",
+                    detail: "请检查网络连接后重试。",
+                  },
+                },
+              },
+            ],
+          }),
+        ),
+      );
+    });
+
+    expect(scrollAncestor.scrollTop).toBe(scrollAncestor.scrollHeight);
   });
 });
 
