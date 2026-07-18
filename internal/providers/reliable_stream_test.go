@@ -327,6 +327,39 @@ func TestReliableStreamClientDoesNotRetryNonRetryableError(t *testing.T) {
 	}
 }
 
+func TestReliableStreamClientAppliesBackoffBeforeReconnect(t *testing.T) {
+	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
+		{err: &HTTPError{StatusCode: 500, Body: "upstream"}},
+		{events: []StreamEvent{{Type: EventDone}}},
+	}}
+	var delays []time.Duration
+	var callsObservedAtWait []int
+	client := NewReliableStreamClient(
+		inner,
+		nil,
+		WithStreamRetryWait(func(_ context.Context, delay time.Duration) error {
+			delays = append(delays, delay)
+			callsObservedAtWait = append(callsObservedAtWait, inner.callCount)
+			return nil
+		}),
+	)
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	_ = collectReliableEvents(t, ch)
+
+	if inner.callCount != 2 {
+		t.Fatalf("stream calls = %d, want 2", inner.callCount)
+	}
+	if !reflect.DeepEqual(callsObservedAtWait, []int{1}) {
+		t.Fatalf("calls observed when waiting = %v, want [1]", callsObservedAtWait)
+	}
+	if len(delays) != 1 || delays[0] < time.Second || delays[0] > 1250*time.Millisecond {
+		t.Fatalf("first reconnect delay = %v, want exponential backoff in [1s, 1.25s]", delays)
+	}
+}
+
 func TestReliableStreamClientDoesNotReplayLocalBackpressure(t *testing.T) {
 	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
 		{events: []StreamEvent{{Type: EventError, Error: &LocalBackpressureError{Component: "test reader"}}}},

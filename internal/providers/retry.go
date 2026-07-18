@@ -289,6 +289,14 @@ func IsRetryable(err error) bool {
 	return PlanRecovery(NormalizeFailure(err)).Retryable()
 }
 
+// IsTerminalUsageLimit reports whether a provider code/message describes a
+// durable quota or billing limit. Workflow layers use the same classifier as
+// inference recovery so a terminal provider failure cannot gain a fresh retry
+// budget after the underlying request has already stopped.
+func IsTerminalUsageLimit(code, message string) bool {
+	return isTerminalUsageLimit(code, message)
+}
+
 // IsAuthError returns true if the error is an authentication failure.
 func IsAuthError(err error) bool {
 	var httpErr *HTTPError
@@ -373,7 +381,6 @@ func isTerminalUsageLimit(code, message string) bool {
 		"quota exceeded",
 		"out of budget",
 		"available balance",
-		"billing",
 	}
 	for _, marker := range terminal {
 		if strings.Contains(needle, marker) {

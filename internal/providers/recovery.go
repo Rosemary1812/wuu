@@ -215,10 +215,10 @@ func normalizeFailure(err error) NormalizedFailure {
 		switch {
 		case httpErr.ContextOverflow:
 			failure.Category = FailureContextOverflow
+		case (httpErr.StatusCode == 403 || httpErr.StatusCode == 429) && isTerminalUsageLimit(httpErr.ProviderCode, httpErr.Body):
+			failure.Category = FailureQuota
 		case httpErr.StatusCode == 401 || httpErr.StatusCode == 403:
 			failure.Category = FailureAuthentication
-		case httpErr.StatusCode == 429 && isTerminalUsageLimit(httpErr.ProviderCode, httpErr.Body):
-			failure.Category = FailureQuota
 		case httpErr.StatusCode == 429:
 			failure.Category = FailureRateLimit
 		case httpErr.StatusCode == 529:

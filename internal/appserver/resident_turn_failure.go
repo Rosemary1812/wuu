@@ -23,6 +23,9 @@ func isRetryableTurnFailure(turn Turn) bool {
 	if turn.Status != TurnStatusFailed || turn.Error == nil {
 		return false
 	}
+	if providers.IsTerminalUsageLimit(turn.Error.Code, turn.Error.Message) {
+		return false
+	}
 	switch strings.TrimSpace(turn.Error.Category) {
 	case "network", "provider":
 		return true

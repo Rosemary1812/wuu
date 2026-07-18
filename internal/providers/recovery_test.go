@@ -18,6 +18,9 @@ func TestPlanRecoveryHTTPStatusSemantics(t *testing.T) {
 		{name: "anthropic 404", err: &HTTPError{ProviderFamily: "anthropic", StatusCode: 404, Body: "not found"}, action: RecoveryStop},
 		{name: "temporary rate limit", err: &HTTPError{StatusCode: 429, Body: "retry later", RetryAfter: 3 * time.Second}, action: RecoveryWaitThenReplay},
 		{name: "terminal quota", err: &HTTPError{StatusCode: 429, Body: "insufficient_quota"}, action: RecoveryStop},
+		{name: "terminal 403 quota", err: &HTTPError{StatusCode: 403, Body: "The usage limit has been reached", AuthRefreshable: true}, action: RecoveryStop},
+		{name: "terminal 403 permission", err: &HTTPError{StatusCode: 403, Body: "forbidden"}, action: RecoveryStop},
+		{name: "billing service 503", err: &HTTPError{StatusCode: 503, Body: "billing service temporarily unavailable"}, action: RecoveryReplaySame},
 		{name: "context transform", err: &HTTPError{StatusCode: 413, Body: "context_length_exceeded", ContextOverflow: true}, action: RecoveryTransformPayload},
 		{name: "body too large", err: &HTTPError{StatusCode: 413, Body: "nginx client_max_body_size"}, action: RecoveryStop},
 	}

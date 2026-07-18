@@ -2243,6 +2243,53 @@ func TestStreamChat_ServerError(t *testing.T) {
 	}
 }
 
+func TestReliableStreamChat_KimiUsageLimit403StopsWithoutReconnect(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, `{"error":{"type":"permission_error","message":"The usage limit has been reached"}}`)
+	}))
+	defer server.Close()
+
+	rawClient, err := New(ClientConfig{BaseURL: server.URL, APIKey: "kimi-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	client := providers.NewReliableStreamClient(rawClient, nil)
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "kimi-for-coding",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hi"},
+		},
+		Operation: providers.NewInferenceOperation(
+			providers.InferenceOperationAgentRound,
+			providers.InferenceProfileInteractive,
+		),
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var reconnects, finalErrors int
+	for event := range ch {
+		if event.Type == providers.EventLifecycle && event.Lifecycle != nil && event.Lifecycle.Phase == providers.StreamPhaseReconnecting {
+			reconnects++
+		}
+		if event.Type == providers.EventError {
+			finalErrors++
+		}
+	}
+
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("physical requests = %d, want 1", got)
+	}
+	if reconnects != 0 || finalErrors != 1 {
+		t.Fatalf("reconnects/final errors = %d/%d, want 0/1", reconnects, finalErrors)
+	}
+}
+
 func TestStreamChat_RejectsInvalidMessageSequenceBeforeRequest(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
