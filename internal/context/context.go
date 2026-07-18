@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ import (
 const SystemReminderMessageName = "wuu_system_reminder"
 
 const systemReminderBlockMessageNamePrefix = "wuu_ctx_"
+
+// DynamicContextProjectionEnvVar controls compact request-only context
+// projection. It defaults to active; set it to "off" for the legacy baseline.
+const DynamicContextProjectionEnvVar = "WUU_DYNAMIC_CONTEXT_PROJECTION"
 
 // TaskContractMessageName marks legacy hidden task-contract context derived
 // from recent user directives. New requests no longer synthesize this
@@ -96,9 +101,19 @@ func Snapshot(cwd string) EnvInfo {
 }
 
 func CompileBlocks(blocks []Block) string {
+	return compileBlocks(blocks, false)
+}
+
+// CompileRequestBlocks renders request-only blocks without model-visible
+// metadata that is already carried by the block and request telemetry.
+func CompileRequestBlocks(blocks []Block) string {
+	return compileBlocks(blocks, true)
+}
+
+func compileBlocks(blocks []Block, compact bool) string {
 	var b strings.Builder
 	for _, block := range blocks {
-		rendered := renderBlock(block)
+		rendered := renderBlock(block, compact)
 		if rendered == "" {
 			continue
 		}
@@ -108,6 +123,13 @@ func CompileBlocks(blocks []Block) string {
 		b.WriteString(rendered)
 	}
 	return b.String()
+}
+
+// DynamicContextProjectionEnabled returns whether request-only context uses
+// compact projection. Empty and unknown values intentionally resolve active so
+// the feature remains on by default; "off" is the A/B baseline.
+func DynamicContextProjectionEnabled() bool {
+	return !strings.EqualFold(strings.TrimSpace(os.Getenv(DynamicContextProjectionEnvVar)), "off")
 }
 
 func FormatSystemReminderBlocks(blocks ...Block) string {
@@ -170,7 +192,7 @@ func sanitizeMessageNameSlug(value string) string {
 	return strings.Trim(b.String(), "_")
 }
 
-func renderBlock(block Block) string {
+func renderBlock(block Block, compact bool) string {
 	content := strings.TrimSpace(block.Content)
 	if content == "" {
 		return ""
@@ -182,6 +204,10 @@ func renderBlock(block Block) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s]\n", kind)
+	if compact {
+		b.WriteString(content)
+		return strings.TrimRight(b.String(), "\n")
+	}
 	if title := strings.TrimSpace(block.Title); title != "" {
 		fmt.Fprintf(&b, "title: %s\n", title)
 	}

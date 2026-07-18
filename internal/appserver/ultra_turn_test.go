@@ -171,7 +171,7 @@ func TestNextUserTurnFoldsFrozenWorkerTree(t *testing.T) {
 	}
 	found := false
 	for _, msg := range requests[0].Messages {
-		if msg.Role == "user" && strings.Contains(msg.Content, "Frozen worker tree") {
+		if msg.Role == "user" && strings.Contains(msg.Content, "whole anonymous-worker tree was frozen") {
 			if !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
 				t.Fatalf("freeze snapshot should be request-only hidden context: %+v", msg)
 			}

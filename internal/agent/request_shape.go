@@ -132,7 +132,7 @@ func requestBlockMetrics(assembly RequestAssembly) ([]string, map[string]int, ma
 	for _, segment := range assembly.Segments {
 		if len(segment.Blocks) > 0 {
 			for _, block := range segment.Blocks {
-				rendered := strings.TrimSpace(wuucontext.CompileBlocks([]wuucontext.Block{block}))
+				rendered := strings.TrimSpace(compileRequestOnlyBlocks([]wuucontext.Block{block}))
 				if rendered == "" {
 					continue
 				}

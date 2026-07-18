@@ -555,7 +555,7 @@ func TestRuntimeContextInjectorIncludesOnlyDynamicTypedBlocks(t *testing.T) {
 		combined.WriteString("\n")
 	}
 	content := combined.String()
-	for _, want := range []string{"<system-reminder>", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
+	for _, want := range []string{"<system-reminder>", "[TASK_STATE]", "rule: Latest update for this key wins.", "[in_progress] edit"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("injected context missing %q:\n%s", want, content)
 		}

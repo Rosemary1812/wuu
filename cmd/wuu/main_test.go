@@ -1207,7 +1207,7 @@ func TestEvalContextBlockObservationsSummarizeRuntimeBlocks(t *testing.T) {
 		t.Fatalf("stable environment should not be reported as runtime context block: %+v", got)
 	}
 	active := byKind["ACTIVE_FILES"]
-	if active.Source != "read_file" || active.TokenBudget == 0 || !strings.Contains(active.ContentPreview, "main.go") {
+	if active.Source != "read_file" || active.TokenBudget == 0 || !strings.Contains(active.ContentPreview, "files: current=1") {
 		t.Fatalf("active files block missing read metadata: %+v", active)
 	}
 }

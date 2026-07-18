@@ -44,6 +44,31 @@ func TestCompileBlocksRendersTypedContext(t *testing.T) {
 	}
 }
 
+func TestCompileRequestBlocksOmitsRuntimeMetadata(t *testing.T) {
+	got := CompileRequestBlocks([]Block{{
+		Kind: BlockTaskState, Title: "Task", Source: "runtime", Content: "state: active", TokenBudget: 200,
+	}})
+	if !strings.Contains(got, "[TASK_STATE]\nstate: active") {
+		t.Fatalf("compact request block missing kind or content:\n%s", got)
+	}
+	for _, omitted := range []string{"title:", "source:", "token_budget:"} {
+		if strings.Contains(got, omitted) {
+			t.Fatalf("compact request block should omit %q:\n%s", omitted, got)
+		}
+	}
+}
+
+func TestDynamicContextProjectionDefaultsActiveAndSupportsOff(t *testing.T) {
+	t.Setenv(DynamicContextProjectionEnvVar, "")
+	if !DynamicContextProjectionEnabled() {
+		t.Fatal("dynamic context projection should default active")
+	}
+	t.Setenv(DynamicContextProjectionEnvVar, "off")
+	if DynamicContextProjectionEnabled() {
+		t.Fatal("off should disable dynamic context projection")
+	}
+}
+
 func TestCompileBlocksEnforcesTokenBudget(t *testing.T) {
 	longContent := strings.Repeat("src/internal/really/long/path/to/file.go\n", 200)
 	got := CompileBlocks([]Block{

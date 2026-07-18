@@ -3463,7 +3463,7 @@ func TestToolkit_RepeatedToolInputGuardBlocksThirdIdenticalCall(t *testing.T) {
 	}
 	block, ok := kit.ToolResultSummaryContextBlock()
 	if !ok ||
-		!strings.Contains(block.Content, "repeated_arguments:") ||
+		!strings.Contains(block.Content, "loop_warning:") ||
 		!strings.Contains(block.Content, "error_kind=repeated_tool_input") {
 		t.Fatalf("tool summary missing repeated input guard evidence:\n%s", block.Content)
 	}
@@ -3687,6 +3687,7 @@ func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 }
 
 func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "API_KEY=secret-value-1234567890\n")
 	kit, err := New(root)
@@ -3811,7 +3812,54 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolResultSummaryContextBlockDefaultsCompact(t *testing.T) {
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "")
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sessionDir := filepath.Join(root, ".wuu-state", "sessions", "session-1")
+	kit.SetSessionDir(sessionDir)
+	repeatedArgs := strings.Repeat("a", 64)
+	for _, record := range []ToolExecutionRecord{
+		{Name: "read_file", Success: true, PolicyAction: ToolPolicyAllow, ResultAction: "read"},
+		{Name: "bash", Success: false, PolicyAction: ToolPolicyAllow, ErrorKind: "exit_status", Error: "API_KEY=secret-value"},
+		{Name: "run_test", Success: true, PolicyAction: ToolPolicyAllow, ArgumentsSHA256: repeatedArgs, ResultBudgeted: true, ResultRef: filepath.Join(sessionDir, "tool-results", "large.txt")},
+		{Name: "run_test", Success: true, PolicyAction: ToolPolicyAllow, ArgumentsSHA256: repeatedArgs},
+	} {
+		kit.env.toolTelemetry.record(record)
+	}
+
+	compact, ok := kit.ToolResultSummaryContextBlock()
+	if !ok {
+		t.Fatal("expected compact tool result summary")
+	}
+	for _, want := range []string{
+		"tools: read_file:ok > bash:error > run_test:ok > run_test:ok",
+		"error_kind=exit_status",
+		"result=projected ref=$SESSION_DIR/tool-results/large.txt",
+		"loop_warning: tool=run_test repeated=2",
+	} {
+		if !strings.Contains(compact.Content, want) {
+			t.Fatalf("compact tool summary missing %q:\n%s", want, compact.Content)
+		}
+	}
+	for _, omitted := range []string{"recent_tool_calls:", "result_action=", "evidence_status=current", "secret-value"} {
+		if strings.Contains(compact.Content, omitted) {
+			t.Fatalf("compact tool summary should omit %q:\n%s", omitted, compact.Content)
+		}
+	}
+
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
+	legacy, ok := kit.ToolResultSummaryContextBlock()
+	if !ok || len(compact.Content) >= len(legacy.Content) {
+		t.Fatalf("compact summary should be smaller than legacy: compact=%d legacy=%d", len(compact.Content), len(legacy.Content))
+	}
+}
+
 func TestToolkit_ToolResultSummaryContextBlockShortensArtifactRefs(t *testing.T) {
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -3860,6 +3908,7 @@ func TestToolkit_ToolResultSummaryContextBlockShortensArtifactRefs(t *testing.T)
 }
 
 func TestToolkit_ToolResultSummaryContextBlockLimitsRenderedCalls(t *testing.T) {
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -3894,6 +3943,7 @@ func TestToolkit_ToolResultSummaryContextBlockLimitsRenderedCalls(t *testing.T) 
 }
 
 func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "line one\nAPI_KEY=secret-value-1234567890\nline three\nline four\n")
 	kit, err := New(root)
@@ -3957,6 +4007,55 @@ func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
 	}
 	if !strings.Contains(block.Content, "status=possibly_stale") {
 		t.Fatalf("active files context should mark changed file stale:\n%s", block.Content)
+	}
+}
+
+func TestToolkit_ActiveFilesContextBlockDefaultsCompact(t *testing.T) {
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "")
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for i := 1; i <= 5; i++ {
+		path := filepath.Join(root, "dir", fmt.Sprintf("%d.txt", i))
+		mustWriteFile(t, path, "one\ntwo\nthree\n")
+		if _, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name: "read_file", Arguments: fmt.Sprintf(`{"path":"dir/%d.txt","offset":1,"limit":2}`, i),
+		}); err != nil {
+			t.Fatalf("read_file %d: %v", i, err)
+		}
+	}
+
+	current, ok := kit.ActiveFilesContextBlock()
+	if !ok || current.Content != "files: current=5 baseline=0 stale=0" {
+		t.Fatalf("unexpected compact current files block: %+v", current)
+	}
+	for i := 1; i <= 5; i++ {
+		mustWriteFile(t, filepath.Join(root, "dir", fmt.Sprintf("%d.txt", i)), "changed\n")
+	}
+	stale, ok := kit.ActiveFilesContextBlock()
+	if !ok {
+		t.Fatal("expected compact stale files block")
+	}
+	for _, want := range []string{
+		"files: current=0 baseline=0 stale=5",
+		"path=dir/1.txt status=possibly_stale",
+		"path=dir/5.txt status=possibly_stale",
+		"action: read flagged files again before editing",
+	} {
+		if !strings.Contains(stale.Content, want) {
+			t.Fatalf("compact active files missing %q:\n%s", want, stale.Content)
+		}
+	}
+	if strings.Contains(stale.Content, "file_sha=") {
+		t.Fatalf("compact active files should omit hashes:\n%s", stale.Content)
+	}
+
+	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
+	legacy, ok := kit.ActiveFilesContextBlock()
+	if !ok || !strings.Contains(legacy.Content, "file_sha=") || len(stale.Content) >= len(legacy.Content) {
+		t.Fatalf("off should restore larger legacy active files block: compact=%d legacy=%d", len(stale.Content), len(legacy.Content))
 	}
 }
 

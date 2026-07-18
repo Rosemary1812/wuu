@@ -220,6 +220,15 @@ func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 	sort.Slice(paths, func(i, j int) bool {
 		return t.env.NormalizeDisplayPath(paths[i]) < t.env.NormalizeDisplayPath(paths[j])
 	})
+	if wuucontext.DynamicContextProjectionEnabled() {
+		return wuucontext.Block{
+			Kind:        wuucontext.BlockActiveFiles,
+			Title:       "Files read in this session",
+			Source:      "read_file",
+			TokenBudget: 700,
+			Content:     t.compactActiveFilesContext(paths, entries),
+		}, true
+	}
 	const maxFiles = 12
 	listed := paths
 	if len(listed) > maxFiles {
@@ -230,12 +239,7 @@ func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 	b.WriteString("read_files:\n")
 	for _, absPath := range listed {
 		entry := entries[absPath]
-		status := "current"
-		if info, err := os.Stat(absPath); err != nil || info.IsDir() || !readEntryMatchesInfo(entry, info) {
-			status = "possibly_stale"
-		} else if entry.BaselineOnly {
-			status = "current_baseline"
-		}
+		status := activeFileContextStatus(absPath, entry)
 		fmt.Fprintf(&b, "- path=%s status=%s file_sha=%s size_bytes=%d read_range=%s\n",
 			compactContextLine(redactToolOutput(t.env.NormalizeDisplayPath(absPath))),
 			status,
@@ -256,6 +260,44 @@ func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 		TokenBudget: 700,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+func (t *Toolkit) compactActiveFilesContext(paths []string, entries map[string]ReadFileEntry) string {
+	var current, baseline, stale int
+	var flagged strings.Builder
+	for _, absPath := range paths {
+		entry := entries[absPath]
+		status := activeFileContextStatus(absPath, entry)
+		switch status {
+		case "current":
+			current++
+			continue
+		case "current_baseline":
+			baseline++
+		case "possibly_stale":
+			stale++
+		}
+		fmt.Fprintf(&flagged, "- path=%s status=%s read_range=%s\n",
+			compactContextLine(redactToolOutput(t.env.NormalizeDisplayPath(absPath))), status, activeFileReadRange(entry))
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "files: current=%d baseline=%d stale=%d\n", current, baseline, stale)
+	b.WriteString(flagged.String())
+	if baseline+stale > 0 {
+		b.WriteString("action: read flagged files again before editing.\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func activeFileContextStatus(absPath string, entry ReadFileEntry) string {
+	if info, err := os.Stat(absPath); err != nil || info.IsDir() || !readEntryMatchesInfo(entry, info) {
+		return "possibly_stale"
+	}
+	if entry.BaselineOnly {
+		return "current_baseline"
+	}
+	return "current"
 }
 
 func (t *Toolkit) TestFailureContextBlock() (wuucontext.Block, bool) {
@@ -407,10 +449,19 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 	if len(records) > maxRenderedRecords {
 		start = len(records) - maxRenderedRecords
 	}
+	currentRevision := workspaceRevision(context.Background(), t.env.RootDir)
+	if wuucontext.DynamicContextProjectionEnabled() {
+		return wuucontext.Block{
+			Kind:        wuucontext.BlockToolResultSummary,
+			Title:       "Recent tool result summary",
+			Source:      "tool_telemetry",
+			TokenBudget: 400,
+			Content:     t.compactToolResultSummary(records, start, currentRevision),
+		}, true
+	}
 
 	var b strings.Builder
 	b.WriteString("recent_tool_calls:\n")
-	currentRevision := workspaceRevision(context.Background(), t.env.RootDir)
 	for i, record := range records[start:] {
 		status := "ok"
 		if !record.Success {
@@ -473,6 +524,73 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		TokenBudget: 400,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+func (t *Toolkit) compactToolResultSummary(records []ToolExecutionRecord, start int, currentRevision string) string {
+	recent := records[start:]
+	var b strings.Builder
+	b.WriteString("tools: ")
+	for i, record := range recent {
+		if i > 0 {
+			b.WriteString(" > ")
+		}
+		name := compactContextLine(redactToolOutput(strings.TrimSpace(record.Name)))
+		status := "ok"
+		if !record.Success {
+			status = "error"
+		}
+		fmt.Fprintf(&b, "%s:%s", name, status)
+	}
+	if start > 0 {
+		fmt.Fprintf(&b, " older=%d", start)
+	}
+	b.WriteString("\n")
+
+	for _, record := range recent {
+		stale := toolEvidenceStatus(record, currentRevision) == "possibly_stale"
+		nonAllow := record.PolicyAction != "" && record.PolicyAction != ToolPolicyAllow
+		patchRisk := record.PatchRiskSummary != nil && record.PatchRiskSummary.RiskLevel != "low"
+		if record.Success && !record.ResultBudgeted && record.ResultRef == "" && !stale && !nonAllow && !patchRisk {
+			continue
+		}
+		fmt.Fprintf(&b, "- tool=%s", compactContextLine(redactToolOutput(strings.TrimSpace(record.Name))))
+		if !record.Success {
+			b.WriteString(" status=error")
+			if record.ErrorKind != "" {
+				fmt.Fprintf(&b, " error_kind=%s", compactContextLine(redactToolOutput(record.ErrorKind)))
+			}
+			if strings.TrimSpace(record.Error) != "" {
+				fmt.Fprintf(&b, " error=%s", compactContextLine(redactToolOutput(record.Error)))
+			}
+		}
+		if nonAllow {
+			fmt.Fprintf(&b, " policy=%s", record.PolicyAction)
+		}
+		if stale {
+			b.WriteString(" evidence=stale")
+		}
+		if record.ResultBudgeted {
+			b.WriteString(" result=projected")
+		}
+		if record.ResultRef != "" {
+			fmt.Fprintf(&b, " ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ResultRef))))
+		} else if record.ResultBudgeted && len(record.ArtifactRefs) > 0 {
+			fmt.Fprintf(&b, " ref=%s", redactedContextArtifactRefs(t.env, record.ArtifactRefs, 1)[0])
+		}
+		if patchRisk {
+			fmt.Fprintf(&b, " patch_risk=%s", compactToolPatchRisk(*record.PatchRiskSummary))
+		}
+		b.WriteString("\n")
+	}
+
+	loopStart := 0
+	if len(records) > 8 {
+		loopStart = len(records) - 8
+	}
+	for _, item := range repeatedToolArguments(records[loopStart:]) {
+		fmt.Fprintf(&b, "loop_warning: tool=%s repeated=%d; inspect prior evidence before retrying.\n", item.ToolName, item.Count)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func toolEvidenceStatus(record ToolExecutionRecord, currentRevision string) string {
