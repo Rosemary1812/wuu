@@ -95,6 +95,8 @@ go run ./cmd/wuu --version
 
 ## 快速开始
 
+安装、提供商配置、会话、附件、信任边界和常见问题见[用户指南](docs/user-guide-zh.md)。
+
 **桌面端**
 
 打开 `wuu.app`，选择一个本地项目文件夹，然后在输入框里开始任务。
@@ -240,6 +242,7 @@ export ANTHROPIC_API_KEY="..."
 ## 文档
 
 - 浏览所有持续维护的文档：[文档索引](docs/README.md)
+- 安装、配置和使用 wuu：[用户指南](docs/user-guide-zh.md)
 - 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/exec.md)
 - 解析流式输出：[JSONL 事件](docs/jsonl-events.md)
 - 将核心嵌入新的 Shell：[`app-server` 协议](docs/app-server-protocol.md)

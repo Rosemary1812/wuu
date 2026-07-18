@@ -5,6 +5,9 @@ developing wuu. Start with the section that matches what you are trying to do.
 
 ## Use wuu
 
+- [User guide](user-guide.md) ([中文](user-guide-zh.md)) — install wuu,
+  connect a provider, work in a repository, continue sessions, and solve common
+  setup problems.
 - [`wuu exec`](exec.md) — run wuu from a terminal, script, CI job, or another agent.
 - [Configuration model](configuration-model-zh.md) — understand configuration
   sources, ownership, trust boundaries, and platform-specific behavior (Chinese).

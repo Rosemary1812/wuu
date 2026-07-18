@@ -54,6 +54,8 @@ thirdparty/
 
 /docs/*
 !/docs/README.md
+!/docs/user-guide.md
+!/docs/user-guide-zh.md
 !/docs/exec.md
 !/docs/app-server-protocol.md
 !/docs/jsonl-events.md

@@ -97,6 +97,9 @@ go run ./cmd/wuu --version
 
 ## Quick Start
 
+For installation, provider setup, sessions, attachments, trust boundaries, and
+common problems, read the [user guide](docs/user-guide.md).
+
 **Desktop**
 
 Open `wuu.app`, choose a local project folder, and start a thread from the composer.
@@ -257,6 +260,7 @@ For another provider, the same config shape applies:
 ## Docs
 
 - Browse all maintained documentation: [Documentation index](docs/README.md)
+- Install, configure, and use wuu: [User guide](docs/user-guide.md)
 - Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/exec.md)
 - Parse the streaming output: [JSONL events](docs/jsonl-events.md)
 - Embed the core in a new shell: [`app-server` protocol](docs/app-server-protocol.md)
