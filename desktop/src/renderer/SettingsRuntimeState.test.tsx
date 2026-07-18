@@ -64,7 +64,6 @@ function usage(range: SettingsUsageRange): SettingsUsageResponse {
     },
     model_breakdowns: [],
     days: [],
-    entries: [],
   };
 }
 

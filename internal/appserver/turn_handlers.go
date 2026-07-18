@@ -4146,23 +4146,13 @@ func (s *Server) handleSettingsUsage(req Request) error {
 	now := time.Now().UTC()
 	cutoff := settingsUsageRangeCutoff(rangeFilter, now)
 
-	metas, err := insight.ScanSessions(sessDir, 0)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("scan sessions: %w", err))
-	}
 	rows, err := insight.CollectTokenUsageRows(sessDir)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("collect usage rows: %w", err))
 	}
 	filteredRows := filterUsageRowsByCutoff(rows, cutoff)
 
-	titleByID := make(map[string]string, len(metas))
-	for _, m := range metas {
-		if title := strings.TrimSpace(m.FirstUserMsg); title != "" {
-			titleByID[m.ID] = truncateUsageTitle(title)
-		}
-	}
-	metrics, days, entries := aggregateUsageRows(filteredRows, titleByID)
+	metrics, days := aggregateUsageRows(filteredRows)
 	totalSessions := countSessionsInRange(rows, cutoff)
 
 	return s.writeResponse(req.ID, SettingsUsageResponse{
@@ -4172,7 +4162,6 @@ func (s *Server) handleSettingsUsage(req Request) error {
 		Metrics:         metrics,
 		ModelBreakdowns: buildUsageModelBreakdowns(filteredRows),
 		Days:            days,
-		Entries:         entries,
 	}, nil)
 }
 
@@ -4258,11 +4247,10 @@ func buildUsageModelBreakdowns(rows []insight.TokenUsageRow) []insight.ModelUsag
 }
 
 // aggregateUsageRows is the single source of truth for the desktop
-// usage page's metrics, daily series, and recent-entries list. It
-// never reads from session metadata — only the per-row token_usage
-// trail — so the headline numbers, the heatmap, and the "最近记录"
-// list all stay numerically consistent.
-func aggregateUsageRows(rows []insight.TokenUsageRow, titleByID map[string]string) (SettingsUsageMetrics, []SettingsUsageDay, []SettingsUsageEntry) {
+// usage page's metrics and daily series. It never reads from session
+// metadata — only the per-row token_usage trail — so the headline
+// numbers and the heatmap stay numerically consistent.
+func aggregateUsageRows(rows []insight.TokenUsageRow) (SettingsUsageMetrics, []SettingsUsageDay) {
 	metrics := SettingsUsageMetrics{}
 	type dayBucket struct {
 		input, output, cacheRead, cacheCreation int
@@ -4327,57 +4315,7 @@ func aggregateUsageRows(rows []insight.TokenUsageRow, titleByID map[string]strin
 	}
 	sort.Slice(days, func(i, j int) bool { return days[i].Date < days[j].Date })
 
-	entries := buildUsageEntries(rows, titleByID, 8)
-	return metrics, days, entries
-}
-
-// buildUsageEntries picks the most recent N token_usage rows (by At)
-// and renders them as SettingsUsageEntry rows. Rows with a zero At are
-// sorted last so legacy imports never steal the top slots in the
-// "最近记录" list.
-func buildUsageEntries(rows []insight.TokenUsageRow, titleByID map[string]string, limit int) []SettingsUsageEntry {
-	type sortable struct {
-		row insight.TokenUsageRow
-		ts  time.Time
-	}
-	items := make([]sortable, 0, len(rows))
-	for _, r := range rows {
-		items = append(items, sortable{row: r, ts: r.At})
-	}
-	sort.Slice(items, func(i, j int) bool {
-		iZero, jZero := items[i].ts.IsZero(), items[j].ts.IsZero()
-		if iZero != jZero {
-			return !iZero
-		}
-		if items[i].ts.Equal(items[j].ts) {
-			return items[i].row.SessionID < items[j].row.SessionID
-		}
-		return items[i].ts.After(items[j].ts)
-	})
-	if limit > 0 && len(items) > limit {
-		items = items[:limit]
-	}
-	entries := make([]SettingsUsageEntry, 0, len(items))
-	for _, it := range items {
-		r := it.row
-		title := titleByID[r.SessionID]
-		if title == "" {
-			title = r.SessionID
-		}
-		entries = append(entries, SettingsUsageEntry{
-			ID:                  "turn:" + r.SessionID + "@" + r.At.Format(time.RFC3339Nano),
-			Source:              "turn",
-			Title:               title,
-			Provider:            r.Provider,
-			Model:               r.Model,
-			At:                  r.At.UTC().Format(time.RFC3339Nano),
-			InputTokens:         r.InputTokens,
-			OutputTokens:        r.OutputTokens,
-			CacheCreationTokens: r.CacheCreationTokens,
-			CacheReadTokens:     r.CacheReadTokens,
-		})
-	}
-	return entries
+	return metrics, days
 }
 
 // truncateUsageTitle shortens a session's first user message down to a

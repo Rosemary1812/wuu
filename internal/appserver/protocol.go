@@ -2313,29 +2313,12 @@ type SettingsUsageDay struct {
 	Agents              int     `json:"agents"`
 }
 
-// SettingsUsageEntry is one recent token-spending record surfaced in the
-// "最近记录" list. Source identifies whether the row came from a primary
-// session turn or a subagent run; Title is rendered as the entry headline.
-type SettingsUsageEntry struct {
-	ID                  string `json:"id"`
-	Source              string `json:"source"` // "turn" | "agent"
-	Title               string `json:"title"`
-	Provider            string `json:"provider"`
-	Model               string `json:"model"`
-	At                  string `json:"at"`
-	InputTokens         int    `json:"input_tokens"`
-	OutputTokens        int    `json:"output_tokens"`
-	CacheCreationTokens int    `json:"cache_creation_tokens"`
-	CacheReadTokens     int    `json:"cache_read_tokens"`
-}
-
 // SettingsUsageResponse is the single source of truth for the desktop
 // usage page. Range mirrors the requested window. Metrics is the headline
 // number block, ModelBreakdowns is the per-model table sorted by total
 // context tokens descending (legacy rows with empty provider+model are
-// surfaced as "(unknown)"), Days is the calendar-day series for the
-// heatmap (gaps filled by the desktop), and Entries is the most recent
-// N token_usage rows within the range for the "最近记录" list.
+// surfaced as "(unknown)"), and Days is the calendar-day series for the
+// heatmap (gaps filled by the desktop).
 type SettingsUsageResponse struct {
 	Range           SettingsUsageRange   `json:"range"`
 	TotalSessions   int                  `json:"total_sessions"`
@@ -2343,5 +2326,4 @@ type SettingsUsageResponse struct {
 	Metrics         SettingsUsageMetrics `json:"metrics"`
 	ModelBreakdowns []insight.ModelUsage `json:"model_breakdowns"`
 	Days            []SettingsUsageDay   `json:"days"`
-	Entries         []SettingsUsageEntry `json:"entries"`
 }

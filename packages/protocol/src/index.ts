@@ -1941,29 +1941,12 @@ export type SettingsUsageDay = {
   agents: number;
 };
 
-// SettingsUsageEntry is one recent token-spending record surfaced in
-// the "最近记录" list. Source distinguishes primary-session turns from
-// subagent runs so the UI can label them differently.
-export type SettingsUsageEntry = {
-  id: string;
-  source: "turn" | "agent";
-  title: string;
-  provider: string;
-  model: string;
-  at: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_tokens: number;
-  cache_read_tokens: number;
-};
-
 // SettingsUsageResponse is the single source of truth for the desktop
 // usage page. ModelBreakdowns is sorted by total context tokens
 // descending; empty Provider+Model entries are bucketed as "(unknown)"
-// in the UI. Days carries the calendar-day series for the heatmap and
-// Entries carries the most recent N rows for the "最近记录" list —
+// in the UI. Days carries the calendar-day series for the heatmap —
 // both are derived from the same per-row token_usage trail so the
-// three views always sum to the same totals.
+// views always sum to the same totals.
 export type SettingsUsageResponse = {
   range: SettingsUsageRange;
   total_sessions: number;
@@ -1971,7 +1954,6 @@ export type SettingsUsageResponse = {
   metrics: SettingsUsageMetrics;
   model_breakdowns: ModelUsage[];
   days: SettingsUsageDay[];
-  entries: SettingsUsageEntry[];
 };
 
 // ComposerGoalSummary is the composer-banner view of the current thread goal.

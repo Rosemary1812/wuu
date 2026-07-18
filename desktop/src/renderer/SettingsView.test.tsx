@@ -1063,20 +1063,6 @@ describe("SettingsView About section", () => {
         turns: 1,
         agents: 0,
       })),
-      entries: [
-        {
-          id: "turn:turn-1",
-          source: "turn",
-          title: "测试会话",
-          provider: "OpenAI API",
-          model: "fake-model",
-          at: "2026-06-18T12:00:00Z",
-          input_tokens: 1000,
-          output_tokens: 200,
-          cache_creation_tokens: 20,
-          cache_read_tokens: 50,
-        },
-      ],
     };
     const { rootText } = renderSettings({
       initialized: baseInitialized(),
