@@ -242,6 +242,7 @@ func buildClient(provider config.ProviderConfig, providerName string) (providers
 			APIKey:                          apiKey,
 			AuthToken:                       authToken,
 			Headers:                         provider.Headers,
+			MaxTokens:                       providerModelOutputLimit(provider),
 			StreamConfig:                    providerStreamTransportConfig(provider),
 			Coordinator:                     sharedProviderCoordinator,
 			CacheCreationInputTokensOmitted: provider.CacheCreationInputTokensOmitted,
@@ -254,6 +255,22 @@ func buildClient(provider config.ProviderConfig, providerName string) (providers
 	default:
 		return nil, fmt.Errorf("unsupported provider wire protocol %q", profile.Wire)
 	}
+}
+
+func providerModelOutputLimit(provider config.ProviderConfig) int {
+	model := strings.TrimSpace(provider.Model)
+	if model == "" {
+		return 0
+	}
+	if cfg, ok := provider.Models[model]; ok && cfg.Limit != nil {
+		return cfg.Limit.Output
+	}
+	for _, cfg := range provider.Models {
+		if strings.TrimSpace(cfg.ID) == model && cfg.Limit != nil {
+			return cfg.Limit.Output
+		}
+	}
+	return 0
 }
 
 func providerStreamTransportConfig(provider config.ProviderConfig) *providers.StreamTransportConfig {

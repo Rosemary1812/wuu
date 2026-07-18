@@ -6,7 +6,54 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 )
+
+func TestKimiK3UsesExplicitMaxVariant(t *testing.T) {
+	providerName, provider := modelcatalog.EnrichProvider("kimi-for-coding", config.ProviderConfig{
+		Type:  "anthropic",
+		Model: "k3",
+	}, "k3")
+
+	variants := SummariesForProvider(providerName, provider, "k3")
+	if got := variantIDs(variants); len(got) != 1 || got[0] != "max" {
+		t.Fatalf("K3 variants = %v, want [max]", got)
+	}
+	selection := ResolveForProvider(providerName, provider, "k3", "", "")
+	if selection.Variant != "max" {
+		t.Fatalf("K3 default variant = %q, want max", selection.Variant)
+	}
+	if selection.ProviderOptions["effort"] != "max" || selection.ProviderOptions["allow_empty_signature"] != true || selection.ProviderOptions["thinking_replay"] != "full" {
+		t.Fatalf("unexpected K3 provider options: %+v", selection.ProviderOptions)
+	}
+	thinking, ok := selection.ProviderOptions["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "adaptive" || thinking["display"] != "summarized" {
+		t.Fatalf("unexpected K3 thinking options: %+v", selection.ProviderOptions)
+	}
+}
+
+func TestKimiProviderDefaultsUseAdaptiveThinking(t *testing.T) {
+	providerName, provider := modelcatalog.EnrichProvider("kimi-for-coding", config.ProviderConfig{
+		Type:  "anthropic",
+		Model: "k2p7",
+	}, "k2p7")
+
+	variants := SummariesForProvider(providerName, provider, "k2p7")
+	if got := strings.Join(variantIDs(variants), ","); got != "low,medium,high" {
+		t.Fatalf("Kimi k2p7 variants = %s, want low,medium,high", got)
+	}
+	selection := ResolveForProvider(providerName, provider, "k2p7", "medium", "")
+	if selection.ProviderOptions["effort"] != "medium" || selection.ProviderOptions["force_adaptive_thinking"] != true {
+		t.Fatalf("unexpected Kimi provider options: %+v", selection.ProviderOptions)
+	}
+	thinking, ok := selection.ProviderOptions["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "adaptive" || thinking["display"] != "summarized" {
+		t.Fatalf("unexpected Kimi adaptive thinking: %+v", selection.ProviderOptions)
+	}
+	if _, exists := selection.ProviderOptions["allow_empty_signature"]; exists {
+		t.Fatalf("K3-only empty signature option leaked to k2p7: %+v", selection.ProviderOptions)
+	}
+}
 
 func TestSummariesInferXiaomiReasoningEfforts(t *testing.T) {
 	provider := config.ProviderConfig{
@@ -59,6 +106,28 @@ func TestSummariesInferOpenRouterNonOpenAIReasoningEfforts(t *testing.T) {
 	reasoning, ok := options["reasoning"].(map[string]any)
 	if !ok || reasoning["effort"] != "medium" {
 		t.Fatalf("expected nested reasoning effort, got %#v", options)
+	}
+}
+
+func TestSummariesUseExplicitXAIReasoningEfforts(t *testing.T) {
+	tests := []struct {
+		model string
+		want  string
+	}{
+		{model: "grok-4.3", want: "none,low,medium,high"},
+		{model: "grok-4.20-multi-agent-0309", want: "low,medium,high"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			providerName, provider := modelcatalog.EnrichProvider("xai", config.ProviderConfig{
+				Type:  "openai-compatible",
+				Model: tc.model,
+			}, tc.model)
+			variants := SummariesForProvider(providerName, provider, tc.model)
+			if got := strings.Join(variantIDs(variants), ","); got != tc.want {
+				t.Fatalf("variants = %q, want %q: %+v", got, tc.want, variants)
+			}
+		})
 	}
 }
 
@@ -292,6 +361,27 @@ func TestResolveKeepsExplicitMiniMaxToolSearchOption(t *testing.T) {
 	}
 }
 
+func TestResolveKeepsExplicitMiniMaxThinkingOption(t *testing.T) {
+	reasoning := true
+	provider := config.ProviderConfig{
+		Type:  "anthropic",
+		NPM:   "@ai-sdk/anthropic",
+		Model: "minimax-m3",
+		Models: map[string]config.ProviderModelConfig{
+			"minimax-m3": {
+				Reasoning: &reasoning,
+				Options:   map[string]any{"thinking": map[string]any{"type": "disabled"}},
+			},
+		},
+	}
+
+	selection := Resolve(provider, provider.Model, "", "")
+	thinking, ok := selection.ProviderOptions["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "disabled" {
+		t.Fatalf("explicit thinking option was overwritten: %#v", selection.ProviderOptions)
+	}
+}
+
 func TestResolveMatchesProviderCompatForZAIAndZhipuThinking(t *testing.T) {
 	for _, providerID := range []string{"zai-coding-plan", "zai", "zhipuai-coding-plan", "zhipuai"} {
 		t.Run(providerID, func(t *testing.T) {
@@ -309,7 +399,32 @@ func TestResolveMatchesProviderCompatForZAIAndZhipuThinking(t *testing.T) {
 			if thinking["type"] != "enabled" || thinking["clear_thinking"] != false {
 				t.Fatalf("thinking = %#v", thinking)
 			}
+
+			provider.Models = map[string]config.ProviderModelConfig{
+				provider.Model: {Options: map[string]any{"thinking": map[string]any{"type": "disabled"}}},
+			}
+			selection = ResolveForProvider(providerID, provider, provider.Model, "", "")
+			thinking, ok = selection.ProviderOptions["thinking"].(map[string]any)
+			if !ok || thinking["type"] != "disabled" {
+				t.Fatalf("explicit thinking option was overwritten: %#v", selection.ProviderOptions)
+			}
 		})
+	}
+}
+
+func TestResolveDeepSeekV4EffortEnablesThinking(t *testing.T) {
+	providerName, provider := modelcatalog.EnrichProvider("deepseek", config.ProviderConfig{
+		Type:  "openai-compatible",
+		Model: "deepseek-v4-pro",
+	}, "deepseek-v4-pro")
+
+	selection := ResolveForProvider(providerName, provider, "deepseek-v4-pro", "high", "")
+	if got := selection.ProviderOptions["reasoningEffort"]; got != "high" {
+		t.Fatalf("reasoningEffort = %#v", got)
+	}
+	thinking, ok := selection.ProviderOptions["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("thinking = %#v; options=%#v", selection.ProviderOptions["thinking"], selection.ProviderOptions)
 	}
 }
 
@@ -324,18 +439,31 @@ func TestResolveMatchesProviderCompatForAlibabaReasoning(t *testing.T) {
 		},
 	}
 
-	selection := ResolveForProvider("alibaba-cn", provider, provider.Model, "", "")
-	if got := selection.ProviderOptions["enable_thinking"]; got != true {
-		t.Fatalf("enable_thinking = %#v; options=%#v", got, selection.ProviderOptions)
+	for _, providerID := range []string{
+		"alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn", "alibaba-token-plan", "alibaba-token-plan-cn",
+	} {
+		selection := ResolveForProvider(providerID, provider, provider.Model, "", "")
+		if got := selection.ProviderOptions["enable_thinking"]; got != true {
+			t.Fatalf("%s enable_thinking = %#v; options=%#v", providerID, got, selection.ProviderOptions)
+		}
 	}
 
 	provider.Model = "kimi-k2-thinking"
 	provider.Models = map[string]config.ProviderModelConfig{
 		"kimi-k2-thinking": {Reasoning: &reasoning},
 	}
-	selection = ResolveForProvider("alibaba-cn", provider, provider.Model, "", "")
+	selection := ResolveForProvider("alibaba-cn", provider, provider.Model, "", "")
 	if _, ok := selection.ProviderOptions["enable_thinking"]; ok {
 		t.Fatalf("kimi-k2-thinking should use provider default thinking: %#v", selection.ProviderOptions)
+	}
+
+	provider.Model = "qwen-plus"
+	provider.Models = map[string]config.ProviderModelConfig{
+		"qwen-plus": {Reasoning: &reasoning, Options: map[string]any{"enable_thinking": false}},
+	}
+	selection = ResolveForProvider("alibaba", provider, provider.Model, "", "")
+	if got := selection.ProviderOptions["enable_thinking"]; got != false {
+		t.Fatalf("explicit enable_thinking = %#v; options=%#v", got, selection.ProviderOptions)
 	}
 }
 
@@ -884,6 +1012,39 @@ func TestResolveMergesProviderCompatBaseOptions(t *testing.T) {
 	}
 	if got := selection.ProviderOptions["store"]; got != false {
 		t.Fatalf("store = %#v", got)
+	}
+	if got := selection.ProviderOptions["promptCacheKeySupported"]; got != true {
+		t.Fatalf("promptCacheKeySupported = %#v", got)
+	}
+}
+
+func TestResolveScopesPromptCacheKeyToSupportingProviders(t *testing.T) {
+	tests := []struct {
+		name       string
+		providerID string
+		provider   config.ProviderConfig
+		want       bool
+	}{
+		{name: "OpenAI", providerID: "openai", provider: config.ProviderConfig{Type: "openai", NPM: "@ai-sdk/openai", Model: "gpt-5.5"}, want: true},
+		{name: "OpenRouter", providerID: "openrouter", provider: config.ProviderConfig{Type: "openai-compatible", NPM: "@openrouter/ai-sdk-provider", Model: "openai/gpt-5.5"}, want: true},
+		{name: "xAI", providerID: "xai", provider: config.ProviderConfig{Type: "openai-compatible", NPM: "@ai-sdk/xai", Model: "grok-4"}},
+		{name: "GLM", providerID: "zai", provider: config.ProviderConfig{Type: "openai-compatible", NPM: "@ai-sdk/openai-compatible", Model: "glm-4.6"}},
+		{name: "Qwen", providerID: "alibaba", provider: config.ProviderConfig{Type: "openai-compatible", NPM: "@ai-sdk/openai-compatible", Model: "qwen-plus"}},
+		{name: "DeepSeek", providerID: "deepseek", provider: config.ProviderConfig{Type: "openai-compatible", NPM: "@ai-sdk/openai-compatible", Model: "deepseek-chat"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			selection := ResolveForProvider(tc.providerID, tc.provider, tc.provider.Model, "", "")
+			got, exists := selection.ProviderOptions["promptCacheKeySupported"]
+			if tc.want {
+				if got != true {
+					t.Fatalf("promptCacheKeySupported = %#v; options=%#v", got, selection.ProviderOptions)
+				}
+			} else if exists {
+				t.Fatalf("unsupported provider inherited prompt cache key: %#v", selection.ProviderOptions)
+			}
+		})
 	}
 }
 

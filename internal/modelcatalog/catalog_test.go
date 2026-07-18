@@ -72,6 +72,21 @@ func TestMatchProviderTreatsTerminalV1AsOptional(t *testing.T) {
 	if enriched.ContextWindow != 0 {
 		t.Fatalf("provider ContextWindow = %d, want 0 without explicit provider override", enriched.ContextWindow)
 	}
+	if got := model.Options["anthropic_default_betas"]; got != false {
+		t.Fatalf("MiniMax default anthropic_default_betas = %#v, want false", got)
+	}
+
+	_, overridden := EnrichProvider("minimax", config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://api.minimaxi.com/anthropic",
+		Model:   "MiniMax-M3",
+		Models: map[string]config.ProviderModelConfig{
+			"MiniMax-M3": {Options: map[string]any{"anthropic_default_betas": true}},
+		},
+	}, "MiniMax-M3")
+	if got := overridden.Models["MiniMax-M3"].Options["anthropic_default_betas"]; got != true {
+		t.Fatalf("explicit MiniMax anthropic_default_betas = %#v, want true", got)
+	}
 }
 
 func TestEnrichProviderInheritsKnownOpenAIModelForCompatibleGateway(t *testing.T) {
@@ -184,8 +199,91 @@ func TestCatalogSnapshotMatchesOpenCodeDefaultVisibleCounts(t *testing.T) {
 			}
 		}
 	}
-	if modelCount != 5211 {
-		t.Fatalf("model count = %d, want 5211", modelCount)
+	if modelCount != 5212 {
+		t.Fatalf("model count = %d, want 5212", modelCount)
+	}
+}
+
+func TestKimiK3BuiltinCatalogOverride(t *testing.T) {
+	provider, ok := ProviderByID("kimi-for-coding")
+	if !ok {
+		t.Fatal("expected Kimi For Coding provider")
+	}
+	if provider.API != "https://api.kimi.com/coding/" || provider.NPM != "@ai-sdk/anthropic" {
+		t.Fatalf("unexpected Kimi provider transport: %+v", provider)
+	}
+	if provider.Headers["User-Agent"] != "KimiCLI/1.5" ||
+		provider.ModelOptions["force_adaptive_thinking"] != true ||
+		provider.ModelOptions["anthropic_default_betas"] != false {
+		t.Fatalf("unexpected Kimi provider defaults: options=%+v headers=%+v", provider.ModelOptions, provider.Headers)
+	}
+	var k3 Model
+	for _, model := range provider.Models {
+		if model.ID == "k3" {
+			k3 = model
+			break
+		}
+	}
+	if k3.ID == "" {
+		t.Fatal("expected built-in K3 model")
+	}
+	if k3.Limit == nil || k3.Limit.Context != 1_048_576 || k3.Limit.Output != 131_072 {
+		t.Fatalf("unexpected K3 limits: %+v", k3.Limit)
+	}
+	if got := reasoningEfforts(k3); !equalStrings(got, []string{"max"}) {
+		t.Fatalf("unexpected K3 efforts: %v", got)
+	}
+	if k3.DefaultVariant != "max" || len(k3.Variants) != 1 || k3.Variants["max"] == nil {
+		t.Fatalf("unexpected K3 variants: default=%q variants=%+v", k3.DefaultVariant, k3.Variants)
+	}
+
+	ruleName, enriched := EnrichProvider("kimi-for-coding", config.ProviderConfig{
+		Type:  "anthropic",
+		Model: "k3",
+	}, "k3")
+	if ruleName != "kimi-for-coding" || enriched.BaseURL != "https://api.kimi.com/coding/" {
+		t.Fatalf("unexpected enriched K3 provider: rule=%q provider=%+v", ruleName, enriched)
+	}
+	model := enriched.Models["k3"]
+	if model.Limit == nil || model.Limit.Context != 1_048_576 || model.Limit.Output != 131_072 {
+		t.Fatalf("unexpected enriched K3 limits: %+v", model.Limit)
+	}
+	if model.Options["allow_empty_signature"] != true || model.Options["thinking_replay"] != "full" ||
+		model.Options["force_adaptive_thinking"] != true || model.Options["anthropic_default_betas"] != false {
+		t.Fatalf("unexpected K3 compatibility options: %+v", model.Options)
+	}
+	if enriched.Headers["User-Agent"] != "KimiCLI/1.5" {
+		t.Fatalf("unexpected K3 headers: %+v", enriched.Headers)
+	}
+}
+
+func TestKimiProviderDefaultsApplyWithoutK3ModelOverrides(t *testing.T) {
+	_, enriched := EnrichProvider("kimi-for-coding", config.ProviderConfig{
+		Type:  "anthropic",
+		Model: "k2p7",
+	}, "k2p7")
+
+	model := enriched.Models["k2p7"]
+	if model.Options["force_adaptive_thinking"] != true || model.Options["anthropic_default_betas"] != false {
+		t.Fatalf("unexpected Kimi provider options: %+v", model.Options)
+	}
+	if _, exists := model.Options["allow_empty_signature"]; exists {
+		t.Fatalf("K3-only empty signature option leaked to k2p7: %+v", model.Options)
+	}
+	if enriched.Headers["User-Agent"] != "KimiCLI/1.5" {
+		t.Fatalf("unexpected Kimi provider headers: %+v", enriched.Headers)
+	}
+
+	_, overridden := EnrichProvider("kimi-for-coding", config.ProviderConfig{
+		Type:    "anthropic",
+		Model:   "k2p7",
+		Headers: map[string]string{"User-Agent": "custom-client"},
+		Models: map[string]config.ProviderModelConfig{
+			"k2p7": {Options: map[string]any{"anthropic_default_betas": true}},
+		},
+	}, "k2p7")
+	if overridden.Headers["User-Agent"] != "custom-client" || overridden.Models["k2p7"].Options["anthropic_default_betas"] != true {
+		t.Fatalf("user Kimi overrides lost: provider=%+v model=%+v", overridden.Headers, overridden.Models["k2p7"].Options)
 	}
 }
 
@@ -433,5 +531,48 @@ func TestMergeModelConfigUserContextWinsOverCatalog(t *testing.T) {
 	}
 	if merged.Limit == nil || merged.Limit.Context != 0 {
 		t.Fatalf("Limit = %+v, want Context 0 (catalog must not fill the other spelling)", merged.Limit)
+	}
+}
+
+func TestMergeModelConfigPreservesCatalogCompatibilityMaps(t *testing.T) {
+	catalog := config.ProviderModelConfig{
+		Options: map[string]any{
+			"allow_empty_signature": true,
+			"thinking":              map[string]any{"type": "adaptive", "display": "summarized"},
+		},
+		Headers: map[string]string{"User-Agent": "KimiCLI/1.5"},
+		Variants: map[string]map[string]any{
+			"max": {"effort": "max", "thinking": map[string]any{"type": "adaptive"}},
+		},
+	}
+	user := config.ProviderModelConfig{
+		Options: map[string]any{
+			"custom":   true,
+			"thinking": map[string]any{"display": "omitted"},
+		},
+		Headers: map[string]string{"X-Custom": "value"},
+		Variants: map[string]map[string]any{
+			"custom": {"effort": "high"},
+			"max":    {"thinking": map[string]any{"display": "omitted"}},
+		},
+	}
+
+	merged := MergeModelConfig(user, catalog)
+	if merged.Options["allow_empty_signature"] != true || merged.Options["custom"] != true {
+		t.Fatalf("options did not merge: %+v", merged.Options)
+	}
+	thinking, _ := merged.Options["thinking"].(map[string]any)
+	if thinking["type"] != "adaptive" || thinking["display"] != "omitted" {
+		t.Fatalf("nested options did not merge with user precedence: %+v", thinking)
+	}
+	if merged.Headers["User-Agent"] != "KimiCLI/1.5" || merged.Headers["X-Custom"] != "value" {
+		t.Fatalf("headers did not merge: %+v", merged.Headers)
+	}
+	if merged.Variants["custom"]["effort"] != "high" || merged.Variants["max"]["effort"] != "max" {
+		t.Fatalf("variants did not merge: %+v", merged.Variants)
+	}
+	maxThinking, _ := merged.Variants["max"]["thinking"].(map[string]any)
+	if maxThinking["type"] != "adaptive" || maxThinking["display"] != "omitted" {
+		t.Fatalf("nested variant options did not merge with user precedence: %+v", maxThinking)
 	}
 }

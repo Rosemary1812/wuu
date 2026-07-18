@@ -109,19 +109,18 @@ type ClientConfig struct {
 
 // Client sends tool-enabled chat requests to OpenAI-compatible APIs.
 type Client struct {
-	baseURL              string
-	wireAPI              string
-	apiKey               string
-	headers              map[string]string
-	httpClient           *http.Client
-	promptCacheKeyFormat promptCacheKeyFormat
-	reasoningFormat      reasoningEffortFormat
-	streamConfig         providers.StreamTransportConfig
-	coordinator          *providers.ProviderCoordinator
-	providerScope        providers.ProviderScope
-	responsesStore       *bool
-	responsesTransport   providers.StreamTransportMode
-	responsesWSCache     *ResponsesWebSocketCache
+	baseURL            string
+	wireAPI            string
+	apiKey             string
+	headers            map[string]string
+	httpClient         *http.Client
+	reasoningFormat    reasoningEffortFormat
+	streamConfig       providers.StreamTransportConfig
+	coordinator        *providers.ProviderCoordinator
+	providerScope      providers.ProviderScope
+	responsesStore     *bool
+	responsesTransport providers.StreamTransportMode
+	responsesWSCache   *ResponsesWebSocketCache
 }
 
 // New creates an OpenAI-compatible client.
@@ -155,19 +154,18 @@ func New(cfg ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:              strings.TrimRight(cfg.BaseURL, "/"),
-		wireAPI:              wireAPI,
-		apiKey:               cfg.APIKey,
-		headers:              cloneHeaders(cfg.Headers),
-		httpClient:           hc,
-		promptCacheKeyFormat: detectPromptCacheKeyFormat(cfg.BaseURL, cfg.Headers),
-		reasoningFormat:      detectReasoningEffortFormat(cfg.BaseURL),
-		streamConfig:         streamTransportConfig(cfg.StreamConfig),
-		coordinator:          cfg.Coordinator,
-		providerScope:        providerScope,
-		responsesStore:       cfg.ResponsesStore,
-		responsesTransport:   responsesTransport,
-		responsesWSCache:     cfg.ResponsesWebSocketCache,
+		baseURL:            strings.TrimRight(cfg.BaseURL, "/"),
+		wireAPI:            wireAPI,
+		apiKey:             cfg.APIKey,
+		headers:            cloneHeaders(cfg.Headers),
+		httpClient:         hc,
+		reasoningFormat:    detectReasoningEffortFormat(cfg.BaseURL),
+		streamConfig:       streamTransportConfig(cfg.StreamConfig),
+		coordinator:        cfg.Coordinator,
+		providerScope:      providerScope,
+		responsesStore:     cfg.ResponsesStore,
+		responsesTransport: responsesTransport,
+		responsesWSCache:   cfg.ResponsesWebSocketCache,
 	}, nil
 }
 
@@ -209,7 +207,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		Options:         provideroptions.Clone(req.ProviderOptions),
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
-	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
+	applyPromptCacheKey(&payload, req.CacheHint, req.ProviderOptions)
 
 	prepared, err := providers.PrepareMessagesForProviderRequest(req.Provider, req.Model, req.Messages)
 	if err != nil {
@@ -365,7 +363,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		Options:         provideroptions.Clone(req.ProviderOptions),
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
-	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
+	applyPromptCacheKey(&payload, req.CacheHint, req.ProviderOptions)
 	prepared, err := providers.PrepareMessagesForProviderRequest(req.Provider, req.Model, req.Messages)
 	if err != nil {
 		return nil, err
@@ -919,7 +917,7 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 		Temperature     float64          `json:"temperature,omitempty"`
 		MaxTokens       int              `json:"max_tokens,omitempty"`
 		Stream          bool             `json:"stream,omitempty"`
-		PromptCacheKey  string           `json:"promptCacheKey,omitempty"`
+		PromptCacheKey  string           `json:"prompt_cache_key,omitempty"`
 		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 		Reasoning       *reasoningConfig `json:"reasoning,omitempty"`
 	}
@@ -948,58 +946,23 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(payload.AltCacheKey) != "" {
-		object["prompt_cache_key"] = payload.AltCacheKey
-	}
 	mergeChatProviderOptions(object, payload.Options, payload.ReasoningFormat)
 	return json.Marshal(object)
 }
 
-func applyPromptCacheKey(payload *chatCompletionsRequest, hint *providers.CacheHint, format promptCacheKeyFormat) {
+func applyPromptCacheKey(payload *chatCompletionsRequest, hint *providers.CacheHint, options map[string]any) {
 	if payload == nil || hint == nil {
+		return
+	}
+	supported, _ := options["promptCacheKeySupported"].(bool)
+	if !supported {
 		return
 	}
 	key := clampPromptCacheKey(hint.PromptCacheKey)
 	if key == "" {
 		return
 	}
-	switch format {
-	case promptCacheKeySnake:
-		payload.AltCacheKey = key
-	default:
-		payload.PromptCacheKey = key
-	}
-}
-
-type promptCacheKeyFormat int
-
-const (
-	promptCacheKeyCamel promptCacheKeyFormat = iota
-	promptCacheKeySnake
-)
-
-func detectPromptCacheKeyFormat(baseURL string, headers map[string]string) promptCacheKeyFormat {
-	if promptCacheKeyHeaderPrefersSnake(headers) {
-		return promptCacheKeySnake
-	}
-	host := strings.ToLower(strings.TrimSpace(baseURL))
-	if strings.Contains(host, "openrouter.ai") {
-		return promptCacheKeySnake
-	}
-	return promptCacheKeyCamel
-}
-
-func promptCacheKeyHeaderPrefersSnake(headers map[string]string) bool {
-	for k, v := range headers {
-		key := strings.ToLower(strings.TrimSpace(k))
-		value := strings.ToLower(strings.TrimSpace(v))
-		if key == "x-openrouter-provider" || key == "http-referer" || key == "x-title" {
-			if value != "" {
-				return true
-			}
-		}
-	}
-	return false
+	payload.PromptCacheKey = key
 }
 
 func applyReasoningEffort(payload *chatCompletionsRequest, effort string, format reasoningEffortFormat) {
@@ -1044,7 +1007,7 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 		case "maxOutputTokens":
 			object["max_tokens"] = value
 		case "promptCacheKey":
-			object["promptCacheKey"] = value
+			object["prompt_cache_key"] = value
 		case "temperature":
 			if _, exists := object["temperature"]; !exists {
 				object["temperature"] = value
@@ -1069,7 +1032,7 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 func chatProviderOptionIsAISDKOnly(key string) bool {
 	switch key {
 	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway",
-		"temperatureSupported", "temperature_supported":
+		"temperatureSupported", "temperature_supported", "promptCacheKeySupported":
 		return true
 	default:
 		return false
@@ -1108,8 +1071,7 @@ type chatCompletionsRequest struct {
 	MaxTokens       int                   `json:"max_tokens,omitempty"`
 	Stream          bool                  `json:"stream,omitempty"`
 	StreamOptions   *streamOptions        `json:"stream_options,omitempty"`
-	PromptCacheKey  string                `json:"promptCacheKey,omitempty"`
-	AltCacheKey     string                `json:"prompt_cache_key,omitempty"`
+	PromptCacheKey  string                `json:"prompt_cache_key,omitempty"`
 	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
 	Reasoning       *reasoningConfig      `json:"reasoning,omitempty"`
 	ReasoningFormat reasoningEffortFormat `json:"-"`

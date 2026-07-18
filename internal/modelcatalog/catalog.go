@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 )
 
 //go:generate go run ../../cmd/wuu-modelcatalog-gen -input https://models.dev/api.json -output models_dev_catalog.json
@@ -16,34 +17,39 @@ import (
 var catalogJSON []byte
 
 type Provider struct {
-	ID     string   `json:"id"`
-	Name   string   `json:"name,omitempty"`
-	API    string   `json:"api,omitempty"`
-	NPM    string   `json:"npm,omitempty"`
-	Env    []string `json:"env,omitempty"`
-	Models []Model  `json:"models"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name,omitempty"`
+	API          string            `json:"api,omitempty"`
+	NPM          string            `json:"npm,omitempty"`
+	Env          []string          `json:"env,omitempty"`
+	ModelOptions map[string]any    `json:"model_options,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	Models       []Model           `json:"models"`
 }
 
 type Model struct {
-	ID               string            `json:"id"`
-	APIID            string            `json:"api_id,omitempty"`
-	Name             string            `json:"name,omitempty"`
-	Family           string            `json:"family,omitempty"`
-	Status           string            `json:"status,omitempty"`
-	ReleaseDate      string            `json:"release_date,omitempty"`
-	Reasoning        bool              `json:"reasoning"`
-	ReasoningOptions []map[string]any  `json:"reasoning_options,omitempty"`
-	Attachment       *bool             `json:"attachment,omitempty"`
-	ToolCall         *bool             `json:"tool_call,omitempty"`
-	StructuredOutput *bool             `json:"structured_output,omitempty"`
-	Temperature      *bool             `json:"temperature,omitempty"`
-	Interleaved      any               `json:"interleaved,omitempty"`
-	Modalities       *Modalities       `json:"modalities,omitempty"`
-	Cost             map[string]any    `json:"cost,omitempty"`
-	Provider         *ModelProvider    `json:"provider,omitempty"`
-	Limit            *Limit            `json:"limit,omitempty"`
-	Options          map[string]any    `json:"options,omitempty"`
-	Headers          map[string]string `json:"headers,omitempty"`
+	ID               string                    `json:"id"`
+	APIID            string                    `json:"api_id,omitempty"`
+	Name             string                    `json:"name,omitempty"`
+	Family           string                    `json:"family,omitempty"`
+	Status           string                    `json:"status,omitempty"`
+	ReleaseDate      string                    `json:"release_date,omitempty"`
+	Reasoning        bool                      `json:"reasoning"`
+	ReasoningOptions []map[string]any          `json:"reasoning_options,omitempty"`
+	Attachment       *bool                     `json:"attachment,omitempty"`
+	ToolCall         *bool                     `json:"tool_call,omitempty"`
+	StructuredOutput *bool                     `json:"structured_output,omitempty"`
+	Temperature      *bool                     `json:"temperature,omitempty"`
+	Interleaved      any                       `json:"interleaved,omitempty"`
+	Modalities       *Modalities               `json:"modalities,omitempty"`
+	Cost             map[string]any            `json:"cost,omitempty"`
+	Provider         *ModelProvider            `json:"provider,omitempty"`
+	Limit            *Limit                    `json:"limit,omitempty"`
+	Options          map[string]any            `json:"options,omitempty"`
+	Headers          map[string]string         `json:"headers,omitempty"`
+	SupportedEfforts []string                  `json:"supported_efforts,omitempty"`
+	DefaultVariant   string                    `json:"default_variant,omitempty"`
+	Variants         map[string]map[string]any `json:"variants,omitempty"`
 }
 
 type ModelProvider struct {
@@ -75,6 +81,9 @@ var (
 func Providers() ([]Provider, error) {
 	loadOnce.Do(func() {
 		loadErr = json.Unmarshal(catalogJSON, &loaded)
+		if loadErr == nil {
+			applyBuiltinCatalogOverrides(&loaded)
+		}
 	})
 	if loadErr != nil {
 		return nil, loadErr
@@ -282,6 +291,7 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 		!isCodexSubscriptionProviderType(out.Type) {
 		out.APIKeyEnv = firstCatalogEnv(catalogProvider.Env)
 	}
+	out.Headers = mergeHeaders(catalogProvider.Headers, out.Headers)
 
 	modelSet := make(map[string]bool, len(modelIDs))
 	for _, modelID := range modelIDs {
@@ -292,9 +302,12 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 	}
 	includeAll := len(modelSet) == 0
 
+	providerModelDefaults := config.ProviderModelConfig{
+		Options: cloneOptions(catalogProvider.ModelOptions),
+	}
 	models := make(map[string]config.ProviderModelConfig, len(out.Models)+len(catalogProvider.Models))
 	for id, model := range out.Models {
-		models[id] = model
+		models[id] = MergeModelConfig(model, providerModelDefaults)
 	}
 	for _, model := range catalogProvider.Models {
 		id := strings.TrimSpace(model.ID)
@@ -304,7 +317,8 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 		if !includeAll && !modelSet[id] {
 			continue
 		}
-		models[id] = MergeModelConfig(models[id], ModelConfig(model))
+		catalogModel := MergeModelConfig(ModelConfig(model), providerModelDefaults)
+		models[id] = MergeModelConfig(models[id], catalogModel)
 	}
 	if len(models) > 0 {
 		out.Models = models
@@ -382,6 +396,9 @@ func ModelConfig(model Model) config.ProviderModelConfig {
 		Temperature:      cloneBool(model.Temperature),
 		Interleaved:      cloneAny(model.Interleaved),
 		Cost:             cloneOptions(model.Cost),
+		SupportedEfforts: append([]string(nil), model.SupportedEfforts...),
+		DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
+		Variants:         cloneVariants(model.Variants),
 	}
 	if model.Modalities != nil {
 		out.Modalities = &config.ProviderModelModalitiesConfig{
@@ -511,12 +528,15 @@ func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.Provi
 	if out.ContextWindow == 0 && !userSetContext {
 		out.ContextWindow = fallback.ContextWindow
 	}
-	if len(out.Options) == 0 {
-		out.Options = cloneOptions(fallback.Options)
+	out.Options = mergeModelOptions(fallback.Options, out.Options)
+	out.Headers = mergeHeaders(fallback.Headers, out.Headers)
+	if len(out.SupportedEfforts) == 0 {
+		out.SupportedEfforts = append([]string(nil), fallback.SupportedEfforts...)
 	}
-	if len(out.Headers) == 0 {
-		out.Headers = cloneHeaders(fallback.Headers)
+	if strings.TrimSpace(out.DefaultVariant) == "" {
+		out.DefaultVariant = fallback.DefaultVariant
 	}
+	out.Variants = mergeVariants(fallback.Variants, out.Variants)
 	return out
 }
 
@@ -554,13 +574,45 @@ func cloneOptionList(input []map[string]any) []map[string]any {
 	return out
 }
 
-func cloneOptions(input map[string]any) map[string]any {
+func cloneVariants(input map[string]map[string]any) map[string]map[string]any {
 	if len(input) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
+	out := make(map[string]map[string]any, len(input))
+	for key, options := range input {
+		out[key] = cloneOptions(options)
+	}
+	return out
+}
+
+func mergeVariants(base, override map[string]map[string]any) map[string]map[string]any {
+	out := cloneVariants(base)
+	if len(override) == 0 {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]map[string]any, len(override))
+	}
+	for key, options := range override {
+		out[key] = mergeModelOptions(out[key], options)
+	}
+	return out
+}
+
+func cloneOptions(input map[string]any) map[string]any {
+	return provideroptions.Clone(input)
+}
+
+func mergeModelOptions(base, override map[string]any) map[string]any {
+	out := provideroptions.Clone(base)
+	if len(override) == 0 {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]any, len(override))
+	}
+	for key, value := range override {
+		provideroptions.MergeValue(out, key, value)
 	}
 	return out
 }

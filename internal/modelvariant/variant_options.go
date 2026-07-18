@@ -65,6 +65,13 @@ func compatReasoningEffortVariants(efforts []string) map[string]map[string]any {
 	})
 }
 
+func compatDeepSeekVariantOptions(effort string) map[string]any {
+	return map[string]any{
+		"thinking":        map[string]any{"type": "enabled"},
+		"reasoningEffort": effort,
+	}
+}
+
 func compatOpenAIProviderVariantOptions(effort string) map[string]any {
 	return map[string]any{
 		"reasoningEffort":  effort,

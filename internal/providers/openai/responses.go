@@ -288,7 +288,7 @@ func responsesProviderOptionUnsupported(key string) bool {
 	switch key {
 	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway",
 		"usage", "chat_template_args", "enable_thinking", "thinking",
-		"temperatureSupported", "temperature_supported":
+		"temperatureSupported", "temperature_supported", "promptCacheKeySupported":
 		return true
 	default:
 		return false

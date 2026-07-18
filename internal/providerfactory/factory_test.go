@@ -111,6 +111,44 @@ func TestBuildClient_Anthropic(t *testing.T) {
 	}
 }
 
+func TestBuildClient_AnthropicUsesConfiguredModelOutputLimit(t *testing.T) {
+	t.Setenv("TEST_ANTHROPIC_KEY", "abc")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			MaxTokens int `json:"max_tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if body.MaxTokens != 131_072 {
+			t.Fatalf("max_tokens = %d, want 131072", body.MaxTokens)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := BuildClient(config.ProviderConfig{
+		Type:      "anthropic",
+		BaseURL:   server.URL,
+		APIKeyEnv: "TEST_ANTHROPIC_KEY",
+		Model:     "k3",
+		Models: map[string]config.ProviderModelConfig{
+			"k3": {Limit: &config.ProviderModelLimitConfig{Output: 131_072}},
+		},
+	}, "kimi-for-coding")
+	if err != nil {
+		t.Fatalf("BuildClient returned error: %v", err)
+	}
+	if _, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "k3",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	}); err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+}
+
 func TestResolveProviderProfile_OpenAICodex(t *testing.T) {
 	profile, err := resolveProviderProfile(config.ProviderConfig{Type: "openai-codex"})
 	if err != nil {
