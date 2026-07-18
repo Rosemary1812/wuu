@@ -275,7 +275,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		}
 		cmd.Stdout = logf
 		cmd.Stderr = logf
-		configureProcessGroup(cmd)
+		PrepareCommand(cmd)
 		if err := cmd.Start(); err != nil {
 			_ = stdin.Close()
 			_ = logf.Close()
@@ -288,11 +288,11 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		}
 	}
 	p.PID = cmd.Process.Pid
-	p.PGID = lookupProcessGroup(p.PID)
+	p.PGID = ProcessTreeForPID(p.PID).ID()
 	p.ProcessStartTime, _, _, err = readProcessIdentity(p.PID)
 	if err != nil {
 		if p.PGID > 1 {
-			_ = killProcessGroup(p.PGID)
+			_ = ProcessTreeFromID(p.PGID).Kill()
 		}
 		if stdin != nil {
 			_ = stdin.Close()
@@ -693,7 +693,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		return p, fmt.Errorf("persist stopping process: %w", err)
 	}
 	m.mu.Unlock()
-	if err := terminateProcessGroup(p.PGID); err != nil {
+	if err := ProcessTreeFromID(p.PGID).Terminate(); err != nil {
 		return p, fmt.Errorf("terminate process group %d: %w", p.PGID, err)
 	}
 	cur, stopped, err := m.waitForStop(id, time.Now().Add(2*time.Second))
@@ -715,7 +715,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		}
 		return cur, err
 	}
-	if err := killProcessGroup(cur.PGID); err != nil {
+	if err := ProcessTreeFromID(cur.PGID).Kill(); err != nil {
 		return cur, fmt.Errorf("kill process group %d: %w", cur.PGID, err)
 	}
 	cur, stopped, err = m.waitForStop(id, time.Now().Add(2*time.Second))

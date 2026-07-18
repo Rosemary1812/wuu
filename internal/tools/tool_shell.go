@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/shellpath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
@@ -138,7 +139,7 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 		}
 		executedCommand = prefix + executedCommand
 	}
-	cmd := exec.CommandContext(runCtx, shell.Path, shell.CommandArgs(executedCommand)...)
+	cmd := exec.Command(shell.Path, shell.CommandArgs(executedCommand)...)
 	cmd.Dir = workDir
 	cmd.Env = shellpath.CommandEnv(shellCommandEnv(os.Environ()))
 
@@ -148,15 +149,29 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	cmd.Stderr = &stderr
 
 	startedAt := time.Now()
-	err = cmd.Run()
+	handle, err := proc.StartCommand(cmd)
+	if err != nil {
+		return shellExecutionResult{}, fmt.Errorf("run command: %w", err)
+	}
+	interrupted := false
+	select {
+	case <-handle.Done():
+		err = handle.Wait()
+	case <-runCtx.Done():
+		interrupted = true
+		if stopErr := handle.Stop(proc.DefaultStopGracePeriod); stopErr != nil {
+			return shellExecutionResult{}, fmt.Errorf("stop command: %w", stopErr)
+		}
+		err = handle.Wait()
+	}
 	durationMS := time.Since(startedAt).Milliseconds()
 	exitCode := 0
-	if err != nil {
+	if interrupted {
+		exitCode = -1
+	} else if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
-		} else if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			exitCode = 124
 		} else {
 			return shellExecutionResult{}, fmt.Errorf("run command: %w", err)
 		}
@@ -172,7 +187,7 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	stdoutTail, stdoutTailTruncated := tailString(redactedStdout, maxShellTailBytes)
 	stderrTail, stderrTailTruncated := tailString(redactedStderr, maxShellTailBytes)
 	classification := classifyShellCommand(command)
-	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
+	timedOut := interrupted && errors.Is(runCtx.Err(), context.DeadlineExceeded)
 
 	return shellExecutionResult{
 		Action:              "run",
