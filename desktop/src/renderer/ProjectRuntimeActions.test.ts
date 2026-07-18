@@ -17,7 +17,6 @@ import {
   type SessionTab,
 } from "./AppState";
 import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
-import { resolveLocalizedText } from "./i18n";
 
 function projectContext(id = "project-1"): RuntimeContext {
   return { kind: "project", project_id: id, cwd: `/tmp/${id}` };
@@ -178,24 +177,45 @@ describe("createProjectRuntimeActions", () => {
     );
   });
 
-  it("refuses to select a different project for a new thread while work is running", async () => {
-    const context = projectContext("project-1");
+  it("retargets a draft to another project while a background thread is running", async () => {
+    const sourceContext = projectContext("project-1");
+    const targetContext = projectContext("project-2");
+    const sourceDraft = createDraftSessionTab("draft:project-1", sourceContext);
+    const projectState = {
+      projects: [project("project-1"), project("project-2")],
+      active_context: targetContext,
+    } as ProjectListResult;
+    const loadRuntime = vi.fn().mockResolvedValue({
+      activeContext: targetContext,
+      activeProjectId: "project-2",
+      thread: undefined,
+      threads: [],
+      status: "ready",
+    });
+    const selectProject = vi.fn().mockResolvedValue(projectState);
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { selectProject } as Partial<WuuDesktopApi>,
+    });
     const harness = buildActions({
       initial: {
         ...initialState,
-        activeContext: context,
+        activeContext: sourceContext,
         activeProjectId: "project-1",
         projects: [project("project-1"), project("project-2")],
-        thread: thread("running", "in_progress"),
+        threads: [thread("running", "in_progress")],
+        sessionTabs: [sourceDraft],
+        activeSessionTabID: sourceDraft.id,
       },
+      loadRuntime,
     });
 
     await harness.actions.selectProjectForNewThread("project-2");
 
+    expect(selectProject).toHaveBeenCalledWith("project-2");
     expect(harness.closeProjectMenus).toHaveBeenCalled();
-    expect(resolveLocalizedText(harness.getAppState().status)).toBe(
-      "任务运行中，暂不能切换项目",
-    );
+    expect(harness.getAppState().activeContext).toEqual(targetContext);
+    expect(harness.getAppState().status).toBe("ready");
   });
 
   it("opens a blank draft when creating a no-project conversation", async () => {
@@ -324,24 +344,45 @@ describe("createProjectRuntimeActions", () => {
     );
   });
 
-  it("refuses to switch to 不使用项目 while work is running", async () => {
-    const context = projectContext("project-1");
+  it("switches to 不使用项目 while a background thread is running", async () => {
+    const sourceContext = projectContext("project-1");
+    const targetContext = noProjectContext();
+    const sourceDraft = createDraftSessionTab("draft:project-1", sourceContext);
+    const projectState = {
+      projects: [project("project-1")],
+      active_context: targetContext,
+    } as ProjectListResult;
+    const loadRuntime = vi.fn().mockResolvedValue({
+      activeContext: targetContext,
+      activeProjectId: undefined,
+      thread: undefined,
+      threads: [],
+      status: "ready",
+    });
+    const selectNoProject = vi.fn().mockResolvedValue(projectState);
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { selectNoProject } as Partial<WuuDesktopApi>,
+    });
     const harness = buildActions({
       initial: {
         ...initialState,
-        activeContext: context,
+        activeContext: sourceContext,
         activeProjectId: "project-1",
         projects: [project("project-1")],
-        thread: thread("running", "in_progress"),
+        threads: [thread("running", "in_progress")],
+        sessionTabs: [sourceDraft],
+        activeSessionTabID: sourceDraft.id,
       },
+      loadRuntime,
     });
 
     await harness.actions.useNoProject(false);
 
+    expect(selectNoProject).toHaveBeenCalledWith(false);
     expect(harness.closeProjectMenus).toHaveBeenCalled();
-    expect(resolveLocalizedText(harness.getAppState().status)).toBe(
-      "任务运行中，暂不能切换项目",
-    );
+    expect(harness.getAppState().activeContext).toEqual(targetContext);
+    expect(harness.getAppState().status).toBe("ready");
   });
 
   it("reuses an existing no-project draft when the 对话 workspace plus is clicked", async () => {

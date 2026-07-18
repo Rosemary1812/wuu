@@ -7,7 +7,6 @@ import {
   composerDraftHasContent,
   draftSessionTabForContext,
   ensureSessionTab,
-  isAnyThreadRunning,
   persistActiveSessionTabDraft,
   sameRuntimeContext,
   withLoadedRuntimeSessionTab,
@@ -16,7 +15,7 @@ import {
   type SessionTab,
 } from "./AppState";
 import { loadRuntime as defaultLoadRuntime } from "./RuntimeLoadState";
-import { localizedText, translateCurrent } from "./i18n";
+import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -141,11 +140,9 @@ export function createProjectRuntimeActions(
       }
       return true;
     }
-    if (isAnyThreadRunning(currentState)) {
-      deps.closeProjectMenus();
-      setStatus(localizedText("project.switchWhileRunning"));
-      return false;
-    }
+    // Project navigation is independent from task execution. The main process
+    // pools app-server clients by workdir and keeps busy clients alive, so a
+    // running thread in the source context must not lock this draft in place.
     const requestID = deps.beginViewSwitch(switchKind, switchTarget);
     deps.closeProjectMenus();
 
