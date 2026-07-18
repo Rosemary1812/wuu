@@ -183,7 +183,7 @@ export const enUS = {
   "settings.cacheHitRate": "Cache hit rate",
   "settings.activeDays": "Active",
   "settings.dayCount": "{count} days",
-  "settings.cacheHeatmap": "Cache hit rate heatmap",
+  "settings.usageHeatmap": "Daily usage heatmap",
   "settings.less": "Less",
   "settings.more": "More",
   "settings.modelUsage": "Model usage",

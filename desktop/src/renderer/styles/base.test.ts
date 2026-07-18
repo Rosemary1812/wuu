@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const baseCss = readFileSync(resolve(__dirname, "base.css"), "utf-8");
 const sidebarCss = readFileSync(resolve(__dirname, "sidebar.css"), "utf-8");
 const environmentCss = readFileSync(resolve(__dirname, "environment.css"), "utf-8");
+const settingsCss = readFileSync(resolve(__dirname, "settings.css"), "utf-8");
 const themeCss = readFileSync(resolve(__dirname, "theme.css"), "utf-8");
 
 describe("resize drag over embedded frames", () => {
@@ -51,6 +52,21 @@ describe("dark theme inline code", () => {
     )?.[1] ?? "";
 
     expect(darkTheme).toMatch(/--surface-chip:\s*var\(--surface-4\);/);
+  });
+});
+
+describe("usage heatmap color scale", () => {
+  it("uses dedicated theme-aware colors instead of the neutral gray ramp", () => {
+    for (const level of [1, 2, 3, 4]) {
+      const token = `--settings-heatmap-level-${level}`;
+      const levelRule = settingsCss.match(
+        new RegExp(`\\.settings-usage-heatmap-cell\\[data-level="${level}"\\][\\s\\S]*?\\{[\\s\\S]*?\\}`),
+      )?.[0] ?? "";
+
+      expect(settingsCss).toContain(token);
+      expect(themeCss).toContain(token);
+      expect(levelRule).toContain(`background: var(${token})`);
+    }
   });
 });
 

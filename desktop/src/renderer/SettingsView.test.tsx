@@ -1015,6 +1015,16 @@ describe("SettingsView About section", () => {
       core: undefined,
       desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
     });
+    const heatmapDates = Array.from({ length: 4 }, (_, index) => {
+      const date = new Date();
+      date.setHours(12, 0, 0, 0);
+      date.setDate(date.getDate() - (3 - index));
+      return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ].join("-");
+    });
     const usage: SettingsUsageResponse = {
       range: "all",
       total_sessions: 1,
@@ -1043,18 +1053,16 @@ describe("SettingsView About section", () => {
           sessions: 1,
         },
       ],
-      days: [
-        {
-          date: "2026-06-18",
-          input_tokens: 1000,
-          output_tokens: 200,
-          cache_creation_tokens: 20,
-          cache_read_tokens: 50,
-          cache_hit_rate: 50 / 1050,
-          turns: 1,
-          agents: 0,
-        },
-      ],
+      days: heatmapDates.map((date, index) => ({
+        date,
+        input_tokens: (index + 1) * 100,
+        output_tokens: 0,
+        cache_creation_tokens: 20,
+        cache_read_tokens: 50,
+        cache_hit_rate: 0.5,
+        turns: 1,
+        agents: 0,
+      })),
       entries: [
         {
           id: "turn:turn-1",
@@ -1088,7 +1096,16 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("5%");
     expect(rootText()).toContain("OpenAI API");
     expect(rootText()).not.toContain("最近记录");
-    expect(container.querySelector(".settings-cache-heatmap")).not.toBeNull();
+    const heatmap = container.querySelector(".settings-usage-heatmap");
+    expect(heatmap).not.toBeNull();
+    expect(heatmap?.getAttribute("aria-label")).toBe("每日用量热力图");
+    expect(
+      heatmapDates.map((date) =>
+        heatmap
+          ?.querySelector<HTMLElement>(`[title^="${date}"]`)
+          ?.getAttribute("data-level"),
+      ),
+    ).toEqual(["1", "2", "3", "4"]);
   });
 });
 

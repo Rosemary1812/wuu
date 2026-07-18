@@ -181,7 +181,7 @@ export const zhCN = {
   "settings.cacheHitRate": "缓存命中率",
   "settings.activeDays": "活跃",
   "settings.dayCount": "{count} 天",
-  "settings.cacheHeatmap": "缓存命中率热力图",
+  "settings.usageHeatmap": "每日用量热力图",
   "settings.less": "少",
   "settings.more": "多",
   "settings.modelUsage": "模型使用",

@@ -26,6 +26,13 @@
  *   .settings-status-pill            semantic status badge
  * ========================================================================= */
 
+:root {
+  --settings-heatmap-level-1: #bad0f0;
+  --settings-heatmap-level-2: #7aaae0;
+  --settings-heatmap-level-3: #3d74cc;
+  --settings-heatmap-level-4: #1a4fa8;
+}
+
 /* --- Shell grid (shared with the main app shell) ------------------------- */
 
 /* Same column vocabulary as .app-shell: `--sidebar-width` is the live grid
@@ -987,8 +994,7 @@
   font-size: var(--font-sm);
 }
 
-/* Heatmap panel: a card whose grid is the content. Levels are the gray
- * ramp — more cache hits = stronger ink, in both themes. */
+/* Heatmap panel: a card whose grid is the content. */
 .settings-heatmap-panel {
   display: flex;
   flex-direction: column;
@@ -1019,7 +1025,7 @@
 }
 
 /* Grid: column = week, row = day-of-week */
-.settings-cache-heatmap {
+.settings-usage-heatmap {
   --heatmap-gap: 3px;
   display: grid;
   grid-template-rows: repeat(7, 1fr);
@@ -1030,7 +1036,7 @@
   /* height set inline via JS to keep cells square */
 }
 
-.settings-cache-heatmap-cell {
+.settings-usage-heatmap-cell {
   min-width: 0;
   min-height: 0;
   border-radius: 2px;
@@ -1039,33 +1045,33 @@
   transition: opacity var(--motion-fast) var(--ease-out);
 }
 
-.settings-cache-heatmap-cell:hover {
+.settings-usage-heatmap-cell:hover {
   opacity: 0.7;
 }
 
-.settings-cache-heatmap-cell[data-level="0"],
+.settings-usage-heatmap-cell[data-level="0"],
 .settings-heatmap-legend-cell[data-level="0"] {
   background: var(--gray-100);
 }
 
-.settings-cache-heatmap-cell[data-level="1"],
+.settings-usage-heatmap-cell[data-level="1"],
 .settings-heatmap-legend-cell[data-level="1"] {
-  background: var(--gray-350);
+  background: var(--settings-heatmap-level-1);
 }
 
-.settings-cache-heatmap-cell[data-level="2"],
+.settings-usage-heatmap-cell[data-level="2"],
 .settings-heatmap-legend-cell[data-level="2"] {
-  background: var(--gray-500);
+  background: var(--settings-heatmap-level-2);
 }
 
-.settings-cache-heatmap-cell[data-level="3"],
+.settings-usage-heatmap-cell[data-level="3"],
 .settings-heatmap-legend-cell[data-level="3"] {
-  background: var(--gray-700);
+  background: var(--settings-heatmap-level-3);
 }
 
-.settings-cache-heatmap-cell[data-level="4"],
+.settings-usage-heatmap-cell[data-level="4"],
 .settings-heatmap-legend-cell[data-level="4"] {
-  background: var(--gray-900);
+  background: var(--settings-heatmap-level-4);
 }
 
 /* Legend row */
@@ -1876,7 +1882,7 @@
   .settings-switch-thumb,
   .settings-usage-range-button,
   .settings-memory-tab,
-  .settings-cache-heatmap-cell {
+  .settings-usage-heatmap-cell {
     transition: none;
   }
 

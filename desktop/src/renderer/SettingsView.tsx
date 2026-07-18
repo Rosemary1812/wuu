@@ -2092,7 +2092,7 @@ function SettingsUsagePage({
 }): JSX.Element {
   const { locale, t, formatNumber } = useI18n();
   const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
-  const heatmap = usage ? buildCacheHeatmap(usage.days) : [];
+  const heatmap = usage ? buildUsageHeatmap(usage.days) : [];
   const heatmapCols = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
 
   // Keep grid height = 7 × cell-size so cells stay square as panel resizes
@@ -2191,8 +2191,8 @@ function SettingsUsagePage({
         {/* Grid */}
         <div
           ref={heatmapRef}
-          className="settings-cache-heatmap"
-          aria-label={t("settings.cacheHeatmap")}
+          className="settings-usage-heatmap"
+          aria-label={t("settings.usageHeatmap")}
           role="grid"
           style={{
             "--heatmap-cols": heatmapCols,
@@ -2201,7 +2201,7 @@ function SettingsUsagePage({
         >
           {heatmap.map((day) => (
             <span
-              className="settings-cache-heatmap-cell"
+              className="settings-usage-heatmap-cell"
               data-level={day.level}
               key={day.date}
               role="gridcell"
@@ -2474,7 +2474,7 @@ function isAnthropicProviderType(type: string | undefined): boolean {
   return normalized === "anthropic" || normalized === "claude" || normalized === "anthropic-official";
 }
 
-type CacheHeatmapCell = SettingsUsageDay & {
+type UsageHeatmapCell = SettingsUsageDay & {
   level: number;
 };
 
@@ -2517,11 +2517,18 @@ function hitRateLevel(rate: number | undefined): number {
   return 4;
 }
 
-function buildCacheHeatmap(days: SettingsUsageDay[]): CacheHeatmapCell[] {
+function buildUsageHeatmap(days: SettingsUsageDay[]): UsageHeatmapCell[] {
   const byDate = new Map(days.map((day) => [day.date, day]));
   const end = startOfLocalDay(new Date());
   const start = startOfWeek(addDays(end, -364));
-  const cells: CacheHeatmapCell[] = [];
+  const startKey = localDateKey(start);
+  const endKey = localDateKey(end);
+  const activeTotals = days
+    .filter((day) => day.date >= startKey && day.date <= endKey)
+    .map(usageTokenTotal)
+    .filter((total) => total > 0)
+    .sort((a, b) => a - b);
+  const cells: UsageHeatmapCell[] = [];
   for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
     const date = localDateKey(cursor);
     const day = byDate.get(date) ?? {
@@ -2536,17 +2543,28 @@ function buildCacheHeatmap(days: SettingsUsageDay[]): CacheHeatmapCell[] {
     };
     cells.push({
       ...day,
-      level: heatmapLevel(day),
+      level: usageHeatmapLevel(day, activeTotals),
     });
   }
   return cells;
 }
 
-function heatmapLevel(day: SettingsUsageDay): number {
-  if (!hasUsageDayData(day)) {
+function usageHeatmapLevel(day: SettingsUsageDay, activeTotals: number[]): number {
+  const total = usageTokenTotal(day);
+  if (total <= 0 || activeTotals.length === 0) {
     return 0;
   }
-  return hitRateLevel(day.cache_hit_rate);
+  const upperRank = activeTotals.findLastIndex((candidate) => candidate <= total) + 1;
+  return Math.min(4, Math.max(1, Math.ceil((upperRank / activeTotals.length) * 4)));
+}
+
+function usageTokenTotal(day: SettingsUsageDay): number {
+  return (
+    Math.max(0, day.input_tokens) +
+    Math.max(0, day.output_tokens) +
+    Math.max(0, day.cache_creation_tokens) +
+    Math.max(0, day.cache_read_tokens)
+  );
 }
 
 function hasUsageDayData(day: SettingsUsageDay): boolean {
@@ -2561,7 +2579,7 @@ function hasUsageDayData(day: SettingsUsageDay): boolean {
 }
 
 function formatHeatmapTitle(
-  day: CacheHeatmapCell,
+  day: UsageHeatmapCell,
   t: Translate,
   formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string,
 ): string {
