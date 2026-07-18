@@ -284,6 +284,7 @@
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.03);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.05);
   --sidebar-drawer-bg: #1a1d20;
+  --sidebar-brand-wordmark-color: #e06b4f;
   --sidebar-resizer-hover-bg: var(--ink-overlay-18);
   --sidebar-resizer-hover-ring: rgba(0, 0, 0, 0.4);
   --sidebar-dev-fixture-nav-border: var(--ink-overlay-12);

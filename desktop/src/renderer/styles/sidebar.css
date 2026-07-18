@@ -17,6 +17,7 @@
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.12);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.44);
   --sidebar-drawer-bg: #ffffff;
+  --sidebar-brand-wordmark-color: #b64a32;
   --sidebar-resizer-hover-bg: var(--ink-overlay-18);
   --sidebar-resizer-hover-ring: rgba(255, 255, 255, 0.4);
   /* Dev fixtures: text + nav-border come from the shared ink ladder so they
@@ -606,15 +607,7 @@
   font-weight: 600;
   letter-spacing: 0.6px;
   line-height: 1;
-  background: linear-gradient(
-    95deg,
-    var(--wuu-accent) 0%,
-    color-mix(in srgb, var(--ink-strong) 78%, var(--wuu-accent)) 60%,
-    var(--ink-strong) 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--sidebar-brand-wordmark-color);
 }
 
 .sidebar-main {
