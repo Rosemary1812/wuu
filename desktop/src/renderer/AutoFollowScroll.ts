@@ -18,6 +18,7 @@ export const USER_SCROLL_AWAY_INTENT_WINDOW_MS = 300;
 export const AUTO_FOLLOW_NESTED_SCROLL_ATTR = "data-wuu-nested-scroll";
 export const AUTO_FOLLOW_NESTED_SCROLL_SELECTOR = `[${AUTO_FOLLOW_NESTED_SCROLL_ATTR}]`;
 export const SCROLL_AWAY_KEYS = new Set(["ArrowUp", "PageUp", "Home"]);
+export const SCROLL_TOWARD_LATEST_KEYS = new Set(["ArrowDown", "PageDown", "End"]);
 
 export function maxScrollTop(node: HTMLElement): number {
   return Math.max(0, node.scrollHeight - node.clientHeight);
@@ -50,6 +51,25 @@ export function eventTargetsNestedAutoFollowScroll(
   }
   const nested = target.closest(AUTO_FOLLOW_NESTED_SCROLL_SELECTOR);
   return Boolean(nested && nested !== root);
+}
+
+export function selectionIntersectsNode(
+  selection: Selection | null,
+  node: Node,
+): boolean {
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    return false;
+  }
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    try {
+      if (selection.getRangeAt(index).intersectsNode(node)) {
+        return true;
+      }
+    } catch {
+      // Streaming reconciliation can detach a range between event delivery and inspection.
+    }
+  }
+  return false;
 }
 
 export function setAutoFollowOverflowAnchor(
@@ -93,6 +113,10 @@ export function useAutoFollowScrollContainer({
 } {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
+  const selectionPausedAutoFollowRef = useRef(false);
+  const pointerScrollGestureRef = useRef<
+    { node: HTMLElement; scrollTop: number; scrollHeight: number } | undefined
+  >(undefined);
   const lastScrollTopRef = useRef(0);
   const programmaticScrollTopRef = useRef<number | undefined>(undefined);
   const userScrollAwayIntentRef = useRef(false);
@@ -107,6 +131,15 @@ export function useAutoFollowScrollContainer({
     if (node) {
       setAutoFollowOverflowAnchor(node, next);
     }
+  }, []);
+
+  const refreshPointerScrollGestureLayout = useCallback((node: HTMLElement): void => {
+    const gesture = pointerScrollGestureRef.current;
+    if (gesture?.node !== node) {
+      return;
+    }
+    gesture.scrollTop = clampScrollTop(node, node.scrollTop);
+    gesture.scrollHeight = node.scrollHeight;
   }, []);
 
   const clearUserScrollAwayIntent = useCallback((): void => {
@@ -150,6 +183,7 @@ export function useAutoFollowScrollContainer({
         return;
       }
       if (options.force) {
+        selectionPausedAutoFollowRef.current = false;
         setAutoFollow(true);
       }
       clearUserScrollAwayIntent();
@@ -190,6 +224,16 @@ export function useAutoFollowScrollContainer({
       }
     }
 
+    const pointerGesture = pointerScrollGestureRef.current;
+    if (selectionPausedAutoFollowRef.current && pointerGesture?.node === node) {
+      if (node.scrollHeight !== pointerGesture.scrollHeight) {
+        pointerGesture.scrollTop = clampScrollTop(node, node.scrollTop);
+        pointerGesture.scrollHeight = node.scrollHeight;
+      } else if (node.scrollTop > pointerGesture.scrollTop) {
+        selectionPausedAutoFollowRef.current = false;
+      }
+    }
+
     const scrolledUp = node.scrollTop < lastScrollTopRef.current;
     const userScrollAwayIntent = userScrollAwayIntentRef.current;
     lastScrollTopRef.current = clampScrollTop(node, node.scrollTop);
@@ -198,7 +242,10 @@ export function useAutoFollowScrollContainer({
       setAutoFollow(false);
       return;
     }
-    if (atLatestScrollView(node, bottomThreshold)) {
+    if (
+      atLatestScrollView(node, bottomThreshold) &&
+      !selectionPausedAutoFollowRef.current
+    ) {
       setAutoFollow(true);
       return;
     }
@@ -226,18 +273,36 @@ export function useAutoFollowScrollContainer({
       event.stopPropagation();
       if (event.deltaY < 0) {
         markUserScrollAwayIntent();
+      } else if (event.deltaY > 0) {
+        selectionPausedAutoFollowRef.current = false;
       }
     };
     const handlePointerDown = (event: PointerEvent): void => {
       event.stopPropagation();
       if (event.target === node) {
+        pointerScrollGestureRef.current = {
+          node,
+          scrollTop: clampScrollTop(node, node.scrollTop),
+          scrollHeight: node.scrollHeight,
+        };
         markUserScrollAwayIntent();
+      }
+    };
+    const handlePointerEnd = (): void => {
+      pointerScrollGestureRef.current = undefined;
+    };
+    const handleSelectionChange = (): void => {
+      if (selectionIntersectsNode(document.getSelection(), node)) {
+        selectionPausedAutoFollowRef.current = true;
+        setAutoFollow(false);
       }
     };
     const handleKeyDown = (event: KeyboardEvent): void => {
       event.stopPropagation();
       if (SCROLL_AWAY_KEYS.has(event.key)) {
         markUserScrollAwayIntent();
+      } else if (SCROLL_TOWARD_LATEST_KEYS.has(event.key)) {
+        selectionPausedAutoFollowRef.current = false;
       }
     };
     const handleTouchStart = (event: TouchEvent): void => {
@@ -254,6 +319,12 @@ export function useAutoFollowScrollContainer({
         currentY > previousY
       ) {
         markUserScrollAwayIntent();
+      } else if (
+        currentY !== undefined &&
+        previousY !== undefined &&
+        currentY < previousY
+      ) {
+        selectionPausedAutoFollowRef.current = false;
       }
       touchLastYRef.current = currentY;
     };
@@ -265,6 +336,9 @@ export function useAutoFollowScrollContainer({
     node.addEventListener("scroll", handleScroll, { passive: true });
     node.addEventListener("wheel", handleWheel, { passive: true });
     node.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointerup", handlePointerEnd);
+    window.addEventListener("pointercancel", handlePointerEnd);
+    document.addEventListener("selectionchange", handleSelectionChange);
     node.addEventListener("touchstart", handleTouchStart, { passive: true });
     node.addEventListener("touchmove", handleTouchMove, { passive: true });
     node.addEventListener("touchend", handleTouchEnd);
@@ -274,13 +348,16 @@ export function useAutoFollowScrollContainer({
       node.removeEventListener("scroll", handleScroll);
       node.removeEventListener("wheel", handleWheel);
       node.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+      document.removeEventListener("selectionchange", handleSelectionChange);
       node.removeEventListener("touchstart", handleTouchStart);
       node.removeEventListener("touchmove", handleTouchMove);
       node.removeEventListener("touchend", handleTouchEnd);
       node.removeEventListener("touchcancel", handleTouchEnd);
       node.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleScrollFrame, markUserScrollAwayIntent]);
+  }, [handleScrollFrame, markUserScrollAwayIntent, setAutoFollow]);
 
   useLayoutEffect(() => {
     const node = scrollRef.current;
@@ -289,6 +366,7 @@ export function useAutoFollowScrollContainer({
     }
     const windowResizeScroll = createWindowResizeSettleScheduler(scrollToBottom);
     const resizeObserver = new ResizeObserver(() => {
+      refreshPointerScrollGestureLayout(node);
       if (isWindowResizing()) {
         windowResizeScroll.schedule();
         return;
@@ -300,12 +378,13 @@ export function useAutoFollowScrollContainer({
       windowResizeScroll.cancel();
       resizeObserver.disconnect();
     };
-  }, [observeKey, scrollToBottom]);
+  }, [observeKey, refreshPointerScrollGestureLayout, scrollToBottom]);
 
   useEffect(() => {
     if (!open) {
       return undefined;
     }
+    selectionPausedAutoFollowRef.current = false;
     setAutoFollow(true);
     lastScrollTopRef.current = 0;
     const timer = window.setTimeout(() => {

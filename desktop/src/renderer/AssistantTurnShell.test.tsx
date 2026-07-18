@@ -328,6 +328,21 @@ function reasoningScroll(fold: HTMLDetailsElement): HTMLElement {
   return scroll;
 }
 
+function selectTextWithin(node: HTMLElement): void {
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  const text = walker.nextNode();
+  const selection = document.getSelection();
+  if (!text || !selection) {
+    throw new Error("expected selectable text");
+  }
+  const range = document.createRange();
+  range.setStart(text, 0);
+  range.setEnd(text, Math.min(4, text.textContent?.length ?? 0));
+  selection.removeAllRanges();
+  selection.addRange(range);
+  document.dispatchEvent(new Event("selectionchange"));
+}
+
 async function openReasoningFold(fold: HTMLDetailsElement): Promise<void> {
   fold.open = true;
   act(() => {
@@ -1076,6 +1091,62 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     });
 
     expect(layout.scrollTop).toBe(1300);
+  });
+
+  it("keeps reasoning selection paused after a pointer press without scroll movement", async () => {
+    const turn = makeTurn("completed", [
+      makeReasoning("long internal deliberation ".repeat(50)),
+      makeFinalAnswer("short answer"),
+    ]);
+    const { container } = renderShell(turn);
+    const fold = reasoningFolds(container)[0];
+    const scroll = reasoningScroll(fold);
+    const layout = stubScrollLayout(scroll, {
+      scrollHeight: 1000,
+      clientHeight: 200,
+    });
+    await openReasoningFold(fold);
+
+    act(() => selectTextWithin(scroll));
+    expect(scroll.style.overflowAnchor).toBe("auto");
+    act(() => {
+      scroll.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      window.dispatchEvent(new Event("pointerup"));
+      layout.scrollHeight += 8;
+      layout.scrollTop += 8;
+      scroll.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
+    });
+
+    expect(scroll.style.overflowAnchor).toBe("auto");
+  });
+
+  it("resumes reasoning follow after an active pointer scroll reaches latest", async () => {
+    await withMockResizeObserver(async (flushResizeObservers) => {
+      const turn = makeTurn("completed", [
+        makeReasoning("long internal deliberation ".repeat(50)),
+        makeFinalAnswer("short answer"),
+      ]);
+      const { container } = renderShell(turn);
+      const fold = reasoningFolds(container)[0];
+      const scroll = reasoningScroll(fold);
+      const layout = stubScrollLayout(scroll, {
+        scrollHeight: 1000,
+        clientHeight: 200,
+      });
+      await openReasoningFold(fold);
+
+      act(() => selectTextWithin(scroll));
+      act(() => {
+        scroll.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        layout.scrollHeight = 1300;
+        flushResizeObservers();
+        layout.scrollTop = 1284.5;
+        scroll.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
+        window.dispatchEvent(new Event("pointerup"));
+      });
+
+      expect(scroll.style.overflowAnchor).toBe("none");
+    });
   });
 
   it("keeps up when many reasoning tokens arrive before the next frame", async () => {

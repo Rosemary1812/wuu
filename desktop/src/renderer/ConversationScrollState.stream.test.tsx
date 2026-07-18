@@ -120,12 +120,16 @@ function Probe({
       onScroll: () => handle.handleConversationScroll(),
       "data-testid": "scroll-container",
     },
-    createElement("div", {
-      ref: (node: HTMLDivElement | null) => {
-        if (node) handle.scrollContentRef.current = node;
+    createElement(
+      "div",
+      {
+        ref: (node: HTMLDivElement | null) => {
+          if (node) handle.scrollContentRef.current = node;
+        },
+        "data-testid": "scroll-content",
       },
-      "data-testid": "scroll-content",
-    }),
+      createElement("span", { "data-testid": "message-text" }, "selectable message text"),
+    ),
     createElement("div", {
       [AUTO_FOLLOW_NESTED_SCROLL_ATTR]: "true",
       "data-testid": "nested-scroll",
@@ -207,6 +211,7 @@ describe("useConversationScrollState — high-frequency stream", () => {
   });
 
   afterEach(() => {
+    document.getSelection()?.removeAllRanges();
     act(() => {
       root?.unmount();
     });
@@ -346,6 +351,18 @@ describe("useConversationScrollState — high-frequency stream", () => {
     return nested;
   }
 
+  function selectMessageText(collapsed = false): void {
+    const text = container.querySelector("[data-testid='message-text']")?.firstChild;
+    const selection = document.getSelection();
+    if (!text || !selection) throw new Error("message text not rendered");
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, collapsed ? 0 : 10);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  }
+
   it("stays pinned to the bottom across 120 fast stream ticks", () => {
     // Start: 2000px of content in a 600px viewport. We are at the
     // bottom (scrollTop = 1400).
@@ -375,6 +392,110 @@ describe("useConversationScrollState — high-frequency stream", () => {
       // (5) The scroll position must still be at the bottom.
       expect(layout.scrollTop).toBe(bottom);
     }
+  });
+
+  it("stops following streamed growth once message text is selected", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => selectMessageText());
+    act(() => {
+      // Native scroll anchoring can move scrollTop down with content growth.
+      // That passive movement must not count as an explicit return to latest.
+      layout!.scrollHeight += 8;
+      layout!.scrollTop += 8;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+    const anchoredAt = layout.scrollTop;
+    act(() => {
+      layout!.scrollHeight += 80;
+      handle!.scheduleStreamScroll();
+    });
+    flushResizeObservers();
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(anchoredAt);
+    expect(layout.scrollTop).toBeLessThan(layout.scrollHeight - layout.clientHeight);
+  });
+
+  it("resumes following after an explicit downward scroll reaches latest", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => selectMessageText());
+    act(() => {
+      layout!.scrollHeight += 80;
+      node!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 80 }));
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+      layout!.scrollHeight += 40;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+  });
+
+  it("does not treat a pointer press without scrollbar movement as return intent", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => selectMessageText());
+    act(() => {
+      node!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      window.dispatchEvent(new Event("pointerup"));
+      layout!.scrollHeight += 8;
+      layout!.scrollTop += 8;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+      layout!.scrollHeight += 40;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(2000 - 600 + 8);
+    expect(layout.scrollTop).toBeLessThan(layout.scrollHeight - layout.clientHeight);
+  });
+
+  it("resumes after an active pointer gesture actually scrolls toward latest", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => selectMessageText());
+    act(() => {
+      node!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      layout!.scrollHeight += 80;
+      flushResizeObservers();
+    });
+    rerenderTurns(makeLongTurnsSnapshot(1));
+    act(() => {
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+      window.dispatchEvent(new Event("pointerup"));
+      layout!.scrollHeight += 40;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+  });
+
+  it("keeps following when the conversation selection is collapsed", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => selectMessageText(true));
+    act(() => {
+      layout!.scrollHeight += 80;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
   });
 
   it("re-anchors immediately when streamed content grows after the stream frame", () => {
