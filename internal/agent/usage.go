@@ -30,6 +30,39 @@ type UsageTracker struct {
 	// the last response was recorded. Reset every time RecordResponse
 	// is called.
 	pendingDelta int
+	// adjustment explains which state transition produced the current
+	// baseline/delta pair. It is metadata-only and surfaces in compact traces.
+	adjustment UsageAdjustment
+}
+
+// UsageAdjustment describes the most recent tracker transition relevant to a
+// compact decision. Values are stable because they are persisted in traces.
+type UsageAdjustment string
+
+const (
+	UsageAdjustmentProviderResponse          UsageAdjustment = "provider_response"
+	UsageAdjustmentSeededGroundTruth         UsageAdjustment = "seeded_ground_truth"
+	UsageAdjustmentInitialHistoryEstimate    UsageAdjustment = "initial_history_estimate"
+	UsageAdjustmentLengthReset               UsageAdjustment = "length_reset"
+	UsageAdjustmentRequestShapeReset         UsageAdjustment = "request_shape_reset"
+	UsageAdjustmentRequestShapeTailRebase    UsageAdjustment = "request_shape_tail_rebase"
+	UsageAdjustmentExternalRewriteSeed       UsageAdjustment = "external_rewrite_seed"
+	UsageAdjustmentExternalRewriteEstimate   UsageAdjustment = "external_rewrite_estimate"
+	UsageAdjustmentCompactionRewriteEstimate UsageAdjustment = "compaction_rewrite_estimate"
+	UsageAdjustmentRuntimeRebuildSeed        UsageAdjustment = "runtime_rebuild_seed"
+)
+
+// UsageBreakdown is an atomic snapshot of the values behind EstimateCurrent.
+// It lets compact diagnostics explain whether a trigger came from provider
+// ground truth or locally estimated pending messages.
+type UsageBreakdown struct {
+	LastResponseTotal int
+	PendingDelta      int
+	Adjustment        UsageAdjustment
+}
+
+func (b UsageBreakdown) Total() int {
+	return b.LastResponseTotal + b.PendingDelta
 }
 
 // NewUsageTracker constructs a fresh tracker with no recorded usage.
@@ -56,6 +89,7 @@ func (t *UsageTracker) RecordResponse(usage *providers.TokenUsage) {
 	// The new ground truth already includes everything we'd been
 	// estimating, so the pending delta resets to zero.
 	t.pendingDelta = 0
+	t.adjustment = UsageAdjustmentProviderResponse
 }
 
 // RecordPendingMessages adds an estimate for messages that have been
@@ -82,6 +116,20 @@ func (t *UsageTracker) EstimateCurrent() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.lastResponseTotal + t.pendingDelta
+}
+
+// Breakdown returns an atomic diagnostic snapshot of the tracker.
+func (t *UsageTracker) Breakdown() UsageBreakdown {
+	if t == nil {
+		return UsageBreakdown{}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return UsageBreakdown{
+		LastResponseTotal: t.lastResponseTotal,
+		PendingDelta:      t.pendingDelta,
+		Adjustment:        t.adjustment,
+	}
 }
 
 // LastResponseTotal returns the most recently recorded ground truth.
@@ -127,7 +175,18 @@ func (t *UsageTracker) SeedGroundTruth(total int) bool {
 		return false
 	}
 	t.lastResponseTotal = total
+	t.adjustment = UsageAdjustmentSeededGroundTruth
 	return true
+}
+
+// SetAdjustment records why the current baseline/delta pair was adopted.
+func (t *UsageTracker) SetAdjustment(adjustment UsageAdjustment) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.adjustment = adjustment
 }
 
 // Reset clears all recorded state. Used after a compact pass replaces
@@ -140,6 +199,7 @@ func (t *UsageTracker) Reset() {
 	defer t.mu.Unlock()
 	t.lastResponseTotal = 0
 	t.pendingDelta = 0
+	t.adjustment = ""
 }
 
 // Clone returns a snapshot copy of the current tracker state. Useful
@@ -154,6 +214,7 @@ func (t *UsageTracker) Clone() *UsageTracker {
 	return &UsageTracker{
 		lastResponseTotal: t.lastResponseTotal,
 		pendingDelta:      t.pendingDelta,
+		adjustment:        t.adjustment,
 	}
 }
 

@@ -173,6 +173,7 @@ func RunToolLoop(
 		// Without caller-owned cross-turn state, seed this run from a
 		// local estimate so resumed long sessions can compact before
 		// the first provider request.
+		usage.SetAdjustment(UsageAdjustmentInitialHistoryEstimate)
 		usage.RecordPendingMessages(messages)
 	}
 	// Cross-run continuity: splice the previous run's retained request-only
@@ -205,6 +206,7 @@ func RunToolLoop(
 		pendingRetainedContext = nil
 		historyRewritten = true
 		usage.Reset()
+		usage.SetAdjustment(UsageAdjustmentCompactionRewriteEstimate)
 		usage.RecordPendingMessages(messages)
 	}
 	// runCompactPass executes one compact attempt. Non-forced passes are
@@ -218,7 +220,8 @@ func RunToolLoop(
 		if !force && (proactiveSuppressed || threshold <= 0 || usage.EstimateCurrent() < threshold || !canProactivelyCompact(messages, cfg)) {
 			return
 		}
-		before := usage.EstimateCurrent()
+		usageBefore := usage.Breakdown()
+		before := usageBefore.Total()
 		msgsBefore := len(messages)
 		if cfg.OnCompactStart != nil {
 			cfg.OnCompactStart(reason)
@@ -230,25 +233,25 @@ func RunToolLoop(
 			if !force {
 				proactiveSuppressed = true
 			}
-			emitCompactAttempt(cfg, CompactAttemptInfo{
+			emitCompactAttempt(cfg, compactAttemptWithUsage(CompactAttemptInfo{
 				Reason:         reason,
 				Status:         CompactAttemptFailed,
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
 				Error:          cerr.Error(),
-			})
+			}, usageBefore))
 		case compactChanged(messages, compacted):
 			if compactOperationID := lineage.LastOperationID(); compactOperationID != "" && compactOperationID != lastAgentOperationID {
 				nextOperationParentID = compactOperationID
 			}
 			resetTranscript(compacted)
-			emitCompactAttempt(cfg, CompactAttemptInfo{
+			emitCompactAttempt(cfg, compactAttemptWithUsage(CompactAttemptInfo{
 				Reason:         reason,
 				Status:         CompactAttemptSucceeded,
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
 				MessagesAfter:  len(messages),
-			})
+			}, usageBefore))
 			if cfg.OnCompact != nil {
 				cfg.OnCompact(CompactInfo{
 					Reason:         reason,
@@ -261,13 +264,13 @@ func RunToolLoop(
 			if !force {
 				proactiveSuppressed = true
 			}
-			emitCompactAttempt(cfg, CompactAttemptInfo{
+			emitCompactAttempt(cfg, compactAttemptWithUsage(CompactAttemptInfo{
 				Reason:         reason,
 				Status:         CompactAttemptUnchanged,
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
 				MessagesAfter:  len(compacted),
-			})
+			}, usageBefore))
 		}
 	}
 	tryProactiveCompact := func() { runCompactPass(CompactReasonProactive, false) }
@@ -432,7 +435,8 @@ func RunToolLoop(
 			// where our proactive estimate undercounted.
 			if cfg.Compact != nil && providers.IsContextOverflow(err) && !overflowCompacted {
 				overflowCompacted = true // gate first; never retry twice
-				before := usage.EstimateCurrent()
+				usageBefore := usage.Breakdown()
+				before := usageBefore.Total()
 				msgsBefore := len(messages)
 				if cfg.OnCompactStart != nil {
 					cfg.OnCompactStart(CompactReasonOverflow)
@@ -448,13 +452,13 @@ func RunToolLoop(
 						// context; re-queue it so the retried request still
 						// carries tool-produced notices.
 						postToolContextSegments = consumedPostToolSegments
-						emitCompactAttempt(cfg, CompactAttemptInfo{
+						emitCompactAttempt(cfg, compactAttemptWithUsage(CompactAttemptInfo{
 							Reason:         CompactReasonOverflow,
 							Status:         CompactAttemptSucceeded,
 							TokensBefore:   before,
 							MessagesBefore: msgsBefore,
 							MessagesAfter:  len(messages),
-						})
+						}, usageBefore))
 						if cfg.OnCompact != nil {
 							cfg.OnCompact(CompactInfo{
 								Reason:         CompactReasonOverflow,
@@ -465,21 +469,21 @@ func RunToolLoop(
 						}
 						continue
 					}
-					emitCompactAttempt(cfg, CompactAttemptInfo{
+					emitCompactAttempt(cfg, compactAttemptWithUsage(CompactAttemptInfo{
 						Reason:         CompactReasonOverflow,
 						Status:         CompactAttemptUnchanged,
 						TokensBefore:   before,
 						MessagesBefore: msgsBefore,
 						MessagesAfter:  len(compacted),
-					})
+					}, usageBefore))
 				} else {
-					emitCompactAttempt(cfg, CompactAttemptInfo{
+					emitCompactAttempt(cfg, compactAttemptWithUsage(CompactAttemptInfo{
 						Reason:         CompactReasonOverflow,
 						Status:         CompactAttemptFailed,
 						TokensBefore:   before,
 						MessagesBefore: msgsBefore,
 						Error:          cerr.Error(),
-					})
+					}, usageBefore))
 				}
 			}
 			// A streaming step can fail after content deltas were already shown to
@@ -646,7 +650,8 @@ func RunToolLoop(
 		}
 		usage.RecordPendingMessages(orderedToolMessages)
 		if cfg.PostToolRewrite != nil {
-			before := usage.EstimateCurrent()
+			usageBefore := usage.Breakdown()
+			before := usageBefore.Total()
 			msgsBefore := len(messages)
 			rewritten, changed, rerr := cfg.PostToolRewrite(ctx, providers.CloneChatMessages(messages), providers.CloneChatMessages(orderedToolMessages))
 			if rerr != nil {
@@ -668,7 +673,7 @@ func RunToolLoop(
 					MessagesAfter:  len(rewritten),
 				}
 				resetTranscript(rewritten)
-				emitCompactAttempt(cfg, attempt)
+				emitCompactAttempt(cfg, compactAttemptWithUsage(attempt, usageBefore))
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{
 						Reason:         CompactReasonHelpMe,
@@ -744,6 +749,13 @@ func emitCompactAttempt(cfg LoopConfig, info CompactAttemptInfo) {
 	if cfg.OnCompactAttempt != nil {
 		cfg.OnCompactAttempt(info)
 	}
+}
+
+func compactAttemptWithUsage(info CompactAttemptInfo, usage UsageBreakdown) CompactAttemptInfo {
+	info.LastResponseTotal = usage.LastResponseTotal
+	info.PendingDelta = usage.PendingDelta
+	info.UsageAdjustment = usage.Adjustment
+	return info
 }
 
 // proactiveCompactThreshold returns the absolute token count at which

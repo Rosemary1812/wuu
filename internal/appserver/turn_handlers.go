@@ -2432,12 +2432,15 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 
 func compactRecord(info agent.CompactAttemptInfo) sessiontrace.CompactRecord {
 	return sessiontrace.CompactRecord{
-		Reason:         string(info.Reason),
-		Status:         string(info.Status),
-		TokensBefore:   info.TokensBefore,
-		MessagesBefore: info.MessagesBefore,
-		MessagesAfter:  info.MessagesAfter,
-		Error:          info.Error,
+		Reason:            string(info.Reason),
+		Status:            string(info.Status),
+		TokensBefore:      info.TokensBefore,
+		LastResponseTotal: info.LastResponseTotal,
+		PendingDelta:      info.PendingDelta,
+		UsageAdjustment:   string(info.UsageAdjustment),
+		MessagesBefore:    info.MessagesBefore,
+		MessagesAfter:     info.MessagesAfter,
+		Error:             info.Error,
 	}
 }
 

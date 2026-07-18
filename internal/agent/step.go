@@ -120,12 +120,15 @@ type CompactInfo struct {
 // CompactAttemptInfo describes every compact attempt, including failures and
 // no-op results. It is metadata-only and must not include raw prompt text.
 type CompactAttemptInfo struct {
-	Reason         CompactReason
-	Status         CompactAttemptStatus
-	TokensBefore   int
-	MessagesBefore int
-	MessagesAfter  int
-	Error          string
+	Reason            CompactReason
+	Status            CompactAttemptStatus
+	TokensBefore      int
+	LastResponseTotal int
+	PendingDelta      int
+	UsageAdjustment   UsageAdjustment
+	MessagesBefore    int
+	MessagesAfter     int
+	Error             string
 }
 
 // ToolBatchRejectionInfo describes a whole assistant tool-call batch that was

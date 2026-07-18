@@ -1098,6 +1098,103 @@ func TestStreamRunner_ReusesUsageAcrossTurnsForPreRequestCompact(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_ExpandedDurableHistoryKeepsLastProviderBaseline(t *testing.T) {
+	client := &mockStreamClient{attempts: []mockStreamAttempt{{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "done"},
+		{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 190_100}},
+	}}}}
+	runner := StreamRunner{
+		Client:                 client,
+		ProviderName:           "openai-codex",
+		Model:                  "gpt-5.6-sol",
+		ContextWindowOverride:  272_000,
+		MaxInputTokens:         272_000,
+		OutputReserveTokens:    128_000,
+		CompactThresholdTokens: 239_000,
+	}
+
+	lastResponse := providers.ChatMessage{Role: "assistant", Content: "previous answer"}
+	compactedHistory := []providers.ChatMessage{
+		{Role: "system", Content: "[Conversation summary] bounded"},
+		lastResponse,
+	}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 190_000})
+	runner.commitUsageTracker(tracker, compactedHistory)
+
+	// Simulate a durable reload that expands the old prefix with raw tool
+	// results while retaining the exact response boundary measured above. The
+	// lossless durable content is intentionally much larger than the provider
+	// projection stored on ToolResult.
+	expanded := []providers.ChatMessage{
+		{Role: "system", Content: "[Conversation summary] expanded"},
+		{Role: "user", Content: "old request"},
+	}
+	for i := 0; i < 48; i++ {
+		callID := fmt.Sprintf("call-%d", i)
+		expanded = append(expanded, providers.ChatMessage{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID: callID, Name: "read_file", Arguments: fmt.Sprintf(`{"path":"file-%d"}`, i),
+			}},
+		})
+		projected := toolresult.FromText("bounded provider projection")
+		expanded = append(expanded, providers.ChatMessage{
+			Role:       "tool",
+			Name:       "read_file",
+			ToolCallID: callID,
+			Content:    strings.Repeat("raw durable output ", 1_300),
+			ToolResult: &projected,
+		})
+	}
+	expanded = append(expanded, lastResponse, userMsg("short follow-up"))
+
+	if raw := estimateMessages(expanded); raw < runner.CompactThresholdTokens {
+		t.Fatalf("raw durable estimate = %d, want above threshold %d", raw, runner.CompactThresholdTokens)
+	}
+	projected, err := providers.PrepareMessagesForProviderRequest(runner.ProviderName, runner.Model, expanded)
+	if err != nil {
+		t.Fatalf("project provider request: %v", err)
+	}
+	if got := estimateMessages(projected); got >= runner.CompactThresholdTokens {
+		t.Fatalf("provider projection estimate = %d, want below threshold %d", got, runner.CompactThresholdTokens)
+	}
+
+	prepared, tracked := runner.prepareUsageTracker(expanded)
+	breakdown := prepared.Breakdown()
+	if tracked != len(expanded) || breakdown.LastResponseTotal != 190_000 {
+		t.Fatalf("rebased tracker = %+v tracked=%d, want provider baseline and %d messages", breakdown, tracked, len(expanded))
+	}
+	if breakdown.Adjustment != UsageAdjustmentRequestShapeTailRebase {
+		t.Fatalf("usage adjustment = %q, want %q", breakdown.Adjustment, UsageAdjustmentRequestShapeTailRebase)
+	}
+	if breakdown.Total() >= runner.CompactThresholdTokens {
+		t.Fatalf("rebased estimate = %d, want below threshold %d", breakdown.Total(), runner.CompactThresholdTokens)
+	}
+
+	// The app-server synchronizes the durable snapshot before admitting the
+	// next user message. A missing persisted total must still preserve the live
+	// provider baseline when the same response boundary is present.
+	runner.SynchronizeConversationUsage(expanded[:len(expanded)-1], 0)
+	synced, _ := runner.prepareUsageTracker(expanded)
+	if got := synced.Breakdown(); got.LastResponseTotal != 190_000 || got.Adjustment != UsageAdjustmentRequestShapeTailRebase || got.Total() >= runner.CompactThresholdTokens {
+		t.Fatalf("synchronized tracker lost provider baseline: %+v", got)
+	}
+
+	var attempts []CompactAttemptInfo
+	runner.OnCompactAttempt = func(info CompactAttemptInfo) { attempts = append(attempts, info) }
+	res, err := runner.RunWithCallback(context.Background(), expanded, nil)
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if res.Content != "done" || len(client.requests) != 1 {
+		t.Fatalf("normal request did not run directly: result=%q requests=%d", res.Content, len(client.requests))
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("short follow-up triggered proactive compact: %+v", attempts)
+	}
+}
+
 func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{
@@ -2222,6 +2319,94 @@ func TestStreamRunner_SynchronizeConversationUsageAdoptsExternalRewrite(t *testi
 	got, tracked := runner.prepareUsageTracker(newHistory)
 	if got.EstimateCurrent() != 9_000 || tracked != len(newHistory) {
 		t.Fatalf("external rewrite did not adopt persisted usage: estimate=%d tracked=%d", got.EstimateCurrent(), tracked)
+	}
+}
+
+func TestStreamRunner_SynchronizeConversationUsageAdoptsExternalCompletedTurn(t *testing.T) {
+	oldHistory := []providers.ChatMessage{userMsg("old"), {Role: "assistant", Content: "old answer"}}
+	newHistory := append(providers.CloneChatMessages(oldHistory),
+		userMsg("external ask"),
+		providers.ChatMessage{Role: "assistant", Content: "external answer"},
+	)
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000, OutputTokens: 2_000})
+	runner.commitUsageTracker(tracker, oldHistory)
+
+	runner.SynchronizeConversationUsage(newHistory, 9_000)
+
+	got, tracked := runner.prepareUsageTracker(newHistory)
+	breakdown := got.Breakdown()
+	if breakdown.Total() != 9_000 || breakdown.Adjustment != UsageAdjustmentExternalRewriteSeed || tracked != len(newHistory) {
+		t.Fatalf("external completed turn did not adopt persisted usage: usage=%+v tracked=%d", breakdown, tracked)
+	}
+}
+
+func TestStreamRunner_SynchronizeConversationUsageRejectsRepeatedTailAnchor(t *testing.T) {
+	oldHistory := []providers.ChatMessage{userMsg("old"), {
+		Role: "assistant", Content: "Done", ProviderItemID: "msg-old", ProviderItemProvider: "openai-codex", ProviderItemModel: "gpt-test",
+	}}
+	newHistory := append(providers.CloneChatMessages(oldHistory),
+		userMsg("external ask"),
+		providers.ChatMessage{Role: "assistant", Content: "Done", ProviderItemID: "msg-new", ProviderItemProvider: "openai-codex", ProviderItemModel: "gpt-test"},
+	)
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000, OutputTokens: 2_000})
+	runner.commitUsageTracker(tracker, oldHistory)
+
+	runner.SynchronizeConversationUsage(newHistory, 52_000)
+
+	got, tracked := runner.prepareUsageTracker(newHistory)
+	breakdown := got.Breakdown()
+	if breakdown.Total() != 52_000 || breakdown.Adjustment != UsageAdjustmentExternalRewriteSeed || tracked != len(newHistory) {
+		t.Fatalf("repeated tail anchor retained stale usage: usage=%+v tracked=%d", breakdown, tracked)
+	}
+}
+
+func TestStreamRunner_SynchronizeConversationUsageAllowsEarlierMatchingContent(t *testing.T) {
+	current := providers.ChatMessage{
+		Role: "assistant", Content: "Done", ProviderItemID: "msg-current", ProviderItemProvider: "openai-codex", ProviderItemModel: "gpt-test",
+	}
+	oldHistory := []providers.ChatMessage{userMsg("old"), current}
+	expanded := []providers.ChatMessage{
+		userMsg("expanded old ask"),
+		{Role: "assistant", Content: "Done", ProviderItemID: "msg-earlier", ProviderItemProvider: "openai-codex", ProviderItemModel: "gpt-test"},
+		userMsg("current ask"),
+		current,
+	}
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000, OutputTokens: 2_000})
+	runner.commitUsageTracker(tracker, oldHistory)
+
+	runner.SynchronizeConversationUsage(expanded, 0)
+
+	got, tracked := runner.prepareUsageTracker(expanded)
+	breakdown := got.Breakdown()
+	if breakdown.Total() != 52_000 || breakdown.Adjustment != UsageAdjustmentRequestShapeTailRebase || tracked != len(expanded) {
+		t.Fatalf("earlier matching content discarded live usage: usage=%+v tracked=%d", breakdown, tracked)
+	}
+}
+
+func TestStreamRunner_SynchronizeConversationUsageDoesNotDoubleCountPendingToolDelta(t *testing.T) {
+	oldHistory := []providers.ChatMessage{userMsg("old"), {Role: "assistant", Content: "old answer"}}
+	toolCall := providers.ChatMessage{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call-1", Name: "read_file", Arguments: `{}`}}}
+	toolResult := providers.ChatMessage{Role: "tool", Name: "read_file", ToolCallID: "call-1", Content: "result"}
+	newHistory := append(providers.CloneChatMessages(oldHistory), toolCall, toolResult)
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000})
+	tracker.RecordPendingMessages([]providers.ChatMessage{toolCall, toolResult})
+	runner.commitUsageTracker(tracker, oldHistory)
+
+	runner.SynchronizeConversationUsage(newHistory, 0)
+
+	got, tracked := runner.prepareUsageTracker(newHistory)
+	breakdown := got.Breakdown()
+	want := estimateMessages(newHistory)
+	if breakdown.LastResponseTotal != 0 || breakdown.PendingDelta != want || breakdown.Adjustment != UsageAdjustmentExternalRewriteEstimate || tracked != len(newHistory) {
+		t.Fatalf("pending tool delta was retained across durable replay: usage=%+v want=%d tracked=%d", breakdown, want, tracked)
 	}
 }
 

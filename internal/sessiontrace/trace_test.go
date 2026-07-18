@@ -95,11 +95,14 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			DeltaInputItems:        1,
 		}},
 		[]CompactRecord{{
-			Reason:         "proactive",
-			Status:         "failed",
-			TokensBefore:   1234,
-			MessagesBefore: 10,
-			Error:          "compact failed API_KEY=secret-value-compact",
+			Reason:            "proactive",
+			Status:            "failed",
+			TokensBefore:      1234,
+			LastResponseTotal: 1200,
+			PendingDelta:      34,
+			UsageAdjustment:   "request_shape_tail_rebase",
+			MessagesBefore:    10,
+			Error:             "compact failed API_KEY=secret-value-compact",
 		}},
 		[]BarrierToolBatchRejectionRecord{{
 			StepIndex:     0,
@@ -136,6 +139,11 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"cache_creation_tokens":8`) || !strings.Contains(string(raw), `"cache_read_tokens":5`) {
 		t.Fatalf("trace should include prompt cache usage:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), `"last_response_total":1200`) ||
+		!strings.Contains(string(raw), `"pending_delta":34`) ||
+		!strings.Contains(string(raw), `"usage_adjustment":"request_shape_tail_rebase"`) {
+		t.Fatalf("trace should explain compact usage baseline:\n%s", raw)
 	}
 	for _, want := range []string{
 		`"message_count":4`,

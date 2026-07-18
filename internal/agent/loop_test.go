@@ -1812,6 +1812,9 @@ func TestRunToolLoop_ProactiveCompactFailureEmitsAttempt(t *testing.T) {
 	if len(attempts) != 1 ||
 		attempts[0].Reason != CompactReasonProactive ||
 		attempts[0].Status != CompactAttemptFailed ||
+		attempts[0].LastResponseTotal != 1300 ||
+		attempts[0].PendingDelta != 0 ||
+		attempts[0].UsageAdjustment != UsageAdjustmentProviderResponse ||
 		!strings.Contains(attempts[0].Error, compactErr.Error()) {
 		t.Fatalf("expected proactive failed attempt, got %+v", attempts)
 	}

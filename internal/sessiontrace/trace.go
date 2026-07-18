@@ -230,12 +230,15 @@ type ProviderStateRecord struct {
 }
 
 type CompactRecord struct {
-	Reason         string `json:"reason,omitempty"`
-	Status         string `json:"status,omitempty"`
-	TokensBefore   int    `json:"tokens_before,omitempty"`
-	MessagesBefore int    `json:"messages_before,omitempty"`
-	MessagesAfter  int    `json:"messages_after,omitempty"`
-	Error          string `json:"error,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	Status            string `json:"status,omitempty"`
+	TokensBefore      int    `json:"tokens_before,omitempty"`
+	LastResponseTotal int    `json:"last_response_total"`
+	PendingDelta      int    `json:"pending_delta"`
+	UsageAdjustment   string `json:"usage_adjustment,omitempty"`
+	MessagesBefore    int    `json:"messages_before,omitempty"`
+	MessagesAfter     int    `json:"messages_after,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 type BarrierToolBatchRejectionRecord struct {
