@@ -9744,6 +9744,70 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	}
 }
 
+func TestSettingsUsageModelBreakdownsSkipZeroUsageBuckets(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	now := time.Now().UTC()
+
+	sess1, err := session.CreateWithMetadata(rt.SessionDir, "usage-real", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []session.HistoryRecord{
+		{Role: "user", Content: "real session"},
+		{
+			Role: "meta", Content: "token_usage", Provider: "openai", Model: "gpt-4o",
+			At: now.Add(-time.Hour), InputTokens: 200, OutputTokens: 100, CacheReadTokens: 50,
+		},
+	} {
+		if err := session.AppendHistoryRecord(rt.SessionDir, sess1.ID, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Providers that never report usage (and compaction markers) persist
+	// token_usage rows with all-zero usage but a nonzero context size. A
+	// bucket made only of such rows must not surface as a 0/0 card.
+	sess2, err := session.CreateWithMetadata(rt.SessionDir, "usage-zero", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []session.HistoryRecord{
+		{Role: "user", Content: "zero session"},
+		{
+			Role: "meta", Content: "token_usage", Provider: "test", Model: "gpt-test",
+			At: now.Add(-time.Hour), ContextTokens: 4096,
+		},
+	} {
+		if err := session.AppendHistoryRecord(rt.SessionDir, sess2.ID, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw, err := json.Marshal(map[string]any{
+		"id":     "1",
+		"method": MethodSettingsUsage,
+		"params": map[string]any{"range": string(SettingsUsageRangeAll)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("handleLine: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
+
+	if len(result.ModelBreakdowns) != 1 {
+		t.Fatalf("expected 1 breakdown, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
+	}
+	if result.ModelBreakdowns[0].Provider != "openai" || result.ModelBreakdowns[0].InputTokens != 200 {
+		t.Fatalf("expected only the openai breakdown, got %+v", result.ModelBreakdowns[0])
+	}
+}
+
 func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	now := time.Now().UTC()

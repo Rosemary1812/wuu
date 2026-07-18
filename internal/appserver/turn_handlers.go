@@ -4241,6 +4241,13 @@ func buildUsageModelBreakdowns(rows []insight.TokenUsageRow) []insight.ModelUsag
 
 	breakdowns := make([]insight.ModelUsage, 0, len(buckets))
 	for key, bucket := range buckets {
+		// token_usage rows double as context-size markers (compaction
+		// checkpoints, turns whose provider reported no usage): their token
+		// sums are all zero. A bucket made only of such rows carries no
+		// spend signal and would render as a meaningless 0/0 card.
+		if bucket.TotalContextTokens() == 0 {
+			continue
+		}
 		bucket.Sessions = len(sessionsByBucket[key])
 		breakdowns = append(breakdowns, *bucket)
 	}
