@@ -192,6 +192,28 @@ func editHistoryBeforeUserMessage(history []providers.ChatMessage, sourceThreadI
 	if targetItemID == "" {
 		return nil, ThreadEditDraft{}, fmt.Errorf("item_id is required")
 	}
+	targetSeq := 0
+	targetFound := false
+	for _, turn := range turns {
+		if turn.ID != targetTurnID {
+			continue
+		}
+		for _, item := range turn.Items {
+			if item.ID != targetItemID {
+				continue
+			}
+			if item.Type != ThreadItemUserMessage {
+				return nil, ThreadEditDraft{}, fmt.Errorf("only regular user messages can be edited")
+			}
+			targetSeq = item.Seq
+			targetFound = true
+			break
+		}
+		break
+	}
+	if !targetFound {
+		return nil, ThreadEditDraft{}, fmt.Errorf("editable user message not found")
+	}
 
 	var currentTurnID string
 	turnIndex := 0
@@ -223,10 +245,19 @@ func editHistoryBeforeUserMessage(history []providers.ChatMessage, sourceThreadI
 			continue
 		}
 		if msg.Steered {
-			if currentTurnID != "" && itemMatches(nextItemID()) {
+			if (targetSeq > 0 && msg.Seq == targetSeq) || (targetSeq == 0 && currentTurnID != "" && itemMatches(nextItemID())) {
 				return nil, ThreadEditDraft{}, fmt.Errorf("only regular user messages can be edited")
 			}
 			continue
+		}
+		if targetSeq > 0 {
+			if msg.Seq != targetSeq {
+				continue
+			}
+			if compactedAttachmentOmission(msg) {
+				return nil, ThreadEditDraft{}, fmt.Errorf("this message contains compacted attachment placeholders and cannot be restored for editing")
+			}
+			return cloneHistory(history[:i]), editDraftFromChatMessage(msg), nil
 		}
 
 		currentTurnIndex = turnIndex
