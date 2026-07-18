@@ -276,7 +276,7 @@ describe("ChatThreadView", () => {
     expect(container.querySelector(".envelope-notice")).not.toBeNull();
   });
 
-  it("renders consecutive envelope rows as one collapsed notice", () => {
+  it("keeps consecutive envelope rows from different turns separate", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: [
@@ -320,20 +320,9 @@ describe("ChatThreadView", () => {
       }),
     );
     const notices = container.querySelectorAll(".envelope-notice");
-    expect(notices).toHaveLength(1);
-    const toggle = container.querySelector<HTMLButtonElement>(
-      ".envelope-notice-toggle",
-    );
-    expect(toggle?.textContent).toContain("收到来自「all」的 2 条消息");
-    expect(toggle?.textContent).toContain("点名");
-    expect(toggle?.textContent).toContain("转发×1");
-
-    act(() => {
-      toggle?.click();
-    });
-    const body = container.querySelector(".envelope-notice-body");
-    expect(body?.textContent).toContain("第一条群聊消息");
-    expect(body?.textContent).toContain("第二条群聊消息");
+    expect(notices).toHaveLength(2);
+    expect(notices[0]?.textContent).not.toContain("点名");
+    expect(notices[1]?.textContent).toContain("点名");
   });
 
   it("starts a new envelope notice after a user query", () => {
@@ -461,6 +450,102 @@ describe("ChatThreadView reply / task affordances", () => {
       container.querySelector(".chat-system-divider .turn-event-title")
         ?.textContent,
     ).toBe("subagent 完成了任务");
+  });
+
+  it("renders reconnect progress and terminal network events in chat threads", () => {
+    const reconnecting = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "继续处理" },
+        ]),
+        streamStatus: {
+          text: "消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）",
+          liveProgress: true,
+        },
+      }),
+    );
+    expect(
+      reconnecting.querySelector(".chat-row--reconnecting .turn-event-title")
+        ?.textContent,
+    ).toBe("消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）");
+
+    const failed = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "继续处理" },
+        ]),
+        turnEvents: [
+          {
+            turnID: "turn-1",
+            event: {
+              kind: "network_lost",
+              source: "turn",
+              presentation: "notice",
+              notice: {
+                category: "network",
+                tone: "error",
+                title: "网络异常",
+                detail: "请检查网络连接后重试。",
+              },
+            },
+          },
+        ],
+      }),
+    );
+    expect(
+      failed.querySelector(".chat-row--turn-event .turn-event-title")?.textContent,
+    ).toBe("网络异常");
+  });
+
+  it("keeps each turn's system rows on the correct side of its terminal event", () => {
+    const notification = (id: string): ThreadItem => ({
+      id,
+      type: "user_message",
+      text: JSON.stringify({
+        author: "/root/explore",
+        recipient: "/root",
+        content: `<subagent_notification>\n${JSON.stringify({
+          agent_path: "/root/explore",
+          status: {
+            type: "agent_result",
+            agent_id: "worker-1",
+            task_name: "explore",
+            status: "completed",
+          },
+        })}\n</subagent_notification>`,
+        trigger_turn: true,
+      }),
+    });
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: [
+          { id: "turn-1", items: [notification("item-1")] },
+          { id: "turn-2", items: [notification("item-2")] },
+        ],
+        turnEvents: [
+          {
+            turnID: "turn-1",
+            event: {
+              kind: "network_lost",
+              source: "turn",
+              presentation: "notice",
+              notice: {
+                category: "network",
+                tone: "error",
+                title: "网络异常",
+                detail: "请检查网络连接后重试。",
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    const rows = [...container.querySelectorAll(".chat-row")];
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.textContent).toContain("subagent 完成了任务");
+    expect(rows[1]?.classList.contains("chat-row--turn-event")).toBe(true);
+    expect(rows[2]?.textContent).toContain("subagent 完成了任务");
   });
 
   it("hangs a 'N 条回复' badge under a message that anchors a plain reply", () => {
@@ -1339,12 +1424,114 @@ describe("ChatThreadView windowing", () => {
       scrollAncestor,
     );
 
+    scrollAncestor.scrollTop = 0;
+    scrollAncestor.dispatchEvent(new Event("scroll"));
     triggerSentinelIntersection(mountPoint);
 
     // 80 rows before -> scrollHeight 3600; 160 rows after -> 6800. The
     // reader was pinned at scrollTop 0, so the compensation must add
     // exactly the height inserted above the viewport.
     expect(scrollAncestor.scrollTop).toBe(3200);
+  });
+
+  it("does not auto-follow updates while the pane is inactive", () => {
+    const scrollAncestor = document.createElement("div");
+    scrollAncestor.style.overflowY = "auto";
+    const mountPoint = document.createElement("div");
+    scrollAncestor.appendChild(mountPoint);
+    document.body.appendChild(scrollAncestor);
+    Object.defineProperty(scrollAncestor, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+    Object.defineProperty(scrollAncestor, "scrollHeight", {
+      value: 1200,
+      configurable: true,
+    });
+    scrollAncestor.scrollTop = 300;
+
+    const root = createRoot(mountPoint);
+    act(() => {
+      root.render(
+        createElement(
+          ImagePreviewProvider,
+          null,
+          createElement(ChatThreadView, {
+            isActive: false,
+            turns: turns([{ id: "item-1", type: "user_message", text: "继续" }]),
+            streamStatus: {
+              text: "消息流暂时中断，正在恢复（第 2/4 次尝试）",
+              liveProgress: true,
+            },
+          }),
+        ),
+      );
+    });
+    mountedRoots.push(root);
+    mountedContainers.push(scrollAncestor);
+
+    expect(scrollAncestor.scrollTop).toBe(300);
+  });
+
+  it("keeps recovery auto-follow paused while chat text is selected", () => {
+    const scrollAncestor = document.createElement("div");
+    scrollAncestor.style.overflowY = "auto";
+    const mountPoint = document.createElement("div");
+    scrollAncestor.appendChild(mountPoint);
+    document.body.appendChild(scrollAncestor);
+    Object.defineProperty(scrollAncestor, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+    Object.defineProperty(scrollAncestor, "scrollHeight", {
+      value: 1200,
+      configurable: true,
+    });
+
+    const renderThread = (statusText: string): React.ReactElement =>
+      createElement(
+        ImagePreviewProvider,
+        null,
+        createElement(ChatThreadView, {
+          turns: turns([{ id: "item-1", type: "user_message", text: "保留这段选择" }]),
+          streamStatus: { text: statusText, liveProgress: true },
+        }),
+      );
+    const root = createRoot(mountPoint);
+    act(() => {
+      root.render(renderThread("消息流暂时中断，正在恢复（第 1/4 次尝试）"));
+    });
+    mountedRoots.push(root);
+    mountedContainers.push(scrollAncestor);
+
+    scrollAncestor.scrollTop = 700;
+    scrollAncestor.dispatchEvent(new Event("scroll"));
+    const textNode = mountPoint.querySelector(".chat-row--user")?.firstChild;
+    const selection = document.getSelection();
+    expect(textNode).not.toBeNull();
+    expect(selection).not.toBeNull();
+    const range = document.createRange();
+    range.selectNodeContents(textNode!);
+    selection!.removeAllRanges();
+    selection!.addRange(range);
+
+    act(() => {
+      root.render(renderThread("消息流暂时中断，正在恢复（第 2/4 次尝试）"));
+    });
+    expect(scrollAncestor.scrollTop).toBe(700);
+
+    selection!.removeAllRanges();
+    act(() => {
+      root.render(renderThread("消息流暂时中断，正在恢复（第 3/4 次尝试）"));
+    });
+    expect(scrollAncestor.scrollTop).toBe(700);
+
+    scrollAncestor.scrollTop = 800;
+    scrollAncestor.dispatchEvent(new Event("scroll"));
+    act(() => {
+      root.render(renderThread("消息流暂时中断，正在恢复（第 4/4 次尝试）"));
+    });
+    expect(scrollAncestor.scrollTop).toBe(1200);
   });
 });
 

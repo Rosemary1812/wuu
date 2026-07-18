@@ -335,6 +335,7 @@ export const enUS = {
   "tools.notConnected": "Not connected",
   "tools.counts": "{visible} available, {hidden} hidden",
   "tools.moreCapabilities": "{shown} and {count} total",
+  "error.requestFailedTitle": "Request failed",
   "error.http400": "Invalid request",
   "error.http401": "Unauthorized",
   "error.http403": "Forbidden",

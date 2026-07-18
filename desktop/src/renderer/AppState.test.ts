@@ -2811,7 +2811,7 @@ describe("chatMessagesFromTurns", () => {
     ]);
   });
 
-  it("coalesces consecutive envelope rows into one visible chat row", () => {
+  it("does not coalesce consecutive envelope rows across turns", () => {
     const first: ThreadItem = {
       id: "item-1",
       type: "user_message",
@@ -2833,7 +2833,13 @@ describe("chatMessagesFromTurns", () => {
         kind: "envelope",
         id: "turn-1:item-1",
         turnID: "turn-1",
-        items: [first, second],
+        items: [first],
+      },
+      {
+        kind: "envelope",
+        id: "turn-2:item-2",
+        turnID: "turn-2",
+        items: [second],
       },
     ]);
   });
@@ -2927,6 +2933,47 @@ describe("chatMessagesFromTurns", () => {
         item: notification,
       },
       { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: realMessage },
+    ]);
+  });
+
+  it("coalesces equivalent system events only within the same turn", () => {
+    const first: ThreadItem = {
+      id: "handoff-1",
+      type: "user_message",
+      text: handoffText(),
+    };
+    const second: ThreadItem = {
+      id: "handoff-2",
+      type: "user_message",
+      text: handoffText(),
+    };
+    const third: ThreadItem = {
+      id: "handoff-3",
+      type: "user_message",
+      text: handoffText(),
+    };
+
+    expect(
+      chatMessagesFromTurns([
+        turn("turn-1", [first, second]),
+        turn("turn-2", [third]),
+      ]),
+    ).toEqual([
+      {
+        kind: "system",
+        id: "turn-1:handoff-1",
+        turnID: "turn-1",
+        text: "subagent 完成了任务",
+        item: first,
+        count: 2,
+      },
+      {
+        kind: "system",
+        id: "turn-2:handoff-3",
+        turnID: "turn-2",
+        text: "subagent 完成了任务",
+        item: third,
+      },
     ]);
   });
 

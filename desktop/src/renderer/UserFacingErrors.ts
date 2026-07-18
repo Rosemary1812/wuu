@@ -68,12 +68,17 @@ function httpTitle(code: string): string {
   return key ? `${code} ${t(key)}` : code;
 }
 
-function structuredStatusTitle(structured: TurnError | undefined): string | undefined {
+function structuredStatusFact(structured: TurnError | undefined): string | undefined {
   const statusCode = structured?.status_code;
   if (typeof statusCode !== "number" || !Number.isFinite(statusCode) || statusCode <= 0) {
     return undefined;
   }
-  return httpTitle(String(Math.trunc(statusCode)));
+  return `HTTP ${Math.trunc(statusCode)}`;
+}
+
+function structuredProviderCode(structured: TurnError | undefined): string | undefined {
+  const code = structured?.code?.trim();
+  return code && /^[A-Za-z0-9._-]{1,128}$/.test(code) ? code : undefined;
 }
 
 type SpecificDisplay = {
@@ -213,21 +218,24 @@ export function userFacingErrorForMessage(
         : "internal"
       : classifyUserFacingError(message, context);
 
-  // Title: always a localized label — keyword extraction from the raw
-  // message (or from the structured code, when the code itself is a
-  // known identifier), then the HTTP status phrase, then the category
-  // default. Raw machine identifiers remain on the structured error for
-  // diagnostics and never become a second visible label.
-  const structuredCode = structured?.code?.trim() || undefined;
+  // Structured transport facts take precedence over inferred category
+  // labels. A post-200 provider failure has no HTTP status, so retain its
+  // provider code when no more specific localized state is available.
+  const structuredCode = structuredProviderCode(structured);
   const specific = extractSpecificDisplay(message, category);
   const specificFromCode = structuredCode
     ? extractSpecificDisplay(structuredCode, category)
     : {};
-  const statusTitle = structuredStatusTitle(structured);
+  const statusFact = structuredStatusFact(structured);
+  const traceableFailureTitle = statusFact
+    ? `${t("error.requestFailedTitle")} · ${statusFact}`
+    : category === "provider" && structuredCode && !specific.title && !specificFromCode.title
+      ? `${t("error.requestFailedTitle")} · ${structuredCode}`
+      : undefined;
   const title =
+    traceableFailureTitle ||
     specific.title ||
     specificFromCode.title ||
-    statusTitle ||
     defaultTitleForCategory(category);
   // Detail is hover and accessibility copy, not a visible second line.
   const detail =

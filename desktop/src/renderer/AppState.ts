@@ -2102,7 +2102,14 @@ export type ChatMessageRow =
   | { kind: "user"; id: string; turnID: string; item: ThreadItem }
   | { kind: "envelope"; id: string; turnID: string; items: ThreadItem[] }
   | { kind: "participant"; id: string; turnID: string; item: ThreadItem }
-  | { kind: "system"; id: string; turnID: string; text: string; item: ThreadItem }
+  | {
+      kind: "system";
+      id: string;
+      turnID: string;
+      text: string;
+      item: ThreadItem;
+      count?: number;
+    }
   | { kind: "focus"; id: string; turnID: string; item: ThreadItem };
 
 /**
@@ -2196,13 +2203,22 @@ export function chatMessagesFromTurns(
         // why `name` is the reliable signal and `text` sniff is a fallback).
         const handoff = agentHandoffDisplayItem(item);
         if (handoff) {
-          rows.push({
-            kind: "system",
-            id,
-            turnID: turn.id,
-            text: handoff.label,
-            item,
-          });
+          const previous = rows[rows.length - 1];
+          if (
+            previous?.kind === "system" &&
+            previous.turnID === turn.id &&
+            previous.text === handoff.label
+          ) {
+            previous.count = (previous.count ?? 1) + 1;
+          } else {
+            rows.push({
+              kind: "system",
+              id,
+              turnID: turn.id,
+              text: handoff.label,
+              item,
+            });
+          }
           continue;
         }
         if (isInternalUserNotificationItem(item)) {
@@ -2210,7 +2226,7 @@ export function chatMessagesFromTurns(
         }
         if (item.envelope_meta && item.envelope_meta.length > 0) {
           const previous = rows[rows.length - 1];
-          if (previous?.kind === "envelope") {
+          if (previous?.kind === "envelope" && previous.turnID === turn.id) {
             previous.items.push(item);
           } else {
             rows.push({ kind: "envelope", id, turnID: turn.id, items: [item] });

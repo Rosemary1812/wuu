@@ -333,6 +333,7 @@ export const zhCN = {
   "tools.notConnected": "未连接",
   "tools.counts": "{visible} 个可用，{hidden} 个已隐藏",
   "tools.moreCapabilities": "{shown} 等 {count} 项",
+  "error.requestFailedTitle": "请求失败",
   "error.http400": "请求无效",
   "error.http401": "未授权",
   "error.http403": "无访问权限",

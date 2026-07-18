@@ -92,12 +92,12 @@ describe("userFacingErrorForMessage", () => {
         "turn",
       );
 
-      expect(display.title).toBe("404 资源不存在");
+      expect(display.title).toBe("请求失败 · HTTP 404");
       expect(display).not.toHaveProperty("code");
       expect(display).not.toHaveProperty("recommendedActions");
     });
 
-    it("keeps an untranslatable structured code out of the visible model", () => {
+    it("keeps a provider code visible when the stream failed after HTTP 200", () => {
       const display = userFacingErrorForMessage(
         {
           message: "some raw provider body",
@@ -106,7 +106,7 @@ describe("userFacingErrorForMessage", () => {
         },
         "turn",
       );
-      expect(display.title).toBe("模型服务异常");
+      expect(display.title).toBe("请求失败 · insufficient_quota");
       expect(display).not.toHaveProperty("code");
       expect(display.category).toBe("provider");
     });
@@ -122,7 +122,37 @@ describe("userFacingErrorForMessage", () => {
       );
 
       expect(display.category).toBe("provider");
-      expect(display.title).toBe("429 触发限流");
+      expect(display.title).toBe("请求失败 · HTTP 429");
+    });
+
+    it("prefers the exact HTTP status over an inferred quota classification", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "usage limit reached",
+          code: "usage_limit_reached",
+          category: "auth",
+          provider: "anthropic",
+          status_code: 403,
+        },
+        "turn",
+      );
+
+      expect(display.title).toBe("请求失败 · HTTP 403");
+      expect(display.category).toBe("auth");
+    });
+
+    it("shows the provider code for a post-200 stream failure", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "usage limit reached",
+          code: "usage_limit_reached",
+          category: "provider",
+          provider: "anthropic",
+        },
+        "turn",
+      );
+
+      expect(display.title).toBe("请求失败 · usage_limit_reached");
     });
 
     it("uses structured partial-stream facts without exposing the code", () => {
@@ -157,7 +187,7 @@ describe("userFacingErrorForMessage", () => {
 
       expect(display.category).toBe("invalid_request");
       expect(display.tone).toBe("error");
-      expect(display.title).toBe("400 请求无效");
+      expect(display.title).toBe("请求失败 · HTTP 400");
       expect(display.detail).toBe("Provider 认为这次请求参数无效。原始错误已留在调试信息中。");
     });
 
