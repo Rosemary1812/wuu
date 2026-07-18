@@ -2480,10 +2480,6 @@
   }
 }
 
-.process-surface-row.failed {
-  color: var(--danger);
-}
-
 .process-surface-fold.no-details > .process-surface-row {
   cursor: default;
 }

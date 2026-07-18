@@ -209,6 +209,41 @@ describe("ProcessSurface", () => {
     expect(label?.textContent).toBe("思考过程");
   });
 
+  it("keeps process summaries neutral when a tool fails", () => {
+    const failedTool = {
+      ...makeReadFile("tool-1", "a.ts", "failed"),
+      error: "command failed",
+    };
+    const { container } = render({
+      processItems: [
+        failedTool,
+        makeReasoning("reason-1", "recovering", "in_progress"),
+      ],
+      streaming: true,
+      active: false,
+    });
+    const row = container.querySelector(".process-surface-row");
+    expect(row?.classList.contains("is-streaming")).toBe(true);
+    expect(row?.classList.contains("is-live-gray")).toBe(false);
+    expect(row?.classList.contains("failed")).toBe(false);
+
+    rerender({
+      processItems: [
+        failedTool,
+        makeReasoning("reason-1", "recovered", "completed"),
+      ],
+      streaming: false,
+    });
+    expect(
+      container
+        .querySelector(".process-surface-row")
+        ?.classList.contains("failed"),
+    ).toBe(false);
+    expect(
+      container.querySelector(".activity-detail-error")?.textContent,
+    ).toContain("命令执行失败");
+  });
+
   it("keeps the fold collapsed when streaming starts", () => {
     const { container } = render({
       processItems: [

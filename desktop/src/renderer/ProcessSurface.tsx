@@ -146,7 +146,6 @@ export function ProcessSurface({
   const hasMultipleTools = toolItems.length > 1;
   const hasDetails = hasReasoning || hasMultipleTools;
   const hasErrors = toolSegments.some((segment) => Boolean(segment.error));
-  const failed = toolSegments.some((segment) => segment.status === "failed");
   const reasoningStreaming =
     streaming &&
     reasoningItems.some((item) => item.status === "in_progress");
@@ -185,7 +184,7 @@ export function ProcessSurface({
 
   const className = `process-surface${
     hasDetails ? " has-details" : " no-details"
-  }${streaming ? " is-streaming" : ""}${failed ? " failed" : ""}`;
+  }${streaming ? " is-streaming" : ""}`;
 
   const summaryLine = (
     <span className="process-surface-summary-line">
@@ -243,8 +242,6 @@ export function ProcessSurface({
       <details
         className={`process-surface-fold${hasDetails ? " has-details" : " no-details"}${
           expanded ? " expanded" : " collapsed"
-        }${
-          failed ? " failed" : ""
         }`}
         open={hasDetails && expanded}
         onToggle={handleToggle}
@@ -252,7 +249,7 @@ export function ProcessSurface({
         <summary
           className={`process-surface-row${
             activeGrayText ? " is-live-gray" : ""
-          }${streaming ? " is-streaming" : ""}${failed ? " failed" : ""}`}
+          }${streaming ? " is-streaming" : ""}`}
           onClick={handleSummaryClick}
         >
           {summaryLine}
