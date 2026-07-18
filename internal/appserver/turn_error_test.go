@@ -54,6 +54,27 @@ func TestBuildTurnError_InvalidRequestIsNotRetryable(t *testing.T) {
 	}
 }
 
+func TestBuildTurnError_TerminalUsageLimitIsNotRetryable(t *testing.T) {
+	tests := []error{
+		&providers.HTTPError{
+			StatusCode: 429,
+			Body:       `{"error":{"code":"insufficient_quota","message":"You exceeded your current quota."}}`,
+		},
+		providers.NewProviderStreamError("usage_limit_reached", "The usage limit has been reached"),
+		&providers.HTTPError{
+			StatusCode: 403,
+			Body:       `{"error":{"type":"permission_error","message":"The usage limit has been reached"}}`,
+		},
+	}
+	for _, err := range tests {
+		out := BuildTurnError(err, "kimi-code")
+		turn := Turn{Status: TurnStatusFailed, Error: &out}
+		if isRetryableTurnFailure(turn) {
+			t.Fatalf("%T terminal usage limit must not be retried: %+v", err, out)
+		}
+	}
+}
+
 // TestBuildTurnError_Nil covers the no-error path. BuildTurnError
 // must not panic on nil and must still surface the provider so the
 // front-end can show "Provider: openai" even when the body is empty.
