@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InitializeResult, Thread } from "../shared/protocol";
 import { initialState, type AppState } from "./AppState";
 import { environmentPanelScaleForWidth } from "./EnvironmentPanelScale";
-import { EnvironmentSideStack } from "./EnvironmentSideStack";
+import {
+  EnvironmentSideStack,
+  type SubagentRowSummary,
+} from "./EnvironmentSideStack";
+import { agentStatusLabel } from "./ThreadAgents";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -68,7 +72,10 @@ function groupThread(): Thread {
   };
 }
 
-function renderStack(stateOverrides: Partial<AppState> = {}): void {
+function renderStack(
+  stateOverrides: Partial<AppState> = {},
+  subagentSessions?: SubagentRowSummary[],
+): void {
   const state: AppState = {
     ...initialState,
     initialized: initialized(),
@@ -95,6 +102,7 @@ function renderStack(stateOverrides: Partial<AppState> = {}): void {
         onOpenReview={() => {}}
         onOpenCommit={() => {}}
         onOpenPullRequest={() => {}}
+        subagentSessions={subagentSessions}
         participants={[
           { id: "participant-1", name: "小青", kind: "named", role: "评审" },
         ]}
@@ -154,5 +162,26 @@ describe("EnvironmentSideStack", () => {
     expect(container.textContent).toContain("前端小队");
     expect(container.textContent).not.toContain("群内容");
     expect(container.textContent).not.toContain("创建拉取请求");
+  });
+
+  it("renders a subagent's pooled name and source in its tooltip", () => {
+    renderStack({}, [
+      {
+        id: "agent-0",
+        status: "running",
+        type: "worker",
+        task_name: "Check types",
+      },
+    ]);
+
+    const row = container.querySelector<HTMLButtonElement>(".subagent-row-main");
+    expect(row).not.toBeNull();
+    expect(container.textContent).toContain("薛定谔");
+    expect(row?.title).toContain("薛定谔");
+    expect(row?.title).toContain("科学家");
+    expect(row?.title).toContain(agentStatusLabel("running"));
+    expect(row?.title).toContain("worker");
+    expect(row?.title).toContain("Check types");
+    expect(row?.title).not.toContain("undefined");
   });
 });

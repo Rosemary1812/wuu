@@ -26,7 +26,7 @@ import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 import { agentStatusLabel, sortChildAgents } from "./ThreadAgents";
 import { ParticipantChip } from "./ParticipantChip";
 import { type SubagentRowSummary } from "./EnvironmentSideStack";
-import { nicknameForSubagentID } from "./waterMarginNames";
+import { agentNameForSubagentID } from "./agentNames";
 import { useI18n } from "./i18n";
 
 export type EnvironmentPanelMenu = "branch" | "file" | null;
@@ -365,14 +365,18 @@ function agentStatusToneToClass(status: string | undefined): string {
 }
 
 function agentLabelFromSummary(agent: SubagentRowSummary): string {
-  return nicknameForSubagentID(agent.id).nickname;
+  return agentNameForSubagentID(agent.id).displayName;
 }
 
 function agentTooltipFromSummary(agent: SubagentRowSummary): string {
-  const { nickname, realName } = nicknameForSubagentID(agent.id);
-  const pieces: string[] = [nickname, realName, agentStatusLabel(agent.status)];
+  const { displayName, secondaryName, source } = agentNameForSubagentID(agent.id);
+  const pieces: string[] = [displayName];
+  if (secondaryName) {
+    pieces.push(secondaryName);
+  }
+  pieces.push(source, agentStatusLabel(agent.status));
   const type = agent.type?.trim();
-  if (type && type !== nickname) {
+  if (type && type !== displayName) {
     pieces.push(type);
   }
   const path = agent.agent_path?.trim();
