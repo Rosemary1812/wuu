@@ -401,7 +401,7 @@ export function ChatThreadView({
     return () => observer.disconnect();
   }, [hiddenOlderCount, revealOlder]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const detachAutoFollow = (): void => {
       if (autoFollowParentRef.current && autoFollowListenerRef.current) {
         autoFollowParentRef.current.removeEventListener(

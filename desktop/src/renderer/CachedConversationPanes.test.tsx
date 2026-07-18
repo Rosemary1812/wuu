@@ -187,13 +187,19 @@ describe("CachedConversationPanes Thread wiring", () => {
 });
 
 describe("CachedConversationPanes session switching", () => {
-  it("waits for the mounted message DOM to settle before entering", () => {
+  it("waits until the mounted message DOM height is stable before entering", () => {
     const frameCallbacks: FrameRequestCallback[] = [];
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       frameCallbacks.push(callback);
       return frameCallbacks.length;
     });
     vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+    let paneHeight = 100;
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+      function scrollHeight(this: HTMLElement): number {
+        return this.classList.contains("cached-conversation-pane") ? paneHeight : 0;
+      },
+    );
 
     const { container } = renderPane(chatThread("thread-a", {}));
     const pane = container.querySelector<HTMLElement>(".cached-conversation-pane");
@@ -207,10 +213,208 @@ describe("CachedConversationPanes session switching", () => {
     expect(pane?.hasAttribute("data-layout-settled")).toBe(false);
     expect(frameCallbacks).toHaveLength(1);
 
+    paneHeight = 240;
     act(() => {
       frameCallbacks.shift()?.(16);
     });
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(false);
+    expect(frameCallbacks).toHaveLength(1);
+
+    act(() => {
+      frameCallbacks.shift()?.(32);
+    });
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(false);
+    expect(frameCallbacks).toHaveLength(1);
+
+    act(() => {
+      frameCallbacks.shift()?.(48);
+    });
     expect(pane?.hasAttribute("data-layout-settled")).toBe(true);
+  });
+
+  it("reuses a settled hidden pane until its layout content changes", () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+
+    const threadA = chatThread("thread-a", {});
+    const threadB = chatThread("thread-b", {});
+    let threadsByID = new Map([
+      [threadA.id, threadA],
+      [threadB.id, threadB],
+    ]);
+    let turnStreamStatus: Record<string, TurnStreamStatus> = {};
+    let contextCompositionEntries: ComponentProps<
+      typeof CachedConversationPanes
+    >["contextCompositionEntries"] = [];
+    let instructionFilesEntries: ComponentProps<
+      typeof CachedConversationPanes
+    >["instructionFilesEntries"] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    const stableProps = {
+      threadIDs: [threadA.id, threadB.id],
+      conversationGridVisible: false,
+      contextCompositionEntries: [],
+      instructionFilesEntries: [],
+      onStreamFrame: () => {},
+      onCollapseComplete: () => {},
+      onDismissContextComposition: () => {},
+      onDismissInstructions: () => {},
+      canEditThreadMessage: () => false,
+      onForkMessage: () => {},
+      onOpenAgent: () => {},
+      onOpenSubthread: () => {},
+      onReact: () => {},
+      onEditMessage: () => {},
+      onCancelEditMessage: () => {},
+      onSubmitEditMessage: () => {},
+      onOpenFileDiff: () => {},
+      turnStreamStatus: {},
+      busyParticipantIDs: new Set<string>(),
+      activeThreadMarks: [],
+      resolveParticipantName: (id: string) => id,
+      chatReaderCount: 0,
+      pendingChatMessagesByThread: {},
+    } satisfies Omit<
+      ComponentProps<typeof CachedConversationPanes>,
+      "activeThreadID" | "threadsByID"
+    >;
+    const renderActiveThread = (activeThreadID: string): void => {
+      act(() => {
+        root.render(
+          <ImagePreviewProvider>
+            <CachedConversationPanes
+              {...stableProps}
+              activeThreadID={activeThreadID}
+              contextCompositionEntries={contextCompositionEntries}
+              instructionFilesEntries={instructionFilesEntries}
+              threadsByID={threadsByID}
+              turnStreamStatus={turnStreamStatus}
+            />
+          </ImagePreviewProvider>,
+        );
+      });
+    };
+    const runTwoStableFrames = (): void => {
+      act(() => {
+        frameCallbacks.shift()?.(0);
+      });
+      act(() => {
+        frameCallbacks.shift()?.(16);
+      });
+    };
+
+    renderActiveThread(threadA.id);
+    runTwoStableFrames();
+    renderActiveThread(threadB.id);
+    runTwoStableFrames();
+
+    const paneA = container.querySelector<HTMLElement>(
+      '[data-thread-id="thread-a"]',
+    );
+    const paneB = container.querySelector<HTMLElement>(
+      '[data-thread-id="thread-b"]',
+    );
+    expect(paneA?.hasAttribute("data-layout-settled")).toBe(true);
+    expect(paneA?.hasAttribute("inert")).toBe(true);
+    expect(paneA?.getAttribute("aria-hidden")).toBe("true");
+    expect(paneA?.style.display).toBe("");
+
+    renderActiveThread(threadA.id);
+    expect(frameCallbacks).toHaveLength(0);
+    expect(paneA?.getAttribute("data-active")).toBe("true");
+    expect(paneA?.hasAttribute("inert")).toBe(false);
+
+    const changedThreadB = {
+      ...threadB,
+      turns: [
+        ...threadB.turns,
+        {
+          id: "turn-2",
+          status: "completed" as const,
+          items_view: "full" as const,
+          items: [
+            {
+              id: "assistant-2",
+              type: "agent_message" as const,
+              text: "后台新增的消息",
+            },
+          ],
+        },
+      ],
+    };
+    threadsByID = new Map([
+      [threadA.id, threadA],
+      [changedThreadB.id, changedThreadB],
+    ]);
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
+
+    renderActiveThread(threadB.id);
+    expect(frameCallbacks).toHaveLength(1);
+    expect(paneB?.getAttribute("data-active")).toBe("true");
+    const settleThreadBAndHide = (): void => {
+      runTwoStableFrames();
+      renderActiveThread(threadA.id);
+      expect(frameCallbacks).toHaveLength(0);
+    };
+
+    settleThreadBAndHide();
+    turnStreamStatus = {
+      "turn-2": { text: "消息流暂时中断", liveProgress: true },
+    };
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
+
+    renderActiveThread(threadB.id);
+    settleThreadBAndHide();
+    turnStreamStatus = {
+      "turn-2": { text: "约 2 秒后继续", liveProgress: true },
+    };
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
+
+    renderActiveThread(threadB.id);
+    settleThreadBAndHide();
+    turnStreamStatus = {};
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
+
+    renderActiveThread(threadB.id);
+    settleThreadBAndHide();
+    contextCompositionEntries = [
+      { id: "context-b", threadID: threadB.id, loading: true },
+    ];
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
+
+    renderActiveThread(threadB.id);
+    settleThreadBAndHide();
+    instructionFilesEntries = [
+      { id: "instructions-b", threadID: threadB.id, loading: true },
+    ];
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
+
+    renderActiveThread(threadB.id);
+    settleThreadBAndHide();
+    const forkedThreadB = {
+      ...changedThreadB,
+      forked_from_id: "thread-source",
+      worktree: { path: "/tmp/wuu/thread-b" },
+    };
+    threadsByID = new Map([
+      [threadA.id, threadA],
+      [forkedThreadB.id, forkedThreadB],
+    ]);
+    renderActiveThread(threadA.id);
+    expect(paneB?.hasAttribute("data-layout-settled")).toBe(false);
   });
 
   it("does not re-render an unrelated hidden conversation", () => {

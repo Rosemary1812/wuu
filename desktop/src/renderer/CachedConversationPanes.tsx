@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import type {
   Agent,
   ConversationSubthread,
@@ -39,6 +39,15 @@ import { turnHasAssistantOutput } from "./TurnViewHelpers";
 import type { HistoryMessageEditState } from "./ConversationHistoryActions";
 
 const CONVERSATION_GRID_COLUMNS = 12;
+const CONVERSATION_LAYOUT_STABLE_FRAMES = 2;
+const CONVERSATION_LAYOUT_SETTLE_TIMEOUT_MS = 120;
+
+function sameEntriesByIdentity<T>(previous: readonly T[], next: readonly T[]): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every((entry, index) => entry === next[index])
+  );
+}
 
 export type CachedConversationPanesProps = {
   threadIDs: string[];
@@ -215,7 +224,15 @@ const CachedConversationPane = memo(function CachedConversationPane({
   pendingChatMessagesByThread,
 }: CachedConversationPaneProps): JSX.Element {
   const [layoutSettled, setLayoutSettled] = useState(false);
+  const paneRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
+  const handleOpenFile = useCallback(
+    (path: string) => onOpenFile?.(threadRef.current, path),
+    [onOpenFile],
+  );
   const threadTurns = thread.turns ?? [];
+  const pendingChatMessages = pendingChatMessagesByThread[thread.id]?.queued;
   const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
   const threadContextEntries = contextCompositionEntries.filter(
     (entry) => entry.threadID === thread.id,
@@ -243,15 +260,16 @@ const CachedConversationPane = memo(function CachedConversationPane({
       onDismiss={onDismissContextComposition}
     />
   );
-  const threadInstructionCards = instructionFilesEntries
-    .filter((entry) => entry.threadID === thread.id)
-    .map((entry) => (
-      <InstructionFilesCard
-        entry={entry}
-        key={entry.id}
-        onDismiss={onDismissInstructions}
-      />
-    ));
+  const threadInstructionEntries = instructionFilesEntries.filter(
+    (entry) => entry.threadID === thread.id,
+  );
+  const threadInstructionCards = threadInstructionEntries.map((entry) => (
+    <InstructionFilesCard
+      entry={entry}
+      key={entry.id}
+      onDismiss={onDismissInstructions}
+    />
+  ));
   const forkWorktreeNotice =
     thread.worktree && thread.forked_from_id ? (
       <ForkWorktreeNotice thread={thread} />
@@ -259,38 +277,141 @@ const CachedConversationPane = memo(function CachedConversationPane({
   const isGroupChat = isGroupThread(thread);
   const isChatStyleThread = isDMThread(thread) || isGroupChat;
   const latestTurn = threadTurns[threadTurns.length - 1];
+  const latestTurnStreamStatus = latestTurn
+    ? turnStreamStatus[latestTurn.id]
+    : undefined;
   const turnEvents = threadTurns.flatMap((turn) => {
     const event = turnEventForTurn(turn, turnHasAssistantOutput(turn));
     return event ? [{ turnID: turn.id, event }] : [];
   });
+  const previousLayoutContentRef = useRef({
+    turns: threadTurns,
+    pendingChatMessages,
+    streamStatus: latestTurnStreamStatus,
+    contextEntries: threadContextEntries,
+    instructionEntries: threadInstructionEntries,
+    historyMessageEdit,
+    forkedFromID: thread.forked_from_id,
+    worktree: thread.worktree,
+    cwd: thread.cwd,
+  });
+  const wasActiveRef = useRef(isActive);
 
   useLayoutEffect(() => {
-    if (!isActive) {
+    const previous = previousLayoutContentRef.current;
+    const contentChanged =
+      previous.turns !== threadTurns ||
+      previous.pendingChatMessages !== pendingChatMessages ||
+      previous.streamStatus !== latestTurnStreamStatus ||
+      !sameEntriesByIdentity(previous.contextEntries, threadContextEntries) ||
+      !sameEntriesByIdentity(previous.instructionEntries, threadInstructionEntries) ||
+      previous.historyMessageEdit !== historyMessageEdit ||
+      previous.forkedFromID !== thread.forked_from_id ||
+      previous.worktree !== thread.worktree ||
+      previous.cwd !== thread.cwd;
+    const changedWhileHidden =
+      contentChanged && (!isActive || !wasActiveRef.current);
+
+    previousLayoutContentRef.current = {
+      turns: threadTurns,
+      pendingChatMessages,
+      streamStatus: latestTurnStreamStatus,
+      contextEntries: threadContextEntries,
+      instructionEntries: threadInstructionEntries,
+      historyMessageEdit,
+      forkedFromID: thread.forked_from_id,
+      worktree: thread.worktree,
+      cwd: thread.cwd,
+    };
+    wasActiveRef.current = isActive;
+
+    if (changedWhileHidden && layoutSettled) {
       setLayoutSettled(false);
+    }
+  }, [
+    contextCompositionEntries,
+    historyMessageEdit,
+    isActive,
+    instructionFilesEntries,
+    latestTurnStreamStatus,
+    layoutSettled,
+    pendingChatMessages,
+    thread.cwd,
+    thread.forked_from_id,
+    thread.worktree,
+    threadTurns,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!isActive || layoutSettled) {
       return undefined;
     }
 
-    let settleFrame: number | undefined;
-    const layoutFrame = window.requestAnimationFrame(() => {
-      settleFrame = window.requestAnimationFrame(() => {
-        setLayoutSettled(true);
-      });
-    });
+    const pane = paneRef.current;
+    if (!pane) {
+      setLayoutSettled(true);
+      return undefined;
+    }
+
+    let frame: number | undefined;
+    let timeout: number | undefined;
+    let finished = false;
+    let previousHeight = pane.scrollHeight;
+    let stableFrames = 0;
+
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      if (frame !== undefined) {
+        window.cancelAnimationFrame(frame);
+        frame = undefined;
+      }
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+        timeout = undefined;
+      }
+      setLayoutSettled(true);
+    };
+
+    const sampleLayout = (): void => {
+      frame = undefined;
+      const nextHeight = pane.scrollHeight;
+      if (nextHeight === previousHeight) {
+        stableFrames += 1;
+      } else {
+        previousHeight = nextHeight;
+        stableFrames = 0;
+      }
+      if (stableFrames >= CONVERSATION_LAYOUT_STABLE_FRAMES) {
+        finish();
+        return;
+      }
+      frame = window.requestAnimationFrame(sampleLayout);
+    };
+
+    frame = window.requestAnimationFrame(sampleLayout);
+    timeout = window.setTimeout(finish, CONVERSATION_LAYOUT_SETTLE_TIMEOUT_MS);
+
     return () => {
-      window.cancelAnimationFrame(layoutFrame);
-      if (settleFrame !== undefined) {
-        window.cancelAnimationFrame(settleFrame);
+      finished = true;
+      if (frame !== undefined) {
+        window.cancelAnimationFrame(frame);
+      }
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
       }
     };
-  }, [isActive, thread.id]);
+  }, [isActive, layoutSettled, thread.id]);
 
   return (
     <div
+      aria-hidden={isActive ? undefined : true}
       className="cached-conversation-pane"
       data-active={isActive}
-      data-layout-settled={isActive && layoutSettled ? "" : undefined}
+      data-layout-settled={layoutSettled ? "" : undefined}
       data-thread-id={thread.id}
-      style={isActive ? undefined : { display: "none" }}
+      inert={isActive ? undefined : true}
+      ref={paneRef}
     >
       <div className="conversation-width session-flow">
         {isActive && conversationGridVisible ? <ConversationGridGuides /> : null}
@@ -306,7 +427,7 @@ const CachedConversationPane = memo(function CachedConversationPane({
             threadOwnerCandidates={isGroupChat ? thread.members : undefined}
             subthreadsByAnchor={isGroupChat ? subthreadsByAnchor : undefined}
             isActive={isActive}
-            streamStatus={latestTurn ? turnStreamStatus[latestTurn.id] : undefined}
+            streamStatus={latestTurnStreamStatus}
             turnEvents={turnEvents}
             onOpenSubthread={
               isGroupChat
@@ -346,7 +467,7 @@ const CachedConversationPane = memo(function CachedConversationPane({
               <TurnView
                 turn={turn}
                 cwd={thread.cwd ?? activeContextCwd}
-                onOpenFile={(path) => onOpenFile?.(thread, path)}
+                onOpenFile={onOpenFile ? handleOpenFile : undefined}
                 onOpenAgent={(agentID) => {
                   const agent = thread.child_agents?.find(
                     (candidate) => candidate.id === agentID,
@@ -386,9 +507,7 @@ const CachedConversationPane = memo(function CachedConversationPane({
                   onOpenTurnRuns ? () => onOpenTurnRuns(thread, turn.id) : undefined
                 }
                 streamStatus={
-                  thread.turns[thread.turns.length - 1]?.id === turn.id
-                    ? turnStreamStatus[turn.id]
-                    : undefined
+                  latestTurn?.id === turn.id ? latestTurnStreamStatus : undefined
                 }
               />
             )}

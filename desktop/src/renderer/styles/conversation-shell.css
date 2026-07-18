@@ -194,23 +194,37 @@
   grid-column: 1;
 }
 
-.cached-conversation-pane[data-active="true"]:not([data-layout-settled]) > .conversation-width {
+.cached-conversation-panes {
+  position: relative;
+  min-width: 0;
+}
+
+.cached-conversation-pane {
+  overflow: clip;
+}
+
+/* Keep inactive panes out of layout without destroying Chromium's remembered
+ * content-visibility sizes. Warm tab switches can then reuse the exact message
+ * geometry that was already painted instead of rebuilding it from estimates. */
+.cached-conversation-pane[data-active="false"] {
+  position: absolute;
+  inset: 0;
+  content-visibility: hidden;
+  pointer-events: none;
+}
+
+.cached-conversation-pane[data-active="true"] {
+  position: relative;
+  content-visibility: visible;
+}
+
+.cached-conversation-pane:not([data-layout-settled]) > .conversation-width {
   opacity: 0;
 }
 
-.cached-conversation-pane[data-active="true"][data-layout-settled] > .conversation-width {
-  animation: content-swap-enter var(--content-swap-duration) var(--content-swap-easing) both;
-}
-
-/* The swap's 4px translate must NOT leak into scroll geometry: a transformed
- * child extends the scroller's scrollable overflow, so the pre-paint
- * scroll-to-bottom pins against a 4px phantom that then shrinks as the
- * animation rises — the browser walks scrollTop down ~1px per frame while
- * the transform walks the content up, and any dropped frame between the two
- * shows as a visible vertical jolt right after opening a session. Clipping
- * at the pane keeps the scroller's height honest for the whole entrance. */
-.cached-conversation-pane {
-  overflow: clip;
+.cached-conversation-pane[data-layout-settled] > .conversation-width {
+  opacity: 1;
+  transition: opacity var(--content-swap-duration) var(--content-swap-easing);
 }
 
 .conversation-pane.subthread-panel-visible {
@@ -260,12 +274,12 @@
     transition: none;
   }
 
-  .cached-conversation-pane[data-active="true"]:not([data-layout-settled]) > .conversation-width {
+  .cached-conversation-pane:not([data-layout-settled]) > .conversation-width {
     opacity: 1;
   }
 
-  .cached-conversation-pane[data-active="true"][data-layout-settled] > .conversation-width {
-    animation: none;
+  .cached-conversation-pane[data-layout-settled] > .conversation-width {
+    transition: none;
   }
 }
 
