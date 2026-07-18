@@ -3687,6 +3687,7 @@ func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 }
 
 func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
 	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "API_KEY=secret-value-1234567890\n")
@@ -3942,7 +3943,72 @@ func TestToolkit_ToolResultSummaryContextBlockLimitsRenderedCalls(t *testing.T) 
 	}
 }
 
+// TestToolkit_ContextBlocksOmitsDerivedLedgersByDefault locks the issue-128
+// behavior: the four derived ledgers (plan TASK_STATE, ACTIVE_FILES,
+// TOOL_RESULT_SUMMARY, WEB_EVIDENCE) stay out of the default model projection
+// even when their underlying state exists, and WUU_DERIVED_CONTEXT_LEDGERS=on
+// restores them as the A/B baseline.
+func TestToolkit_ContextBlocksOmitsDerivedLedgersByDefault(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "one\ntwo\n")
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, call := range []providers.ToolCall{
+		{Name: "update_plan", Arguments: `{"plan":[{"step":"ship it","status":"in_progress"}]}`},
+		{Name: "read_file", Arguments: `{"path":"a.txt"}`},
+		{Name: "web_fetch", Arguments: `{"url":"http://127.0.0.1/"}`},
+	} {
+		if _, err := kit.Execute(context.Background(), call); err != nil {
+			t.Fatalf("%s: %v", call.Name, err)
+		}
+	}
+	// Sanity: every ledger producer holds state, so gating is what excludes
+	// the blocks, not empty inputs.
+	if len(kit.PlanContextBlocks()) == 0 {
+		t.Fatal("expected plan state for update_plan")
+	}
+	if _, ok := kit.ActiveFilesContextBlock(); !ok {
+		t.Fatal("expected active files state for read_file")
+	}
+	if _, ok := kit.ToolResultSummaryContextBlock(); !ok {
+		t.Fatal("expected tool telemetry state")
+	}
+	if _, ok := kit.WebEvidenceContextBlock(); !ok {
+		t.Fatal("expected web evidence state for web_fetch")
+	}
+
+	ledgerKinds := []wuucontext.BlockKind{
+		wuucontext.BlockTaskState,
+		wuucontext.BlockActiveFiles,
+		wuucontext.BlockToolResultSummary,
+		wuucontext.BlockWebEvidence,
+	}
+	present := func() map[wuucontext.BlockKind]bool {
+		got := map[wuucontext.BlockKind]bool{}
+		for _, block := range kit.ContextBlocks() {
+			got[block.Kind] = true
+		}
+		return got
+	}
+
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "")
+	if got := present(); len(got) != 0 {
+		t.Fatalf("default projection must omit derived ledgers and carry no other toolkit blocks: %+v", got)
+	}
+
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
+	got := present()
+	for _, kind := range ledgerKinds {
+		if !got[kind] {
+			t.Fatalf("A/B baseline should restore %s: %+v", kind, got)
+		}
+	}
+}
+
 func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
 	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "line one\nAPI_KEY=secret-value-1234567890\nline three\nline four\n")

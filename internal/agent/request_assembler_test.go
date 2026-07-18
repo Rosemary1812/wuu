@@ -84,3 +84,31 @@ func TestRequestBlockMetricsMatchProjectionSwitch(t *testing.T) {
 		t.Fatalf("compact block bytes should be smaller: compact=%d legacy=%d", compactBytes, legacyBytes)
 	}
 }
+
+// TestReconciledRetainedContextDropsDerivedLedgers locks the issue-128
+// migration behavior: derived-ledger updates retained by an earlier turn must
+// not re-enter the request stream once they leave the default projection.
+// The A/B baseline ("on") keeps the legacy stream intact.
+func TestReconciledRetainedContextDropsDerivedLedgers(t *testing.T) {
+	ledger := wuucontext.Block{Kind: wuucontext.BlockActiveFiles, Title: "Active files", Source: "read_file", Content: "files:\n- go.mod"}
+	kept := wuucontext.Block{Kind: wuucontext.BlockTestFailures, Title: "Test failures", Source: "bash", Content: "go test failed"}
+	ledgerMsg := requestOnlyMessagesFromBlocks([]wuucontext.Block{ledger})[0]
+	keptMsg := requestOnlyMessagesFromBlocks([]wuucontext.Block{kept})[0]
+	retained := []RetainedContextMessage{
+		{AfterDurable: 0, Message: ledgerMsg},
+		{AfterDurable: 1, Message: keptMsg},
+	}
+	current := RequestOnlyContextBlocks([]wuucontext.Block{kept})
+
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "")
+	got := reconciledRetainedContext(retained, current)
+	if len(got) != 1 || got[0].Message.Name != keptMsg.Name {
+		t.Fatalf("derived ledger must be dropped from retained context: %+v", got)
+	}
+
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
+	got = reconciledRetainedContext(retained, current)
+	if len(got) != 2 {
+		t.Fatalf("A/B baseline keeps the retained ledger stream: %+v", got)
+	}
+}

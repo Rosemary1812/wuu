@@ -30,17 +30,23 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 	}
 	var blocks []wuucontext.Block
 	blocks = append(blocks, t.SessionMemoryContextBlocks()...)
-	blocks = append(blocks, t.PlanContextBlocks()...)
-	if block, ok := t.ActiveFilesContextBlock(); ok {
-		blocks = append(blocks, block)
+	if wuucontext.DerivedContextLedgersEnabled() {
+		// Legacy derived ledgers, kept only as the A/B baseline arm. Ordinary
+		// requests read these facts from their causal source (update_plan
+		// calls, read_file results, web tool results, and the tool
+		// transcript itself) instead of re-stating them every request.
+		blocks = append(blocks, t.PlanContextBlocks()...)
+		if block, ok := t.ActiveFilesContextBlock(); ok {
+			blocks = append(blocks, block)
+		}
+		if block, ok := t.WebEvidenceContextBlock(); ok {
+			blocks = append(blocks, block)
+		}
+		if block, ok := t.ToolResultSummaryContextBlock(); ok {
+			blocks = append(blocks, block)
+		}
 	}
 	if block, ok := t.TestFailureContextBlock(); ok {
-		blocks = append(blocks, block)
-	}
-	if block, ok := t.WebEvidenceContextBlock(); ok {
-		blocks = append(blocks, block)
-	}
-	if block, ok := t.ToolResultSummaryContextBlock(); ok {
 		blocks = append(blocks, block)
 	}
 	return blocks
