@@ -290,6 +290,9 @@ type Env struct {
 	// new snapshot. Consumers can bridge it to runtime events or UI
 	// notifications without coupling the plan tool to either layer.
 	OnPlanUpdated func(snapshot PlanSnapshot)
+	// OnSessionWorkspaceChanged persists and broadcasts an explicit main-agent
+	// workspace move before subsequent tools start resolving paths there.
+	OnSessionWorkspaceChanged func(root string) error
 
 	readState *readFileState
 	testState testRunState
@@ -297,6 +300,61 @@ type Env struct {
 	webState  webEvidenceState
 
 	toolTelemetry toolTelemetry
+}
+
+// prepareSessionWorkspaceChange constructs every fallible runtime dependency
+// before persistence. Its commit function only applies prepared state and is
+// called after the app-server has durably accepted the new workspace.
+func (e *Env) prepareSessionWorkspaceChange(root string) (func(), error) {
+	root = filepath.Clean(root)
+	fileScopeRoots := rebaseRuntimeFileScope(e.FileScopeRoots, e.RootDir, root)
+	commitAgentControl := func() {}
+	if e.AgentControl != nil {
+		var err error
+		commitAgentControl, err = e.AgentControl.PrepareWorkspaceRebind(root)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return func() {
+		e.RootDir = root
+		e.FileScopeRoots = fileScopeRoots
+		if e.ProcessMgr != nil {
+			e.ProcessMgr.SetRootDir(root)
+		}
+		commitAgentControl()
+	}, nil
+}
+
+func rebaseRuntimeFileScope(roots []string, oldRoot, newRoot string) []string {
+	if len(roots) == 0 {
+		return nil
+	}
+	out := append([]string(nil), roots...)
+	for i, root := range out {
+		if sameRuntimeFileScopePath(root, oldRoot) {
+			out[i] = newRoot
+			return out
+		}
+	}
+	return append([]string{newRoot}, out...)
+}
+
+func sameRuntimeFileScopePath(left, right string) bool {
+	canonical := func(path string) string {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return ""
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		return filepath.Clean(path)
+	}
+	return canonical(left) == canonical(right)
 }
 
 // BrowserScreenshotResult reports the persisted screenshot geometry and on-disk

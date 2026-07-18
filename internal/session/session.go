@@ -385,6 +385,23 @@ func UpdateTitle(sessDir, id string, title string) (Session, error) {
 	})
 }
 
+// UpdateWorkspaceBinding persists the workspace used by a session after the
+// main agent explicitly moves the task into a linked worktree.
+func UpdateWorkspaceBinding(
+	sessDir, id, cwd, worktreePath, worktreeBaseHEAD, worktreeBaseRepo string,
+) (Session, error) {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return Session{}, errors.New("workspace cwd is required")
+	}
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.CWD = cwd
+		s.WorktreePath = strings.TrimSpace(worktreePath)
+		s.WorktreeBaseHEAD = strings.TrimSpace(worktreeBaseHEAD)
+		s.WorktreeBaseRepo = strings.TrimSpace(worktreeBaseRepo)
+	})
+}
+
 // UpdatePinned marks a session as pinned or unpinned.
 func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 	now := time.Now().UTC()

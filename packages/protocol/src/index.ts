@@ -2158,14 +2158,14 @@ export type WuuDesktopApi = {
   ) => Promise<{ state_dir: string; removed: boolean; memory_archived: boolean }>;
   relocateProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean, cwd?: string) => Promise<ProjectListResult>;
-  gitStatus: () => Promise<GitStatusResult>;
-  listGitChanges: () => Promise<GitChangesResult>;
+  gitStatus: (root?: string) => Promise<GitStatusResult>;
+  listGitChanges: (root?: string) => Promise<GitChangesResult>;
   readGitFileDiff: (path: string, root?: string) => Promise<GitFileDiffResult>;
-  gitActionBusy?: () => Promise<boolean>;
-  checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
-  createCheckoutGitBranch: (branch: string) => Promise<GitCreateBranchResult>;
-  commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;
-  createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
+  gitActionBusy?: (root?: string) => Promise<boolean>;
+  checkoutGitBranch: (branch: string, root?: string) => Promise<GitStatusResult>;
+  createCheckoutGitBranch: (branch: string, root?: string) => Promise<GitCreateBranchResult>;
+  commitGitChanges: (params: GitCommitParams, root?: string) => Promise<GitCommitResult>;
+  createPullRequest: (params: GitPullRequestParams, root?: string) => Promise<GitPullRequestResult>;
   // root is an optional absolute directory override, used to root the
   // workspace file tree / preview at the active thread's own cwd (e.g. a
   // worktree fork) instead of the active project's cwd. See

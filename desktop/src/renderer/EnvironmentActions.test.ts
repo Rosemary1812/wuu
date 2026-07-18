@@ -63,16 +63,19 @@ function installWuuApi(): {
 
 function buildActions({
   initial = { ...initialState, activeContext: projectContext(), status: "ready" },
+  environmentRoot = "/tmp/project-1",
   anyThreadIsRunning = false,
   environmentPanelVisible = false,
   panelContainsFocus = false,
 }: {
   initial?: AppState;
+  environmentRoot?: string;
   anyThreadIsRunning?: boolean;
   environmentPanelVisible?: boolean;
   panelContainsFocus?: boolean;
 } = {}) {
   let appState = initial;
+  let currentEnvironmentRoot = environmentRoot;
   let activeMenu: EnvironmentPanelMenu = null;
   let panelOpen = false;
   let panelDismissed = false;
@@ -81,6 +84,7 @@ function buildActions({
   const focusEnvironmentToggle = vi.fn();
   const actions = createEnvironmentActions({
     getAppState: () => appState,
+    getEnvironmentRoot: () => currentEnvironmentRoot,
     setAppState: (update) => {
       appState = typeof update === "function" ? update(appState) : update;
     },
@@ -107,6 +111,9 @@ function buildActions({
   return {
     actions,
     getAppState: () => appState,
+    setEnvironmentRoot: (root: string) => {
+      currentEnvironmentRoot = root;
+    },
     getPanelState: () => ({ activeMenu, panelOpen, panelDismissed }),
     closeProjectMenus,
     closeRuntimeMenus,
@@ -121,7 +128,7 @@ describe("createEnvironmentActions", () => {
 
     await harness.actions.checkoutBranch("feature");
 
-    expect(api.checkoutGitBranch).toHaveBeenCalledWith("feature");
+    expect(api.checkoutGitBranch).toHaveBeenCalledWith("feature", "/tmp/project-1");
     expect(harness.closeProjectMenus).toHaveBeenCalled();
     expect(harness.getAppState().gitStatus?.branch).toBe("feature");
     expect(harness.getAppState().status).toBe("ready");
@@ -146,11 +153,36 @@ describe("createEnvironmentActions", () => {
       includeUnstaged: true,
     });
 
-    expect(api.commitGitChanges).toHaveBeenCalledWith({
-      message: "commit message",
-      include_unstaged: true,
-    });
+    expect(api.commitGitChanges).toHaveBeenCalledWith(
+      {
+        message: "commit message",
+        include_unstaged: true,
+      },
+      "/tmp/project-1",
+    );
     expect(resolveLocalizedText(harness.getAppState().status)).toBe("已提交 abc123");
+  });
+
+  it("discards a Git status response after the session workspace changes", async () => {
+    vi.useFakeTimers();
+    const api = installWuuApi();
+    let resolveStatus: ((status: GitStatusResult) => void) | undefined;
+    api.gitStatus.mockImplementationOnce(
+      () => new Promise<GitStatusResult>((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+    const harness = buildActions();
+
+    harness.actions.scheduleGitStatusRefresh(0);
+    await vi.runOnlyPendingTimersAsync();
+    expect(api.gitStatus).toHaveBeenCalledWith("/tmp/project-1");
+
+    harness.setEnvironmentRoot("/tmp/project-1-worktree");
+    resolveStatus?.(gitStatus("stale-branch"));
+    await Promise.resolve();
+
+    expect(harness.getAppState().gitStatus).toBeUndefined();
   });
 
   it("opens and closes the environment panel with focus restoration", () => {

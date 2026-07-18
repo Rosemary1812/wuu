@@ -56,6 +56,45 @@ func TestStartListAndPersist(t *testing.T) {
 	}
 }
 
+func TestSetRootDirMovesFutureLaunches(t *testing.T) {
+	oldRoot := t.TempDir()
+	newRoot := t.TempDir()
+	m, err := NewManager(oldRoot, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.SetRootDir(newRoot)
+	p, err := m.Start(context.Background(), StartOptions{
+		Command:   "pwd",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(newRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.CWD != want {
+		t.Fatalf("process cwd = %q, want %q", p.CWD, want)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		current, err := m.Get(p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Status == StatusStopped || current.Status == StatusFailed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("process did not reach terminal status: %+v", current)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestStartDoesNotRequirePSBinary(t *testing.T) {
 	root := t.TempDir()
 	runtimeDir := filepath.Join(root, "state", "runtime")

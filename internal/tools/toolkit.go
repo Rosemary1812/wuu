@@ -182,12 +182,13 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		// runs through CloneForRoot, so omitting these here silently strips the
 		// bridge/tab store from every cloned session (the mcpActivityBindings
 		// precedent below is the same hazard).
-		BrowserBridge:  t.env.BrowserBridge,
-		BrowserTabs:    t.env.BrowserTabs,
-		FileScopeRoots: append([]string(nil), t.env.FileScopeRoots...),
-		Skills:         t.env.Skills,
-		OnFileChanged:  t.env.OnFileChanged,
-		OnPlanUpdated:  t.env.OnPlanUpdated,
+		BrowserBridge:             t.env.BrowserBridge,
+		BrowserTabs:               t.env.BrowserTabs,
+		FileScopeRoots:            append([]string(nil), t.env.FileScopeRoots...),
+		Skills:                    t.env.Skills,
+		OnFileChanged:             t.env.OnFileChanged,
+		OnPlanUpdated:             t.env.OnPlanUpdated,
+		OnSessionWorkspaceChanged: t.env.OnSessionWorkspaceChanged,
 	}
 
 	clone := &Toolkit{
@@ -254,6 +255,7 @@ func (t *Toolkit) rebuildRegistry() {
 		// desktop session tree — agents receive a thread ID and resolve it
 		// back to the full conversation via this tool).
 		NewThreadGetTool(e),
+		NewSetSessionWorkspaceTool(e),
 		NewFetchThreadMessagesTool(e),
 		// Goals
 		NewGoalTool(e),
@@ -437,6 +439,12 @@ func (t *Toolkit) SetOnFileChanged(fn func(absPath string)) {
 // stores a new snapshot.
 func (t *Toolkit) SetOnPlanUpdated(fn func(snapshot PlanSnapshot)) {
 	t.env.OnPlanUpdated = fn
+}
+
+// SetOnSessionWorkspaceChanged attaches the app-server persistence and
+// notification hook used by set_session_workspace.
+func (t *Toolkit) SetOnSessionWorkspaceChanged(fn func(root string) error) {
+	t.env.OnSessionWorkspaceChanged = fn
 }
 
 // SetMCPManager attaches the MCP manager so its tools are exposed to the agent.

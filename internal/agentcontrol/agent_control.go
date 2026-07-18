@@ -58,6 +58,7 @@ type ParticipantStore interface {
 // AgentControl owns the orchestration runtime for one wuu session.
 type AgentControl struct {
 	manager       *subagent.Manager
+	workspaceMu   sync.RWMutex
 	worktrees     *worktree.Manager // nil when workspace is not a git repo
 	parentRepo    string            // absolute path to workspace root
 	worktreeRoot  string            // workspace-state worktrees directory
@@ -345,6 +346,75 @@ func New(cfg Config) (*AgentControl, error) {
 	}()
 	c.reconcileOrphanedHarnessTasks()
 	return c, nil
+}
+
+// PrepareWorkspaceRebind builds any fallible workspace-specific state before
+// the caller persists a session move. The returned commit function only swaps
+// prepared in-memory state, so a successful durable update cannot leave the
+// current turn on the old workspace.
+func (c *AgentControl) PrepareWorkspaceRebind(parentRepo string) (func(), error) {
+	if c == nil {
+		return func() {}, nil
+	}
+	parentRepo = strings.TrimSpace(parentRepo)
+	if parentRepo == "" {
+		return nil, errors.New("parent repository is required")
+	}
+	abs, err := filepath.Abs(parentRepo)
+	if err != nil {
+		return nil, fmt.Errorf("resolve parent repository: %w", err)
+	}
+	abs = filepath.Clean(abs)
+
+	var manager *worktree.Manager
+	if worktree.IsGitRepo(abs) {
+		manager, err = worktree.NewManager(abs, c.worktreeRoot)
+		if err != nil {
+			return nil, fmt.Errorf("prepare worktree manager: %w", err)
+		}
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.workspaceMu.Lock()
+			c.parentRepo = abs
+			c.worktrees = manager
+			c.workspaceMu.Unlock()
+			c.updateRootThreadWorkspace(abs)
+		})
+	}, nil
+}
+
+func (c *AgentControl) workspaceSnapshot() (string, *worktree.Manager) {
+	if c == nil {
+		return "", nil
+	}
+	c.workspaceMu.RLock()
+	defer c.workspaceMu.RUnlock()
+	return c.parentRepo, c.worktrees
+}
+
+// ParentRepo returns the workspace used by future inplace workers and forks.
+func (c *AgentControl) ParentRepo() string {
+	parentRepo, _ := c.workspaceSnapshot()
+	return parentRepo
+}
+
+func (c *AgentControl) updateRootThreadWorkspace(root string) {
+	if c == nil || c.threads == nil || c.threadStore == nil {
+		return
+	}
+	sessionID := strings.TrimSpace(c.sessionID)
+	if sessionID == "" || sessionID == "session-pending" {
+		return
+	}
+	model := ""
+	if existing, ok := c.threads.Resolve(sessionID); ok {
+		model = existing.Model
+	}
+	meta := c.threads.RegisterRoot(sessionID, sessionID, root, model, time.Now().UTC())
+	_ = c.threadStore.UpsertThread(meta)
 }
 
 // Manager exposes the underlying subagent.Manager for advanced use
@@ -1029,21 +1099,22 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	// 1. Determine the worker's working directory.
 	//    - inplace: share the parent repo (no checkout cost)
 	//    - worktree: `git worktree add --detach` based on parent HEAD
+	parentRepo, worktrees := c.workspaceSnapshot()
 	var (
 		workerRoot  string
 		worktreeRef *worktree.Worktree
 	)
 	if isolation == IsolationWorktree {
-		if c.worktrees == nil {
+		if worktrees == nil {
 			return nil, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
+		worktreeRef, err = worktrees.Create(c.sessionID, workerID, req.BaseRepo)
 		if err != nil {
 			return nil, fmt.Errorf("worktree create: %w", err)
 		}
 		workerRoot = worktreeRef.Path
 	} else {
-		workerRoot = c.parentRepo
+		workerRoot = parentRepo
 	}
 
 	// 2. Register the child thread before launch so the visible worker
@@ -1051,7 +1122,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, ultra)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, err
 	}
@@ -1072,7 +1143,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if err != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
 	}
@@ -1082,7 +1153,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if err != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker system prompt: %w", err))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker system prompt: %w", err)
 	}
@@ -1136,7 +1207,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if err != nil {
 		c.clearReportSettlement(workerID)
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
@@ -1421,21 +1492,22 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		}
 	}()
 
+	parentRepo, worktrees := c.workspaceSnapshot()
 	var (
 		workerRoot  string
 		worktreeRef *worktree.Worktree
 	)
 	if isolation == IsolationWorktree {
-		if c.worktrees == nil {
+		if worktrees == nil {
 			return nil, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
+		worktreeRef, err = worktrees.Create(c.sessionID, workerID, req.BaseRepo)
 		if err != nil {
 			return nil, fmt.Errorf("worktree create: %w", err)
 		}
 		workerRoot = worktreeRef.Path
 	} else {
-		workerRoot = c.parentRepo
+		workerRoot = parentRepo
 	}
 
 	forkPrompt := req.Prompt
@@ -1446,7 +1518,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, ultra)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, err
 	}
@@ -1460,7 +1532,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if err != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
 	}
@@ -1475,7 +1547,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if sysErr != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker system prompt: %w", sysErr)
 	}
@@ -1507,7 +1579,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	})
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
@@ -2012,7 +2084,7 @@ func (c *AgentControl) registerRootThread() {
 	if c.rootThreadID == sessionID && c.rootThreadDir == c.threadDir {
 		return
 	}
-	meta := c.threads.RegisterRoot(sessionID, sessionID, c.parentRepo, "", time.Now().UTC())
+	meta := c.threads.RegisterRoot(sessionID, sessionID, c.ParentRepo(), "", time.Now().UTC())
 	_ = c.threadStore.UpsertThread(meta)
 	c.rootThreadID = sessionID
 	c.rootThreadDir = c.threadDir
@@ -2076,7 +2148,7 @@ func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile,
 		AgentProfile:    strings.TrimSpace(agentProfile),
 		Role:            role,
 		LastTaskMessage: message,
-		CWD:             c.parentRepo,
+		CWD:             c.ParentRepo(),
 		Ultra:           ultra,
 		SourceKind:      source,
 		ForkMode:        strings.TrimSpace(forkMode),
@@ -2779,10 +2851,11 @@ func (c *AgentControl) resolveSpawnModelPin(label, modelOverride, rawPin string,
 }
 
 func (c *AgentControl) resolveQueuedWorktreeBase(baseRepo string) (worktree.ResolvedBase, error) {
-	if c.worktrees == nil {
+	_, worktrees := c.workspaceSnapshot()
+	if worktrees == nil {
 		return worktree.ResolvedBase{}, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 	}
-	resolved, err := c.worktrees.ResolveBase(baseRepo, "")
+	resolved, err := worktrees.ResolveBase(baseRepo, "")
 	if err != nil {
 		return worktree.ResolvedBase{}, fmt.Errorf("resolve queued worktree base: %w", err)
 	}
@@ -2883,13 +2956,14 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 			returnErr = errors.Join(returnErr, ackErr)
 		}
 	}()
-	workerRoot := c.parentRepo
+	parentRepo, worktrees := c.workspaceSnapshot()
+	workerRoot := parentRepo
 	var worktreeRef *worktree.Worktree
 	if prepared.Isolation == IsolationWorktree {
-		if c.worktrees == nil {
+		if worktrees == nil {
 			return queuedSpawnStartUnknown, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.OpenOrCreate(worktree.OpenOrCreateOptions{
+		worktreeRef, err = worktrees.OpenOrCreate(worktree.OpenOrCreateOptions{
 			SessionID:    c.sessionID,
 			WorkerID:     prepared.WorkerID,
 			BaseRepo:     prepared.BaseRepo,
@@ -2910,7 +2984,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	workerKit, err := c.workerFact(workerRoot, prepared.WorkerType, prepared.ThreadMeta)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, fmt.Errorf("worker toolkit: %w", err)
 	}
@@ -2918,7 +2992,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	systemPrompt, err := c.workerSystemPrompt(workerRoot, prepared.WorkerType, prepared.ThreadMeta, prepared.Isolation)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, fmt.Errorf("worker system prompt: %w", err)
 	}
@@ -2949,7 +3023,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	modelOverride, clientOverride, providerOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("queued spawn %s", prepared.WorkerID), prepared.ModelOverride, prepared.ModelPin, prepared.ClientOverride)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, err
 	}
@@ -3018,12 +3092,12 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		c.clearReportSettlement(prepared.WorkerID)
 		if errors.Is(err, errAgentControlStopping) {
 			if worktreeRef != nil {
-				_ = c.worktrees.Cleanup(worktreeRef)
+				_ = worktrees.Cleanup(worktreeRef)
 			}
 			return queuedSpawnRetryPending, err
 		}
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, fmt.Errorf("spawn: %w", err)
 	}
@@ -3636,7 +3710,7 @@ func (c *AgentControl) ensureTerminalHarnessProjection(n subagent.Notification) 
 		}
 	}
 	if workerRoot == "" {
-		workerRoot = c.parentRepo
+		workerRoot = c.ParentRepo()
 	}
 	if role == "" {
 		role = meta.Role
@@ -4730,10 +4804,11 @@ If a worker seems stuck, close it with close_agent and respawn with clearer inst
 
 // CleanupSession removes all worktrees belonging to this session.
 func (c *AgentControl) CleanupSession() error {
-	if c.worktrees == nil {
+	_, worktrees := c.workspaceSnapshot()
+	if worktrees == nil {
 		return nil // non-git workspace, no worktrees to clean
 	}
-	return c.worktrees.CleanupSession(c.sessionID)
+	return worktrees.CleanupSession(c.sessionID)
 }
 
 func appendForkWorktreeReminder(prompt, workerRoot string, isolation IsolationMode) string {

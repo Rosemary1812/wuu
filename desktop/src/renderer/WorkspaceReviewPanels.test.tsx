@@ -28,7 +28,10 @@ async function flushReviewEffects(): Promise<void> {
   });
 }
 
-function installGitReviewStub(files: GitChangeFile[]): void {
+function installGitReviewStub(files: GitChangeFile[]): {
+  listGitChanges: ReturnType<typeof vi.fn>;
+  readGitFileDiff: ReturnType<typeof vi.fn>;
+} {
   const first = files[0];
   const changes: GitChangesResult = {
     is_repo: true,
@@ -50,13 +53,16 @@ function installGitReviewStub(files: GitChangeFile[]): void {
     ].join("\n"),
     truncated: false,
   };
+  const listGitChanges = vi.fn().mockResolvedValue(changes);
+  const readGitFileDiff = vi.fn().mockResolvedValue(diff);
   Object.defineProperty(window, "wuu", {
     configurable: true,
     value: {
-      listGitChanges: vi.fn().mockResolvedValue(changes),
-      readGitFileDiff: vi.fn().mockResolvedValue(diff),
+      listGitChanges,
+      readGitFileDiff,
     },
   });
+  return { listGitChanges, readGitFileDiff };
 }
 
 function restoreWuu(): void {
@@ -82,7 +88,7 @@ afterEach(() => {
 
 describe("WorkspaceReviewPanel", () => {
   it("uses the full review width for a single changed file", async () => {
-    installGitReviewStub([
+    const api = installGitReviewStub([
       {
         path: "desktop/src/renderer/styles/sidebar.css",
         status: "modified",
@@ -91,8 +97,19 @@ describe("WorkspaceReviewPanel", () => {
       },
     ]);
 
-    mount(<WorkspaceReviewPanel gitStatus={{ is_repo: true, branch: "main", dirty_count: 1 }} />);
+    mount(
+      <WorkspaceReviewPanel
+        gitStatus={{ is_repo: true, branch: "main", dirty_count: 1 }}
+        workspaceRoot="/repo/worktree"
+      />,
+    );
     await flushReviewEffects();
+
+    expect(api.listGitChanges).toHaveBeenCalledWith("/repo/worktree");
+    expect(api.readGitFileDiff).toHaveBeenCalledWith(
+      "desktop/src/renderer/styles/sidebar.css",
+      "/repo/worktree",
+    );
 
     const panel = container?.querySelector<HTMLElement>(".workspace-review-panel");
     expect(panel?.classList.contains("single-file")).toBe(true);

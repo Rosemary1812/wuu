@@ -61,7 +61,8 @@ const (
 
 	// Session lookup: resolve a copied Wuu thread/session ID to the
 	// persisted conversation record and history.
-	CapabilitySessionLookup Capability = "session.lookup"
+	CapabilitySessionLookup    Capability = "session.lookup"
+	CapabilitySessionWorkspace Capability = "session.workspace"
 
 	// Plan / Goal / skills.
 	CapabilityPlan  Capability = "plan"
@@ -109,6 +110,7 @@ func All() []Capability {
 		CapabilityMemorySession,
 		CapabilityMemoryProject,
 		CapabilitySessionLookup,
+		CapabilitySessionWorkspace,
 		CapabilityPlan,
 		CapabilityGoal,
 		CapabilitySkill,

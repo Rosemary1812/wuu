@@ -376,6 +376,10 @@ function gitServiceForEvent(event: IpcMainInvokeEvent): GitService {
   return new GitService(
     () => runtimeContextForEvent(event),
     () => appServerClientPool.runningThreadCwds(),
+    () => {
+      const context = runtimeContextForEvent(event);
+      return appServerClientPool.threadCwdsForWorkdir(context.cwd);
+    },
   );
 }
 
@@ -1078,29 +1082,29 @@ app.whenReady().then(async () => {
     (_event, fresh?: boolean, cwd?: string) =>
       projectManager.selectNoProject(Boolean(fresh), cwd),
   );
-  ipcMain.handle("wuu:git-status", (event) =>
-    gitServiceForEvent(event).status(),
+  ipcMain.handle("wuu:git-status", (event, root?: string) =>
+    gitServiceForEvent(event).status({}, root),
   );
-  ipcMain.handle("wuu:git-changes", (event) =>
-    gitServiceForEvent(event).changes(),
+  ipcMain.handle("wuu:git-changes", (event, root?: string) =>
+    gitServiceForEvent(event).changes(root),
   );
   ipcMain.handle("wuu:git-file-diff", (event, path: string, root?: string) =>
     gitServiceForEvent(event).fileDiff(path, root),
   );
-  ipcMain.handle("wuu:git-action-busy", (event) =>
-    gitServiceForEvent(event).actionBusy(),
+  ipcMain.handle("wuu:git-action-busy", (event, root?: string) =>
+    gitServiceForEvent(event).actionBusy(root),
   );
-  ipcMain.handle("wuu:git-checkout-branch", (event, branch: string) =>
-    gitServiceForEvent(event).checkoutBranch(branch),
+  ipcMain.handle("wuu:git-checkout-branch", (event, branch: string, root?: string) =>
+    gitServiceForEvent(event).checkoutBranch(branch, root),
   );
-  ipcMain.handle("wuu:git-create-checkout-branch", (event, branch: string) =>
-    gitServiceForEvent(event).createCheckoutBranch(branch),
+  ipcMain.handle("wuu:git-create-checkout-branch", (event, branch: string, root?: string) =>
+    gitServiceForEvent(event).createCheckoutBranch(branch, root),
   );
-  ipcMain.handle("wuu:git-commit", (event, params: GitCommitParams) =>
-    gitServiceForEvent(event).commit(params ?? {}),
+  ipcMain.handle("wuu:git-commit", (event, params: GitCommitParams, root?: string) =>
+    gitServiceForEvent(event).commit(params ?? {}, root),
   );
-  ipcMain.handle("wuu:git-create-pr", (event, params: GitPullRequestParams) =>
-    gitServiceForEvent(event).createPullRequest(params ?? {}),
+  ipcMain.handle("wuu:git-create-pr", (event, params: GitPullRequestParams, root?: string) =>
+    gitServiceForEvent(event).createPullRequest(params ?? {}, root),
   );
   ipcMain.handle("wuu:file-tree-list", (event, root?: string) =>
     workspaceFilesForEvent(event).fileTreeList(root),

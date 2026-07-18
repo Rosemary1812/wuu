@@ -81,6 +81,10 @@ func (k SurfaceKind) includesHelpme() bool {
 	return k == SurfaceMain || k == SurfaceNamed
 }
 
+func (k SurfaceKind) includesSessionWorkspace() bool {
+	return k == SurfaceMain
+}
+
 // Compiler compiles a model profile into a tool surface. Compile is given a
 // SurfaceKind so it can decide whether the surface should advertise, hide, or
 // omit orchestration and recovery tools (the spawn_agent suite, helpme) and
@@ -121,6 +125,9 @@ func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	}
 	if kind.includesHelpme() {
 		addHelpmeTool(b)
+	}
+	if kind.includesSessionWorkspace() {
+		addSessionWorkspaceTool(b)
 	}
 	if kind.isWorker() {
 		addWorkerReportTool(b)
@@ -352,6 +359,10 @@ func addMemoryTools(b *surfaceBuilder) {
 
 func addSessionTools(b *surfaceBuilder) {
 	b.addDeferred("thread_get", capability.CapabilitySessionLookup)
+}
+
+func addSessionWorkspaceTool(b *surfaceBuilder) {
+	b.addDeferred("set_session_workspace", capability.CapabilitySessionWorkspace)
 }
 
 func addPlanningTools(b *surfaceBuilder) {

@@ -185,6 +185,24 @@ func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 	return m, nil
 }
 
+// SetRootDir changes the default working directory and confinement root for
+// future process launches without discarding handles for existing processes.
+func (m *Manager) SetRootDir(rootDir string) {
+	if m == nil {
+		return
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return
+	}
+	if abs, err := filepath.Abs(rootDir); err == nil {
+		rootDir = abs
+	}
+	m.mu.Lock()
+	m.rootDir = filepath.Clean(rootDir)
+	m.mu.Unlock()
+}
+
 func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error) {
 	if strings.TrimSpace(opt.Command) == "" {
 		return nil, errors.New("command is required")
@@ -204,7 +222,10 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	if opt.CompletionMode != CompletionModeResume && opt.CompletionMode != CompletionModeDetached {
 		return nil, errors.New("completion_mode must be resume or detached")
 	}
-	cwd, err := resolveStartCWD(m.rootDir, opt.CWD, opt.AllowOutsideWorkspace)
+	m.mu.Lock()
+	rootDir := m.rootDir
+	m.mu.Unlock()
+	cwd, err := resolveStartCWD(rootDir, opt.CWD, opt.AllowOutsideWorkspace)
 	if err != nil {
 		return nil, err
 	}

@@ -68,7 +68,13 @@ function clampWorkspaceReviewTreeWidth(width: number, panelWidth = Number.POSITI
   return clamp(width, WORKSPACE_REVIEW_TREE_MIN_WIDTH, maxForPanel);
 }
 
-export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResult }): JSX.Element {
+export function WorkspaceReviewPanel({
+  gitStatus,
+  workspaceRoot,
+}: {
+  gitStatus?: GitStatusResult;
+  workspaceRoot?: string;
+}): JSX.Element {
   const { locale, t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
   const splitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
@@ -104,7 +110,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     setLoadingChanges(true);
     setError(undefined);
     void window.wuu
-      .listGitChanges()
+      .listGitChanges(workspaceRoot)
       .then((result) => {
         if (cancelled) {
           return;
@@ -128,7 +134,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return () => {
       cancelled = true;
     };
-  }, [locale]);
+  }, [locale, workspaceRoot]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -159,7 +165,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     setLoadingDiff(true);
     setError(undefined);
     void window.wuu
-      .readGitFileDiff(selectedPath)
+      .readGitFileDiff(selectedPath, workspaceRoot)
       .then((result) => {
         if (!cancelled) {
           setFileDiff(result);
@@ -179,7 +185,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
     return () => {
       cancelled = true;
     };
-  }, [selectedPath, locale]);
+  }, [selectedPath, locale, workspaceRoot]);
 
   useEffect(() => {
     window.localStorage.setItem(WORKSPACE_REVIEW_TREE_WIDTH_KEY, String(treePaneWidth));

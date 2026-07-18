@@ -27,54 +27,71 @@ export class GitService {
   constructor(
     private readonly getRuntimeContext: () => RuntimeContext,
     private readonly getRunningThreadCwds: () => string[] = () => [],
+    private readonly getKnownThreadCwds: () => string[] = () => [],
   ) {}
 
   worktreeRoot(cwd: string): string {
     return gitWorktreeRoot(cwd);
   }
 
-  actionBusy(): boolean {
+  actionBusy(root?: string): boolean {
     return gitWorkingTreeBusy(
-      this.getRuntimeContext().cwd,
+      this.contextForRoot(root).cwd,
       this.getRunningThreadCwds(),
     );
   }
 
-  status(options: GitStatusOptions = {}): GitStatusResult {
-    return gitStatusResult(this.getRuntimeContext(), options);
+  status(options: GitStatusOptions = {}, root?: string): GitStatusResult {
+    return gitStatusResult(this.contextForRoot(root), options);
   }
 
-  changes(): GitChangesResult {
-    return gitChangesResult(this.getRuntimeContext());
+  changes(root?: string): GitChangesResult {
+    return gitChangesResult(this.contextForRoot(root));
   }
 
   fileDiff(path: string, root?: string): GitFileDiffResult {
-    const context = this.getRuntimeContext();
-    return gitFileDiffResult(root ? { ...context, cwd: root } : context, path);
+    return gitFileDiffResult(this.contextForRoot(root), path);
   }
 
-  checkoutBranch(branch: string): GitStatusResult {
-    const context = this.getRuntimeContext();
+  checkoutBranch(branch: string, root?: string): GitStatusResult {
+    const context = this.contextForRoot(root);
     this.assertMutationAllowed(context.cwd);
     return checkoutGitBranch(context, branch);
   }
 
-  createCheckoutBranch(branch: string): GitCreateBranchResult {
-    const context = this.getRuntimeContext();
+  createCheckoutBranch(branch: string, root?: string): GitCreateBranchResult {
+    const context = this.contextForRoot(root);
     this.assertMutationAllowed(context.cwd);
     return createCheckoutGitBranch(context, branch);
   }
 
-  commit(params: GitCommitParams): GitCommitResult {
-    const context = this.getRuntimeContext();
+  commit(params: GitCommitParams, root?: string): GitCommitResult {
+    const context = this.contextForRoot(root);
     this.assertMutationAllowed(context.cwd);
     return commitGitChanges(context, params);
   }
 
-  createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
-    const context = this.getRuntimeContext();
+  createPullRequest(params: GitPullRequestParams, root?: string): GitPullRequestResult {
+    const context = this.contextForRoot(root);
     this.assertMutationAllowed(context.cwd);
     return createPullRequest(context, params);
+  }
+
+  private contextForRoot(root?: string): RuntimeContext {
+    const context = this.getRuntimeContext();
+    const requestedRoot = root?.trim();
+    if (!requestedRoot) {
+      return context;
+    }
+    if (!isAbsolute(requestedRoot)) {
+      throw new Error("Git working directory must be absolute");
+    }
+    const normalizedRoot = resolve(requestedRoot);
+    const allowedRoots = [context.cwd, ...this.getKnownThreadCwds()].map((cwd) => resolve(cwd));
+    if (!allowedRoots.includes(normalizedRoot)) {
+      throw new Error("Git working directory is not associated with the current project");
+    }
+    return { ...context, cwd: normalizedRoot };
   }
 
   private assertMutationAllowed(cwd: string): void {

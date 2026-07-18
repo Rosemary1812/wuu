@@ -883,12 +883,11 @@ export function App(): JSX.Element {
     }
   }, [rightPanelGlobalized, rightPanelOpen, sidebarDrawerPhase]);
 
-  // Workspace panel (file tree / file preview / terminal) root: follows the
+  // Workspace panel (file tree / file preview / terminal / review) root: follows the
   // active thread's own cwd when it differs from state.activeContext — the
   // main remaining case is a worktree-fork thread, whose cwd is a git
   // worktree directory distinct from the project root activeContext stays
-  // pinned to. The diff/review panel intentionally keeps using
-  // state.activeContext directly (see workspacePanelContext's doc comment).
+  // pinned to.
   const workspaceContext = useMemo(
     () => workspacePanelContext(state.activeContext, state.thread),
     [state.activeContext, state.thread],
@@ -907,6 +906,7 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const environmentContext = workspacePanelContext(state.activeContext, activeThread);
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
     activeContext: state.activeContext,
@@ -1749,8 +1749,9 @@ export function App(): JSX.Element {
     scheduleGitStatusRefresh(0);
   }, [
     state.activeContext?.kind,
-    state.activeContext?.cwd,
+    environmentContext?.cwd,
     state.activeProjectId,
+    activeThreadID,
   ]);
 
   useEffect(() => {
@@ -2284,11 +2285,11 @@ export function App(): JSX.Element {
     state.threads,
   ]);
   const activeWorkingTreeBusy = useGitActionBusy(
-    state.activeContext,
+    environmentContext,
     runningThreadKey,
   );
   // The Environment panel's git actions (branch switch / commit / PR) mutate the
-  // active context's working tree, so they are gated on that tree being busy —
+  // active session's working tree, so they are gated on that tree being busy —
   // not on any thread anywhere running. A worktree-fork thread running in its
   // own cwd, or a thread in another project, no longer blocks them.
   const environmentGitBusy = activeWorkingTreeBusy || viewContextSwitchPending;
@@ -2887,6 +2888,11 @@ export function App(): JSX.Element {
     closeEnvironmentPanel,
   } = createEnvironmentActions({
     getAppState: () => appStateRef.current,
+    getEnvironmentRoot: () =>
+      workspacePanelContext(
+        appStateRef.current.activeContext,
+        activeThreadForState(appStateRef.current),
+      )?.cwd,
     setAppState: setState,
     getAnyThreadIsRunning: () => environmentGitBusy,
     closeProjectMenus,

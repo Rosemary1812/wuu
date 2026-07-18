@@ -126,18 +126,19 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:project-relocate", projectId),
   selectNoProject: (fresh?: boolean, cwd?: string) =>
     ipcRenderer.invoke("wuu:project-select-none", fresh, cwd),
-  gitStatus: () => ipcRenderer.invoke("wuu:git-status"),
-  listGitChanges: () => ipcRenderer.invoke("wuu:git-changes"),
+  gitStatus: (root?: string) => ipcRenderer.invoke("wuu:git-status", root),
+  listGitChanges: (root?: string) => ipcRenderer.invoke("wuu:git-changes", root),
   readGitFileDiff: (path: string, root?: string) =>
     ipcRenderer.invoke("wuu:git-file-diff", path, root),
-  gitActionBusy: () => ipcRenderer.invoke("wuu:git-action-busy"),
-  checkoutGitBranch: (branch: string) =>
-    ipcRenderer.invoke("wuu:git-checkout-branch", branch),
-  createCheckoutGitBranch: (branch: string) =>
-    ipcRenderer.invoke("wuu:git-create-checkout-branch", branch),
-  commitGitChanges: (params) => ipcRenderer.invoke("wuu:git-commit", params),
-  createPullRequest: (params) =>
-    ipcRenderer.invoke("wuu:git-create-pr", params),
+  gitActionBusy: (root?: string) => ipcRenderer.invoke("wuu:git-action-busy", root),
+  checkoutGitBranch: (branch: string, root?: string) =>
+    ipcRenderer.invoke("wuu:git-checkout-branch", branch, root),
+  createCheckoutGitBranch: (branch: string, root?: string) =>
+    ipcRenderer.invoke("wuu:git-create-checkout-branch", branch, root),
+  commitGitChanges: (params, root?: string) =>
+    ipcRenderer.invoke("wuu:git-commit", params, root),
+  createPullRequest: (params, root?: string) =>
+    ipcRenderer.invoke("wuu:git-create-pr", params, root),
   listWorkspaceFiles: (root?: string) =>
     ipcRenderer.invoke("wuu:file-tree-list", root),
   listWorkspaceDirectory: (path?: string, root?: string) =>

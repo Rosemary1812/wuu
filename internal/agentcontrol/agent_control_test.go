@@ -199,6 +199,73 @@ func TestNew_NonGitRepoSucceeds(t *testing.T) {
 	}
 }
 
+func TestPrepareWorkspaceRebindMovesSubsequentInplaceSpawnAndFork(t *testing.T) {
+	parent := t.TempDir()
+	initRepo(t, parent)
+	linked := filepath.Join(t.TempDir(), "linked")
+	cmd := exec.Command("git", "worktree", "add", "-q", "-b", "rebound-workspace", linked)
+	cmd.Dir = parent
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+
+	spawnRoots := make(chan string, 2)
+	c, err := New(Config{
+		Client:       &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel: "fake-model",
+		ParentRepo:   parent,
+		WorktreeRoot: filepath.Join(t.TempDir(), "worktrees"),
+		SessionID:    "workspace-rebind",
+		ThreadDir:    filepath.Join(t.TempDir(), "threads"),
+		WorkerFactory: func(root string, _ WorkerType, _ agentthread.Metadata) (agent.ToolExecutor, error) {
+			spawnRoots <- root
+			return fakeToolkit{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
+
+	commit, err := c.PrepareWorkspaceRebind(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ParentRepo() != parent {
+		t.Fatalf("workspace changed before commit: %q", c.ParentRepo())
+	}
+	commit()
+	if c.ParentRepo() != linked {
+		t.Fatalf("parent repo = %q, want %q", c.ParentRepo(), linked)
+	}
+	_, manager := c.workspaceSnapshot()
+	if manager == nil {
+		t.Fatal("rebound workspace lost worktree support")
+	}
+
+	if _, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "after_rebind",
+		Prompt:      "inspect the rebound workspace",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if got := <-spawnRoots; got != linked {
+		t.Fatalf("inplace spawn root = %q, want %q", got, linked)
+	}
+	if _, err := c.Fork(context.Background(), ForkRequest{
+		TaskName:    "fork_after_rebind",
+		Prompt:      "continue in the rebound workspace",
+		Synchronous: true,
+	}, []providers.ChatMessage{{Role: "user", Content: "continue"}}); err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	if got := <-spawnRoots; got != linked {
+		t.Fatalf("inplace fork root = %q, want %q", got, linked)
+	}
+}
+
 func TestSpawn_SyncHappyPath(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
