@@ -57,8 +57,7 @@ describe("SideThreadComposer", () => {
     renderComposer({ draft: " status? " });
 
     expect(container.querySelector(".composer-wrap")).toBeTruthy();
-    expect(container.querySelector(".composer-attachment-button")).toBeNull();
-    expect(container.querySelector(".composer-slash-button")).toBeNull();
+    expect(container.querySelector(".composer-plus-button")).toBeNull();
     expect(container.querySelector(".permission-chip")).toBeNull();
     expect(container.querySelector("textarea")?.getAttribute("placeholder")).toBe(
       "询问当前任务，不会加入主对话",

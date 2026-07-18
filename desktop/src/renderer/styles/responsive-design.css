@@ -180,17 +180,6 @@
   }
 }
 
-@container composer-toolbar (max-width: 440px) {
-  .composer-bar-left,
-  .composer-bar-right {
-    gap: 6px;
-  }
-
-  .composer-slash-button {
-    display: none;
-  }
-}
-
 @container composer-toolbar (max-width: 360px) {
   .composer-project-control {
     display: none;

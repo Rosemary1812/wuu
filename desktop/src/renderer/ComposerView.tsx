@@ -1,38 +1,15 @@
 import {
   AtSign,
-  Brain,
-  Bug,
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CircleHelp,
-  Cpu,
   FileText,
-  FlaskConical,
-  FoldVertical,
   Folder,
   FolderOpen,
   FolderX,
-  Gauge,
-  GitCommitHorizontal,
-  GitCompare,
-  GitPullRequest,
-  Hammer,
-  LifeBuoy,
-  MessageSquarePlus,
-  Paperclip,
-  PieChart,
-  Puzzle,
-  RotateCcw,
-  ScrollText,
-  Search,
   Send,
-  Settings,
-  Slash,
   Square,
-  Terminal,
-  X,
-  Zap
+  X
 } from "lucide-react";
 import {
   type ClipboardEvent as ReactClipboardEvent,
@@ -81,8 +58,10 @@ import { ComposerGoalStrip } from "./ComposerGoalStrip";
 import {
   AccessMenu,
   ChatFocusChip,
+  ComposerPlusButton,
   ProjectPickerMenu,
   RuntimePicker,
+  SlashCommandIcon,
   permissionModeFromSummary,
   permissionModeOption
 } from "./ComposerRuntimeMenus";
@@ -671,17 +650,6 @@ export function Composer({
     focusComposerSoon();
   }
 
-  function revealSlashCommands(): void {
-    if (readOnly) {
-      return;
-    }
-    setSlashDismissedValue("");
-    if (prompt.trim().length === 0) {
-      setPrompt("/");
-    }
-    focusComposerAtEndSoon();
-  }
-
   function applySlashCommand(command: ComposerSlashCommand | undefined, draft: ComposerSlashDraft | undefined): void {
     if (!command || command.disabledReason) {
       return;
@@ -1142,26 +1110,14 @@ export function Composer({
                 ) : null}
                 {textOnly ? null : (
                   <>
-                    <button
-                      className="composer-tool-button composer-attachment-button"
-                      type="button"
-                      aria-label={t("composer.addAttachment")}
-                      title={t("composer.addAttachment")}
+                    <ComposerPlusButton
+                      variant={variant}
                       disabled={readOnly}
-                      onClick={() => attachmentInputRef.current?.click()}
-                    >
-                      <Paperclip aria-hidden="true" />
-                    </button>
-                    <button
-                      className="composer-tool-button composer-slash-button"
-                      type="button"
-                      aria-label={t("composer.openSlashCommands")}
-                      title={t("composer.openSlashCommandsHint")}
-                      disabled={readOnly}
-                      onClick={revealSlashCommands}
-                    >
-                      <Slash aria-hidden="true" />
-                    </button>
+                      commands={slashCommands}
+                      menuAnchorRef={composerShellRef}
+                      onAddAttachment={() => attachmentInputRef.current?.click()}
+                      onSelectCommand={(command) => applySlashCommand(command, undefined)}
+                    />
                     <div className="permission-menu-anchor" ref={accessMenuRef}>
                       <button
                         className={`permission-chip tone-${permissionOption.chipTone}`}
@@ -1334,61 +1290,6 @@ function CollapsedComposerPromptCard({
       </button>
     </div>
   );
-}
-
-function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.Element {
-  switch (command.action ?? command.id) {
-    case "review":
-      return <Search className="icon" />;
-    case "open-review":
-      return <GitCompare className="icon" />;
-    case "debug":
-      return <Bug className="icon" />;
-    case "fix":
-      return <Hammer className="icon" />;
-    case "helpme":
-      return <LifeBuoy className="icon" />;
-    case "test":
-      return <FlaskConical className="icon" />;
-    case "explain":
-      return <CircleHelp className="icon" />;
-    case "commit":
-      return <GitCommitHorizontal className="icon" />;
-    case "pr":
-      return <GitPullRequest className="icon" />;
-    case "open-skills":
-      return <Puzzle className="icon" />;
-    case "new-thread":
-      return <MessageSquarePlus className="icon" />;
-    case "open-terminal":
-      return <Terminal className="icon" />;
-    case "open-files":
-      return <FileText className="icon" />;
-    case "open-project":
-      return <FolderOpen className="icon" />;
-    case "no-project":
-      return <FolderX className="icon" />;
-    case "reset-side-thread":
-      return <RotateCcw className="icon" />;
-    case "context":
-      return <PieChart className="icon" />;
-    case "compact":
-      return <FoldVertical className="icon" />;
-    case "instructions":
-      return <ScrollText className="icon" />;
-    case "open-memory":
-      return <Brain className="icon" />;
-    case "fast":
-      return <Zap className="icon" />;
-    case "model":
-      return <Cpu className="icon" />;
-    case "effort":
-      return <Gauge className="icon" />;
-    case "settings":
-      return <Settings className="icon" />;
-    default:
-      return <Puzzle className="icon" />;
-  }
 }
 
 type ComposerMentionDraft = {

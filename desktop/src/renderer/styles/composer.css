@@ -1200,36 +1200,6 @@
 }
 
 /*
- * Style the two slanted tool buttons (Paperclip, Slash) only — the
- * sibling Plus button uses .composer-tool-button too but reads as
- * upright/symmetric and should not be rotated. Selector is scoped to
- * the per-variant classes, not the base .composer-tool-button, so any
- * future composer-tool-button added later is not accidentally rotated.
- *
- *   stroke-width: 1.5 — overrides var(--icon-stroke: 2). At 14px the
- *     default stroke reads heavy next to the surrounding neutral text;
- *     1.5 matches the lighter weight used elsewhere (App.tsx passes
- *     strokeWidth="1.5" to a few toolbar icons).
- *
- *   transform: rotate(-15deg) — counter-clockwise to "扶正" the lucide
- *     Slash (steeply leaning) and Paperclip (drawn tilted in real-life
- *     clip style). User feedback: the default slopes were too
- *     aggressive.
- *
- *   transform-origin: center — required because SVG defaults
- *     transform-origin to 0 0 (top-left), which would rotate the icons
- *     off-center inside the 32x32 button.
- */
-.composer-bar .composer-attachment-button > svg,
-.composer-bar .composer-attachment-button svg,
-.composer-bar .composer-slash-button > svg,
-.composer-bar .composer-slash-button svg {
-  stroke-width: 1.5;
-  transform: rotate(-15deg);
-  transform-origin: center;
-}
-
-/*
  * Make only the dock Plus button icon (composer-project-control, the
  * "open project" affordance) visibly larger than the slanted utility
  * icons (Paperclip, Slash). The hero project picker also uses
@@ -1282,6 +1252,12 @@
 .context-branch-chip svg + svg {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
+}
+
+.composer-plus-menu-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 .permission-menu-anchor {
@@ -1975,6 +1951,40 @@
 .branch-menu {
   left: 304px;
   width: 300px;
+}
+
+.composer-plus-menu {
+  width: 100%;
+  max-height: min(420px, calc(100vh - 180px));
+  gap: 1px;
+  padding: 7px;
+}
+
+.composer-plus-menu-section {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  line-height: 16px;
+  padding: 7px 10px 4px;
+  user-select: none;
+}
+
+.composer-plus-menu button {
+  height: 38px;
+  gap: 9px;
+  padding: 0 10px;
+}
+
+.composer-plus-menu button .composer-plus-menu-item-title {
+  flex: 0 1 auto;
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+}
+
+.composer-plus-menu button .composer-plus-menu-item-desc {
+  flex: 1 1 auto;
+  color: var(--ink-muted);
+  font-weight: 400;
 }
 
 .composer-context-menu button {

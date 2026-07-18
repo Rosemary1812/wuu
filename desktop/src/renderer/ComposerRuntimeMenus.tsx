@@ -1,19 +1,42 @@
 import {
+  Brain,
+  Bug,
   Check,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
+  Cpu,
   Eye,
+  FileText,
+  FlaskConical,
   Focus,
+  FoldVertical,
   Folder,
   FolderOpen,
   FolderPlus,
   FolderX,
+  Gauge,
   GitBranch,
+  GitCommitHorizontal,
+  GitCompare,
+  GitPullRequest,
+  Hammer,
   Home,
   LayoutGrid,
+  LifeBuoy,
+  MessageSquarePlus,
+  Paperclip,
+  PieChart,
+  Plus,
+  Puzzle,
+  RotateCcw,
+  ScrollText,
   Search,
+  Settings,
   Shield,
+  Terminal,
   TriangleAlert,
+  Zap,
   type LucideIcon
 } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
@@ -28,6 +51,7 @@ import type {
   RuntimeContext
 } from "../shared/protocol";
 import { FloatingMenuPortal, isInsideFloatingMenu } from "./ComposerFloatingMenu";
+import type { ComposerSlashCommand } from "./ComposerSlashCommands";
 import type {
   CodexModelLoadState,
   CodexRuntimeMenu,
@@ -456,6 +480,185 @@ function normalizedVariantForRuntimeModel(
     return providerModel.default_effort;
   }
   return "";
+}
+
+// Composer-bar "+" menu: the single entry point for everything the composer
+// can attach or invoke — attachments plus the full slash-command list
+// (built-in actions, prompts, and skills; future plugin actions join here).
+// Clicking a command behaves exactly like picking it in the "/" panel.
+// Open state is local — same pattern as ChatFocusChip — so the host's
+// floating-menu registry needs no wiring for it.
+export function ComposerPlusButton({
+  variant,
+  disabled,
+  commands,
+  menuAnchorRef,
+  onAddAttachment,
+  onSelectCommand
+}: {
+  variant: ComposerVariant;
+  disabled: boolean;
+  commands: ComposerSlashCommand[];
+  menuAnchorRef: RefObject<HTMLElement | null>;
+  onAddAttachment: () => void;
+  onSelectCommand: (command: ComposerSlashCommand) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    function handlePointerDown(event: PointerEvent): void {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (triggerRef.current?.contains(target)) {
+        return;
+      }
+      if (isInsideFloatingMenu(target, "composer-plus")) {
+        return;
+      }
+      setOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="composer-plus-menu-anchor" ref={triggerRef}>
+      <button
+        className="composer-tool-button composer-plus-button"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t("composer.plusMenu")}
+        title={t("composer.plusMenu")}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Plus aria-hidden="true" />
+      </button>
+      {open ? (
+        <FloatingMenuPortal
+          anchorRef={menuAnchorRef}
+          owner="composer-plus"
+          placement="above"
+          align="left"
+          offset={variant === "hero" ? 10 : 8}
+          width={320}
+          matchAnchorWidth
+        >
+          <div className="composer-context-menu composer-plus-menu" role="menu" aria-label={t("composer.plusMenu")}>
+            <div className="composer-plus-menu-section" role="presentation">{t("composer.plusSectionAdd")}</div>
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onAddAttachment();
+              }}
+            >
+              <Paperclip className="icon-lg" />
+              <span className="composer-plus-menu-item-title">{t("composer.addAttachment")}</span>
+              <span className="composer-plus-menu-item-desc">{t("composer.addAttachmentHint")}</span>
+            </button>
+            <div className="composer-plus-menu-section" role="presentation">{t("composer.plusSectionCommands")}</div>
+            {commands.map((command) => (
+              <button
+                key={command.id}
+                role="menuitem"
+                type="button"
+                disabled={Boolean(command.disabledReason)}
+                title={command.disabledReason ?? command.description}
+                onClick={() => {
+                  setOpen(false);
+                  onSelectCommand(command);
+                }}
+              >
+                <SlashCommandIcon command={command} />
+                <span className="composer-plus-menu-item-title">
+                  {command.kind === "skill" ? command.description : command.title}
+                </span>
+                <span className="composer-plus-menu-item-desc">
+                  {command.kind === "skill" ? command.title : command.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </FloatingMenuPortal>
+      ) : null}
+    </div>
+  );
+}
+
+// Icon resolver shared by the "/" command panel and the "+" menu so both
+// surfaces show the same glyph for the same command.
+export function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.Element {
+  switch (command.action ?? command.id) {
+    case "review":
+      return <Search className="icon" />;
+    case "open-review":
+      return <GitCompare className="icon" />;
+    case "debug":
+      return <Bug className="icon" />;
+    case "fix":
+      return <Hammer className="icon" />;
+    case "helpme":
+      return <LifeBuoy className="icon" />;
+    case "test":
+      return <FlaskConical className="icon" />;
+    case "explain":
+      return <CircleHelp className="icon" />;
+    case "commit":
+      return <GitCommitHorizontal className="icon" />;
+    case "pr":
+      return <GitPullRequest className="icon" />;
+    case "open-skills":
+      return <Puzzle className="icon" />;
+    case "new-thread":
+      return <MessageSquarePlus className="icon" />;
+    case "open-terminal":
+      return <Terminal className="icon" />;
+    case "open-files":
+      return <FileText className="icon" />;
+    case "open-project":
+      return <FolderOpen className="icon" />;
+    case "no-project":
+      return <FolderX className="icon" />;
+    case "reset-side-thread":
+      return <RotateCcw className="icon" />;
+    case "context":
+      return <PieChart className="icon" />;
+    case "compact":
+      return <FoldVertical className="icon" />;
+    case "instructions":
+      return <ScrollText className="icon" />;
+    case "open-memory":
+      return <Brain className="icon" />;
+    case "fast":
+      return <Zap className="icon" />;
+    case "model":
+      return <Cpu className="icon" />;
+    case "effort":
+      return <Gauge className="icon" />;
+    case "settings":
+      return <Settings className="icon" />;
+    default:
+      return <Puzzle className="icon" />;
+  }
 }
 
 export function AccessMenu({

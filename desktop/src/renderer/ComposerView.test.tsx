@@ -57,7 +57,7 @@ afterEach(() => {
   container.remove();
   document.body
     .querySelectorAll(
-      "[data-floating-menu-owner=\"composer-access\"], [data-floating-menu-owner=\"composer-focus\"]",
+      "[data-floating-menu-owner=\"composer-access\"], [data-floating-menu-owner=\"composer-focus\"], [data-floating-menu-owner=\"composer-plus\"]",
     )
     .forEach((element) => element.remove());
 });
@@ -251,6 +251,7 @@ function renderStatefulComposer(props: {
   initialPrompt?: string;
   onSend?: (prompt: string) => void;
   showUltraToggle?: boolean;
+  activeContext?: RuntimeContext;
 }): void {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -277,6 +278,7 @@ function renderStatefulComposer(props: {
           readOnly={false}
           initialized={initialized()}
           projects={[]}
+          activeContext={props.activeContext}
           codexModels={codexModels}
           codexRuntimeMenu={null}
           codexRuntimeRef={createRef<HTMLDivElement>()}
@@ -730,20 +732,24 @@ describe("Composer send control", () => {
     expect(frame?.contains(slashMenu)).toBe(false);
   });
 
-  it("places the caret after the slash inserted from the toolbar", async () => {
-    renderStatefulComposer({});
+  it("places the caret after a command inserted from the plus menu", async () => {
+    renderStatefulComposer({ activeContext: { kind: "no_project", cwd: "/tmp" } });
 
-    const slashButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="打开斜杠命令"]',
-    );
+    const plusButton = container.querySelector<HTMLButtonElement>(".composer-plus-button");
     const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
 
-    act(() => slashButton?.click());
+    act(() => plusButton?.click());
+    const reviewItem = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-floating-menu-owner="composer-plus"] button',
+      ),
+    ).find((button) => button.textContent?.includes("审查当前更改"));
+    act(() => reviewItem?.click());
     await act(async () => nextAnimationFrame());
 
-    expect(textarea?.value).toBe("/");
-    expect(textarea?.selectionStart).toBe(1);
-    expect(textarea?.selectionEnd).toBe(1);
+    expect(textarea?.value).toBe("/review ");
+    expect(textarea?.selectionStart).toBe(8);
+    expect(textarea?.selectionEnd).toBe(8);
   });
 
   it("resizes the slash command menu with its composer and available viewport height", () => {
@@ -841,7 +847,7 @@ describe("Composer send control", () => {
       container.querySelector<HTMLButtonElement>("button[aria-label=\"打开项目\"]"),
     ).toBeNull();
     // The composer itself still renders — only the workspace/cwd control is gone.
-    expect(container.querySelector(".composer-attachment-button")).not.toBeNull();
+    expect(container.querySelector(".composer-plus-button")).not.toBeNull();
   });
 
   it("uses the active project name in the hero project selector", () => {
@@ -895,12 +901,114 @@ describe("Composer send control", () => {
     // A sent project/对话 conversation (dock variant) locks its cwd, so no
     // project/cwd control renders in the leading slot anymore.
     expect(leftGroup?.querySelector(".composer-project-control")).toBeNull();
-    expect(leftGroup?.querySelector(".composer-attachment-button")).not.toBeNull();
-    expect(leftGroup?.querySelector(".composer-slash-button")).not.toBeNull();
+    expect(leftGroup?.querySelector(".composer-plus-button")).not.toBeNull();
     expect(leftGroup?.querySelector(".permission-menu-anchor")).not.toBeNull();
     expect(rightGroup?.querySelector(".composer-token-gauge")).not.toBeNull();
     expect(rightGroup?.querySelector(".codex-runtime-anchor")).not.toBeNull();
     expect(rightGroup?.contains(sendButton)).toBe(true);
+  });
+
+  it("folds attachment and slash commands into the plus menu", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "follow up",
+      activeContext: { kind: "no_project", cwd: "/tmp" },
+    });
+
+    const plusButton = container.querySelector<HTMLButtonElement>(".composer-plus-button");
+    expect(plusButton).not.toBeNull();
+    expect(container.querySelector(".composer-attachment-button")).toBeNull();
+    expect(container.querySelector(".composer-slash-button")).toBeNull();
+
+    const shell = container.querySelector<HTMLElement>(".composer-shell");
+    vi.spyOn(shell as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      bottom: 580,
+      height: 100,
+      left: 80,
+      right: 720,
+      top: 480,
+      width: 640,
+      x: 80,
+      y: 480,
+      toJSON: () => ({}),
+    });
+
+    const fileInput = container.querySelector<HTMLInputElement>(".composer-file-input");
+    expect(fileInput).not.toBeNull();
+    const inputClickSpy = vi.spyOn(fileInput as HTMLInputElement, "click").mockImplementation(() => {});
+
+    act(() => {
+      plusButton?.click();
+    });
+    expect(plusButton?.getAttribute("aria-expanded")).toBe("true");
+
+    const menu = document.body.querySelector<HTMLElement>('[data-floating-menu-owner="composer-plus"]');
+    expect(menu?.style.width).toBe("640px");
+    expect(menu?.style.left).toBe("80px");
+    expect(menu?.style.bottom).toBe(`${window.innerHeight - 480 + 8}px`);
+    expect(composerCSS).toMatch(/\.composer-plus-menu\s*{[^}]*width:\s*100%;/s);
+    expect(menu?.querySelectorAll(".composer-plus-menu-section")).toHaveLength(2);
+    expect(menu?.textContent).toContain("添加");
+    expect(menu?.textContent).toContain("添加附件");
+    expect(menu?.textContent).toContain("图片或 PDF");
+    expect(menu?.textContent).toContain("命令");
+    expect(menu?.textContent).toContain("审查当前更改");
+    expect(menu?.textContent).not.toContain("打开斜杠命令");
+
+    const attachmentItem = Array.from(menu?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent?.includes("添加附件"),
+    );
+    act(() => {
+      attachmentItem?.click();
+    });
+    expect(inputClickSpy).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('[data-floating-menu-owner="composer-plus"]')).toBeNull();
+  });
+
+  it("runs prompt commands directly from the plus menu", () => {
+    const setPrompt = vi.fn();
+    renderComposer({
+      variant: "dock",
+      prompt: "",
+      setPrompt,
+      activeContext: { kind: "no_project", cwd: "/tmp" },
+    });
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".composer-plus-button")?.click();
+    });
+    const reviewItem = Array.from(
+      document.body.querySelectorAll('[data-floating-menu-owner="composer-plus"] button'),
+    ).find((button) => button.textContent?.includes("审查当前更改"));
+    act(() => {
+      (reviewItem as HTMLButtonElement | undefined)?.click();
+    });
+
+    expect(setPrompt).toHaveBeenCalledWith("/review ");
+    expect(document.body.querySelector('[data-floating-menu-owner="composer-plus"]')).toBeNull();
+  });
+
+  it("runs action commands directly from the plus menu", () => {
+    const onStartNewThread = vi.fn();
+    renderComposer({
+      variant: "dock",
+      prompt: "",
+      onStartNewThread,
+      activeContext: { kind: "no_project", cwd: "/tmp" },
+    });
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".composer-plus-button")?.click();
+    });
+    const newThreadItem = Array.from(
+      document.body.querySelectorAll('[data-floating-menu-owner="composer-plus"] button'),
+    ).find((button) => button.textContent?.includes("新建对话"));
+    act(() => {
+      (newThreadItem as HTMLButtonElement | undefined)?.click();
+    });
+
+    expect(onStartNewThread).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('[data-floating-menu-owner="composer-plus"]')).toBeNull();
   });
 
   it("keeps runtime controls separate from composer send state", () => {
@@ -971,18 +1079,15 @@ describe("Composer send control", () => {
     const permissionLabelCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 620px)");
     const gaugeCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 560px)");
     const runtimeCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 500px)");
-    const slashCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 440px)");
     const projectCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 360px)");
 
     expect(speedLabelCollapse).toBeGreaterThan(-1);
     expect(permissionLabelCollapse).toBeGreaterThan(speedLabelCollapse);
     expect(gaugeCollapse).toBeGreaterThan(permissionLabelCollapse);
     expect(runtimeCollapse).toBeGreaterThan(gaugeCollapse);
-    expect(slashCollapse).toBeGreaterThan(runtimeCollapse);
-    expect(projectCollapse).toBeGreaterThan(slashCollapse);
+    expect(projectCollapse).toBeGreaterThan(runtimeCollapse);
     expect(responsiveDesignCSS).toContain(".composer-token-gauge-label");
     expect(responsiveDesignCSS).toContain(".codex-runtime-anchor");
-    expect(responsiveDesignCSS).toContain(".composer-slash-button");
     expect(responsiveDesignCSS).toContain(".composer-project-control");
   });
 

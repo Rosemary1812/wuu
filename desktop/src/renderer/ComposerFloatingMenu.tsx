@@ -38,6 +38,7 @@ export function FloatingMenuPortal({
   offset = 8,
   crossAxisOffset = 0,
   width,
+  matchAnchorWidth = false,
   // When true, flip to the opposite side of the trigger if the
   // requested placement doesn't have room. Use this for dropdowns
   // whose content height is uncertain (model pickers, tag pickers)
@@ -56,6 +57,7 @@ export function FloatingMenuPortal({
   offset?: number;
   crossAxisOffset?: number;
   width: number;
+  matchAnchorWidth?: boolean;
   flip?: boolean;
   children: ReactNode;
 }): JSX.Element | null {
@@ -82,8 +84,9 @@ export function FloatingMenuPortal({
       }
       const viewportMargin = 8;
       const rect = anchor.getBoundingClientRect();
-      const baseLeft = align === "right" ? rect.right - width : rect.left;
-      const maxLeft = Math.max(viewportMargin, window.innerWidth - width - viewportMargin);
+      const menuWidth = matchAnchorWidth && rect.width > 0 ? rect.width : width;
+      const baseLeft = align === "right" ? rect.right - menuWidth : rect.left;
+      const maxLeft = Math.max(viewportMargin, window.innerWidth - menuWidth - viewportMargin);
       const left = clamp(baseLeft + crossAxisOffset, viewportMargin, maxLeft);
 
       // Auto-flip: if the requested side has less than the panel's actual
@@ -126,6 +129,9 @@ export function FloatingMenuPortal({
         // surface might intentionally pin above.
         zIndex: 220,
       };
+      if (matchAnchorWidth) {
+        nextStyle.width = menuWidth;
+      }
 
       // Constrain max-height to the available viewport room on the
       // chosen side. This is the proportional-scaling half of the
@@ -210,6 +216,7 @@ export function FloatingMenuPortal({
     anchorRef,
     crossAxisOffset,
     flip,
+    matchAnchorWidth,
     measuredPanelHeight,
     offset,
     placement,

@@ -16,6 +16,7 @@ export type FloatingMenuOwner =
   | "composer-context-meter"
   | "composer-focus"
   | "composer-goal"
+  | "composer-plus"
   | "codex-runtime"
   | "composer-query-history"
   | "select-menu";
