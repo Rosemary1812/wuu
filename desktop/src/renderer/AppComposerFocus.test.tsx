@@ -83,6 +83,7 @@ let container: HTMLDivElement;
 let root: Root | null = null;
 let serverEventHandlers: Array<(event: ServerEvent) => void> = [];
 let releaseProjectSelection: (() => void) | null = null;
+let releaseThreadStart: (() => void) | null = null;
 
 function initialized(cwd: string): InitializeResult {
   return {
@@ -183,6 +184,8 @@ function installWuuApi(
     deferProjectSelection?: boolean;
     rejectProjectSelection?: boolean;
     rejectNoProjectSelection?: boolean;
+    deferThreadStart?: boolean;
+    rejectThreadStart?: boolean;
     rejectTurnStart?: boolean;
   } = {},
 ): void {
@@ -226,7 +229,17 @@ function installWuuApi(
     ),
     listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread: vi.fn().mockResolvedValue({ thread }),
-    startThread: vi.fn().mockResolvedValue({ thread: newThread() }),
+    startThread: vi.fn().mockImplementation(async () => {
+      if (options.deferThreadStart) {
+        await new Promise<void>((resolve) => {
+          releaseThreadStart = resolve;
+        });
+      }
+      if (options.rejectThreadStart) {
+        throw new Error("thread start failed");
+      }
+      return { thread: newThread() };
+    }),
     startTurn: options.rejectTurnStart
       ? vi.fn().mockRejectedValue(new Error("turn start failed"))
       : vi.fn().mockResolvedValue({
@@ -282,6 +295,8 @@ async function renderApp(
     deferProjectSelection?: boolean;
     rejectProjectSelection?: boolean;
     rejectNoProjectSelection?: boolean;
+    deferThreadStart?: boolean;
+    rejectThreadStart?: boolean;
     rejectTurnStart?: boolean;
   } = {},
 ): Promise<void> {
@@ -348,6 +363,7 @@ describe("main composer focus continuity", () => {
     installWindowStubs();
     serverEventHandlers = [];
     releaseProjectSelection = null;
+    releaseThreadStart = null;
     container = document.createElement("div");
     document.body.appendChild(container);
     window.localStorage.clear();
@@ -510,6 +526,36 @@ describe("main composer focus continuity", () => {
     await enterCommand(hero, "first query");
 
     await waitForMainComposerFocus("dock");
+  });
+
+  it("shows the first query while thread creation is still pending", async () => {
+    await renderApp(false, { deferThreadStart: true });
+    const hero = mainComposer("hero");
+
+    await enterCommand(hero, "first query before thread start");
+
+    expect(container.textContent).toContain("first query before thread start");
+    expect(container.querySelector(".turn-process-title")?.textContent).toBe(
+      "正在处理",
+    );
+    expect(mainComposer("dock")).not.toBeNull();
+    expect(window.wuu.startTurn).not.toHaveBeenCalled();
+
+    if (!releaseThreadStart) {
+      throw new Error("thread start was not deferred");
+    }
+    releaseThreadStart();
+    await flushAsync();
+  });
+
+  it("removes the pending query and restores the hero draft when thread creation fails", async () => {
+    await renderApp(false, { rejectThreadStart: true });
+    const hero = mainComposer("hero");
+
+    await enterCommand(hero, "query that fails before thread start");
+
+    expect(mainComposer("hero").value).toBe("query that fails before thread start");
+    expect(container.querySelector(".turn-process-title")).toBeNull();
   });
 
   it("restores focus to the hero when the first query fails", async () => {
