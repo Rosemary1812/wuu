@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultResponsesWebSocketCacheTTL = 5 * time.Minute
+	defaultResponsesWebSocketCacheTTL = 30 * time.Minute
 	// Fallback pins prevent every request in a hot session from immediately
 	// retrying a broken websocket path. Transient failures re-probe quickly,
 	// connection pressure backs off longer, and stable compatibility/auth

@@ -22,6 +22,13 @@ import (
 
 func immediateStreamRetryWait(context.Context, time.Duration) error { return nil }
 
+func TestNewResponsesWebSocketCache_DefaultIdleTTL(t *testing.T) {
+	cache := NewResponsesWebSocketCache()
+	if cache.idleTTL != 30*time.Minute {
+		t.Fatalf("idle TTL = %s, want 30m", cache.idleTTL)
+	}
+}
+
 func TestResolveCodexWebSocketURL(t *testing.T) {
 	cases := []struct {
 		in   string
