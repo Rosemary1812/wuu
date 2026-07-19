@@ -28,13 +28,29 @@ const defaultCompactTimeout = 20 * time.Minute
 // the context window, defeating the purpose of compaction.
 const maxCompactOutputChars = 80_000
 const (
-	compactSummaryMaxTokens       = 4096
-	compactSummaryInputMaxTokens  = 80_000
-	compactSummaryInputMinTokens  = 4_000
-	compactSummaryInputFraction   = 0.5
-	compactPromptContentMaxChars  = 500
-	compactPromptToolArgsMaxChars = 200
+	compactSummaryFallbackMaxTokens = 4096
+	compactSummaryInputMaxTokens    = 80_000
+	compactSummaryInputMinTokens    = 4_000
+	compactSummaryInputFraction     = 0.5
+	compactPromptContentMaxChars    = 500
+	compactPromptToolArgsMaxChars   = 200
 )
+
+// A length-limited summary is unusable. Retry once from the same history with
+// a stricter compression instruction, then fail without replacing history.
+const maxCompactLengthRetries = 1
+
+var errCompactSummaryOutputLimit = errors.New("compact summary reached the output limit before completion")
+
+// IsSummaryOutputLimit reports whether compaction failed because the provider
+// explicitly ended a summary at its output limit.
+func IsSummaryOutputLimit(err error) bool {
+	return errors.Is(err, errCompactSummaryOutputLimit)
+}
+
+const compactLengthRecoveryInstruction = `
+
+The previous summary attempt reached its output limit. Produce one complete replacement summary within the same output budget. Compress aggressively: keep only decision-critical requirements, current state, external effects, verification, and next steps. Do not mention this retry and do not end mid-section.`
 
 const (
 	// ConversationSummaryPrefix marks the synthetic summary installed after
@@ -233,7 +249,7 @@ func summarizeCompactHistory(ctx context.Context, client providers.Client, model
 			n = 1
 		}
 		chunk := remaining[:n]
-		next, err := summarizeCompactChunk(ctx, client, model, options, chunk, summary)
+		next, err := summarizeCompactChunk(ctx, client, model, budget, options, chunk, summary)
 		if err != nil {
 			return "", err
 		}
@@ -254,27 +270,51 @@ func limitSummaryOutput(summary string) string {
 	return summary[:cut]
 }
 
-func summarizeCompactChunk(ctx context.Context, client providers.Client, model string, options map[string]any, messages []providers.ChatMessage, previousSummary string) (string, error) {
+func summarizeCompactChunk(ctx context.Context, client providers.Client, model string, budget Budget, options map[string]any, messages []providers.ChatMessage, previousSummary string) (string, error) {
 	toSummarize := messages
-	for attempt := 0; ; attempt++ {
-		summaryReq := compactSummaryRequest(model, buildSummaryPrompt(toSummarize, previousSummary), options)
-		resp, err := summarizeCompact(ctx, client, summaryReq)
-		if err != nil {
-			// If the summary request itself overflowed the model's
-			// context window, drop the oldest message from this chunk and try
-			// again. The chunker prevents normal huge histories from reaching
-			// this path; this remains a backstop for provider-specific counting.
-			if providers.IsContextOverflow(err) && attempt < maxCompactRetries && len(toSummarize) > 1 {
+	maxTokens := compactSummaryMaxTokensForBudget(budget)
+	outputLimitCount := 0
+	for overflowAttempt := 0; ; overflowAttempt++ {
+		prompt := buildSummaryPrompt(toSummarize, previousSummary)
+		for {
+			attemptPrompt := prompt
+			if outputLimitCount > 0 {
+				attemptPrompt += compactLengthRecoveryInstruction
+			}
+			summaryReq := compactSummaryRequest(model, attemptPrompt, maxTokens, options)
+			resp, err := summarizeCompact(ctx, client, summaryReq)
+			if err == nil {
+				return resp.Content, nil
+			}
+			if errors.Is(err, errCompactSummaryOutputLimit) {
+				outputLimitCount++
+				if outputLimitCount <= maxCompactLengthRetries {
+					continue
+				}
+				return "", fmt.Errorf("compact summary failed after %d output attempts with max_tokens=%d: %w", outputLimitCount, maxTokens, err)
+			}
+			// If the summary request itself overflowed the model's context
+			// window, drop the oldest message from this chunk and try again.
+			// The chunker prevents normal huge histories from reaching this
+			// path; this remains a backstop for provider-specific counting.
+			if providers.IsContextOverflow(err) && outputLimitCount == 0 && overflowAttempt < maxCompactRetries && len(toSummarize) > 1 {
 				toSummarize = toSummarize[1:]
-				continue
+				break
 			}
 			return "", fmt.Errorf("compact summary failed: %w", err)
 		}
-		return resp.Content, nil
 	}
 }
 
-func compactSummaryRequest(model, prompt string, options map[string]any) providers.ChatRequest {
+func compactSummaryMaxTokensForBudget(budget Budget) int {
+	preferred := compactReservedMaxTokens * 4 / 5
+	if budget.OutputReserveTokens <= 0 {
+		return compactSummaryFallbackMaxTokens
+	}
+	return min(preferred, budget.OutputReserveTokens)
+}
+
+func compactSummaryRequest(model, prompt string, maxTokens int, options map[string]any) providers.ChatRequest {
 	return providers.ChatRequest{
 		Model:     model,
 		Operation: providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical),
@@ -283,7 +323,7 @@ func compactSummaryRequest(model, prompt string, options map[string]any) provide
 			{Role: "user", Content: prompt},
 		},
 		Temperature:     0.3,
-		MaxTokens:       compactSummaryMaxTokens,
+		MaxTokens:       maxTokens,
 		ProviderOptions: compactSummaryProviderOptions(options),
 	}
 }
@@ -432,15 +472,15 @@ func finishCompactFailure(execution *providers.InferenceExecution, err error) er
 }
 
 func validateCompactResponse(resp providers.ChatResponse) error {
-	if strings.TrimSpace(resp.Content) == "" {
-		return errors.New("compact summary was empty")
-	}
 	finish := resp.FinishReason
 	if finish == "" {
 		finish = providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(resp.ToolCalls) > 0)
 	}
 	if resp.Truncated || finish == providers.FinishReasonLength {
-		return errors.New("compact summary reached the output limit before completion")
+		return errCompactSummaryOutputLimit
+	}
+	if strings.TrimSpace(resp.Content) == "" {
+		return errors.New("compact summary was empty")
 	}
 	return nil
 }

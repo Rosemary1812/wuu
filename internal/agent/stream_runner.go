@@ -1157,6 +1157,8 @@ func formatCompactNotice(info CompactInfo) string {
 
 func formatCompactAttemptNotice(info CompactAttemptInfo) (string, bool) {
 	switch {
+	case info.Status == CompactAttemptFailed && info.OutputLimit:
+		return "Context compaction still exceeded the model's summary output limit after retry; history is unchanged. Retry compaction or switch to a model with a larger output limit.", true
 	case info.Reason == CompactReasonProactive && info.Status == CompactAttemptFailed:
 		return "Context compaction failed; continuing without compacting history.", true
 	case info.Reason == CompactReasonOverflow && info.Status == CompactAttemptFailed:

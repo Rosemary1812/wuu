@@ -1337,6 +1337,22 @@ func TestFormatCompactAttemptNoticeClosesVisibleProgress(t *testing.T) {
 	}
 }
 
+func TestFormatCompactAttemptNoticeExplainsOutputLimitRecovery(t *testing.T) {
+	notice, ok := formatCompactAttemptNotice(CompactAttemptInfo{
+		Reason:      CompactReasonManual,
+		Status:      CompactAttemptFailed,
+		OutputLimit: true,
+	})
+	if !ok {
+		t.Fatal("output-limit failure must emit a terminal notice")
+	}
+	for _, want := range []string{"after retry", "history is unchanged", "Retry compaction", "larger output limit"} {
+		if !strings.Contains(notice, want) {
+			t.Fatalf("notice %q does not contain %q", notice, want)
+		}
+	}
+}
+
 func TestStreamRunner_StopsProactiveCompactAfterRepeatedFailures(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

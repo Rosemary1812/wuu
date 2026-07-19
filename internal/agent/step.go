@@ -129,6 +129,7 @@ type CompactAttemptInfo struct {
 	MessagesBefore    int
 	MessagesAfter     int
 	Error             string
+	OutputLimit       bool
 }
 
 // ToolBatchRejectionInfo describes a whole assistant tool-call batch that was

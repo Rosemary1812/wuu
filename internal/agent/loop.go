@@ -239,6 +239,7 @@ func RunToolLoop(
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
 				Error:          cerr.Error(),
+				OutputLimit:    compact.IsSummaryOutputLimit(cerr),
 			}, usageBefore))
 		case compactChanged(messages, compacted):
 			if compactOperationID := lineage.LastOperationID(); compactOperationID != "" && compactOperationID != lastAgentOperationID {
@@ -483,6 +484,7 @@ func RunToolLoop(
 						TokensBefore:   before,
 						MessagesBefore: msgsBefore,
 						Error:          cerr.Error(),
+						OutputLimit:    compact.IsSummaryOutputLimit(cerr),
 					}, usageBefore))
 				}
 			}
