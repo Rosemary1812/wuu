@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { ChevronDown, ChevronUp, PanelRightOpen, Paperclip, Send } from "lucide-react";
+import { ChevronDown, ChevronUp, PanelRightOpen, Plus, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplayItem } from "./AgentHandoff";
 import { replyCountBadge } from "./AppState";
@@ -672,13 +672,13 @@ function UserMessageInlineEditor({
       <div className="user-message-edit-toolbar">
         <button
           type="button"
-          className="user-message-edit-attach-button"
+          className="composer-tool-button user-message-edit-attach-button"
           aria-label={t("composer.addAttachment")}
           title={t("message.addImageOrPdf")}
           disabled={submitting}
           onClick={() => fileInputRef.current?.click()}
         >
-          <Paperclip aria-hidden="true" />
+          <Plus aria-hidden="true" />
         </button>
         <div className="user-message-edit-spacer" />
         <div className="user-message-edit-actions">
@@ -691,7 +691,7 @@ function UserMessageInlineEditor({
             {t("common.cancel")}
           </button>
           <button
-            className="user-message-edit-button primary"
+            className="composer-action-button composer-send-button"
             type="button"
             aria-label={t("composer.send")}
             title={t("composer.send")}
