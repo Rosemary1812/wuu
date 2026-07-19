@@ -49,6 +49,7 @@ export function WorkspaceMonacoEditor({
   onChange,
   onSave,
   onViewStateChange,
+  onCursorPositionChange,
 }: {
   path: string;
   resourceID: string;
@@ -59,6 +60,7 @@ export function WorkspaceMonacoEditor({
   onChange?: (value: string) => void;
   onSave?: () => void;
   onViewStateChange?: (state: WorkspaceMonacoViewState | null) => void;
+  onCursorPositionChange?: (position: { lineNumber: number; column: number }) => void;
 }): JSX.Element {
   const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -67,13 +69,15 @@ export function WorkspaceMonacoEditor({
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onViewStateChangeRef = useRef(onViewStateChange);
+  const onCursorPositionChangeRef = useRef(onCursorPositionChange);
   const language = useMemo(() => monacoLanguageForPath(path), [path]);
 
   useEffect(() => {
     onChangeRef.current = onChange;
     onSaveRef.current = onSave;
     onViewStateChangeRef.current = onViewStateChange;
-  }, [onChange, onSave, onViewStateChange]);
+    onCursorPositionChangeRef.current = onCursorPositionChange;
+  }, [onChange, onSave, onViewStateChange, onCursorPositionChange]);
 
   useEffect(() => {
     installMonacoWorkers();
@@ -126,6 +130,12 @@ export function WorkspaceMonacoEditor({
     const changeDisposable = editor.onDidChangeModelContent(() => {
       onChangeRef.current?.(model.getValue());
     });
+    const cursorDisposable = editor.onDidChangeCursorPosition((event) => {
+      onCursorPositionChangeRef.current?.({
+        lineNumber: event.position.lineNumber,
+        column: event.position.column,
+      });
+    });
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
       () => onSaveRef.current?.(),
@@ -142,6 +152,7 @@ export function WorkspaceMonacoEditor({
       onViewStateChangeRef.current?.(editor.saveViewState());
       stopObservingTheme();
       changeDisposable.dispose();
+      cursorDisposable.dispose();
       editor.dispose();
       model.dispose();
       if (editorRef.current === editor) {
