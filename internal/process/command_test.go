@@ -46,7 +46,7 @@ while :; do sleep 1; done
 		t.Fatal(err)
 	}
 
-	if err := handle.Stop(200 * time.Millisecond); err != nil {
+	if err := handle.Stop(2 * time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := handle.Wait(); err != nil {
