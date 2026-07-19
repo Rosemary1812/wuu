@@ -506,6 +506,22 @@ export function latestAgentMessageItemID(turns: Turn[]): string | undefined {
   return undefined;
 }
 
+// Same scan as latestAgentMessageItemID, but also reports which turn owns the
+// item. Callers rendering per-turn subtrees can then scope the "latest"
+// affordance to the owner turn instead of handing every turn an id it can
+// never match (item ids are unique per thread).
+export function latestAgentMessageLocation(
+  turns: Turn[],
+): { turnID: string; itemID: string } | undefined {
+  for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex--) {
+    const itemID = latestAgentMessageItemIDForTurn(turns[turnIndex]);
+    if (itemID) {
+      return { turnID: turns[turnIndex].id, itemID };
+    }
+  }
+  return undefined;
+}
+
 function latestAgentMessageItemIDForTurn(turn: Turn): string | undefined {
   for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex--) {
     const item = turn.items[itemIndex];

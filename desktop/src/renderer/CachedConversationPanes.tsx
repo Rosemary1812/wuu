@@ -7,6 +7,7 @@ import type {
   MessageMarkWire,
   Thread,
   ThreadItem,
+  Turn,
 } from "../shared/protocol";
 import {
   chatReaderCountForThread,
@@ -29,13 +30,13 @@ import {
   pendingComposerMessagesForThread as pendingComposerMessagesForThreadSnapshot,
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
-import {
-  TurnView,
-  latestAgentMessageItemID,
-} from "./TurnView";
+import { TurnView } from "./TurnView";
 import { turnEventForTurn } from "./TurnEvents";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
-import { turnHasAssistantOutput } from "./TurnViewHelpers";
+import {
+  latestAgentMessageLocation,
+  turnHasAssistantOutput,
+} from "./TurnViewHelpers";
 import type { HistoryMessageEditState } from "./ConversationHistoryActions";
 
 const CONVERSATION_GRID_COLUMNS = 12;
@@ -231,9 +232,64 @@ const CachedConversationPane = memo(function CachedConversationPane({
     (path: string) => onOpenFile?.(threadRef.current, path),
     [onOpenFile],
   );
+  // Memo-safe callbacks: PaneTurnView is React.memo'd, so every function prop
+  // must keep a stable identity across re-renders or the bailout never fires.
+  // They read the live thread through threadRef (same pattern as
+  // handleOpenFile) instead of closing over the render-scope thread.
+  const handleOpenAgentByID = useCallback(
+    (agentID: string) => {
+      const agent = threadRef.current.child_agents?.find(
+        (candidate) => candidate.id === agentID,
+      );
+      if (agent) {
+        void onOpenAgent(agent);
+      }
+    },
+    [onOpenAgent],
+  );
+  const handleForkMessage = useCallback(
+    (turnID: string, itemID: string) =>
+      onForkMessage(threadRef.current, turnID, itemID),
+    [onForkMessage],
+  );
+  const handleEditMessage = useCallback(
+    (turnID: string, item: ThreadItem) =>
+      onEditMessage(threadRef.current, turnID, item),
+    [onEditMessage],
+  );
+  const handleSubmitEditMessage = useCallback(
+    (
+      turnID: string,
+      item: ThreadItem,
+      text: string,
+      images: InputImage[],
+      files: InputFile[],
+    ) =>
+      onSubmitEditMessage(
+        threadRef.current,
+        turnID,
+        item,
+        text,
+        images,
+        files,
+      ),
+    [onSubmitEditMessage],
+  );
+  const handleOpenFileDiffSelection = useCallback(
+    (selection: TurnFileDiffSelection) =>
+      onOpenFileDiff(threadRef.current, selection),
+    [onOpenFileDiff],
+  );
+  const handleOpenTurnRunsForThread = useCallback(
+    (turnID: string) => onOpenTurnRuns?.(threadRef.current, turnID),
+    [onOpenTurnRuns],
+  );
   const threadTurns = thread.turns ?? [];
   const pendingChatMessages = pendingChatMessagesByThread[thread.id]?.queued;
-  const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
+  // Location (owner turn + item) lets renderTurn scope latestAgentMessageID to
+  // the one turn that can match it, so a new agent message re-renders only
+  // the previous and next owner turns instead of every PaneTurnView.
+  const latestAgentLocation = latestAgentMessageLocation(threadTurns);
   const threadContextEntries = contextCompositionEntries.filter(
     (entry) => entry.threadID === thread.id,
   );
@@ -464,47 +520,28 @@ const CachedConversationPane = memo(function CachedConversationPane({
               historyMessageEdit ? [historyMessageEdit.turnID] : undefined
             }
             renderTurn={(turn) => (
-              <TurnView
+              <PaneTurnView
                 turn={turn}
                 cwd={thread.cwd ?? activeContextCwd}
                 onOpenFile={onOpenFile ? handleOpenFile : undefined}
-                onOpenAgent={(agentID) => {
-                  const agent = thread.child_agents?.find(
-                    (candidate) => candidate.id === agentID,
-                  );
-                  if (agent) {
-                    void onOpenAgent(agent);
-                  }
-                }}
-                latestAgentMessageID={threadLatestAgentMessageID}
-                isLatestTurn={
-                  thread.turns[thread.turns.length - 1]?.id === turn.id
-                }
-                onStreamFrame={onStreamFrame}
-                onCollapseComplete={onCollapseComplete}
-                onForkMessage={(turnID, itemID) =>
-                  onForkMessage(thread, turnID, itemID)
-                }
-                onEditMessage={
-                  canEditThreadMessage(thread)
-                    ? (turnID, item) => onEditMessage(thread, turnID, item)
+                onOpenAgent={handleOpenAgentByID}
+                latestAgentMessageID={
+                  latestAgentLocation?.turnID === turn.id
+                    ? latestAgentLocation.itemID
                     : undefined
                 }
+                isLatestTurn={latestTurn?.id === turn.id}
+                onStreamFrame={onStreamFrame}
+                onCollapseComplete={onCollapseComplete}
+                onForkMessage={handleForkMessage}
+                canEdit={canEditThreadMessage(thread)}
+                onEditMessage={handleEditMessage}
                 editingMessage={historyMessageEdit}
                 onCancelEditMessage={onCancelEditMessage}
-                onSubmitEditMessage={(turnID, item, text, images, files) =>
-                  onSubmitEditMessage(
-                    thread,
-                    turnID,
-                    item,
-                    text,
-                    images,
-                    files,
-                  )
-                }
-                onOpenFileDiff={(selection) => onOpenFileDiff(thread, selection)}
-                onOpenRuns={
-                  onOpenTurnRuns ? () => onOpenTurnRuns(thread, turn.id) : undefined
+                onSubmitEditMessage={handleSubmitEditMessage}
+                onOpenFileDiff={handleOpenFileDiffSelection}
+                onOpenTurnRuns={
+                  onOpenTurnRuns ? handleOpenTurnRunsForThread : undefined
                 }
                 streamStatus={
                   latestTurn?.id === turn.id ? latestTurnStreamStatus : undefined
@@ -515,6 +552,87 @@ const CachedConversationPane = memo(function CachedConversationPane({
         )}
       </div>
     </div>
+  );
+});
+
+type PaneTurnViewProps = {
+  turn: Turn;
+  cwd?: string;
+  latestAgentMessageID?: string;
+  isLatestTurn: boolean;
+  canEdit: boolean;
+  editingMessage?: HistoryMessageEditState;
+  streamStatus?: TurnStreamStatus;
+  onOpenFile?: (path: string) => void;
+  onOpenAgent: (agentID: string) => void;
+  onStreamFrame: () => void;
+  onCollapseComplete: () => void;
+  onForkMessage: (turnID: string, itemID: string) => void;
+  onEditMessage: (turnID: string, item: ThreadItem) => void;
+  onCancelEditMessage: () => void;
+  onSubmitEditMessage: (
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+  ) => void;
+  onOpenFileDiff: (selection: TurnFileDiffSelection) => void;
+  onOpenTurnRuns?: (turnID: string) => void;
+};
+
+// Memo boundary for the turn tree. Server events (item/started, item/
+// completed, turn/completed) rebuild the thread object but preserve the
+// identity of every turn they did not touch, so a memoized per-turn wrapper
+// lets hundreds of untouched TurnView subtrees bail out of the re-render
+// instead of reconciling the whole conversation on every event. All props
+// must be value-compared or identity-stable — every callback the pane passes
+// is a useCallback reading through threadRef for exactly that reason.
+const PaneTurnView = memo(function PaneTurnView({
+  turn,
+  cwd,
+  latestAgentMessageID,
+  isLatestTurn,
+  canEdit,
+  editingMessage,
+  streamStatus,
+  onOpenFile,
+  onOpenAgent,
+  onStreamFrame,
+  onCollapseComplete,
+  onForkMessage,
+  onEditMessage,
+  onCancelEditMessage,
+  onSubmitEditMessage,
+  onOpenFileDiff,
+  onOpenTurnRuns,
+}: PaneTurnViewProps): JSX.Element {
+  // TurnView's onOpenRuns takes no argument; bind the turn id here so the
+  // pane-level callback can stay identity-stable (per-turn inline closures
+  // would defeat the memo).
+  const handleOpenRuns = useCallback(
+    () => onOpenTurnRuns?.(turn.id),
+    [onOpenTurnRuns, turn.id],
+  );
+  return (
+    <TurnView
+      turn={turn}
+      cwd={cwd}
+      onOpenFile={onOpenFile}
+      onOpenAgent={onOpenAgent}
+      latestAgentMessageID={latestAgentMessageID}
+      isLatestTurn={isLatestTurn}
+      onStreamFrame={onStreamFrame}
+      onCollapseComplete={onCollapseComplete}
+      onForkMessage={onForkMessage}
+      onEditMessage={canEdit ? onEditMessage : undefined}
+      editingMessage={editingMessage}
+      onCancelEditMessage={onCancelEditMessage}
+      onSubmitEditMessage={onSubmitEditMessage}
+      onOpenFileDiff={onOpenFileDiff}
+      onOpenRuns={onOpenTurnRuns ? handleOpenRuns : undefined}
+      streamStatus={streamStatus}
+    />
   );
 });
 
