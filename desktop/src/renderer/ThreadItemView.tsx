@@ -70,6 +70,7 @@ export function ThreadItemView({
   onSubmitEditMessage,
   onOpenAgent,
   onOpenSubthread,
+  editSummaryCard,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -96,6 +97,7 @@ export function ThreadItemView({
   ) => void;
   onOpenAgent?: (agentID: string) => void;
   onOpenSubthread?: (item: ThreadItem) => void;
+  editSummaryCard?: JSX.Element;
 }): JSX.Element | null {
   const { t } = useI18n();
   switch (item.type) {
@@ -219,6 +221,7 @@ export function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
+          {editSummaryCard}
           {actionsVisible ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
