@@ -8,6 +8,49 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-19
+
+### Added
+
+- Added Kimi K3 Anthropic compatibility, including K3-specific thinking and empty-signature handling.
+- Added context-overflow detection, recovery, and user-visible display for BYOK providers.
+- Added dynamic request context compaction, reducing how much transient context enters model requests.
+- Added a redesigned Settings page using a flat chassis with instant-apply controls and hover drawers.
+- Added token-speed display via hover tooltip on narrow composer bars.
+- Added settled agent runs in the terminal workspace surface.
+- Added support for diversified subagent name pools.
+- Added the ability to switch projects while background runs are still active.
+- Added a bilingual user guide covering core desktop and agent workflows.
+
+### Changed
+
+- Unified terminal session history into a single shared history model.
+- Dropped derived context ledgers from the default model projection.
+- Simplified the sidebar wordmark color treatment.
+- Scoped environment Git configuration to the active session workspace.
+- Memoized conversation turns on server-event re-renders to improve idle performance.
+- Reduced idle renderer activity across the desktop conversation view.
+- Kept process summaries neutral and hidden from the main conversation stream.
+- Unified composer actions into a single plus menu.
+
+### Fixed
+
+- Interrupted turns now show answer actions and prevent stacked query overlap.
+- Turn edit summary cards now appear before answer action buttons.
+- Background completion wakeups are now waited on correctly before proceeding.
+- Model-aware summary output limits are recovered after compaction.
+- Messages can be edited after history compaction.
+- Conversation layout is settled before reveal, preventing flicker on tab switch.
+- Stream follow pauses during text selection.
+- Stable single-line retry error display is shown while a turn retries or recovers.
+- First query is shown before thread creation completes.
+- Zero-usage model buckets are hidden from the settings usage panel.
+- Synchronous shell process trees are stopped correctly.
+- Terminal quota replays are stopped during recovery.
+- OpenAI Responses WebSocket cache TTL is extended.
+- Usage number overflow is prevented in heatmap and inline displays.
+- Usage heatmap intensity is restored after theme changes.
+
 ## [0.6.0] - 2026-07-17
 
 ### Added
