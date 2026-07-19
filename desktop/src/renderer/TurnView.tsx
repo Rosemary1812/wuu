@@ -71,7 +71,7 @@ export function TurnView({
   isLatestTurn?: boolean;
 }): JSX.Element {
   const actionableAgentMessageID =
-    turn.status === "completed"
+    turn.status === "completed" || turn.status === "interrupted"
       ? messageFlowAgentMessageItemID(turn)
       : undefined;
 

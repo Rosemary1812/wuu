@@ -787,6 +787,15 @@
   height: 20px;
 }
 
+/* Two user queries can land back-to-back in the same turn (steer/queue).
+ * The first query's hover action row hangs 22px below its bubble
+ * (20px controls + 2px hover bridge), but the turn item gap is only 8px,
+ * so the row overlaps the second query. Push the next query down by the
+ * difference so the action row clears it. */
+.user-message-block-with-actions + .user-message-block {
+  margin-top: calc(22px - var(--conversation-turn-item-gap));
+}
+
 .message-images {
   display: flex;
   flex-wrap: wrap;
