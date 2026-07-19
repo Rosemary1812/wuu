@@ -877,6 +877,8 @@ export const enUS = {
   "appState.attemptRequests": "{attempt}, {count} requests sent",
   "appState.reconnectingAfter": "{subject} interrupted temporarily; continuing {wait} ({progress})",
   "appState.reconnecting": "{subject} is recovering ({progress})",
+  "appState.reconnectingCauseAfter": "{cause}; continuing {wait} ({progress})",
+  "appState.reconnectingCause": "{cause}; reconnecting ({progress})",
   "appState.retrySecond": "in about {count} second",
   "appState.retrySeconds": "in about {count} seconds",
   "appState.retryMinute": "in about {count} minute",

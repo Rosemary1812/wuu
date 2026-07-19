@@ -1072,6 +1072,214 @@ describe("AppState token usage", () => {
     });
   });
 
+  it("names the failure cause in the single reconnect chip instead of the transport", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+    const reconnectEvent = {
+      kind: "notification" as const,
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 2,
+              max_attempts: 6,
+              retry_in_ms: 5000,
+              failure_category: "rate_limit",
+              reason: "Provider is overloaded",
+            },
+          },
+        },
+      },
+    };
+
+    const first = reduceServerEvent(state, reconnectEvent);
+    expect(turnStreamStatusForThread(first, first.thread)).toEqual({
+      text: "429 触发限流，约 5 秒后继续（第 2/6 次尝试）",
+      liveProgress: true,
+    });
+
+    // A later attempt with a shorter wait updates the same chip in place —
+    // the turn keeps exactly one status entry, never one per attempt.
+    const second = reduceServerEvent(first, {
+      ...reconnectEvent,
+      message: {
+        ...reconnectEvent.message,
+        params: {
+          ...reconnectEvent.message.params,
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 3,
+              max_attempts: 6,
+              retry_in_ms: 2000,
+              failure_category: "rate_limit",
+              reason: "Provider is overloaded",
+            },
+          },
+        },
+      },
+    });
+    expect(Object.keys(second.turnStreamStatus)).toEqual(["turn-1"]);
+    expect(turnStreamStatusForThread(second, second.thread)).toEqual({
+      text: "429 触发限流，约 2 秒后继续（第 3/6 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("names auth recovery in the reconnect chip without a wait hint", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 2,
+              failure_category: "authentication",
+              reason: "Authentication failed",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "认证失败，正在重连中（第 2 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("falls back to the redacted reason summary when failure_category is absent", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 1,
+              reason: "Provider is overloaded",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "上游过载，正在重连中（第 1 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("keeps the transport wording when the reconnect cause is unknown", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 1,
+              failure_category: "replay_unsafe",
+              reason: "Automatic replay blocked to avoid duplicate tool execution",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "消息流正在恢复（第 1 次尝试）",
+      liveProgress: true,
+    });
+  });
+
   it("explains when automatic replay stops to avoid duplicate tools", () => {
     const thread: Thread = {
       ...threadWithUserTexts(["hi"]),

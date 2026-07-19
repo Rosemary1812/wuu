@@ -268,6 +268,36 @@ describe("TurnView", () => {
     expect(view.querySelectorAll(".turn-notice button, .turn-notice a")).toHaveLength(0);
   });
 
+  it("hides a transient stream error item while the turn is still retrying", () => {
+    // A retryable attempt that failed terminally lands an error item, but
+    // the turn keeps running (reconnect chip carries the cause). Rendering
+    // the item here would pile up one settled error line per attempt.
+    const view = render(
+      makeTurn("in_progress", [
+        makeCommentary("partial progress"),
+        makeError("HTTP 429: Too Many Requests"),
+      ]),
+    );
+
+    expect(view.querySelectorAll(".turn-notice")).toHaveLength(0);
+    expect(view.textContent).not.toContain("429");
+  });
+
+  it("drops a transient stream error item once the turn recovered and completed", () => {
+    // The retry succeeded: nothing about the superseded failure should stay
+    // behind in the finished turn.
+    const view = render(
+      makeTurn("completed", [
+        makeFinalAnswer("done"),
+        makeError("HTTP 429: Too Many Requests"),
+      ]),
+    );
+
+    expect(view.textContent).toContain("done");
+    expect(view.querySelectorAll(".turn-notice")).toHaveLength(0);
+    expect(view.textContent).not.toContain("429");
+  });
+
   it("renders a single warning chip when a completed turn has commentary but no final answer", () => {
     // Pin the chip-pipeline contract: a completed turn whose items
     // carry only `commentary` (no `final_answer`) now surfaces a

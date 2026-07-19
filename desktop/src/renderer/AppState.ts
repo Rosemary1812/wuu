@@ -1023,12 +1023,78 @@ function streamStatusFromLifecycle(
         },
       )
     : attemptText;
+  // While the stream is being retried, this chip is the only place the
+  // failure shows up — name the cause (429, auth refresh, …) instead of the
+  // transport so the single line answers "what is being retried".
+  const cause = reconnectCauseLabel(lifecycle);
+  if (cause) {
+    return {
+      text: waitText
+        ? t("appState.reconnectingCauseAfter", {
+            cause,
+            wait: waitText,
+            progress: progressText,
+          })
+        : t("appState.reconnectingCause", { cause, progress: progressText }),
+      liveProgress: true,
+    };
+  }
   return {
     text: waitText
       ? t("appState.reconnectingAfter", { subject, wait: waitText, progress: progressText })
       : t("appState.reconnecting", { subject, progress: progressText }),
     liveProgress: true,
   };
+}
+
+/**
+ * Short localized label for the failure that triggered a stream reconnect,
+ * or undefined when nothing specific is known (the chip then falls back to
+ * the transport-subject wording). Prefers the lifecycle's structured
+ * `failure_category`; the redacted `reason` summary is only consulted for
+ * app-servers that predate the category field.
+ */
+function reconnectCauseLabel(lifecycle: JsonRecord): string | undefined {
+  const category = stringValue(lifecycle, "failure_category");
+  if (category) {
+    switch (category) {
+      case "authentication":
+        return t("error.authTitle");
+      case "rate_limit":
+      case "quota":
+        return `429 ${t("error.http429")}`;
+      case "overloaded":
+        return t("error.upstreamOverloaded");
+      case "server":
+        return t("error.providerTitle");
+      case "deadline":
+        return t("error.requestTimeout");
+      case "network":
+      case "incomplete_stream":
+        return t("error.networkTitle");
+      default:
+        // A category with no user-meaningful cause (replay_unsafe, budget
+        // limits, context overflow, …) keeps the transport wording.
+        return undefined;
+    }
+  }
+  const reason = stringValue(lifecycle, "reason")?.toLowerCase() ?? "";
+  if (!reason) {
+    return undefined;
+  }
+  if (reason.includes("authentication") || reason.includes("unauthorized")) {
+    return t("error.authTitle");
+  }
+  if (reason.includes("rate limit") || reason.includes("too many requests")) {
+    return `429 ${t("error.http429")}`;
+  }
+  if (reason.includes("overloaded")) {
+    return t("error.upstreamOverloaded");
+  }
+  if (reason.includes("timeout") || reason.includes("deadline")) {
+    return t("error.requestTimeout");
+  }
+  return undefined;
 }
 
 function retryWaitText(retryInMs: number | undefined): string | undefined {

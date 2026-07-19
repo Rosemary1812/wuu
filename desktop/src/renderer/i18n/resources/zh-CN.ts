@@ -875,6 +875,8 @@ export const zhCN = {
   "appState.attemptRequests": "{attempt}，已发送 {count} 次请求",
   "appState.reconnectingAfter": "{subject}暂时中断，{wait}（{progress}）",
   "appState.reconnecting": "{subject}正在恢复（{progress}）",
+  "appState.reconnectingCauseAfter": "{cause}，{wait}（{progress}）",
+  "appState.reconnectingCause": "{cause}，正在重连中（{progress}）",
   "appState.retrySecond": "约 {count} 秒后继续",
   "appState.retrySeconds": "约 {count} 秒后继续",
   "appState.retryMinute": "约 {count} 分钟后继续",

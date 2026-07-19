@@ -147,6 +147,11 @@ function extractSpecificDisplay(
         return { title: t("error.contextExceeded") };
       }
       if (lower.includes("too many tokens")) return { title: t("error.tokenLimitExceeded") };
+      // A status code embedded in the message ("HTTP 429: …") is the one
+      // fact that survives a history rebuild, so it outranks keyword
+      // guesses — resume-safe identity beats phrasing.
+      const code = extractHttpCode(message);
+      if (code) return { title: httpTitle(code) };
       if (lower.includes("content policy") || lower.includes("content_policy")) return { title: t("error.contentPolicy") };
       if (lower.includes("rate_limit") || lower.includes("rate limit")) return { title: t("error.rateLimited") };
       if (lower.includes("model_not_found")) return { title: t("error.modelNotFound") };
@@ -218,9 +223,12 @@ export function userFacingErrorForMessage(
         : "internal"
       : classifyUserFacingError(message, context);
 
-  // Structured transport facts take precedence over inferred category
-  // labels. A post-200 provider failure has no HTTP status, so retain its
-  // provider code when no more specific localized state is available.
+  // Message-derived specifics win over structured transport facts: after a
+  // thread resume the turn snapshot is rebuilt from persisted history, which
+  // retains only the message — not status_code / code. A title that depends
+  // on structured fields would flip wording across a resume (tab switch), so
+  // the traceable title is kept only as the fallback for opaque messages
+  // (e.g. a post-200 provider failure whose message carries no status).
   const structuredCode = structuredProviderCode(structured);
   const specific = extractSpecificDisplay(message, category);
   const specificFromCode = structuredCode
@@ -233,9 +241,9 @@ export function userFacingErrorForMessage(
       ? `${t("error.requestFailedTitle")} · ${structuredCode}`
       : undefined;
   const title =
-    traceableFailureTitle ||
     specific.title ||
     specificFromCode.title ||
+    traceableFailureTitle ||
     defaultTitleForCategory(category);
   // Detail is hover and accessibility copy, not a visible second line.
   const detail =
@@ -343,7 +351,7 @@ function specificDetailForMessage(
   return undefined;
 }
 
-function classifyUserFacingError(message: string, context: UserFacingErrorContext): UserFacingErrorCategory {
+export function classifyUserFacingError(message: string, context: UserFacingErrorContext): UserFacingErrorCategory {
   const normalized = message.toLowerCase();
   if (isCancellationMessage(normalized)) {
     return "cancelled";
@@ -356,6 +364,9 @@ function classifyUserFacingError(message: string, context: UserFacingErrorContex
   }
   if (isProviderBusinessError(normalized)) {
     return "provider";
+  }
+  if (isInvalidRequestError(normalized)) {
+    return "invalid_request";
   }
   if (isNetworkOrUpstreamError(normalized)) {
     return "network";
@@ -394,7 +405,7 @@ function isAuthOrPermissionError(message: string): boolean {
 
 function isNetworkOrUpstreamError(message: string): boolean {
   return (
-    /\b(429|500|502|503|504|529)\b/.test(message) ||
+    /\b(500|502|503|504)\b/.test(message) ||
     message.includes("network") ||
     message.includes("stream request failed") ||
     message.includes("request failed") ||
@@ -417,6 +428,10 @@ function isNetworkOrUpstreamError(message: string): boolean {
 function isProviderBusinessError(message: string): boolean {
   return (
     isResponseCompletedMissingMessage(message) ||
+    // Mirror the Go core's HTTP mapping (categoryFromHTTPError): 413 is a
+    // context-overflow signal, 429/529 are rate limit / overloaded — all
+    // provider-side, never network faults.
+    /\b(413|429|529)\b/.test(message) ||
     message.includes("context_length_exceeded") ||
     message.includes("context window") ||
     message.includes("maximum context length") ||
@@ -428,7 +443,18 @@ function isProviderBusinessError(message: string): boolean {
     message.includes("response failed") ||
     message.includes("response error") ||
     message.includes("content policy") ||
-    message.includes("invalid_request_error")
+    message.includes("rate_limit")
+  );
+}
+
+// Message-only counterpart of the wire `invalid_request` category: keeps a
+// resumed turn (rebuilt from the persisted message, without structured
+// fields) classified the same as the live turn the Go core tagged.
+function isInvalidRequestError(message: string): boolean {
+  return (
+    message.includes("invalid_request") ||
+    message.includes("bad request") ||
+    message.includes("http 400")
   );
 }
 

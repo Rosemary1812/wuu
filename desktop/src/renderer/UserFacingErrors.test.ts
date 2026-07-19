@@ -187,7 +187,9 @@ describe("userFacingErrorForMessage", () => {
 
       expect(display.category).toBe("invalid_request");
       expect(display.tone).toBe("error");
-      expect(display.title).toBe("请求失败 · HTTP 400");
+      // The message-embedded status wins over the structured status_code
+      // fact so the wording survives a history rebuild (tab switch).
+      expect(display.title).toBe("400 请求无效");
       expect(display.detail).toBe("Provider 认为这次请求参数无效。原始错误已留在调试信息中。");
     });
 
@@ -238,6 +240,90 @@ describe("userFacingErrorForMessage", () => {
       expect(display.category).toBe("provider");
       expect(display.title).toBe("上下文超出窗口");
       expect(display).not.toHaveProperty("code");
+    });
+  });
+
+  describe("resume stability (tab switch rebuilds the turn from the persisted message only)", () => {
+    // After a thread resume the app-server rebuilds turn.error from the
+    // terminal history record: only `message` survives — status_code,
+    // code and category are lost. The renderer must derive the same
+    // category and title from the message alone as it did from the
+    // structured TurnError, or the user watches an error rename itself
+    // across a tab switch.
+    function expectResumeStable(input: TurnError, expectedCategory: string) {
+      const live = userFacingErrorForMessage(input, "turn");
+      const resumed = userFacingErrorForMessage(input.message, "turn");
+      expect(resumed.category).toBe(expectedCategory);
+      expect(resumed.title).toBe(live.title);
+      expect(resumed.tone).toBe(live.tone);
+    }
+
+    it("keeps a 429 rate-limit failure identical across a resume", () => {
+      expectResumeStable(
+        {
+          message: 'HTTP 429: {"error":{"type":"rate_limit_error","message":"slow down"}}',
+          code: "rate_limit_error",
+          category: "provider",
+          status_code: 429,
+        },
+        "provider",
+      );
+    });
+
+    it("keeps a 429 whose body carries no provider keywords identical across a resume", () => {
+      expectResumeStable(
+        {
+          message: "HTTP 429: Too Many Requests",
+          category: "provider",
+          status_code: 429,
+        },
+        "provider",
+      );
+    });
+
+    it("keeps a 401 auth failure identical across a resume", () => {
+      expectResumeStable(
+        {
+          message: 'HTTP 401: {"error":{"message":"invalid api key"}}',
+          category: "auth",
+          status_code: 401,
+        },
+        "auth",
+      );
+    });
+
+    it("keeps a 400 invalid_request failure identical across a resume", () => {
+      expectResumeStable(
+        {
+          message: 'HTTP 400: {"error":{"type":"invalid_request_error","message":"max_tokens must be positive"}}',
+          code: "invalid_request_error",
+          category: "invalid_request",
+          status_code: 400,
+        },
+        "invalid_request",
+      );
+    });
+
+    it("keeps a post-200 rate-limit stream error identical across a resume", () => {
+      expectResumeStable(
+        {
+          message: "stream request failed: stream error (rate_limit_error)",
+          code: "rate_limit_error",
+          category: "provider",
+        },
+        "provider",
+      );
+    });
+
+    it("keeps a 503 upstream failure identical across a resume", () => {
+      expectResumeStable(
+        {
+          message: "HTTP 503: service unavailable",
+          category: "network",
+          status_code: 503,
+        },
+        "network",
+      );
     });
   });
 });
