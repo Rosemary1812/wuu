@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -245,25 +246,62 @@ func StreamErrorDisplay(err error) string {
 	}
 }
 
+// contextOverflowPatterns match provider error text that means the prompt
+// exceeded the model's context window: one entry per phrasing observed in
+// the wild, attributed per provider. Classification gates compaction-vs-
+// retry, so entries must be specific enough to never match transient
+// failures; numeric fields stay inside the patterns so a rate/quota
+// number can't widen the match.
+var contextOverflowPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)context[_ ]length[_ ]exceeded`),                                 // OpenAI code and prose forms
+	regexp.MustCompile(`(?i)exceeds the context window`),                                    // OpenAI Completions & Responses
+	regexp.MustCompile(`(?i)context window exceeds limit`),                                  // MiniMax
+	regexp.MustCompile(`(?i)maximum context length`),                                        // OpenAI-compatible proxies, OpenRouter, Mistral
+	regexp.MustCompile(`(?i)model_context_window_exceeded`),                                 // z.ai finish_reason surfaced as error text
+	regexp.MustCompile(`(?i)prompt is too long`),                                            // Anthropic
+	regexp.MustCompile(`(?i)request_too_large`),                                             // Anthropic HTTP 413
+	regexp.MustCompile(`(?i)input is too long`),                                             // AWS Bedrock
+	regexp.MustCompile(`(?i)input token count.*exceeds the maximum`),                        // Google Gemini
+	regexp.MustCompile(`(?i)maximum prompt length is \d+`),                                  // xAI
+	regexp.MustCompile(`(?i)reduce the length of the messages`),                             // Groq
+	regexp.MustCompile(`(?i)exceeds (?:the )?maximum allowed input length`),                 // OpenRouter/Poolside
+	regexp.MustCompile(`(?i)is longer than the model'?s context length`),                    // Together AI
+	regexp.MustCompile(`(?i)prompt token count(?: of)? [\d,]+ exceeds the limit of [\d,]+`), // GitHub Copilot
+	regexp.MustCompile(`(?i)exceeds the available context size`),                            // llama.cpp
+	regexp.MustCompile(`(?i)greater than the context length`),                               // LM Studio
+	regexp.MustCompile(`(?i)exceeded model token limit`),                                    // Kimi For Coding (legacy phrasing)
+	regexp.MustCompile(`(?i)message size [\d,]+ exceeds limit`),                             // Kimi For Coding k3: "total message size 2306631 exceeds limit 2097152"
+	regexp.MustCompile(`(?i)prompt too long; exceeded (?:max )?context length`),             // Ollama
+}
+
+// contextNonOverflowPatterns veto overflow classification for transient quota
+// failures whose wording collides with a generic overflow pattern (Bedrock
+// throttling formats as "Too many tokens, please wait"; 429 phrasing varies).
+var contextNonOverflowPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)rate limit`),
+	regexp.MustCompile(`(?i)too many requests`),
+	regexp.MustCompile(`(?i)throttl`),
+}
+
 // DetectContextOverflow inspects a provider error body and reports
 // whether it represents a context-window-exceeded condition. The
-// matching is provider-agnostic: it covers both OpenAI's
-// `context_length_exceeded` code and Anthropic's "prompt is too long"
-// style messages.
+// matching is provider-agnostic: exclusion patterns run first, then
+// the overflow table.
 func DetectContextOverflow(body string) bool {
 	if body == "" {
 		return false
 	}
-	msg := strings.ToLower(body)
-	return strings.Contains(msg, "context_length_exceeded") ||
-		strings.Contains(msg, "context length exceeded") ||
-		strings.Contains(msg, "exceeds the context window") ||
-		strings.Contains(msg, "context window exceeds limit") ||
-		strings.Contains(msg, "maximum context length") ||
-		strings.Contains(msg, "model_context_window_exceeded") ||
-		strings.Contains(msg, "prompt is too long") ||
-		strings.Contains(msg, "input is too long") ||
-		strings.Contains(msg, "too many tokens")
+	for _, pattern := range contextNonOverflowPatterns {
+		if pattern.MatchString(body) {
+			return false
+		}
+	}
+	for _, pattern := range contextOverflowPatterns {
+		if pattern.MatchString(body) {
+			return true
+		}
+	}
+	return false
 }
 
 func isContextOverflowCode(code string) bool {

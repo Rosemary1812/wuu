@@ -241,6 +241,72 @@ describe("userFacingErrorForMessage", () => {
       expect(display.title).toBe("上下文超出窗口");
       expect(display).not.toHaveProperty("code");
     });
+
+    it("renders message-size-limit overflow identically in live and rebuilt paths", () => {
+      // Kimi-for-coding rejects oversized prompts with a 400 whose body
+      // names no context keyword; both the wire-category path and the
+      // message-only fallback must converge on the context-overflow display.
+      const raw =
+        'stream request failed: HTTP 400: 400 Bad Request: {"error":{"type":"invalid_request_error","message":"total message size 2306631 exceeds limit 2097152"},"type":"error"}';
+      const live = userFacingErrorForMessage(
+        {
+          message: raw,
+          code: "invalid_request_error",
+          category: "provider",
+          provider: "kimi-code",
+          status_code: 400,
+        },
+        "turn",
+      );
+      const rebuilt = userFacingErrorForMessage(raw, "turn");
+
+      for (const display of [live, rebuilt]) {
+        expect(display.category).toBe("provider");
+        expect(display.title).toBe("上下文超出窗口");
+      }
+    });
+
+    it("keeps every core overflow phrasing identical in live and rebuilt paths", () => {
+      const phrasings = [
+        "context length exceeded",
+        "Your input exceeds the context window of this model",
+        "context window exceeds limit",
+        "maximum context length",
+        "model_context_window_exceeded",
+        "prompt is too long",
+        "request_too_large",
+        "input is too long",
+        "input token count (120000) exceeds the maximum number of tokens allowed",
+        "maximum prompt length is 131072",
+        "reduce the length of the messages",
+        "exceeds the maximum allowed input length",
+        "is longer than the model's context length",
+        "prompt token count of 240000 exceeds the limit of 200000",
+        "exceeds the available context size",
+        "greater than the context length",
+        "exceeded model token limit",
+        "message size 2,306,631 exceeds limit",
+        "prompt too long; exceeded max context length",
+      ];
+
+      for (const phrasing of phrasings) {
+        const message = `stream request failed: HTTP 400: ${phrasing}`;
+        const live = userFacingErrorForMessage(
+          {
+            message,
+            category: "provider",
+            status_code: 400,
+          },
+          "turn",
+        );
+        const rebuilt = userFacingErrorForMessage(message, "turn");
+
+        expect(live.category, phrasing).toBe("provider");
+        expect(rebuilt.category, phrasing).toBe("provider");
+        expect(live.title, phrasing).toBe("上下文超出窗口");
+        expect(rebuilt.title, phrasing).toBe(live.title);
+      }
+    });
   });
 
   describe("resume stability (tab switch rebuilds the turn from the persisted message only)", () => {

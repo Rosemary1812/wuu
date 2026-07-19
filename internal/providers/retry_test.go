@@ -175,6 +175,77 @@ func TestDetectContextOverflow_MiniMaxMessage(t *testing.T) {
 	}
 }
 
+func TestDetectContextOverflow_KimiMessageSizeLimit(t *testing.T) {
+	msg := `HTTP 400: 400 Bad Request: {"error":{"type":"invalid_request_error","message":"total message size 2306631 exceeds limit 2097152"},"type":"error"}`
+	if !DetectContextOverflow(msg) {
+		t.Fatal("expected Kimi message-size-limit message to be detected")
+	}
+}
+
+func TestDetectContextOverflow_DoesNotGuessFromRateLimitPhrasing(t *testing.T) {
+	msg := `HTTP 429: {"error":{"type":"rate_limit_error","message":"request rate exceeds limit, slow down"}}`
+	if DetectContextOverflow(msg) {
+		t.Fatal("rate-limit phrasing without a message-size signal must not be classified as context overflow")
+	}
+}
+
+func TestDetectContextOverflow_ProviderPhrasings(t *testing.T) {
+	overflows := []string{
+		// Anthropic
+		"prompt is too long: 213462 tokens > 200000 maximum",
+		`413 {"error":{"type":"request_too_large","message":"Request exceeds the maximum size"}}`,
+		// OpenAI / OpenAI-compatible
+		"context_length_exceeded",
+		"Requested token count exceeds the model's maximum context length of 131072 tokens",
+		// Google
+		"The input token count (1196265) exceeds the maximum number of tokens allowed (1048575)",
+		// xAI
+		"This model's maximum prompt length is 131072 but the request contains 537812 tokens",
+		// Groq
+		"Please reduce the length of the messages or completion",
+		// OpenRouter
+		"This endpoint's maximum context length is 200000 tokens. However, you requested about 240000 tokens",
+		"Input length 265330 exceeds the maximum allowed input length of 262144 tokens.",
+		// Together AI
+		"The input (300000 tokens) is longer than the model's context length (262144 tokens).",
+		// GitHub Copilot
+		"prompt token count of 240000 exceeds the limit of 200000",
+		// llama.cpp
+		"the request exceeds the available context size, try increasing it",
+		// LM Studio
+		"tokens to keep from the initial prompt is greater than the context length",
+		// Kimi For Coding
+		"Your request exceeded model token limit: 2097152 (requested: 2306631)",
+		"total message size 2306631 exceeds limit 2097152",
+		// Ollama
+		"prompt too long; exceeded max context length by 4021 tokens",
+		// Mistral
+		"Prompt contains 240000 tokens, too large for model with 128000 maximum context length",
+	}
+	for _, msg := range overflows {
+		if !DetectContextOverflow(msg) {
+			t.Errorf("expected overflow detection for %q", msg)
+		}
+	}
+
+	nonOverflows := []string{
+		// 429s and throttling must not trigger lossy compaction.
+		`429 {"error":{"type":"rate_limit_error","message":"We're receiving too many requests at the moment."}}`,
+		"request rate exceeds limit, slow down",
+		"Throttling error: Too many tokens, please wait before trying again.",
+		"429: too many tokens per minute",
+		"monthly token limit exceeded",
+		"request count exceeds the limit of 100",
+		// Gateway byte-buffer limits are not context windows.
+		"HTTP 507: 507 Insufficient Storage: exceeded request buffer limit while retrying upstream",
+	}
+	for _, msg := range nonOverflows {
+		if DetectContextOverflow(msg) {
+			t.Errorf("expected non-overflow for %q", msg)
+		}
+	}
+}
+
 func TestNewProviderStreamError_Auth(t *testing.T) {
 	err := NewProviderStreamError("authentication_error", "invalid api key")
 	if !IsAuthError(err) {

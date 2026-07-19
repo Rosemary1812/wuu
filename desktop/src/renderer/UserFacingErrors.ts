@@ -68,6 +68,36 @@ function httpTitle(code: string): string {
   return key ? `${code} ${t(key)}` : code;
 }
 
+// Keep this legacy message-only fallback aligned with the Go core's explicit
+// overflow identities. Persisted history does not retain every structured
+// error field, so these patterns must classify a rebuilt turn the same way as
+// the live structured error without guessing from quota wording.
+const CONTEXT_OVERFLOW_PATTERNS = [
+  /context[_ ]length[_ ]exceeded/i,
+  /exceeds the context window/i,
+  /context window exceeds limit/i,
+  /maximum context length/i,
+  /model_context_window_exceeded/i,
+  /prompt is too long/i,
+  /request_too_large/i,
+  /input is too long/i,
+  /input token count.*exceeds the maximum/i,
+  /maximum prompt length is \d+/i,
+  /reduce the length of the messages/i,
+  /exceeds (?:the )?maximum allowed input length/i,
+  /is longer than the model'?s context length/i,
+  /prompt token count(?: of)? [\d,]+ exceeds the limit of [\d,]+/i,
+  /exceeds the available context size/i,
+  /greater than the context length/i,
+  /exceeded model token limit/i,
+  /message size [\d,]+ exceeds limit/i,
+  /prompt too long; exceeded (?:max )?context length/i,
+];
+
+function hasContextOverflowPhrasing(message: string): boolean {
+  return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 function structuredStatusFact(structured: TurnError | undefined): string | undefined {
   const statusCode = structured?.status_code;
   if (typeof statusCode !== "number" || !Number.isFinite(statusCode) || statusCode <= 0) {
@@ -139,11 +169,7 @@ function extractSpecificDisplay(
       if (isResponseCompletedMissingMessage(lower)) {
         return { title: t("error.responseIncomplete") };
       }
-      if (
-        lower.includes("context_length_exceeded") ||
-        lower.includes("context window") ||
-        lower.includes("maximum context length")
-      ) {
+      if (hasContextOverflowPhrasing(lower)) {
         return { title: t("error.contextExceeded") };
       }
       if (lower.includes("too many tokens")) return { title: t("error.tokenLimitExceeded") };
@@ -235,12 +261,17 @@ export function userFacingErrorForMessage(
     ? extractSpecificDisplay(structuredCode, category)
     : {};
   const statusFact = structuredStatusFact(structured);
+  // Context-overflow phrasing is an identity, not a keyword guess: like the
+  // embedded HTTP status it survives history rebuilds, so it shares the top
+  // precedence instead of losing to the transport status fact.
+  const overflowTitle = hasContextOverflowPhrasing(message.toLowerCase()) ? t("error.contextExceeded") : undefined;
   const traceableFailureTitle = statusFact
     ? `${t("error.requestFailedTitle")} · ${statusFact}`
     : category === "provider" && structuredCode && !specific.title && !specificFromCode.title
       ? `${t("error.requestFailedTitle")} · ${structuredCode}`
       : undefined;
   const title =
+    overflowTitle ||
     specific.title ||
     specificFromCode.title ||
     traceableFailureTitle ||
@@ -428,13 +459,11 @@ function isNetworkOrUpstreamError(message: string): boolean {
 function isProviderBusinessError(message: string): boolean {
   return (
     isResponseCompletedMissingMessage(message) ||
+    hasContextOverflowPhrasing(message) ||
     // Mirror the Go core's HTTP mapping (categoryFromHTTPError): 413 is a
-    // context-overflow signal, 429/529 are rate limit / overloaded — all
-    // provider-side, never network faults.
+    // request-size failure, while 429/529 are rate limit / overloaded — all
+    // are provider-side, never network faults.
     /\b(413|429|529)\b/.test(message) ||
-    message.includes("context_length_exceeded") ||
-    message.includes("context window") ||
-    message.includes("maximum context length") ||
     message.includes("too many tokens") ||
     message.includes("empty response") ||
     message.includes("empty answer") ||

@@ -1280,8 +1280,12 @@ func TestRunToolLoop_MaxTokensStopReasonNormalizesLength(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_ContextOverflowAutoCompact(t *testing.T) {
-	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
+func TestRunToolLoop_KimiMessageSizeOverflowAutoCompactsOnce(t *testing.T) {
+	body := "total message size 2306631 exceeds limit 2097152"
+	overflow := &providers.HTTPError{StatusCode: 400, Body: body, ContextOverflow: providers.DetectContextOverflow(body)}
+	if !overflow.ContextOverflow {
+		t.Fatal("Kimi message-size response was not classified as context overflow")
+	}
 	step := &fakeStep{results: []StepResult{{}, {Content: "ok"}}, errs: []error{overflow, nil}}
 	compactCalled := 0
 	compactFn := func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
@@ -1304,6 +1308,9 @@ func TestRunToolLoop_ContextOverflowAutoCompact(t *testing.T) {
 	}
 	if compactCalled != 1 {
 		t.Fatalf("expected compact called once, got %d", compactCalled)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected initial request plus one transformed retry, got %d calls", len(step.calls))
 	}
 }
 
