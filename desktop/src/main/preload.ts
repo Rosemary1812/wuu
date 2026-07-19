@@ -6,7 +6,6 @@ import {
   type PopOutInitResult,
   type RemoteControlEvent,
   type ServerEvent,
-  type SettingsUsageRange,
   type SideThreadEventEnvelope,
   type SideThreadSendParams,
   type ThreadStartParams,
@@ -202,8 +201,7 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   listAgentTemplates: () => ipcRenderer.invoke("wuu:agent-template-list"),
-  getSettingsUsage: (range?: SettingsUsageRange) =>
-    ipcRenderer.invoke("wuu:settings-usage", range),
+  getSettingsUsage: () => ipcRenderer.invoke("wuu:settings-usage"),
   listMCPServers: () => ipcRenderer.invoke("wuu:mcp-list"),
   connectMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-connect", name),
   disconnectMCPServer: (name: string) =>

@@ -68,8 +68,6 @@ import type {
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
-  SettingsUsageQuery,
-  SettingsUsageRange,
   SettingsUsageResponse,
   TerminalSessionStartParams,
   Thread,
@@ -1355,14 +1353,8 @@ app.whenReady().then(async () => {
     (_event, hints: CodexPetHint[] | null) =>
       codexPetWindowManager.setHints(hints ?? []),
   );
-  ipcMain.handle(
-    "wuu:settings-usage",
-    (event, range?: SettingsUsageRange) =>
-      appServerRequest<SettingsUsageResponse>(
-        event,
-        "settings/usage",
-        { range } satisfies SettingsUsageQuery,
-      ),
+  ipcMain.handle("wuu:settings-usage", (event) =>
+    appServerRequest<SettingsUsageResponse>(event, "settings/usage"),
   );
   ipcMain.handle("wuu:mcp-list", (event) =>
     appServerRequest<MCPListResult>(event, "mcp/list"),

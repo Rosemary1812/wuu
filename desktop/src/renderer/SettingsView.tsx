@@ -20,7 +20,6 @@ import type {
   CodexPetSettingsUpdate,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
-  SettingsUsageRange,
 } from "../shared/protocol";
 import {
   type CSSProperties,
@@ -120,8 +119,6 @@ export function SettingsView({
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,
-  usageRange,
-  setUsageRange,
   archivedThreads,
   onUnarchiveThread,
   // The settings rail shares the main sidebar's state and handlers wholesale:
@@ -146,8 +143,6 @@ export function SettingsView({
   // 记忆页「同事」子 Tab 的数据源：现有 roster 状态（App 的 participants），
   // 面板内部只保留在职 named agent。
   participants?: ParticipantProfile[];
-  usageRange: SettingsUsageRange;
-  setUsageRange: (range: SettingsUsageRange) => void;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
   codexPets?: CodexPetsSnapshot;
@@ -195,7 +190,6 @@ export function SettingsView({
   const [providerTypeDraft, setProviderTypeDraft] = useState("openai-compatible");
   const [addingProvider, setAddingProvider] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   const [desktopBuild, setDesktopBuild] = useState<DesktopBuildInfo | undefined>();
   const [activePage, setActivePage] = useState<SettingsPage>(() =>
     availableSettingsPage(initialPage),
@@ -212,9 +206,12 @@ export function SettingsView({
   const [maxStepsDraft, setMaxStepsDraft] = useState("0");
   const [temperatureDraft, setTemperatureDraft] = useState("");
   const [advancedError, setAdvancedError] = useState("");
-  const [advancedSaved, setAdvancedSaved] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const settingsScrollRef = useRef<HTMLDivElement>(null);
+  // Last persisted draft of each numeric advanced field, recorded when
+  // initialized state syncs in and after every successful commit. Blurring
+  // an untouched field is a no-op instead of a redundant IPC round-trip.
+  const advancedCommittedRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     setActivePage(availableSettingsPage(initialPage));
@@ -267,7 +264,6 @@ export function SettingsView({
   const core = initialized?.core;
   const selectedProvider = addingProvider ? undefined : providers.find((item) => item.name === providerDraft);
   const providerLabels = useMemo(() => providerDisplayLabels(providers, t), [providers, t]);
-  const selectedBaseURL = selectedProvider?.base_url ?? "";
   const connectionLocked = !addingProvider && (selectedProvider?.connection_locked ?? false);
   const variantOptions = providerModelVariantOptions(selectedProvider, modelDraft, variantDraft);
   const providerNameTaken = addingProvider && providers.some((item) => item.name === providerDraft.trim());
@@ -281,35 +277,62 @@ export function SettingsView({
     setAPIKeyDraft("");
     setAddingProvider(false);
     setError("");
-    setSaved(false);
   }, [initialized?.provider, initialized?.model, initialized?.variant, initialized?.effort, initialized?.providers]);
 
   useEffect(() => {
     const advanced = initialized?.advanced_settings;
+    const synced = {
+      compactThreshold: formatPercentDraft(advanced?.compact_threshold_pct),
+      compactKeepRecent: formatOptionalNumberDraft(advanced?.compact_keep_recent_tokens),
+      providerContextWindow: formatOptionalNumberDraft(advanced?.provider_context_window),
+      maxContextTokens: formatOptionalNumberDraft(advanced?.max_context_tokens),
+      maxSteps: String(advanced?.max_steps ?? 0),
+      temperature: formatTemperatureDraft(advanced?.temperature)
+    };
     setAutoCompactDraft(!(advanced?.disable_auto_compact ?? false));
-    setCompactThresholdDraft(formatPercentDraft(advanced?.compact_threshold_pct));
-    setCompactKeepRecentDraft(formatOptionalNumberDraft(advanced?.compact_keep_recent_tokens));
-    setProviderContextWindowDraft(formatOptionalNumberDraft(advanced?.provider_context_window));
-    setMaxContextTokensDraft(formatOptionalNumberDraft(advanced?.max_context_tokens));
-    setMaxStepsDraft(String(advanced?.max_steps ?? 0));
-    setTemperatureDraft(formatTemperatureDraft(advanced?.temperature));
+    setCompactThresholdDraft(synced.compactThreshold);
+    setCompactKeepRecentDraft(synced.compactKeepRecent);
+    setProviderContextWindowDraft(synced.providerContextWindow);
+    setMaxContextTokensDraft(synced.maxContextTokens);
+    setMaxStepsDraft(synced.maxSteps);
+    setTemperatureDraft(synced.temperature);
+    advancedCommittedRef.current = synced;
     setAdvancedError("");
-    setAdvancedSaved(false);
   }, [initialized?.advanced_settings, initialized?.provider, initialized?.model]);
 
-  function changeProvider(provider: string): void {
+  // Selection is activation: picking a tile or a name in the select
+  // switches the runtime to that provider through the same instant path
+  // the composer runtime menus use. A provider without a model cannot
+  // activate — the form opens for editing, and committing a model name
+  // activates it.
+  async function activateProvider(provider: string): Promise<void> {
     setAddingProvider(false);
-    setProviderDraft(provider);
     // Reset the type draft: it is only meaningful when creating a provider,
     // and leaving add mode via card click should drop any pending type pick.
     setProviderTypeDraft("openai-compatible");
-    setSaved(false);
+    setError("");
     const summary = providers.find((item) => item.name === provider);
-    if (summary) {
-      setModelDraft(summary.model);
-      setVariantDraft(normalizedVariantForProviderModel(initialized?.variant ?? initialized?.effort ?? "", summary, summary.model));
-      setBaseURLDraft(summary.base_url ?? "");
-      setAPIKeyDraft("");
+    if (!summary) {
+      return;
+    }
+    const variant = normalizedVariantForProviderModel(
+      initialized?.variant ?? initialized?.effort ?? "",
+      summary,
+      summary.model,
+    );
+    setProviderDraft(provider);
+    setModelDraft(summary.model);
+    setVariantDraft(variant);
+    setBaseURLDraft(summary.base_url ?? "");
+    setAPIKeyDraft("");
+    if (!summary.model.trim()) {
+      return;
+    }
+    try {
+      await onSave(provider, summary.model, undefined, undefined, variant);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
+      cancelAddingProvider();
     }
   }
 
@@ -322,7 +345,6 @@ export function SettingsView({
     setBaseURLDraft("");
     setAPIKeyDraft("");
     setError("");
-    setSaved(false);
   }
 
   function cancelAddingProvider(): void {
@@ -335,45 +357,115 @@ export function SettingsView({
     setBaseURLDraft(summary?.base_url ?? "");
     setAPIKeyDraft("");
     setError("");
-    setSaved(false);
+  }
+
+  // Field edits persist against the selected provider, independently and
+  // instantly: text inputs commit on blur or Enter, the effort select on
+  // change. An emptied required field snaps back to the persisted value;
+  // an empty API key field means "keep the current secret" and never
+  // round-trips.
+  async function commitModelName(): Promise<void> {
+    if (addingProvider) {
+      return;
+    }
+    const model = modelDraft.trim();
+    if (!model) {
+      setModelDraft(selectedProvider?.model ?? "");
+      return;
+    }
+    if (model === (selectedProvider?.model ?? "")) {
+      return;
+    }
+    const variant = normalizedVariantForProviderModel(variantDraft, selectedProvider, model);
+    setVariantDraft(variant);
+    setError("");
+    try {
+      await onSave(providerDraft, model, undefined, undefined, variant);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
+    }
+  }
+
+  async function changeVariant(variant: string): Promise<void> {
+    const previous = variantDraft;
+    setVariantDraft(variant);
+    if (addingProvider) {
+      return;
+    }
+    setError("");
+    try {
+      await onSave(providerDraft, modelDraft, undefined, undefined, variant);
+    } catch (saveError) {
+      setVariantDraft(previous);
+      setError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
+    }
+  }
+
+  async function commitBaseURL(): Promise<void> {
+    if (addingProvider || connectionLocked) {
+      return;
+    }
+    const baseURL = baseURLDraft.trim();
+    if (!baseURL) {
+      setBaseURLDraft(selectedProvider?.base_url ?? "");
+      return;
+    }
+    if (baseURL === (selectedProvider?.base_url ?? "")) {
+      return;
+    }
+    setError("");
+    try {
+      await onSave(providerDraft, modelDraft, undefined, { base_url: baseURL }, variantDraft);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
+    }
+  }
+
+  async function commitAPIKey(): Promise<void> {
+    if (addingProvider || connectionLocked) {
+      return;
+    }
+    const apiKey = apiKeyDraft.trim();
+    if (!apiKey) {
+      return;
+    }
+    const connection: RuntimeConnectionUpdate = {
+      base_url: baseURLDraft.trim() || selectedProvider?.base_url || ""
+    };
+    if (isAnthropicProviderType(selectedProvider?.type)) {
+      connection.auth_token = apiKey;
+    } else {
+      connection.api_key = apiKey;
+    }
+    setError("");
+    try {
+      await onSave(providerDraft, modelDraft, undefined, connection, variantDraft);
+      setAPIKeyDraft("");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
+    }
   }
 
   async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    if (!addingProvider) {
+      return;
+    }
     setError("");
-    setSaved(false);
     try {
-      let connection: RuntimeConnectionUpdate | undefined;
-      const providerType = addingProvider ? providerTypeDraft : selectedProvider?.type;
-      const usesAuthToken = isAnthropicProviderType(providerType);
-      if (addingProvider) {
-        connection = {
-          base_url: baseURLDraft.trim(),
-          type: providerTypeDraft,
-          create_provider: true
-        };
-        if (usesAuthToken) {
-          connection.auth_token = apiKeyDraft.trim();
-        } else {
-          connection.api_key = apiKeyDraft.trim();
-        }
-      } else if (!connectionLocked) {
-        connection = {
-          base_url: baseURLDraft.trim()
-        };
-        const apiKey = apiKeyDraft.trim();
-        if (apiKey) {
-          if (usesAuthToken) {
-            connection.auth_token = apiKey;
-          } else {
-            connection.api_key = apiKey;
-          }
-        }
+      const connection: RuntimeConnectionUpdate = {
+        base_url: baseURLDraft.trim(),
+        type: providerTypeDraft,
+        create_provider: true
+      };
+      if (isAnthropicProviderType(providerTypeDraft)) {
+        connection.auth_token = apiKeyDraft.trim();
+      } else {
+        connection.api_key = apiKeyDraft.trim();
       }
       await onSave(providerDraft, modelDraft, undefined, connection, variantDraft);
       setAddingProvider(false);
       setAPIKeyDraft("");
-      setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
     }
@@ -384,14 +476,12 @@ export function SettingsView({
       return;
     }
     setError("");
-    setSaved(false);
     try {
       await onRemoveProvider(name);
       // The parent's state update will refresh initialized.providers
       // and active provider/model; sync the local drafts so the form
       // does not show the now-deleted provider as selected.
       setAddingProvider(false);
-      setSaved(true);
     } catch (removeError) {
       setError(
         removeError instanceof Error
@@ -496,44 +586,100 @@ export function SettingsView({
     }
   }
 
-  async function submitAdvanced(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  // Instant-apply: the switch persists immediately (rolling back on
+  // failure); numeric drafts persist on blur/Enter after per-field
+  // validation. No Save button, no "saved" confirmation — the control
+  // staying put is the confirmation, consistent with the MCP toggles.
+  function toggleAutoCompact(): void {
+    const next = !autoCompactDraft;
+    setAutoCompactDraft(next);
     setAdvancedError("");
-    setAdvancedSaved(false);
-    const update = parseAdvancedSettingsDraft({
-      autoCompact: autoCompactDraft,
+    void onAdvancedSave({ disable_auto_compact: !next }).catch((saveError: unknown) => {
+      setAutoCompactDraft(!next);
+      setAdvancedError(saveError instanceof Error ? saveError.message : t("settings.saveFailed"));
+    });
+  }
+
+  async function commitAdvancedField(field: AdvancedNumericField): Promise<void> {
+    const drafts: Record<AdvancedNumericField, string> = {
       compactThreshold: compactThresholdDraft,
       compactKeepRecent: compactKeepRecentDraft,
       providerContextWindow: providerContextWindowDraft,
       maxContextTokens: maxContextTokensDraft,
       maxSteps: maxStepsDraft,
-      temperature: temperatureDraft,
-    }, t);
-    if (update.error) {
-      setAdvancedError(update.error);
+      temperature: temperatureDraft
+    };
+    const draft = drafts[field];
+    if (advancedCommittedRef.current[field] === draft) {
       return;
     }
+    let update: RuntimeAdvancedSettingsUpdate | undefined;
+    let validationError = "";
+    switch (field) {
+      case "compactThreshold": {
+        const parsed = parseOptionalNumber(draft, t("settings.compactThreshold"), t);
+        if (parsed.error) {
+          validationError = parsed.error;
+        } else if (parsed.value >= 100) {
+          validationError = t("validation.compactThreshold");
+        } else {
+          update = { compact_threshold_pct: parsed.value > 0 ? parsed.value / 100 : 0 };
+        }
+        break;
+      }
+      case "compactKeepRecent": {
+        const parsed = parseOptionalInteger(draft, t("settings.keepRecentContext"), t);
+        if (parsed.error) validationError = parsed.error;
+        else update = { compact_keep_recent_tokens: parsed.value };
+        break;
+      }
+      case "providerContextWindow": {
+        const parsed = parseOptionalInteger(draft, t("settings.providerContextLimit"), t);
+        if (parsed.error) validationError = parsed.error;
+        else update = { provider_context_window: parsed.value };
+        break;
+      }
+      case "maxContextTokens": {
+        const parsed = parseOptionalInteger(draft, t("settings.unknownModelLimit"), t);
+        if (parsed.error) validationError = parsed.error;
+        else update = { max_context_tokens: parsed.value };
+        break;
+      }
+      case "maxSteps": {
+        const parsed = parseOptionalInteger(draft, t("settings.maxSteps"), t);
+        if (parsed.error) validationError = parsed.error;
+        else update = { max_steps: parsed.value };
+        break;
+      }
+      case "temperature": {
+        const parsed = parseTemperatureDraft(draft, t);
+        if (parsed.error) validationError = parsed.error;
+        else update = { temperature: parsed.value };
+        break;
+      }
+    }
+    if (validationError || !update) {
+      setAdvancedError(validationError);
+      return;
+    }
+    setAdvancedError("");
     try {
-      await onAdvancedSave(update.settings);
-      setAdvancedSaved(true);
+      await onAdvancedSave(update);
+      advancedCommittedRef.current[field] = draft;
     } catch (saveError) {
-      setAdvancedError(saveError instanceof Error ? saveError.message : t("provider.saveFailed"));
+      setAdvancedError(saveError instanceof Error ? saveError.message : t("settings.saveFailed"));
     }
   }
 
-  const disabled =
+  // The create-transaction submit is the only explicit action left: every
+  // other field on the page applies instantly on commit.
+  const addSubmitDisabled =
     running ||
     !providerDraft.trim() ||
     providerNameTaken ||
     !modelDraft.trim() ||
-    (!connectionLocked && !baseURLDraft.trim()) ||
-    (addingProvider && !apiKeyDraft.trim()) ||
-    (!addingProvider &&
-      providerDraft === initialized?.provider &&
-      modelDraft === initialized?.model &&
-      variantDraft === (initialized?.variant ?? initialized?.effort ?? "") &&
-      (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
-      (connectionLocked || !apiKeyDraft.trim()));
+    !baseURLDraft.trim() ||
+    !apiKeyDraft.trim();
   const shellStyle = {
     // Same variables as the main app shell (`--sidebar-width` collapses to 0,
     // `--sidebar-open-width` remembers the open width for the hover drawer)
@@ -577,7 +723,6 @@ export function SettingsView({
   }${sidebarAnimating ? " sidebar-animating" : ""}`;
 
   const pageTitle = settingsPageTitle(activePage, t);
-  const pageDescription = settingsPageDescription(activePage, t);
 
   return (
     <div ref={effectiveShellRef} className={shellClassName} style={shellStyle}>
@@ -684,7 +829,6 @@ export function SettingsView({
             {activePage === "memory" ? null : (
               <header className="settings-page-header">
                 <h1 className="settings-page-title">{pageTitle}</h1>
-                <p className="settings-page-description">{pageDescription}</p>
               </header>
             )}
   
@@ -701,43 +845,29 @@ export function SettingsView({
                 apiKeyDraft={apiKeyDraft}
                 addingProvider={addingProvider}
                 error={error}
-                saved={saved}
                 selectedProvider={selectedProvider}
                 connectionLocked={connectionLocked}
                 variantOptions={variantOptions}
                 providerNameTaken={Boolean(providerNameTaken)}
-                onProviderChange={changeProvider}
+                onProviderChange={activateProvider}
                 onStartAddingProvider={startAddingProvider}
                 onCancelAddingProvider={cancelAddingProvider}
-                onProviderDraftChange={(value) => {
-                  setProviderDraft(value);
-                  setSaved(false);
-                }}
-                onProviderTypeDraftChange={(value) => {
-                  setProviderTypeDraft(value);
-                  setSaved(false);
-                }}
+                onProviderDraftChange={setProviderDraft}
+                onProviderTypeDraftChange={setProviderTypeDraft}
                 onModelDraftChange={(value) => {
                   setModelDraft(value);
                   setVariantDraft("");
-                  setSaved(false);
                 }}
-                onVariantDraftChange={(value) => {
-                  setVariantDraft(value);
-                  setSaved(false);
-                }}
-                onBaseURLDraftChange={(value) => {
-                  setBaseURLDraft(value);
-                  setSaved(false);
-                }}
-                onAPIKeyDraftChange={(value) => {
-                  setAPIKeyDraft(value);
-                  setSaved(false);
-                }}
+                onVariantDraftChange={changeVariant}
+                onBaseURLDraftChange={setBaseURLDraft}
+                onAPIKeyDraftChange={setAPIKeyDraft}
+                onCommitModel={commitModelName}
+                onCommitBaseURL={commitBaseURL}
+                onCommitAPIKey={commitAPIKey}
                 onSubmit={submit}
                 onRemoveProvider={requestRemoveProvider}
                 runningProviderNames={runningProviderNameSet}
-                disabled={disabled}
+                disabled={addSubmitDisabled}
               />
             ) : activePage === "advanced" ? (
               <SettingsAdvancedPage
@@ -758,36 +888,14 @@ export function SettingsView({
                 maxSteps={maxStepsDraft}
                 temperature={temperatureDraft}
                 error={advancedError}
-                saved={advancedSaved}
-                onAutoCompactToggle={() => {
-                  setAutoCompactDraft((value) => !value);
-                  setAdvancedSaved(false);
-                }}
-                onCompactThresholdChange={(value) => {
-                  setCompactThresholdDraft(value);
-                  setAdvancedSaved(false);
-                }}
-                onCompactKeepRecentChange={(value) => {
-                  setCompactKeepRecentDraft(value);
-                  setAdvancedSaved(false);
-                }}
-                onProviderContextWindowChange={(value) => {
-                  setProviderContextWindowDraft(value);
-                  setAdvancedSaved(false);
-                }}
-                onMaxContextTokensChange={(value) => {
-                  setMaxContextTokensDraft(value);
-                  setAdvancedSaved(false);
-                }}
-                onMaxStepsChange={(value) => {
-                  setMaxStepsDraft(value);
-                  setAdvancedSaved(false);
-                }}
-                onTemperatureChange={(value) => {
-                  setTemperatureDraft(value);
-                  setAdvancedSaved(false);
-                }}
-                onSubmit={submitAdvanced}
+                onAutoCompactToggle={toggleAutoCompact}
+                onCompactThresholdChange={setCompactThresholdDraft}
+                onCompactKeepRecentChange={setCompactKeepRecentDraft}
+                onProviderContextWindowChange={setProviderContextWindowDraft}
+                onMaxContextTokensChange={setMaxContextTokensDraft}
+                onMaxStepsChange={setMaxStepsDraft}
+                onTemperatureChange={setTemperatureDraft}
+                onCommitField={commitAdvancedField}
               />
             ) : activePage === "general" ? (
               <SettingsGeneralPage
@@ -829,8 +937,6 @@ export function SettingsView({
             ) : (
               <SettingsUsagePage
                 usage={usage}
-                usageRange={usageRange}
-                setUsageRange={setUsageRange}
               />
             )}
           </div>
@@ -938,7 +1044,6 @@ function SettingsProvidersPage({
   apiKeyDraft,
   addingProvider,
   error,
-  saved,
   selectedProvider,
   connectionLocked,
   variantOptions,
@@ -952,6 +1057,9 @@ function SettingsProvidersPage({
   onVariantDraftChange,
   onBaseURLDraftChange,
   onAPIKeyDraftChange,
+  onCommitModel,
+  onCommitBaseURL,
+  onCommitAPIKey,
   onSubmit,
   onRemoveProvider,
   runningProviderNames,
@@ -968,7 +1076,6 @@ function SettingsProvidersPage({
   apiKeyDraft: string;
   addingProvider: boolean;
   error: string;
-  saved: boolean;
   selectedProvider: ProviderSummary | undefined;
   connectionLocked: boolean;
   variantOptions: string[];
@@ -982,6 +1089,9 @@ function SettingsProvidersPage({
   onVariantDraftChange: (value: string) => void;
   onBaseURLDraftChange: (value: string) => void;
   onAPIKeyDraftChange: (value: string) => void;
+  onCommitModel: () => void;
+  onCommitBaseURL: () => void;
+  onCommitAPIKey: () => void;
   onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
   onRemoveProvider?: (provider: string) => Promise<void> | void;
   runningProviderNames: ReadonlySet<string>;
@@ -993,6 +1103,18 @@ function SettingsProvidersPage({
   const authFieldLabel = authFieldUsesToken
     ? t("provider.authToken")
     : t("provider.apiKey");
+  // Text fields commit on blur, or on Enter — except while creating a
+  // provider, where Enter submits the create transaction instead.
+  const commitOnEnter =
+    (commit: () => void) =>
+    (event: ReactKeyboardEvent<HTMLInputElement>): void => {
+      if (event.key !== "Enter" || addingProvider) {
+        return;
+      }
+      event.preventDefault();
+      commit();
+      event.currentTarget.blur();
+    };
   return (
     <SettingsSection testID="settings-providers">
       {providers.length > 0 ? (
@@ -1125,6 +1247,8 @@ function SettingsProvidersPage({
             className="settings-input"
             value={modelDraft}
             onChange={(event) => onModelDraftChange(event.target.value)}
+            onBlur={() => onCommitModel()}
+            onKeyDown={commitOnEnter(onCommitModel)}
             disabled={running}
           />
         </SettingsRow>
@@ -1155,6 +1279,8 @@ function SettingsProvidersPage({
             value={baseURLDraft}
             placeholder={connectionLocked ? t("provider.oauthManaged") : "https://api.openai.com/v1"}
             onChange={(event) => onBaseURLDraftChange(event.target.value)}
+            onBlur={() => onCommitBaseURL()}
+            onKeyDown={commitOnEnter(onCommitBaseURL)}
             disabled={running || connectionLocked}
           />
         </SettingsRow>
@@ -1174,13 +1300,14 @@ function SettingsProvidersPage({
                     : t("provider.enterAuth", { field: authFieldLabel })
             }
             onChange={(event) => onAPIKeyDraftChange(event.target.value)}
+            onBlur={() => onCommitAPIKey()}
+            onKeyDown={commitOnEnter(onCommitAPIKey)}
             disabled={running || connectionLocked}
           />
         </SettingsRow>
-        <div className="settings-row settings-row-footer">
-          {error ? <div className="settings-error">{error}</div> : null}
-          {saved && !error ? <div className="settings-saved">{t("settings.saved")}</div> : null}
-          {addingProvider ? (
+        {addingProvider ? (
+          <div className="settings-row settings-row-footer">
+            {error ? <div className="settings-error">{error}</div> : null}
             <button
               className="settings-button settings-button-ghost"
               type="button"
@@ -1189,15 +1316,19 @@ function SettingsProvidersPage({
             >
               {t("common.cancel")}
             </button>
-          ) : null}
-          <button
-            className="settings-button settings-button-primary"
-            type="submit"
-            disabled={disabled}
-          >
-            {addingProvider ? t("provider.addAction") : t("provider.saveConfiguration")}
-          </button>
-        </div>
+            <button
+              className="settings-button settings-button-primary"
+              type="submit"
+              disabled={disabled}
+            >
+              {t("provider.addAction")}
+            </button>
+          </div>
+        ) : error ? (
+          <div className="settings-row settings-row-footer">
+            <div className="settings-error">{error}</div>
+          </div>
+        ) : null}
       </form>
     </SettingsSection>
   );
@@ -1206,6 +1337,14 @@ function SettingsProvidersPage({
 /* -------------------------------------------------------------------------- */
 /*  Advanced page                                                              */
 /* -------------------------------------------------------------------------- */
+
+type AdvancedNumericField =
+  | "compactThreshold"
+  | "compactKeepRecent"
+  | "providerContextWindow"
+  | "maxContextTokens"
+  | "maxSteps"
+  | "temperature";
 
 function SettingsAdvancedPage({
   initialized,
@@ -1220,7 +1359,6 @@ function SettingsAdvancedPage({
   maxSteps,
   temperature,
   error,
-  saved,
   onAutoCompactToggle,
   onCompactThresholdChange,
   onCompactKeepRecentChange,
@@ -1228,7 +1366,7 @@ function SettingsAdvancedPage({
   onMaxContextTokensChange,
   onMaxStepsChange,
   onTemperatureChange,
-  onSubmit
+  onCommitField
 }: {
   initialized: InitializeResult | undefined;
   running: boolean;
@@ -1242,7 +1380,6 @@ function SettingsAdvancedPage({
   maxSteps: string;
   temperature: string;
   error: string;
-  saved: boolean;
   onAutoCompactToggle: () => void;
   onCompactThresholdChange: (value: string) => void;
   onCompactKeepRecentChange: (value: string) => void;
@@ -1250,12 +1387,23 @@ function SettingsAdvancedPage({
   onMaxContextTokensChange: (value: string) => void;
   onMaxStepsChange: (value: string) => void;
   onTemperatureChange: (value: string) => void;
-  onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
+  onCommitField: (field: AdvancedNumericField) => void;
 }): JSX.Element {
   const { t } = useI18n();
+  // Enter and blur both commit through onCommitField; the ref-guard inside
+  // makes the blur that follows Enter a no-op, so there is one effective
+  // commit per edit.
+  const commitOnEnter =
+    (field: AdvancedNumericField) =>
+    (event: ReactKeyboardEvent<HTMLInputElement>): void => {
+      if (event.key === "Enter") {
+        onCommitField(field);
+        event.currentTarget.blur();
+      }
+    };
   return (
     <SettingsSection testID="settings-advanced">
-      <form className="settings-card" onSubmit={onSubmit}>
+      <div className="settings-card">
         <SettingsRow
           title={t("settings.autoCompact")}
           description={t("settings.autoCompactDescription")}
@@ -1282,6 +1430,8 @@ function SettingsAdvancedPage({
             inputMode="numeric"
             placeholder={t("settings.automatic")}
             onChange={(event) => onCompactThresholdChange(event.target.value)}
+            onBlur={() => onCommitField("compactThreshold")}
+            onKeyDown={commitOnEnter("compactThreshold")}
             disabled={running || !initialized}
           />
         </SettingsRow>
@@ -1295,6 +1445,8 @@ function SettingsAdvancedPage({
             inputMode="numeric"
             placeholder="20,000"
             onChange={(event) => onCompactKeepRecentChange(event.target.value)}
+            onBlur={() => onCommitField("compactKeepRecent")}
+            onKeyDown={commitOnEnter("compactKeepRecent")}
             disabled={running || !initialized}
           />
         </SettingsRow>
@@ -1310,6 +1462,8 @@ function SettingsAdvancedPage({
             inputMode="numeric"
             placeholder={t("settings.detectAutomatically")}
             onChange={(event) => onProviderContextWindowChange(event.target.value)}
+            onBlur={() => onCommitField("providerContextWindow")}
+            onKeyDown={commitOnEnter("providerContextWindow")}
             disabled={running || !initialized}
           />
         </SettingsRow>
@@ -1323,6 +1477,8 @@ function SettingsAdvancedPage({
             inputMode="numeric"
             placeholder={t("settings.automatic")}
             onChange={(event) => onMaxContextTokensChange(event.target.value)}
+            onBlur={() => onCommitField("maxContextTokens")}
+            onKeyDown={commitOnEnter("maxContextTokens")}
             disabled={running || !initialized}
           />
         </SettingsRow>
@@ -1335,6 +1491,8 @@ function SettingsAdvancedPage({
             value={maxSteps}
             inputMode="numeric"
             onChange={(event) => onMaxStepsChange(event.target.value)}
+            onBlur={() => onCommitField("maxSteps")}
+            onKeyDown={commitOnEnter("maxSteps")}
             disabled={running || !initialized}
           />
         </SettingsRow>
@@ -1345,21 +1503,17 @@ function SettingsAdvancedPage({
             inputMode="decimal"
             placeholder={t("settings.automatic")}
             onChange={(event) => onTemperatureChange(event.target.value)}
+            onBlur={() => onCommitField("temperature")}
+            onKeyDown={commitOnEnter("temperature")}
             disabled={running || !initialized}
           />
         </SettingsRow>
-        <div className="settings-row settings-row-footer">
-          {error ? <div className="settings-error">{error}</div> : null}
-          {saved && !error ? <div className="settings-saved">{t("settings.saved")}</div> : null}
-          <button
-            className="settings-button settings-button-primary"
-            type="submit"
-            disabled={running || !initialized}
-          >
-            {t("settings.save")}
-          </button>
-        </div>
-      </form>
+        {error ? (
+          <div className="settings-row settings-row-footer">
+            <div className="settings-error">{error}</div>
+          </div>
+        ) : null}
+      </div>
     </SettingsSection>
   );
 }
@@ -1431,28 +1585,39 @@ function SettingsGeneralPage({
   const [gitAttributionBusy, setGitAttributionBusy] = useState(false);
   const [gitAttributionError, setGitAttributionError] = useState("");
   const [generalError, setGeneralError] = useState("");
-  const [generalSaved, setGeneralSaved] = useState(false);
 
   useEffect(() => {
     setAppendSystemPromptDraft(generalSettings?.append_system_prompt ?? "");
     setMemoryDisabledDraft(generalSettings?.memory_disabled ?? false);
     setMCPEnabledDraft({ ...configuredMCPEnabled });
     setGeneralError("");
-    setGeneralSaved(false);
   }, [generalSettings?.append_system_prompt, generalSettings?.memory_disabled, configuredMCPKey]);
 
-  async function submitGeneral(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  // Instant-apply, same model as the MCP toggles below: the textarea
+  // commits on blur, the memory switch persists immediately, and only
+  // failures speak — inline at the foot of the section.
+  async function commitAppendSystemPrompt(): Promise<void> {
+    const next = appendSystemPromptDraft.trim();
+    if (next === (generalSettings?.append_system_prompt ?? "")) {
+      return;
+    }
     setGeneralError("");
-    setGeneralSaved(false);
     try {
-      await onGeneralSave({
-        append_system_prompt: appendSystemPromptDraft.trim(),
-        memory_disable: memoryDisabledDraft,
-      });
-      setGeneralSaved(true);
-    } catch (saveError) {
-      setGeneralError(saveError instanceof Error ? saveError.message : t("settings.saveFailed"));
+      await onGeneralSave({ append_system_prompt: next });
+    } catch (error) {
+      setGeneralError(error instanceof Error ? error.message : t("settings.saveFailed"));
+    }
+  }
+
+  async function toggleMemoryDisabled(): Promise<void> {
+    const next = !memoryDisabledDraft;
+    setMemoryDisabledDraft(next);
+    setGeneralError("");
+    try {
+      await onGeneralSave({ memory_disable: next });
+    } catch (error) {
+      setMemoryDisabledDraft(!next);
+      setGeneralError(error instanceof Error ? error.message : t("settings.saveFailed"));
     }
   }
 
@@ -1553,7 +1718,7 @@ function SettingsGeneralPage({
           <SettingsRow title={t("settings.language")}>
             <LanguagePreferenceControl />
           </SettingsRow>
-          <SettingsRow title={t("settings.theme")}>
+          <SettingsRow title={t("settings.theme")} block>
             <ThemePreferenceControl />
           </SettingsRow>
           <SettingsRow title={t("settings.messageFontSize")} block>
@@ -1562,68 +1727,71 @@ function SettingsGeneralPage({
           <SettingsRow
             title={t("settings.codexPet")}
             description={t("settings.petSource", { path: codexPets?.home ?? "~/.wuu/pets" })}
-            block
           >
-            <div className="settings-codex-pets-controls">
-              <button
-                className="settings-switch"
-                type="button"
-                role="switch"
-                aria-checked={codexPetEnabled}
-                data-testid="settings-codex-pet-enabled"
-                disabled={codexPetsLoading || codexPetBusy || codexPetOptions.length === 0}
-                onClick={() => void updateCodexPets({ enabled: !codexPetEnabled })}
-              >
-                <span className="settings-switch-thumb" aria-hidden="true" />
-                <span className="sr-only">{codexPetEnabled ? t("settings.disablePet") : t("settings.enablePet")}</span>
-              </button>
-              <select
-                className="settings-select settings-codex-pet-select"
-                aria-label={t("settings.selectPet")}
-                data-testid="settings-codex-pet-select"
+            {codexPetOptions.length > 0 ? (
+              <SelectMenu
+                className="settings-codex-pet-select"
+                triggerClassName="settings-select-trigger"
+                ariaLabel={t("settings.selectPet")}
+                dataTestid="settings-codex-pet-select"
                 value={codexPetSelectedID}
-                disabled={codexPetsLoading || codexPetBusy || codexPetOptions.length === 0}
-                onChange={(event) => void updateCodexPets({ selected_id: event.currentTarget.value })}
-              >
-                {codexPetOptions.length === 0 ? (
-                  <option value="">{t("settings.noLocalPets")}</option>
-                ) : (
-                  codexPetOptions.map((pet) => (
-                    <option key={pet.id} value={pet.id}>
-                      {pet.display_name}
-                    </option>
-                  ))
-                )}
-              </select>
-              <button
-                className="settings-button settings-icon-button"
-                type="button"
-                title={t("settings.refreshPets")}
-                aria-label={t("settings.refreshPets")}
-                disabled={codexPetsLoading || codexPetBusy}
-                onClick={() => void refreshCodexPets()}
-              >
-                <RefreshCw size={15} aria-hidden="true" />
-              </button>
-            </div>
-            {codexPetsLoading ? <small className="settings-muted-line">{t("settings.loadingPets")}</small> : null}
-            {!codexPetsLoading && codexPetOptions.length === 0 ? (
-              <small className="settings-muted-line">
-                {t("settings.petInstallHint")}
-              </small>
-            ) : null}
-            {codexPets?.errors.length ? (
-              <small className="settings-muted-line settings-error">
-                {codexPets.errors[0]}
-              </small>
-            ) : null}
-            {codexPetStatus ? <small className="settings-muted-line settings-error">{codexPetStatus}</small> : null}
+                disabled={codexPetsLoading || codexPetBusy || !codexPetEnabled}
+                onChange={(next) => void updateCodexPets({ selected_id: next })}
+                options={codexPetOptions.map((pet) => ({
+                  value: pet.id,
+                  label: pet.display_name
+                }))}
+              />
+            ) : (
+              <span className="settings-inline-flag">{t("settings.noLocalPets")}</span>
+            )}
+            <button
+              className="settings-button settings-icon-button"
+              type="button"
+              title={t("settings.refreshPets")}
+              aria-label={t("settings.refreshPets")}
+              disabled={codexPetsLoading || codexPetBusy}
+              onClick={() => void refreshCodexPets()}
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+            </button>
+            <button
+              className="settings-switch"
+              type="button"
+              role="switch"
+              aria-checked={codexPetEnabled}
+              data-testid="settings-codex-pet-enabled"
+              disabled={codexPetsLoading || codexPetBusy || codexPetOptions.length === 0}
+              onClick={() => void updateCodexPets({ enabled: !codexPetEnabled })}
+            >
+              <span className="settings-switch-thumb" aria-hidden="true" />
+              <span className="sr-only">{codexPetEnabled ? t("settings.disablePet") : t("settings.enablePet")}</span>
+            </button>
           </SettingsRow>
+          {codexPetsLoading ||
+          (!codexPetsLoading && codexPetOptions.length === 0) ||
+          codexPets?.errors.length ||
+          codexPetStatus ? (
+            <div className="settings-row settings-row-block">
+              {codexPetsLoading ? <small className="settings-muted-line">{t("settings.loadingPets")}</small> : null}
+              {!codexPetsLoading && codexPetOptions.length === 0 ? (
+                <small className="settings-muted-line">
+                  {t("settings.petInstallHint")}
+                </small>
+              ) : null}
+              {codexPets?.errors.length ? (
+                <small className="settings-muted-line settings-error">
+                  {codexPets.errors[0]}
+                </small>
+              ) : null}
+              {codexPetStatus ? <small className="settings-muted-line settings-error">{codexPetStatus}</small> : null}
+            </div>
+          ) : null}
         </SettingsCard>
       </SettingsSection>
 
       <SettingsSection title={t("settings.behavior")} testID="settings-general">
-        <form className="settings-card" onSubmit={submitGeneral}>
+        <SettingsCard>
           <SettingsRow
             title={t("settings.additionalPrompt")}
             description={t("settings.additionalPromptDescription")}
@@ -1636,8 +1804,8 @@ function SettingsGeneralPage({
               rows={5}
               onChange={(event) => {
                 setAppendSystemPromptDraft(event.target.value);
-                setGeneralSaved(false);
               }}
+              onBlur={() => void commitAppendSystemPrompt()}
               disabled={running || !initialized}
             />
           </SettingsRow>
@@ -1651,10 +1819,7 @@ function SettingsGeneralPage({
               role="switch"
               aria-checked={!memoryDisabledDraft}
               disabled={running || !initialized}
-              onClick={() => {
-                setMemoryDisabledDraft((value) => !value);
-                setGeneralSaved(false);
-              }}
+              onClick={() => void toggleMemoryDisabled()}
             >
               <span className="settings-switch-thumb" aria-hidden="true" />
               <span className="sr-only">{memoryDisabledDraft ? t("settings.enableMemory") : t("settings.disableMemory")}</span>
@@ -1684,18 +1849,12 @@ function SettingsGeneralPage({
               </small>
             ) : null}
           </SettingsRow>
-        <div className="settings-row settings-row-footer">
-            {generalError ? <div className="settings-error">{generalError}</div> : null}
-            {generalSaved && !generalError ? <div className="settings-saved">{t("settings.saved")}</div> : null}
-            <button
-              className="settings-button settings-button-primary"
-              type="submit"
-              disabled={running || !initialized}
-            >
-              {t("settings.save")}
-            </button>
-          </div>
-        </form>
+          {generalError ? (
+            <div className="settings-row settings-row-footer">
+              <div className="settings-error">{generalError}</div>
+            </div>
+          ) : null}
+        </SettingsCard>
       </SettingsSection>
 
       <SettingsSection title={t("settings.mcpServers")} testID="settings-mcp">
@@ -2082,16 +2241,11 @@ function formatArchiveTime(
 /* -------------------------------------------------------------------------- */
 
 function SettingsUsagePage({
-  usage,
-  usageRange,
-  setUsageRange
+  usage
 }: {
   usage: SettingsUsageResponse | undefined;
-  usageRange: SettingsUsageRange;
-  setUsageRange: (range: SettingsUsageRange) => void;
 }): JSX.Element {
   const { locale, t, formatNumber } = useI18n();
-  const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
   const heatmap = usage ? buildUsageHeatmap(usage.days) : [];
   const heatmapCols = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
 
@@ -2140,27 +2294,6 @@ function SettingsUsagePage({
   }
   return (
     <div className="settings-usage-page" data-testid="settings-usage">
-      <div className="settings-usage-toolbar">
-        <div
-          className="settings-usage-range"
-          role="tablist"
-          aria-label={t("settings.timeRange")}
-        >
-          {ranges.map((range) => (
-            <button
-              key={range}
-              type="button"
-              role="tab"
-              aria-selected={usageRange === range}
-              data-range={range}
-              className={`settings-usage-range-button${usageRange === range ? " active" : ""}`}
-              onClick={() => setUsageRange(range)}
-            >
-              {formatUsageRange(range, t)}
-            </button>
-          ))}
-        </div>
-      </div>
       {usage && (
         <div className="settings-usage-stats">
           <UsageStat
@@ -2251,8 +2384,10 @@ function SettingsUsagePage({
                   return (
                     <tr key={`${b.provider}\n${b.model}`}>
                       <td>
-                        <strong>{b.provider || t("settings.unknownProvider")}</strong>
-                        <small>{b.model || t("settings.unknownModel")}</small>
+                        <div className="settings-usage-model">
+                          <strong>{b.provider || t("settings.unknownProvider")}</strong>
+                          <small>{b.model || t("settings.unknownModel")}</small>
+                        </div>
                       </td>
                       <td className="settings-usage-num">
                         <span className="settings-usage-number" title={formatNumber(b.input_tokens)}>
@@ -2265,9 +2400,7 @@ function SettingsUsagePage({
                         </span>
                       </td>
                       <td className="settings-usage-num">
-                        <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
-                          {formatPercent(rate)}
-                        </span>
+                        <span className="settings-usage-number">{formatPercent(rate)}</span>
                       </td>
                     </tr>
                   );
@@ -2324,16 +2457,6 @@ function formatCompactUsageNumber(value: number, locale: string): string {
 /*  Helpers (kept at module scope, no behavior change)                         */
 /* -------------------------------------------------------------------------- */
 
-type AdvancedDraft = {
-  autoCompact: boolean;
-  compactThreshold: string;
-  compactKeepRecent: string;
-  providerContextWindow: string;
-  maxContextTokens: string;
-  maxSteps: string;
-  temperature: string;
-};
-
 type Translate = ReturnType<typeof useI18n>["t"];
 
 function settingsPageTitle(page: SettingsPage, t: Translate): string {
@@ -2355,71 +2478,11 @@ function settingsPageTitle(page: SettingsPage, t: Translate): string {
   }
 }
 
-function settingsPageDescription(page: SettingsPage, t: Translate): string {
-  switch (page) {
-    case "providers":
-      return t("settings.descriptionProviders");
-    case "advanced":
-      return t("settings.descriptionAdvanced");
-    case "general":
-      return t("settings.descriptionGeneral");
-    case "memory":
-      return "";
-    case "usage":
-      return t("settings.descriptionUsage");
-    case "remote":
-      return t("settings.descriptionRemote");
-    case "archive":
-      return t("settings.descriptionArchive");
-  }
-}
-
 function stableBoolRecordSignature(record: Record<string, boolean>): string {
   return Object.keys(record)
     .sort((a, b) => a.localeCompare(b))
     .map((key) => `${key}:${record[key] ? "1" : "0"}`)
     .join("|");
-}
-
-function parseAdvancedSettingsDraft(draft: AdvancedDraft, t: Translate): { settings: RuntimeAdvancedSettingsUpdate; error?: string } {
-  const compactPercent = parseOptionalNumber(draft.compactThreshold, t("settings.compactThreshold"), t);
-  if (compactPercent.error) {
-    return { settings: {}, error: compactPercent.error };
-  }
-  if (compactPercent.value < 0 || compactPercent.value >= 100) {
-    return { settings: {}, error: t("validation.compactThreshold") };
-  }
-  const compactKeepRecent = parseOptionalInteger(draft.compactKeepRecent, t("settings.keepRecentContext"), t);
-  if (compactKeepRecent.error) {
-    return { settings: {}, error: compactKeepRecent.error };
-  }
-  const providerContextWindow = parseOptionalInteger(draft.providerContextWindow, t("settings.providerContextLimit"), t);
-  if (providerContextWindow.error) {
-    return { settings: {}, error: providerContextWindow.error };
-  }
-  const maxContextTokens = parseOptionalInteger(draft.maxContextTokens, t("settings.unknownModelLimit"), t);
-  if (maxContextTokens.error) {
-    return { settings: {}, error: maxContextTokens.error };
-  }
-  const maxSteps = parseOptionalInteger(draft.maxSteps, t("settings.maxSteps"), t);
-  if (maxSteps.error) {
-    return { settings: {}, error: maxSteps.error };
-  }
-  const temperature = parseTemperatureDraft(draft.temperature, t);
-  if (temperature.error) {
-    return { settings: {}, error: temperature.error };
-  }
-  return {
-    settings: {
-      disable_auto_compact: !draft.autoCompact,
-      compact_threshold_pct: compactPercent.value > 0 ? compactPercent.value / 100 : 0,
-      compact_keep_recent_tokens: compactKeepRecent.value,
-      provider_context_window: providerContextWindow.value,
-      max_context_tokens: maxContextTokens.value,
-      max_steps: maxSteps.value,
-      temperature: temperature.value,
-    },
-  };
 }
 
 function parseOptionalInteger(raw: string, label: string, t: Translate): { value: number; error?: string } {
@@ -2534,32 +2597,11 @@ function formatOptionalTokenCount(value: number | undefined): string {
   return formatTokenCount(value);
 }
 
-function formatUsageRange(range: SettingsUsageRange, t: Translate): string {
-  switch (range) {
-    case "all":
-      return t("settings.rangeAll");
-    case "7d":
-      return t("settings.rangeDays", { count: 7 });
-    case "30d":
-      return t("settings.rangeDays", { count: 30 });
-    case "90d":
-      return t("settings.rangeDays", { count: 90 });
-  }
-}
-
 function formatPercent(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) {
     return "—";
   }
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
-}
-
-function hitRateLevel(rate: number | undefined): number {
-  if (rate === undefined || rate <= 0) return 0;
-  if (rate < 0.25) return 1;
-  if (rate < 0.5) return 2;
-  if (rate < 0.75) return 3;
-  return 4;
 }
 
 function buildUsageHeatmap(days: SettingsUsageDay[]): UsageHeatmapCell[] {

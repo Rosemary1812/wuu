@@ -3,7 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CodexPetsSnapshot,
-  SettingsUsageRange,
   SettingsUsageResponse,
   WuuDesktopApi,
 } from "../shared/protocol";
@@ -44,10 +43,9 @@ function snapshot(enabled: boolean): CodexPetsSnapshot {
   };
 }
 
-function usage(range: SettingsUsageRange): SettingsUsageResponse {
+function usage(): SettingsUsageResponse {
   return {
-    range,
-    total_sessions: range === "7d" ? 7 : 12,
+    total_sessions: 12,
     generated_at: "2026-07-09T00:00:00Z",
     metrics: {
       prompt_tokens: 0,
@@ -140,9 +138,7 @@ describe("useSettingsRuntimeState", () => {
   });
 
   it("loads usage only while settings are open and clears it on close", async () => {
-    const getSettingsUsage = vi
-      .fn()
-      .mockImplementation(async (range: SettingsUsageRange) => usage(range));
+    const getSettingsUsage = vi.fn().mockImplementation(async () => usage());
     installWuuStub({
       listCodexPets: vi.fn().mockResolvedValue(snapshot(false)),
       updateCodexPetSettings: vi.fn().mockResolvedValue(snapshot(false)),
@@ -151,16 +147,8 @@ describe("useSettingsRuntimeState", () => {
 
     const hook = await renderSettingsRuntimeState(true);
 
-    expect(getSettingsUsage).toHaveBeenCalledWith("all");
-    expect(hook.get().settingsUsage?.range).toBe("all");
-
-    await act(async () => {
-      hook.get().setUsageRange("7d");
-      await flushEffects();
-    });
-
-    expect(getSettingsUsage).toHaveBeenCalledWith("7d");
-    expect(hook.get().settingsUsage?.range).toBe("7d");
+    expect(getSettingsUsage).toHaveBeenCalledTimes(1);
+    expect(hook.get().settingsUsage?.total_sessions).toBe(12);
 
     await hook.rerender(false);
 

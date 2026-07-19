@@ -9922,7 +9922,6 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"id":     "1",
 		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": string(SettingsUsageRangeAll)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -9934,9 +9933,6 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	msgs := parseOutput(t, out.String())
 	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
 
-	if result.Range != SettingsUsageRangeAll {
-		t.Fatalf("range=%q, want %q", result.Range, SettingsUsageRangeAll)
-	}
 	if result.TotalSessions != 2 {
 		t.Fatalf("total_sessions=%d, want 2", result.TotalSessions)
 	}
@@ -9997,7 +9993,6 @@ func TestSettingsUsageModelBreakdownsSkipZeroUsageBuckets(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"id":     "1",
 		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": string(SettingsUsageRangeAll)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -10017,11 +10012,11 @@ func TestSettingsUsageModelBreakdownsSkipZeroUsageBuckets(t *testing.T) {
 	}
 }
 
-func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
+func TestSettingsUsageModelBreakdownsCoverFullHistory(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	now := time.Now().UTC()
 
-	sess, err := session.CreateWithMetadata(rt.SessionDir, "usage-range-models", rt.RootDir)
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "usage-full-history-models", rt.RootDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10046,7 +10041,6 @@ func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"id":     "1",
 		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": string(SettingsUsageRange7d)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -10057,68 +10051,23 @@ func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
 
 	msgs := parseOutput(t, out.String())
 	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
-	if len(result.ModelBreakdowns) != 1 {
-		t.Fatalf("expected one in-range breakdown, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
+
+	// Every token_usage row counts, however old: openai totals 900+0+100
+	// ahead of openai-codex 100+300+20.
+	if len(result.ModelBreakdowns) != 2 {
+		t.Fatalf("expected two breakdowns, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
 	}
-	got := result.ModelBreakdowns[0]
-	if got.Provider != "openai-codex" || got.Model != "gpt-5-codex" {
-		t.Fatalf("unexpected model breakdown: %+v", got)
+	if result.ModelBreakdowns[0].Provider != "openai" || result.ModelBreakdowns[0].InputTokens != 900 {
+		t.Fatalf("expected the older openai bucket first, got %+v", result.ModelBreakdowns[0])
 	}
-	if got.InputTokens != 100 || got.CacheReadTokens != 300 || got.OutputTokens != 20 {
-		t.Fatalf("unexpected model usage totals: %+v", got)
+	codex := result.ModelBreakdowns[1]
+	if codex.Provider != "openai-codex" || codex.Model != "gpt-5-codex" {
+		t.Fatalf("unexpected model breakdown: %+v", codex)
 	}
-	if result.Metrics.PromptTokens != 400 || result.Metrics.CacheReadTokens != 300 || result.Metrics.CacheHitRate != 0.75 {
+	if codex.InputTokens != 100 || codex.CacheReadTokens != 300 || codex.OutputTokens != 20 {
+		t.Fatalf("unexpected model usage totals: %+v", codex)
+	}
+	if result.Metrics.PromptTokens != 1300 || result.Metrics.CacheReadTokens != 300 {
 		t.Fatalf("unexpected headline usage: %+v", result.Metrics)
-	}
-}
-
-func TestSettingsUsageRangeCutoff(t *testing.T) {
-	now := time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)
-
-	if c := settingsUsageRangeCutoff(SettingsUsageRangeAll, now); c != nil {
-		t.Fatalf("all range: expected nil cutoff, got %v", c)
-	}
-	if c := settingsUsageRangeCutoff("", now); c != nil {
-		t.Fatalf("empty range: expected nil cutoff, got %v", c)
-	}
-
-	cases := []struct {
-		name string
-		r    SettingsUsageRange
-		days int
-	}{
-		{"7d", SettingsUsageRange7d, 7},
-		{"30d", SettingsUsageRange30d, 30},
-		{"90d", SettingsUsageRange90d, 90},
-	}
-	for _, tc := range cases {
-		want := now.AddDate(0, 0, -tc.days)
-		got := settingsUsageRangeCutoff(tc.r, now)
-		if got == nil || !got.Equal(want) {
-			t.Fatalf("%s: expected %v, got %v", tc.name, want, got)
-		}
-	}
-}
-
-func TestSettingsUsageRejectsInvalidRange(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	raw, err := json.Marshal(map[string]any{
-		"id":     "1",
-		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": "nonsense"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := srv.handleLine(context.Background(), raw); err != nil {
-		t.Fatalf("handleLine: %v", err)
-	}
-
-	msgs := parseOutput(t, out.String())
-	if got := responseByID(t, msgs, "1")["error"]; got == nil {
-		t.Fatalf("expected error response, got %+v", msgs)
 	}
 }

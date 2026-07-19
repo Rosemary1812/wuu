@@ -526,8 +526,6 @@ export function App(): JSX.Element {
     string | undefined
   >(undefined);
   const {
-    usageRange,
-    setUsageRange,
     settingsUsage,
     codexPets,
     codexPetsLoading,
@@ -4097,8 +4095,6 @@ export function App(): JSX.Element {
           runningProviderNames={runningProviderNames}
           participants={participants}
           usage={settingsUsage}
-          usageRange={usageRange}
-          setUsageRange={setUsageRange}
           codexPets={codexPets}
           codexPetsLoading={codexPetsLoading}
           codexPetsError={codexPetsError}

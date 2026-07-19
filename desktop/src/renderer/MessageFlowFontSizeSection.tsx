@@ -14,13 +14,18 @@ import { useI18n } from "./i18n";
 import { ThreadItemView } from "./ThreadItemView";
 
 // Mini conversation the Settings preview shows underneath the slider.
-// Both messages go through the same ThreadItemView pipeline the
+// Every message goes through the same ThreadItemView pipeline the
 // conversation pane uses — user bubble, hairline divider, agent answer —
 // so the slider previews real message-flow typography instead of a
-// look-alike placeholder. The pair mirrors a typical exchange: a short
-// user request, then an agent reply with mixed CJK/Latin prose, inline
-// code, and a short list.
-const PREVIEW_TURN_ID = "settings-message-flow-preview-turn";
+// look-alike placeholder. Two short turns make the size readable at a
+// glance: a user request with a mixed prose/list reply, then a quick
+// follow-up exchange.
+
+type PreviewTurn = {
+  id: string;
+  user: ThreadItem;
+  agent: ThreadItem;
+};
 
 function noop(): void {}
 const { min, max, step, default: defaultSize } = MESSAGE_FLOW_FONT_SIZE_RANGE;
@@ -69,24 +74,45 @@ export function MessageFlowFontSizeControl(): JSX.Element {
   const [size, setSize] = useState<MessageFlowFontSize>(() =>
     clampSize(window.wuu?.initialMessageFlowFontSize),
   );
-  const previewUserItem = useMemo<ThreadItem>(() => ({
-    id: "settings-preview-user-message",
-    type: "user_message",
-    status: "completed",
-    text: t("settings.messageFontSizeSampleUser"),
-  }), [t]);
-  const previewAgentItem = useMemo<ThreadItem>(() => ({
-    id: "settings-preview-agent-message",
-    type: "agent_message",
-    status: "completed",
-    phase: "final_answer",
-    text: [
-      t("settings.messageFontSizeSampleIntro"),
-      "",
-      t("settings.messageFontSizeSampleScope"),
-      t("settings.messageFontSizeSampleTests"),
-    ].join("\n"),
-  }), [t]);
+  const previewTurns = useMemo<PreviewTurn[]>(() => [
+    {
+      id: "settings-message-flow-preview-turn-1",
+      user: {
+        id: "settings-preview-user-message-1",
+        type: "user_message",
+        status: "completed",
+        text: t("settings.messageFontSizeSampleUser"),
+      },
+      agent: {
+        id: "settings-preview-agent-message-1",
+        type: "agent_message",
+        status: "completed",
+        phase: "final_answer",
+        text: [
+          t("settings.messageFontSizeSampleIntro"),
+          "",
+          t("settings.messageFontSizeSampleScope"),
+          t("settings.messageFontSizeSampleTests"),
+        ].join("\n"),
+      },
+    },
+    {
+      id: "settings-message-flow-preview-turn-2",
+      user: {
+        id: "settings-preview-user-message-2",
+        type: "user_message",
+        status: "completed",
+        text: t("settings.messageFontSizeSampleUser2"),
+      },
+      agent: {
+        id: "settings-preview-agent-message-2",
+        type: "agent_message",
+        status: "completed",
+        phase: "final_answer",
+        text: t("settings.messageFontSizeSampleReply2"),
+      },
+    },
+  ], [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,26 +183,28 @@ export function MessageFlowFontSizeControl(): JSX.Element {
         aria-label={t("settings.messageFontSizePreview")}
         data-testid="settings-message-flow-font-size-preview"
       >
-        <section className="turn" data-turn-status="completed">
-          <ThreadItemView
-            turnID={PREVIEW_TURN_ID}
-            turnStatus="completed"
-            item={previewUserItem}
-            streaming={false}
-            onStreamFrame={noop}
-          />
-          <div className="assistant-turn-shell has-answer">
-            <div className="turn-answer-body">
-              <ThreadItemView
-                turnID={PREVIEW_TURN_ID}
-                turnStatus="completed"
-                item={previewAgentItem}
-                streaming={false}
-                onStreamFrame={noop}
-              />
+        {previewTurns.map((turn) => (
+          <section className="turn" data-turn-status="completed" key={turn.id}>
+            <ThreadItemView
+              turnID={turn.id}
+              turnStatus="completed"
+              item={turn.user}
+              streaming={false}
+              onStreamFrame={noop}
+            />
+            <div className="assistant-turn-shell has-answer">
+              <div className="turn-answer-body">
+                <ThreadItemView
+                  turnID={turn.id}
+                  turnStatus="completed"
+                  item={turn.agent}
+                  streaming={false}
+                  onStreamFrame={noop}
+                />
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        ))}
       </div>
     </div>
   );

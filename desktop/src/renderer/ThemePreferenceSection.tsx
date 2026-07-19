@@ -4,10 +4,10 @@ import { applyThemePreference } from "./Theme";
 import { useI18n } from "./i18n";
 
 /**
- * 外观 row body: a three-way segmented control (system / light / dark).
- * Reads and persists through window.wuu directly, and applies the choice to
- * <html data-theme>
- * immediately so the user sees the switch without a save step.
+ * 外观 row body: visual radio cards with a tiny window preview per option
+ * (system splits light/dark). Reads and persists through window.wuu
+ * directly, and applies the choice to <html data-theme> immediately so
+ * the user sees the switch without a save step.
  */
 export function ThemePreferenceControl(): JSX.Element {
   const { t } = useI18n();
@@ -57,16 +57,28 @@ export function ThemePreferenceControl(): JSX.Element {
   }
 
   return (
-    <div className="theme-segmented" role="group" aria-label={t("settings.themeGroup")}>
+    <div className="settings-theme-options" role="radiogroup" aria-label={t("settings.themeGroup")}>
       {themeOptions.map((option) => (
         <button
           key={option.value}
           type="button"
-          aria-pressed={preference === option.value}
+          role="radio"
+          aria-checked={preference === option.value}
+          className={`settings-theme-card${preference === option.value ? " active" : ""}`}
           data-testid={`settings-theme-${option.value}`}
           onClick={() => choose(option.value)}
         >
-          {option.label}
+          <span className={`settings-theme-preview settings-theme-preview-${option.value}`} aria-hidden="true">
+            <span className="settings-theme-preview-window">
+              <span className="settings-theme-preview-sidebar" />
+              <span className="settings-theme-preview-body">
+                <span className="settings-theme-preview-line settings-theme-preview-line-title" />
+                <span className="settings-theme-preview-line" />
+                <span className="settings-theme-preview-line settings-theme-preview-line-short" />
+              </span>
+            </span>
+          </span>
+          <span className="settings-theme-card-label">{option.label}</span>
         </button>
       ))}
     </div>

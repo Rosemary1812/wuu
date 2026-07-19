@@ -2262,22 +2262,9 @@ type WorkflowSnapshotPayload struct {
 	EstimatedOutputTokens      int    `json:"estimated_output_tokens"`
 }
 
-// SettingsUsageRange selects which time window the settings/usage RPC
-// covers. Empty string is treated as "all" by the appserver.
-type SettingsUsageRange string
-
-const (
-	SettingsUsageRangeAll SettingsUsageRange = "all"
-	SettingsUsageRange7d  SettingsUsageRange = "7d"
-	SettingsUsageRange30d SettingsUsageRange = "30d"
-	SettingsUsageRange90d SettingsUsageRange = "90d"
-)
-
-// SettingsUsageQuery is the input for the settings/usage RPC. Range
-// selects the time window; empty defaults to "all".
-type SettingsUsageQuery struct {
-	Range SettingsUsageRange `json:"range,omitempty"`
-}
+// SettingsUsageQuery is the input for the settings/usage RPC. It carries
+// no parameters: the snapshot always covers the full recorded history.
+type SettingsUsageQuery struct{}
 
 // SettingsUsageMetrics is the headline number block shown at the top of the
 // desktop usage page. Totals are weighted by token count across every
@@ -2314,13 +2301,12 @@ type SettingsUsageDay struct {
 }
 
 // SettingsUsageResponse is the single source of truth for the desktop
-// usage page. Range mirrors the requested window. Metrics is the headline
-// number block, ModelBreakdowns is the per-model table sorted by total
-// context tokens descending (legacy rows with empty provider+model are
-// surfaced as "(unknown)"), and Days is the calendar-day series for the
-// heatmap (gaps filled by the desktop).
+// usage page. Metrics is the headline number block, ModelBreakdowns is
+// the per-model table sorted by total context tokens descending (legacy
+// rows with empty provider+model are surfaced as "(unknown)"), and Days
+// is the calendar-day series for the heatmap (gaps filled by the
+// desktop).
 type SettingsUsageResponse struct {
-	Range           SettingsUsageRange   `json:"range"`
 	TotalSessions   int                  `json:"total_sessions"`
 	GeneratedAt     string               `json:"generated_at"`
 	Metrics         SettingsUsageMetrics `json:"metrics"`

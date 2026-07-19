@@ -4138,84 +4138,35 @@ func mergeConcurrentParticipantTailIntoTurnsLocked(th *threadState, records []pe
 }
 
 // handleSettingsUsage returns the aggregated token usage snapshot for
-// the desktop settings page. Range selects a time window ("all" / "7d"
-// / "30d" / "90d"); empty defaults to "all". Range filtering is applied
-// to each token_usage row's At timestamp (UTC), not to the session
-// CreatedAt, so a long-running session that crosses a range boundary
-// contributes only the rows inside the window. Rows with a zero At
-// (legacy imports written before the timestamp was added) are kept
-// under "all" and dropped from any time-windowed query so they cannot
-// masquerade as fresh activity.
+// the desktop settings page. The snapshot always covers the full
+// token_usage trail — every row, including zero-At legacy imports, so
+// long-running sessions and migrated history contribute their real
+// totals.
 func (s *Server) handleSettingsUsage(req Request) error {
-	var params SettingsUsageQuery
-	if err := decodeParams(req.Params, &params); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	rangeFilter := params.Range
-	if rangeFilter == "" {
-		rangeFilter = SettingsUsageRangeAll
-	}
-	if err := validateSettingsUsageRange(rangeFilter); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-
 	sessDir := s.rt.SessionDir
 	now := time.Now().UTC()
-	cutoff := settingsUsageRangeCutoff(rangeFilter, now)
 
 	rows, err := insight.CollectTokenUsageRows(sessDir)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("collect usage rows: %w", err))
 	}
-	filteredRows := filterUsageRowsByCutoff(rows, cutoff)
 
-	metrics, days := aggregateUsageRows(filteredRows)
-	totalSessions := countSessionsInRange(rows, cutoff)
+	metrics, days := aggregateUsageRows(rows)
 
 	return s.writeResponse(req.ID, SettingsUsageResponse{
-		Range:           rangeFilter,
-		TotalSessions:   totalSessions,
+		TotalSessions:   countUsageSessions(rows),
 		GeneratedAt:     now.Format(time.RFC3339Nano),
 		Metrics:         metrics,
-		ModelBreakdowns: buildUsageModelBreakdowns(filteredRows),
+		ModelBreakdowns: buildUsageModelBreakdowns(rows),
 		Days:            days,
 	}, nil)
 }
 
-// filterUsageRowsByCutoff returns rows that fall inside the requested
-// range. "all" (cutoff == nil) keeps every row, including zero-At
-// legacy imports; time-windowed queries drop zero-At rows so they
-// cannot be pinned to "today" or "this week" by accident.
-func filterUsageRowsByCutoff(rows []insight.TokenUsageRow, cutoff *time.Time) []insight.TokenUsageRow {
-	if cutoff == nil {
-		return rows
-	}
-	out := make([]insight.TokenUsageRow, 0, len(rows))
-	for _, r := range rows {
-		if r.At.IsZero() {
-			continue
-		}
-		if r.At.Before(*cutoff) {
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
-}
-
-// countSessionsInRange returns the number of distinct session IDs that
-// have at least one token_usage row inside the cutoff. Sessions with
-// only zero-At legacy rows are excluded from time-windowed counts but
-// still counted under "all".
-func countSessionsInRange(rows []insight.TokenUsageRow, cutoff *time.Time) int {
+// countUsageSessions returns the number of distinct session IDs present
+// in the token_usage trail.
+func countUsageSessions(rows []insight.TokenUsageRow) int {
 	seen := make(map[string]struct{})
 	for _, r := range rows {
-		if cutoff != nil && r.At.IsZero() {
-			continue
-		}
-		if cutoff != nil && r.At.Before(*cutoff) {
-			continue
-		}
 		seen[r.SessionID] = struct{}{}
 	}
 	return len(seen)
@@ -4372,34 +4323,4 @@ func cloneStringIntMap(in map[string]int) map[string]int {
 		out[key] = value
 	}
 	return out
-}
-
-// validateSettingsUsageRange rejects unknown range strings so the
-// desktop gets a clear error instead of a silently empty snapshot.
-func validateSettingsUsageRange(r SettingsUsageRange) error {
-	switch r {
-	case SettingsUsageRangeAll, SettingsUsageRange7d, SettingsUsageRange30d, SettingsUsageRange90d:
-		return nil
-	}
-	return fmt.Errorf("invalid settings/usage range %q", r)
-}
-
-// settingsUsageRangeCutoff returns the exclusive lower-bound timestamp
-// for the requested range. "all" (and the empty string) returns nil,
-// meaning no time filter applies.
-func settingsUsageRangeCutoff(r SettingsUsageRange, now time.Time) *time.Time {
-	switch r {
-	case SettingsUsageRangeAll, "":
-		return nil
-	case SettingsUsageRange7d:
-		c := now.AddDate(0, 0, -7)
-		return &c
-	case SettingsUsageRange30d:
-		c := now.AddDate(0, 0, -30)
-		return &c
-	case SettingsUsageRange90d:
-		c := now.AddDate(0, 0, -90)
-		return &c
-	}
-	return nil
 }

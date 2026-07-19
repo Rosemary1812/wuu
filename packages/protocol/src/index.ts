@@ -1897,21 +1897,15 @@ export type ModelUsage = {
   sessions: number;
 };
 
-// SettingsUsageRange selects which time window the settings/usage RPC
-// covers. Empty string is treated as "all" by the appserver.
-export type SettingsUsageRange = "all" | "7d" | "30d" | "90d";
-
-// SettingsUsageQuery is the input for the settings/usage RPC. Range
-// selects the time window; empty defaults to "all".
-export type SettingsUsageQuery = {
-  range?: SettingsUsageRange;
-};
+// SettingsUsageQuery is the input for the settings/usage RPC. It takes
+// no parameters: the snapshot always covers the full recorded history.
+export type SettingsUsageQuery = Record<string, never>;
 
 // SettingsUsageMetrics is the headline number block shown at the top of
-// the desktop usage page. Every number is summed across token_usage rows
-// whose At timestamp falls inside the requested range. Prompt tokens
-// count input + cache_read (the prompt side); context tokens also add
-// output so the user sees the full token footprint per session.
+// the desktop usage page. Every number is summed across the full
+// token_usage trail. Prompt tokens count input + cache_read (the prompt
+// side); context tokens also add output so the user sees the full token
+// footprint per session.
 export type SettingsUsageMetrics = {
   prompt_tokens: number;
   context_tokens: number;
@@ -1948,7 +1942,6 @@ export type SettingsUsageDay = {
 // both are derived from the same per-row token_usage trail so the
 // views always sum to the same totals.
 export type SettingsUsageResponse = {
-  range: SettingsUsageRange;
   total_sessions: number;
   generated_at: string;
   metrics: SettingsUsageMetrics;
@@ -2467,7 +2460,7 @@ export type WuuDesktopApi = {
   // URL is http(s) lives in the main-process handler so the renderer
   // can't escalate arbitrary schemes via this channel.
   openExternal: (url: string) => Promise<void>;
-  getSettingsUsage: (range?: SettingsUsageRange) => Promise<SettingsUsageResponse>;
+  getSettingsUsage: () => Promise<SettingsUsageResponse>;
   // Composer goal banner surface. The renderer only needs a lightweight
   // summary plus explicit runtime controls; the full GoalSnapshot and
   // workflow/agent run detail stay on the agent tool loop.

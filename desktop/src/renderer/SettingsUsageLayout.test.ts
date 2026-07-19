@@ -23,7 +23,7 @@ describe("settings usage responsive layout", () => {
   it("folds model metrics when the usage content itself gets narrow", () => {
     expect(cssRule(".settings-usage-page")).toMatch(/container-type:\s*inline-size;/);
     expect(settingsCSS).toMatch(
-      /@container settings-usage \(max-width:\s*640px\)[\s\S]*?\.settings-usage-table tbody tr\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
+      /@container settings-usage \(max-width:\s*520px\)[\s\S]*?\.settings-usage-table tbody tr\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
     );
     expect(settingsCSS).toMatch(
       /\.settings-usage-table tbody td:nth-child\(2\)::before\s*\{[\s\S]*?content:\s*"输入";/,

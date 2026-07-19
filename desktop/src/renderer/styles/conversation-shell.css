@@ -1463,7 +1463,10 @@
  * re-declares the message-flow tokens because the preview lives in
  * the Settings panel — OUTSIDE .conversation-pane, where the same
  * tokens now live at :root (moved up so the inline-style override
- * from the slider cascades correctly).
+ * from the slider cascades correctly). The preview carries no box:
+ * it renders on the same paper canvas as the conversation pane, so
+ * the user bubble reads with its designed contrast — boxed on
+ * --surface-1 it washed out to near-invisibility.
  */
 .message-flow-font-size-control {
   display: flex;
@@ -1506,9 +1509,5 @@
   font-weight: var(--conversation-message-font-weight);
   line-height: var(--conversation-reading-line-height);
   color: var(--ink);
-  padding: 14px 18px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
   max-width: var(--conversation-message-max-width, 680px);
 }
