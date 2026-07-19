@@ -5050,6 +5050,126 @@ func TestServerGoalContinuationSkipsQueuedAgentCompletionWork(t *testing.T) {
 	assertFakeClientRequestCount(t, client, 0)
 }
 
+func TestServerGoalContinuationWaitsForRunningBackgroundProcess(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+	srv, _, threadID, threadRuntime := startThreadWithRuntimeGoal(t, client, "goal-process-running")
+	manager, err := process.NewManager(srv.rt.RootDir, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("process.NewManager: %v", err)
+	}
+	threadRuntime.ProcessManager = manager
+	background, err := manager.Start(context.Background(), process.StartOptions{
+		Command:        "sleep 30",
+		OwnerKind:      process.OwnerMainAgent,
+		OwnerID:        threadID,
+		Lifecycle:      process.LifecycleManaged,
+		CompletionMode: process.CompletionModeResume,
+	})
+	if err != nil {
+		t.Fatalf("start background process: %v", err)
+	}
+	t.Cleanup(func() { _, _ = manager.Stop(background.ID) })
+
+	started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		t.Fatalf("startGoalContinuationTurn: %v", err)
+	}
+	if started {
+		t.Fatal("goal continuation should wait for a running background process to wake the thread")
+	}
+	assertFakeClientRequestCount(t, client, 0)
+}
+
+func TestServerGoalContinuationWaitsForRunningSubagent(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "integrated result"}}
+	srv, out, threadID, threadRuntime := startThreadWithRuntimeGoal(t, client, "goal-agent-running")
+	workerClient := newBlockingStreamClient("agent done")
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       workerClient,
+		DefaultModel: "fake-model",
+		ParentRepo:   srv.rt.RootDir,
+		WorktreeRoot: filepath.Join(srv.rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    threadID,
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("agentcontrol.New: %v", err)
+	}
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	oldSubscription := th.runtimeSubscription
+	th.runtimeSubscription = nil
+	th.mu.Unlock()
+	releaseThreadRuntimeSubscription(threadRuntime, oldSubscription)
+	threadRuntime.AgentControl = control
+	th.mu.Lock()
+	th.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	th.mu.Unlock()
+	var releaseWorker sync.Once
+	t.Cleanup(func() {
+		releaseWorker.Do(func() { close(workerClient.release) })
+		releaseThreadRuntime(th)
+		control.StopAll()
+		control.Close()
+	})
+
+	spawned, err := control.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "goal_waiting_worker",
+		Description: "finish after release",
+		Prompt:      "wait until released",
+		Isolation:   string(agentcontrol.IsolationInplace),
+	})
+	if err != nil {
+		t.Fatalf("spawn background agent: %v", err)
+	}
+	select {
+	case <-workerClient.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background agent did not start")
+	}
+
+	startReq := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"wait for the worker"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	time.Sleep(100 * time.Millisecond)
+	if got := turnCompletedCountForThread(t, out, threadID); got != 1 {
+		t.Fatalf("active goal started a turn while waiting for the subagent: completed turns=%d", got)
+	}
+	assertFakeClientRequestCount(t, client, 1)
+
+	if _, err := threadRuntime.GoalRuntime.Complete(time.Now().UTC()); err != nil {
+		t.Fatalf("complete goal before worker wake: %v", err)
+	}
+	releaseWorker.Do(func() { close(workerClient.release) })
+	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+	time.Sleep(50 * time.Millisecond)
+	if got := turnCompletedCountForThread(t, out, threadID); got != 2 {
+		t.Fatalf("subagent completion should wake exactly one turn, got %d", got)
+	}
+	assertFakeClientRequestCount(t, client, 2)
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if got := goalCompletionMessageForTest(requests[1].Messages, spawned.AgentID); got == "" {
+		t.Fatalf("subagent wake request missing completion result for %s: %+v", spawned.AgentID, requests[1].Messages)
+	}
+}
+
+func goalCompletionMessageForTest(messages []providers.ChatMessage, agentID string) string {
+	for _, msg := range messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, agentID) && strings.Contains(msg.Content, "agent done") {
+			return msg.Content
+		}
+	}
+	return ""
+}
+
 func TestServerTurnErrorStopsActiveGoal(t *testing.T) {
 	tests := []struct {
 		name       string

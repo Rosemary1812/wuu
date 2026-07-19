@@ -1270,6 +1270,14 @@ func threadRuntimeHasOutstandingAgentWork(threadRuntime *runtime.ThreadRuntime) 
 	return false
 }
 
+func threadRuntimeAwaitsAutoContinuation(threadID string, threadRuntime *runtime.ThreadRuntime) bool {
+	if threadRuntime == nil {
+		return false
+	}
+	return threadRuntimeHasOutstandingAgentWork(threadRuntime) ||
+		threadHasOutstandingProcessCompletion(threadID, threadRuntime.AgentControl, threadRuntime.ProcessManager)
+}
+
 func threadRuntimeHasOutstandingWork(threadID string, threadRuntime *runtime.ThreadRuntime) bool {
 	if threadRuntimeHasOutstandingAgentWork(threadRuntime) {
 		return true
@@ -2254,9 +2262,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	// Local queue drains are kicked only after this write, preserving terminal
 	// before successor ordering on this server without making an immediate user
 	// turn spuriously fail as busy.
-	awaitingAutoContinuation := err == nil && threadRuntime != nil &&
-		(threadRuntimeHasOutstandingAgentWork(threadRuntime) ||
-			threadHasOutstandingProcessCompletion(th.ID, threadRuntime.AgentControl, threadRuntime.ProcessManager))
+	awaitingAutoContinuation := err == nil && threadRuntimeAwaitsAutoContinuation(th.ID, threadRuntime)
 	if runID := strings.TrimSpace(turnRuntime.AutomationRunID); runID != "" && s.rt != nil && s.rt.AutomationManager != nil {
 		if completeErr := s.rt.AutomationManager.CompleteRun(runID, th.ID, turnID, err); completeErr != nil {
 			providers.DebugLogf("complete automation run %q: %v", runID, completeErr)
@@ -3682,7 +3688,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 
 	// The goal and all queue gates may have changed while another app-server
 	// owned the thread. Evaluate them only after acquiring ownership.
-	decision, err := threadRuntime.GoalRuntime.DecideContinuation(s.goalContinuationInput(th, threadID))
+	decision, err := threadRuntime.GoalRuntime.DecideContinuation(s.goalContinuationInput(th, threadID, threadRuntime))
 	if err != nil {
 		releaseAdmission()
 		return false, err
@@ -3745,7 +3751,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 	return true, nil
 }
 
-func (s *Server) goalContinuationInput(th *threadState, threadID string) goalruntime.ContinuationInput {
+func (s *Server) goalContinuationInput(th *threadState, threadID string, threadRuntime *runtime.ThreadRuntime) goalruntime.ContinuationInput {
 	var running, readOnly bool
 	if th != nil {
 		th.mu.Lock()
@@ -3754,11 +3760,12 @@ func (s *Server) goalContinuationInput(th *threadState, threadID string) goalrun
 		th.mu.Unlock()
 	}
 	return goalruntime.ContinuationInput{
-		ThreadIdle:      !running,
-		ActiveTurn:      running,
-		QueuedUserWork:  s.hasQueuedUserWork(threadID),
-		QueuedAgentWork: s.hasQueuedAgentCompletionWork(threadID),
-		ReadOnly:        readOnly,
+		ThreadIdle:             !running,
+		ActiveTurn:             running,
+		QueuedUserWork:         s.hasQueuedUserWork(threadID),
+		QueuedAgentWork:        s.hasQueuedAgentCompletionWork(threadID),
+		AwaitingBackgroundWork: threadRuntimeAwaitsAutoContinuation(threadID, threadRuntime),
+		ReadOnly:               readOnly,
 	}
 }
 

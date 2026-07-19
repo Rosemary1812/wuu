@@ -11,13 +11,14 @@ type Runtime struct {
 }
 
 type ContinuationInput struct {
-	ThreadIdle          bool
-	ActiveTurn          bool
-	QueuedUserWork      bool
-	QueuedAgentWork     bool
-	ReadOnly            bool
-	PlanMode            bool
-	UnsafeProtocolState bool
+	ThreadIdle             bool
+	ActiveTurn             bool
+	QueuedUserWork         bool
+	QueuedAgentWork        bool
+	AwaitingBackgroundWork bool
+	ReadOnly               bool
+	PlanMode               bool
+	UnsafeProtocolState    bool
 }
 
 type ContinuationDecision struct {
@@ -34,6 +35,7 @@ const (
 	ContinuationBlockedBusy                ContinuationBlockReason = "busy"
 	ContinuationBlockedQueuedUserWork      ContinuationBlockReason = "queued_user_work"
 	ContinuationBlockedQueuedAgentWork     ContinuationBlockReason = "queued_agent_work"
+	ContinuationBlockedAwaitingBackground  ContinuationBlockReason = "awaiting_background_work"
 	ContinuationBlockedReadOnly            ContinuationBlockReason = "read_only"
 	ContinuationBlockedPlanMode            ContinuationBlockReason = "plan_mode"
 	ContinuationBlockedUnsafeProtocolState ContinuationBlockReason = "unsafe_protocol_state"
@@ -161,6 +163,9 @@ func DecideContinuation(goal Goal, input ContinuationInput) ContinuationDecision
 	}
 	if input.QueuedAgentWork {
 		return blockedContinuation(goal.Status, ContinuationBlockedQueuedAgentWork)
+	}
+	if input.AwaitingBackgroundWork {
+		return blockedContinuation(goal.Status, ContinuationBlockedAwaitingBackground)
 	}
 	if input.ReadOnly {
 		return blockedContinuation(goal.Status, ContinuationBlockedReadOnly)
