@@ -8,6 +8,12 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-19
+
+### Changed
+
+- Reused composer controls in the user message edit bubble for consistent styling.
+
 ## [0.7.0] - 2026-07-19
 
 ### Added
