@@ -2432,11 +2432,15 @@ export function App(): JSX.Element {
     state.lastViewedMessageSeqByThreadID,
   ]);
   const sideThreadPanelVisible = Boolean(activeThreadID && sideThread.entry?.open);
+  // The environment panel floats inside the conversation pane, so it can
+  // coexist with the docked workspace right panel. Only the globalized
+  // (full-window sheet) right panel blocks it, because that mode makes the
+  // entire conversation pane inert.
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !poppedOutMode &&
     !previewingLaunch &&
-    !rightPanelOpen &&
+    !rightPanelGlobalized &&
     !openSubthreadPanel &&
     !participantPanel &&
     !sideThreadPanelVisible,
