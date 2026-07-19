@@ -192,7 +192,7 @@ export function ThreadItemView({
       const copyable = streaming || agentText.trim() !== "";
       const isProcessText = item.phase === "commentary";
       const actionsVisible =
-        (turnStatus === "completed" || turnStatus === "interrupted") &&
+        turnStatus === "completed" &&
         item.id === actionableAgentMessageID &&
         copyable &&
         !isProcessText;

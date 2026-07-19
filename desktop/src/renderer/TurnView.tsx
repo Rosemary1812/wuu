@@ -71,7 +71,7 @@ export function TurnView({
   isLatestTurn?: boolean;
 }): JSX.Element {
   const actionableAgentMessageID =
-    turn.status === "completed" || turn.status === "interrupted"
+    turn.status === "completed"
       ? messageFlowAgentMessageItemID(turn)
       : undefined;
   // The edit summary card should sit inside the actionable answer message
@@ -147,7 +147,8 @@ export function TurnView({
     rawAssistantDisplay,
   );
   const hasTurnRuns =
-    turn.status !== "in_progress" && turn.items.some(isCommandToolCall);
+    (turn.status === "completed" || turn.status === "failed") &&
+    turn.items.some(isCommandToolCall);
   // `buildAssistantTurnDisplay` already classifies "turn completed but
   // only commentary, no `final_answer`" and surfaces it as
   // `missingReplyMessage`. Forward that to the event pipeline so the
