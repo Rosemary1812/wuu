@@ -25,7 +25,7 @@
 Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
 
 > [!WARNING]
-> **Project status:** The mobile app has not been released yet. wuu is still pre-1.0 and evolving quickly, so features, interfaces, and behavior may change between versions. If you need a stable, production-ready tool, please evaluate carefully before adopting it.
+> **Project status:** Packaged desktop builds currently support Apple silicon Macs. wuu is still pre-1.0 and evolving quickly, so features, interfaces, and behavior may change between versions. If you need a stable, production-ready tool, please evaluate carefully before adopting it.
 
 ## Start Here
 
@@ -40,10 +40,10 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 | Review the security and trust boundaries | [Security model](docs/en/reference/security-model.md) |
 | Inspect reproducible public evaluations | [Public evaluations](evals/) |
 
-## News
+## Release Status
 
-- **macOS desktop releases** — tagged GitHub Releases contain only the unsigned macOS Electron app; the CLI remains available from source for automation.
-- **2026-07-10** Tagged **v0.1.0** — the first packaged desktop milestone: unsigned macOS Electron preview builds on GitHub Releases, plus open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
+- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide unsigned Apple silicon macOS builds. The CLI remains available from source for automation.
+- **Latest changes** — see the [latest release](https://github.com/blueberrycongee/wuu/releases/latest) and [CHANGELOG](CHANGELOG.md).
 
 ## Why wuu
 
@@ -156,7 +156,7 @@ wuu session list --json
 **Providers and integration**
 - **BYOK / multi-provider** — bring your own API key; works with Anthropic and OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
 - **JSONL output** — scriptable, streamable output for CI and other agents
-- **Desktop app** — packaged macOS Electron app, or source-built UI for interactive use alongside the CLI
+- **Desktop app** — packaged Apple silicon macOS Electron app, or source-built UI for interactive use alongside the CLI
 
 ## Architecture
 
@@ -171,7 +171,7 @@ Wuu is split into a reusable **Go core** and a thin **shell**:
 
 ## Desktop App
 
-The first packaged desktop release is a macOS Electron app on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
+Packaged Apple silicon macOS builds are available on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
 The DMG/ZIP assets are currently unsigned; see the install section for the Gatekeeper
 quarantine workaround.
 

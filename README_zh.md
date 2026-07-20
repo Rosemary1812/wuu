@@ -25,7 +25,7 @@
 除了单轮任务，wuu 还能规划多步工作、委派给专门的子智能体、应用任务专属技能，并跨会话记住上下文。桌面应用用于交互式工作，`wuu exec` 则适合脚本、CI 和其他 agent 调用。
 
 > [!WARNING]
-> **项目状态：** 移动端目前尚未正式推出。wuu 仍处于 1.0 之前的高速迭代阶段，不同版本之间的功能、接口和行为可能发生变化。如果你需要稳定、可用于生产环境的工具，请在采用前谨慎评估。
+> **项目状态：** 打包好的桌面版目前仅支持 Apple 芯片 Mac。wuu 仍处于 1.0 之前的高速迭代阶段，不同版本之间的功能、接口和行为可能发生变化。如果你需要稳定、可用于生产环境的工具，请在采用前谨慎评估。
 
 ## 从这里开始
 
@@ -40,10 +40,10 @@
 | 了解安全和信任边界 | [安全模型](docs/en/reference/security-model.md) |
 | 查看可复现的公开评测 | [公开评测记录](evals/) |
 
-## 动态
+## 发布状态
 
-- **macOS 桌面版发布** —— 带标签的 GitHub Release 只提供未签名的 macOS Electron 应用；CLI 仍可从源码安装，用于自动化。
-- **2026-07-10** 发布 **v0.1.0** —— 第一个打包桌面端里程碑：GitHub Releases 提供未签名 macOS Electron 预览包，同时开源治理文件就位。详见 [CHANGELOG](CHANGELOG.md)。
+- **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供未签名的 Apple 芯片 macOS 安装包；CLI 仍可从源码安装，用于自动化。
+- **最新变化** —— 查看[最新版本](https://github.com/blueberrycongee/wuu/releases/latest)和 [CHANGELOG](CHANGELOG.md)。
 
 ## 为什么选 wuu
 
@@ -152,7 +152,7 @@ wuu session list --json
 **提供商与集成**
 - **BYOK / 多提供商** — 自带 API Key；支持 Anthropic 和 OpenAI 兼容网关（OpenAI、OpenRouter、one-api、本地等）
 - **JSONL 输出** — 可脚本化、可流式的输出，适合 CI 和其他 agent
-- **桌面应用** — 打包好的 macOS Electron 应用，也可以从源码运行，与 CLI 配合使用
+- **桌面应用** — 打包好的 Apple 芯片 macOS Electron 应用，也可以从源码运行，与 CLI 配合使用
 
 ## 架构
 
@@ -167,8 +167,8 @@ Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
 
 ## 桌面应用
 
-第一版桌面安装包是 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 上的 macOS Electron 应用。
-它目前是未签名版本；Gatekeeper 的 quarantine 处理方式见安装章节。
+[GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供 Apple 芯片 macOS 桌面安装包。
+安装包目前未签名；Gatekeeper 的 quarantine 处理方式见安装章节。
 
 桌面端代码在 `desktop/`。从源码启动：
 
