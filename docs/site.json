@@ -14,7 +14,10 @@
           "title": "开始使用",
           "pages": [
             "zh-cn/index.md",
-            "zh-cn/getting-started/index.md"
+            "zh-cn/getting-started/index.md",
+            "zh-cn/getting-started/installation.md",
+            "zh-cn/getting-started/model-services.md",
+            "zh-cn/getting-started/first-task.md"
           ]
         },
         {
