@@ -1677,6 +1677,7 @@ export const zhCN = {
   "provider.apiKey": "API key",
   "project.relocateFailed": "重新定位工作区失败",
   "git.checkoutFailed": "切换分支失败",
+  "git.checkoutBlockedByRunningThread": "当前工作区有任务正在运行，无法切换分支",
   "git.refreshFailed": "刷新 Git 状态失败",
   "thread.pinFailed": "更新会话置顶状态失败",
   "thread.memberAdd.failed": "添加 Thread 成员失败",

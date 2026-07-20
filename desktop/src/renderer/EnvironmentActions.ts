@@ -58,8 +58,13 @@ export function createEnvironmentActions(
 
   async function checkoutBranch(branch: string): Promise<void> {
     const root = deps.getEnvironmentRoot();
-    if (!branch || !root || deps.getAnyThreadIsRunning()) {
+    if (!branch || !root) {
       return;
+    }
+    if (deps.getAnyThreadIsRunning()) {
+      throw new Error(
+        translateCurrent("git.checkoutBlockedByRunningThread"),
+      );
     }
     deps.closeProjectMenus();
     try {
@@ -76,11 +81,12 @@ export function createEnvironmentActions(
       if (!environmentRootIsCurrent(root)) {
         return;
       }
-      setStatus(
+      const message =
         error instanceof Error
           ? error.message
-          : translateCurrent("git.checkoutFailed"),
-      );
+          : translateCurrent("git.checkoutFailed");
+      setStatus(message);
+      throw new Error(message);
     }
   }
 

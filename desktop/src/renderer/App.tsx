@@ -160,6 +160,8 @@ import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
 import { ArchiveTip } from "./ArchiveTip";
+import { TopNotice } from "./TopNotice";
+import { CircleAlert } from "lucide-react";
 import type { ComposerGoalSummary, KanbanCrystallizeResult } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
@@ -644,6 +646,10 @@ export function App(): JSX.Element {
   } | null>(null);
   const dismissArchiveTip = useCallback(() => {
     setArchiveTip(null);
+  }, []);
+  const [checkoutErrorTip, setCheckoutErrorTip] = useState<string | null>(null);
+  const dismissCheckoutErrorTip = useCallback(() => {
+    setCheckoutErrorTip(null);
   }, []);
   // Mirrors `archiveConfirmSubagentID` (legacy confirm state) for the
   // info-panel subagent rows. The state lives in App rather than the panel
@@ -3697,10 +3703,21 @@ export function App(): JSX.Element {
     />
   ) : null;
 
+  const checkoutErrorTipNode = checkoutErrorTip ? (
+    <TopNotice
+      message={checkoutErrorTip}
+      icon={CircleAlert}
+      onDismiss={dismissCheckoutErrorTip}
+      isError
+      dismissAriaLabel={t("common.closeNotice")}
+    />
+  ) : null;
+
   if (settingsOpen) {
     return (
       <>
         {archiveTipNode}
+        {checkoutErrorTipNode}
         <SettingsShellRenderer
           initialized={sessionRuntime}
           initialPage={settingsInitialPage}
@@ -3763,6 +3780,7 @@ export function App(): JSX.Element {
   return (
     <>
       {archiveTipNode}
+      {checkoutErrorTipNode}
       <ImagePreviewProvider>
         <div ref={appShellRef} className={shellClassName} style={shellStyle}>
           {!poppedOutMode ? (
@@ -4005,7 +4023,17 @@ export function App(): JSX.Element {
           onCloseEnvironmentPanel={() =>
             closeEnvironmentPanel({ dismissed: true })
           }
-          onSelectBranch={(branch) => void checkoutBranch(branch)}
+          onSelectBranch={async (branch) => {
+            try {
+              await checkoutBranch(branch);
+            } catch (error) {
+              setCheckoutErrorTip(
+                error instanceof Error
+                  ? error.message
+                  : t("git.checkoutFailed"),
+              );
+            }
+          }}
           onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
           onOpenReview={() => {
             openWorkspaceTool("review");

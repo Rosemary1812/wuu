@@ -1679,6 +1679,7 @@ export const enUS = {
   "provider.apiKey": "API key",
   "project.relocateFailed": "Failed to relocate workspace",
   "git.checkoutFailed": "Failed to switch branches",
+  "git.checkoutBlockedByRunningThread": "Cannot switch branches while a task is running in this workspace",
   "git.refreshFailed": "Failed to refresh Git status",
   "thread.pinFailed": "Failed to update conversation pin",
   "thread.memberAdd.failed": "Failed to add Thread member",

@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
-import { Archive, CircleAlert, X } from "lucide-react";
+import { Archive, CircleAlert } from "lucide-react";
 import { useI18n } from "./i18n";
-
-const ARCHIVE_TIP_AUTO_DISMISS_MS = 6000;
+import { TopNotice } from "./TopNotice";
 
 export type ArchiveTipProps = {
   threadTitle: string;
@@ -12,8 +10,8 @@ export type ArchiveTipProps = {
 };
 
 /**
- * Lightweight toast for an archive attempt. A successful archive links to the
- * archive page; a rejected attempt explains why the session stayed visible.
+ * Archive result toast. Reuses the generic TopNotice so success and failure
+ * notices share the same pill styling and auto-dismiss behavior.
  */
 export function ArchiveTip({
   threadTitle,
@@ -22,65 +20,35 @@ export function ArchiveTip({
   onDismiss,
 }: ArchiveTipProps): JSX.Element {
   const { t } = useI18n();
-  const [leaving, setLeaving] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setLeaving(true);
-    }, ARCHIVE_TIP_AUTO_DISMISS_MS - 400);
-    const finalize = window.setTimeout(onDismiss, ARCHIVE_TIP_AUTO_DISMISS_MS);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearTimeout(finalize);
-    };
-  }, [onDismiss]);
-
-  const trimmedTitle = threadTitle.trim();
   const failed = Boolean(errorMessage);
+  const trimmedTitle = threadTitle.trim();
+
+  const message = errorMessage ? (
+    <span>{errorMessage}</span>
+  ) : trimmedTitle ? (
+    <>
+      <strong>{trimmedTitle}</strong>
+      <span> {t("archive.archivedSuffix")}</span>
+    </>
+  ) : (
+    <span>{t("archive.conversationArchived")}</span>
+  );
 
   return (
-    <div
-      className={`archive-tip${failed ? " is-error" : ""}${leaving ? " leaving" : ""}`}
-      role={failed ? "alert" : "status"}
-      aria-live={failed ? "assertive" : "polite"}
-    >
-      {failed ? (
-        <CircleAlert className="archive-tip-icon" aria-hidden="true" />
-      ) : (
-        <Archive className="archive-tip-icon" aria-hidden="true" />
-      )}
-      <span className="archive-tip-message">
-        {errorMessage ? (
-          <span>{errorMessage}</span>
-        ) : trimmedTitle ? (
-          <>
-            <strong>{trimmedTitle}</strong>
-            <span> {t("archive.archivedSuffix")}</span>
-          </>
-        ) : (
-          <span>{t("archive.conversationArchived")}</span>
-        )}
-      </span>
-      {failed ? null : (
-        <button
-          type="button"
-          className="archive-tip-action"
-          onClick={onViewArchive}
-        >
-          {t("archive.viewArchive")}
-        </button>
-      )}
-      <button
-        type="button"
-        className="archive-tip-dismiss"
-        aria-label={t("common.closeNotice")}
-        onClick={() => {
-          setLeaving(true);
-          window.setTimeout(onDismiss, 200);
-        }}
-      >
-        <X className="icon-sm" />
-      </button>
-    </div>
+    <TopNotice
+      message={message}
+      icon={failed ? CircleAlert : Archive}
+      onDismiss={onDismiss}
+      isError={failed}
+      dismissAriaLabel={t("common.closeNotice")}
+      action={
+        failed
+          ? undefined
+          : {
+              label: t("archive.viewArchive"),
+              onClick: onViewArchive,
+            }
+      }
+    />
   );
 }

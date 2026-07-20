@@ -138,7 +138,7 @@ describe("createEnvironmentActions", () => {
     const api = installWuuApi();
     const harness = buildActions({ anyThreadIsRunning: true });
 
-    await harness.actions.checkoutBranch("feature");
+    await expect(harness.actions.checkoutBranch("feature")).rejects.toThrow();
 
     expect(api.checkoutGitBranch).not.toHaveBeenCalled();
     expect(harness.closeProjectMenus).not.toHaveBeenCalled();
