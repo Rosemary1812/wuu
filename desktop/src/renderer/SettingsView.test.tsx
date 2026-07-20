@@ -37,6 +37,9 @@ afterEach(() => {
   // Drop the stub so each test installs its own.
   delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   delete (window as { wuu?: WuuDesktopApi }).wuu;
+  Reflect.deleteProperty(document, "elementFromPoint");
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function installBuildInfoStub(info: BuildInfoResult): void {
@@ -102,6 +105,7 @@ function renderSettings(props: {
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onToggleSidebar?: () => void;
+  sidebarCollapsed?: boolean;
   // ArchivedSessionView 是结构子集（id/title?/updated_at），这里
   // 直接传对象字面量，避免引入 ThreadSummary（它要求 turns/turn_count
   // 等计算字段，测试场景下冗余）。
@@ -133,7 +137,7 @@ function renderSettings(props: {
         resizingSidebar={false}
         // Mirror the App-level collapse/hover wiring so existing render
         // assertions still produce a sensible non-collapsed shell by default.
-        sidebarCollapsed={false}
+        sidebarCollapsed={props.sidebarCollapsed ?? false}
         sidebarAnimating={false}
         onToggleSidebar={props.onToggleSidebar ?? (() => {})}
         sidebarMotionMs={240}
@@ -219,6 +223,54 @@ describe("SettingsView shell", () => {
       toggle?.click();
     });
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the hover drawer open when the pointer moves from it to the settings toggle", () => {
+    vi.useFakeTimers();
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    renderSettings({ initialized: baseInitialized(), sidebarCollapsed: true });
+
+    const shell = container.querySelector<HTMLElement>(".settings-shell");
+    const sidebar = container.querySelector<HTMLElement>(".settings-sidebar");
+    const toggle = container.querySelector<HTMLElement>(
+      ".settings-titlebar .sidebar-toggle-button",
+    );
+    expect(sidebar).not.toBeNull();
+    expect(toggle).not.toBeNull();
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => toggle),
+    });
+    act(() => {
+      toggle?.dispatchEvent(
+        new MouseEvent("pointerover", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 24,
+        }),
+      );
+      vi.advanceTimersByTime(240);
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+
+    act(() => {
+      sidebar?.dispatchEvent(
+        new MouseEvent("pointerout", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 24,
+          relatedTarget: toggle,
+        }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-closing")).toBe(false);
   });
 
   it("starts each settings page at the top and replaces the content surface", () => {

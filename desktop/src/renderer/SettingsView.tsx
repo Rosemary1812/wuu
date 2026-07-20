@@ -703,7 +703,7 @@ export function SettingsView({
     scheduleSidebarDrawerOpen,
     cancelSidebarDrawerOpen,
     openSidebarDrawer,
-    closeSidebarDrawer
+    scheduleSidebarDrawerCloseFromPointerLeave
   } = useSidebarDrawerState({
     appShellRef: effectiveShellRef,
     sidebarCollapsed,
@@ -736,7 +736,9 @@ export function SettingsView({
       <aside
         className="settings-sidebar"
         onPointerEnter={openSidebarDrawer}
-        onPointerLeave={closeSidebarDrawer}
+        onPointerLeave={(event) =>
+          scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+        }
       >
         {/*
           * 与主侧栏一致的内层 .sidebar-content：折叠动画期间列宽收窄时，
