@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+
+vi.hoisted(() => {
+  vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
+});
+
 import {
   buildComposerSlashCommands,
   buildSideThreadSlashCommands,
@@ -10,6 +15,10 @@ import type { InitializeResult, SkillSummary } from "../shared/protocol";
 import { setActiveLocale } from "./i18n";
 
 afterEach(() => setActiveLocale("zh-CN"));
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 function initialized(model: string, models: string[], helpMe = false): InitializeResult {
   return {
@@ -109,7 +118,6 @@ describe("composer slash commands", () => {
   });
 
   it("routes /memory to the memory settings action instead of instructions", () => {
-    vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
       initialized: initialized("gpt-5.5", ["gpt-5.5"]),
@@ -124,7 +132,6 @@ describe("composer slash commands", () => {
     const instructions = commands.find((command) => command.name === "instructions");
     expect(instructions?.action).toBe("instructions");
     expect(instructions?.aliases).not.toContain("memory");
-    vi.unstubAllEnvs();
   });
 
   it("adds user-invocable skills to slash results", () => {

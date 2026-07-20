@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.hoisted(() => {
+  vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
+});
+
 import type { DesktopProject, InitializeResult } from "../shared/protocol";
 import { AppSidebar } from "./AppSidebar";
 import {
@@ -27,6 +32,10 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   container.remove();
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
 });
 
 function initialized(): InitializeResult {
