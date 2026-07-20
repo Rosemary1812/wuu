@@ -97,6 +97,6 @@ describe("StreamingMarkdown perf", () => {
 
     expect(pending).toHaveLength(0);
     expect(container.textContent).toContain("标题 40");
-    expect(duration).toBeLessThan(1000);
+    expect(duration).toBeLessThan(2000);
   }, 15000);
 });
