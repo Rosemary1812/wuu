@@ -176,7 +176,13 @@ func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *ag
 		})
 		if control != nil {
 			resultID := control.AgentResultDeliveryID(n.Snapshot)
-			s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath), &n.Snapshot)
+			msg := control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath)
+			consumer, _ := control.AgentResultDeliveryConsumer(resultID)
+			if consumer == "" {
+				if !s.steerAgentCompletion(threadID, resultID, msg) {
+					s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, msg, &n.Snapshot)
+				}
+			}
 		}
 	}
 	return nil
