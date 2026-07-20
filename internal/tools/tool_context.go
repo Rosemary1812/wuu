@@ -46,6 +46,9 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 			blocks = append(blocks, block)
 		}
 	}
+	if block, ok := t.PlanStaleReminderContextBlock(); ok {
+		blocks = append(blocks, block)
+	}
 	if block, ok := t.TestFailureContextBlock(); ok {
 		blocks = append(blocks, block)
 	}

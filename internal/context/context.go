@@ -78,6 +78,7 @@ const (
 	BlockGoalContinuation  BlockKind = "GOAL_CONTINUATION"
 	BlockActiveFiles       BlockKind = "ACTIVE_FILES"
 	BlockTestFailures      BlockKind = "TEST_FAILURES"
+	BlockPlanReminder      BlockKind = "PLAN_REMINDER"
 	BlockWebEvidence       BlockKind = "WEB_EVIDENCE"
 	BlockMemory            BlockKind = "MEMORY"
 	BlockToolPolicy        BlockKind = "TOOL_POLICY"

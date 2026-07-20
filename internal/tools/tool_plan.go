@@ -32,15 +32,41 @@ const (
 )
 
 type planState struct {
-	mu       sync.RWMutex
-	snapshot PlanSnapshot
+	mu               sync.RWMutex
+	snapshot         PlanSnapshot
+	callsSinceUpdate int
 }
 
 func (s *planState) set(snapshot PlanSnapshot) PlanSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.snapshot = clonePlanSnapshot(snapshot)
+	s.callsSinceUpdate = 0
 	return clonePlanSnapshot(s.snapshot)
+}
+
+// noteToolCall advances the staleness counter used by the plan reminder.
+// update_plan itself must not call this: set resets the counter.
+func (s *planState) noteToolCall() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.callsSinceUpdate++
+}
+
+// staleSnapshot returns the current snapshot when a plan with unfinished
+// steps has gone at least threshold tool calls without an update.
+func (s *planState) staleSnapshot(threshold int) (PlanSnapshot, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.snapshot.Plan) == 0 || s.callsSinceUpdate < threshold {
+		return PlanSnapshot{}, false
+	}
+	for _, item := range s.snapshot.Plan {
+		if item.Status != PlanStatusCompleted {
+			return clonePlanSnapshot(s.snapshot), true
+		}
+	}
+	return PlanSnapshot{}, false
 }
 
 func (s *planState) get() (PlanSnapshot, bool) {
@@ -99,6 +125,42 @@ func planStateBlock(snapshot PlanSnapshot) (wuucontext.Block, bool) {
 		Kind:    wuucontext.BlockTaskState,
 		Title:   "Current visible task plan",
 		Source:  "update_plan",
+		Content: strings.TrimRight(b.String(), "\n"),
+	}, true
+}
+
+// planStaleReminderCallThreshold is the number of tool calls after the last
+// update_plan (or plan restore) before the reminder block appears. The block
+// content stays byte-identical while the model keeps ignoring it, so the
+// request assembler dedups it after one send; it costs one injection plus one
+// tombstone per stale episode.
+const planStaleReminderCallThreshold = 10
+
+// PlanStaleReminderContextBlock surfaces a one-shot reminder when the plan
+// has unfinished steps but update_plan has not been called recently. Unlike
+// the removed derived TASK_STATE ledger it is conditional: models that keep
+// the plan current never pay for it.
+func (t *Toolkit) PlanStaleReminderContextBlock() (wuucontext.Block, bool) {
+	if t == nil || t.env == nil {
+		return wuucontext.Block{}, false
+	}
+	snapshot, ok := t.env.planState.staleSnapshot(planStaleReminderCallThreshold)
+	if !ok {
+		return wuucontext.Block{}, false
+	}
+	var b strings.Builder
+	b.WriteString("The plan below has unfinished steps but update_plan has not been called recently. ")
+	b.WriteString("If steps were completed, call update_plan to mark them completed and the current step in_progress; ")
+	b.WriteString("if the plan no longer matches the work, rewrite it. ")
+	b.WriteString("Ignore this reminder when progress tracking adds no value, and never mention it to the user.\n\n")
+	b.WriteString("plan:\n")
+	for _, item := range snapshot.Plan {
+		fmt.Fprintf(&b, "- [%s] %s\n", item.Status, strings.TrimSpace(item.Step))
+	}
+	return wuucontext.Block{
+		Kind:    wuucontext.BlockPlanReminder,
+		Title:   "Plan update reminder",
+		Source:  "plan_stale",
 		Content: strings.TrimRight(b.String(), "\n"),
 	}, true
 }

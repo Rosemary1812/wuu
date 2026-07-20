@@ -204,6 +204,9 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
 	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, rawProjection, returnedProjection, resultRef, resultBudgeted, err, projectionDiag)
+	if call.Name != "update_plan" {
+		t.env.planState.noteToolCall()
+	}
 
 	return returned, err
 }
