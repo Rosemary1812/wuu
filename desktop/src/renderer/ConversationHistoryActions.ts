@@ -225,18 +225,13 @@ export function createConversationHistoryActions(
     if (!target) {
       return;
     }
-    try {
-      await executeForkFromMessage(
-        target.sourceThread,
-        target.turnID,
-        target.itemID,
-        mode,
-      );
-      deps.setPendingFork(undefined);
-    } catch {
-      // Status is already set inside executeForkFromMessage; keep the
-      // dialog open so the user can pick the other option or cancel.
-    }
+    await executeForkFromMessage(
+      target.sourceThread,
+      target.turnID,
+      target.itemID,
+      mode,
+    );
+    deps.setPendingFork(undefined);
   }
 
   async function forkThreadFromMessage(

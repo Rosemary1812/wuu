@@ -6144,6 +6144,107 @@ func TestServerThreadForkAtAssistantItem(t *testing.T) {
 	}
 }
 
+func TestServerThreadForkDoesNotReuseSourceToolInvocationOwnership(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260718-000000-fork-tool-ledger", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	db, err := session.OpenStore(rt.SessionDir)
+	if err != nil {
+		t.Fatalf("open session store: %v", err)
+	}
+	now := time.Now().UTC().UnixMilli()
+	if _, err := db.Exec(`
+INSERT INTO tool_batches (id, owner_id, operation_id, step_index, status, created_at, updated_at, terminal_at)
+VALUES ('fork-source-batch', ?, 'fork-source-operation', 1, 'settled', ?, ?, ?)`, sess.ID, now, now, now); err != nil {
+		db.Close()
+		t.Fatalf("insert source tool batch: %v", err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO tool_invocations (
+  id, batch_id, provider_call_id, tool_name, arguments_json, replay_policy, state,
+  result_json, prepared_at, running_at, settled_at
+) VALUES ('fork-source-invocation', 'fork-source-batch', 'fork-source-call', 'read_file', '{}', 'at_most_once', 'succeeded', '{}', ?, ?, ?)`, now, now, now); err != nil {
+		db.Close()
+		t.Fatalf("insert source tool invocation: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close session store: %v", err)
+	}
+
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "read the file"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID: "fork-source-call", Name: "read_file", Arguments: `{"path":"README.md"}`,
+			}},
+		},
+		{
+			Role: "tool", ToolCallID: "fork-source-call", ToolInvocationID: "fork-source-invocation",
+			Name: "read_file", Content: "contents",
+		},
+		{Role: "assistant", Content: "file read"},
+		{Role: "user", Content: "continue from here"},
+	}
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, history); err != nil {
+		t.Fatalf("write source history: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	resumeReq := fmt.Sprintf(`{"id":"resume-tool-fork","method":%q,"params":{"session_id":%q}}`, MethodThreadResume, sess.ID)
+	if err := srv.handleLine(context.Background(), []byte(resumeReq)); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+	resumed := remarshal[ThreadResumeResult](t, responseByID(t, parseOutput(t, out.String()), "resume-tool-fork")["result"])
+	var targetTurnID, targetItemID string
+	for _, turn := range resumed.Thread.Turns {
+		for _, item := range turn.Items {
+			if item.Type == ThreadItemUserMessage && item.Text == "continue from here" {
+				targetTurnID = turn.ID
+				targetItemID = item.ID
+			}
+		}
+	}
+	if targetItemID == "" {
+		t.Fatalf("fork target not found in resumed thread: %+v", resumed.Thread.Turns)
+	}
+
+	forkPayload, err := json.Marshal(map[string]any{
+		"id":     "fork-with-tool-ledger",
+		"method": MethodThreadFork,
+		"params": ThreadForkParams{
+			ThreadID: sess.ID,
+			TurnID:   targetTurnID,
+			ItemID:   targetItemID,
+			Mode:     "local",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal fork request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), forkPayload); err != nil {
+		t.Fatalf("thread/fork: %v", err)
+	}
+	forkResponse := responseByID(t, parseOutput(t, out.String()), "fork-with-tool-ledger")
+	if forkResponse["error"] != nil {
+		t.Fatalf("thread/fork returned error: %+v", forkResponse["error"])
+	}
+	fork := remarshal[ThreadForkResult](t, forkResponse["result"]).Thread
+	forkHistory, err := loadChatMessages(rt.SessionDir, fork.ID)
+	if err != nil {
+		t.Fatalf("load fork history: %v", err)
+	}
+	for _, message := range forkHistory {
+		if message.ToolInvocationID != "" {
+			t.Fatalf("fork retained source tool invocation ownership: %+v", forkHistory)
+		}
+	}
+}
+
 func TestServerThreadForkToWorktree(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{

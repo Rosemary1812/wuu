@@ -318,7 +318,9 @@ describe("createConversationHistoryActions", () => {
     const pending = { sourceThread: source, turnID: "turn-1", itemID: "item-1" };
     const harness = buildActions({ pendingFork: pending });
 
-    await harness.actions.choosePendingFork("worktree");
+    await expect(harness.actions.choosePendingFork("worktree")).rejects.toThrow(
+      "当前工作目录不是 git 仓库，不能创建 git worktree",
+    );
 
     expect(api.gitStatus).toHaveBeenCalled();
     expect(api.forkThread).not.toHaveBeenCalled();

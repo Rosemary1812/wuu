@@ -308,4 +308,27 @@ describe("ConversationForkDialog", () => {
       await Promise.resolve();
     });
   });
+
+  it("shows a fork error and restores the dialog actions", async () => {
+    const onChoose = vi.fn(() => Promise.reject(new Error("fork failed")));
+
+    mount(
+      createElement(ConversationForkDialog, {
+        onCancel: () => undefined,
+        onChoose,
+      }),
+    );
+
+    await act(async () => {
+      buttonByLabel("派生到本地").click();
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+      "fork failed",
+    );
+    expect(buttonByLabel("派生到本地").disabled).toBe(false);
+    expect(buttonByLabel("派生到 git worktree").disabled).toBe(false);
+    expect(buttonByLabel("取消").disabled).toBe(false);
+  });
 });

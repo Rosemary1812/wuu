@@ -13,7 +13,7 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 	targetTurnID = strings.TrimSpace(targetTurnID)
 	targetItemID = strings.TrimSpace(targetItemID)
 	if targetTurnID == "" && targetItemID == "" {
-		return cloneHistory(history), nil
+		return cloneForkHistory(history), nil
 	}
 
 	var currentTurnID string
@@ -51,7 +51,7 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 		if index >= len(history) {
 			index = len(history) - 1
 		}
-		return cloneHistory(history[:index+1])
+		return cloneForkHistory(history[:index+1])
 	}
 
 	for i, msg := range history {
@@ -140,6 +140,17 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 		return returnPrefix(targetTurnLastIndex), nil
 	}
 	return nil, fmt.Errorf("fork target not found")
+}
+
+func cloneForkHistory(history []providers.ChatMessage) []providers.ChatMessage {
+	cloned := cloneHistory(history)
+	for i := range cloned {
+		// Tool invocation ids address the execution ledger owned by the source
+		// thread. The semantic tool call/result history is safe to copy, but the
+		// source ledger address must not be projected into the new fork owner.
+		cloned[i].ToolInvocationID = ""
+	}
+	return cloned
 }
 
 type forkToolBatch struct {

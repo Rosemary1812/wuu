@@ -20,8 +20,8 @@ func TestForkHistoryAtToolCallTargetKeepsWholeToolBatch(t *testing.T) {
 				{ID: "call_grep", Name: "bash", Arguments: `{"command":"grep -n composer desktop/src/renderer/styles/composer.css"}`},
 			},
 		},
-		{Role: "tool", ToolCallID: "call_read", Name: "read_file", Content: "sidebar css"},
-		{Role: "tool", ToolCallID: "call_grep", Name: "bash", Content: "composer css"},
+		{Role: "tool", ToolCallID: "call_read", ToolInvocationID: "invocation_read", Name: "read_file", Content: "sidebar css"},
+		{Role: "tool", ToolCallID: "call_grep", ToolInvocationID: "invocation_grep", Name: "bash", Content: "composer css"},
 		{
 			Role:    "assistant",
 			Content: "Use the same bottom padding.",
@@ -51,6 +51,9 @@ func TestForkHistoryAtToolCallTargetKeepsWholeToolBatch(t *testing.T) {
 	}
 	if visible[3].Role != "tool" || visible[3].ToolCallID != "call_grep" {
 		t.Fatalf("expected second tool result, got %+v", visible[3])
+	}
+	if visible[2].ToolInvocationID != "" || visible[3].ToolInvocationID != "" {
+		t.Fatalf("fork must not retain source tool invocation ownership: %+v", visible)
 	}
 }
 

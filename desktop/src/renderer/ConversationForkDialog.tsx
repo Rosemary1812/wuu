@@ -1,6 +1,7 @@
 import { GitBranch, GitFork, Laptop } from "lucide-react";
 import { useState } from "react";
 import { Modal } from "./Modal";
+import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { useI18n } from "./i18n";
 
 export type ForkMode = "local" | "worktree";
@@ -54,15 +55,19 @@ export function ConversationForkDialog({
   // while one is submitting — when the IPC returns, the caller closes
   // the dialog, which remounts this component.
   const [busyMode, setBusyMode] = useState<ForkMode | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const disabled = busyMode !== null;
 
   async function handleChoose(mode: ForkMode): Promise<void> {
     if (busyMode !== null) {
       return;
     }
+    setErrorMessage(undefined);
     setBusyMode(mode);
     try {
       await onChoose(mode);
+    } catch (error) {
+      setErrorMessage(desktopApiErrorMessage(error, t("thread.forkFailed")));
     } finally {
       // The caller is expected to close the dialog on success, so the
       // setter is only meaningful if the promise resolves inside this
@@ -123,6 +128,11 @@ export function ConversationForkDialog({
           );
         })}
       </div>
+      {errorMessage ? (
+        <div className="environment-dialog-error" role="alert">
+          {errorMessage}
+        </div>
+      ) : null}
       <p className="fork-dialog-note">
         {t("fork.note")}
       </p>
