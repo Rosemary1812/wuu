@@ -61,6 +61,7 @@ type threadState struct {
 	WorktreePath     string
 	WorktreeBaseHEAD string
 	WorktreeBaseRepo string
+	WorkspaceID      string
 	PinnedAt         *time.Time
 	ArchivedAt       *time.Time
 	Turns            []Turn

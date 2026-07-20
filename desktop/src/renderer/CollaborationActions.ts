@@ -1,17 +1,11 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { RuntimeContext, Thread } from "../shared/protocol";
+import type { Dispatch, SetStateAction } from "react";
+import type { Thread } from "../shared/protocol";
 import {
   activeThreadForState,
   createSkillsSessionTab,
-  createThreadSessionTab,
   ensureSessionTab,
   initialSplitComposerDrafts,
-  isThreadRunning,
   persistActiveSessionTabDraft,
-  sameRuntimeContext,
-  sessionTabDraftForThread,
-  threadSessionTabID,
-  upsertThread,
   type AppState,
   type ComposerDraftState,
 } from "./AppState";
@@ -35,9 +29,7 @@ export type CollaborationActionsDeps = {
   setPrompt: Dispatch<SetStateAction<string>>;
   setComposerImages: Dispatch<SetStateAction<ComposerImage[]>>;
   setComposerFiles: Dispatch<SetStateAction<ComposerFile[]>>;
-  
   cancelViewSwitch: () => void;
-  activateThread: (threadID: string) => Promise<void>;
   setContextCompositionEntries: Dispatch<
     SetStateAction<ContextCompositionEntry[]>
   >;
@@ -45,9 +37,7 @@ export type CollaborationActionsDeps = {
     SetStateAction<InstructionFilesEntry[]>
   >;
   scheduleStreamScroll: () => void;
-  openingCollaborationRef: MutableRefObject<boolean>;
-  getCollaborationThreadID: () => string | undefined;
-  setCollaborationThreadID: (threadID: string) => void;
+  setKanbanViewMode: (mode: "message" | "board") => void;
   closeProjectMenus: () => void;
   setSettingsMemoryFocusID: (participantID: string | undefined) => void;
   setSettingsInitialPage: (page: SettingsPage) => void;
@@ -60,7 +50,7 @@ export type CollaborationActions = {
   dismissInstructionFilesEntry: (id: string) => void;
   openInstructions: () => void;
   openContextComposition: () => void;
-  openCollaborationIntake: () => Promise<void>;
+  openCollaborationIntake: () => void;
   openMemorySettings: (participantID?: string) => void;
 };
 
@@ -212,50 +202,9 @@ export function createCollaborationActions(
     })();
   }
 
-  async function openCollaborationIntake(): Promise<void> {
-    const currentState = deps.getAppState();
-    if (!currentState.activeContext || !currentState.initialized) {
-      return;
-    }
-    if (deps.openingCollaborationRef.current) {
-      return;
-    }
-    deps.openingCollaborationRef.current = true;
-    try {
-      const existingThreadID = deps.getCollaborationThreadID();
-      if (existingThreadID) {
-        try {
-          await deps.activateThread(existingThreadID);
-          return;
-        } catch {
-          // The remembered thread may have been deleted outside this view.
-        }
-      }
-      resetComposerForThreadActivation();
-      try {
-        const { thread } = await window.wuu.startThread({ collaboration: true });
-        if (
-          !sameRuntimeContext(
-            deps.getAppState().activeContext,
-            currentState.activeContext,
-          )
-        ) {
-          return;
-        }
-        deps.setCollaborationThreadID(thread.id);
-        selectFreshThread(thread, deps.getAppState().activeContext);
-      } catch (error) {
-        deps.setAppState((current) => ({
-          ...current,
-          status:
-            error instanceof Error
-              ? error.message
-              : translateCurrent("collaboration.intakeCreateFailed"),
-        }));
-      }
-    } finally {
-      deps.openingCollaborationRef.current = false;
-    }
+  function openCollaborationIntake(): void {
+    deps.closeProjectMenus();
+    deps.setKanbanViewMode("board");
   }
 
   function openMemorySettings(participantID?: string): void {
@@ -263,46 +212,6 @@ export function createCollaborationActions(
     deps.setSettingsMemoryFocusID(participantID);
     deps.setSettingsInitialPage("memory");
     deps.setSettingsOpen(true);
-  }
-
-  function resetComposerForThreadActivation(): void {
-    deps.cancelViewSwitch();
-    
-    deps.setPrompt("");
-    deps.setComposerImages([]);
-    deps.setComposerFiles([]);
-  }
-
-  function selectFreshThread(
-    thread: Thread,
-    activeContext: RuntimeContext | undefined,
-  ): void {
-    if (!activeContext) {
-      return;
-    }
-    const targetDraft = sessionTabDraftForThread(deps.getAppState(), thread.id);
-    deps.setSplitComposerDrafts(initialSplitComposerDrafts());
-    deps.setAppState((current) => {
-      const withDraft = persistActiveSessionTabDraft(
-        current,
-        deps.getPrimaryComposerDraft(),
-      );
-      return {
-        ...withDraft,
-        thread,
-        secondaryThread: undefined,
-        activePane: "primary",
-        allowThreadAutoActivation: true,
-        sessionTabs: ensureSessionTab(
-          withDraft.sessionTabs,
-          createThreadSessionTab(thread, activeContext, targetDraft),
-        ),
-        activeSessionTabID: threadSessionTabID(thread.id),
-        threads: upsertThread(current.threads, thread),
-        running: isThreadRunning(thread),
-        status: "ready",
-      };
-    });
   }
 
   return {

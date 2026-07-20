@@ -921,6 +921,8 @@ func migrateSchema(db *sql.DB) error {
 		// projection. parent_id nests decomposition subtasks.
 		`CREATE TABLE IF NOT EXISTS kanban_tasks (
 			id               TEXT PRIMARY KEY,
+			space_id         TEXT NOT NULL DEFAULT '',
+			workspace_id     TEXT NOT NULL DEFAULT '',
 			session_id       TEXT NOT NULL,
 			parent_id        TEXT NOT NULL DEFAULT '',
 			title            TEXT NOT NULL,
@@ -933,6 +935,7 @@ func migrateSchema(db *sql.DB) error {
 			created_at       INTEGER NOT NULL,
 			updated_at       INTEGER NOT NULL
 		)`,
+		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_space ON kanban_tasks(space_id, status, sort_index)`,
 		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_session ON kanban_tasks(session_id, status, sort_index)`,
 		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_parent ON kanban_tasks(parent_id, sort_index)`,
 		// kanban_runs binds a task to one concrete named-agent execution.
@@ -942,6 +945,8 @@ func migrateSchema(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS kanban_runs (
 			id            TEXT PRIMARY KEY,
 			task_id       TEXT NOT NULL,
+			space_id      TEXT NOT NULL DEFAULT '',
+			workspace_id  TEXT NOT NULL DEFAULT '',
 			session_id    TEXT NOT NULL,
 			kind          TEXT NOT NULL,
 			target_id     TEXT NOT NULL,
@@ -966,6 +971,8 @@ func migrateSchema(db *sql.DB) error {
 			id           TEXT PRIMARY KEY,
 			run_id       TEXT NOT NULL,
 			task_id      TEXT NOT NULL,
+			space_id     TEXT NOT NULL DEFAULT '',
+			workspace_id TEXT NOT NULL DEFAULT '',
 			session_id   TEXT NOT NULL,
 			path         TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
@@ -1171,6 +1178,35 @@ func migrateSchema(db *sql.DB) error {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("migrate sessions database: %w", err)
 		}
+	}
+	// Kanban schema migration: add collaboration-space scoping and optional
+	// workspace binding, then backfill existing rows into the global space.
+	if err := addColumnIfMissing(db, "kanban_tasks", "space_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "kanban_tasks", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "kanban_runs", "space_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "kanban_runs", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "kanban_artifacts", "space_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "kanban_artifacts", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE kanban_tasks SET space_id = 'global' WHERE space_id = ''`); err != nil {
+		return fmt.Errorf("migrate kanban tasks to global space: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE kanban_runs SET space_id = 'global' WHERE space_id = ''`); err != nil {
+		return fmt.Errorf("migrate kanban runs to global space: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE kanban_artifacts SET space_id = 'global' WHERE space_id = ''`); err != nil {
+		return fmt.Errorf("migrate kanban artifacts to global space: %w", err)
 	}
 	if err := addColumnIfMissing(db, "inference_operations", "workflow_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err

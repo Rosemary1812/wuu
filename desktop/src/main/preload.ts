@@ -311,8 +311,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:participant-reset", participantId, scope),
   retireParticipant: (participantId) =>
     ipcRenderer.invoke("wuu:participant-retire", participantId),
-  kanbanListTasks: (sessionId, parentId) =>
-    ipcRenderer.invoke("wuu:kanban-list-tasks", { session_id: sessionId, parent_id: parentId }),
+  kanbanListTasks: (spaceId, parentId) =>
+    ipcRenderer.invoke("wuu:kanban-list-tasks", { space_id: spaceId, parent_id: parentId }),
   kanbanCreateTask: (params) =>
     ipcRenderer.invoke("wuu:kanban-create-task", params),
   kanbanTransitionTask: (taskId, status) =>

@@ -252,11 +252,7 @@ func slimMobileChatTurn(raw json.RawMessage) (json.RawMessage, bool) {
 }
 
 func isMobileChatThread(raw json.RawMessage) bool {
-	var thread map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &thread); err != nil {
-		return true
-	}
-	return strings.TrimSpace(jsonString(thread["source"])) == appserver.ThreadSourceCollaboration
+	return false
 }
 
 func isMobileChatItem(raw json.RawMessage) bool {

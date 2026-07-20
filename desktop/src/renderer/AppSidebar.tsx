@@ -264,7 +264,7 @@ export function AppSidebar({
   sectionOrder,
   onStartNewThread,
   onOpenSkillsTab,
-  collaborationActive = false,
+  kanbanBoardVisible = false,
   onOpenCollaboration = () => {},
   onToggleConversationSearch,
   onSeedConversationFixture,
@@ -313,7 +313,7 @@ export function AppSidebar({
   sectionOrder: string[];
   onStartNewThread: () => void;
   onOpenSkillsTab: () => void;
-  collaborationActive?: boolean;
+  kanbanBoardVisible?: boolean;
   onOpenCollaboration?: () => void;
   onToggleConversationSearch: () => void;
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
@@ -453,9 +453,9 @@ export function AppSidebar({
             <span>{t("skills.sectionSkills")}</span>
           </button>
           <button
-            className={`nav-item collaboration-nav-item${collaborationActive ? " active" : ""}`}
+            className={`nav-item collaboration-nav-item${kanbanBoardVisible ? " active" : ""}`}
             type="button"
-            aria-current={collaborationActive ? "page" : undefined}
+            aria-current={kanbanBoardVisible ? "page" : undefined}
             onClick={onOpenCollaboration}
             disabled={!hasRuntimeContext}
           >

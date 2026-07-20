@@ -8,7 +8,6 @@ import type {
 import {
   initialSplitComposerDrafts,
   initialState,
-  threadSessionTabID,
   type AppState,
   type ComposerDraftState,
 } from "./AppState";
@@ -118,10 +117,8 @@ function buildActions({
     thread: thread(),
     status: "ready",
   },
-  initialCollaborationThreadID,
 }: {
   initial?: AppState;
-  initialCollaborationThreadID?: string;
 } = {}) {
   let appState = initial;
   let splitDrafts = initialSplitComposerDrafts();
@@ -149,11 +146,9 @@ function buildActions({
     files: [],
   };
   const cancelViewSwitch = vi.fn();
-  const activateThread = vi.fn().mockResolvedValue(undefined);
   const scheduleStreamScroll = vi.fn();
   const closeProjectMenus = vi.fn();
-  const openingCollaborationRef = { current: false };
-  let collaborationThreadID = initialCollaborationThreadID;
+  let kanbanViewMode: "message" | "board" = "message";
   const actions = createCollaborationActions({
     getAppState: () => appState,
     setAppState: (update) => {
@@ -176,9 +171,7 @@ function buildActions({
       composerFiles =
         typeof update === "function" ? update(composerFiles) : update;
     },
-    
     cancelViewSwitch,
-    activateThread,
     setContextCompositionEntries: (update) => {
       contextCompositionEntries =
         typeof update === "function"
@@ -190,10 +183,8 @@ function buildActions({
         typeof update === "function" ? update(instructionFilesEntries) : update;
     },
     scheduleStreamScroll,
-    openingCollaborationRef,
-    getCollaborationThreadID: () => collaborationThreadID,
-    setCollaborationThreadID: (threadID) => {
-      collaborationThreadID = threadID;
+    setKanbanViewMode: (mode) => {
+      kanbanViewMode = mode;
     },
     closeProjectMenus,
     setSettingsMemoryFocusID: (participantID) => {
@@ -223,10 +214,8 @@ function buildActions({
       settingsOpen,
     }),
     cancelViewSwitch,
-    activateThread,
     scheduleStreamScroll,
-    openingCollaborationRef,
-    getCollaborationThreadID: () => collaborationThreadID,
+    getKanbanViewMode: () => kanbanViewMode,
     closeProjectMenus,
   };
 }
@@ -307,40 +296,14 @@ describe("createCollaborationActions", () => {
     });
   });
 
-  it("starts the global collaboration intake as a collaboration thread", async () => {
-    const created = thread("collaboration", { status: "in_progress" });
-    const api = installWuuApi(created);
+  it("opens the global kanban board", () => {
+    installWuuApi();
     const harness = buildActions();
 
-    await harness.actions.openCollaborationIntake();
+    harness.actions.openCollaborationIntake();
 
-    expect(api.startThread).toHaveBeenCalledWith({ collaboration: true });
-    expect(harness.cancelViewSwitch).toHaveBeenCalled();
-    expect(harness.getComposerState()).toMatchObject({
-      prompt: "",
-      composerImages: [],
-      composerFiles: [],
-    });
-    expect(harness.getAppState().thread?.id).toBe("collaboration");
-    expect(harness.getAppState().activePane).toBe("primary");
-    expect(harness.getAppState().activeSessionTabID).toBe(
-      threadSessionTabID("collaboration"),
-    );
-    expect(harness.getAppState().running).toBe(true);
-    expect(harness.openingCollaborationRef.current).toBe(false);
-    expect(harness.getCollaborationThreadID()).toBe("collaboration");
-  });
-
-  it("reuses the collaboration intake thread", async () => {
-    const api = installWuuApi();
-    const harness = buildActions({
-      initialCollaborationThreadID: "collaboration",
-    });
-
-    await harness.actions.openCollaborationIntake();
-
-    expect(harness.activateThread).toHaveBeenCalledWith("collaboration");
-    expect(api.startThread).not.toHaveBeenCalled();
+    expect(harness.closeProjectMenus).toHaveBeenCalled();
+    expect(harness.getKanbanViewMode()).toBe("board");
   });
 
 });

@@ -45,57 +45,22 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if params.Collaboration && params.Ephemeral {
-		return s.writeResponse(req.ID, nil, errors.New("collaboration thread cannot be ephemeral"))
-	}
-	if params.Collaboration {
-		sessions, err := session.List(s.rt.SessionDir, 0)
-		if err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
-		for _, metadata := range sessions {
-			if metadata.Source != ThreadSourceCollaboration || metadata.ArchivedAt != nil {
-				continue
-			}
-			thread, err := s.threadAfterMetadataUpdate(metadata)
-			if err != nil {
-				return s.writeResponse(req.ID, nil, err)
-			}
-			s.pruneCachedThreads(thread.ID)
-			return s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil)
-		}
-	}
 	id := session.NewID()
 	persistHistory := !params.Ephemeral
 	threadCWD := s.rt.RootDir
 	workspaceKind := workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	threadSource := ""
-	if params.Collaboration {
-		threadSource = ThreadSourceCollaboration
-		if strings.TrimSpace(s.rt.WuuHome) != "" {
-			threadCWD = filepath.Join(s.rt.WuuHome, "scratch", ThreadSourceCollaboration)
-			if err := os.MkdirAll(threadCWD, 0o700); err != nil {
-				return s.writeResponse(req.ID, nil, fmt.Errorf("create collaboration workspace: %w", err))
-			}
-		}
-		workspaceKind = WorkspaceKindScratch
-	}
 	if !params.Ephemeral {
 		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 			return s.writeResponse(req.ID, nil, err)
-		}
-		if threadSource != "" {
-			if _, err := session.SetSource(s.rt.SessionDir, id, threadSource); err != nil {
-				return s.writeResponse(req.ID, nil, err)
-			}
 		}
 		if _, err := session.SetRuntimeSelection(s.rt.SessionDir, id, s.currentSessionRuntimeSelection()); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 		// Bind project threads to the active workspace's stable id so their
-		// state and listing survive the project moving. Global collaboration
-		// and scratch threads carry no project id.
-		if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" && threadSource == "" {
+		// state and listing survive the project moving. Scratch threads carry
+		// no project id.
+		if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" {
 			if _, err := session.SetWorkspaceID(s.rt.SessionDir, id, wsID); err != nil {
 				return s.writeResponse(req.ID, nil, err)
 			}
@@ -640,15 +605,6 @@ func (s *Server) handleThreadList(req Request) error {
 		}
 		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
 	}
-	allSessions, err := session.List(s.rt.SessionDir, 0)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	for _, sess := range allSessions {
-		if sess.ArchivedAt == nil && strings.TrimSpace(sess.Source) == ThreadSourceCollaboration {
-			entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
-		}
-	}
 
 	s.mu.Lock()
 	for _, th := range s.threads {
@@ -666,7 +622,7 @@ func (s *Server) handleThreadList(req Request) error {
 			delete(entries, thread.ID)
 			continue
 		}
-		if thread.Source == ThreadSourceCollaboration || sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) {
+		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) {
 			entries[thread.ID] = entry
 		}
 	}
@@ -875,6 +831,7 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.WorktreePath = metadata.WorktreePath
 	th.WorktreeBaseHEAD = metadata.WorktreeBaseHEAD
 	th.WorktreeBaseRepo = metadata.WorktreeBaseRepo
+	th.WorkspaceID = metadata.WorkspaceID
 	th.PinnedAt = metadata.PinnedAt
 	th.ArchivedAt = metadata.ArchivedAt
 }

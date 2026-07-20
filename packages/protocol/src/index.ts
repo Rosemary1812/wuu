@@ -1069,12 +1069,12 @@ export type KanbanArtifact = {
 };
 
 export type KanbanListTasksParams = {
-  session_id: string;
+  space_id: string;
   parent_id?: string;
 };
 
 export type KanbanCreateTaskParams = {
-  session_id: string;
+  space_id: string;
   title: string;
   brief?: string;
   parent_id?: string;
@@ -1107,7 +1107,6 @@ export type KanbanListArtifactsParams = {
 
 export type KanbanCrystallizeParams = {
   thread_id: string;
-  session_id: string;
   created_by?: string;
 };
 
@@ -2177,7 +2176,7 @@ export type WuuDesktopApi = {
   retireParticipant: (participantId: string) => Promise<ParticipantRetireResult>;
   // Kanban board (multi-agent task board).
   kanbanListTasks: (
-    sessionId: string,
+    spaceId: string,
     parentId?: string,
   ) => Promise<KanbanTask[]>;
   kanbanCreateTask: (

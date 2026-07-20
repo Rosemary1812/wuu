@@ -64,22 +64,8 @@ func TestFilterMobileChatLineSlimsThreadListResponse(t *testing.T) {
 	if err := json.Unmarshal(got, &env); err != nil {
 		t.Fatalf("decode filtered line: %v\n%s", err, got)
 	}
-	if len(env.Result.Threads) != 1 {
-		t.Fatalf("expected only collaboration threads, got %+v", env.Result.Threads)
-	}
-	thread := env.Result.Threads[0]
-	if thread.ID != "collaboration" {
-		t.Fatalf("first thread = %q, want collaboration", thread.ID)
-	}
-	if len(thread.ChildAgents) != 0 || len(thread.Browser) != 0 {
-		t.Fatalf("desktop-only thread fields were not removed: child=%s browser=%s", thread.ChildAgents, thread.Browser)
-	}
-	items := thread.Turns[0].Items
-	if gotTypes := itemTypes(items); gotTypes != "user_message,agent_message" {
-		t.Fatalf("unexpected visible item types: %s", gotTypes)
-	}
-	if len(items) != 2 {
-		t.Fatalf("expected collaboration intake messages only: %+v", items)
+	if len(env.Result.Threads) != 0 {
+		t.Fatalf("expected no mobile chat threads after collaboration removal, got %+v", env.Result.Threads)
 	}
 }
 

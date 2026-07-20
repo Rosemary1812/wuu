@@ -17,10 +17,14 @@ func newKanbanID(prefix string) string { return prefix + NewID() }
 
 // CreateKanbanTask inserts a task. Initial status must be draft or ready.
 func CreateKanbanTask(sessDir string, task kanban.Task) (kanban.Task, error) {
-	task.SessionID = strings.TrimSpace(task.SessionID)
+	task.SpaceID = strings.TrimSpace(task.SpaceID)
+	task.WorkspaceID = strings.TrimSpace(task.WorkspaceID)
+	if task.SpaceID == "" {
+		task.SpaceID = "global"
+	}
 	task.Title = strings.TrimSpace(task.Title)
-	if task.SessionID == "" || task.Title == "" {
-		return kanban.Task{}, errors.New("session_id and title are required")
+	if task.SpaceID == "" || task.Title == "" {
+		return kanban.Task{}, errors.New("space_id and title are required")
 	}
 	if task.Status == "" {
 		task.Status = kanban.TaskStatusDraft
@@ -45,11 +49,11 @@ func CreateKanbanTask(sessDir string, task kanban.Task) (kanban.Task, error) {
 	task.UpdatedAt = now
 	_, err = db.Exec(`
 INSERT INTO kanban_tasks (
- id, session_id, parent_id, title, brief, status, source_thread_id,
+ id, space_id, workspace_id, session_id, parent_id, title, brief, status, source_thread_id,
  created_by, sort_index, latest_run_id, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)`,
-		task.ID, task.SessionID, task.ParentID, task.Title, task.Brief, task.Status,
-		task.SourceThreadID, task.CreatedBy, task.SortIndex, now.UnixMilli(), now.UnixMilli())
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		task.ID, task.SpaceID, task.WorkspaceID, "", task.ParentID, task.Title, task.Brief, task.Status,
+		task.SourceThreadID, task.CreatedBy, task.SortIndex, task.LatestRunID, now.UnixMilli(), now.UnixMilli())
 	if err != nil {
 		return kanban.Task{}, fmt.Errorf("insert kanban task: %w", err)
 	}
@@ -59,7 +63,7 @@ INSERT INTO kanban_tasks (
 func scanKanbanTask(row interface{ Scan(...any) error }) (kanban.Task, error) {
 	var t kanban.Task
 	var createdMS, updatedMS int64
-	err := row.Scan(&t.ID, &t.SessionID, &t.ParentID, &t.Title, &t.Brief, &t.Status,
+	err := row.Scan(&t.ID, &t.SpaceID, &t.WorkspaceID, &t.ParentID, &t.Title, &t.Brief, &t.Status,
 		&t.SourceThreadID, &t.CreatedBy, &t.SortIndex, &t.LatestRunID, &createdMS, &updatedMS)
 	if err != nil {
 		return kanban.Task{}, err
@@ -69,7 +73,7 @@ func scanKanbanTask(row interface{ Scan(...any) error }) (kanban.Task, error) {
 	return t, nil
 }
 
-const kanbanTaskColumns = `id, session_id, parent_id, title, brief, status, source_thread_id, created_by, sort_index, latest_run_id, created_at, updated_at`
+const kanbanTaskColumns = `id, space_id, workspace_id, parent_id, title, brief, status, source_thread_id, created_by, sort_index, latest_run_id, created_at, updated_at`
 
 // GetKanbanTask loads one task by id.
 func GetKanbanTask(sessDir, taskID string) (kanban.Task, error) {
@@ -85,16 +89,16 @@ func GetKanbanTask(sessDir, taskID string) (kanban.Task, error) {
 	return t, err
 }
 
-// ListKanbanTasks lists a session's tasks, ordered for board projection.
+// ListKanbanTasks lists a space's tasks, ordered for board projection.
 // parentID empty lists root tasks; pass a task id to list its subtasks.
-func ListKanbanTasks(sessDir, sessionID, parentID string) ([]kanban.Task, error) {
+func ListKanbanTasks(sessDir, spaceID, parentID string) ([]kanban.Task, error) {
 	db, err := openStore(sessDir)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.Query(`SELECT `+kanbanTaskColumns+` FROM kanban_tasks
-WHERE session_id = ? AND parent_id = ? ORDER BY sort_index, created_at`, sessionID, parentID)
+WHERE space_id = ? AND parent_id = ? ORDER BY sort_index, created_at`, spaceID, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,16 +114,16 @@ WHERE session_id = ? AND parent_id = ? ORDER BY sort_index, created_at`, session
 	return out, rows.Err()
 }
 
-// ListAllKanbanTasks lists every task in a session regardless of nesting,
+// ListAllKanbanTasks lists every task in a space regardless of nesting,
 // ordered by sort_index then creation — the auto-dispatch scan order.
-func ListAllKanbanTasks(sessDir, sessionID string) ([]kanban.Task, error) {
+func ListAllKanbanTasks(sessDir, spaceID string) ([]kanban.Task, error) {
 	db, err := openStore(sessDir)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.Query(`SELECT `+kanbanTaskColumns+` FROM kanban_tasks
-WHERE session_id = ? ORDER BY sort_index, created_at`, sessionID)
+WHERE space_id = ? ORDER BY sort_index, created_at`, spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +178,7 @@ func TransitionKanbanTaskStatus(sessDir, taskID, to string) (kanban.Task, error)
 func scanKanbanRun(row interface{ Scan(...any) error }) (kanban.Run, error) {
 	var r kanban.Run
 	var createdMS, startedMS, finishedMS int64
-	err := row.Scan(&r.ID, &r.TaskID, &r.SessionID, &r.Kind, &r.TargetID, &r.ThreadID,
+	err := row.Scan(&r.ID, &r.TaskID, &r.SpaceID, &r.WorkspaceID, &r.Kind, &r.TargetID, &r.ThreadID,
 		&r.HostThreadID, &r.Status, &r.Summary, &r.ErrorMessage, &r.CreatedBy, &createdMS, &startedMS, &finishedMS)
 	if err != nil {
 		return kanban.Run{}, err
@@ -185,7 +189,7 @@ func scanKanbanRun(row interface{ Scan(...any) error }) (kanban.Run, error) {
 	return r, nil
 }
 
-const kanbanRunColumns = `id, task_id, session_id, kind, target_id, thread_id, host_thread_id, status, summary, error_message, created_by, created_at, started_at, finished_at`
+const kanbanRunColumns = `id, task_id, space_id, workspace_id, kind, target_id, thread_id, host_thread_id, status, summary, error_message, created_by, created_at, started_at, finished_at`
 
 // CreateKanbanRun is the dispatch action: it binds a task to a target
 // participant as a queued run and moves the task to running in one
@@ -251,16 +255,17 @@ func CreateKanbanRun(sessDir string, run kanban.Run) (kanban.Run, error) {
 
 	now := time.Now().UTC()
 	run.ID = newKanbanID("kr-")
-	run.SessionID = task.SessionID
+	run.SpaceID = task.SpaceID
+	run.WorkspaceID = task.WorkspaceID
 	run.Status = kanban.RunStatusQueued
 	run.ThreadID = ""
 	run.CreatedAt = now
 	_, err = tx.Exec(`
 INSERT INTO kanban_runs (
- id, task_id, session_id, kind, target_id, thread_id, host_thread_id, status, summary,
+ id, task_id, space_id, workspace_id, session_id, kind, target_id, thread_id, host_thread_id, status, summary,
  error_message, created_by, created_at, started_at, finished_at
-) VALUES (?, ?, ?, ?, ?, '', ?, ?, '', '', ?, ?, 0, 0)`,
-		run.ID, run.TaskID, run.SessionID, run.Kind, run.TargetID, run.HostThreadID, run.Status,
+) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, '', '', ?, ?, 0, 0)`,
+		run.ID, run.TaskID, run.SpaceID, run.WorkspaceID, "", run.Kind, run.TargetID, run.HostThreadID, run.Status,
 		run.CreatedBy, now.UnixMilli())
 	if err != nil {
 		if strings.Contains(err.Error(), "idx_kanban_runs_active_target") {
@@ -429,11 +434,14 @@ func AddKanbanArtifact(sessDir string, artifact kanban.Artifact) (kanban.Artifac
 	now := time.Now().UTC()
 	artifact.ID = newKanbanID("ka-")
 	artifact.CreatedAt = now
+	if artifact.SpaceID == "" {
+		artifact.SpaceID = "global"
+	}
 	_, err = db.Exec(`
 INSERT INTO kanban_artifacts (
- id, run_id, task_id, session_id, path, display_name, media_type, size_bytes, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		artifact.ID, artifact.RunID, artifact.TaskID, artifact.SessionID, artifact.Path,
+ id, run_id, task_id, space_id, workspace_id, session_id, path, display_name, media_type, size_bytes, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		artifact.ID, artifact.RunID, artifact.TaskID, artifact.SpaceID, artifact.WorkspaceID, "", artifact.Path,
 		artifact.DisplayName, artifact.MediaType, artifact.SizeBytes, now.UnixMilli())
 	if err != nil {
 		return kanban.Artifact{}, fmt.Errorf("insert kanban artifact: %w", err)
@@ -449,7 +457,7 @@ func ListKanbanArtifacts(sessDir, taskID string) ([]kanban.Artifact, error) {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT id, run_id, task_id, session_id, path, display_name, media_type, size_bytes, created_at
+	rows, err := db.Query(`SELECT id, run_id, task_id, space_id, workspace_id, path, display_name, media_type, size_bytes, created_at
 FROM kanban_artifacts WHERE task_id = ? ORDER BY created_at`, taskID)
 	if err != nil {
 		return nil, err
@@ -459,7 +467,7 @@ FROM kanban_artifacts WHERE task_id = ? ORDER BY created_at`, taskID)
 	for rows.Next() {
 		var a kanban.Artifact
 		var createdMS int64
-		if err := rows.Scan(&a.ID, &a.RunID, &a.TaskID, &a.SessionID, &a.Path, &a.DisplayName, &a.MediaType, &a.SizeBytes, &createdMS); err != nil {
+		if err := rows.Scan(&a.ID, &a.RunID, &a.TaskID, &a.SpaceID, &a.WorkspaceID, &a.Path, &a.DisplayName, &a.MediaType, &a.SizeBytes, &createdMS); err != nil {
 			return nil, err
 		}
 		a.CreatedAt = time.UnixMilli(createdMS).UTC()

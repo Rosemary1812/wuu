@@ -77,7 +77,7 @@ async function mountBoard(
   await act(async () => {
     root.render(
       createElement(KanbanBoardView, {
-        sessionId: "session-1",
+        spaceId: "space-1",
         refreshToken: 0,
         ...props,
       }),

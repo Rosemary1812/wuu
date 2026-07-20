@@ -32,7 +32,8 @@ import (
 
 type kanbanTaskWire struct {
 	ID             string `json:"id"`
-	SessionID      string `json:"session_id"`
+	SpaceID        string `json:"space_id"`
+	WorkspaceID    string `json:"workspace_id,omitempty"`
 	ParentID       string `json:"parent_id,omitempty"`
 	Title          string `json:"title"`
 	Brief          string `json:"brief,omitempty"`
@@ -48,7 +49,8 @@ type kanbanTaskWire struct {
 type kanbanRunWire struct {
 	ID           string `json:"id"`
 	TaskID       string `json:"task_id"`
-	SessionID    string `json:"session_id"`
+	SpaceID      string `json:"space_id"`
+	WorkspaceID  string `json:"workspace_id,omitempty"`
 	Kind         string `json:"kind"`
 	TargetID     string `json:"target_id"`
 	ThreadID     string `json:"thread_id,omitempty"`
@@ -65,6 +67,8 @@ type kanbanArtifactWire struct {
 	ID          string `json:"id"`
 	RunID       string `json:"run_id"`
 	TaskID      string `json:"task_id"`
+	SpaceID     string `json:"space_id"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
 	Path        string `json:"path"`
 	DisplayName string `json:"display_name,omitempty"`
 	MediaType   string `json:"media_type,omitempty"`
@@ -78,13 +82,13 @@ type kanbanTaskWithLatestRunWire struct {
 }
 
 type KanbanUpdatedNotification struct {
-	SessionID string `json:"session_id"`
-	TaskID    string `json:"task_id,omitempty"`
+	SpaceID string `json:"space_id"`
+	TaskID  string `json:"task_id,omitempty"`
 }
 
 func kanbanTaskToWire(t kanban.Task) kanbanTaskWire {
 	return kanbanTaskWire{
-		ID: t.ID, SessionID: t.SessionID, ParentID: t.ParentID, Title: t.Title,
+		ID: t.ID, SpaceID: t.SpaceID, WorkspaceID: t.WorkspaceID, ParentID: t.ParentID, Title: t.Title,
 		Brief: t.Brief, Status: t.Status, SourceThreadID: t.SourceThreadID,
 		CreatedBy: t.CreatedBy, SortIndex: t.SortIndex, LatestRunID: t.LatestRunID,
 		CreatedAt: t.CreatedAt.UnixMilli(), UpdatedAt: t.UpdatedAt.UnixMilli(),
@@ -93,7 +97,7 @@ func kanbanTaskToWire(t kanban.Task) kanbanTaskWire {
 
 func kanbanRunToWire(r kanban.Run) kanbanRunWire {
 	return kanbanRunWire{
-		ID: r.ID, TaskID: r.TaskID, SessionID: r.SessionID, Kind: r.Kind,
+		ID: r.ID, TaskID: r.TaskID, SpaceID: r.SpaceID, WorkspaceID: r.WorkspaceID, Kind: r.Kind,
 		TargetID: r.TargetID, ThreadID: r.ThreadID, Status: r.Status,
 		Summary: r.Summary, ErrorMessage: r.ErrorMessage, CreatedBy: r.CreatedBy,
 		CreatedAt: r.CreatedAt.UnixMilli(), StartedAt: r.StartedAt.UnixMilli(),
@@ -103,22 +107,23 @@ func kanbanRunToWire(r kanban.Run) kanbanRunWire {
 
 func kanbanArtifactToWire(a kanban.Artifact) kanbanArtifactWire {
 	return kanbanArtifactWire{
-		ID: a.ID, RunID: a.RunID, TaskID: a.TaskID, Path: a.Path,
+		ID: a.ID, RunID: a.RunID, TaskID: a.TaskID, SpaceID: a.SpaceID, WorkspaceID: a.WorkspaceID, Path: a.Path,
 		DisplayName: a.DisplayName, MediaType: a.MediaType, SizeBytes: a.SizeBytes,
 		CreatedAt: a.CreatedAt.UnixMilli(),
 	}
 }
 
-func (s *Server) notifyKanbanUpdated(sessionID, taskID string) {
+func (s *Server) notifyKanbanUpdated(spaceID, taskID string) {
 	_ = s.writeNotification(NotificationKanbanUpdated, KanbanUpdatedNotification{
-		SessionID: sessionID, TaskID: taskID,
+		SpaceID: spaceID, TaskID: taskID,
 	})
 }
 
 // ---- task CRUD ----
 
 type KanbanCreateTaskParams struct {
-	SessionID      string `json:"session_id"`
+	SpaceID        string `json:"space_id"`
+	WorkspaceID    string `json:"workspace_id,omitempty"`
 	ParentID       string `json:"parent_id,omitempty"`
 	Title          string `json:"title"`
 	Brief          string `json:"brief,omitempty"`
@@ -133,8 +138,13 @@ func (s *Server) handleKanbanCreateTask(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	spaceID := strings.TrimSpace(params.SpaceID)
+	if spaceID == "" {
+		spaceID = "global"
+	}
 	task, err := session.CreateKanbanTask(s.rt.SessionDir, kanban.Task{
-		SessionID:      params.SessionID,
+		SpaceID:        spaceID,
+		WorkspaceID:    strings.TrimSpace(params.WorkspaceID),
 		ParentID:       strings.TrimSpace(params.ParentID),
 		Title:          params.Title,
 		Brief:          params.Brief,
@@ -146,12 +156,12 @@ func (s *Server) handleKanbanCreateTask(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	s.notifyKanbanUpdated(task.SessionID, task.ID)
+	s.notifyKanbanUpdated(task.SpaceID, task.ID)
 	return s.writeResponse(req.ID, kanbanTaskToWire(task), nil)
 }
 
 type KanbanListTasksParams struct {
-	SessionID string `json:"session_id"`
+	SpaceID   string `json:"space_id"`
 	ParentID  string `json:"parent_id,omitempty"`
 }
 
@@ -160,10 +170,11 @@ func (s *Server) handleKanbanListTasks(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if strings.TrimSpace(params.SessionID) == "" {
-		return s.writeResponse(req.ID, nil, errors.New("session_id is required"))
+	spaceID := strings.TrimSpace(params.SpaceID)
+	if spaceID == "" {
+		spaceID = "global"
 	}
-	tasks, err := session.ListKanbanTasks(s.rt.SessionDir, params.SessionID, strings.TrimSpace(params.ParentID))
+	tasks, err := session.ListKanbanTasks(s.rt.SessionDir, spaceID, strings.TrimSpace(params.ParentID))
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -195,7 +206,7 @@ func (s *Server) handleKanbanTransitionTask(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	s.notifyKanbanUpdated(task.SessionID, task.ID)
+	s.notifyKanbanUpdated(task.SpaceID, task.ID)
 	return s.writeResponse(req.ID, kanbanTaskToWire(task), nil)
 }
 
@@ -285,7 +296,7 @@ func (s *Server) dispatchKanbanRun(ctx context.Context, hostThreadID, taskID, ta
 		if _, cerr := session.CompleteKanbanRun(s.rt.SessionDir, run.ID, kanban.RunStatusFailed, "", cause.Error()); cerr != nil {
 			providers.DebugLogf("complete dispatch-failed kanban run %s: %v", run.ID, cerr)
 		}
-		s.notifyKanbanUpdated(task.SessionID, task.ID)
+		s.notifyKanbanUpdated(task.SpaceID, task.ID)
 		return kanban.Run{}, cause
 	}
 
@@ -399,7 +410,7 @@ func (s *Server) dispatchKanbanRun(ctx context.Context, hostThreadID, taskID, ta
 	if err != nil {
 		providers.DebugLogf("bind kanban run %s to agent %s: %v", run.ID, spawned.AgentID, err)
 	}
-	s.notifyKanbanUpdated(task.SessionID, task.ID)
+	s.notifyKanbanUpdated(task.SpaceID, task.ID)
 	return run, nil
 }
 
@@ -465,7 +476,6 @@ func kanbanStandingInstructionsPrompt(overlay string, skills []string) string {
 // KanbanCrystallizeParams converts one intake conversation into draft tasks.
 type KanbanCrystallizeParams struct {
 	ThreadID  string `json:"thread_id"`
-	SessionID string `json:"session_id"`
 	CreatedBy string `json:"created_by,omitempty"`
 }
 
@@ -503,9 +513,8 @@ func (s *Server) handleKanbanCrystallize(ctx context.Context, req Request) error
 		return s.writeResponse(req.ID, nil, err)
 	}
 	threadID := strings.TrimSpace(params.ThreadID)
-	sessionID := strings.TrimSpace(params.SessionID)
-	if threadID == "" || sessionID == "" {
-		return s.writeResponse(req.ID, nil, errors.New("thread_id and session_id are required"))
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
 	th, err := s.ensureThreadLoaded(threadID)
 	if err != nil {
@@ -547,8 +556,9 @@ func (s *Server) handleKanbanCrystallize(ctx context.Context, req Request) error
 	}
 
 	createdBy := strings.TrimSpace(params.CreatedBy)
+	workspaceID := strings.TrimSpace(th.WorkspaceID)
 	parent, err := session.CreateKanbanTask(s.rt.SessionDir, kanban.Task{
-		SessionID: sessionID, Title: plan.Title, Brief: plan.Brief,
+		SpaceID: "global", WorkspaceID: workspaceID, Title: plan.Title, Brief: plan.Brief,
 		Status: kanban.TaskStatusDraft, SourceThreadID: threadID, CreatedBy: createdBy,
 	})
 	if err != nil {
@@ -564,7 +574,7 @@ func (s *Server) handleKanbanCrystallize(ctx context.Context, req Request) error
 			continue
 		}
 		child, err := session.CreateKanbanTask(s.rt.SessionDir, kanban.Task{
-			SessionID: sessionID, ParentID: parent.ID, Title: sub.Title, Brief: sub.Brief,
+			SpaceID: "global", WorkspaceID: workspaceID, ParentID: parent.ID, Title: sub.Title, Brief: sub.Brief,
 			Status: kanban.TaskStatusDraft, SourceThreadID: threadID, CreatedBy: createdBy,
 			SortIndex: i + 1,
 		})
@@ -578,7 +588,7 @@ func (s *Server) handleKanbanCrystallize(ctx context.Context, req Request) error
 		}
 		result.Subtasks = append(result.Subtasks, w)
 	}
-	s.notifyKanbanUpdated(sessionID, parent.ID)
+	s.notifyKanbanUpdated("global", parent.ID)
 	return s.writeResponse(req.ID, result, nil)
 }
 
@@ -750,9 +760,9 @@ func (s *Server) handleParticipantSaveManifest(req Request) error {
 const kanbanAutoDispatchActor = "auto"
 
 type KanbanAutoDispatchParams struct {
-	SessionID string `json:"session_id"`
-	ThreadID  string `json:"thread_id"`
-	TargetID  string `json:"target_id,omitempty"`
+	SpaceID    string `json:"space_id"`
+	ThreadID   string `json:"thread_id"`
+	TargetID   string `json:"target_id,omitempty"`
 }
 
 type kanbanAutoDispatchSkippedWire struct {
@@ -783,7 +793,7 @@ func (s *Server) resolveDefaultDispatchTarget() (string, error) {
 	return "", errors.New("no named agent available; create one first")
 }
 
-// kanbanAutoDispatchEligible filters a session's full task list to
+// kanbanAutoDispatchEligible filters a space's full task list to
 // dispatchable leaves, preserving scan order (sort_index, created_at). A task
 // is eligible when it is ready, has no children (parents are containers), and
 // its parent is past the draft stage.
@@ -812,11 +822,11 @@ func kanbanAutoDispatchEligible(tasks []kanban.Task) []kanban.Task {
 	return out
 }
 
-// autoDispatchKanbanTasks drains the session's eligible tasks toward one
+// autoDispatchKanbanTasks drains the space's eligible tasks toward one
 // target, serially: the busy lock admits one run, the rest are reported as
 // skipped and drained later by the autopilot completion hook.
-func (s *Server) autoDispatchKanbanTasks(ctx context.Context, sessionID, hostThreadID, targetID string) (kanbanAutoDispatchResultWire, error) {
-	tasks, err := session.ListAllKanbanTasks(s.rt.SessionDir, sessionID)
+func (s *Server) autoDispatchKanbanTasks(ctx context.Context, spaceID, hostThreadID, targetID string) (kanbanAutoDispatchResultWire, error) {
+	tasks, err := session.ListAllKanbanTasks(s.rt.SessionDir, spaceID)
 	if err != nil {
 		return kanbanAutoDispatchResultWire{}, err
 	}
@@ -852,10 +862,13 @@ func (s *Server) handleKanbanAutoDispatch(ctx context.Context, req Request) erro
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	sessionID := strings.TrimSpace(params.SessionID)
+	spaceID := strings.TrimSpace(params.SpaceID)
+	if spaceID == "" {
+		spaceID = "global"
+	}
 	hostThreadID := strings.TrimSpace(params.ThreadID)
-	if sessionID == "" || hostThreadID == "" {
-		return s.writeResponse(req.ID, nil, errors.New("session_id and thread_id are required"))
+	if hostThreadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
 	targetID := strings.TrimSpace(params.TargetID)
 	if targetID == "" {
@@ -865,7 +878,7 @@ func (s *Server) handleKanbanAutoDispatch(ctx context.Context, req Request) erro
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
-	result, err := s.autoDispatchKanbanTasks(ctx, sessionID, hostThreadID, targetID)
+	result, err := s.autoDispatchKanbanTasks(ctx, spaceID, hostThreadID, targetID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -873,15 +886,15 @@ func (s *Server) handleKanbanAutoDispatch(ctx context.Context, req Request) erro
 }
 
 // maybeAutoDispatchNextKanbanRun is the autopilot drain: after an auto-batch
-// run reaches a terminal state, offer the session's remaining ready tasks to
+// run reaches a terminal state, offer the space's remaining ready tasks to
 // the same target. Errors only log — the board already reflects the finished
 // run, and any successful follow-up dispatch emits its own kanban/updated.
 func (s *Server) maybeAutoDispatchNextKanbanRun(run kanban.Run) {
 	if run.CreatedBy != kanbanAutoDispatchActor || strings.TrimSpace(run.HostThreadID) == "" {
 		return
 	}
-	if _, err := s.autoDispatchKanbanTasks(context.Background(), run.SessionID, run.HostThreadID, run.TargetID); err != nil {
-		providers.DebugLogf("auto-dispatch drain for session %s: %v", run.SessionID, err)
+	if _, err := s.autoDispatchKanbanTasks(context.Background(), run.SpaceID, run.HostThreadID, run.TargetID); err != nil {
+		providers.DebugLogf("auto-dispatch drain for space %s: %v", run.SpaceID, err)
 	}
 }
 
@@ -892,7 +905,7 @@ func (s *Server) rollupKanbanParent(taskID string) {
 	if err != nil || task.ParentID == "" {
 		return
 	}
-	siblings, err := session.ListKanbanTasks(s.rt.SessionDir, task.SessionID, task.ParentID)
+	siblings, err := session.ListKanbanTasks(s.rt.SessionDir, task.SpaceID, task.ParentID)
 	if err != nil || len(siblings) == 0 {
 		return
 	}
@@ -912,7 +925,7 @@ func (s *Server) rollupKanbanParent(taskID string) {
 		providers.DebugLogf("rollup kanban parent %s to review: %v", parent.ID, err)
 		return
 	}
-	s.notifyKanbanUpdated(parent.SessionID, parent.ID)
+	s.notifyKanbanUpdated(parent.SpaceID, parent.ID)
 }
 
 // completeKanbanRunForAgent folds a spawned execution's terminal outcome back
@@ -945,7 +958,7 @@ func (s *Server) completeKanbanRunForAgent(participantID, agentID string, status
 		providers.DebugLogf("complete kanban run %s for agent %s: %v", run.ID, agentID, err)
 		return
 	}
-	s.notifyKanbanUpdated(run.SessionID, run.TaskID)
+	s.notifyKanbanUpdated(run.SpaceID, run.TaskID)
 	s.rollupKanbanParent(run.TaskID)
 	s.maybeAutoDispatchNextKanbanRun(completedRun)
 }
@@ -977,7 +990,7 @@ func (s *Server) collectKanbanRunArtifacts(participantID string, run kanban.Run)
 			return nil
 		}
 		if _, err := session.AddKanbanArtifact(s.rt.SessionDir, kanban.Artifact{
-			RunID: run.ID, TaskID: run.TaskID, SessionID: run.SessionID,
+			RunID: run.ID, TaskID: run.TaskID, SpaceID: run.SpaceID, WorkspaceID: run.WorkspaceID,
 			Path:        filepath.ToSlash(rel),
 			DisplayName: name,
 			MediaType:   mime.TypeByExtension(filepath.Ext(name)),

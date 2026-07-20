@@ -61,10 +61,14 @@ var (
 
 // Task is one agent-neutral unit of work. ParentID nests subtasks produced by
 // decomposition; SourceThreadID points back at the intake conversation the
-// task crystallized from (kept as a lazy reference, never inlined).
+// task crystallized from (kept as a lazy reference, never inlined). SpaceID
+// scopes the task to a collaboration space (global for the local-first app);
+// WorkspaceID optionally binds it to a project workspace when the task was
+// created from a conversation.
 type Task struct {
 	ID             string
-	SessionID      string
+	SpaceID        string
+	WorkspaceID    string
 	ParentID       string
 	Title          string
 	Brief          string
@@ -84,7 +88,8 @@ type Task struct {
 type Run struct {
 	ID           string
 	TaskID       string
-	SessionID    string
+	SpaceID      string
+	WorkspaceID  string
 	Kind         string
 	TargetID     string
 	ThreadID     string
@@ -103,7 +108,8 @@ type Artifact struct {
 	ID          string
 	RunID       string
 	TaskID      string
-	SessionID   string
+	SpaceID     string
+	WorkspaceID string
 	Path        string
 	DisplayName string
 	MediaType   string

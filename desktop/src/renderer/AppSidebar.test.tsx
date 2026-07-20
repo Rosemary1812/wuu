@@ -63,14 +63,14 @@ const sidebarProjects: DesktopProject[] = [
 ];
 
 interface RenderOptions {
-  collaborationActive?: boolean;
+  kanbanBoardVisible?: boolean;
   onOpenCollaboration?: () => void;
   sectionOrder?: string[];
   state?: AppState;
 }
 
 function renderSidebar({
-  collaborationActive = false,
+  kanbanBoardVisible = false,
   onOpenCollaboration = () => {},
   sectionOrder = [SCRATCH_PSEUDO_PROJECT_ID, "project-1", "project-2"],
   state = {
@@ -103,7 +103,7 @@ function renderSidebar({
         sectionOrder={sectionOrder}
         onStartNewThread={() => {}}
         onOpenSkillsTab={() => {}}
-        collaborationActive={collaborationActive}
+        kanbanBoardVisible={kanbanBoardVisible}
         onOpenCollaboration={onOpenCollaboration}
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
@@ -213,7 +213,7 @@ describe("AppSidebar layout", () => {
   it("keeps collaboration in the fixed primary navigation and opens it", () => {
     let opened = 0;
     renderSidebar({
-      collaborationActive: true,
+      kanbanBoardVisible: true,
       onOpenCollaboration: () => {
         opened += 1;
       },

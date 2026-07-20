@@ -167,7 +167,6 @@ import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { KanbanBoardView } from "./KanbanBoardView";
 import { KanbanCrystallizeDialog } from "./KanbanCrystallizeDialog";
-import { KanbanViewToggle } from "./KanbanViewToggle";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { useBrowserVisibility } from "./BrowserVisibility";
@@ -611,7 +610,6 @@ export function App(): JSX.Element {
   const [boardRefreshTick, setBoardRefreshTick] = useState(0);
   // In-page kanban board view toggle (message | board). Session-local only.
   const [kanbanViewMode, setKanbanViewMode] = useState<"message" | "board">("message");
-  const [collaborationThreadID, setCollaborationThreadID] = useState<string | undefined>();
   // Crystallize flow state.
   const [crystallizeOpen, setCrystallizeOpen] = useState(false);
   const [crystallizePending, setCrystallizePending] = useState(false);
@@ -769,7 +767,6 @@ export function App(): JSX.Element {
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const draftSessionTabCounterRef = useRef(0);
-  const openingCollaborationRef = useRef(false);
   const currentSessionTab = activeSessionTab(state);
 
   useEffect(() => {
@@ -855,28 +852,7 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
-  const collaborationActive = activeThread?.source === "collaboration";
-  const kanbanBoardVisible = collaborationActive && kanbanViewMode === "board";
-  useEffect(() => {
-    const collaborationThread = state.threads.reduce<Thread | undefined>(
-      (latest, thread) =>
-        thread.source === "collaboration" &&
-        (!latest || thread.updated_at > latest.updated_at)
-          ? thread
-          : latest,
-      undefined,
-    );
-    if (
-      collaborationThread &&
-      collaborationThread.id !== collaborationThreadID
-    ) {
-      setCollaborationThreadID(collaborationThread.id);
-      return;
-    }
-    if (!collaborationThread && collaborationThreadID) {
-      setCollaborationThreadID(undefined);
-    }
-  }, [collaborationThreadID, state.threads]);
+  const kanbanBoardVisible = kanbanViewMode === "board";
   const environmentContext = workspacePanelContext(state.activeContext, activeThread);
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
@@ -2330,11 +2306,7 @@ export function App(): JSX.Element {
       <Composer
         variant={variant}
         mainConversation
-        topAccessory={
-          collaborationActive ? (
-            <KanbanViewToggle mode={kanbanViewMode} onChange={setKanbanViewMode} />
-          ) : undefined
-        }
+        topAccessory={undefined}
         containerRef={variant === "dock" ? dockComposerRef : undefined}
         prompt={prompt}
         setPrompt={setPrompt}
@@ -2466,7 +2438,7 @@ export function App(): JSX.Element {
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
         onConvertToTask={
-          collaborationActive && turns.length > 0 && activeThreadID
+          turns.length > 0 && activeThreadID
             ? handleConvertToTask
             : undefined
         }
@@ -2479,7 +2451,7 @@ export function App(): JSX.Element {
   // ---------------------------------------------------------------------------
   async function handleConvertToTask(): Promise<void> {
     const threadId = activeThreadID;
-    if (!threadId || !collaborationActive) return;
+    if (!threadId) return;
     setCrystallizeOpen(true);
     setCrystallizePending(true);
     setCrystallizeResult(undefined);
@@ -2487,7 +2459,6 @@ export function App(): JSX.Element {
     try {
       const result = await window.wuu.kanbanCrystallize({
         thread_id: threadId,
-        session_id: threadId,
       });
       setCrystallizeResult(result);
     } catch (error) {
@@ -2833,21 +2804,10 @@ export function App(): JSX.Element {
     setComposerFiles,
     
     cancelViewSwitch,
-    activateThread,
     setContextCompositionEntries,
     setInstructionFilesEntries,
     scheduleStreamScroll,
-    openingCollaborationRef,
-    getCollaborationThreadID: () =>
-      appStateRef.current.threads.reduce<Thread | undefined>(
-        (latest, thread) =>
-          thread.source === "collaboration" &&
-          (!latest || thread.updated_at > latest.updated_at)
-            ? thread
-            : latest,
-        undefined,
-      )?.id,
-    setCollaborationThreadID,
+    setKanbanViewMode,
     closeProjectMenus,
     setSettingsMemoryFocusID,
     setSettingsInitialPage,
@@ -3832,7 +3792,7 @@ export function App(): JSX.Element {
               debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
             }
             sectionOrder={sidebarSectionOrder}
-            collaborationActive={collaborationActive}
+            kanbanBoardVisible={kanbanBoardVisible}
             onStartNewThread={() => {
               revealConversationFromFocusedWorkspace();
               startNewThreadWithComposerFocus();
@@ -4123,9 +4083,9 @@ export function App(): JSX.Element {
                 activeContext={state.activeContext}
                 extensionInventory={state.initialized?.extension_inventory}
               />
-            ) : kanbanBoardVisible && activeThreadID ? (
+            ) : kanbanBoardVisible ? (
               <KanbanBoardView
-                sessionId={activeThreadID}
+                spaceId="global"
                 refreshToken={boardRefreshTick}
                 onOpenSourceThread={(threadId) => void activateThread(threadId)}
               />
@@ -4405,7 +4365,7 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
-      {collaborationActive && activeThreadID ? (
+      {activeThreadID ? (
         <KanbanCrystallizeDialog
           threadId={activeThreadID}
           isOpen={crystallizeOpen}

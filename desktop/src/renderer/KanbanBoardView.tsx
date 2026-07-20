@@ -46,7 +46,7 @@ const COLUMNS: {
 const COLUMN_WIDTH = 248;
 
 export type KanbanBoardViewProps = {
-  sessionId: string;
+  spaceId: string;
   refreshToken?: number;
   onOpenSourceThread?: (threadId: string) => void;
 };
@@ -63,7 +63,7 @@ type BoardData = {
 };
 
 export function KanbanBoardView({
-  sessionId,
+  spaceId,
   refreshToken,
   onOpenSourceThread,
 }: KanbanBoardViewProps): JSX.Element {
@@ -84,7 +84,7 @@ export function KanbanBoardView({
     setPhase({ kind: "loading" });
     try {
       const [tasks, participantResult] = await Promise.all([
-        window.wuu.kanbanListTasks(sessionId),
+        window.wuu.kanbanListTasks(spaceId),
         window.wuu.listParticipants(),
       ]);
       const participants = new Map<string, ParticipantProfile>();
@@ -105,7 +105,7 @@ export function KanbanBoardView({
         message: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [sessionId]);
+  }, [spaceId]);
 
   useEffect(() => {
     let cancelled = false;

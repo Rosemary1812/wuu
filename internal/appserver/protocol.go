@@ -884,10 +884,7 @@ type ProviderModelVariantSummary struct {
 
 type ThreadStartParams struct {
 	Ephemeral     bool `json:"ephemeral,omitempty"`
-	Collaboration bool `json:"collaboration,omitempty"`
 }
-
-const ThreadSourceCollaboration = "collaboration"
 
 type ThreadStartResult struct {
 	Thread Thread `json:"thread"`

@@ -19,10 +19,10 @@ func seedKanbanTarget(t *testing.T, dir, name string) string {
 	return id
 }
 
-func seedKanbanTask(t *testing.T, dir, sessionID, status string) kanban.Task {
+func seedKanbanTask(t *testing.T, dir, spaceID, status string) kanban.Task {
 	t.Helper()
 	task, err := CreateKanbanTask(dir, kanban.Task{
-		SessionID: sessionID, Title: "Build the thing", Brief: "goal + done criteria", Status: status,
+		SpaceID: spaceID, Title: "Build the thing", Brief: "goal + done criteria", Status: status,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,33 +32,33 @@ func seedKanbanTask(t *testing.T, dir, sessionID, status string) kanban.Task {
 
 func TestKanbanTaskCreateAndList(t *testing.T) {
 	dir := t.TempDir()
-	root := seedKanbanTask(t, dir, "sess-1", "")
+	root := seedKanbanTask(t, dir, "space-1", "")
 	if root.Status != kanban.TaskStatusDraft {
 		t.Fatalf("default status = %q, want draft", root.Status)
 	}
 	child, err := CreateKanbanTask(dir, kanban.Task{
-		SessionID: "sess-1", ParentID: root.ID, Title: "Subtask", Status: kanban.TaskStatusReady,
+		SpaceID: "space-1", ParentID: root.ID, Title: "Subtask", Status: kanban.TaskStatusReady,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	roots, err := ListKanbanTasks(dir, "sess-1", "")
+	roots, err := ListKanbanTasks(dir, "space-1", "")
 	if err != nil || len(roots) != 1 {
 		t.Fatalf("roots = %+v, %v", roots, err)
 	}
-	children, err := ListKanbanTasks(dir, "sess-1", root.ID)
+	children, err := ListKanbanTasks(dir, "space-1", root.ID)
 	if err != nil || len(children) != 1 || children[0].ID != child.ID {
 		t.Fatalf("children = %+v, %v", children, err)
 	}
-	other, err := ListKanbanTasks(dir, "sess-2", "")
+	other, err := ListKanbanTasks(dir, "space-2", "")
 	if err != nil || len(other) != 0 {
-		t.Fatalf("cross-session leak: %+v, %v", other, err)
+		t.Fatalf("cross-space leak: %+v, %v", other, err)
 	}
 }
 
 func TestKanbanTaskTransitionGraph(t *testing.T) {
 	dir := t.TempDir()
-	task := seedKanbanTask(t, dir, "sess-1", "")
+	task := seedKanbanTask(t, dir, "space-1", "")
 	if _, err := TransitionKanbanTaskStatus(dir, task.ID, kanban.TaskStatusDone); !errors.Is(err, kanban.ErrInvalidTransition) {
 		t.Fatalf("draft->done = %v, want ErrInvalidTransition", err)
 	}
@@ -76,7 +76,7 @@ func TestKanbanTaskTransitionGraph(t *testing.T) {
 func TestKanbanRunDispatchLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	target := seedKanbanTarget(t, dir, "worker-1")
-	task := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
+	task := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
 
 	run, err := CreateKanbanRun(dir, kanban.Run{TaskID: task.ID, TargetID: target, CreatedBy: "human"})
 	if err != nil {
@@ -120,8 +120,8 @@ func TestKanbanRunBusyLock(t *testing.T) {
 	dir := t.TempDir()
 	target := seedKanbanTarget(t, dir, "worker-1")
 	other := seedKanbanTarget(t, dir, "worker-2")
-	taskA := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
-	taskB := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
+	taskA := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
+	taskB := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
 
 	if _, err := CreateKanbanRun(dir, kanban.Run{TaskID: taskA.ID, TargetID: target}); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestKanbanRunBusyLock(t *testing.T) {
 func TestKanbanRunFailedReturnsTaskToReady(t *testing.T) {
 	dir := t.TempDir()
 	target := seedKanbanTarget(t, dir, "worker-1")
-	task := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
+	task := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
 	run, err := CreateKanbanRun(dir, kanban.Run{TaskID: task.ID, TargetID: target})
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestKanbanRunFailedReturnsTaskToReady(t *testing.T) {
 func TestKanbanReviewKindAndRetiredTarget(t *testing.T) {
 	dir := t.TempDir()
 	target := seedKanbanTarget(t, dir, "worker-1")
-	task := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
+	task := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
 	run, err := CreateKanbanRun(dir, kanban.Run{TaskID: task.ID, TargetID: target, Kind: kanban.RunKindReview})
 	if err != nil {
 		t.Fatal(err)
@@ -184,13 +184,13 @@ func TestKanbanReviewKindAndRetiredTarget(t *testing.T) {
 func TestKanbanArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	target := seedKanbanTarget(t, dir, "worker-1")
-	task := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
+	task := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
 	run, err := CreateKanbanRun(dir, kanban.Run{TaskID: task.ID, TargetID: target})
 	if err != nil {
 		t.Fatal(err)
 	}
 	a, err := AddKanbanArtifact(dir, kanban.Artifact{
-		RunID: run.ID, TaskID: task.ID, SessionID: task.SessionID,
+		RunID: run.ID, TaskID: task.ID, SpaceID: task.SpaceID, WorkspaceID: task.WorkspaceID,
 		Path: "out/design.png", DisplayName: "design.png", MediaType: "image/png", SizeBytes: 42,
 	})
 	if err != nil {
@@ -205,7 +205,7 @@ func TestKanbanArtifacts(t *testing.T) {
 func TestGetActiveKanbanRunByThreadID(t *testing.T) {
 	dir := t.TempDir()
 	target := seedKanbanTarget(t, dir, "worker-1")
-	task := seedKanbanTask(t, dir, "sess-1", kanban.TaskStatusReady)
+	task := seedKanbanTask(t, dir, "space-1", kanban.TaskStatusReady)
 	run, err := CreateKanbanRun(dir, kanban.Run{TaskID: task.ID, TargetID: target})
 	if err != nil {
 		t.Fatal(err)
