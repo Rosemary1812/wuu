@@ -96,6 +96,8 @@ function renderComposer(props: {
   readOnly?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
+  onSteer?: () => void;
+  onQueue?: () => void;
   onStartNewThread?: () => void;
   onOpenContextComposition?: () => void;
   onOpenSideThread?: () => void;
@@ -191,6 +193,8 @@ function renderComposer(props: {
           onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
           onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
           onSend={props.onSend ?? (() => {})}
+          onSteer={props.onSteer}
+          onQueue={props.onQueue}
           onInterrupt={props.onInterrupt ?? (() => {})}
           goalSummary={props.goalSummary}
           onEditGoal={props.onEditGoal}
@@ -381,6 +385,77 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
 }
 
 describe("Composer send control", () => {
+  it("steers with Enter and queues with Tab while a turn is running", () => {
+    const onSend = vi.fn();
+    const onSteer = vi.fn();
+    const onQueue = vi.fn();
+    renderComposer({
+      prompt: "change direction",
+      running: true,
+      onSend,
+      onSteer,
+      onQueue,
+    });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onSteer).toHaveBeenCalledTimes(1);
+    expect(onQueue).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    });
+    expect(onQueue).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tab available for focus navigation when there is no running draft", () => {
+    const onQueue = vi.fn();
+    renderComposer({ prompt: "", running: true, onQueue });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      textarea?.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onQueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tab and Shift+Tab available outside a running draft", () => {
+    const onQueue = vi.fn();
+    renderComposer({ prompt: "not running", running: false, onQueue });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const tabEvent = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    const reverseTabEvent = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      textarea?.dispatchEvent(tabEvent);
+      textarea?.dispatchEvent(reverseTabEvent);
+    });
+
+    expect(tabEvent.defaultPrevented).toBe(false);
+    expect(reverseTabEvent.defaultPrevented).toBe(false);
+    expect(onQueue).not.toHaveBeenCalled();
+  });
+
   it("keeps a send (queue) button while running when the input has a draft", () => {
     const onInterrupt = vi.fn();
     const onSend = vi.fn();

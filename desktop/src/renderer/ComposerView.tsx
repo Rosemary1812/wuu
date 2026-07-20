@@ -162,6 +162,8 @@ export function Composer({
   onToggleUltra,
   onEditGuideMessage,
   onSend,
+  onSteer,
+  onQueue,
   onInterrupt,
   goalSummary,
   onEditGoal,
@@ -250,6 +252,8 @@ export function Composer({
   onToggleUltra?: (enabled: boolean) => void;
   onEditGuideMessage: (id: string) => void;
   onSend: () => void;
+  onSteer?: () => void;
+  onQueue?: () => void;
   onInterrupt: () => void;
   goalSummary?: ComposerGoalSummary | null;
   onEditGoal?: (nextText: string) => void | Promise<void>;
@@ -565,7 +569,7 @@ export function Composer({
     focusComposerSoon();
   }
 
-  function submitComposer(): void {
+  function submitComposerWith(onSubmit: () => void): void {
     resetQueryHistoryNavigation();
     const actionCommand = slashDraft
       ? exactActionSlashCommand(slashCommands, slashDraft)
@@ -574,8 +578,12 @@ export function Composer({
       applySlashCommand(actionCommand, slashDraft);
       return;
     }
-    onSend();
+    onSubmit();
     focusComposerSoon();
+  }
+
+  function submitComposer(): void {
+    submitComposerWith(onSend);
   }
 
   function updateVisiblePrompt(value: string): void {
@@ -798,9 +806,23 @@ export function Composer({
     if (handleQueryHistoryKeyDown(event)) {
       return;
     }
+    if (
+      event.key === "Tab" &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      running &&
+      hasDraft &&
+      onQueue
+    ) {
+      event.preventDefault();
+      submitComposerWith(onQueue);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submitComposer();
+      submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
     }
   }
 

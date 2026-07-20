@@ -2778,6 +2778,16 @@ export function App(): JSX.Element {
         onEditQueuedMessage={(id) => void editQueuedMessage(id)}
         onEditGuideMessage={(id) => void editGuideMessage(id)}
         onSend={() => void sendPrompt()}
+        onSteer={
+          activeThreadIsRunning && activeThread && !isGroupThread(activeThread)
+            ? () => void sendPrompt("steer")
+            : undefined
+        }
+        onQueue={
+          activeThreadIsRunning && activeThread && !isGroupThread(activeThread)
+            ? () => void sendPrompt("queue")
+            : undefined
+        }
         onInterrupt={() => void interrupt()}
         goalSummary={goalSummary}
         onEditGoal={editGoalText}
@@ -3263,7 +3273,7 @@ export function App(): JSX.Element {
     worktreeForkNonGitReason: t("app.worktreeRequiresGit"),
   });
 
-  async function sendPrompt(): Promise<void> {
+  async function sendPrompt(runningAction: "queue" | "steer" = "queue"): Promise<void> {
     if (viewSwitchPending) {
       return;
     }
@@ -3309,8 +3319,10 @@ export function App(): JSX.Element {
       isStateActiveThreadRunning(currentState) &&
       !(targetThread && isGroupThread(targetThread))
     ) {
-      const queued = await queueComposerMessage(message, targetThread);
-      if (!queued) {
+      const sent = runningAction === "steer"
+        ? await steerComposerMessage(message, targetThread)
+        : await queueComposerMessage(message, targetThread);
+      if (!sent) {
         setPrompt(message.text);
         setComposerImages(message.images);
         setComposerFiles(message.files);
@@ -3527,6 +3539,53 @@ export function App(): JSX.Element {
         ...current,
         status:
           error instanceof Error ? error.message : t("app.queueFailed"),
+      }));
+      return false;
+    }
+  }
+
+  async function steerComposerMessage(
+    message: QueuedComposerMessage,
+    targetThread = activeThreadForState(appStateRef.current),
+  ): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const text = message.text.trim();
+    const files = inputFilesFromComposer(message.files);
+    const turnID = targetThread ? activeTurnIDForThread(targetThread) : undefined;
+    if (
+      (!text && message.images.length === 0 && files.length === 0) ||
+      !targetThread ||
+      targetThread.read_only ||
+      !turnID ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      viewSwitchPending
+    ) {
+      return false;
+    }
+    try {
+      const encodedImages = await awaitComposerImages(message.images);
+      await window.wuu.steerTurn(
+        targetThread.id,
+        turnID,
+        text,
+        inputImagesFromComposer(encodedImages),
+        message.id,
+        files,
+      );
+      updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
+        ...previous,
+        guides: [
+          ...previous.guides,
+          { ...message, images: encodedImages, origin: "steer" },
+        ],
+      }));
+      return true;
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : t("composer.guideFailed"),
       }));
       return false;
     }
