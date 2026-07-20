@@ -1,5 +1,6 @@
 import { net, protocol } from "electron";
 import { pathToFileURL } from "node:url";
+import { pdfResponseHeaders, rangedPdfResponse } from "./renderableFileRange";
 import {
   filePathFromRenderableURL,
   isRenderableImageFile,
@@ -32,13 +33,17 @@ export function registerRenderableFileProtocol(): void {
       return new Response("Not found", { status: 404 });
     }
     if (isRenderablePdfFile(filePath)) {
+      // The viewer switches to range requests once it sees Accept-Ranges;
+      // serving 206 chunks lets large PDFs render their first page without
+      // downloading the whole document.
+      const ranged = rangedPdfResponse(request, filePath);
+      if (ranged) {
+        return ranged;
+      }
       const response = await net.fetch(pathToFileURL(filePath).toString());
-      const headers = new Headers(response.headers);
-      headers.set("content-type", "application/pdf");
-      headers.set("access-control-allow-origin", "*");
       return new Response(response.body, {
         status: response.status,
-        headers,
+        headers: pdfResponseHeaders(response.headers),
       });
     }
     if (!isRenderableImageFile(filePath)) {
