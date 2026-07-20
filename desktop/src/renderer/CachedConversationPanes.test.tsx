@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Thread } from "../shared/protocol";
 import type { TurnStreamStatus } from "./AppState";
 import { CachedConversationPanes } from "./CachedConversationPanes";
+import { OPTIMISTIC_TURN_ID_PREFIX } from "./ComposerMessages";
 import { ImagePreviewProvider } from "./ImagePreview";
 
 const turnListRenders = vi.hoisted(() => new Map<string, number>());
@@ -187,6 +188,24 @@ describe("CachedConversationPanes Thread wiring", () => {
 });
 
 describe("CachedConversationPanes session switching", () => {
+  it("keeps an optimistic first query visible during the new-thread handoff", () => {
+    const thread = chatThread("thread-a", {
+      turns: [
+        {
+          id: `${OPTIMISTIC_TURN_ID_PREFIX}1`,
+          status: "in_progress",
+          items_view: "full",
+          items: [],
+        },
+      ],
+    });
+
+    const { container } = renderPane(thread);
+    const pane = container.querySelector<HTMLElement>(".cached-conversation-pane");
+
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(true);
+  });
+
   it("waits until the mounted message DOM height is stable before entering", () => {
     const frameCallbacks: FrameRequestCallback[] = [];
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {

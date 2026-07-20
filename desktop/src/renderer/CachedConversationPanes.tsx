@@ -34,6 +34,7 @@ import {
   pendingComposerMessagesForThread as pendingComposerMessagesForThreadSnapshot,
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
+import { OPTIMISTIC_TURN_ID_PREFIX } from "./ComposerMessages";
 import { TurnView } from "./TurnView";
 import { turnEventForTurn } from "./TurnEvents";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -228,7 +229,12 @@ const CachedConversationPane = memo(function CachedConversationPane({
   subthreadsByAnchor,
   pendingChatMessagesByThread,
 }: CachedConversationPaneProps): JSX.Element {
-  const [layoutSettled, setLayoutSettled] = useState(false);
+  // A brand-new thread takes over from the already-visible optimistic first
+  // turn. Hiding that same turn behind the tab-switch layout gate creates a
+  // blank frame during the handoff, so keep it visible from the first paint.
+  const [layoutSettled, setLayoutSettled] = useState(() =>
+    thread.turns.some((turn) => turn.id.startsWith(OPTIMISTIC_TURN_ID_PREFIX)),
+  );
   const paneRef = useRef<HTMLDivElement | null>(null);
   const threadRef = useRef(thread);
   threadRef.current = thread;
