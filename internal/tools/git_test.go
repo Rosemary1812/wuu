@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/gitattribution"
 	proc "github.com/blueberrycongee/wuu/internal/process"
@@ -165,6 +166,7 @@ func TestBashBackgroundGitAttributionUsesWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create process manager: %v", err)
 	}
+	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
 	runBash(t, root, "printf 'background\\n' > hello.txt")
 	args, _ := json.Marshal(map[string]any{
@@ -173,8 +175,30 @@ func TestBashBackgroundGitAttributionUsesWrapper(t *testing.T) {
 		"completion_mode": "detached",
 		"wait_ms":         10000,
 	})
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)}); err != nil {
+	response, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: string(args)})
+	if err != nil {
 		t.Fatalf("start background commit: %v", err)
+	}
+	var started startProcessResponse
+	if err := json.Unmarshal([]byte(response), &started); err != nil {
+		t.Fatalf("parse background commit response: %v\n%s", err, response)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		process, processErr := manager.Get(started.ID)
+		if processErr != nil {
+			t.Fatalf("check background commit status: %v", processErr)
+		}
+		if process.Status == proc.StatusStopped {
+			break
+		}
+		if process.Status == proc.StatusFailed {
+			t.Fatalf("background commit failed: %+v", process)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background commit did not complete")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	message := runBash(t, root, "git log -1 --format=%B")
 	if strings.Count(message, gitattribution.Email) != 1 {
