@@ -53,6 +53,7 @@ import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { useI18n } from "./i18n";
 
 /**
@@ -452,16 +453,18 @@ export function AppSidebar({
             <Wrench className="icon-lg" />
             <span>{t("skills.sectionSkills")}</span>
           </button>
-          <button
-            className={`nav-item collaboration-nav-item${kanbanBoardVisible ? " active" : ""}`}
-            type="button"
-            aria-current={kanbanBoardVisible ? "page" : undefined}
-            onClick={onOpenCollaboration}
-            disabled={!hasRuntimeContext}
-          >
-            <MessagesSquare className="icon-lg" />
-            <span>{t("sidebar.collaboration")}</span>
-          </button>
+          {ENABLE_COLLABORATION ? (
+            <button
+              className={`nav-item collaboration-nav-item${kanbanBoardVisible ? " active" : ""}`}
+              type="button"
+              aria-current={kanbanBoardVisible ? "page" : undefined}
+              onClick={onOpenCollaboration}
+              disabled={!hasRuntimeContext}
+            >
+              <MessagesSquare className="icon-lg" />
+              <span>{t("sidebar.collaboration")}</span>
+            </button>
+          ) : null}
           {debugFixturesVisible ? (
             <div className="dev-fixture-nav" aria-label={t("sidebar.devFixtures.label")}>
               <div className="dev-fixture-label">{t("sidebar.devFixtures.title")}</div>

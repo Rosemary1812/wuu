@@ -162,6 +162,7 @@ import {
 import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
 import { CircleAlert } from "lucide-react";
@@ -860,7 +861,7 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activeTabKind = activeSessionTab(state)?.kind;
-  const boardTabActive = activeTabKind === "board";
+  const boardTabActive = ENABLE_COLLABORATION && activeTabKind === "board";
   const environmentContext = workspacePanelContext(state.activeContext, activeThread);
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
@@ -2446,6 +2447,7 @@ export function App(): JSX.Element {
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
         onConvertToTask={
+          ENABLE_COLLABORATION &&
           turns.length > 0 &&
           activeThreadID &&
           state.activeContext?.kind !== "project"
@@ -2460,6 +2462,9 @@ export function App(): JSX.Element {
   // Kanban "convert conversation to task" flow.
   // ---------------------------------------------------------------------------
   async function handleConvertToTask(): Promise<void> {
+    if (!ENABLE_COLLABORATION) {
+      return;
+    }
     const threadId = activeThreadID;
     if (!threadId) return;
     setCrystallizeOpen(true);
@@ -3819,6 +3824,9 @@ export function App(): JSX.Element {
             }}
             onOpenSkillsTab={openSkillsTab}
             onOpenCollaboration={() => {
+              if (!ENABLE_COLLABORATION) {
+                return;
+              }
               closeProjectMenus();
               const currentState = appStateRef.current;
               const context = currentState.activeContext;
@@ -4409,7 +4417,7 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
-      {activeThreadID ? (
+      {ENABLE_COLLABORATION && activeThreadID ? (
         <KanbanCrystallizeDialog
           threadId={activeThreadID}
           isOpen={crystallizeOpen}
@@ -4421,6 +4429,9 @@ export function App(): JSX.Element {
             setCrystallizeResult(undefined);
           }}
           onSwitchToBoard={() => {
+            if (!ENABLE_COLLABORATION) {
+              return;
+            }
             setCrystallizeOpen(false);
             setCrystallizeResult(undefined);
             const currentState = appStateRef.current;

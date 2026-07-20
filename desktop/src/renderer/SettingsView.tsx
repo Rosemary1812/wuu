@@ -65,7 +65,7 @@ export type ArchivedSessionView = {
   archive_project_name?: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
-import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
+import { ENABLE_REMOTE_CONTROL, ENABLE_COLLABORATION } from "./FeatureFlags";
 import { MemoryPanel } from "./MemoryPanel";
 import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
@@ -88,7 +88,13 @@ const COPY_RESET_MS = 1500;
 
 function availableSettingsPage(page: SettingsPage | undefined): SettingsPage {
   const next = page ?? "providers";
-  return next === "remote" && !ENABLE_REMOTE_CONTROL ? "providers" : next;
+  if (next === "remote" && !ENABLE_REMOTE_CONTROL) {
+    return "providers";
+  }
+  if (next === "memory" && !ENABLE_COLLABORATION) {
+    return "providers";
+  }
+  return next;
 }
 
 export function SettingsView({
@@ -766,9 +772,11 @@ export function SettingsView({
               <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
                 {t("settings.providers")}
               </SettingsNavItem>
-              <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
-                {t("settings.memory")}
-              </SettingsNavItem>
+              {ENABLE_COLLABORATION ? (
+                <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
+                  {t("settings.memory")}
+                </SettingsNavItem>
+              ) : null}
               <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
                 {t("settings.advanced")}
               </SettingsNavItem>
@@ -935,7 +943,7 @@ export function SettingsView({
                 copyState={copyState}
                 onCopyVersion={copyVersionInfo}
               />
-            ) : activePage === "memory" ? (
+            ) : ENABLE_COLLABORATION && activePage === "memory" ? (
               <MemoryPanel
                 participants={participants ?? []}
                 focusParticipantID={memoryFocusParticipantID}

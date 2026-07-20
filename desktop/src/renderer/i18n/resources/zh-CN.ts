@@ -493,6 +493,7 @@ export const zhCN = {
   "toolActivity.usedTools": "已使用工具",
   "slash.selectWorkspaceFirst": "先选择工作区",
   "slash.taskRunning": "当前任务运行中",
+  "slash.collaborationDisabled": "协作功能已禁用",
   "slash.tag.view": "视图",
   "slash.tag.configuration": "配置",
   "slash.tag.workflow": "工作流",

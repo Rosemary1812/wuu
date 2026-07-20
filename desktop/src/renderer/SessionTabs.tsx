@@ -34,6 +34,7 @@ import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMe
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
 import { translateCurrent as translate, useI18n } from "./i18n";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
@@ -64,16 +65,18 @@ export function SessionTabStrip({
   const newTabButtonRef = useRef<HTMLButtonElement>(null);
   const { requestFocusRestoration, tabListRef } = useTabCloseFocusRestoration(
     state.activeSessionTabID,
-    state.sessionTabs.map((tab) => tab.id),
+    state.sessionTabs
+      .filter((tab) => ENABLE_COLLABORATION || tab.kind !== "board")
+      .map((tab) => tab.id),
     newTabButtonRef,
   );
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>();
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>();
   const enterReady = useStripEnterReady();
-  const sessionTabEntries = useTabExitRetention(
-    state.sessionTabs,
-    (tab) => tab.id,
-  );
+  const visibleTabs = ENABLE_COLLABORATION
+    ? state.sessionTabs
+    : state.sessionTabs.filter((tab) => tab.kind !== "board");
+  const sessionTabEntries = useTabExitRetention(visibleTabs, (tab) => tab.id);
   const [tabContextMenu, setTabContextMenu] = useState<
     { tabID: string; x: number; y: number } | undefined
   >();

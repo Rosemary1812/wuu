@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildComposerSlashCommands,
   buildSideThreadSlashCommands,
@@ -109,6 +109,7 @@ describe("composer slash commands", () => {
   });
 
   it("routes /memory to the memory settings action instead of instructions", () => {
+    vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
       initialized: initialized("gpt-5.5", ["gpt-5.5"]),
@@ -123,6 +124,7 @@ describe("composer slash commands", () => {
     const instructions = commands.find((command) => command.name === "instructions");
     expect(instructions?.action).toBe("instructions");
     expect(instructions?.aliases).not.toContain("memory");
+    vi.unstubAllEnvs();
   });
 
   it("adds user-invocable skills to slash results", () => {

@@ -495,6 +495,7 @@ export const enUS = {
   "toolActivity.usedTools": "Used tools",
   "slash.selectWorkspaceFirst": "Select a workspace first",
   "slash.taskRunning": "The current task is running",
+  "slash.collaborationDisabled": "Collaboration features are disabled",
   "slash.tag.view": "View",
   "slash.tag.configuration": "Configuration",
   "slash.tag.workflow": "Workflow",
