@@ -391,6 +391,7 @@ export const zhCN = {
   "toolActivity.readTarget": "读取 {target}",
   "toolActivity.viewTarget": "查看 {target}",
   "toolActivity.searchTarget": "搜索 {target}",
+  "toolActivity.searchTargetInScope": "在 {scope} 中搜索 {target}",
   "toolActivity.searchWebTarget": "搜索网页 {target}",
   "toolActivity.readWebTarget": "读取网页 {target}",
   "toolActivity.searchToolsTarget": "搜索工具 {target}",

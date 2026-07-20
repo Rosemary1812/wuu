@@ -393,6 +393,7 @@ export const enUS = {
   "toolActivity.readTarget": "Read {target}",
   "toolActivity.viewTarget": "View {target}",
   "toolActivity.searchTarget": "Search {target}",
+  "toolActivity.searchTargetInScope": "Search {target} in {scope}",
   "toolActivity.searchWebTarget": "Search the web for {target}",
   "toolActivity.readWebTarget": "Read webpage {target}",
   "toolActivity.searchToolsTarget": "Search tools for {target}",
