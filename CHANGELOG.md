@@ -10,6 +10,10 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [0.7.2] - 2026-07-20
 
+### Added
+
+- Added collapsed-sidebar preview when hovering the titlebar sidebar toggle.
+
 ### Changed
 
 - Aligned `apply_patch` completion messages and client file-change records with
