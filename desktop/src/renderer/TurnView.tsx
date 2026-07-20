@@ -17,6 +17,8 @@ import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { TurnEventNotice, StreamReconnectNotice } from "./TurnNotice";
 import { turnEventForTurn } from "./TurnEvents";
 import type { TurnStreamStatus } from "./AppState";
+import { isAutomaticBackgroundContinuationTurn } from "./BackgroundContinuation";
+import { useI18n } from "./i18n";
 import {
   latestAgentMessageItemID,
   messageFlowAgentMessageItemID,
@@ -45,6 +47,8 @@ export function TurnView({
   onOpenRuns,
   streamStatus,
   isLatestTurn,
+  backgroundWaiting = false,
+  suppressAnswerActions = false,
 }: {
   turn: Turn;
   cwd?: string;
@@ -69,11 +73,15 @@ export function TurnView({
   onOpenRuns?: () => void;
   streamStatus?: TurnStreamStatus;
   isLatestTurn?: boolean;
+  backgroundWaiting?: boolean;
+  suppressAnswerActions?: boolean;
 }): JSX.Element {
   const actionableAgentMessageID =
-    turn.status === "completed"
+    turn.status === "completed" && !suppressAnswerActions
       ? messageFlowAgentMessageItemID(turn)
       : undefined;
+  const automaticBackgroundContinuation =
+    isAutomaticBackgroundContinuationTurn(turn);
   // The edit summary card should sit inside the actionable answer message
   // (between its text and its action bar) when that message actually renders
   // an action bar. Otherwise it falls back to its turn-level slot below the
@@ -163,7 +171,9 @@ export function TurnView({
 
   return (
     <section
-      className="turn"
+      className={`turn${automaticBackgroundContinuation ? " background-continuation-turn" : ""}${
+        backgroundWaiting ? " background-continuation-waiting" : ""
+      }`}
       id={turnAnchorID(turn.id)}
       data-turn-id={turn.id}
       data-turn-status={turn.status}
@@ -183,8 +193,10 @@ export function TurnView({
           onCollapseComplete={onCollapseComplete}
           onOpenAgent={onOpenAgent}
           onOpenSubthread={onOpenSubthread}
+          automaticBackgroundContinuation={automaticBackgroundContinuation}
         />
       ) : null}
+      {backgroundWaiting ? <BackgroundContinuationWait /> : null}
       {hasTurnRuns && onOpenRuns && !runActionAttachedToMessage ? (
         <TurnRunActions onOpenRuns={onOpenRuns} />
       ) : null}
@@ -201,5 +213,20 @@ export function TurnView({
       ) : null}
       {event ? <TurnEventNotice event={event} /> : null}
     </section>
+  );
+}
+
+function BackgroundContinuationWait(): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className="background-continuation-wait" role="status">
+      <span className="process-surface-row is-live-gray">
+        <span className="process-surface-summary-line">
+          <span className="process-surface-segment">
+            {t("turn.waitingForBackground")}
+          </span>
+        </span>
+      </span>
+    </div>
   );
 }

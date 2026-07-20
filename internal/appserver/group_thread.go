@@ -257,7 +257,7 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 // (consistency plan 2026-07-04 §1 #15).
 func (s *Server) notifyThreadStarted(thread Thread) error {
 	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-		Thread: s.threadWithGroupMembers(thread),
+		Thread: s.threadWithGroupMembers(s.threadWithBackgroundWaiting(thread)),
 	})
 }
 
@@ -267,7 +267,7 @@ func (s *Server) notifyThreadStarted(thread Thread) error {
 // Members the UI already had.
 func (s *Server) notifyThreadUpdated(thread Thread) error {
 	return s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{
-		Thread: s.threadWithGroupMembers(thread),
+		Thread: s.threadWithGroupMembers(s.threadWithBackgroundWaiting(thread)),
 	})
 }
 

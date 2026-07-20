@@ -2400,6 +2400,18 @@
   animation: process-surface-count-jump var(--motion-base) var(--ease-out);
 }
 
+.background-continuation-wait {
+  margin-top: 16px;
+  color: var(--ink-muted);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
+}
+
+.background-continuation-turn {
+  margin-top: 16px;
+}
+
 .process-surface-row.is-live-gray,
 .turn-reasoning-summary-text.is-live-gray,
 .turn-process-preview.is-live,

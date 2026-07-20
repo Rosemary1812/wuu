@@ -1954,6 +1954,7 @@ type Thread struct {
 	UpdatedAt        time.Time     `json:"updated_at"`
 	Turns            []Turn        `json:"turns"`
 	ChildAgents      []Agent       `json:"child_agents,omitempty"`
+	BackgroundWait   bool          `json:"background_waiting"`
 	// DMParticipantID, when non-empty, marks this thread as the direct-message
 	// conversation with the named participant of that ID. Set once at thread
 	// creation; never mutated afterward.

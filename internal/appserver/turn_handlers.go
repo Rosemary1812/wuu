@@ -1467,9 +1467,20 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	}
 	th.mu.Lock()
 	cancel := th.cancel
+	threadRuntime := th.execRuntime
 	if cancel == nil {
+		hasAgentWork := threadRuntimeHasOutstandingAgentWork(threadRuntime)
+		if hasAgentWork {
+			th.workerTreeFrozen = true
+		}
 		th.mu.Unlock()
-		return s.writeResponse(req.ID, nil, errors.New("thread has no running turn"))
+		if hasAgentWork && threadRuntime.AgentControl != nil {
+			threadRuntime.AgentControl.FreezeWorkerTree()
+		}
+		if err := s.stopResumeProcessesForThread(threadID, threadRuntime); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		return s.writeResponse(req.ID, OKResult{OK: true}, nil)
 	}
 	pendingSteers := queuedTurnsFromSteers(th.pendingSteers)
 	for index := range pendingSteers {
@@ -1512,11 +1523,48 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	if control != nil {
 		control.FreezeWorkerTree()
 	}
+	if err := s.stopResumeProcessesForThread(threadID, threadRuntime); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 		return err
 	}
 	s.notifyQueuedTurnsDequeued(threadID, automationIDs)
 	s.notifyHeldUserTurns(threadID, held)
+	return nil
+}
+
+// stopResumeProcessesForThread stops only processes whose completion would
+// automatically resume this thread. Detached services intentionally outlive
+// the thread's waiting state and are left alone.
+func (s *Server) stopResumeProcessesForThread(threadID string, threadRuntime *runtime.ThreadRuntime) error {
+	var manager *process.Manager
+	if threadRuntime != nil {
+		manager = threadRuntime.ProcessManager
+	}
+	if manager == nil {
+		manager = s.processManagerForThread(threadID)
+	}
+	if manager == nil {
+		return nil
+	}
+	processes, err := manager.List()
+	if err != nil {
+		return fmt.Errorf("list background processes: %w", err)
+	}
+	for _, p := range processes {
+		if p.Lifecycle != process.LifecycleManaged ||
+			p.CompletionMode != process.CompletionModeResume ||
+			!s.processBelongsToThread(threadID, p) {
+			continue
+		}
+		switch p.Status {
+		case process.StatusStarting, process.StatusRunning:
+			if _, err := manager.Stop(p.ID); err != nil {
+				return fmt.Errorf("stop background process %q: %w", p.ID, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -2295,6 +2343,9 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			TracePath:                tracePath,
 			AwaitingAutoContinuation: awaitingAutoContinuation,
 		})
+	}
+	if len(turnRuntime.ProcessCompletionIDs) > 0 && !processCompletionClaimFailed {
+		s.notifyProcessBackgroundWaitingChanged(th.ID)
 	}
 	if residentTurn {
 		s.kickResidentAgent(residentParticipantID)

@@ -52,6 +52,7 @@ export function AssistantTurnShell({
   onForkMessage,
   onOpenRuns,
   onCollapseComplete,
+  automaticBackgroundContinuation = false,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -65,6 +66,7 @@ export function AssistantTurnShell({
   onForkMessage?: (turnID: string, itemID: string) => void;
   onOpenRuns?: () => void;
   onCollapseComplete?: () => void;
+  automaticBackgroundContinuation?: boolean;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -144,6 +146,7 @@ export function AssistantTurnShell({
           }
           sources={turnSources}
           onOpenSource={handleOpenSource}
+          automaticBackgroundContinuation={automaticBackgroundContinuation}
           {...entryProps}
         />
       ) : null}
@@ -186,6 +189,7 @@ function TurnProcessFold({
   onForkMessage,
   onOpenRuns,
   onCollapseComplete,
+  automaticBackgroundContinuation,
 }: {
   turn: Turn;
   entries: TurnEntry[];
@@ -193,6 +197,7 @@ function TurnProcessFold({
   latestPreview?: TurnProcessPreview;
   sources: ReturnType<typeof collectTurnSources>;
   onOpenSource?: (url: string) => void;
+  automaticBackgroundContinuation: boolean;
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
@@ -231,12 +236,16 @@ function TurnProcessFold({
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs =
     completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const processLabel = turnProcessTitle(
-    turn,
-    elapsedMs,
-    collapseRequested,
-  );
-  const metaParts = turnProcessMetaParts(turn, elapsedMs);
+  const processLabel = automaticBackgroundContinuation
+    ? translate(
+        turn.status === "in_progress"
+          ? "turn.processingBackgroundResult"
+          : "turn.processedBackgroundResult",
+      )
+    : turnProcessTitle(turn, elapsedMs, collapseRequested);
+  const metaParts = automaticBackgroundContinuation
+    ? []
+    : turnProcessMetaParts(turn, elapsedMs);
 
   // A confirmed non-empty final answer is the handoff edge: process work
   // yields immediately so the answer becomes the primary reading surface.

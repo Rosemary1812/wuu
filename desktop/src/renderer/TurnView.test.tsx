@@ -66,7 +66,11 @@ function makeReasoning(text: string, id = "reasoning-1"): ThreadItem {
   };
 }
 
-function render(turn: Turn, onOpenRuns?: () => void): HTMLDivElement {
+function render(
+  turn: Turn,
+  onOpenRuns?: () => void,
+  options: { backgroundWaiting?: boolean; suppressAnswerActions?: boolean } = {},
+): HTMLDivElement {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -76,6 +80,8 @@ function render(turn: Turn, onOpenRuns?: () => void): HTMLDivElement {
         turn={turn}
         onStreamFrame={() => {}}
         onOpenRuns={onOpenRuns}
+        backgroundWaiting={options.backgroundWaiting}
+        suppressAnswerActions={options.suppressAnswerActions}
       />,
     );
   });
@@ -109,6 +115,40 @@ describe("TurnView", () => {
 
     const turn = view.querySelector<HTMLElement>(".turn");
     expect(turn?.dataset.turnStatus).toBe("in_progress");
+  });
+
+  it("renders a sweeping background wait row without answer actions", () => {
+    const view = render(
+      makeTurn("completed", [makeFinalAnswer("先等后台任务")]),
+      undefined,
+      { backgroundWaiting: true, suppressAnswerActions: true },
+    );
+
+    expect(view.textContent).toContain("等待后台任务完成");
+    expect(view.querySelector(".background-continuation-wait .is-live-gray")).not.toBeNull();
+    expect(view.querySelector(".agent-message-actions")).toBeNull();
+  });
+
+  it("labels an automatic process continuation without a standalone duration", () => {
+    const continuation = makeTurn("completed", [
+      {
+        id: "process-notification",
+        type: "user_message",
+        name: PROCESS_NOTIFICATION_NAME,
+        text: '<process_notification>{"process_id":"proc-1"}</process_notification>',
+      },
+      makeCommentary("处理后台结果"),
+      makeFinalAnswer("继续后的回答"),
+    ]);
+    continuation.kind = "internal";
+    continuation.duration_ms = 900;
+
+    const view = render(continuation);
+    expect(view.querySelector(".turn")?.classList).toContain(
+      "background-continuation-turn",
+    );
+    expect(view.textContent).toContain("已继续处理后台任务结果");
+    expect(view.textContent).not.toContain("用时");
   });
 
   it("hides named and legacy process notifications from the direct turn renderer", () => {
