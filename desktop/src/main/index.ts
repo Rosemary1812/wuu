@@ -559,6 +559,16 @@ function resolvedThemeIsDark(): boolean {
   return preference === "dark";
 }
 
+// Keep Chromium's internal color scheme (used by the built-in PDF viewer,
+// form controls, scrollbars, and DevTools) in lockstep with the app-global
+// theme preference. Without this the PDF preview follows the OS theme even
+// when the user has pinned Wuu to light/dark, producing the black PDF chrome
+// seen on dark-mode macOS while the rest of the app stays light.
+function syncNativeThemeSource(): void {
+  const preference = getThemePreference();
+  nativeTheme.themeSource = preference === "system" ? "system" : preference;
+}
+
 // Pre-paint window fill. macOS keeps the fixed light color (the vibrancy
 // material paints over it); elsewhere the fill IS the visible backdrop, so
 // it follows the stored theme.
@@ -645,6 +655,7 @@ function broadcastLanguagePreference(): void {
 }
 
 function syncThemeAcrossWindows(): void {
+  syncNativeThemeSource();
   syncThemedWindowChrome();
   broadcastThemePreference();
 }
@@ -1841,6 +1852,7 @@ app.whenReady().then(async () => {
       }),
   );
 
+  syncNativeThemeSource();
   createWindow();
 
   app.on("activate", () => {
