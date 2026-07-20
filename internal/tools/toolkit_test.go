@@ -1045,16 +1045,23 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+	result, err := kit.ExecuteResult(context.Background(), providers.ToolCall{
 		Name:      "apply_patch",
 		Arguments: string(args),
 	})
 	if err != nil {
 		t.Fatalf("apply_patch: %v", err)
 	}
-	if !strings.Contains(resp, `"action":"update"`) || !strings.Contains(resp, `"action":"add"`) ||
-		!strings.Contains(resp, `"action":"delete"`) || !strings.Contains(resp, `"action":"move"`) {
-		t.Fatalf("expected per-file actions in response: %s", resp)
+	resp := result.TextProjection()
+	for _, want := range []string{"M a.txt", "A dir/new.txt", "D remove.txt", "M oldname.txt -> renamed.txt", "Workspace revision:", "Patch journal:", "Recovery:"} {
+		if !strings.Contains(resp, want) {
+			t.Fatalf("model response missing %q:\n%s", want, resp)
+		}
+	}
+	for _, redundant := range []string{`"diff"`, `old_file_sha`, `new_file_sha`, `patch_journal`, `next_suggestions`, `risk_summary`} {
+		if strings.Contains(resp, redundant) {
+			t.Fatalf("model response contains recovery/UI-only detail %q:\n%s", redundant, resp)
+		}
 	}
 	var parsed struct {
 		DryRun            bool                  `json:"dry_run"`
@@ -1062,24 +1069,20 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		ChangedFiles      []string              `json:"changed_files"`
 		RiskSummary       applyPatchRiskSummary `json:"risk_summary"`
 		WorkspaceRevision string                `json:"workspace_revision"`
-		Suggestions       []string              `json:"next_suggestions"`
-		Provenance        struct {
-			Tool   string `json:"tool"`
-			Source string `json:"source"`
-		} `json:"provenance"`
-		PatchJournalPath string                    `json:"patch_journal_path"`
-		ManifestPath     string                    `json:"manifest_path"`
-		PatchPath        string                    `json:"patch_path"`
-		PatchJournal     applyPatchJournalManifest `json:"patch_journal"`
-		Files            []struct {
+		ManifestPath      string                `json:"manifest_path"`
+		PatchPath         string                `json:"patch_path"`
+		Files             []struct {
 			Path       string `json:"path"`
 			Action     string `json:"action"`
 			OldFileSHA string `json:"old_file_sha"`
 			NewFileSHA string `json:"new_file_sha"`
 		} `json:"files"`
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse apply_patch response: %v", err)
+	if err := json.Unmarshal(result.StructuredContent, &parsed); err != nil {
+		t.Fatalf("parse apply_patch structured detail: %v", err)
+	}
+	if strings.Contains(string(result.StructuredContent), `"patch_journal"`) || strings.Contains(string(result.StructuredContent), `"snapshots"`) {
+		t.Fatalf("structured detail should reference, not inline, the patch journal: %s", result.StructuredContent)
 	}
 	if parsed.DryRun || parsed.HunkCount != 4 {
 		t.Fatalf("unexpected patch summary: %+v", parsed)
@@ -1105,38 +1108,27 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
 		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
 	}
-	if parsed.Provenance.Tool != "apply_patch" || parsed.Provenance.Source != "model_tool_call" {
-		t.Fatalf("unexpected provenance: %+v", parsed.Provenance)
-	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "command execution") {
-		t.Fatalf("apply_patch response missing validation suggestion: %+v", parsed.Suggestions)
-	}
-	if parsed.PatchJournalPath == "" || parsed.ManifestPath != parsed.PatchJournalPath || parsed.PatchPath == "" {
+	if parsed.ManifestPath == "" || parsed.PatchPath == "" {
 		t.Fatalf("apply_patch response missing journal artifact paths: %+v", parsed)
 	}
-	if !strings.HasPrefix(parsed.PatchJournalPath, filepath.Join(sessionDir, "patch-journal")) ||
+	if !strings.HasPrefix(parsed.ManifestPath, filepath.Join(sessionDir, "patch-journal")) ||
 		!strings.HasPrefix(parsed.PatchPath, filepath.Join(sessionDir, "patch-journal")) {
-		t.Fatalf("journal paths should be session-scoped: manifest=%q patch=%q", parsed.PatchJournalPath, parsed.PatchPath)
-	}
-	if parsed.PatchJournal.ID == "" || parsed.PatchJournal.SessionID != "session-apply-patch" ||
-		parsed.PatchJournal.HunkCount != 4 || parsed.PatchJournal.PatchPath != parsed.PatchPath {
-		t.Fatalf("unexpected inline patch journal: %+v", parsed.PatchJournal)
-	}
-	if parsed.PatchJournal.RiskSummary.RiskLevel != "high" || parsed.PatchJournal.RiskSummary.AddedLines != 3 {
-		t.Fatalf("patch journal missing risk summary: %+v", parsed.PatchJournal.RiskSummary)
+		t.Fatalf("journal paths should be session-scoped: manifest=%q patch=%q", parsed.ManifestPath, parsed.PatchPath)
 	}
 	if got := mustReadFile(t, parsed.PatchPath); got != patchText {
 		t.Fatalf("patch artifact mismatch:\n%s", got)
 	}
 	var manifest applyPatchJournalManifest
-	data, err := os.ReadFile(parsed.PatchJournalPath)
+	data, err := os.ReadFile(parsed.ManifestPath)
 	if err != nil {
 		t.Fatalf("read patch journal manifest: %v", err)
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatalf("parse patch journal manifest: %v\n%s", err, data)
 	}
-	if manifest.ID != parsed.PatchJournal.ID || manifest.Tool != "apply_patch" ||
+	if manifest.ID == "" || manifest.Tool != "apply_patch" || manifest.SessionID != "session-apply-patch" ||
+		manifest.HunkCount != 4 || manifest.PatchPath != parsed.PatchPath ||
+		manifest.RiskSummary.RiskLevel != "high" || manifest.RiskSummary.AddedLines != 3 ||
 		manifest.WorkspaceRevisionBefore == "" || manifest.WorkspaceRevisionAfter != parsed.WorkspaceRevision ||
 		!reflect.DeepEqual(manifest.ChangedFiles, wantChanged) || len(manifest.Snapshots) != 5 {
 		t.Fatalf("unexpected patch journal manifest: %+v", manifest)
@@ -1150,7 +1142,7 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		}
 	}
 	records := kit.ToolTelemetry()
-	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.PatchJournalPath) || !containsString(records[0].ArtifactRefs, parsed.PatchPath) {
+	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.ManifestPath) || !containsString(records[0].ArtifactRefs, parsed.PatchPath) {
 		t.Fatalf("patch telemetry missing journal artifacts: %+v", records)
 	}
 	if records[0].PatchRiskSummary == nil ||
@@ -1196,6 +1188,32 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 }
 
+func TestApplyPatchModelSummaryIsStableAndBounded(t *testing.T) {
+	files := make([]applyPatchFileResult, 1000)
+	for i := range files {
+		files[i] = applyPatchFileResult{
+			Path:   fmt.Sprintf("generated/%04d-%s.txt", i, strings.Repeat("long-name-", 8)),
+			Action: "update",
+			Diff: DiffResult{Hunks: []DiffHunk{{
+				Lines: []DiffLine{{Op: "insert", Content: strings.Repeat("large diff content ", 100)}},
+			}}},
+		}
+	}
+	journal := &applyPatchJournalManifest{ManifestPath: "/session/patch-journal/patch-id/manifest.json"}
+
+	first := applyPatchModelSummary(false, files, "git:revision", journal, nil)
+	second := applyPatchModelSummary(false, files, "git:revision", journal, nil)
+	if first != second {
+		t.Fatal("apply_patch model summary changed for identical input")
+	}
+	if estimateResultTokens(first) > defaultProjectionTokenBudget {
+		t.Fatalf("apply_patch model summary exceeded stable budget: tokens=%d", estimateResultTokens(first))
+	}
+	if !strings.Contains(first, "files omitted") || strings.Contains(first, "large diff content") {
+		t.Fatalf("apply_patch model summary should omit overflow file names and all diffs:\n%s", first)
+	}
+}
+
 func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -1232,7 +1250,7 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+	result, err := kit.ExecuteResult(context.Background(), providers.ToolCall{
 		Name:      "apply_patch",
 		Arguments: string(args),
 	})
@@ -1244,13 +1262,12 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 		HunkCount         int      `json:"hunk_count"`
 		ChangedFiles      []string `json:"changed_files"`
 		WorkspaceRevision string   `json:"workspace_revision"`
-		Suggestions       []string `json:"next_suggestions"`
 		Files             []struct {
 			Action string `json:"action"`
 		} `json:"files"`
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse apply_patch response: %v", err)
+	if err := json.Unmarshal(result.StructuredContent, &parsed); err != nil {
+		t.Fatalf("parse apply_patch structured detail: %v", err)
 	}
 	if !parsed.DryRun || parsed.HunkCount != 4 || len(parsed.Files) != 4 {
 		t.Fatalf("unexpected dry-run summary: %+v", parsed)
@@ -1262,8 +1279,9 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
 		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
 	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "without dry_run") {
-		t.Fatalf("apply_patch dry-run response missing apply suggestion: %+v", parsed.Suggestions)
+	resp := result.TextProjection()
+	if !strings.HasPrefix(resp, "Patch validation succeeded.") || strings.Contains(resp, `"diff"`) || strings.Contains(resp, "Patch journal:") {
+		t.Fatalf("unexpected dry-run model response:\n%s", resp)
 	}
 	if changedHookCalls != 0 {
 		t.Fatalf("dry-run should not fire file-change hooks, got %d", changedHookCalls)
@@ -1360,7 +1378,7 @@ func TestToolkit_ApplyPatchUsesCurrentAnchorsWithoutReadBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+	result, err := kit.ExecuteResult(context.Background(), providers.ToolCall{
 		Name:      "apply_patch",
 		Arguments: string(args),
 	})
@@ -1374,8 +1392,8 @@ func TestToolkit_ApplyPatchUsesCurrentAnchorsWithoutReadBaseline(t *testing.T) {
 			NewFileSHA string `json:"new_file_sha"`
 		} `json:"files"`
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse apply_patch response: %v", err)
+	if err := json.Unmarshal(result.StructuredContent, &parsed); err != nil {
+		t.Fatalf("parse apply_patch structured detail: %v", err)
 	}
 	if len(parsed.Files) != 1 || parsed.Files[0].OldFileSHA != currentSHA || !strings.HasPrefix(parsed.Files[0].NewFileSHA, "sha256:") {
 		t.Fatalf("unexpected patch sha metadata: %+v", parsed.Files)

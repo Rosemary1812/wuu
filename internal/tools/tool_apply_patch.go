@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,11 @@ func (t *ApplyPatchTool) ValidateInput(argsJSON string) error {
 }
 
 func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	result, err := t.ExecuteResult(ctx, argsJSON)
+	return result.TextProjection(), err
+}
+
+func (t *ApplyPatchTool) ExecuteResult(ctx context.Context, argsJSON string) (toolresult.Result, error) {
 	var args struct {
 		PatchText  string `json:"patchText"`
 		Patch      string `json:"patch"`
@@ -102,7 +108,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		DryRun2    bool   `json:"dryRun"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
+		return toolresult.Result{}, err
 	}
 	patchText := args.PatchText
 	if strings.TrimSpace(patchText) == "" {
@@ -112,15 +118,15 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		patchText = args.Patch
 	}
 	if strings.TrimSpace(patchText) == "" {
-		return "", errors.New("apply_patch requires patchText")
+		return toolresult.Result{}, errors.New("apply_patch requires patchText")
 	}
 
 	patch, err := parseApplyPatch(patchText)
 	if err != nil {
-		return "", fmt.Errorf("apply_patch verification failed: %w", err)
+		return toolresult.Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 	}
 	if len(patch.Hunks) == 0 {
-		return "", errors.New("apply_patch verification failed: no hunks found")
+		return toolresult.Result{}, errors.New("apply_patch verification failed: no hunks found")
 	}
 
 	dryRun := args.DryRun || args.DryRun2
@@ -132,7 +138,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 	for _, hunk := range patch.Hunks {
 		plan, err := t.planHunk(ctx, hunk)
 		if err != nil {
-			return "", fmt.Errorf("apply_patch verification failed: %w", err)
+			return toolresult.Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 		}
 		plans = append(plans, plan)
 		files = append(files, plan.Result)
@@ -144,11 +150,11 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		var err error
 		snapshots, err = snapshotPatchPlans(plans)
 		if err != nil {
-			return "", fmt.Errorf("apply_patch verification failed: %w", err)
+			return toolresult.Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 		}
 		if err := t.commitPatchPlans(plans); err != nil {
 			_ = rollbackPatchSnapshots(snapshots)
-			return "", fmt.Errorf("apply_patch apply failed: %w", err)
+			return toolresult.Result{}, fmt.Errorf("apply_patch apply failed: %w", err)
 		}
 		t.recordPatchPlanBaselines(plans)
 		t.notifyPatchPlans(plans)
@@ -165,36 +171,91 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		}
 	}
 
-	result := map[string]any{
+	detail := map[string]any{
 		"dry_run":            dryRun,
 		"hunk_count":         len(patch.Hunks),
 		"changed_files":      uniqueNonEmptyStrings(changedFiles),
 		"risk_summary":       riskSummary,
 		"workspace_revision": revisionAfter,
-		"next_suggestions":   applyPatchNextSuggestions(dryRun),
-		"provenance": map[string]any{
-			"tool":   "apply_patch",
-			"source": "model_tool_call",
-		},
-		"files": files,
+		"files":              files,
 	}
 	if journal != nil {
-		result["patch_journal"] = journal
-		result["patch_journal_path"] = journal.ManifestPath
-		result["manifest_path"] = journal.ManifestPath
-		result["patch_path"] = journal.PatchPath
+		detail["manifest_path"] = journal.ManifestPath
+		detail["patch_path"] = journal.PatchPath
 	}
 	if len(warnings) > 0 {
-		result["warnings"] = warnings
+		detail["warnings"] = warnings
 	}
-	return mustJSON(result)
+	structured, err := json.Marshal(detail)
+	if err != nil {
+		return toolresult.Result{}, fmt.Errorf("marshal apply_patch detail: %w", err)
+	}
+	return toolresult.Result{
+		Content: []toolresult.ContentPart{{
+			Type: toolresult.ContentTypeText,
+			Text: applyPatchModelSummary(dryRun, files, revisionAfter, journal, warnings),
+		}},
+		StructuredContent: structured,
+	}, nil
 }
 
-func applyPatchNextSuggestions(dryRun bool) []string {
+func applyPatchModelSummary(dryRun bool, files []applyPatchFileResult, revision string, journal *applyPatchJournalManifest, warnings []string) string {
+	header := "Success. Updated the following files:"
 	if dryRun {
-		return []string{"inspect the previewed diffs, then rerun apply_patch without dry_run only if the preview matches the intended change"}
+		header = "Patch validation succeeded. The following files would be updated:"
 	}
-	return []string{"run targeted validation with command execution if that capability is exposed, then inspect the resulting diff before finishing"}
+
+	records := make([]string, 0, len(files))
+	seen := make(map[string]bool, len(files))
+	for _, file := range files {
+		path := strings.TrimSpace(file.Path)
+		displayPath := path
+		if movePath := strings.TrimSpace(file.MovePath); movePath != "" {
+			displayPath = path + " -> " + movePath
+		}
+		action := strings.ToLower(strings.TrimSpace(file.Action))
+		key := action + "\x00" + displayPath
+		if displayPath == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		marker := "M"
+		switch action {
+		case "add":
+			marker = "A"
+		case "delete":
+			marker = "D"
+		}
+		records = append(records, marker+" "+displayPath)
+	}
+
+	build := func(keep int) string {
+		lines := []string{header}
+		lines = append(lines, records[:keep]...)
+		if omitted := len(records) - keep; omitted > 0 {
+			lines = append(lines, fmt.Sprintf("... %d files omitted", omitted))
+		}
+		if strings.TrimSpace(revision) != "" {
+			lines = append(lines, "Workspace revision: "+revision)
+		}
+		if journal != nil {
+			lines = append(lines,
+				"Patch journal: "+journal.ManifestPath,
+				"Recovery: read the patch journal manifest for the full diff, snapshots, hashes, and rollback instructions.",
+			)
+		}
+		for _, warning := range warnings {
+			if warning = strings.TrimSpace(warning); warning != "" {
+				lines = append(lines, "Warning: "+warning)
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	keep := largestFitting(len(records), defaultProjectionTokenBudget, func(keep int) int {
+		return estimateResultTokens(build(keep))
+	})
+	return build(keep)
 }
 
 type applyPatch struct {

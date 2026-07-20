@@ -173,6 +173,10 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 		result = redactRichToolText(result)
 	}
 	rawProjection := result.TextProjection()
+	telemetryProjection := rawProjection
+	if call.Name == "apply_patch" && len(result.StructuredContent) > 0 {
+		telemetryProjection = string(result.StructuredContent)
+	}
 	returned := result.Clone()
 	returnedProjection := rawProjection
 	resultRef := ""
@@ -203,7 +207,7 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, rawProjection, returnedProjection, resultRef, resultBudgeted, err, projectionDiag)
+	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, telemetryProjection, returnedProjection, resultRef, resultBudgeted, err, projectionDiag)
 
 	return returned, err
 }
