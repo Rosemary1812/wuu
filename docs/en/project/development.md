@@ -54,7 +54,7 @@ Pull requests and pushes to `main` run:
 - **macOS native check:** Swift/native tests and a directory-packaged Electron app.
 
 Tagged releases add unsigned macOS DMG/ZIP verification. GitHub Releases do not
-publish standalone CLI archives. See [release.md](release.md).
+publish standalone CLI archives. See the [release guide](release.md).
 
 ## Product boundaries
 

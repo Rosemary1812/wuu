@@ -37,8 +37,8 @@ source map under `thirdparty/claude-code-sourcemap/src` (a decompiled dump; trea
   default (non-JSON) mode none of these events are produced; stdout gets only the final
   message and stderr gets metadata (`runner.go:186-193`, and the `else`/stderr branches in
   each `emit*` function, e.g. `runner.go:449-452`, `460`, `468`).
-- Design contract (human-authored, not the emitter): `docs/jsonl-events.md`, `docs/exec.md`.
-  Note: `docs/jsonl-events.md:32-63` lists a *target* event family set; the list below is
+- Design contract (human-authored, not the emitter): `docs/en/automation/jsonl-events.md`, `docs/en/automation/exec.md`.
+  Note: `docs/en/automation/jsonl-events.md:32-63` lists a *target* event family set; the list below is
   what the code **actually emits** today. Families present in the doc but not emitted by
   `runner.go` (e.g. a generic `error` for non-schema failures) are called out.
 
@@ -47,7 +47,7 @@ source map under `thirdparty/claude-code-sourcemap/src` (a decompiled dump; trea
 wuu has **no `session_id`**. It identifies work with:
 
 - `thread_id` — a persistent wuu session id, formatted like `20260618-120000-abcdef`
-  (`docs/jsonl-events.md:92`; `appserver.Thread.ID`, `internal/appserver/protocol.go:1254`).
+  (`docs/en/automation/jsonl-events.md:92`; `appserver.Thread.ID`, `internal/appserver/protocol.go:1254`).
 - `turn_id` — one user turn within a thread (`appserver.Turn.ID`,
   `internal/appserver/protocol.go:1313`).
 - `item_id` — one thread item (tool call, message, …) within a turn
@@ -75,7 +75,7 @@ Every payload also has a `type` string. Fields listed are exactly the map keys p
 | `command_started` | `runner.go:477` (only for command tools) | command payload (`runner.go:662-677`): `thread_id`, `turn_id`, `item_id`, `name`, `arguments`, plus `command` / `process_id` extracted from args |
 | `command_output_delta` | `runner.go:510-518` | command payload + `delta` |
 | `command_completed` | `runner.go:495-498` | command payload + `status`, `error` |
-| `file_changed` | `runner.go:501-503` (`fileChangeEventsFromToolResult`, `runner.go:697-718`) | `tool_name`, `path`, `action`, `old_file_sha`, `new_file_sha`, `workspace_revision` (see `docs/jsonl-events.md:309-328`) |
+| `file_changed` | `runner.go:501-503` (`fileChangeEventsFromToolResult`, `runner.go:697-718`) | `tool_name`, `path`, `action`, `old_file_sha`, `new_file_sha`, `workspace_revision` (see `docs/en/automation/jsonl-events.md:309-328`) |
 | `subagent_started` / `subagent_updated` / `subagent_completed` | `runner.go:520-556` (`emitSubagentUpdated`) | `thread_id`, `agent_id`, `agent_type`, `status`, `task_name`, `agent_profile`, `agent_path`, `parent_id`, `description`, `result`, `result_path`, `result_bytes`, `result_truncated`, `error`, `input_tokens`, `output_tokens`, `cache_creation_tokens`, `cache_read_tokens` |
 | `usage_updated` | `runner.go:352` | `thread_id`, `turn_id`, `input_tokens`, `output_tokens`, `cache_creation_tokens`, `cache_read_tokens` |
 | `plan_updated` | `runner.go:866` | `thread_id`, `turn_id`, `plan` |
@@ -95,13 +95,13 @@ Every payload also has a `type` string. Fields listed are exactly the map keys p
   `thread_started`/`thread_resumed`/`thread_forked` (`runner.go:100-107`), then
   `turn_started` (`runner.go:133`).
 - **Last:** exactly one `result` event ends every run (`runner.go:140,146,157,174,180,403`;
-  contract in `docs/jsonl-events.md:14`).
+  contract in `docs/en/automation/jsonl-events.md:14`).
 
 ### 1.5 `result.status` values and error expression
 
 - `status` ∈ `completed`, `failed`, `permission_denied`, `timeout`, `interrupted`
   (set at `runner.go:180`, `174`, `157`, `140`, `146`; also `runner.go:388-403`;
-  `docs/jsonl-events.md:466-472`).
+  `docs/en/automation/jsonl-events.md:466-472`).
 - Errors are expressed two ways:
   1. Per-turn: `turn_failed` event (`runner.go:381`) then a `result` with the failing
      `status` and an `error` string.
@@ -111,7 +111,7 @@ Every payload also has a `type` string. Fields listed are exactly the map keys p
 
 ### 1.6 Exit codes (granular)
 
-Defined in `internal/exec/types.go:13-23` (documented `docs/exec.md:154-166`):
+Defined in `internal/exec/types.go:13-23` (documented `docs/en/automation/exec.md:154-166`):
 
 | Code | Const | Meaning |
 |---|---|---|
@@ -153,7 +153,7 @@ JSONL stream and does not add or change any event.
 
 ### 1.9 Session start / resume / fork are subcommands, not flags
 
-wuu selects thread lifecycle via subcommands (`docs/exec.md:91-108`), e.g.
+wuu selects thread lifecycle via subcommands (`docs/en/automation/exec.md:91-108`), e.g.
 `wuu exec resume --last`, `wuu exec resume <thread-id>`, `wuu exec fork <thread-id>`.
 There is **no** `--session-id`, `--resume`, or `--output-format` flag on `wuu exec`.
 Provider/model are chosen with `--provider` / `--model` / `--effort` / `--variant`
@@ -385,7 +385,7 @@ Legend: **=** direct map · **~** needs transform/synthesis · **wuu∅** wuu ha
 | `--output-format json` | none (wuu has no single-object mode) | wuu∅ |
 | `--output-format text` | default `wuu exec` mode (final message on stdout) | ~ |
 | `--verbose` | n/a (wuu always emits full stream in `--json`) | — |
-| `--input-format stream-json` | `--input-json` reads one input object (`cmd/wuu/main.go:1434`; `docs/exec.md:66-88`) — **not** a streaming JSONL input channel | ~ |
+| `--input-format stream-json` | `--input-json` reads one input object (`cmd/wuu/main.go:1434`; `docs/en/automation/exec.md:66-88`) — **not** a streaming JSONL input channel | ~ |
 | `--max-turns <n>` | `--max-turns <n>` (`cmd/wuu/main.go:1435`) | = |
 | `--max-budget-usd` | none (no cost tracking) | wuu∅ |
 | `--json-schema <schema>` | `--output-schema <schema.json>` (`cmd/wuu/main.go:1436`) | ~ (file vs inline; wuu also injects schema into the prompt) |
@@ -456,7 +456,7 @@ alongside `emitJSON` (`runner.go:978`), keyed off a new `--output-format` value;
    non-Anthropic models). **Recommend emitting `0` and documenting it as unsupported.**
 
 2. **`session_id` UUID semantics.** wuu `thread_id` is `YYYYMMDD-HHMMSS-suffix`
-   (`docs/jsonl-events.md:92`), **not a UUID**. cc consumers that validate the id
+   (`docs/en/automation/jsonl-events.md:92`), **not a UUID**. cc consumers that validate the id
    (`validateUuid`, `cli/print.ts:774`) or feed it back to `--session-id`/`--resume` (which
    require a UUID, `main.tsx:1000`) will reject or mishandle it. A synthetic UUID could be
    minted per run, but then it no longer round-trips to `wuu exec resume <thread-id>`, so
@@ -546,7 +546,7 @@ and usage). The unavoidable lossy points to advertise up front:
 - wuu app-server types: `internal/appserver/protocol.go` (`154-208`, `1100-1210`,
   `1253-1460`).
 - wuu CLI flags/usage: `cmd/wuu/main.go:1400-1456`, `1907-1930`.
-- wuu contract docs: `docs/exec.md`, `docs/jsonl-events.md`.
+- wuu contract docs: `docs/en/automation/exec.md`, `docs/en/automation/jsonl-events.md`.
 - cc print/headless: `thirdparty/claude-code-sourcemap/src/cli/print.ts` (`455-974`,
   `1027-1079`).
 - cc structured IO / control protocol:

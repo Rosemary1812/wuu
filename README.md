@@ -32,11 +32,11 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 |---|---|
 | Install and run your first task | [Install](#install) and [Quick Start](#quick-start) |
 | Use the desktop app | [Desktop App](#desktop-app) |
-| Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`docs/exec.md`](docs/exec.md) |
+| Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`wuu exec`](docs/en/automation/exec.md) |
 | Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
-| Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/app-server-protocol.md) |
+| Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
-| Review the security and trust boundaries | [Security model](docs/security-model.md) |
+| Review the security and trust boundaries | [Security model](docs/en/reference/security-model.md) |
 | Inspect reproducible public evaluations | [Public evaluations](evals/) |
 
 ## News
@@ -98,7 +98,7 @@ go run ./cmd/wuu --version
 ## Quick Start
 
 For installation, provider setup, sessions, attachments, trust boundaries, and
-common problems, read the [user guide](docs/user-guide.md).
+common problems, read the [user guide](docs/en/getting-started/index.md).
 
 **Desktop**
 
@@ -166,7 +166,7 @@ Wuu is split into a reusable **Go core** and a thin **shell**:
 - **Future shells** (VS Code extension, JetBrains plugin, etc.) can consume the same core by spawning `wuu app-server` — no need to import or fork the Go code.
 
 > [!TIP]
-> Building a new shell or integration? Start with the [`app-server` protocol](docs/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
+> Building a new shell or integration? Start with the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
 
 ## Desktop App
 
@@ -198,7 +198,7 @@ wuu exec --file plan.md "implement this plan"
 wuu exec review --uncommitted
 ```
 
-See [`docs/exec.md`](docs/exec.md) for JSONL output, attachments, resume, fork, review, and automation options.
+See [`wuu exec`](docs/en/automation/exec.md) for JSONL output, attachments, resume, fork, review, and automation options.
 
 ## Providers
 
@@ -260,11 +260,11 @@ For another provider, the same config shape applies:
 ## Docs
 
 - Browse all maintained documentation: [Documentation index](docs/README.md)
-- Install, configure, and use wuu: [User guide](docs/user-guide.md)
-- Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/exec.md)
-- Parse the streaming output: [JSONL events](docs/jsonl-events.md)
-- Embed the core in a new shell: [`app-server` protocol](docs/app-server-protocol.md)
-- Consume Claude Code–compatible stream output: [cc-stream-json](docs/compat/cc-stream-json.md)
+- Install, configure, and use wuu: [User guide](docs/en/getting-started/index.md)
+- Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/en/automation/exec.md)
+- Parse the streaming output: [JSONL events](docs/en/automation/jsonl-events.md)
+- Embed the core in a new shell: [`app-server` protocol](docs/en/integrations/app-server-protocol.md)
+- Consume Claude Code–compatible stream output: [Claude Code stream compatibility](docs/en/integrations/compatibility/claude-code-stream-json.md)
 - Set up a development environment: [Contributing](CONTRIBUTING.md)
 
 ## Contributing

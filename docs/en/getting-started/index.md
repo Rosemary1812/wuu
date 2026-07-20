@@ -74,8 +74,8 @@ To use a different configured provider for one run:
 wuu exec --provider anthropic "review the current changes"
 ```
 
-See the [configuration model](configuration-model-zh.md) for configuration
-precedence and trust boundaries, and [`wuu exec`](exec.md) for all automation
+See the [configuration model](../../zh-cn/reference/configuration.md) for configuration
+precedence and trust boundaries, and [`wuu exec`](../automation/exec.md) for all automation
 options.
 
 ## Work in the right repository
@@ -138,7 +138,7 @@ Use `wuu session archive` to hide a session from normal lists and
 - User config, sessions, logs, and other state live under `~/.wuu` by default.
   Set `WUU_HOME` to move that state as one unit.
 
-Read the [security model](security-model.md) before using wuu with untrusted
+Read the [security model](../reference/security-model.md) before using wuu with untrusted
 repositories or sensitive data.
 
 ## Common problems

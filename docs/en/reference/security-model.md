@@ -130,4 +130,4 @@ as the host session. Revoke devices that are lost or no longer trusted.
 4. Pair remote devices in private and use `wss://` for relays across untrusted
    networks.
 5. Review diffs and command output before publishing them.
-6. Report boundary bypasses privately using [SECURITY.md](../SECURITY.md).
+6. Report boundary bypasses privately using [SECURITY.md](../../../SECURITY.md).

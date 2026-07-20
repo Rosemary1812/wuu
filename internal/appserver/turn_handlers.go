@@ -3380,7 +3380,7 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	// A synthetic completion turn belongs to the orchestration tree that
 	// produced it: reuse the completing worker's inherited Ultra value
 	// instead of the current session setting (turn boundary and inheritance,
-	// docs/app-server-protocol.md).
+	// docs/en/integrations/app-server-protocol.md).
 	completionUltra := false
 	for _, turn := range pending {
 		if turn.snapshot != nil && turn.snapshot.Ultra {

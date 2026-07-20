@@ -70,8 +70,8 @@ wuu exec "描述一下这个仓库"
 wuu exec --provider anthropic "审查当前改动"
 ```
 
-配置覆盖顺序和信任边界见[配置模型](configuration-model-zh.md)，完整自动化参数见
-[`wuu exec`](exec.md)。
+配置覆盖顺序和信任边界见[配置模型](../reference/configuration.md)，完整自动化参数见
+[`wuu exec`](../../en/automation/exec.md)（英文）。
 
 ## 在正确的仓库中工作
 
@@ -125,7 +125,7 @@ wuu session show --last
 - 用户配置、会话、日志和其他状态默认位于 `~/.wuu`。设置 `WUU_HOME` 可以整体迁移
   这些状态。
 
-处理不可信仓库或敏感数据前，请先阅读[安全模型](security-model.md)。
+处理不可信仓库或敏感数据前，请先阅读[安全模型](../../en/reference/security-model.md)（英文）。
 
 ## 常见问题
 

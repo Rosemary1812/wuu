@@ -36,7 +36,7 @@ work that affects compatibility across shells.
 - Start the desktop development path: `make dev`
 - Run the full local gate: `make ci`
 
-See [the development guide](docs/development.md) for component commands,
+See [the development guide](docs/en/project/development.md) for component commands,
 supported platforms, CI checks, architecture boundaries, and restart behavior.
 `AGENTS.md` contains additional automation instructions but is not required
 reading for human contributors.
@@ -72,7 +72,7 @@ run.
 - Compatible fixes use a patch release. Features and compatibility-sensitive
   protocol, configuration, data, or behavior changes use a minor release while
   wuu remains pre-1.0.
-- Only maintainers create release tags. See [the release guide](docs/release.md).
+- Only maintainers create release tags. See [the release guide](docs/en/project/release.md).
 
 ### Pull request process
 

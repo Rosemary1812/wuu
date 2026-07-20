@@ -32,11 +32,11 @@
 |---|---|
 | 安装并跑通第一个任务 | [安装](#安装) 和 [快速开始](#快速开始) |
 | 使用桌面应用 | [桌面应用](#桌面应用) |
-| 在脚本、CI 或其他 agent 中调用 wuu | [CLI 和自动化](#cli-和自动化) 和 [`docs/exec.md`](docs/exec.md) |
+| 在脚本、CI 或其他 agent 中调用 wuu | [CLI 和自动化](#cli-和自动化) 和 [`wuu exec`](docs/en/automation/exec.md) |
 | 接入模型提供商（Anthropic、OpenAI 兼容、本地） | [模型提供商](#模型提供商) |
-| 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/app-server-protocol.md) |
+| 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) |
 | 参与贡献 | [贡献指南](CONTRIBUTING.md) |
-| 了解安全和信任边界 | [安全模型](docs/security-model.md) |
+| 了解安全和信任边界 | [安全模型](docs/en/reference/security-model.md) |
 | 查看可复现的公开评测 | [公开评测记录](evals/) |
 
 ## 动态
@@ -95,7 +95,7 @@ go run ./cmd/wuu --version
 
 ## 快速开始
 
-安装、提供商配置、会话、附件、信任边界和常见问题见[用户指南](docs/user-guide-zh.md)。
+安装、提供商配置、会话、附件、信任边界和常见问题见[用户指南](docs/zh-cn/getting-started/index.md)。
 
 **桌面端**
 
@@ -162,7 +162,7 @@ Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
 - **未来的 Shell**（VS Code 插件、JetBrains 插件等）可以通过派生 `wuu app-server` 来复用同一个核心——无需导入或 fork Go 代码。
 
 > [!TIP]
-> 想构建新的 Shell 或集成？从 [`app-server` 协议](docs/app-server-protocol.md) 开始——它完整记录了桌面应用所使用的 JSON-RPC 接口。
+> 想构建新的 Shell 或集成？从 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) 开始——它完整记录了桌面应用所使用的 JSON-RPC 接口。
 
 ## 桌面应用
 
@@ -187,7 +187,7 @@ wuu exec --file plan.md "实现这个计划"
 wuu exec review --uncommitted
 ```
 
-JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`docs/exec.md`](docs/exec.md)。
+JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`wuu exec`](docs/en/automation/exec.md)。
 
 ## 模型提供商
 
@@ -242,12 +242,12 @@ export ANTHROPIC_API_KEY="..."
 ## 文档
 
 - 浏览所有持续维护的文档：[文档索引](docs/README.md)
-- 安装、配置和使用 wuu：[用户指南](docs/user-guide-zh.md)
-- 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/exec.md)
-- 解析流式输出：[JSONL 事件](docs/jsonl-events.md)
-- 将核心嵌入新的 Shell：[`app-server` 协议](docs/app-server-protocol.md)
-- 消费 Claude Code 兼容的流式输出：[cc-stream-json](docs/compat/cc-stream-json.md)
-- 了解配置加载和自动化入口：[`wuu exec`](docs/exec.md)
+- 安装、配置和使用 wuu：[用户指南](docs/zh-cn/getting-started/index.md)
+- 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/en/automation/exec.md)
+- 解析流式输出：[JSONL 事件](docs/en/automation/jsonl-events.md)
+- 将核心嵌入新的 Shell：[`app-server` 协议](docs/en/integrations/app-server-protocol.md)
+- 消费 Claude Code 兼容的流式输出：[Claude Code 流兼容说明](docs/en/integrations/compatibility/claude-code-stream-json.md)
+- 了解配置加载和自动化入口：[`wuu exec`](docs/en/automation/exec.md)
 - 搭建开发环境：[贡献指南](CONTRIBUTING.md)
 
 ## 参与贡献

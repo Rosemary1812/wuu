@@ -4,7 +4,7 @@ This file starts the maintained release record. Earlier GitHub Releases may not
 have complete change notes.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versioning rules are documented in [the release guide](docs/release.md).
+Versioning rules are documented in [the release guide](docs/en/project/release.md).
 
 ## [Unreleased]
 

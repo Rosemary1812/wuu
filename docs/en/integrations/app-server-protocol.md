@@ -148,7 +148,7 @@ Requests a clean app-server shutdown.
 Ultra mode is configured by `agent.ultra_mode`; it defaults to `false`.
 `agent.max_parallel` controls anonymous-worker execution capacity, uses `5`
 when omitted or set to zero, and is unchanged by Ultra mode. See the
-[configuration model](configuration-model-zh.md) for the persistent fields.
+[configuration model](../../zh-cn/reference/configuration.md) for the persistent fields.
 
 The `ultra` member of `ConfigModelUpdateParams` is optional:
 

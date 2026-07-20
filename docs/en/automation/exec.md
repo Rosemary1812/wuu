@@ -148,7 +148,7 @@ In JSONL mode:
 - diagnostics and debug logs must not pollute stdout.
 - the final event is `result`.
 
-See [jsonl-events.md](jsonl-events.md) for the event contract.
+See [JSONL events](jsonl-events.md) for the event contract.
 
 ## Exit Codes
 
@@ -257,7 +257,7 @@ The mode is an in-process tool boundary, not an operating-system sandbox.
 Permitted child processes keep Wuu's OS identity, inherited environment, and
 network stack. `--allow-tool` and `--deny-tool` change the one-run tool surface;
 they do not expand the path boundary or disable hard tool guards. See the
-[security model](security-model.md) before unattended or untrusted-repository
+[security model](../reference/security-model.md) before unattended or untrusted-repository
 use.
 
 ## Session Inspection

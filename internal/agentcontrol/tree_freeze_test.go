@@ -14,7 +14,7 @@ import (
 // turn/interrupt semantics: the freeze cancels the whole tree preserving
 // partial state, gates wakes so racing terminals cannot restart cancelled
 // parents, and ResolveFrozenWorkerTree hands the held results to the next
-// user turn exactly once (docs/app-server-protocol.md, Turn Interrupt and
+// user turn exactly once (docs/en/integrations/app-server-protocol.md, Turn Interrupt and
 // Tree Freeze).
 func TestFreezeWorkerTreeCancelsAndHoldsResults(t *testing.T) {
 	dir := t.TempDir()

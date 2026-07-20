@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "site": {
+    "title": "wuu",
+    "description": "在本地工作区中与你共同完成工作的 AI Agent",
+    "default_locale": "zh-CN"
+  },
+  "locales": {
+    "zh-CN": {
+      "label": "简体中文",
+      "root": "zh-cn",
+      "navigation": [
+        {
+          "title": "开始使用",
+          "pages": [
+            "zh-cn/index.md",
+            "zh-cn/getting-started/index.md"
+          ]
+        },
+        {
+          "title": "配置",
+          "pages": [
+            "zh-cn/reference/configuration.md"
+          ]
+        },
+        {
+          "title": "自动化与集成（英文）",
+          "pages": [
+            "en/automation/exec.md",
+            "en/automation/jsonl-events.md",
+            "en/integrations/app-server-protocol.md",
+            "en/integrations/compatibility/claude-code-stream-json.md"
+          ]
+        },
+        {
+          "title": "安全与项目（英文）",
+          "pages": [
+            "en/reference/security-model.md",
+            "en/project/development.md",
+            "en/project/release.md"
+          ]
+        }
+      ]
+    },
+    "en": {
+      "label": "English",
+      "root": "en",
+      "navigation": [
+        {
+          "title": "Start",
+          "pages": [
+            "en/index.md",
+            "en/getting-started/index.md"
+          ]
+        },
+        {
+          "title": "Automation",
+          "pages": [
+            "en/automation/exec.md",
+            "en/automation/jsonl-events.md"
+          ]
+        },
+        {
+          "title": "Integrations",
+          "pages": [
+            "en/integrations/app-server-protocol.md",
+            "en/integrations/compatibility/claude-code-stream-json.md"
+          ]
+        },
+        {
+          "title": "Reference",
+          "pages": [
+            "en/reference/security-model.md",
+            "en/project/development.md",
+            "en/project/release.md"
+          ]
+        }
+      ]
+    }
+  }
+}

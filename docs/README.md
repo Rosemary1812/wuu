@@ -1,36 +1,42 @@
-# Documentation
+# wuu documentation
 
-This directory contains maintained documentation for using, integrating, and
-developing wuu. Start with the section that matches what you are trying to do.
+The documentation in this directory is organized as publishable content, not as
+a loose collection of repository notes.
 
-## Use wuu
+- [简体中文入口](zh-cn/index.md)
+- [English entry](en/index.md)
+- [Site manifest](site.json)
 
-- [User guide](user-guide.md) ([中文](user-guide-zh.md)) — install wuu,
-  connect a provider, work in a repository, continue sessions, and solve common
-  setup problems.
-- [`wuu exec`](exec.md) — run wuu from a terminal, script, CI job, or another agent.
-- [Configuration model](configuration-model-zh.md) — understand configuration
-  sources, ownership, trust boundaries, and platform-specific behavior (Chinese).
+## Content structure
 
-## Build an integration
+```text
+docs/
+├── site.json                 # site identity, locales, and navigation
+├── zh-cn/                    # Simplified Chinese content
+├── en/                       # English content
+│   ├── getting-started/
+│   ├── automation/
+│   ├── integrations/
+│   ├── reference/
+│   └── project/
+└── plans/                    # ignored working notes; never published
+```
 
-- [App-server protocol](app-server-protocol.md) — embed the Go core in another shell.
-- [JSONL events](jsonl-events.md) — consume the event stream from `wuu exec --json`.
-- [Claude Code stream compatibility](compat/cc-stream-json.md) — compare wuu JSONL
-  with Claude Code's `stream-json` format.
+The current tree keeps all maintained legacy documents, but groups them by
+reader intent. A page may link to another language when no translation exists;
+the link label should make that fallback clear.
 
-## Develop and release wuu
+## Authoring rules
 
-- [Development guide](development.md) — set up the repository and run checks.
-- [Contributing guide](../CONTRIBUTING.md) — report issues and submit changes.
-- [Release guide](release.md) — prepare and verify a release.
+- Write standard Markdown so the same source works on GitHub and in a future
+  wuu publishing flow.
+- Use relative links between pages and keep images in a nearby `assets/`
+  directory.
+- Describe behavior that exists today. Keep proposals and temporary task notes
+  out of the published navigation.
+- Add a page to `site.json` when it should appear in the published site.
+- Prefer one task-oriented page over a large feature inventory.
 
-## Design and security
-
-- [Security model](security-model.md) — review trust boundaries and security rules.
-- [Desktop design notes](../desktop/DESIGN.md) — follow durable interaction and
-  visual design decisions for the Electron shell.
-
-Implementation plans and task notes are temporary working material, not maintained
-project documentation. Local files under `docs/plans/` are ignored and must not be
-committed as permanent references.
+The manifest is intentionally small and renderer-neutral. It defines the
+content contract without binding the repository to Astro, MDX, or a hosted
+documentation service.

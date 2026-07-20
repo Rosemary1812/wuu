@@ -92,7 +92,7 @@ spawn，因此不经过 spawn 排队闸门；整合开始时，实际运行数�
 
 ### App-server 与 CLI
 
-[`config/model/update`](app-server-protocol.md#ultra-mode-configuration) 的请求可以带可选
+[`config/model/update`](../../en/integrations/app-server-protocol.md#ultra-mode-configuration) 的请求可以带可选
 字段 `ultra`。省略该字段会保留当前值；`{"ultra": true}` 或
 `{"ultra": false}` 可以单独更新模式，也可以与模型更新一起原子写入配置。
 `initialize`、`config/read` 和 `config/model/update` 的结果都会回读 `ultra` 与

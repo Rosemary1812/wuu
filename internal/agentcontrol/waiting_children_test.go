@@ -84,7 +84,7 @@ func waitForWorkerStatus(t *testing.T, c *AgentControl, id string, want subagent
 // A parent that finishes its final message while a direct child is still
 // running parks as waiting_children (result held, no delivery), resumes when
 // the child's result arrives, and only its integrated completion delivers —
-// once (docs/app-server-protocol.md, Anonymous Worker Lifecycle States).
+// once (docs/en/integrations/app-server-protocol.md, Anonymous Worker Lifecycle States).
 func TestCompletedParentParksUntilChildDelivers(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
