@@ -1528,11 +1528,11 @@ WHERE id = ? AND operation_id = ?`, attemptID, operationID).Scan(&phase, &existi
 UPDATE inference_attempts SET
     phase = 'terminal', terminal_outcome = ?, terminal_at = ?,
     failure_origin = ?, failure_category = ?, provider_family = ?,
-    provider_code = ?, http_status = ?, confidence = ?
+    provider_code = ?, http_status = ?, confidence = ?, failure_message = ?
 WHERE id = ? AND operation_id = ?`,
 		string(outcome), stamp, string(failure.Origin), string(failure.Category),
 		journalText(failure.ProviderFamily, 128), journalText(failure.ProviderCode, 128),
-		failure.HTTPStatus, string(failure.Confidence), attemptID, operationID,
+		failure.HTTPStatus, string(failure.Confidence), journalText(failure.Message, 256), attemptID, operationID,
 	)
 	return err
 }
@@ -1561,13 +1561,13 @@ SELECT status, terminal_outcome FROM inference_operations WHERE id = ?`, operati
 UPDATE inference_operations SET
     status = ?, terminal_outcome = ?, recovery_action = ?,
     failure_origin = ?, failure_category = ?, provider_family = ?,
-    provider_code = ?, http_status = ?, confidence = ?,
+    provider_code = ?, http_status = ?, confidence = ?, failure_message = ?,
     updated_at = ?, terminal_at = ?
 WHERE id = ?`,
 		string(outcome), string(outcome), string(action),
 		string(failure.Origin), string(failure.Category), journalText(failure.ProviderFamily, 128),
 		journalText(failure.ProviderCode, 128), failure.HTTPStatus, string(failure.Confidence),
-		stamp, stamp, operationID,
+		journalText(failure.Message, 256), stamp, stamp, operationID,
 	)
 	return err
 }

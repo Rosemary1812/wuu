@@ -2,6 +2,8 @@ package providers
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -121,7 +123,9 @@ type InferenceWorkflowTerminalRecord struct {
 }
 
 // InferenceJournalFailure is the durable allowlist of failure metadata. Raw
-// bodies and Cause deliberately do not have fields here.
+// bodies and Cause deliberately do not have fields here; Message is the one
+// exception, derived from Cause only after credential-shaped fragments are
+// redacted, whitespace is collapsed, and the result is truncated.
 type InferenceJournalFailure struct {
 	Origin         FailureOrigin
 	Category       FailureCategory
@@ -129,6 +133,7 @@ type InferenceJournalFailure struct {
 	ProviderCode   string
 	HTTPStatus     int
 	Confidence     ClassificationConfidence
+	Message        string
 }
 
 func DurableInferenceFailure(failure NormalizedFailure) InferenceJournalFailure {
@@ -139,7 +144,30 @@ func DurableInferenceFailure(failure NormalizedFailure) InferenceJournalFailure 
 		ProviderCode:   failure.ProviderCode,
 		HTTPStatus:     failure.HTTPStatus,
 		Confidence:     failure.ClassificationConfidence,
+		Message:        sanitizeInferenceFailureMessage(failure.Cause),
 	}
+}
+
+// inferenceFailureMessageSecrets matches credential-shaped fragments that
+// transport errors occasionally echo (auth URLs, header values, SDK client
+// options). The key prefix is kept so the message stays readable.
+var inferenceFailureMessageSecrets = regexp.MustCompile(`(?i)(bearer\s+|sk-|api[-_]?key\s*[=:]\s*|token\s*[=:]\s*|secret\s*[=:]\s*|password\s*[=:]\s*)[^\s,;\)\]\}"']+`)
+
+// sanitizeInferenceFailureMessage derives the durable one-line summary from a
+// failure cause: redact credential-shaped fragments, collapse all whitespace
+// (wrapped errors span lines), and cap the length. Everything else about the
+// cause - stack, request body - never reaches the journal.
+func sanitizeInferenceFailureMessage(cause error) string {
+	if cause == nil {
+		return ""
+	}
+	msg := inferenceFailureMessageSecrets.ReplaceAllString(cause.Error(), "${1}[redacted]")
+	msg = strings.Join(strings.Fields(msg), " ")
+	runes := []rune(msg)
+	if len(runes) > 200 {
+		msg = string(runes[:200])
+	}
+	return msg
 }
 
 type InferenceTerminalOutcome string

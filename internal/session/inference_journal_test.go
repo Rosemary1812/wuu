@@ -557,6 +557,64 @@ func TestInferenceJournalReplayBudgetExemptsUnansweredNetworkFailure(t *testing.
 	})
 }
 
+func TestInferenceJournalPersistsFailureMessage(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-failure-message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-failure-message")
+	now := time.Now().UTC()
+
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	hash := testInferenceHash("failure-message")
+	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: hash, At: now}); err != nil {
+		t.Fatal(err)
+	}
+	attemptID := op.AttemptID(1)
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Ordinal: 1, RequestHash: hash, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	failure := providers.DurableInferenceFailure(providers.NormalizedFailure{
+		Origin:   providers.FailureOriginNetwork,
+		Category: providers.FailureNetwork,
+		Cause:    errors.New(`Post "https://api.example.com/v1/messages" (token=t0psecret123): connection reset by peer`),
+	})
+	if err := journal.CompleteAttempt(providers.InferenceAttemptTerminalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Outcome: providers.InferenceOutcomeFailed, Failure: failure, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{
+		OperationID: op.ID, Outcome: providers.InferenceOutcomeFailed, Failure: failure, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := `Post "https://api.example.com/v1/messages" (token=[redacted]): connection reset by peer`
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var attemptMessage, operationMessage string
+	if err := db.QueryRow(`SELECT failure_message FROM inference_attempts WHERE id = ?`, attemptID).Scan(&attemptMessage); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT failure_message FROM inference_operations WHERE id = ?`, op.ID).Scan(&operationMessage); err != nil {
+		t.Fatal(err)
+	}
+	if attemptMessage != want {
+		t.Fatalf("attempt failure_message = %q, want %q", attemptMessage, want)
+	}
+	if operationMessage != want {
+		t.Fatalf("operation failure_message = %q, want %q", operationMessage, want)
+	}
+}
+
 func TestInferenceJournalRecoveryAttemptAdmissionRollsBackAtomically(t *testing.T) {
 	dir := t.TempDir()
 	runtime, err := NewInferenceJournalRuntime(dir, "workspace-recovery-atomic")

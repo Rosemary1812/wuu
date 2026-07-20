@@ -1057,6 +1057,7 @@ func migrateSchema(db *sql.DB) error {
 			provider_code      TEXT NOT NULL DEFAULT '',
 			http_status        INTEGER NOT NULL DEFAULT 0,
 			confidence         TEXT NOT NULL DEFAULT '',
+			failure_message    TEXT NOT NULL DEFAULT '',
 			created_at         INTEGER NOT NULL,
 			updated_at         INTEGER NOT NULL,
 			terminal_at        INTEGER NOT NULL DEFAULT 0
@@ -1082,6 +1083,7 @@ func migrateSchema(db *sql.DB) error {
 			provider_code      TEXT NOT NULL DEFAULT '',
 			http_status        INTEGER NOT NULL DEFAULT 0,
 			confidence         TEXT NOT NULL DEFAULT '',
+			failure_message    TEXT NOT NULL DEFAULT '',
 			prepared_at        INTEGER NOT NULL,
 			dispatching_at     INTEGER NOT NULL DEFAULT 0,
 			sent_at            INTEGER NOT NULL DEFAULT 0,
@@ -1217,6 +1219,12 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "inference_operations", "attempt_limit", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "inference_operations", "failure_message", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "inference_attempts", "failure_message", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// Existing journal rows predate workflow identity. Give each historical
