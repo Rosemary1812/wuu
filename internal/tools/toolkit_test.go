@@ -2013,7 +2013,7 @@ func TestToolkit_UpdatePlan_RejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestToolkit_UpdatePlan_ReturnsConciseResult(t *testing.T) {
+func TestToolkit_UpdatePlan_ReturnsSnapshotResult(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -2038,8 +2038,10 @@ func TestToolkit_UpdatePlan_ReturnsConciseResult(t *testing.T) {
 	if parsed.Action != "update_plan" || parsed.Status != "updated" || parsed.Explanation != "" {
 		t.Fatalf("unexpected response metadata: %+v", parsed)
 	}
-	if len(parsed.Plan) != 0 {
-		t.Fatalf("tool result should not echo plan: %+v", parsed.Plan)
+	// The result echoes the stored snapshot so the transcript tail keeps a
+	// fresh copy of the plan now that the TASK_STATE ledger is opt-in.
+	if len(parsed.Plan) != 2 || parsed.Plan[0].Step != "inspect" || parsed.Plan[1].Status != PlanStatusInProgress {
+		t.Fatalf("tool result should echo the stored plan: %+v", parsed.Plan)
 	}
 	records := kit.ToolTelemetry()
 	if len(records) != 1 || records[0].ResultAction != "update_plan" {

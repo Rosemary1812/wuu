@@ -150,7 +150,9 @@ func (t *UpdatePlanTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "update_plan",
 		Description: "Update the current task plan. Use this for multi-step work so the user can see what is pending, in progress, and completed. " +
-			"Provide the full current plan every time. Exactly one item must be in_progress until all plan items are completed.",
+			"Provide the full current plan every time. Exactly one item must be in_progress until all plan items are completed. " +
+			"After finishing a step, call update_plan again to mark it completed and the next step in_progress before moving on. " +
+			"When every step is done, call update_plan to mark all items completed.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -196,7 +198,14 @@ func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, er
 	if t.env.OnPlanUpdated != nil {
 		t.env.OnPlanUpdated(snapshot)
 	}
-	return mustJSON(map[string]string{"action": "update_plan", "status": "updated"})
+	// Echo the stored snapshot so the transcript tail always carries a fresh
+	// copy of the plan; the derived TASK_STATE ledger no longer re-states it
+	// on every request.
+	return mustJSON(map[string]any{
+		"action": "update_plan",
+		"status": "updated",
+		"plan":   snapshot.Plan,
+	})
 }
 
 func decodePlanSnapshot(raw string) (PlanSnapshot, error) {
