@@ -8,6 +8,17 @@ Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-20
+
+### Changed
+
+- Aligned `apply_patch` completion messages and client file-change records with
+  Codex while removing redundant patch journals and metadata.
+
+### Fixed
+
+- Preserved trailing Markdown emphasis markers during streamed rendering.
+
 ## [0.7.1] - 2026-07-19
 
 ### Changed
