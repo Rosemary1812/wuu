@@ -13,9 +13,9 @@ func TestSanitizeInferenceFailureMessage(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
+		name  string
 		cause error
-		want string
+		want  string
 	}{
 		{
 			name:  "plain transport error",

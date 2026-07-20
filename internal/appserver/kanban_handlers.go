@@ -161,8 +161,8 @@ func (s *Server) handleKanbanCreateTask(req Request) error {
 }
 
 type KanbanListTasksParams struct {
-	SpaceID   string `json:"space_id"`
-	ParentID  string `json:"parent_id,omitempty"`
+	SpaceID  string `json:"space_id"`
+	ParentID string `json:"parent_id,omitempty"`
 }
 
 func (s *Server) handleKanbanListTasks(req Request) error {
@@ -760,9 +760,9 @@ func (s *Server) handleParticipantSaveManifest(req Request) error {
 const kanbanAutoDispatchActor = "auto"
 
 type KanbanAutoDispatchParams struct {
-	SpaceID    string `json:"space_id"`
-	ThreadID   string `json:"thread_id"`
-	TargetID   string `json:"target_id,omitempty"`
+	SpaceID  string `json:"space_id"`
+	ThreadID string `json:"thread_id"`
+	TargetID string `json:"target_id,omitempty"`
 }
 
 type kanbanAutoDispatchSkippedWire struct {

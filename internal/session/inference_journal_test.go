@@ -510,7 +510,7 @@ func TestInferenceJournalReplayBudgetExemptsUnansweredNetworkFailure(t *testing.
 	replay := func(op providers.InferenceOperation, workflowID, hash string) error {
 		return journal.PrepareRecoveryAttempt(context.Background(), providers.InferenceRecoveryAttemptJournalRecord{
 			Recovery: providers.InferenceRecoveryJournalRecord{
-				OperationID: op.ID, AttemptID: op.AttemptID(1), Action: providers.RecoveryReplaySame, At: now.Add(3*time.Millisecond),
+				OperationID: op.ID, AttemptID: op.AttemptID(1), Action: providers.RecoveryReplaySame, At: now.Add(3 * time.Millisecond),
 			},
 			NextAttempt: providers.InferenceAttemptJournalRecord{
 				OperationID: op.ID, WorkflowID: workflowID, AttemptID: op.AttemptID(2), Ordinal: 2,

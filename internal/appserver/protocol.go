@@ -883,7 +883,7 @@ type ProviderModelVariantSummary struct {
 }
 
 type ThreadStartParams struct {
-	Ephemeral     bool `json:"ephemeral,omitempty"`
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 type ThreadStartResult struct {
