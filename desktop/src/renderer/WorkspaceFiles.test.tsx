@@ -16,6 +16,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
     readOnly,
     onChange,
     onSave,
+    onCursorPositionChange,
   }: {
     path: string;
     text: string;
@@ -23,6 +24,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
     readOnly?: boolean;
     onChange?: (value: string) => void;
     onSave?: () => void;
+    onCursorPositionChange?: (position: { lineNumber: number; column: number }) => void;
   }) => (
     <div
       className="workspace-monaco-editor"
@@ -40,6 +42,9 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
       </button>
       <button type="button" className="mock-editor-save" disabled={readOnly} onClick={() => onSave?.()}>
         mock save
+      </button>
+      <button type="button" className="mock-editor-cursor" disabled={readOnly} onClick={() => onCursorPositionChange?.({ lineNumber: 3, column: 5 })}>
+        mock cursor
       </button>
     </div>
   ),
@@ -385,7 +390,10 @@ describe("WorkspaceFileTree", () => {
 
     expect(readWorkspaceFile).toHaveBeenCalledWith("AGENTS.txt", "/repo");
     expect(container.querySelector(".workspace-monaco-editor")).not.toBeNull();
-    expect(container.querySelector(".workspace-file-preview-header")).toBeNull();
+    expect(container.querySelector(".workspace-file-preview-header")).not.toBeNull();
+    expect(
+      container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.readonly,
+    ).toBe("false");
     expect(container.textContent).toContain("Execution Autonomy");
   });
 
@@ -417,8 +425,12 @@ describe("WorkspaceFileTree", () => {
     expect(content?.innerHTML).not.toContain("<tag>");
   });
 
-  it("keeps text files readonly without exposing edit or save controls", async () => {
+  it("allows text files to be edited and saved", async () => {
     const onDirtyChange = vi.fn();
+    writeWorkspaceFile.mockResolvedValueOnce({
+      status: "saved",
+      file: workspaceFile({ text: "edited code\n" }),
+    });
     await render(
       <WorkspaceFilePreview
         activeContext={activeContext}
@@ -429,15 +441,72 @@ describe("WorkspaceFileTree", () => {
     );
 
     await settleDirectoryLoads();
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.readonly).toBe("true");
-    expect(container.querySelector(".workspace-file-editor-toolbar")).toBeNull();
-    expect(container.querySelector(".workspace-file-save-button")).toBeNull();
-    expect(writeWorkspaceFile).not.toHaveBeenCalled();
+
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.readonly).toBe("false");
+    expect(container.querySelector(".workspace-file-save-button")).not.toBeNull();
     expect(onDirtyChange).toHaveBeenLastCalledWith({
       root: "/repo",
       path: "src/index.ts",
       dirty: false,
     });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
+    });
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith({
+      root: "/repo",
+      path: "src/index.ts",
+      dirty: true,
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.click();
+    });
+    await flushMacrotask();
+
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      {
+        path: "src/index.ts",
+        text: "edited code\n",
+        base_mtime_ms: 1000,
+        base_sha256: "a".repeat(64),
+      },
+      "/repo",
+    );
+    expect(container.querySelector(".workspace-file-save-status.saved")).not.toBeNull();
+    expect(onDirtyChange).toHaveBeenLastCalledWith({
+      root: "/repo",
+      path: "src/index.ts",
+      dirty: false,
+    });
+  });
+
+  it("shows a conflict status when the file changed on disk during save", async () => {
+    writeWorkspaceFile.mockResolvedValueOnce({
+      status: "conflict",
+      file: workspaceFile({ text: "server version" }),
+    });
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.click();
+    });
+    await flushMacrotask();
+
+    expect(writeWorkspaceFile).toHaveBeenCalled();
+    expect(container.querySelector(".workspace-file-save-status.conflict")).not.toBeNull();
   });
 
   it("keeps truncated text files readonly", async () => {

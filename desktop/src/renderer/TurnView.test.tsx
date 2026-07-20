@@ -383,6 +383,29 @@ describe("TurnView", () => {
     act(() => button?.click());
     expect(onOpenRuns).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the answer action bar on interrupted turns with a final answer", () => {
+    const onOpenRuns = vi.fn();
+    const view = render(
+      makeTurn("interrupted", [
+        {
+          id: "call-1",
+          type: "tool_call",
+          status: "completed",
+          name: "bash",
+          arguments: JSON.stringify({ command: "npm test" }),
+          display: { kind: "command", capability: "command.bash" },
+          result: JSON.stringify({ exit_code: 0 }),
+        },
+        makeFinalAnswer("partial answer"),
+      ]),
+      onOpenRuns,
+    );
+
+    expect(view.querySelector(".agent-message-actions")).not.toBeNull();
+    expect(view.querySelector("button:has(.lucide-copy)")).not.toBeNull();
+    expect(view.querySelector("button:has(.lucide-square-terminal)")).not.toBeNull();
+  });
 });
 
 describe("TurnView optimistic placeholder", () => {

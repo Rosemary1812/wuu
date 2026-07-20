@@ -1,7 +1,7 @@
 import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { AlertCircle, FileText, FolderOpen, FolderX } from "lucide-react";
-import { type CSSProperties, Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Check, FileText, FolderOpen, FolderX, Save } from "lucide-react";
+import { type CSSProperties, Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
@@ -504,6 +504,10 @@ export function WorkspaceFilePreview({
   const [draftText, setDraftText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error" | "conflict">("idle");
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  const [markdownEditMode, setMarkdownEditMode] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState<{ lineNumber: number; column: number } | undefined>(undefined);
   const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
   const markdownHostRef = useRef<HTMLDivElement>(null);
   const selectedWorkspaceFilePath = useMemo(
@@ -517,6 +521,9 @@ export function WorkspaceFilePreview({
       setDraftText("");
       setError(undefined);
       setLoading(false);
+      setSaveState("idle");
+      setSaveError(undefined);
+      setMarkdownEditMode(false);
       return;
     }
 
@@ -526,6 +533,9 @@ export function WorkspaceFilePreview({
     setDraftText("");
     setLoading(true);
     setError(undefined);
+    setSaveState("idle");
+    setSaveError(undefined);
+    setMarkdownEditMode(false);
     void window.wuu
       .readWorkspaceFile(selectedWorkspaceFilePath, activeContext?.cwd)
       .then((result) => {
@@ -551,25 +561,23 @@ export function WorkspaceFilePreview({
   }, [activeContext?.cwd, selectedWorkspaceFilePath, locale]);
 
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
-  const isMarkdownReadingMode = isMarkdown && !selection;
+  const isMarkdownReadingMode = isMarkdown && !selection && !markdownEditMode;
   const dirtyStatePath = file?.path ?? selectedWorkspaceFilePath;
 
-  useEffect(() => {
-    if (!isMarkdownReadingMode || !anchor) {
-      return;
+  const dirty = useMemo(() => {
+    if (!file || file.binary || file.renderable_url || file.truncated) {
+      return false;
     }
-    const target = Array.from(markdownHostRef.current?.querySelectorAll<HTMLElement>("[id]") ?? [])
-      .find((element) => element.id === anchor);
-    target?.scrollIntoView({ block: "start" });
-  }, [anchor, draftText, isMarkdownReadingMode]);
+    return draftText !== (file.text ?? "");
+  }, [draftText, file]);
 
   useEffect(() => {
     onDirtyChange?.({
       root: activeContext?.cwd,
       path: dirtyStatePath,
-      dirty: false,
+      dirty,
     });
-  }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
+  }, [activeContext?.cwd, dirty, dirtyStatePath, onDirtyChange]);
 
   useEffect(() => {
     return () => {
@@ -580,6 +588,56 @@ export function WorkspaceFilePreview({
       });
     };
   }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
+
+  useEffect(() => {
+    if (!isMarkdownReadingMode || !anchor) {
+      return;
+    }
+    const target = Array.from(markdownHostRef.current?.querySelectorAll<HTMLElement>("[id]") ?? [])
+      .find((element) => element.id === anchor);
+    target?.scrollIntoView({ block: "start" });
+  }, [anchor, draftText, isMarkdownReadingMode]);
+
+  const handleEditorChange = useCallback((value: string) => {
+    setDraftText(value);
+    setSaveState("idle");
+    setSaveError(undefined);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!file || !activeContext || !dirty) {
+      return;
+    }
+    setSaveState("saving");
+    setSaveError(undefined);
+    try {
+      const result = await window.wuu.writeWorkspaceFile(
+        {
+          path: file.path,
+          text: draftText,
+          base_mtime_ms: file.mtime_ms,
+          base_sha256: file.sha256,
+        },
+        activeContext.cwd,
+      );
+      if (result.status === "saved") {
+        setFile(result.file);
+        setSaveState("saved");
+      } else {
+        setSaveState("conflict");
+      }
+    } catch (nextError) {
+      setSaveState("error");
+      setSaveError(desktopApiErrorMessage(nextError, translateCurrent("workspace.files.saveFailed")));
+    }
+  }, [activeContext, draftText, dirty, file]);
+
+  const handleCursorPositionChange = useCallback((position: { lineNumber: number; column: number }) => {
+    setCursorPosition(position);
+  }, []);
+
+  const editable = Boolean(file && !file.binary && !file.renderable_url && !file.truncated);
+  const languageLabel = useMemo(() => workspaceFileExtension(file?.path ?? "").toUpperCase(), [file]);
 
   if (!activeContext) {
     return (
@@ -654,8 +712,53 @@ export function WorkspaceFilePreview({
     );
   }
 
+  const fileName = file.path.split(/[\\/]/).filter(Boolean).at(-1) ?? file.path;
+
   return (
-    <article className="workspace-file-preview readonly">
+    <article className={`workspace-file-preview${editable ? " editable" : " readonly"}`}>
+      {editable ? (
+        <header className="workspace-file-preview-header">
+          <div>
+            <strong>{fileName}</strong>
+            <span>{file.path}</span>
+          </div>
+          <div className="workspace-file-preview-actions">
+            {isMarkdown ? (
+              <button
+                type="button"
+                className="workspace-file-preview-action"
+                onClick={() => setMarkdownEditMode((value) => !value)}
+              >
+                {isMarkdownReadingMode ? t("workspace.files.edit") : t("workspace.files.preview")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="workspace-file-save-button"
+              disabled={!dirty || saveState === "saving"}
+              onClick={handleSave}
+            >
+              <Save className="icon" size={14} />
+              {t("common.save")}
+            </button>
+            {saveState === "saved" ? (
+              <span className="workspace-file-save-status saved">
+                <Check className="icon" size={14} />
+                {t("workspace.files.saved")}
+              </span>
+            ) : null}
+            {saveState === "saving" ? (
+              <span className="workspace-file-save-status saving">{t("workspace.files.saving")}</span>
+            ) : null}
+            {saveState === "conflict" ? (
+              <span className="workspace-file-save-status conflict">{t("workspace.files.conflict")}</span>
+            ) : null}
+            {saveState === "error" && saveError ? (
+              <span className="workspace-file-save-status error">{saveError}</span>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
       <div className={`workspace-file-editor-scroll ${isMarkdownReadingMode ? "markdown-reading" : "code"}`}>
         {isMarkdownReadingMode ? (
           <div className="workspace-markdown-reading" ref={markdownHostRef}>
@@ -674,7 +777,10 @@ export function WorkspaceFilePreview({
               resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
               selection={selection}
               text={draftText}
-              readOnly
+              readOnly={!editable}
+              onChange={editable ? handleEditorChange : undefined}
+              onSave={editable ? handleSave : undefined}
+              onCursorPositionChange={handleCursorPositionChange}
               onViewStateChange={(viewState) => {
                 editorViewStateRef.current = viewState;
               }}
@@ -682,10 +788,29 @@ export function WorkspaceFilePreview({
           </Suspense>
         ) : null}
       </div>
+      {editable ? (
+        <footer className="workspace-file-editor-statusbar">
+          <span className="workspace-file-status-language">{languageLabel}</span>
+          {cursorPosition ? (
+            <span className="workspace-file-status-cursor">
+              {t("workspace.files.lineColumn", cursorPosition)}
+            </span>
+          ) : null}
+        </footer>
+      ) : null}
     </article>
   );
 }
 
 function isMarkdownPath(path: string): boolean {
   return /\.mdx?$/i.test(path);
+}
+
+function workspaceFileExtension(path: string): string {
+  const basename = path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+  if (!basename.includes(".")) {
+    return "";
+  }
+  const extension = basename.split(".").at(-1);
+  return extension ?? "";
 }

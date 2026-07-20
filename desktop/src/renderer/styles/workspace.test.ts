@@ -110,10 +110,20 @@ describe("workspace right panel chrome", () => {
 describe("workspace readonly file preview", () => {
   it("removes editing chrome and gives the content the full available height", () => {
     expect(workspaceCss).not.toContain(".workspace-file-editor-toolbar");
-    expect(workspaceCss).not.toContain(".workspace-file-save-button");
     expect(workspaceCss).not.toContain(".workspace-markdown-mode-switch");
     expect(cssRuleBody(".workspace-file-preview.readonly")).toMatch(
       /grid-template-rows:\s*minmax\(0, 1fr\);/,
+    );
+  });
+});
+
+describe("workspace editable file preview", () => {
+  it("adds a header and a status bar around the editor surface", () => {
+    expect(workspaceCss).toContain(".workspace-file-preview-header");
+    expect(workspaceCss).toContain(".workspace-file-save-button");
+    expect(workspaceCss).toContain(".workspace-file-editor-statusbar");
+    expect(cssRuleBody(".workspace-file-preview.editable")).toMatch(
+      /grid-template-rows:\s*auto minmax\(0, 1fr\) auto;/,
     );
   });
 });

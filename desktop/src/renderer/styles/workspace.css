@@ -2053,7 +2053,11 @@ html.resizing-workspace-terminal-split * {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.workspace-file-preview.editable {
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .workspace-file-preview.readonly {
@@ -2066,13 +2070,15 @@ html.resizing-workspace-terminal-split * {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--surface-3);
-  padding: 14px 22px;
+  padding: 10px 16px;
+  gap: 12px;
+  background: var(--paper);
 }
 
 .workspace-file-preview-header div {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 2px;
 }
 
 .workspace-file-preview-header strong,
@@ -2085,13 +2091,126 @@ html.resizing-workspace-terminal-split * {
 
 .workspace-file-preview-header strong {
   color: var(--ink);
-  font-size: var(--font-title);
+  font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
 }
 
 .workspace-file-preview-header span {
   color: var(--ink-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
+}
+
+.workspace-file-preview-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-file-preview-action,
+.workspace-file-save-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--ink);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background-color var(--motion-base) var(--ease-out), border-color var(--motion-base) var(--ease-out);
+}
+
+.workspace-file-preview-action:hover,
+.workspace-file-save-button:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--surface-4);
+}
+
+.workspace-file-save-button {
+  border-color: var(--wuu-accent);
+  background: var(--wuu-accent);
+  color: #ffffff;
+}
+
+.workspace-file-save-button:hover:not(:disabled) {
+  background: var(--wuu-accent-press);
+  border-color: var(--wuu-accent-press);
+}
+
+.workspace-file-save-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.workspace-file-save-button .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-file-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.workspace-file-save-status.saved {
+  color: var(--success);
+}
+
+.workspace-file-save-status.saving {
+  color: var(--ink-tertiary);
+}
+
+.workspace-file-save-status.conflict,
+.workspace-file-save-status.error {
+  color: var(--danger);
+}
+
+.workspace-file-save-status .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-file-editor-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--surface-3);
+  background: var(--surface-1);
+  padding: 5px 14px;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+}
+
+.workspace-file-status-language,
+.workspace-file-status-cursor {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.workspace-file-status-language {
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.workspace-file-status-cursor {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .workspace-file-code-scroll {
