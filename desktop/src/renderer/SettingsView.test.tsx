@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -21,10 +19,6 @@ type GlobalWindow = typeof window & { wuu: WuuDesktopApi };
 
 let container: HTMLDivElement;
 let root: Root | null = null;
-const settingsCSS = readFileSync(
-  resolve(process.cwd(), "src/renderer/styles/settings.css"),
-  "utf8",
-);
 
 function noopResizeStart(): void {}
 function noopResizeKey(): void {}
@@ -218,16 +212,12 @@ describe("SettingsView shell", () => {
     renderSettings({ initialized: baseInitialized(), onToggleSidebar });
 
     const toggle = container.querySelector<HTMLButtonElement>(
-      ".settings-shell > .settings-sidebar-toggle",
+      ".settings-titlebar .sidebar-toggle-button",
     );
     expect(toggle).not.toBeNull();
     expect(toggle?.classList.contains("icon-button")).toBe(true);
     expect(toggle?.classList.contains("side-panel-toggle-button")).toBe(true);
-    expect(toggle?.parentElement?.classList.contains("settings-shell")).toBe(true);
     expect(toggle?.getAttribute("aria-pressed")).toBe("true");
-    expect(settingsCSS).toMatch(
-      /\.settings-sidebar-toggle\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*150;/,
-    );
 
     act(() => {
       toggle?.click();
@@ -246,7 +236,7 @@ describe("SettingsView shell", () => {
     const shell = container.querySelector<HTMLElement>(".settings-shell");
     const sidebar = container.querySelector<HTMLElement>(".settings-sidebar");
     const toggle = container.querySelector<HTMLElement>(
-      ".settings-shell > .settings-sidebar-toggle",
+      ".settings-titlebar .sidebar-toggle-button",
     );
     expect(sidebar).not.toBeNull();
     expect(toggle).not.toBeNull();

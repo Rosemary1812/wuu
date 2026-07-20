@@ -233,33 +233,10 @@
   padding-left: max(24px, var(--window-controls-inset-left));
 }
 
-/* The toggle is a direct child of the shell rather than a descendant of
- * `.settings-main`. That puts it in the same stacking context as the drawer,
- * so its z-index can actually keep the hit target above the revealed rail.
- * `left` mirrors the titlebar's natural grid position and follows the shared
- * sidebar motion when the docked column collapses or expands. */
+/* Toggle button lives inside the titlebar drag strip but itself is a no-drag
+ * control so the click target still works. */
 .settings-sidebar-toggle {
-  position: absolute;
-  top: 9px;
-  left: calc(var(--sidebar-width, 326px) + 24px);
-  z-index: 150;
-  transition:
-    left var(--sidebar-motion-duration) var(--sidebar-motion-ease),
-    background-color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
-    box-shadow var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
-    color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing);
   -webkit-app-region: no-drag;
-}
-
-.settings-shell.sidebar-collapsed .settings-sidebar-toggle {
-  left: max(24px, var(--window-controls-inset-left));
-}
-
-.settings-shell.sidebar-collapsed:is(.sidebar-drawer-open, .sidebar-drawer-closing)
-  > .settings-sidebar-toggle {
-  background-color: var(--surface-3);
-  box-shadow: 0 4px 12px var(--ink-overlay-8);
-  color: var(--ink);
 }
 
 /* Column direction is load-bearing, not cosmetic: .settings-page carries
