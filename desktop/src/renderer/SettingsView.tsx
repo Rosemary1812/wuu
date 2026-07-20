@@ -703,7 +703,7 @@ export function SettingsView({
     scheduleSidebarDrawerOpen,
     cancelSidebarDrawerOpen,
     openSidebarDrawer,
-    closeSidebarDrawer
+    scheduleSidebarDrawerCloseFromPointerLeave
   } = useSidebarDrawerState({
     appShellRef: effectiveShellRef,
     sidebarCollapsed,
@@ -736,7 +736,9 @@ export function SettingsView({
       <aside
         className="settings-sidebar"
         onPointerEnter={openSidebarDrawer}
-        onPointerLeave={closeSidebarDrawer}
+        onPointerLeave={(event) =>
+          scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+        }
       >
         {/*
           * 与主侧栏一致的内层 .sidebar-content：折叠动画期间列宽收窄时，
@@ -809,20 +811,19 @@ export function SettingsView({
           onKeyDown={onSidebarSeparatorKey}
         />
       )}
+      <button
+        type="button"
+        className="icon-button side-panel-toggle-button sidebar-toggle-button settings-sidebar-toggle"
+        aria-label={sidebarCollapsed ? t("settings.expandSidebar") : t("settings.collapseSidebar")}
+        aria-pressed={!sidebarCollapsed}
+        onClick={onToggleSidebar}
+        onPointerEnter={scheduleSidebarDrawerOpen}
+        onPointerLeave={cancelSidebarDrawerOpen}
+      >
+        <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+      </button>
       <main className="settings-main">
-        <div className="settings-titlebar">
-          <button
-            type="button"
-            className="icon-button side-panel-toggle-button sidebar-toggle-button settings-sidebar-toggle"
-            aria-label={sidebarCollapsed ? t("settings.expandSidebar") : t("settings.collapseSidebar")}
-            aria-pressed={!sidebarCollapsed}
-            onClick={onToggleSidebar}
-            onPointerEnter={scheduleSidebarDrawerOpen}
-            onPointerLeave={cancelSidebarDrawerOpen}
-          >
-            <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
-          </button>
-        </div>
+        <div className="settings-titlebar" />
         <div ref={settingsScrollRef} className="settings-scroll">
           <div
             className={`settings-page${activePage === "archive" ? " settings-page-archive" : ""}`}
