@@ -193,13 +193,13 @@ func (t *ApplyPatchTool) ExecuteResult(ctx context.Context, argsJSON string) (to
 	return toolresult.Result{
 		Content: []toolresult.ContentPart{{
 			Type: toolresult.ContentTypeText,
-			Text: applyPatchModelSummary(dryRun, files, revisionAfter, journal, warnings),
+			Text: applyPatchModelSummary(dryRun, files),
 		}},
 		StructuredContent: structured,
 	}, nil
 }
 
-func applyPatchModelSummary(dryRun bool, files []applyPatchFileResult, revision string, journal *applyPatchJournalManifest, warnings []string) string {
+func applyPatchModelSummary(dryRun bool, files []applyPatchFileResult) string {
 	header := "Success. Updated the following files:"
 	if dryRun {
 		header = "Patch validation succeeded. The following files would be updated:"
@@ -229,33 +229,7 @@ func applyPatchModelSummary(dryRun bool, files []applyPatchFileResult, revision 
 		records = append(records, marker+" "+displayPath)
 	}
 
-	build := func(keep int) string {
-		lines := []string{header}
-		lines = append(lines, records[:keep]...)
-		if omitted := len(records) - keep; omitted > 0 {
-			lines = append(lines, fmt.Sprintf("... %d files omitted", omitted))
-		}
-		if strings.TrimSpace(revision) != "" {
-			lines = append(lines, "Workspace revision: "+revision)
-		}
-		if journal != nil {
-			lines = append(lines,
-				"Patch journal: "+journal.ManifestPath,
-				"Recovery: read the patch journal manifest for the full diff, snapshots, hashes, and rollback instructions.",
-			)
-		}
-		for _, warning := range warnings {
-			if warning = strings.TrimSpace(warning); warning != "" {
-				lines = append(lines, "Warning: "+warning)
-			}
-		}
-		return strings.Join(lines, "\n")
-	}
-
-	keep := largestFitting(len(records), defaultProjectionTokenBudget, func(keep int) int {
-		return estimateResultTokens(build(keep))
-	})
-	return build(keep)
+	return strings.Join(append([]string{header}, records...), "\n")
 }
 
 type applyPatch struct {

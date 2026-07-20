@@ -1053,15 +1053,15 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 		t.Fatalf("apply_patch: %v", err)
 	}
 	resp := result.TextProjection()
-	for _, want := range []string{"M a.txt", "A dir/new.txt", "D remove.txt", "M oldname.txt -> renamed.txt", "Workspace revision:", "Patch journal:", "Recovery:"} {
-		if !strings.Contains(resp, want) {
-			t.Fatalf("model response missing %q:\n%s", want, resp)
-		}
-	}
-	for _, redundant := range []string{`"diff"`, `old_file_sha`, `new_file_sha`, `patch_journal`, `next_suggestions`, `risk_summary`} {
-		if strings.Contains(resp, redundant) {
-			t.Fatalf("model response contains recovery/UI-only detail %q:\n%s", redundant, resp)
-		}
+	wantResponse := strings.Join([]string{
+		"Success. Updated the following files:",
+		"M a.txt",
+		"A dir/new.txt",
+		"D remove.txt",
+		"M oldname.txt -> renamed.txt",
+	}, "\n")
+	if resp != wantResponse {
+		t.Fatalf("unexpected apply_patch model response:\ngot:\n%s\nwant:\n%s", resp, wantResponse)
 	}
 	var parsed struct {
 		DryRun            bool                  `json:"dry_run"`
@@ -1188,7 +1188,7 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 }
 
-func TestApplyPatchModelSummaryIsStableAndBounded(t *testing.T) {
+func TestApplyPatchModelSummaryContainsOnlyStableFileRecords(t *testing.T) {
 	files := make([]applyPatchFileResult, 1000)
 	for i := range files {
 		files[i] = applyPatchFileResult{
@@ -1199,18 +1199,18 @@ func TestApplyPatchModelSummaryIsStableAndBounded(t *testing.T) {
 			}}},
 		}
 	}
-	journal := &applyPatchJournalManifest{ManifestPath: "/session/patch-journal/patch-id/manifest.json"}
-
-	first := applyPatchModelSummary(false, files, "git:revision", journal, nil)
-	second := applyPatchModelSummary(false, files, "git:revision", journal, nil)
+	first := applyPatchModelSummary(false, files)
+	second := applyPatchModelSummary(false, files)
 	if first != second {
 		t.Fatal("apply_patch model summary changed for identical input")
 	}
-	if estimateResultTokens(first) > defaultProjectionTokenBudget {
-		t.Fatalf("apply_patch model summary exceeded stable budget: tokens=%d", estimateResultTokens(first))
+	if !strings.Contains(first, "M generated/0000-") || !strings.Contains(first, "M generated/0999-") {
+		t.Fatalf("apply_patch model summary should list every changed file:\n%s", first)
 	}
-	if !strings.Contains(first, "files omitted") || strings.Contains(first, "large diff content") {
-		t.Fatalf("apply_patch model summary should omit overflow file names and all diffs:\n%s", first)
+	for _, extra := range []string{"files omitted", "large diff content", "Workspace revision:", "Patch journal:", "Recovery:", "Warning:"} {
+		if strings.Contains(first, extra) {
+			t.Fatalf("apply_patch model summary contains unsupported extra %q:\n%s", extra, first)
+		}
 	}
 }
 
