@@ -767,7 +767,11 @@ func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
 	}
 }
 
-func TestStreamRunnerSharesReplaySpendAcrossAgentRounds(t *testing.T) {
+func TestStreamRunnerToleratesUnansweredNetworkReplaysAcrossAgentRounds(t *testing.T) {
+	// Every round fails once with a pre-response transport error and succeeds
+	// on replay. Those replays are unbillable and must not accumulate against
+	// the workflow replay budget, so the turn survives any number of them
+	// (per-operation attempt limits still bound each round on their own).
 	const successfulToolRounds = 6
 	attempts := make([]mockStreamAttempt, 0, successfulToolRounds*2)
 	results := make(map[string]string, successfulToolRounds)
@@ -798,14 +802,13 @@ func TestStreamRunnerSharesReplaySpendAcrossAgentRounds(t *testing.T) {
 	}
 
 	result, err := runner.Run(context.Background(), "read files")
-	var exceeded *providers.WorkflowBudgetExceededError
-	if !errors.As(err, &exceeded) || exceeded.Dimension != providers.WorkflowBudgetSamePayloadReplays {
-		t.Fatalf("Run error = %v, want shared replay budget exhaustion", err)
+	if err != nil {
+		t.Fatalf("Run error = %v, want transient network replays tolerated", err)
 	}
-	if result != "" {
-		t.Fatalf("result = %q, want no final answer after budget denial", result)
+	if result != "done" {
+		t.Fatalf("result = %q, want %q", result, "done")
 	}
-	wantPhysicalAttempts := 5*2 + 1
+	wantPhysicalAttempts := successfulToolRounds*2 + 1
 	if client.callCount != wantPhysicalAttempts {
 		t.Fatalf("physical stream attempts = %d, want %d", client.callCount, wantPhysicalAttempts)
 	}
