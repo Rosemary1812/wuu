@@ -8,6 +8,14 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-20
+
+### Changed
+
+- Background subagent completions are now steered into the current parent turn
+  and injected before the next model step, instead of waiting for the whole turn
+  to end. This reduces redundant exploration while the subagent is finishing.
+
 ## [0.7.2] - 2026-07-20
 
 ### Added
