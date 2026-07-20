@@ -5,18 +5,11 @@
 //     turns must not wipe locally-known turns;
 //   - item snapshots upsert by id, and a completed snapshot must never
 //     truncate longer text that already streamed in via deltas;
-//   - marks upsert by (seq, participant_id, kind) — replace, never append.
 // Pure TS (no react-native imports) so the whole reducer is vitest-able.
 
-import type {
-  MessageMarkWire,
-  ParticipantProfile,
-  Thread,
-  ThreadItem,
-  Turn,
-} from "@wuu/protocol";
+import type { Thread, ThreadItem, Turn } from "@wuu/protocol";
 
-import { isChatThread } from "./threads";
+import { isVisibleThread } from "./threads";
 
 export type ConnectionPhase = "idle" | "connecting" | "attached" | "reconnecting";
 
@@ -32,9 +25,7 @@ export type AppSnapshot = {
   phase: ConnectionPhase;
   syncError: string | null;
   hostName: string;
-  threads: Thread[]; // chat threads only (DM + group), unsorted
-  participants: ParticipantProfile[];
-  marks: Readonly<Record<string, MessageMarkWire[]>>;
+  threads: Thread[];
   lastViewed: Readonly<Record<string, string>>;
   pending: PendingSend[];
   activeThreadId: string | null;
@@ -44,8 +35,6 @@ type Listener = () => void;
 
 export class AppStore {
   private threads = new Map<string, Thread>();
-  private participants: ParticipantProfile[] = [];
-  private marks = new Map<string, MessageMarkWire[]>();
   private lastViewed: Record<string, string> = {};
   private pending: PendingSend[] = [];
   private phase: ConnectionPhase = "idle";
@@ -57,8 +46,6 @@ export class AppStore {
   /** Thread ids referenced by notifications but unknown locally — the
    *  controller watches this to schedule a thread/list refresh. */
   onUnknownThread: ((threadId: string) => void) | null = null;
-  /** participant/updated arrived — the controller re-pulls the roster. */
-  onParticipantsStale: (() => void) | null = null;
   /** The unread cursor moved — the controller persists it. */
   onLastViewedChanged: ((lastViewed: Readonly<Record<string, string>>) => void) | null = null;
 
@@ -74,8 +61,6 @@ export class AppStore {
         syncError: this.syncError,
         hostName: this.hostName,
         threads: [...this.threads.values()],
-        participants: this.participants,
-        marks: Object.fromEntries(this.marks),
         lastViewed: { ...this.lastViewed },
         pending: [...this.pending],
         activeThreadId: this.activeThreadId,
@@ -113,7 +98,6 @@ export class AppStore {
    *  mirror of server state is stale; local-only state survives. */
   resetServerState(): void {
     this.threads.clear();
-    this.marks.clear();
     this.pending = [];
     this.bump();
   }
@@ -124,9 +108,9 @@ export class AppStore {
     const previous = this.threads;
     this.threads = new Map();
     for (const thread of threads) {
-      if (!isChatThread(thread)) continue;
+      if (!isVisibleThread(thread)) continue;
       // thread/list entries carry summaries with empty turns for threads the
-      // server no longer holds resident — full histories loaded via
+      // server no longer has loaded — full histories loaded via
       // thread/resume must survive a list refresh.
       const existing = previous.get(thread.id);
       if (existing && (!thread.turns || thread.turns.length === 0) && (existing.turns?.length ?? 0) > 0) {
@@ -135,16 +119,6 @@ export class AppStore {
         this.threads.set(thread.id, thread);
       }
     }
-    this.bump();
-  }
-
-  setParticipants(participants: ParticipantProfile[]): void {
-    this.participants = participants;
-    this.bump();
-  }
-
-  setThreadMarks(threadId: string, marks: MessageMarkWire[]): void {
-    this.marks.set(threadId, marks);
     this.bump();
   }
 
@@ -258,24 +232,14 @@ export class AppStore {
           () => String(p.text ?? ""),
         );
         return;
-      case "message/mark": {
-        const threadId = p.thread_id as string;
-        if (typeof p.seq === "number" && typeof p.participant_id === "string") {
-          this.applyMark(threadId, p as unknown as MessageMarkWire);
-        }
-        return;
-      }
-      case "participant/updated":
-        this.onParticipantsStale?.();
-        return;
       default:
         return; // everything else is safely ignorable on mobile
     }
   }
 
   private upsertThread(incoming: Thread): void {
-    if (!isChatThread(incoming)) {
-      // A chat thread may transition out of visibility (archived): drop it.
+    if (!isVisibleThread(incoming)) {
+      // A thread may transition out of visibility (archived/read-only): drop it.
       if (this.threads.delete(incoming.id)) this.bump();
       return;
     }
@@ -389,18 +353,6 @@ export class AppStore {
     items[itemIndex] = { ...items[itemIndex], text: update(items[itemIndex].text) };
     turns[index] = { ...turns[index], items };
     this.threads.set(threadId, { ...thread, turns });
-    this.bump();
-  }
-
-  /** Upsert by (seq, participant_id, kind): replace, never append. */
-  applyMark(threadId: string, mark: MessageMarkWire): void {
-    const marks = [...(this.marks.get(threadId) ?? [])];
-    const index = marks.findIndex(
-      (m) => m.seq === mark.seq && m.participant_id === mark.participant_id && m.kind === mark.kind,
-    );
-    if (index >= 0) marks[index] = mark;
-    else marks.push(mark);
-    this.marks.set(threadId, marks);
     this.bump();
   }
 }

@@ -125,15 +125,10 @@ export function ParticipantProfilePanel({
   onFeedback,
   onOpenMemoryPanel,
   onRetire,
-  forkedFromName,
   initialName,
 }: {
   participant?: ParticipantProfile;
   mode: "new" | "edit";
-  // forkedFromName is the母体's display name when this profile is a
-  // temporary分身 (decision six / participant.forked_from_id). The parent
-  // resolves the id to a name so the identity section can badge "X 的分身".
-  forkedFromName?: string;
   // initialName seeds the form's name field in "new" mode so the
   // profile editor opens with the name the user just typed into the
   // SidebarNameDialog (matching rename-conversation / new-group). The
@@ -421,11 +416,6 @@ export function ParticipantProfilePanel({
               aria-labelledby="participant-profile-identity"
             >
               <h3 id="participant-profile-identity">{t("participant.profile.identity")}</h3>
-              {participant?.forked_from_id ? (
-                <p className="participant-profile-fork-badge">
-                  {t("participant.profile.forkOf", { name: forkedFromName?.trim() || participant.forked_from_id })}
-                </p>
-              ) : null}
               <div className="participant-profile-avatar-row">
                 <button
                   type="button"

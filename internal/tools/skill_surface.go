@@ -78,7 +78,7 @@ func isKnownSurfaceSkillTool(name string) bool {
 	case "read_file", "list_files", "write_file", "edit_file", "apply_patch",
 		"grep", "glob",
 		"bash", "git",
-		"spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message",
+		"spawn_agent", "helpme", "send_message", "close_agent", "agent_report",
 		"tool_search", "load_skill",
 		"web_fetch", "web_search",
 		"session_memory",

@@ -444,9 +444,9 @@ describe("createProjectRuntimeActions", () => {
       thread: undefined,
       threads: [
         {
-          ...thread("andy-dm"),
-          dm_participant_id: "participant-andy",
-          workspace_kind: "dm",
+          ...thread("collaboration"),
+          source: "collaboration",
+          workspace_kind: "scratch",
         },
       ],
       status: "ready",

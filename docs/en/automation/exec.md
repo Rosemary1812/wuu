@@ -281,124 +281,16 @@ automation. `archive` hides a session from default lists without deleting its
 persisted data. `delete` removes the session, its durable history, and any
 workspace-scoped artifacts Wuu can locate for that thread.
 
-## Named Group Chat
+## Named Agents and Kanban
 
-The desktop app is where humans run named agents in group chats. `wuu exec`
-exposes the same named group-chat surface headlessly so CI and agents can drive
-and assert it without the GUI. A scripted `actions` array in the `--input-json`
-payload runs an ordered sequence of steps against the app server: each step is
-either a human/orchestrator RPC (build a group, add members, open a reply,
-escalate to a task) or a turn run AS a named participant (the only path that
-mounts the group-chat tool surface — `post_message`, `manage_participant`).
+`wuu exec` runs ordinary coding-agent sessions. Named agents are not a separate
+CLI execution mode.
 
-Every step emits `action_started` and `action_completed` (or `action_failed`)
-JSONL events; a named turn additionally emits its `participant_turn_started`
-and the usual tool/subagent events. A step can bind a value from its result into
-a variable with `save_as` and reference it in a later step with `$name`
-(including woven into a named turn's prompt). `expect` asserts a dotted-path
-field on the step result and fails the sequence on mismatch.
-
-```bash
-wuu exec --input-json <<'JSON'
-{
-  "json": true,
-  "actions": [
-    { "action": "create_group",
-      "params": { "title": "Ship the fix" },
-      "save_as": { "group": "thread.id" } },
-
-    { "action": "add_group_member",
-      "params": { "thread_id": "$group", "participant_id": "prt-ada" } },
-
-    { "action": "participant_turn", "as": "prt-ada",
-      "params": { "thread_id": "$group", "task_name": "ada_status",
-                  "prompt": "Post a status result to thread $group." },
-      "save_as": { "anchor": "anchor_item_id" } },
-
-    { "action": "open_reply",
-      "params": { "thread_id": "$group", "anchor_item_id": "$anchor" },
-      "save_as": { "cth": "subthread.id" } },
-
-    { "action": "participant_turn", "as": "prt-ada",
-      "params": { "thread_id": "$group", "task_name": "ada_reply",
-                  "prompt": "Answer inside the reply thread $cth." } },
-
-    { "action": "post_subthread",
-      "params": { "thread_id": "$group", "subthread_id": "$cth",
-                  "text": "what about the retry path?" } },
-
-    { "action": "escalate_task",
-      "params": { "thread_id": "$group", "subthread_id": "$cth",
-                  "title": "Ship the retry fix" },
-      "expect": { "subthread.status": "task",
-                  "subthread.lead_participant_id": "prt-ada" } },
-
-    { "action": "participant_turn", "as": "prt-ada",
-      "params": { "thread_id": "$group", "task_name": "ada_fork",
-                  "prompt": "Fork a copy of yourself to help." } }
-  ]
-}
-JSON
-```
-
-Actions split by how they reach the app server:
-
-- Directly-callable RPCs (`action` maps to an existing app-server method):
-  `create_group`, `create_dm`, `add_group_member`, `remove_group_member`,
-  `save_participant`, `list_participants`, `retire_participant`, `open_reply`,
-  `list_replies`, `resolve_reply`, `escalate_task`,
-  `post_subthread`.
-- Named turns (`post_message` / `participant_turn`, run with `as` set to a named
-  participant id): run a turn AS that participant so its deterministic provider
-  can invoke the resident tools. `post_message` is the speak-in-a-group case;
-  `participant_turn` is the general label for any other turn AS that
-  participant, including forking a copy via `manage_participant`. Which tool the
-  turn actually invokes is decided by the agent, not by the action name.
-- Human turns (`send_user_message`) call `turn/start` on an existing thread.
-  This is the desktop-equivalent way to talk to a resident named agent in its
-  DM; it is intentionally different from `participant_turn`, which starts a
-  separate named task run.
-- Observation (`observe_collaboration`) keeps the same app server alive for an
-  explicit duration and forwards background resident activity. This matters
-  after an agent posts into a group: ambient agent posts intentionally wait for
-  a 30-second quiet-room timer before waking an idle teammate, while a one-shot
-  exec process would otherwise exit first. For example,
-  `{ "action": "observe_collaboration", "params": { "duration": "75s" } }`
-  observes two quiet-room windows without changing collaboration behavior.
-  For end-to-end Task runs, add `until_idle` and an explicit quiet window:
-  `{ "action": "observe_collaboration", "params": {
-  "duration": "10m", "until_idle": true, "settle_for": "35s",
-  "thread_id": "$group" } }`. `thread_id` is optional: omit it when a DM agent
-  creates the group internally and exec must discover every group opened in
-  the local app-server. Here `duration` is a hard upper bound. The
-  action returns early with `status: "quiescent"` only after the target has no
-  pending/running named agents or active Tasks for the whole `settle_for`
-  window. If the deadline arrives first, the action fails instead of reporting
-  success and shutting down an in-flight local app server. A quiet window over
-  30 seconds also covers the product's delayed idle-reader wake; scripts that
-  mention every collaborator directly can use a shorter explicit window.
-
-Notes for scripting named turns:
-
-- `create_dm` takes `dm_participant_id` and returns the same idempotent
-  `thread/start` result used by the desktop when opening a named agent's DM.
-  Save `thread.id`, then pass it to `send_user_message` to exercise the real
-  resident DM brain in the same script.
-
-- A named agent runs one task at a time. Running two turns as the SAME
-  participant back to back is supported — exec briefly waits out the prior run's
-  drain — but give each turn a distinct `task_name` (lowercase letters, digits,
-  underscores) so their agent paths do not collide.
-- Escalation and reply/subthread posting are human-side RPCs by design; agents
-  only reach a reply by posting into it from a named turn. `escalate_task`
-  records the task lead; named turns on the escalated task can read the lead
-  via `subthread.lead_participant_id` to identify who owns the task.
-
-The full lifecycle above — build group, pull named members, named response,
-open reply, weak-isolation round trip, escalate to a task with a lead, and fork —
-is exercised end to end against the real app server with a deterministic provider
-by `TestExecGroupChatEndToEndRegression` in `internal/exec`, which runs in CI
-with no live API.
+Named agents belong to the desktop Kanban workflow. Open the global
+**Collaboration** entry in the desktop sidebar, use its message view to shape
+the work, switch to the board, and assign or dispatch Kanban tasks there.
+Ordinary sessions still support general subagents, but their composer does not
+offer named-agent mentions.
 
 ## Safety
 

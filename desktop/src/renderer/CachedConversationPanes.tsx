@@ -1,21 +1,13 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import type {
   Agent,
-  ConversationSubthread,
   InputFile,
   InputImage,
-  MessageMarkWire,
   Thread,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
-import {
-  chatReaderCountForThread,
-  isDMThread,
-  isGroupThread,
-  type TurnStreamStatus,
-} from "./AppState";
-import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
+import type { TurnStreamStatus } from "./AppState";
 import {
   backgroundContinuationState,
   hasFollowingBackgroundContinuation,
@@ -30,18 +22,10 @@ import {
   InstructionFilesCard,
   type InstructionFilesEntry,
 } from "./InstructionFilesCard";
-import {
-  pendingComposerMessagesForThread as pendingComposerMessagesForThreadSnapshot,
-  type PendingComposerMessagesByThread,
-} from "./ComposerPendingMessages";
 import { OPTIMISTIC_TURN_ID_PREFIX } from "./ComposerMessages";
 import { TurnView } from "./TurnView";
-import { turnEventForTurn } from "./TurnEvents";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
-import {
-  latestAgentMessageLocation,
-  turnHasAssistantOutput,
-} from "./TurnViewHelpers";
+import { latestAgentMessageLocation } from "./TurnViewHelpers";
 import type { HistoryMessageEditState } from "./ConversationHistoryActions";
 
 const CONVERSATION_GRID_COLUMNS = 12;
@@ -72,13 +56,6 @@ export type CachedConversationPanesProps = {
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
   onOpenFile?: (thread: Thread, path: string) => void;
   onOpenAgent: (agent: Agent) => void;
-  onOpenSubthread: (
-    thread: Thread,
-    item: ThreadItem,
-    threadOwnerParticipantID?: string,
-    existingSubthreadID?: string,
-  ) => void;
-  onReact: (thread: Thread, item: ThreadItem, reaction: string) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
   onCancelEditMessage: () => void;
   onSubmitEditMessage: (
@@ -92,13 +69,6 @@ export type CachedConversationPanesProps = {
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   onOpenTurnRuns?: (thread: Thread, turnID: string) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
-  busyParticipantIDs: ReadonlySet<string>;
-  activeThreadMarks: readonly MessageMarkWire[];
-  resolveParticipantName: (id: string) => string;
-  chatReaderCount: number;
-  subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
-  subthreadsThreadID?: string;
-  pendingChatMessagesByThread: PendingComposerMessagesByThread;
 };
 
 export const CachedConversationPanes = memo(function CachedConversationPanes({
@@ -118,21 +88,12 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
   onForkMessage,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
-  onReact,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
   onOpenFileDiff,
   onOpenTurnRuns,
   turnStreamStatus,
-  busyParticipantIDs,
-  activeThreadMarks,
-  resolveParticipantName,
-  chatReaderCount,
-  subthreadsByAnchor,
-  subthreadsThreadID,
-  pendingChatMessagesByThread,
 }: CachedConversationPanesProps): JSX.Element {
   return (
     <div className="cached-conversation-panes">
@@ -162,22 +123,12 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
             onForkMessage={onForkMessage}
             onOpenFile={onOpenFile}
             onOpenAgent={onOpenAgent}
-            onOpenSubthread={onOpenSubthread}
-            onReact={onReact}
             onEditMessage={onEditMessage}
             onCancelEditMessage={onCancelEditMessage}
             onSubmitEditMessage={onSubmitEditMessage}
             onOpenFileDiff={onOpenFileDiff}
             onOpenTurnRuns={onOpenTurnRuns}
             turnStreamStatus={turnStreamStatus}
-            busyParticipantIDs={busyParticipantIDs}
-            threadMarks={isActive ? activeThreadMarks : undefined}
-            resolveParticipantName={resolveParticipantName}
-            chatReaderCount={chatReaderCount}
-            subthreadsByAnchor={
-              threadID === subthreadsThreadID ? subthreadsByAnchor : undefined
-            }
-            pendingChatMessagesByThread={pendingChatMessagesByThread}
           />
         );
       })}
@@ -187,15 +138,10 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
 
 type CachedConversationPaneProps = Omit<
   CachedConversationPanesProps,
-  | "threadIDs"
-  | "threadsByID"
-  | "activeThreadID"
-  | "activeThreadMarks"
-  | "subthreadsThreadID"
+  "threadIDs" | "threadsByID" | "activeThreadID"
 > & {
   thread: Thread;
   isActive: boolean;
-  threadMarks?: readonly MessageMarkWire[];
 };
 
 const CachedConversationPane = memo(function CachedConversationPane({
@@ -214,20 +160,12 @@ const CachedConversationPane = memo(function CachedConversationPane({
   onForkMessage,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
-  onReact,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
   onOpenFileDiff,
   onOpenTurnRuns,
   turnStreamStatus,
-  busyParticipantIDs,
-  threadMarks,
-  resolveParticipantName,
-  chatReaderCount,
-  subthreadsByAnchor,
-  pendingChatMessagesByThread,
 }: CachedConversationPaneProps): JSX.Element {
   // A brand-new thread takes over from the already-visible optimistic first
   // turn. Hiding that same turn behind the tab-switch layout gate creates a
@@ -295,7 +233,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
     [onOpenTurnRuns],
   );
   const threadTurns = thread.turns ?? [];
-  const pendingChatMessages = pendingChatMessagesByThread[thread.id]?.queued;
   // Location (owner turn + item) lets renderTurn scope latestAgentMessageID to
   // the one turn that can match it, so a new agent message re-renders only
   // the previous and next owner turns instead of every PaneTurnView.
@@ -340,8 +277,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
     thread.worktree && thread.forked_from_id ? (
       <ForkWorktreeNotice thread={thread} />
     ) : null;
-  const isGroupChat = isGroupThread(thread);
-  const isChatStyleThread = isDMThread(thread) || isGroupChat;
   const latestTurn = threadTurns[threadTurns.length - 1];
   const backgroundContinuation = backgroundContinuationState(thread);
   const backgroundWaitingTurnID = backgroundContinuation.waiting
@@ -355,13 +290,8 @@ const CachedConversationPane = memo(function CachedConversationPane({
   const latestTurnStreamStatus = latestTurn
     ? turnStreamStatus[latestTurn.id]
     : undefined;
-  const turnEvents = threadTurns.flatMap((turn) => {
-    const event = turnEventForTurn(turn, turnHasAssistantOutput(turn));
-    return event ? [{ turnID: turn.id, event }] : [];
-  });
   const previousLayoutContentRef = useRef({
     turns: threadTurns,
-    pendingChatMessages,
     streamStatus: latestTurnStreamStatus,
     contextEntries: threadContextEntries,
     instructionEntries: threadInstructionEntries,
@@ -376,7 +306,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
     const previous = previousLayoutContentRef.current;
     const contentChanged =
       previous.turns !== threadTurns ||
-      previous.pendingChatMessages !== pendingChatMessages ||
       previous.streamStatus !== latestTurnStreamStatus ||
       !sameEntriesByIdentity(previous.contextEntries, threadContextEntries) ||
       !sameEntriesByIdentity(previous.instructionEntries, threadInstructionEntries) ||
@@ -389,7 +318,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
 
     previousLayoutContentRef.current = {
       turns: threadTurns,
-      pendingChatMessages,
       streamStatus: latestTurnStreamStatus,
       contextEntries: threadContextEntries,
       instructionEntries: threadInstructionEntries,
@@ -410,7 +338,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
     instructionFilesEntries,
     latestTurnStreamStatus,
     layoutSettled,
-    pendingChatMessages,
     thread.cwd,
     thread.forked_from_id,
     thread.worktree,
@@ -490,90 +417,60 @@ const CachedConversationPane = memo(function CachedConversationPane({
     >
       <div className="conversation-width session-flow">
         {isActive && conversationGridVisible ? <ConversationGridGuides /> : null}
-        {isChatStyleThread ? (
-          <ChatThreadViewContainer
-            threadID={thread.id}
-            turns={threadTurns}
-            cwd={thread.cwd ?? activeContextCwd}
-            marks={threadMarks}
-            busyParticipantIDs={busyParticipantIDs}
-            resolveParticipantName={resolveParticipantName}
-            readerCount={chatReaderCountForThread(thread, chatReaderCount)}
-            threadOwnerCandidates={isGroupChat ? thread.members : undefined}
-            subthreadsByAnchor={isGroupChat ? subthreadsByAnchor : undefined}
-            isActive={isActive}
-            streamStatus={latestTurnStreamStatus}
-            turnEvents={turnEvents}
-            onOpenSubthread={
-              isGroupChat
-                ? (item, ownerID, existingSubthreadID) =>
-                    onOpenSubthread(thread, item, ownerID, existingSubthreadID)
-                : undefined
-            }
-            onReact={(item, reaction) => onReact(thread, item, reaction)}
-            pendingMessages={
-              pendingComposerMessagesForThreadSnapshot(
-                pendingChatMessagesByThread,
-                thread.id,
-              ).queued
-            }
-          />
-        ) : (
-          <ConversationTurnList
-            threadID={thread.id}
-            turns={threadTurns}
-            renderBeforeTurns={[
-              ...threadInstructionCards,
-              ...entriesBeforeTurns.map(renderContextEntry),
-            ]}
-            renderAfterMissingTurn={
-              <>
-                {entriesAfterMissingTurn.map(renderContextEntry)}
-                {forkWorktreeNotice}
-              </>
-            }
-            renderAfterTurn={(turn) =>
-              (entriesByAfterTurnID.get(turn.id) ?? []).map(renderContextEntry)
-            }
-            forcedFullTurnIDs={
-              historyMessageEdit ? [historyMessageEdit.turnID] : undefined
-            }
-            renderTurn={(turn) => (
-              <PaneTurnView
-                turn={turn}
-                cwd={thread.cwd ?? activeContextCwd}
-                onOpenFile={onOpenFile ? handleOpenFile : undefined}
-                onOpenAgent={handleOpenAgentByID}
-                latestAgentMessageID={
-                  latestAgentLocation?.turnID === turn.id
-                    ? latestAgentLocation.itemID
-                    : undefined
-                }
-                isLatestTurn={latestTurn?.id === turn.id}
-                backgroundWaiting={backgroundWaitingTurnID === turn.id}
-                suppressAnswerActions={
-                  backgroundWaitingTurnID === turn.id ||
-                  turnsFollowedByBackgroundContinuation.has(turn.id)
-                }
-                onStreamFrame={onStreamFrame}
-                onCollapseComplete={onCollapseComplete}
-                onForkMessage={handleForkMessage}
-                canEdit={canEditThreadMessage(thread)}
-                onEditMessage={handleEditMessage}
-                editingMessage={historyMessageEdit}
-                onCancelEditMessage={onCancelEditMessage}
-                onSubmitEditMessage={handleSubmitEditMessage}
-                onOpenFileDiff={handleOpenFileDiffSelection}
-                onOpenTurnRuns={
-                  onOpenTurnRuns ? handleOpenTurnRunsForThread : undefined
-                }
-                streamStatus={
-                  latestTurn?.id === turn.id ? latestTurnStreamStatus : undefined
-                }
-              />
-            )}
-          />
-        )}
+        <ConversationTurnList
+          threadID={thread.id}
+          turns={threadTurns}
+          renderBeforeTurns={[
+            ...threadInstructionCards,
+            ...entriesBeforeTurns.map(renderContextEntry),
+          ]}
+          renderAfterMissingTurn={
+            <>
+              {entriesAfterMissingTurn.map(renderContextEntry)}
+              {forkWorktreeNotice}
+            </>
+          }
+          renderAfterTurn={(turn) =>
+            (entriesByAfterTurnID.get(turn.id) ?? []).map(renderContextEntry)
+          }
+          forcedFullTurnIDs={
+            historyMessageEdit ? [historyMessageEdit.turnID] : undefined
+          }
+          renderTurn={(turn) => (
+            <PaneTurnView
+              turn={turn}
+              cwd={thread.cwd ?? activeContextCwd}
+              onOpenFile={onOpenFile ? handleOpenFile : undefined}
+              onOpenAgent={handleOpenAgentByID}
+              latestAgentMessageID={
+                latestAgentLocation?.turnID === turn.id
+                  ? latestAgentLocation.itemID
+                  : undefined
+              }
+              isLatestTurn={latestTurn?.id === turn.id}
+              backgroundWaiting={backgroundWaitingTurnID === turn.id}
+              suppressAnswerActions={
+                backgroundWaitingTurnID === turn.id ||
+                turnsFollowedByBackgroundContinuation.has(turn.id)
+              }
+              onStreamFrame={onStreamFrame}
+              onCollapseComplete={onCollapseComplete}
+              onForkMessage={handleForkMessage}
+              canEdit={canEditThreadMessage(thread)}
+              onEditMessage={handleEditMessage}
+              editingMessage={historyMessageEdit}
+              onCancelEditMessage={onCancelEditMessage}
+              onSubmitEditMessage={handleSubmitEditMessage}
+              onOpenFileDiff={handleOpenFileDiffSelection}
+              onOpenTurnRuns={
+                onOpenTurnRuns ? handleOpenTurnRunsForThread : undefined
+              }
+              streamStatus={
+                latestTurn?.id === turn.id ? latestTurnStreamStatus : undefined
+              }
+            />
+          )}
+        />
       </div>
     </div>
   );

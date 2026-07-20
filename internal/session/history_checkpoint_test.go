@@ -56,7 +56,7 @@ func TestStoreHistoryCheckpointIsAppendOnlyAndPreservesConcurrentTail(t *testing
 	baseline := []HistoryRecord{
 		{Role: "user", Content: "original user"},
 		{Role: "assistant", Content: "original answer"},
-		{Role: "participant", Content: "original participant", ParticipantID: "prt-reviewer", BasisSeq: 1},
+		{Role: "assistant", Content: "original follow-up"},
 	}
 	for _, rec := range baseline {
 		if err := AppendHistoryRecord(dir, "thread-1", rec); err != nil {
@@ -105,7 +105,7 @@ func TestStoreHistoryCheckpointIsAppendOnlyAndPreservesConcurrentTail(t *testing
 	if len(raw) != 5 {
 		t.Fatalf("raw history = %+v, want five append-only rows", raw)
 	}
-	wantRawContents := []string{"original user", "original answer", "original participant", "concurrent tail", "new compact summary"}
+	wantRawContents := []string{"original user", "original answer", "original follow-up", "concurrent tail", "new compact summary"}
 	for i, want := range wantRawContents {
 		if raw[i].Seq != i+1 || raw[i].Content != want {
 			t.Fatalf("raw[%d] = %+v, want seq=%d content=%q", i, raw[i], i+1, want)

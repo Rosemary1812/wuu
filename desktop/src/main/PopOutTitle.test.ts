@@ -20,7 +20,6 @@ describe("pop-out title ownership", () => {
   it("derives the loaded title from hydrated state and current translations", () => {
     expect(appSource).toContain("const popOutWindowTitle =");
     expect(appSource).toContain('t("tabs.newConversation")');
-    expect(appSource).toContain('t("subthread.label")');
     expect(appSource).toContain("document.title = `wuu · ${popOutWindowTitle}`");
     expect(appSource).toContain("[poppedOutMode, popOutWindowTitle]");
   });

@@ -164,10 +164,6 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		GoalRuntime:                 t.env.GoalRuntime,
 		AgentID:                     t.env.AgentID,
 		AgentPath:                   t.env.AgentPath,
-		ParticipantID:               t.env.ParticipantID,
-		ParticipantSpeechEnabled:    t.env.ParticipantSpeechEnabled,
-		ResidentParticipantEnabled:  t.env.ResidentParticipantEnabled,
-		ConversationSessionDir:      t.env.ConversationSessionDir,
 		ToolSearchEnabled:           t.env.ToolSearchEnabled,
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
 		GitAttributionDisabled:      t.env.GitAttributionDisabled,
@@ -175,9 +171,6 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		ProcessMgr:                  t.env.ProcessMgr,
 		AgentControl:                t.env.AgentControl,
 		AutomationManager:           t.env.AutomationManager,
-		ParticipantSpeech:           t.env.ParticipantSpeech,
-		GroupManager:                t.env.GroupManager,
-		TaskManager:                 t.env.TaskManager,
 		// Browser dependencies must be copied explicitly: every desktop thread
 		// runs through CloneForRoot, so omitting these here silently strips the
 		// bridge/tab store from every cloned session (the mcpActivityBindings
@@ -256,7 +249,6 @@ func (t *Toolkit) rebuildRegistry() {
 		// back to the full conversation via this tool).
 		NewThreadGetTool(e),
 		NewSetSessionWorkspaceTool(e),
-		NewFetchThreadMessagesTool(e),
 		// Goals
 		NewGoalTool(e),
 		// Recurring agent profiles
@@ -270,10 +262,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewSendAgentMessageTool(e),
 		NewCloseAgentTool(e),
 		NewAgentReportTool(e),
-		NewPostMessageTool(e),
-		NewReactTool(e),
-		NewManageParticipantTool(e),
-		NewManageTaskTool(e),
 		// Cron scheduling
 		NewCronTool(e),
 		// Embedded browser automation (default-disabled in New(); enabled per
@@ -413,20 +401,6 @@ func (t *Toolkit) GoalRuntime() *goalruntime.Runtime {
 func (t *Toolkit) SetAgentIdentity(id, path string) {
 	t.env.AgentID = strings.TrimSpace(id)
 	t.env.AgentPath = strings.TrimSpace(path)
-}
-
-func (t *Toolkit) SetParticipantIdentity(id string) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ParticipantID = strings.TrimSpace(id)
-}
-
-func (t *Toolkit) SetConversationSessionDir(dir string) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ConversationSessionDir = strings.TrimSpace(dir)
 }
 
 // SetOnFileChanged sets the callback fired after write_file/edit_file
@@ -720,64 +694,11 @@ func (t *Toolkit) SupportsTool(name string) bool {
 	}
 }
 
-// SetParticipantSpeechEnabled exposes participant speech tools for an
-// internally-authorized conversation-native participant run.
-func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ParticipantSpeechEnabled = enabled
-	t.activeProfileMu.Lock()
-	defer t.activeProfileMu.Unlock()
-	if t.activeSurface.ProfileName == "" {
-		return
-	}
-	if enabled {
-		enableParticipantSpeechSurface(&t.activeSurface)
-	} else {
-		delete(t.activeSurface.Tools, "post_message")
-		delete(t.activeSurface.Tools, "react")
-		delete(t.activeSurface.Tools, "manage_participant")
-		delete(t.activeSurface.Tools, "manage_task")
-	}
-	t.publishActiveSurfaceLocked()
-}
-
-func (t *Toolkit) SetParticipantSpeech(speech ParticipantSpeech) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ParticipantSpeech = speech
-}
-
-// SetGroupManager attaches the resident group-management backend used by
-// manage_participant's create_group / add_member actions. Those actions stay
-// unavailable (execute-time error) until a manager is attached; only resident
-// runtimes receive one.
-func (t *Toolkit) SetGroupManager(manager GroupManager) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.GroupManager = manager
-}
-
-// SetTaskManager attaches the resident task-rail backend used by manage_task.
-// The tool stays unavailable (execute-time error) until a manager is
-// attached; only resident runtimes receive one.
-func (t *Toolkit) SetTaskManager(manager TaskManager) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.TaskManager = manager
-}
-
 // SetRootDir re-roots the toolkit's execution environment (bash cwd,
 // relative-path resolution, search root, display paths) without rebuilding
-// the toolkit or touching other per-session state. Used by DM threads
-// whose workspace focus moves between the agent home and a registered
-// workspace root (2026-07-03-workspace-focus.md §5); the file-scope
-// whitelist (SetFileScopeRoots) is intentionally independent — focus
-// changes where tools work by default, not what they may touch. Callers
+// the toolkit or touching other per-session state. The file-scope whitelist
+// (SetFileScopeRoots) is intentionally independent: changing the root changes
+// where tools work by default, not what they may touch. Callers
 // must only invoke this between turns, never while tools are executing.
 func (t *Toolkit) SetRootDir(rootDir string) {
 	if t == nil || t.env == nil {
@@ -806,7 +727,7 @@ func (t *Toolkit) RootDir() string {
 }
 
 // SetFileScopeRoots installs (or clears, with an empty slice) the file-tool
-// whitelist for resident turns and participant task runs: agent home,
+// whitelist for ordinary turns and Kanban task runs: agent home,
 // registered workspace roots, and the system temp directory. Empty roots
 // keep the ordinary single-RootDir confinement.
 func (t *Toolkit) SetFileScopeRoots(roots []string) {
@@ -824,59 +745,6 @@ func (t *Toolkit) SetFileScopeRoots(roots []string) {
 		return
 	}
 	t.env.FileScopeRoots = cleaned
-}
-
-func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ResidentParticipantEnabled = enabled
-	t.activeProfileMu.Lock()
-	defer t.activeProfileMu.Unlock()
-	if t.activeSurface.ProfileName == "" {
-		return
-	}
-	if enabled {
-		enableResidentParticipantSurface(&t.activeSurface)
-	} else {
-		delete(t.activeSurface.Tools, "fetch_thread_messages")
-	}
-	t.publishActiveSurfaceLocked()
-}
-
-func enableParticipantSpeechSurface(surface *capability.Surface) {
-	if surface == nil || surface.ProfileName == "" {
-		return
-	}
-	if surface.Tools == nil {
-		surface.Tools = map[string]capability.Capability{}
-	}
-	surface.Tools["post_message"] = capability.CapabilityTaskCommunicate
-	surface.Tools["react"] = capability.CapabilityTaskCommunicate
-	surface.Tools["manage_participant"] = capability.CapabilityTaskManage
-	surface.Tools["manage_task"] = capability.CapabilityTaskManage
-	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
-		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
-	}
-	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
-		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
-	}
-}
-
-func enableResidentParticipantSurface(surface *capability.Surface) {
-	if surface == nil || surface.ProfileName == "" {
-		return
-	}
-	if surface.Tools == nil {
-		surface.Tools = map[string]capability.Capability{}
-	}
-	surface.Tools["fetch_thread_messages"] = capability.CapabilityTaskCommunicate
-	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
-		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
-	}
-	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
-		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
-	}
 }
 
 // SurfaceToolNames returns the registered built-in tools available to the
@@ -927,9 +795,6 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	if forMainAgent {
 		kind = modelprofile.SurfaceMain
 	}
-	if t != nil && t.env != nil && t.env.ResidentParticipantEnabled {
-		kind = modelprofile.SurfaceNamed
-	}
 	t.setActiveProfileForSurface(p, kind)
 }
 
@@ -952,12 +817,6 @@ func (t *Toolkit) setActiveProfileForSurface(p modelprofile.Profile, kind modelp
 		return
 	}
 	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, kind)
-	if t.env != nil && t.env.ParticipantSpeechEnabled {
-		enableParticipantSpeechSurface(&t.activeSurface)
-	}
-	if t.env != nil && t.env.ResidentParticipantEnabled {
-		enableResidentParticipantSurface(&t.activeSurface)
-	}
 	t.publishActiveSurfaceLocked()
 }
 
@@ -1132,12 +991,6 @@ func (t *Toolkit) ExecuteResult(ctx context.Context, call providers.ToolCall) (t
 }
 
 func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
-	if isParticipantSpeechTool(name) && !t.participantSpeechEnabled() {
-		return fmt.Errorf("tool %q is not available without participant speech capability", name)
-	}
-	if isResidentParticipantTool(name) && !t.residentParticipantEnabled() {
-		return fmt.Errorf("tool %q is not available without resident participant capability", name)
-	}
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
@@ -1152,24 +1005,6 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 		return fmt.Errorf("tool %q is deferred; call tool_search first to load it", name)
 	}
 	return nil
-}
-
-func isParticipantSpeechTool(name string) bool {
-	switch name {
-	case "post_message", "react", "manage_participant", "manage_task":
-		return true
-	default:
-		return false
-	}
-}
-
-func isResidentParticipantTool(name string) bool {
-	switch name {
-	case "fetch_thread_messages":
-		return true
-	default:
-		return false
-	}
 }
 
 func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) bool {

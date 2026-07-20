@@ -45,7 +45,6 @@ export function AssistantTurnShell({
   cwd,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -59,7 +58,6 @@ export function AssistantTurnShell({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -126,7 +124,6 @@ export function AssistantTurnShell({
     cwd,
     onOpenFile,
     onOpenAgent,
-    onOpenSubthread,
     actionableAgentMessageID,
     latestAgentMessageID,
     onStreamFrame,
@@ -182,7 +179,6 @@ function TurnProcessFold({
   cwd,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -201,7 +197,6 @@ function TurnProcessFold({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -388,7 +383,6 @@ return (
                     cwd={cwd}
                     onOpenFile={onOpenFile}
                     onOpenAgent={onOpenAgent}
-                    onOpenSubthread={onOpenSubthread}
                     actionableAgentMessageID={actionableAgentMessageID}
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
@@ -427,7 +421,6 @@ function EntryRenderer({
   cwd,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -440,7 +433,6 @@ function EntryRenderer({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -462,7 +454,6 @@ function EntryRenderer({
             cwd={cwd}
             onOpenFile={onOpenFile}
             onOpenAgent={onOpenAgent}
-            onOpenSubthread={onOpenSubthread}
             streaming={isStreaming}
             onStreamFrame={onStreamFrame}
           />
@@ -487,7 +478,6 @@ function EntryRenderer({
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}
-        onOpenSubthread={onOpenSubthread}
         onStreamFrame={onStreamFrame}
       />
     );
@@ -501,28 +491,12 @@ function EntryRenderer({
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}
-        onOpenSubthread={onOpenSubthread}
         streaming={streaming}
         actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
         onOpenRuns={onOpenRuns}
-      />
-    );
-  }
-  if (item.type === "participant_message" || item.type === "task_card") {
-    return (
-      <ThreadItemView
-        turnID={turn.id}
-        turnStatus={turn.status}
-        item={item}
-        cwd={cwd}
-        onOpenFile={onOpenFile}
-        onOpenAgent={onOpenAgent}
-        onOpenSubthread={onOpenSubthread}
-        streaming={streaming}
-        onStreamFrame={onStreamFrame}
       />
     );
   }
@@ -542,7 +516,6 @@ function ReasoningFold({
   cwd,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
   onStreamFrame,
 }: {
   item: ThreadItem;
@@ -553,7 +526,6 @@ function ReasoningFold({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
   onStreamFrame: () => void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -627,7 +599,6 @@ function ReasoningFold({
               cwd={cwd}
               onOpenFile={onOpenFile}
               onOpenAgent={onOpenAgent}
-              onOpenSubthread={onOpenSubthread}
               streaming={streaming}
               onStreamFrame={handleReasoningStreamFrame}
             />

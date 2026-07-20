@@ -220,19 +220,19 @@ describe("sidebar click latency", () => {
 
     const baseline = turnListProbe.renders;
 
-    // A pure sidebar interaction: collapse + expand the Agents section.
+    // A pure sidebar interaction: collapse + expand the scratch section.
     // This flips App-local state (collapsedSidebarSectionIDs) and must not
     // cascade into the memoized conversation pane.
-    const agentsHeader = container.querySelector<HTMLButtonElement>(
-      'section[aria-label="Agents"] .sidebar-section-row',
+    const scratchHeader = container.querySelector<HTMLButtonElement>(
+      'section[data-section-id="__wuu_scratch__"] .sidebar-section-row',
     );
-    expect(agentsHeader).not.toBeNull();
+    expect(scratchHeader).not.toBeNull();
     await act(async () => {
-      agentsHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      scratchHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushAsync();
     await act(async () => {
-      agentsHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      scratchHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushAsync();
 

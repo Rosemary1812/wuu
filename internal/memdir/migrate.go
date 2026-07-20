@@ -17,10 +17,10 @@ import (
 //  1. ~/.wuu/memory/entries.jsonl (the retired memstore.FileProvider log)
 //     — each live entry becomes a topic file + index line in the user
 //     notebook; the store-template MEMORY.md is replaced by the new index.
-//  2. ~/.wuu/participants/<id>/MEMORY.md (flat resident memory) — content
+//  2. ~/.wuu/participants/<id>/MEMORY.md (legacy named-agent memory) — content
 //     moves into <id>/memory/legacy-profile.md + an index line.
-//  3. ~/.wuu/agents/<id>/home/MEMORY.md (orphan files residents were
-//     mis-guided into writing) — merged into that agent's identity notebook
+//  3. ~/.wuu/agents/<id>/home/MEMORY.md (orphan files older named-agent prompts
+//     misdirected) — merged into that agent's identity notebook
 //     as legacy-home-notes.md.
 //
 // Every consumed source file is renamed with a ".migrated" suffix. The whole

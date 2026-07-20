@@ -18,7 +18,6 @@ import type {
 import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent } from "./RichContent";
 import { SelectMenu } from "./SelectMenu";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { useI18n } from "./i18n";
 
 // 设置 → 记忆 面板（docs/plans/2026-07-04-memory-redesign.md §8.1）。
@@ -116,16 +115,14 @@ function memoryChangedFileActionLabel(
 export function MemoryPanel({
   participants,
   focusParticipantID,
-  collaborationEnabled = ENABLE_COLLABORATION,
 }: {
   participants: ParticipantProfile[];
   // 预选某位同事的笔记本（档案面板「在记忆面板中管理」跳转带过来）。
   focusParticipantID?: string;
-  collaborationEnabled?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
   const [scope, setScope] = useState<MemoryScope>(
-    collaborationEnabled && focusParticipantID ? "participant" : "user",
+    focusParticipantID ? "participant" : "user",
   );
   const [selectedParticipantID, setSelectedParticipantID] = useState(
     focusParticipantID ?? "",
@@ -165,17 +162,11 @@ export function MemoryPanel({
   // 跳转焦点变化时切到对应同事的笔记本（初始值已在 useState 里消化，
   // 这里兜住同一面板实例被复用的情况）。
   useEffect(() => {
-    if (collaborationEnabled && focusParticipantID) {
+    if (focusParticipantID) {
       setScope("participant");
       setSelectedParticipantID(focusParticipantID);
     }
-  }, [collaborationEnabled, focusParticipantID]);
-
-  useEffect(() => {
-    if (!collaborationEnabled && scope !== "user") {
-      setScope("user");
-    }
-  }, [collaborationEnabled, scope]);
+  }, [focusParticipantID]);
 
   useEffect(() => {
     if (!notebookReady) {
@@ -346,8 +337,7 @@ export function MemoryPanel({
           </div>
         </header>
 
-        {collaborationEnabled ? (
-          <div className="settings-memory-toolbar">
+        <div className="settings-memory-toolbar">
             <div
               className="settings-memory-tabs"
               role="tablist"
@@ -386,8 +376,7 @@ export function MemoryPanel({
                 }))}
               />
             ) : null}
-          </div>
-        ) : null}
+        </div>
 
         {!notebookReady ? (
           <div className="settings-card">

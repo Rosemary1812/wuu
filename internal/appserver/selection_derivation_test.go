@@ -45,7 +45,7 @@ func writeTwoProviderSelectionConfig(t *testing.T, path string) {
 	}
 }
 
-func residentForeignPinnedThread(t *testing.T, srv *Server, rt *runtime.Session, id string) *threadState {
+func cachedForeignPinnedThread(t *testing.T, srv *Server, rt *runtime.Session, id string) *threadState {
 	t.Helper()
 	if _, err := session.CreateWithMetadata(rt.SessionDir, id, rt.RootDir); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -62,7 +62,7 @@ func residentForeignPinnedThread(t *testing.T, srv *Server, rt *runtime.Session,
 	}
 	th := srv.thread(id)
 	if th == nil {
-		t.Fatal("resumed thread is not resident")
+		t.Fatal("resumed thread is not cached")
 	}
 	return th
 }
@@ -124,7 +124,7 @@ func TestAdvancedUpdateReDerivesPinnedThreadBudgetAndWorker(t *testing.T) {
 	writeTwoProviderSelectionConfig(t, rt.ConfigPath)
 	srv := New(rt, &lockedBuffer{})
 
-	th := residentForeignPinnedThread(t, srv, rt, "foreign-thread")
+	th := cachedForeignPinnedThread(t, srv, rt, "foreign-thread")
 	built, err := srv.ensureThreadRuntime(th)
 	if err != nil {
 		t.Fatalf("ensureThreadRuntime: %v", err)
@@ -191,7 +191,7 @@ func TestEnsureThreadRuntimeRestoresPinnedVariantEffortPermission(t *testing.T) 
 	}
 	th := srv.thread("resume-thread")
 	if th == nil {
-		t.Fatal("resumed thread is not resident")
+		t.Fatal("resumed thread is not cached")
 	}
 	// The pins are restored onto the thread state...
 	th.mu.Lock()

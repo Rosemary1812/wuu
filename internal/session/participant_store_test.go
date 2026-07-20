@@ -2,7 +2,6 @@ package session
 
 import (
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -99,42 +98,6 @@ func TestCompleteParticipantRunUpsertsMonotonicTerminalState(t *testing.T) {
 	}
 }
 
-// TestParticipantForkedFromRoundTrip proves the decision-six分身 marker
-// (ForkedFrom, the母体's participant id) persists through the store.
-func TestParticipantForkedFromRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	mother := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Rina", Role: "reviewer"}
-	if err := UpsertParticipant(dir, mother); err != nil {
-		t.Fatal(err)
-	}
-	fork := participant.Participant{
-		ID: participant.NewID(), Kind: participant.KindNamed,
-		Name: "Rina 的分身", Role: "reviewer", ForkedFrom: mother.ID,
-	}
-	if err := UpsertParticipant(dir, fork); err != nil {
-		t.Fatal(err)
-	}
-	got, err := GetParticipant(dir, fork.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ForkedFrom != mother.ID {
-		t.Fatalf("ForkedFrom round-trip = %q, want %q", got.ForkedFrom, mother.ID)
-	}
-	// The母体 carries no fork marker.
-	gotMother, err := GetParticipant(dir, mother.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotMother.ForkedFrom != "" {
-		t.Fatalf("mother ForkedFrom = %q, want empty", gotMother.ForkedFrom)
-	}
-	// Summary() surfaces the marker for the wire.
-	if got.Summary().ForkedFromID != mother.ID {
-		t.Fatalf("Summary ForkedFromID = %q, want %q", got.Summary().ForkedFromID, mother.ID)
-	}
-}
-
 func TestNamedParticipantUniqueName(t *testing.T) {
 	dir := t.TempDir()
 	a := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Noel", Role: "reviewer"}
@@ -172,116 +135,6 @@ func TestRetireParticipant(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Errorf("ListParticipants after retire = %v, want empty", list)
-	}
-}
-
-func TestRetireParticipantRefusesOpenThreadOwnerAndActiveTaskLead(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := CreateWithMetadata(dir, "group", t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-
-	open := createOpenConversationThreadForTest(t, dir, ConversationThread{
-		SessionID: "group", AnchorItemID: "open-owner", ThreadOwnerParticipantID: "prt-open-owner",
-	})
-	if err := RetireParticipant(dir, "prt-open-owner"); err == nil || !strings.Contains(err.Error(), "owns an open Thread") {
-		t.Fatalf("open Thread owner retirement must be rejected, got %v", err)
-	}
-	if err := UpdateConversationThreadStatus(dir, open.ID, ConversationThreadResolved); err != nil {
-		t.Fatal(err)
-	}
-	if err := RetireParticipant(dir, "prt-open-owner"); err != nil {
-		t.Fatalf("resolved Thread owner should retire: %v", err)
-	}
-	if err := UpdateConversationThreadStatus(dir, open.ID, ConversationThreadOpen); err == nil || !strings.Contains(err.Error(), "cannot be reopened") {
-		t.Fatalf("resolved Thread must remain terminal after owner retirement, got %v", err)
-	}
-
-	task := createOpenConversationThreadForTest(t, dir, ConversationThread{
-		SessionID: "group", AnchorItemID: "task-lead", ThreadOwnerParticipantID: "prt-task-lead",
-	})
-	if _, err := EscalateConversationThread(dir, task.ID, "human", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := RetireParticipant(dir, "prt-task-lead"); err == nil || !strings.Contains(err.Error(), "leads an active Task") {
-		t.Fatalf("active Task lead retirement must be rejected, got %v", err)
-	}
-	task = readyTaskForConclusionForTest(t, dir, task)
-	if _, err := ConcludeConversationThread(dir, task.ID, "prt-task-lead", "done"); err != nil {
-		t.Fatal(err)
-	}
-	if err := RetireParticipant(dir, "prt-task-lead"); err != nil {
-		t.Fatalf("resolved Task lead should retire: %v", err)
-	}
-}
-
-// TestRetireParticipantCleansDerivedRows asserts that retiring is a full
-// storage-side cleanup transaction, not just a retired_at stamp: the
-// participant's thread_members rows disappear and its unconsumed
-// resident_inbox envelopes are dropped, while consumed envelopes are kept
-// as delivery history.
-func TestRetireParticipantCleansDerivedRows(t *testing.T) {
-	dir := t.TempDir()
-	p := participant.Participant{
-		ID: participant.NewID(), Kind: participant.KindNamed,
-		Name: "Noel", Role: "reviewer",
-	}
-	if err := UpsertParticipant(dir, p); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CreateWithMetadata(dir, "sess-group", t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	if err := AddThreadMember(dir, "sess-group", p.ID); err != nil {
-		t.Fatal(err)
-	}
-	pending, err := EnqueueResidentEnvelope(dir, ResidentEnvelope{
-		ParticipantID: p.ID,
-		EnvelopeJSON:  []byte(`{"text":"pending"}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	consumed, err := EnqueueResidentEnvelope(dir, ResidentEnvelope{
-		ParticipantID: p.ID,
-		EnvelopeJSON:  []byte(`{"text":"consumed"}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := MarkResidentEnvelopesConsumed(dir, []string{consumed.ID}, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := RetireParticipant(dir, p.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	db, err := openStore(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	var memberCount int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM thread_members WHERE participant_id = ?`, p.ID).Scan(&memberCount); err != nil {
-		t.Fatal(err)
-	}
-	if memberCount != 0 {
-		t.Errorf("thread_members rows after retire = %d, want 0", memberCount)
-	}
-	var pendingCount int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NULL`, p.ID).Scan(&pendingCount); err != nil {
-		t.Fatal(err)
-	}
-	if pendingCount != 0 {
-		t.Errorf("pending resident_inbox rows after retire = %d, want 0 (envelope %s should be dropped)", pendingCount, pending.ID)
-	}
-	var consumedCount int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NOT NULL`, p.ID).Scan(&consumedCount); err != nil {
-		t.Fatal(err)
-	}
-	if consumedCount != 1 {
-		t.Errorf("consumed resident_inbox rows after retire = %d, want 1 (history must be kept)", consumedCount)
 	}
 }
 

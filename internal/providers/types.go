@@ -2,7 +2,6 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -219,27 +218,10 @@ type ChatMessage struct {
 	// DiscoveredTools carries provider-native deferred tool state across
 	// compact/resume/fork boundaries without adding full schemas to prompt text.
 	DiscoveredTools []LoadableToolDefinition
-	// Participant metadata is app-level attribution for conversation-native
-	// result cards. Provider adapters ignore it.
-	ParticipantID   string          `json:"participant_id,omitempty"`
-	ParticipantName string          `json:"participant_name,omitempty"`
-	PostKind        string          `json:"post_kind,omitempty"`
-	EnvelopeMeta    json.RawMessage `json:"envelope_meta,omitempty"`
 	// Seq is the message's stable per-thread address (session_messages.seq),
 	// populated when history is loaded from the store. App-level only; provider
-	// adapters ignore it. Carried so chat-view items can map read receipts and
-	// reactions (keyed by seq) to the right bubble. 0 = unknown/not persisted.
+	// adapters ignore it. 0 = unknown/not persisted.
 	Seq int `json:"seq,omitempty"`
-	// FocusMeta carries the structured {kind,name,root} metadata for a
-	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
-	// Mirrors EnvelopeMeta's plumbing but is semantically distinct: envelope
-	// metadata is resident routing bookkeeping, focus metadata describes a
-	// tool-cwd/workspace-scope change the thread has declared.
-	FocusMeta json.RawMessage `json:"focus_meta,omitempty"`
-	// ConsumeResidentEnvelopeIDs is app-server durable bookkeeping. When set
-	// on a user message, the session store appends that message and marks the
-	// listed resident inbox envelopes consumed in the same transaction.
-	ConsumeResidentEnvelopeIDs []string `json:"-"`
 }
 
 // CacheHint carries provider-agnostic prompt-cache guidance.

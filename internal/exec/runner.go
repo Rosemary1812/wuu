@@ -17,7 +17,6 @@ import (
 type runState struct {
 	threadID                 string
 	turnID                   string
-	participantID            string
 	finalMessage             string
 	tracePath                string
 	status                   string
@@ -26,8 +25,6 @@ type runState struct {
 	seenSubagents            map[string]bool
 	permissionDenied         bool
 	permissionError          string
-	lastParticipantItem      string
-	lastParticipantSeq       int
 	structuredResult         any
 	structuredResultSet      bool
 	awaitingAutoContinuation bool
@@ -47,7 +44,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return WithExitCode(ExitInvalidInput, err)
 	}
-	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() && len(opts.Actions) == 0 {
+	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() {
 		return WithExitCode(ExitInvalidInput, errors.New("prompt is required"))
 	}
 	if opts.Stdout == nil {
@@ -95,14 +92,6 @@ func Run(ctx context.Context, opts Options) error {
 		return classifyProtocolOrContextError(ctx, err)
 	}
 	emitSessionConfigured(opts, initResult)
-
-	if len(opts.Actions) > 0 {
-		return runActionSequence(ctx, controller, opts, &state)
-	}
-
-	if opts.Participant.Requested() {
-		return runParticipantTurn(ctx, controller, opts, &state)
-	}
 
 	thread, err := startOrResumeThread(ctx, controller, opts)
 	if err != nil {
@@ -337,14 +326,6 @@ func handleNotification(opts Options, notification Notification, state *runState
 			return false, err
 		}
 		emitItemCompleted(opts, params, state)
-		// Participant messages are the actual public chat surface for named
-		// agents. Emit them for every turn path, including resident DM turns
-		// driven by send_user_message. Previously only participant/start runs
-		// exposed this event, so exec showed the post_message tool call while
-		// hiding the message a desktop user actually saw.
-		if params.Item.Type == appserver.ThreadItemParticipantMsg {
-			emitParticipantMessage(opts, params)
-		}
 	case appserver.NotificationToolCallOutput:
 		var params appserver.ToolCallOutputNotification
 		if err := decodeNotification(notification, &params); err != nil {

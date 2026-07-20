@@ -28,17 +28,14 @@ func TestFilterMobileChatLineSlimsThreadListResponse(t *testing.T) {
 		"result":{
 			"threads":[
 				{
-					"id":"dm",
-					"workspace_kind":"dm",
+					"id":"collaboration",
+					"source":"collaboration",
 					"turns":[{
 						"id":"turn-1",
 						"items":[
 							{"id":"u","type":"user_message","text":"hi"},
 							{"id":"a","type":"agent_message","text":"working"},
-							{"id":"tool","type":"tool_call","name":"bash"},
-							{"id":"p","type":"participant_message","text":"done"},
-							{"id":"task","type":"task_card","task":{"id":"task-1","status":"running"}},
-							{"id":"focus","type":"tool_call","focus_meta":{"kind":"home"}}
+							{"id":"tool","type":"tool_call","name":"bash"}
 						],
 						"items_view":"full",
 						"status":"completed"
@@ -46,7 +43,6 @@ func TestFilterMobileChatLineSlimsThreadListResponse(t *testing.T) {
 					"child_agents":[{"id":"agent-1"}],
 					"browser_state":{"current_url":"https://example.com"}
 				},
-				{"id":"group","group":true,"turns":[]},
 				{"id":"project","workspace_kind":"project","turns":[{"id":"p","items":[]}]}
 			]
 		}
@@ -68,22 +64,22 @@ func TestFilterMobileChatLineSlimsThreadListResponse(t *testing.T) {
 	if err := json.Unmarshal(got, &env); err != nil {
 		t.Fatalf("decode filtered line: %v\n%s", err, got)
 	}
-	if len(env.Result.Threads) != 2 {
-		t.Fatalf("expected only dm/group threads, got %+v", env.Result.Threads)
+	if len(env.Result.Threads) != 1 {
+		t.Fatalf("expected only collaboration threads, got %+v", env.Result.Threads)
 	}
-	dm := env.Result.Threads[0]
-	if dm.ID != "dm" {
-		t.Fatalf("first thread = %q, want dm", dm.ID)
+	thread := env.Result.Threads[0]
+	if thread.ID != "collaboration" {
+		t.Fatalf("first thread = %q, want collaboration", thread.ID)
 	}
-	if len(dm.ChildAgents) != 0 || len(dm.Browser) != 0 {
-		t.Fatalf("desktop-only thread fields were not removed: child=%s browser=%s", dm.ChildAgents, dm.Browser)
+	if len(thread.ChildAgents) != 0 || len(thread.Browser) != 0 {
+		t.Fatalf("desktop-only thread fields were not removed: child=%s browser=%s", thread.ChildAgents, thread.Browser)
 	}
-	items := dm.Turns[0].Items
-	if gotTypes := itemTypes(items); gotTypes != "user_message,participant_message,task_card,tool_call" {
+	items := thread.Turns[0].Items
+	if gotTypes := itemTypes(items); gotTypes != "user_message,agent_message" {
 		t.Fatalf("unexpected visible item types: %s", gotTypes)
 	}
-	if len(items) != 4 || len(items[3].FocusMeta) == 0 {
-		t.Fatalf("focus_meta item should survive even when carried by tool_call: %+v", items)
+	if len(items) != 2 {
+		t.Fatalf("expected collaboration intake messages only: %+v", items)
 	}
 }
 
@@ -92,10 +88,10 @@ func TestFilterMobileChatLineKeepsOnlyVisibleItemNotifications(t *testing.T) {
 	if got, keep := filterMobileChatLine(hidden); keep || got != nil {
 		t.Fatalf("tool item notification should be dropped, keep=%v got=%s", keep, got)
 	}
-	visible := []byte(`{"method":"item/completed","params":{"thread_id":"t","turn_id":"turn","item":{"id":"msg","type":"participant_message","text":"done"}}}`)
+	visible := []byte(`{"method":"item/completed","params":{"thread_id":"t","turn_id":"turn","item":{"id":"msg","type":"agent_message","text":"done"}}}`)
 	got, keep := filterMobileChatLine(visible)
 	if !keep {
-		t.Fatal("participant message notification should be kept")
+		t.Fatal("agent message notification should be kept")
 	}
 	var env struct {
 		Method string `json:"method"`

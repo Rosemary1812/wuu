@@ -25,7 +25,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
-	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -1452,62 +1451,6 @@ func TestNewThreadRuntimeToolLedgerFailureDoesNotTouchRestoredQueue(t *testing.T
 	}
 	if _, err := os.Stat(filepath.Join(statepath.SessionArtifactDir(rt.StateDir, threadID), "threads")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("AgentControl thread store exists after preflight failure: %v", err)
-	}
-}
-
-func TestNewThreadRuntimeWorkerDoesNotInheritParticipantSpeech(t *testing.T) {
-	root := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
-	t.Setenv("TEST_WUU_KEY", "abc")
-
-	rt, err := NewSession(Options{
-		RootDir:    root,
-		HomeDir:    home,
-		ConfigPath: filepath.Join(root, ".wuu.json"),
-		Config: config.Config{
-			DefaultProvider: "test",
-			Providers: map[string]config.ProviderConfig{
-				"test": {
-					Type:      "openai-compatible",
-					BaseURL:   "https://example.test/v1",
-					APIKeyEnv: "TEST_WUU_KEY",
-					Model:     "gpt-5-codex",
-				},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	client := &sessionRecordingClient{}
-	rt.WorkerClient = client
-	threadRT, err := rt.NewThreadRuntime("thread-resident-parent")
-	if err != nil {
-		t.Fatalf("NewThreadRuntime: %v", err)
-	}
-	defer func() {
-		threadRT.AgentControl.StopAll()
-		time.Sleep(100 * time.Millisecond)
-	}()
-	threadRT.Toolkit.SetParticipantIdentity("prt-resident")
-	threadRT.Toolkit.SetParticipantSpeechEnabled(true)
-
-	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
-		Type:        agentcontrol.DefaultSubagentType,
-		TaskName:    "inspect_repo",
-		Prompt:      "inspect the repo",
-		Synchronous: true,
-	}); err != nil {
-		t.Fatalf("Spawn: %v", err)
-	}
-
-	req := client.LastRequest()
-	for _, def := range req.Tools {
-		switch def.Name {
-		case "post_message", "manage_participant":
-			t.Fatalf("ordinary worker inherited participant speech tool %q", def.Name)
-		}
 	}
 }
 
@@ -3220,41 +3163,6 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyCoordination(t *testing.T) 
 		}
 	}
 
-	// Named agents coordinate through task rail/runtime goal, not the legacy
-	// workflow suite. They must not carry workflow capability or receive
-	// start_workflow/catalog prompt guidance.
-	namedSurface := modelprofile.DefaultCompiler{}.Compile(
-		modelprofile.Resolve("openai", "gpt-5"),
-		modelprofile.SurfaceNamed,
-	)
-	namedPrompt := buildBaseSystemPrompt(
-		t.TempDir(),
-		config.DefaultSystemPrompt(),
-		"",
-		"openai",
-		"gpt-5",
-		namedSurface,
-		nil, "", "", nil,
-	)
-	for _, bad := range []string{
-		"- start_workflow:",
-		"`start_workflow`",
-		"Workflow guidance",
-		"# Workflow orchestration",
-		"Workflow catalog",
-		"named-release",
-		"Named release workflow.",
-		"especially MCP tools, workflows",
-		"workflows, scheduling",
-		"task-handling options inside wuu",
-		"direct work, subagents, or workflows",
-		"workflows only when",
-		"matching saved workflow",
-	} {
-		if strings.Contains(namedPrompt, bad) {
-			t.Fatalf("named prompt must not contain legacy workflow guidance %q; got prompt:\n%s", bad, namedPrompt)
-		}
-	}
 }
 
 func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
@@ -3315,7 +3223,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 		t.Fatalf("agent type: %v", err)
 	}
 
-	applyWorkerToolFilter(kit, wt, false, false)
+	applyWorkerToolFilter(kit, wt, false)
 
 	defs := map[string]bool{}
 	for _, def := range kit.Definitions() {
@@ -3326,41 +3234,11 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message", "react", "manage_participant", "manage_task"} {
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
 		if defs[blocked] {
 			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
 		}
 	}
-}
-
-func TestApplyWorkerToolFilter_AllowsAuthorizedParticipantSpeech(t *testing.T) {
-	kit, err := tools.New(t.TempDir())
-	if err != nil {
-		t.Fatalf("New toolkit: %v", err)
-	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", false)
-	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
-	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
-	if err != nil {
-		t.Fatalf("agent type: %v", err)
-	}
-
-	kit.SetParticipantSpeechEnabled(true)
-	applyWorkerToolFilter(kit, wt, true, false)
-	defs := toolDefinitionNamesForRuntimeTest(kit.Definitions())
-	for _, name := range []string{"post_message", "react", "manage_participant", "manage_task"} {
-		if !defs[name] {
-			t.Fatalf("authorized participant worker toolkit should expose %s after role filtering; defs=%v", name, defs)
-		}
-	}
-}
-
-func toolDefinitionNamesForRuntimeTest(defs []providers.ToolDefinition) map[string]bool {
-	names := make(map[string]bool, len(defs))
-	for _, def := range defs {
-		names[def.Name] = true
-	}
-	return names
 }
 
 func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.T) {
@@ -3375,7 +3253,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 		AllowedTools: []string{"read_file", "grep", "glob", "bash", "agent_report"},
 	}
 
-	applyWorkerToolFilter(kit, wt, false, false)
+	applyWorkerToolFilter(kit, wt, false)
 
 	defs := map[string]bool{}
 	for _, def := range kit.Definitions() {
@@ -3385,9 +3263,6 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 		if !defs[allowed] {
 			t.Fatalf("restricted worker toolkit should keep %s; defs=%v", allowed, defs)
 		}
-	}
-	if defs["post_message"] {
-		t.Fatalf("restricted worker toolkit should not expose participant speech tool; defs=%v", defs)
 	}
 	for _, hidden := range []string{"run_shell", "run_test", "start_process", "git", "apply_patch", "edit_file", "write_file"} {
 		if defs[hidden] {

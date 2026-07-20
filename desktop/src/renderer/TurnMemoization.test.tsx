@@ -99,22 +99,16 @@ const stableCallbacks = {
   canEditThreadMessage: () => false,
   onForkMessage: () => {},
   onOpenAgent: () => {},
-  onOpenSubthread: () => {},
-  onReact: () => {},
   onEditMessage: () => {},
   onCancelEditMessage: () => {},
   onSubmitEditMessage: () => {},
   onOpenFileDiff: () => {},
-  resolveParticipantName: (id: string) => id,
 };
 
 const stableCollections = {
   contextCompositionEntries: [],
   instructionFilesEntries: [],
   turnStreamStatus: {},
-  busyParticipantIDs: new Set<string>(),
-  activeThreadMarks: [],
-  pendingChatMessagesByThread: {},
 };
 
 function paneProps(thread: Thread): ComponentProps<typeof CachedConversationPanes> {
@@ -123,7 +117,6 @@ function paneProps(thread: Thread): ComponentProps<typeof CachedConversationPane
     threadsByID: new Map([[thread.id, thread]]),
     activeThreadID: thread.id,
     conversationGridVisible: false,
-    chatReaderCount: 0,
     ...stableCallbacks,
     ...stableCollections,
   };

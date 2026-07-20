@@ -159,119 +159,6 @@ func TestListForCWDMatchesByWorkspaceIDAcrossMoves(t *testing.T) {
 	}
 }
 
-func TestListForCWDStaysScopedDespiteDMSessions(t *testing.T) {
-	dir := t.TempDir()
-	projectCWD := filepath.Join(t.TempDir(), "project-a")
-	dmCWD := filepath.Join(t.TempDir(), ".wuu", "agents", "prt-x", "home")
-
-	if _, err := CreateWithMetadata(dir, "sess-project", projectCWD); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CreateWithMetadata(dir, "sess-dm", dmCWD); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := BindDMParticipant(dir, "sess-dm", "prt-x"); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions, err := ListForCWD(dir, projectCWD, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sessions) != 1 || sessions[0].ID != "sess-project" {
-		t.Fatalf("ListForCWD should stay cwd-scoped, got: %+v", sessions)
-	}
-
-	// A newer DM session must not hijack the project's most-recent lookup
-	// (e.g. `wuu resume` inside a project).
-	recent, err := MostRecentForCWD(dir, projectCWD, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recent != "sess-project" {
-		t.Fatalf("MostRecentForCWD() = %q, want sess-project", recent)
-	}
-}
-
-func TestListForCWDWithDMsIncludesDMSessions(t *testing.T) {
-	dir := t.TempDir()
-	projectCWD := filepath.Join(t.TempDir(), "project-a")
-	dmCWD := filepath.Join(t.TempDir(), ".wuu", "agents", "prt-x", "home")
-
-	if _, err := CreateWithMetadata(dir, "sess-project", projectCWD); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CreateWithMetadata(dir, "sess-dm", dmCWD); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := BindDMParticipant(dir, "sess-dm", "prt-x"); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions, err := ListForCWDWithDMs(dir, projectCWD, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := make(map[string]bool, len(sessions))
-	for _, s := range sessions {
-		ids[s.ID] = true
-	}
-	if len(sessions) != 2 || !ids["sess-project"] || !ids["sess-dm"] {
-		t.Fatalf("ListForCWDWithDMs should include the DM session, got: %+v", sessions)
-	}
-}
-
-func TestSetGroupThreadPersistsAndSurfacesRegardlessOfCWD(t *testing.T) {
-	dir := t.TempDir()
-	projectCWD := filepath.Join(t.TempDir(), "project-a")
-	groupCWD := filepath.Join(t.TempDir(), "elsewhere")
-
-	if _, err := CreateWithMetadata(dir, "sess-project", projectCWD); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CreateWithMetadata(dir, "sess-group", groupCWD); err != nil {
-		t.Fatal(err)
-	}
-	updated, err := SetGroupThread(dir, "sess-group", true)
-	if err != nil {
-		t.Fatalf("SetGroupThread: %v", err)
-	}
-	if !updated.Group {
-		t.Fatalf("expected returned session to have Group=true, got %+v", updated)
-	}
-
-	found, ok, err := Find(dir, "sess-group")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok || !found.Group {
-		t.Fatalf("expected persisted session to be marked group, got %+v (ok=%v)", found, ok)
-	}
-
-	sessions, err := ListForCWDWithDMs(dir, projectCWD, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := make(map[string]bool, len(sessions))
-	for _, s := range sessions {
-		ids[s.ID] = true
-	}
-	if !ids["sess-group"] {
-		t.Fatalf("ListForCWDWithDMs should surface group threads regardless of cwd, got: %+v", sessions)
-	}
-
-	// Strict cwd scoping must not leak group threads bound to other cwds.
-	scoped, err := ListForCWD(dir, projectCWD, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range scoped {
-		if s.ID == "sess-group" {
-			t.Fatalf("ListForCWD should stay cwd-scoped and exclude group threads from other cwds, got: %+v", scoped)
-		}
-	}
-}
-
 func TestSetSourcePersistsAndLists(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := CreateWithMetadata(dir, "automation-thread", "/tmp/project"); err != nil {
@@ -290,104 +177,6 @@ func TestSetSourcePersistsAndLists(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].Source != "automation" {
 		t.Fatalf("sessions = %+v", sessions)
-	}
-}
-
-func TestSetFocusWorkspacePersistsAndIsResettable(t *testing.T) {
-	dir := t.TempDir()
-	cwd := filepath.Join(t.TempDir(), "agent-home")
-	if _, err := CreateWithMetadata(dir, "sess-dm", cwd); err != nil {
-		t.Fatal(err)
-	}
-
-	// A freshly created session has no declared focus (all workspaces,
-	// today's default behavior).
-	found, ok, err := Find(dir, "sess-dm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok || found.FocusWorkspace != "" {
-		t.Fatalf("expected empty default focus, got %+v (ok=%v)", found, ok)
-	}
-
-	updated, err := SetFocusWorkspace(dir, "sess-dm", "acme")
-	if err != nil {
-		t.Fatalf("SetFocusWorkspace: %v", err)
-	}
-	if updated.FocusWorkspace != "acme" {
-		t.Fatalf("expected returned session to have FocusWorkspace=%q, got %+v", "acme", updated)
-	}
-	found, ok, err = Find(dir, "sess-dm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok || found.FocusWorkspace != "acme" {
-		t.Fatalf("expected persisted focus %q, got %+v (ok=%v)", "acme", found, ok)
-	}
-
-	// Unlike BindDMParticipant, focus is re-settable: switch to the home
-	// marker, then back to "all".
-	if _, err := SetFocusWorkspace(dir, "sess-dm", "~"); err != nil {
-		t.Fatalf("SetFocusWorkspace(~): %v", err)
-	}
-	found, _, err = Find(dir, "sess-dm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if found.FocusWorkspace != "~" {
-		t.Fatalf("expected persisted focus %q, got %+v", "~", found)
-	}
-
-	if _, err := SetFocusWorkspace(dir, "sess-dm", ""); err != nil {
-		t.Fatalf("SetFocusWorkspace(\"\"): %v", err)
-	}
-	found, _, err = Find(dir, "sess-dm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if found.FocusWorkspace != "" {
-		t.Fatalf("expected persisted focus to reset to empty, got %+v", found)
-	}
-}
-
-func TestListSurfacesFocusWorkspace(t *testing.T) {
-	dir := t.TempDir()
-	cwd := filepath.Join(t.TempDir(), "agent-home")
-	if _, err := CreateWithMetadata(dir, "sess-dm", cwd); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := SetFocusWorkspace(dir, "sess-dm", "acme"); err != nil {
-		t.Fatalf("SetFocusWorkspace: %v", err)
-	}
-
-	sessions, err := List(dir, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sessions) != 1 || sessions[0].FocusWorkspace != "acme" {
-		t.Fatalf("List should surface FocusWorkspace, got: %+v", sessions)
-	}
-}
-
-func TestHistoryRecordFocusMetaRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
-		t.Fatal(err)
-	}
-	meta := json.RawMessage(`{"kind":"workspace","name":"acme","root":"/tmp/acme"}`)
-	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
-		Role:      "user",
-		Content:   "[focus: acme — /tmp/acme]",
-		FocusMeta: meta,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	history, err := LoadHistoryRecords(dir, "thread-1", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history) != 1 || string(history[0].FocusMeta) != string(meta) {
-		t.Fatalf("loaded focus meta = %+v, want %s", history, meta)
 	}
 }
 
@@ -723,9 +512,6 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 		Content:        "done",
 		DisplayContent: "visible done",
 		Phase:          "final_answer",
-		ParticipantID:  "prt-x",
-		PostKind:       "result",
-		ThreadID:       "cth-review",
 		Hidden:         true,
 		FinishReason:   "length",
 		StopReason:     "context_length_exceeded",
@@ -754,7 +540,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "done" || visible[0].DisplayContent != "visible done" || visible[0].Phase != "final_answer" || visible[0].ParticipantID != "prt-x" || visible[0].PostKind != "result" || visible[0].ThreadID != "cth-review" || !visible[0].Hidden || visible[0].FinishReason != "length" || visible[0].StopReason != "context_length_exceeded" || !visible[0].Truncated || string(visible[0].ToolCalls) == "" || string(visible[0].DiscoveredTools) == "" {
+	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "done" || visible[0].DisplayContent != "visible done" || visible[0].Phase != "final_answer" || !visible[0].Hidden || visible[0].FinishReason != "length" || visible[0].StopReason != "context_length_exceeded" || !visible[0].Truncated || string(visible[0].ToolCalls) == "" || string(visible[0].DiscoveredTools) == "" {
 		t.Fatalf("unexpected visible history: %+v", visible)
 	}
 
@@ -767,7 +553,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacySessionMessagesAddsThreadIDBeforeIndex(t *testing.T) {
+func TestMigrateLegacySessionMessagesRemainsReadable(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -826,8 +612,6 @@ func TestMigrateLegacySessionMessagesAddsThreadIDBeforeIndex(t *testing.T) {
 			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
 			provider TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
-			participant_id TEXT NOT NULL DEFAULT '',
-			post_kind TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY(session_id, seq),
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
@@ -847,7 +631,7 @@ func TestMigrateLegacySessionMessagesAddsThreadIDBeforeIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 1 || history[0].Content != "hello" || history[0].ThreadID != "" {
+	if len(history) != 1 || history[0].Content != "hello" {
 		t.Fatalf("unexpected migrated history: %+v", history)
 	}
 }

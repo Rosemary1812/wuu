@@ -7,7 +7,7 @@
 // index is ever injected into model context; writing memories happens
 // through the ordinary file tools, guided by the teaching text built here.
 // There are exactly two notebook kinds: the user notebook (one per wuu
-// home) and one identity notebook per resident named agent.
+// home) and one identity notebook per named agent.
 package memdir
 
 import (
@@ -41,8 +41,8 @@ func UserMemdir(wuuHome string) string {
 	return filepath.Join(home, "memory")
 }
 
-// ParticipantMemdir returns the identity notebook directory for one resident
-// named agent (~/.wuu/participants/<id>/memory). An empty participant id has
+// ParticipantMemdir returns the identity notebook directory for one named
+// agent (~/.wuu/participants/<id>/memory). An empty participant id has
 // no notebook and yields "".
 func ParticipantMemdir(wuuHome, participantID string) string {
 	home := strings.TrimSpace(wuuHome)

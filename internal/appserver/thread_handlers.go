@@ -13,7 +13,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/config"
-	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -22,8 +21,7 @@ import (
 
 // workspaceKindForCWD classifies a thread by where its working directory lives.
 // Threads whose cwd sits under <wuuHome>/scratch belong to the scratch
-// (no-project) workspace; threads whose cwd sits under <wuuHome>/agents/ belong
-// to a per-agent direct-message home; everything else is treated as a project
+// (no-project) workspace; everything else is treated as a project
 // thread. The scratch root mirrors the layout produced by the desktop
 // ProjectManager.selectNoProject helper, so threads created from a scratch
 // chat round-trip with the correct kind after a desktop restart.
@@ -32,19 +30,12 @@ func workspaceKindForCWD(wuuHome, cwd string) WorkspaceKind {
 		return WorkspaceKindProject
 	}
 	scratchRoot := filepath.Clean(filepath.Join(wuuHome, "scratch"))
-	agentRoot := filepath.Clean(filepath.Join(wuuHome, "agents"))
 	cleanCWD := filepath.Clean(cwd)
 	if cleanCWD == scratchRoot {
 		return WorkspaceKindScratch
 	}
 	if strings.HasPrefix(cleanCWD, scratchRoot+string(filepath.Separator)) {
 		return WorkspaceKindScratch
-	}
-	if cleanCWD == agentRoot {
-		return WorkspaceKindDM
-	}
-	if strings.HasPrefix(cleanCWD, agentRoot+string(filepath.Separator)) {
-		return WorkspaceKindDM
 	}
 	return WorkspaceKindProject
 }
@@ -54,84 +45,57 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	dmParticipantID := strings.TrimSpace(params.DMParticipantID)
-	if dmParticipantID != "" && params.Ephemeral {
-		return s.writeResponse(req.ID, nil, errors.New("dm threads cannot be ephemeral"))
+	if params.Collaboration && params.Ephemeral {
+		return s.writeResponse(req.ID, nil, errors.New("collaboration thread cannot be ephemeral"))
 	}
-	if params.Group && dmParticipantID != "" {
-		return s.writeResponse(req.ID, nil, errors.New("group threads cannot also be dm threads"))
-	}
-	if params.Group && params.Ephemeral {
-		return s.writeResponse(req.ID, nil, errors.New("group threads cannot be ephemeral"))
-	}
-	if params.Group {
-		th, err := s.createGroupThreadState(session.NewID(), params.Title, time.Now().UTC())
+	if params.Collaboration {
+		sessions, err := session.List(s.rt.SessionDir, 0)
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		s.mu.Lock()
-		s.threads[th.ID] = th
-		s.mu.Unlock()
-
-		th.mu.Lock()
-		thread := th.snapshotLocked()
-		th.mu.Unlock()
-		thread = s.threadWithGroupMembers(thread)
-		if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
-			return err
+		for _, metadata := range sessions {
+			if metadata.Source != ThreadSourceCollaboration || metadata.ArchivedAt != nil {
+				continue
+			}
+			thread, err := s.threadAfterMetadataUpdate(metadata)
+			if err != nil {
+				return s.writeResponse(req.ID, nil, err)
+			}
+			s.pruneCachedThreads(thread.ID)
+			return s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil)
 		}
-		if err := s.notifyThreadStarted(thread); err != nil {
-			return err
-		}
-		s.pruneResidentThreads(thread.ID)
-		return nil
 	}
-	if dmParticipantID != "" {
-		p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID)
-		if err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q: %w", dmParticipantID, err))
-		}
-		if p.Kind != participant.KindNamed {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q is not a named agent", dmParticipantID))
-		}
-		// Find-or-create: a resident DM thread for this participant may
-		// already exist in memory or on disk (e.g. created silently by a
-		// background resident reply). Reusing ensureResidentDMThread here
-		// keeps thread/start idempotent so a stale frontend cache can never
-		// spawn a second, indistinguishable "Andy" tab. See issue #3.
-		th, err := s.ensureResidentDMThread(dmParticipantID)
-		if err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
-
-		th.mu.Lock()
-		thread := th.snapshotLocked()
-		th.mu.Unlock()
-		if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
-			return err
-		}
-		if err := s.notifyThreadStarted(thread); err != nil {
-			return err
-		}
-		s.pruneResidentThreads(thread.ID)
-		return nil
-	}
-
 	id := session.NewID()
 	persistHistory := !params.Ephemeral
 	threadCWD := s.rt.RootDir
 	workspaceKind := workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
+	threadSource := ""
+	if params.Collaboration {
+		threadSource = ThreadSourceCollaboration
+		if strings.TrimSpace(s.rt.WuuHome) != "" {
+			threadCWD = filepath.Join(s.rt.WuuHome, "scratch", ThreadSourceCollaboration)
+			if err := os.MkdirAll(threadCWD, 0o700); err != nil {
+				return s.writeResponse(req.ID, nil, fmt.Errorf("create collaboration workspace: %w", err))
+			}
+		}
+		workspaceKind = WorkspaceKindScratch
+	}
 	if !params.Ephemeral {
 		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
+		if threadSource != "" {
+			if _, err := session.SetSource(s.rt.SessionDir, id, threadSource); err != nil {
+				return s.writeResponse(req.ID, nil, err)
+			}
+		}
 		if _, err := session.SetRuntimeSelection(s.rt.SessionDir, id, s.currentSessionRuntimeSelection()); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		// Bind the thread to the active workspace's stable id (registered
-		// projects) so its state and listing survive the project moving; DM
-		// and scratch runtimes carry no id and stay matched by cwd.
-		if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" {
+		// Bind project threads to the active workspace's stable id so their
+		// state and listing survive the project moving. Global collaboration
+		// and scratch threads carry no project id.
+		if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" && threadSource == "" {
 			if _, err := session.SetWorkspaceID(s.rt.SessionDir, id, wsID); err != nil {
 				return s.writeResponse(req.ID, nil, err)
 			}
@@ -144,6 +108,7 @@ func (s *Server) handleThreadStart(req Request) error {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, persistHistory, time.Now().UTC())
+	th.Source = threadSource
 	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
 	th.WorkspaceKind = workspaceKind
 	th.Ephemeral = params.Ephemeral
@@ -161,54 +126,8 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := s.notifyThreadStarted(thread); err != nil {
 		return err
 	}
-	s.pruneResidentThreads(thread.ID)
+	s.pruneCachedThreads(thread.ID)
 	return nil
-}
-
-func (s *Server) createResidentDMThreadState(p participant.Participant, id string, now time.Time) (*threadState, error) {
-	if p.Kind != participant.KindNamed {
-		return nil, fmt.Errorf("dm participant %q is not a named agent", p.ID)
-	}
-	wuuHome := strings.TrimSpace(s.rt.WuuHome)
-	if wuuHome == "" {
-		home, err := statepath.Home("")
-		if err != nil {
-			return nil, fmt.Errorf("dm participant %q: resolve wuu home: %w", p.ID, err)
-		}
-		wuuHome = home
-	}
-	threadCWD := statepath.AgentHomeDir(wuuHome, p.ID)
-	if err := os.MkdirAll(threadCWD, 0o755); err != nil {
-		return nil, fmt.Errorf("dm participant %q: create agent home: %w", p.ID, err)
-	}
-	prompt, err := s.residentPromptForParticipant(p)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(id) == "" {
-		id = session.NewID()
-	}
-	// DMs are matched by the DM bypass, never by workspace id, so they carry
-	// no workspace id.
-	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
-		return nil, err
-	}
-	if _, err := session.SetRuntimeSelection(s.rt.SessionDir, id, s.currentSessionRuntimeSelection()); err != nil {
-		return nil, err
-	}
-	if _, err := session.BindDMParticipant(s.rt.SessionDir, id, p.ID); err != nil {
-		return nil, err
-	}
-	if _, err := session.UpdateTitle(s.rt.SessionDir, id, p.Name); err != nil {
-		return nil, err
-	}
-	history := []providers.ChatMessage{{Role: "system", Content: prompt}}
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, true, now)
-	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
-	th.WorkspaceKind = WorkspaceKindDM
-	th.DMParticipantID = p.ID
-	th.Title = p.Name
-	return th, nil
 }
 
 func (s *Server) handleThreadResume(req Request) error {
@@ -251,7 +170,7 @@ func (s *Server) handleThreadResume(req Request) error {
 		}
 		return s.writeThreadResumeResult(req, thread)
 	}
-	th = s.addResidentThread(th)
+	th = s.addLoadedThread(th)
 	if th == nil {
 		return s.writeResponse(req.ID, nil, errServerClosed)
 	}
@@ -285,11 +204,11 @@ func (s *Server) writeThreadResumeResult(req Request, thread Thread) error {
 		s.restorePendingProcessCompletionsOnThreadResume(thread.ID)
 		s.kickGoalContinuation(thread.ID)
 	}
-	s.pruneResidentThreads(thread.ID)
+	s.pruneCachedThreads(thread.ID)
 	return nil
 }
 
-func (s *Server) ensureResidentThread(id string) (*threadState, error) {
+func (s *Server) ensureThreadLoaded(id string) (*threadState, error) {
 	if s == nil || s.closed.Load() {
 		return nil, errServerClosed
 	}
@@ -304,74 +223,15 @@ func (s *Server) ensureResidentThread(id string) (*threadState, error) {
 	if err != nil {
 		return nil, err
 	}
-	th = s.addResidentThread(th)
+	th = s.addLoadedThread(th)
 	if th == nil {
 		return nil, errServerClosed
 	}
-	s.pruneResidentThreads(id)
+	s.pruneCachedThreads(id)
 	return th, nil
 }
 
-func (s *Server) ensureResidentDMThread(participantID string) (*threadState, error) {
-	if s == nil || s.closed.Load() {
-		return nil, errServerClosed
-	}
-	participantID = strings.TrimSpace(participantID)
-	if participantID == "" {
-		return nil, errors.New("participant_id is required")
-	}
-	s.mu.Lock()
-	threads := make([]*threadState, 0, len(s.threads))
-	for _, th := range s.threads {
-		threads = append(threads, th)
-	}
-	s.mu.Unlock()
-	for _, th := range threads {
-		if th == nil {
-			continue
-		}
-		th.mu.Lock()
-		matches := strings.TrimSpace(th.DMParticipantID) == participantID
-		th.mu.Unlock()
-		if matches {
-			return th, nil
-		}
-	}
-
-	sessions, err := session.List(s.rt.SessionDir, 0)
-	if err != nil {
-		return nil, err
-	}
-	for _, sess := range sessions {
-		if strings.TrimSpace(sess.DMParticipantID) != participantID {
-			continue
-		}
-		return s.ensureResidentThread(sess.ID)
-	}
-
-	p, err := session.GetParticipant(s.rt.SessionDir, participantID)
-	if err != nil {
-		return nil, err
-	}
-	// Existing DM threads for a retired participant remain loadable above
-	// (frozen read-only at load); creating a brand-new DM for one is a
-	// contradiction — the identity is archived.
-	if p.RetiredAt != nil {
-		return nil, fmt.Errorf("participant %q is retired; no new DM thread can be created", firstNonEmpty(p.Name, participantID))
-	}
-	th, err := s.createResidentDMThreadState(p, session.NewID(), time.Now().UTC())
-	if err != nil {
-		return nil, err
-	}
-	th = s.addResidentThread(th)
-	if th == nil {
-		return nil, errServerClosed
-	}
-	s.pruneResidentThreads(th.ID)
-	return th, nil
-}
-
-func (s *Server) addResidentThread(th *threadState) *threadState {
+func (s *Server) addLoadedThread(th *threadState) *threadState {
 	if s == nil || th == nil {
 		return nil
 	}
@@ -403,12 +263,6 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 	th.Turns = applyTokenUsageMetasToTurns(th.Turns, loaded.tokenMetas)
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, threadCWD)
 	applySessionMetadata(th, loaded.metadata)
-	// Retire cleanup protocol: a retired participant's DM is frozen
-	// read-only. ReadOnly is not persisted per-session, so the freeze is
-	// derived from the participant row every time the thread loads.
-	if loaded.dmRetired {
-		th.ReadOnly = true
-	}
 	return th, nil
 }
 
@@ -420,7 +274,6 @@ type persistedThreadSnapshot struct {
 	baselineSeq     int
 	displayHistory  []persistedMessage
 	tokenMetas      []persistedMessage
-	dmRetired       bool
 }
 
 // loadPersistedThreadSnapshot is deliberately read-only. Loading or resuming a
@@ -473,20 +326,6 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 		tokenMetas:      tokenMetas,
 	}
 	systemPrompt := s.rt.StreamRunner.SystemPrompt
-	dmParticipantID := strings.TrimSpace(metadata.DMParticipantID)
-	if dmParticipantID != "" {
-		p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID)
-		if err != nil {
-			return persistedThreadSnapshot{}, err
-		}
-		loaded.dmRetired = p.RetiredAt != nil
-		systemPrompt, err = s.residentPromptForParticipant(p)
-		if err != nil {
-			return persistedThreadSnapshot{}, err
-		}
-		loaded.history = ensureResidentSystemPrompt(repaired, systemPrompt)
-		return loaded, nil
-	}
 	// The active runtime prompt is configuration, not conversation data. Use it
 	// in memory without rewriting the thread during a read-only load.
 	loaded.history = replaceBaseSystemPrompt(repaired, systemPrompt)
@@ -623,7 +462,7 @@ func (s *Server) handleThreadFork(req Request) error {
 	if err := s.notifyThreadStarted(thread); err != nil {
 		return err
 	}
-	s.pruneResidentThreads(thread.ID, source.thread.ID)
+	s.pruneCachedThreads(thread.ID, source.thread.ID)
 	return nil
 }
 
@@ -636,7 +475,7 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 	if threadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
-	th, err := s.ensureResidentThread(threadID)
+	th, err := s.ensureThreadLoaded(threadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -783,9 +622,6 @@ func (s *Server) handleThreadList(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if _, err := s.ensureAllChannel(); err != nil {
-		providers.DebugLogf("ensure #all group channel: %v", err)
-	}
 	targetCWD := firstNonEmpty(params.CWD, s.rt.RootDir)
 	// Trust the active workspace's stable id only when the caller didn't pin a
 	// specific cwd; an explicit params.CWD falls back to pure cwd matching.
@@ -793,7 +629,7 @@ func (s *Server) handleThreadList(req Request) error {
 	if strings.TrimSpace(params.CWD) == "" {
 		targetWorkspaceID = s.rt.WorkspaceID
 	}
-	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, targetCWD, targetWorkspaceID, 0)
+	sessions, err := session.ListForCWD(s.rt.SessionDir, targetCWD, targetWorkspaceID, 0)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -803,6 +639,15 @@ func (s *Server) handleThreadList(req Request) error {
 			continue
 		}
 		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
+	}
+	allSessions, err := session.List(s.rt.SessionDir, 0)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	for _, sess := range allSessions {
+		if sess.ArchivedAt == nil && strings.TrimSpace(sess.Source) == ThreadSourceCollaboration {
+			entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
+		}
 	}
 
 	s.mu.Lock()
@@ -821,7 +666,7 @@ func (s *Server) handleThreadList(req Request) error {
 			delete(entries, thread.ID)
 			continue
 		}
-		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) || thread.DMParticipantID != "" || thread.Group {
+		if thread.Source == ThreadSourceCollaboration || sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) {
 			entries[thread.ID] = entry
 		}
 	}
@@ -956,9 +801,6 @@ func (s *Server) handleThreadArchive(req Request) error {
 				return s.writeResponse(req.ID, nil, errors.New("cannot archive a running thread"))
 			}
 		}
-		if err := s.rejectAllChannelMutation(id, "archive"); err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
 	}
 	var mutationLease *session.ThreadExecutionLease
 	if params.Archived {
@@ -990,9 +832,6 @@ func (s *Server) handleThreadRename(req Request) error {
 	id := strings.TrimSpace(params.ThreadID)
 	if id == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
-	}
-	if err := s.rejectAllChannelMutation(id, "rename"); err != nil {
-		return s.writeResponse(req.ID, nil, err)
 	}
 	metadata, err := session.UpdateTitle(s.rt.SessionDir, id, params.Title)
 	if err != nil {
@@ -1038,13 +877,10 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.WorktreeBaseRepo = metadata.WorktreeBaseRepo
 	th.PinnedAt = metadata.PinnedAt
 	th.ArchivedAt = metadata.ArchivedAt
-	th.DMParticipantID = metadata.DMParticipantID
-	th.Group = metadata.Group
-	th.FocusWorkspace = metadata.FocusWorkspace
 }
 
 // runtimeSelectionFromSession is the one conversion from a persisted session
-// row to its runtime selection. List entries, resident restores, and legacy
+// row to its runtime selection. List entries, loaded threads, and legacy
 // migration all read the row through it so they cannot diverge on which
 // selection fields a session carries.
 func runtimeSelectionFromSession(sess session.Session) session.RuntimeSelection {
@@ -1102,9 +938,6 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 			CreatedAt:        sess.CreatedAt,
 			UpdatedAt:        updatedAt,
 			Turns:            []Turn{},
-			DMParticipantID:  sess.DMParticipantID,
-			Group:            sess.Group,
-			FocusWorkspace:   sess.FocusWorkspace,
 		},
 		pinnedAt: sess.PinnedAt,
 	}
@@ -1117,7 +950,6 @@ func (s *Server) threadWithChildAgents(thread Thread) (Thread, error) {
 	}
 	thread.ChildAgents = agents
 	thread = s.threadWithBackgroundWaiting(thread)
-	thread = s.threadWithGroupMembers(thread)
 	return s.threadWithWorktreeStatus(thread), nil
 }
 
@@ -1366,7 +1198,7 @@ func (s *Server) rootThreadIDs() ([]string, error) {
 		ids = append(ids, id)
 	}
 
-	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
+	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1563,7 +1395,7 @@ func sortThreadListEntries(entries []threadListEntry) {
 }
 
 func (s *Server) mostRecentVisibleThreadID() (string, error) {
-	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
+	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
 	if err != nil {
 		return "", err
 	}

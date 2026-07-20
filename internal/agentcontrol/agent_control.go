@@ -48,7 +48,7 @@ type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.M
 // instructions.
 type WorkerSystemPromptFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error)
 
-// ParticipantStore persists conversation participant identities. It is
+// ParticipantStore persists Kanban agent and task-worker identities. It is
 // defined here (instead of importing internal/session) so agentcontrol
 // stays decoupled from the session storage layer.
 type ParticipantStore interface {
@@ -163,18 +163,8 @@ type AgentControl struct {
 	helpMeRecoveryMu sync.Mutex
 	helpMeRecoveries map[string]HelpMeRecovery
 
-	participantMessagesMu  sync.Mutex
-	participantMessages    []chan<- ParticipantMessage
-	participantSpeech      map[string]struct{}
-	participantResultPosts map[string]struct{}
-	participantResponses   map[string]struct{}
-
-	// participantRosterMu guards participantRoster and
-	// participantRosterBindings, the dispatch table for the
-	// manage_participant tool.
-	participantRosterMu       sync.Mutex
-	participantRoster         ParticipantRoster
-	participantRosterBindings map[string]string
+	participantBindingMu sync.Mutex
+	participantBindings  map[string]string
 
 	// workerProviderName is the provider name the AgentControl's worker
 	// runtime is currently configured for. The model-pin resolver
@@ -800,9 +790,6 @@ type SpawnRequest struct {
 	BaseRepo      string // optional: chain off another worktree (worktree mode only)
 	Synchronous   bool
 	Timeout       time.Duration
-	// SpeechCapability is internal-only. It is set by conversation-native
-	// app-server paths, never by the LLM-facing spawn_agent tool.
-	SpeechCapability bool
 	// Isolation overrides the worker type's DefaultIsolation when set.
 	// Empty string means "use the type default". Use this from
 	// spawn_agent to opt a normally-inplace worker into a worktree
@@ -829,6 +816,13 @@ type SpawnRequest struct {
 	// and must not be exposed through the LLM-facing spawn_agent
 	// tool.
 	ModelPin string
+	// FileScopeRoots is an internal-only per-spawn file-tool whitelist
+	// override. Nil means the worker inherits the factory default scope;
+	// a non-nil slice (including an empty one, which clears the whitelist)
+	// is applied to the freshly built worker toolkit when it supports
+	// SetFileScopeRoots. Like ModelOverride it must never be exposed
+	// through the LLM-facing spawn_agent tool.
+	FileScopeRoots []string
 	// AdmissionPrepare is an internal-only transactional hook for state that
 	// must exist before the worker can become observable or runnable. It is not
 	// exposed through the LLM-facing spawn_agent tool.
@@ -859,19 +853,18 @@ type SpawnResult struct {
 }
 
 type preparedSpawn struct {
-	WorkerID         string
-	ParticipantID    string
-	WorkerType       WorkerType
-	ThreadMeta       agentthread.Metadata
-	Description      string
-	Prompt           string
-	Isolation        IsolationMode
-	SpeechCapability bool
-	BaseRepo         string
-	BaseRevision     string
-	IsFork           bool
-	ForkMode         string
-	ParentHistory    []providers.ChatMessage
+	WorkerID      string
+	ParticipantID string
+	WorkerType    WorkerType
+	ThreadMeta    agentthread.Metadata
+	Description   string
+	Prompt        string
+	Isolation     IsolationMode
+	BaseRepo      string
+	BaseRevision  string
+	IsFork        bool
+	ForkMode      string
+	ParentHistory []providers.ChatMessage
 	// ModelOverride and ClientOverride carry a per-participant model
 	// pin across the queue boundary so that even queued spawns honor
 	// the pin once they dequeue.
@@ -894,19 +887,18 @@ type preparedSpawn struct {
 }
 
 type queuedSpawnPayload struct {
-	WorkerID         string                  `json:"worker_id"`
-	ParticipantID    string                  `json:"participant_id,omitempty"`
-	WorkerType       string                  `json:"worker_type"`
-	ThreadMeta       agentthread.Metadata    `json:"thread_meta"`
-	Description      string                  `json:"description,omitempty"`
-	Prompt           string                  `json:"prompt"`
-	Isolation        string                  `json:"isolation"`
-	SpeechCapability bool                    `json:"speech_capability,omitempty"`
-	BaseRepo         string                  `json:"base_repo,omitempty"`
-	BaseRevision     string                  `json:"base_revision,omitempty"`
-	IsFork           bool                    `json:"is_fork,omitempty"`
-	ForkMode         string                  `json:"fork_mode,omitempty"`
-	ParentHistory    []providers.ChatMessage `json:"parent_history,omitempty"`
+	WorkerID      string                  `json:"worker_id"`
+	ParticipantID string                  `json:"participant_id,omitempty"`
+	WorkerType    string                  `json:"worker_type"`
+	ThreadMeta    agentthread.Metadata    `json:"thread_meta"`
+	Description   string                  `json:"description,omitempty"`
+	Prompt        string                  `json:"prompt"`
+	Isolation     string                  `json:"isolation"`
+	BaseRepo      string                  `json:"base_repo,omitempty"`
+	BaseRevision  string                  `json:"base_revision,omitempty"`
+	IsFork        bool                    `json:"is_fork,omitempty"`
+	ForkMode      string                  `json:"fork_mode,omitempty"`
+	ParentHistory []providers.ChatMessage `json:"parent_history,omitempty"`
 	// ModelOverride is persisted with the queued payload so the
 	// per-participant model pin survives session restart. The
 	// ClientOverride is intentionally NOT persisted — reconstructing a
@@ -1045,7 +1037,6 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 			Description:       req.Description,
 			Prompt:            req.Prompt,
 			Isolation:         isolation,
-			SpeechCapability:  req.SpeechCapability,
 			BaseRepo:          queuedBaseRepo,
 			BaseRevision:      queuedBaseRevision,
 			ModelOverride:     strings.TrimSpace(req.ModelOverride),
@@ -1128,14 +1119,10 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	}
 	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
-	// Create the worker's conversation participant identity. Failure to
-	// persist never blocks the spawn.
+	// Create the worker identity. Failure to persist never blocks the spawn.
 	participantID := strings.TrimSpace(req.ParticipantID)
 	if participantID == "" {
 		participantID = c.newEphemeralParticipant(threadMeta.TaskName, wt).ID
-	}
-	if req.SpeechCapability {
-		c.EnableParticipantSpeech(workerID)
 	}
 
 	// 3. Build worker's toolkit rooted at the chosen working directory.
@@ -1146,6 +1133,11 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
+	}
+	if req.FileScopeRoots != nil {
+		if scoped, ok := workerKit.(interface{ SetFileScopeRoots([]string) }); ok {
+			scoped.SetFileScopeRoots(req.FileScopeRoots)
+		}
 	}
 
 	// 4. Compose system prompt: type-specific role + working dir + base prompt.
@@ -1324,7 +1316,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		if synchronous {
 			return []string{
 				"Inspect the worker result and any agent_report artifacts before relying on the handoff.",
-				"Use manage_task or a thread reply when this result must be bound into a larger group task." + worktreeHint,
+				"Record the handoff in the parent task or thread when this result belongs to a larger workflow." + worktreeHint,
 			}
 		}
 		return []string{
@@ -1524,8 +1516,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 	c.recordHarnessTaskStart(threadMeta, wt.Name, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
-	// Create the worker's conversation participant identity. Failure to
-	// persist never blocks the spawn.
+	// Create the worker identity. Failure to persist never blocks the spawn.
 	prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
 
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
@@ -2721,21 +2712,20 @@ func (c *AgentControl) rollbackSpawnAdmissionReliably(workerID string, rollback 
 
 func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 	return queuedSpawnPayload{
-		WorkerID:         prepared.WorkerID,
-		ParticipantID:    prepared.ParticipantID,
-		WorkerType:       prepared.WorkerType.Name,
-		ThreadMeta:       prepared.ThreadMeta,
-		Description:      prepared.Description,
-		Prompt:           prepared.Prompt,
-		Isolation:        string(prepared.Isolation),
-		SpeechCapability: prepared.SpeechCapability,
-		BaseRepo:         prepared.BaseRepo,
-		BaseRevision:     prepared.BaseRevision,
-		IsFork:           prepared.IsFork,
-		ForkMode:         prepared.ForkMode,
-		ParentHistory:    providers.CloneChatMessages(prepared.ParentHistory),
-		ModelOverride:    prepared.ModelOverride,
-		ModelPin:         prepared.ModelPin,
+		WorkerID:      prepared.WorkerID,
+		ParticipantID: prepared.ParticipantID,
+		WorkerType:    prepared.WorkerType.Name,
+		ThreadMeta:    prepared.ThreadMeta,
+		Description:   prepared.Description,
+		Prompt:        prepared.Prompt,
+		Isolation:     string(prepared.Isolation),
+		BaseRepo:      prepared.BaseRepo,
+		BaseRevision:  prepared.BaseRevision,
+		IsFork:        prepared.IsFork,
+		ForkMode:      prepared.ForkMode,
+		ParentHistory: providers.CloneChatMessages(prepared.ParentHistory),
+		ModelOverride: prepared.ModelOverride,
+		ModelPin:      prepared.ModelPin,
 	}
 }
 
@@ -2759,21 +2749,20 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		payload.ThreadMeta.ID = workerID
 	}
 	return preparedSpawn{
-		WorkerID:         workerID,
-		ParticipantID:    payload.ParticipantID,
-		WorkerType:       wt,
-		ThreadMeta:       payload.ThreadMeta,
-		Description:      payload.Description,
-		Prompt:           payload.Prompt,
-		Isolation:        isolation,
-		SpeechCapability: payload.SpeechCapability,
-		BaseRepo:         payload.BaseRepo,
-		BaseRevision:     payload.BaseRevision,
-		IsFork:           payload.IsFork,
-		ForkMode:         payload.ForkMode,
-		ParentHistory:    providers.CloneChatMessages(payload.ParentHistory),
-		ModelOverride:    payload.ModelOverride,
-		ModelPin:         payload.ModelPin,
+		WorkerID:      workerID,
+		ParticipantID: payload.ParticipantID,
+		WorkerType:    wt,
+		ThreadMeta:    payload.ThreadMeta,
+		Description:   payload.Description,
+		Prompt:        payload.Prompt,
+		Isolation:     isolation,
+		BaseRepo:      payload.BaseRepo,
+		BaseRevision:  payload.BaseRevision,
+		IsFork:        payload.IsFork,
+		ForkMode:      payload.ForkMode,
+		ParentHistory: providers.CloneChatMessages(payload.ParentHistory),
+		ModelOverride: payload.ModelOverride,
+		ModelPin:      payload.ModelPin,
 	}, nil
 }
 
@@ -2978,9 +2967,6 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		_ = c.threadStore.RecordStatus(running)
 	}
 	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo)
-	if prepared.SpeechCapability {
-		c.EnableParticipantSpeech(prepared.WorkerID)
-	}
 	workerKit, err := c.workerFact(workerRoot, prepared.WorkerType, prepared.ThreadMeta)
 	if err != nil {
 		if worktreeRef != nil {

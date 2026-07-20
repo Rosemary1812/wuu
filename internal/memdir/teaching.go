@@ -63,9 +63,9 @@ func SessionTeaching(dir string) string {
 	return strings.Join(lines, "\n")
 }
 
-// ResidentTeaching returns the memory teaching block for a resident named
-// agent, which reads and writes its identity notebook at dir.
-func ResidentTeaching(dir string) string {
+// NamedAgentTeaching returns the memory teaching block for a named agent,
+// which reads and writes its identity notebook at dir.
+func NamedAgentTeaching(dir string) string {
 	lines := []string{
 		"## Memory notebook",
 		fmt.Sprintf("Your durable memory is a file-based notebook at `%s` — your identity across days and tasks: lessons learned, feedback received, decisions and their reasons. %s", dir, dirExistsGuidance),
@@ -91,7 +91,7 @@ func WorkerTeaching(dir string) string {
 // ManagerTeaching returns the notebook-format rules shared with the
 // settings-panel memory manager agent (memory-redesign contract §8.3): the
 // four memory types, the two-step save, and the What-NOT-to-save gate,
-// without the audience-specific header lines of Session/ResidentTeaching.
+// without the audience-specific header lines of Session/NamedAgentTeaching.
 // Exported so the appserver panel agent reuses the canonical wording
 // instead of duplicating it.
 func ManagerTeaching() string {
@@ -101,7 +101,7 @@ func ManagerTeaching() string {
 	return strings.Join(lines, "\n")
 }
 
-// UserIndexNotice returns the read-only preamble a resident named agent sees
+// UserIndexNotice returns the read-only preamble a named agent sees
 // above the injected user-notebook index.
 func UserIndexNotice() string {
 	return strings.Join([]string{
@@ -111,7 +111,7 @@ func UserIndexNotice() string {
 }
 
 // shiftHeadings demotes `## ` headings one level so a teaching block can sit
-// under an existing `## ` section of a larger prompt (the resident persona
+// under an existing `## ` section of a larger prompt (the named-agent persona
 // prompt uses `## ` for its own top-level sections).
 func shiftHeadings(lines []string) []string {
 	out := make([]string, len(lines))

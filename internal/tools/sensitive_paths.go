@@ -70,7 +70,7 @@ func isAgentRuntimeMetadataPath(absPath string) bool {
 }
 
 // isAgentMemoryNotebookPath reports whether an absolute path belongs to a
-// user or resident memory notebook. Unlike the broader runtime metadata
+// user or named-agent memory notebook. Unlike the broader runtime metadata
 // exemption, this excludes credentials, configuration, session artifacts,
 // and caches stored elsewhere under WUU_HOME.
 func isAgentMemoryNotebookPath(absPath string) bool {

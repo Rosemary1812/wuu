@@ -63,8 +63,7 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 
 // newLocalControllerForRuntime wires an in-process app server (over pipes)
 // around an already-built runtime.Session. NewLocalAppServerController builds
-// the runtime from config; end-to-end tests supply a fake-provider runtime so
-// they can drive the real group/reply/task handlers deterministically.
+// the runtime from config; end-to-end tests can supply a fake-provider runtime.
 func newLocalControllerForRuntime(ctx context.Context, rt *runtime.Session) *localAppServerController {
 	serverInR, serverInW := io.Pipe()
 	serverOutR, serverOutW := io.Pipe()
@@ -134,16 +133,6 @@ func (c *localAppServerController) StartTurn(ctx context.Context, threadID strin
 	}
 	err := c.client.Call(ctx, appserver.MethodTurnStart, params, &result)
 	return result.Turn, err
-}
-
-func (c *localAppServerController) StartParticipantTurn(ctx context.Context, params appserver.ParticipantStartParams) (appserver.Agent, error) {
-	var result appserver.ParticipantStartResult
-	err := c.client.Call(ctx, appserver.MethodParticipantStart, params, &result)
-	return result.Agent, err
-}
-
-func (c *localAppServerController) Call(ctx context.Context, method string, params, result any) error {
-	return c.client.Call(ctx, method, params, result)
 }
 
 func (c *localAppServerController) Interrupt(ctx context.Context, threadID string) error {

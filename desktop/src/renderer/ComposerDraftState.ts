@@ -34,14 +34,9 @@ export type ComposerDraftStateController = {
   setSplitComposerDrafts: Dispatch<
     SetStateAction<Record<ConversationPaneID, ComposerDraftState>>
   >;
-  subthreadComposerDraft: ComposerDraftState;
-  setSubthreadComposerDraft: Dispatch<SetStateAction<ComposerDraftState>>;
   attachComposerAttachmentFiles: (files: File[]) => Promise<void>;
   removeComposerImage: (id: string) => void;
   removeComposerFile: (id: string) => void;
-  attachSubthreadComposerAttachmentFiles: (files: File[]) => Promise<void>;
-  removeSubthreadComposerImage: (id: string) => void;
-  removeSubthreadComposerFile: (id: string) => void;
   setSplitComposerPrompt: (pane: ConversationPaneID, value: string) => void;
   attachSplitComposerAttachmentFiles: (
     pane: ConversationPaneID,
@@ -121,9 +116,6 @@ export function useComposerDraftState({
   const [splitComposerDrafts, setSplitComposerDrafts] = useState<
     Record<ConversationPaneID, ComposerDraftState>
   >(initialSplitComposerDrafts);
-  const [subthreadComposerDraft, setSubthreadComposerDraft] =
-    useState<ComposerDraftState>(emptyComposerDraft);
-
   async function attachComposerAttachmentFiles(files: File[]): Promise<void> {
     await attachComposerAttachmentFilesToDraft(files, setStatus, {
       onImagePlaceholder: (placeholder) =>
@@ -148,45 +140,6 @@ export function useComposerDraftState({
 
   function removeComposerFile(id: string): void {
     setComposerFiles((current) => current.filter((file) => file.id !== id));
-  }
-
-  async function attachSubthreadComposerAttachmentFiles(
-    files: File[],
-  ): Promise<void> {
-    await attachComposerAttachmentFilesToDraft(files, setStatus, {
-      onImagePlaceholder: (placeholder) =>
-        setSubthreadComposerDraft((draft) => ({
-          ...draft,
-          images: [...draft.images, placeholder],
-        })),
-      onImageEncoded: (encoded) =>
-        setSubthreadComposerDraft((draft) => ({
-          ...draft,
-          images: draft.images.map((existing) =>
-            existing.id === encoded.id ? encoded : existing,
-          ),
-        })),
-      onFile: (file) =>
-        setSubthreadComposerDraft((draft) => ({
-          ...draft,
-          files: [...draft.files, file],
-        })),
-    });
-  }
-
-  function removeSubthreadComposerImage(id: string): void {
-    setSubthreadComposerDraft((draft) => {
-      const removed = draft.images.find((image) => image.id === id);
-      revokeComposerImagePreview(removed);
-      return { ...draft, images: draft.images.filter((image) => image.id !== id) };
-    });
-  }
-
-  function removeSubthreadComposerFile(id: string): void {
-    setSubthreadComposerDraft((draft) => ({
-      ...draft,
-      files: draft.files.filter((file) => file.id !== id),
-    }));
   }
 
   function updateSplitComposerDraft(
@@ -285,14 +238,9 @@ export function useComposerDraftState({
     setComposerFiles,
     splitComposerDrafts,
     setSplitComposerDrafts,
-    subthreadComposerDraft,
-    setSubthreadComposerDraft,
     attachComposerAttachmentFiles,
     removeComposerImage,
     removeComposerFile,
-    attachSubthreadComposerAttachmentFiles,
-    removeSubthreadComposerImage,
-    removeSubthreadComposerFile,
     setSplitComposerPrompt,
     attachSplitComposerAttachmentFiles,
     removeSplitComposerImage,

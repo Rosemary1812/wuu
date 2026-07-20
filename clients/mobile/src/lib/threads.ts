@@ -1,25 +1,10 @@
-// Conversation-list logic, mirrored from desktop AppState semantics:
-// which threads the mobile app shows (DM + group only — the product
-// decision: no project sessions on the phone), how they sort, and the
+// Conversation-list logic: visible ordinary threads, ordering, and the
 // purely client-local unread state.
 
 import type { Thread } from "@wuu/protocol";
 
-/** List-membership predicate: dm_participant_id alone marks a DM. The
- *  stricter workspace_kind check belongs only to the desktop's findDMThread
- *  (reopen direction) — and thread/list entries built from the on-disk
- *  session index omit workspace_kind entirely for non-resident threads, so
- *  requiring it here would make idle DMs vanish from the phone. */
-export function isDMThread(t: Thread): boolean {
-  return Boolean(t.dm_participant_id);
-}
-
-export function isGroupThread(t: Thread): boolean {
-  return t.group === true;
-}
-
-export function isChatThread(t: Thread): boolean {
-  return (isDMThread(t) || isGroupThread(t)) && !t.archived && !t.read_only;
+export function isVisibleThread(thread: Thread): boolean {
+  return !thread.archived && !thread.read_only;
 }
 
 export function isThreadRunning(t: Thread): boolean {
@@ -33,7 +18,7 @@ export function threadDisplayTitle(t: Thread): string {
 
 /** Two-band ordering (mirrors AppState.sortThreads): running threads first
  *  by created_at desc (stable while streaming), finished by updated_at desc. */
-export function sortChatThreads(threads: Thread[]): Thread[] {
+export function sortThreads(threads: Thread[]): Thread[] {
   const running = threads.filter(isThreadRunning);
   const finished = threads.filter((t) => !isThreadRunning(t));
   const stamp = (value?: string): number => {

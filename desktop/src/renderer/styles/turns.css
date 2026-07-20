@@ -586,93 +586,6 @@
   margin: 2px auto 18px;
 }
 
-/* Envelope-routed messages in a resident agent's DM thread render as a
- * collapsed meta row on the meta layer, never as a user bubble. */
-.envelope-notice {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-  margin: 2px 0 12px;
-}
-
-.envelope-notice-toggle {
-  appearance: none;
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink-faint);
-  font: inherit;
-  cursor: pointer;
-}
-
-.envelope-notice-toggle:hover,
-.envelope-notice-toggle:focus-visible {
-  color: var(--ink-muted);
-}
-
-.envelope-notice-toggle:focus-visible {
-  border-radius: var(--radius-sm);
-  outline: 2px solid var(--ink-overlay-18);
-  outline-offset: 4px;
-}
-
-.envelope-notice-chevron {
-  flex: 0 0 auto;
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
-  stroke-width: var(--icon-stroke);
-}
-
-.envelope-notice-label {
-  gap: 6px;
-  color: inherit;
-}
-
-.envelope-notice-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* "点名" badge: the sender @-mentioned this agent in the source thread
-   (envelope addressed flag). Slightly heavier than the surrounding meta
-   text so a direct call-out reads at a glance. */
-.envelope-notice-addressed {
-  flex: 0 0 auto;
-  padding: 0 5px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-pill);
-  color: var(--ink-soft);
-  font-size: var(--font-xs);
-  line-height: var(--line-ui);
-}
-
-/* "转发×N" marker: the message reached this agent through N resident
-   relays instead of straight from the source thread (envelope hop). */
-.envelope-notice-hop {
-  flex: 0 0 auto;
-  color: var(--ink-faint);
-  font-size: var(--font-xs);
-  line-height: var(--line-ui);
-}
-
-.envelope-notice-body {
-  min-width: 0;
-  max-width: min(760px, 100%);
-  margin: 4px auto 0;
-  padding: 10px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
-  color: var(--ink-soft);
-  font-size: var(--font-sm);
-  line-height: var(--line-body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .message-copy-button {
   --message-copy-rest-transform: translate3d(0, 2px, 0) scale(0.98);
   --message-copy-visible-transform: translate3d(0, 0, 0) scale(1);
@@ -4029,7 +3942,6 @@ pre {
   .thread-row.pending-switch::before,
   .thread-row.running::before,
   .thread-row-spinner,
-  .participant-roster-row .participant-roster-main .participant-roster-status[data-status="busy"],
   .session-tab.running .session-tab-status,
   .session-tab.pending-switch .session-tab-status,
   .turn-progress.in_progress .turn-progress-label svg,

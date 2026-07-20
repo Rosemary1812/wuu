@@ -30,7 +30,7 @@ import mascot9 from "./assets/avatars/mascot-9.png";
 import mascot10 from "./assets/avatars/mascot-10.png";
 import mascot11 from "./assets/avatars/mascot-11.png";
 
-// Two casts. Resident (named) agents are long-lived identities, so they
+// Two casts. Named agents are long-lived identities, so they
 // draw from the dressed characters — an outfit reads as "someone" (巫师、
 // 耳机程序员、侦探、读书人、学者). Everything else (ephemeral task
 // workers, unknown seeds) draws from the plain expression cast.
@@ -69,7 +69,7 @@ export function defaultAvatarIndex(seed: string): number {
  * its container (the caller's circular avatar cell clips it). `seed`
  * should be a stable identity string — the participant id where
  * available, otherwise the display name. Pass the participant `kind`
- * where known: "resident" picks from the dressed cast.
+ * where known: "named" picks from the dressed cast.
  */
 export function DefaultAvatarMark({
   seed,
@@ -78,7 +78,7 @@ export function DefaultAvatarMark({
   seed: string;
   kind?: string;
 }): JSX.Element {
-  const cast = kind === "resident" ? DRESSED_CAST : PLAIN_CAST;
+  const cast = kind === "named" ? DRESSED_CAST : PLAIN_CAST;
   const style = {
     background: `var(--avatar-${defaultAvatarIndex(seed)}-bg)`,
   } as CSSProperties;

@@ -48,7 +48,6 @@ function buildActions({
     createDraftSessionTab("draft:new", context),
   );
   const selectThread = vi.fn();
-  const poppingOutTabIDsRef = { current: new Set<string>() };
 
   const actions = createSessionTabActions({
     getAppState: () => appState,
@@ -61,8 +60,6 @@ function buildActions({
     resetSplitComposerDrafts,
     nextDraftSessionTab,
     selectThread,
-    
-    poppingOutTabIDsRef,
     beginViewSwitch: vi.fn(() => 1),
     finishViewSwitch: vi.fn(() => true),
     cancelViewSwitch: vi.fn(),
@@ -79,7 +76,6 @@ function buildActions({
     resetSplitComposerDrafts,
     nextDraftSessionTab,
     selectThread,
-    poppingOutTabIDsRef,
   };
 }
 
@@ -233,6 +229,5 @@ describe("createSessionTabActions", () => {
       fallbackDraft.id,
     ]);
     expect(harness.getAppState().activeSessionTabID).toBe(fallbackDraft.id);
-    expect(harness.poppingOutTabIDsRef.current.has(activeDraft.id)).toBe(false);
   });
 });

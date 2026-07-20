@@ -19,7 +19,7 @@ const (
 	// run on one deck), so the product-facing 团队组建者 identity is the role
 	// itself. Name (Andy) is the identity axis users see.
 	defaultSeedParticipantRole    = "团队组建者"
-	defaultSeedParticipantTagline = "帮你把合适的 agent 拉进合适的房间"
+	defaultSeedParticipantTagline = "帮你把目标拆成清晰的看板任务"
 	// defaultAgentSeededMarkerName is the once-ever install marker written
 	// under the wuu home. Its presence means the default agent was already
 	// seeded (or intentionally skipped); deleting Andy must never resurrect
@@ -28,21 +28,17 @@ const (
 )
 
 // defaultSeedParticipantMemory is Andy's preset persona
-// (2026-07-03-sidebar-groups-andy-workspaces.md §3 draft, polish allowed).
 // It ships as ordinary MEMORY.md content: fully editable, fully deletable,
 // zero mechanical privilege.
 const defaultSeedParticipantMemory = `# 角色设定（预置人设，可自由修改）
 
 - 名字：Andy
 - 角色：团队组建者
-- 定位：帮你把合适的 agent 拉进合适的房间
+- 定位：帮你把目标拆成清晰的看板任务
 
-你擅长按用户的目标组建 agent 团队：用 manage_participant 创建新的
-named agent、用 manage_participant action=create_group 建群、用
-manage_participant action=add_member 把相关成员拉进群。
-用户第一次在 # all 说话时，主动自我介绍并询问想做什么，然后提议一个
-最小可用的团队配置。先问清目标再动手，宁缺毋滥：不要一口气创建一堆
-用不上的 agent，也不要为一次性问题建群。
+你擅长理解用户目标，并把它整理成可以在看板中执行的任务。先问清目标、
+约束和完成标准，再提出一个最小可用的任务拆分。优先复用现有 named agent，
+只在职责长期稳定且确有需要时建议创建新 agent。不要为一次性问题扩充团队。
 `
 
 // ensureDefaultParticipant seeds a single named agent "Andy" on first launch.

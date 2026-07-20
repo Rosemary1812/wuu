@@ -1,13 +1,13 @@
 // Reducer semantics mirrored from desktop AppState: upserts that never lose
-// local history, snapshots that never truncate streamed text, cumulative
-// mark upserts, and the optimistic-send lifecycle.
+// local history, snapshots that never truncate streamed text, and the
+// optimistic-send lifecycle.
 
 import { describe, expect, it } from "vitest";
 import type { Thread } from "@wuu/protocol";
 
 import { AppStore } from "../src/lib/store";
 
-function chatThread(partial: Partial<Thread>): Thread {
+function thread(partial: Partial<Thread>): Thread {
   return {
     id: "t1",
     preview: "",
@@ -15,30 +15,29 @@ function chatThread(partial: Partial<Thread>): Thread {
     model: "m",
     cwd: "/",
     status: "idle",
-    workspace_kind: "dm",
-    dm_participant_id: "p1",
     created_at: "2026-07-07T00:00:00Z",
     updated_at: "2026-07-07T00:00:00Z",
     turns: [],
     ...partial,
-  } as Thread;
+  };
 }
 
 function seeded(): AppStore {
   const store = new AppStore();
-  store.setThreads([chatThread({})]);
+  store.setThreads([thread({})]);
   return store;
 }
 
 describe("thread upserts", () => {
-  it("filters non-chat threads on setThreads and on upsert", () => {
+  it("keeps ordinary threads and filters archived or read-only threads", () => {
     const store = new AppStore();
     store.setThreads([
-      chatThread({ id: "dm" }),
-      chatThread({ id: "proj", workspace_kind: "project", dm_participant_id: undefined }),
-      chatThread({ id: "grp", workspace_kind: "project", dm_participant_id: undefined, group: true }),
+      thread({ id: "project", workspace_kind: "project" }),
+      thread({ id: "scratch", workspace_kind: "scratch" }),
+      thread({ id: "archived", archived: true }),
+      thread({ id: "readonly", read_only: true }),
     ]);
-    expect(store.getSnapshot().threads.map((t) => t.id).sort()).toEqual(["dm", "grp"]);
+    expect(store.getSnapshot().threads.map((item) => item.id).sort()).toEqual(["project", "scratch"]);
   });
 
   it("thread/updated with empty turns keeps local history", () => {
@@ -47,13 +46,13 @@ describe("thread upserts", () => {
       thread_id: "t1",
       turn: { id: "turn-1", items: [], items_view: "full", status: "in_progress" },
     });
-    store.applyNotification("thread/updated", { thread: chatThread({ turns: [] }) });
+    store.applyNotification("thread/updated", { thread: thread({ turns: [] }) });
     expect(store.getSnapshot().threads[0].turns).toHaveLength(1);
   });
 
   it("archiving via thread/updated removes the thread", () => {
     const store = seeded();
-    store.applyNotification("thread/updated", { thread: chatThread({ archived: true }) });
+    store.applyNotification("thread/updated", { thread: thread({ archived: true }) });
     expect(store.getSnapshot().threads).toHaveLength(0);
   });
 });
@@ -93,7 +92,7 @@ describe("turn and item ingestion", () => {
     store.applyNotification("item/started", {
       thread_id: "t1",
       turn_id: "turn-1",
-      item: { id: "i1", type: "participant_message", text: "" },
+      item: { id: "i1", type: "agent_message", text: "" },
     });
     store.applyNotification("item/agentMessage/delta", {
       thread_id: "t1",
@@ -104,7 +103,7 @@ describe("turn and item ingestion", () => {
     store.applyNotification("item/completed", {
       thread_id: "t1",
       turn_id: "turn-1",
-      item: { id: "i1", type: "participant_message", text: "很长" },
+      item: { id: "i1", type: "agent_message", text: "很长" },
     });
     const item = store.getSnapshot().threads[0].turns[0].items[0];
     expect(item.text).toBe("很长很长的一段流式文本");
@@ -115,7 +114,7 @@ describe("turn and item ingestion", () => {
     store.applyNotification("item/started", {
       thread_id: "t1",
       turn_id: "turn-1",
-      item: { id: "i1", type: "participant_message", text: "旧的长长长长文本" },
+      item: { id: "i1", type: "agent_message", text: "旧的长长长长文本" },
     });
     store.applyNotification("item/agentMessage/replace", {
       thread_id: "t1",
@@ -184,13 +183,13 @@ describe("review fixes", () => {
       thread_id: "t1",
       turn: { id: "turn-1", items: [], items_view: "full", status: "in_progress" },
     });
-    store.setThreads([chatThread({ turns: [] })]);
+    store.setThreads([thread({ turns: [] })]);
     expect(store.getSnapshot().threads[0].turns).toHaveLength(1);
   });
 
   it("upsertTurn uses server timestamps and only moves updated_at forward", () => {
     const store = new AppStore();
-    store.setThreads([chatThread({ updated_at: "2026-07-07T10:00:00Z" })]);
+    store.setThreads([thread({ updated_at: "2026-07-07T10:00:00Z" })]);
     // A redelivered OLD turn must not bump the thread above newer chats.
     store.applyNotification("turn/completed", {
       thread_id: "t1",
@@ -222,7 +221,7 @@ describe("review fixes", () => {
     store.applyNotification("item/completed", {
       thread_id: "t1",
       turn_id: "turn-1",
-      item: { id: "i-local", type: "participant_message", text: "先到的消息" },
+      item: { id: "i-local", type: "agent_message", text: "先到的消息" },
     });
     store.applyNotification("turn/completed", {
       thread_id: "t1",
@@ -237,18 +236,10 @@ describe("review fixes", () => {
     expect(items.map((i) => i.id).sort()).toEqual(["i-local", "i-snap"]);
   });
 
-  it("participant/updated flags the roster stale", () => {
-    const store = seeded();
-    let stale = 0;
-    store.onParticipantsStale = () => stale++;
-    store.applyNotification("participant/updated", { participant_id: "p1" });
-    expect(stale).toBe(1);
-  });
-
   it("seedLastViewed restores cursors without clobbering newer state", () => {
     const store = new AppStore();
     store.setThreads([
-      chatThread({ turns: [{ id: "turn-9", items: [], items_view: "full", status: "completed" }] }),
+      thread({ turns: [{ id: "turn-9", items: [], items_view: "full", status: "completed" }] }),
     ]);
     store.markViewed("t1");
     store.seedLastViewed({ t1: "turn-1", other: "turn-2" });
@@ -256,41 +247,11 @@ describe("review fixes", () => {
   });
 });
 
-describe("marks", () => {
-  it("upserts by (seq, participant_id, kind) — replace, never append", () => {
-    const store = seeded();
-    store.applyNotification("message/mark", {
-      thread_id: "t1",
-      seq: 5,
-      participant_id: "p1",
-      kind: "reaction",
-      reaction: "eyes",
-    });
-    store.applyNotification("message/mark", {
-      thread_id: "t1",
-      seq: 5,
-      participant_id: "p1",
-      kind: "reaction",
-      reaction: "nice",
-    });
-    store.applyNotification("message/mark", {
-      thread_id: "t1",
-      seq: 5,
-      participant_id: "p1",
-      kind: "seen",
-      status: "completed",
-    });
-    const marks = store.getSnapshot().marks["t1"];
-    expect(marks).toHaveLength(2);
-    expect(marks.find((m) => m.kind === "reaction")?.reaction).toBe("nice");
-  });
-});
-
 describe("unread cursor", () => {
   it("markViewed advances to the newest completed turn", () => {
     const store = new AppStore();
     store.setThreads([
-      chatThread({
+      thread({
         turns: [
           { id: "turn-1", items: [], items_view: "full", status: "completed" },
           { id: "turn-2", items: [], items_view: "full", status: "in_progress" },

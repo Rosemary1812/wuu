@@ -18,7 +18,6 @@ func TestSessionWorkspaceToolIsDeferredOnlyOnMainSurface(t *testing.T) {
 	}
 
 	for label, surface := range map[string]capability.Surface{
-		"named":  compiler.Compile(profile, SurfaceNamed),
 		"worker": compiler.Compile(profile, SurfaceWorker),
 	} {
 		if _, ok := surface.Tools["set_session_workspace"]; ok {

@@ -539,32 +539,8 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := mainSurface.DeferredTools["agent_report"]; ok {
 			t.Errorf("%s/%s main-agent surface must NOT defer agent_report", tt.provider, tt.model)
 		}
-		if _, ok := mainSurface.Tools["post_message"]; ok {
-			t.Errorf("%s/%s main-agent surface must NOT directly include post_message", tt.provider, tt.model)
-		}
-		if _, ok := mainSurface.DeferredTools["post_message"]; ok {
-			t.Errorf("%s/%s main-agent surface must NOT defer post_message", tt.provider, tt.model)
-		}
-		if _, ok := mainSurface.Tools["manage_participant"]; ok {
-			t.Errorf("%s/%s main-agent surface must NOT directly include manage_participant", tt.provider, tt.model)
-		}
-		if _, ok := mainSurface.DeferredTools["manage_participant"]; ok {
-			t.Errorf("%s/%s main-agent surface must NOT defer manage_participant", tt.provider, tt.model)
-		}
 		if _, ok := workerSurface.Tools["agent_report"]; !ok {
 			t.Errorf("%s/%s worker surface must directly include agent_report", tt.provider, tt.model)
-		}
-		if _, ok := workerSurface.Tools["post_message"]; ok {
-			t.Errorf("%s/%s ordinary worker surface must NOT directly include post_message", tt.provider, tt.model)
-		}
-		if _, ok := workerSurface.DeferredTools["post_message"]; ok {
-			t.Errorf("%s/%s ordinary worker surface must NOT defer post_message", tt.provider, tt.model)
-		}
-		if _, ok := workerSurface.Tools["manage_participant"]; ok {
-			t.Errorf("%s/%s ordinary worker surface must NOT directly include manage_participant", tt.provider, tt.model)
-		}
-		if _, ok := workerSurface.DeferredTools["manage_participant"]; ok {
-			t.Errorf("%s/%s ordinary worker surface must NOT defer manage_participant", tt.provider, tt.model)
 		}
 	}
 }
@@ -586,10 +562,8 @@ func workflowToolNames() []string {
 	}
 }
 
-// TestSurfaceKindWorkflowToolsAreHidden pins the runtime-goal/task-rail
-// contract: named agents coordinate through task rail and their own runtime
-// goal, so the legacy workflow / agent-profile suite is absent from every
-// compiled model surface rather than deferred on SurfaceNamed.
+// TestSurfaceKindWorkflowToolsAreHidden pins the runtime-goal contract: the
+// legacy workflow / agent-profile suite is absent from every model surface.
 func TestSurfaceKindWorkflowToolsAreHidden(t *testing.T) {
 	cases := []struct {
 		provider string
@@ -604,11 +578,10 @@ func TestSurfaceKindWorkflowToolsAreHidden(t *testing.T) {
 	for _, tt := range cases {
 		p := Resolve(tt.provider, tt.model)
 		main := c.Compile(p, SurfaceMain)
-		named := c.Compile(p, SurfaceNamed)
 		worker := c.Compile(p, SurfaceWorker)
 
 		for _, name := range workflowToolNames() {
-			for label, s := range map[string]capability.Surface{"main": main, "named": named, "worker": worker} {
+			for label, s := range map[string]capability.Surface{"main": main, "worker": worker} {
 				if _, ok := s.Tools[name]; ok {
 					t.Errorf("%s/%s: %s surface must NOT advertise legacy workflow tool %s", tt.provider, tt.model, label, name)
 				}
@@ -618,11 +591,7 @@ func TestSurfaceKindWorkflowToolsAreHidden(t *testing.T) {
 			}
 		}
 
-		// Orchestration boundary unchanged: main/named orchestrate, worker not.
 		for _, tool := range []string{"spawn_agent", "helpme"} {
-			if _, ok := named.Tools[tool]; !ok {
-				t.Errorf("%s/%s: named surface must expose %s", tt.provider, tt.model, tool)
-			}
 			if _, ok := worker.Tools[tool]; ok {
 				t.Errorf("%s/%s: worker surface must NOT expose %s", tt.provider, tt.model, tool)
 			}
@@ -633,14 +602,10 @@ func TestSurfaceKindWorkflowToolsAreHidden(t *testing.T) {
 	}
 }
 
-// TestSurfaceKindOrchestrates documents the derived boundary that main and
-// named agents orchestrate while workers do not.
+// TestSurfaceKindOrchestrates documents the orchestration boundary.
 func TestSurfaceKindOrchestrates(t *testing.T) {
 	if !SurfaceMain.orchestrates() {
 		t.Error("SurfaceMain must orchestrate")
-	}
-	if !SurfaceNamed.orchestrates() {
-		t.Error("SurfaceNamed must orchestrate")
 	}
 	if SurfaceWorker.orchestrates() {
 		t.Error("SurfaceWorker must not orchestrate")

@@ -9,7 +9,6 @@ import {
   Eye,
   FileText,
   FlaskConical,
-  Focus,
   FoldVertical,
   Folder,
   FolderOpen,
@@ -21,8 +20,6 @@ import {
   GitCompare,
   GitPullRequest,
   Hammer,
-  Home,
-  LayoutGrid,
   LifeBuoy,
   MessageSquarePlus,
   Paperclip,
@@ -486,8 +483,7 @@ function normalizedVariantForRuntimeModel(
 // can attach or invoke — attachments plus the full slash-command list
 // (built-in actions, prompts, and skills; future plugin actions join here).
 // Clicking a command behaves exactly like picking it in the "/" panel.
-// Open state is local — same pattern as ChatFocusChip — so the host's
-// floating-menu registry needs no wiring for it.
+// Open state is local, so the host's floating-menu registry needs no wiring.
 export function ComposerPlusButton({
   variant,
   disabled,
@@ -790,223 +786,6 @@ export function ProjectPickerMenu({
         <FolderX className="icon-lg" />
         <span>{t("runtime.noProject")}</span>
         {activeContext?.kind === "no_project" ? <Check className="icon-lg" /> : null}
-      </button>
-    </div>
-  );
-}
-
-// --- Chat-style composer "work focus" chip ----------------------------
-//
-// DM/group threads (chat-style-threads-design.md) get their own focus
-// control, distinct from ProjectPickerMenu above: that one binds a
-// *normal* session to a project directory; this one is a per-thread,
-// sticky selection of how much of the workspace a resident agent's
-// chat-style thread can touch this turn (all workspaces / one named
-// project / the agent's own personal space). Same visual language
-// (composer-project-menu, project-search, project-picker-list) but its
-// own semantics, so it stays a separate component rather than a variant
-// of ProjectPickerMenu.
-
-// Wire value for the "全部工作区" (all workspaces) selection — mirrors
-// an absent/blank Thread.focus_workspace.
-const CHAT_FOCUS_ALL = "";
-// Wire value for the "仅个人空间" (personal space only) selection.
-const CHAT_FOCUS_HOME = "~";
-
-function chatFocusChipDisplay(value: string): {
-  label: string;
-  isDefault: boolean;
-  title: string;
-  ariaLabel: string;
-} {
-  const trimmed = value.trim();
-  if (trimmed === CHAT_FOCUS_HOME) {
-    return {
-      label: translate("runtime.personalChip"),
-      isDefault: false,
-      title: translate("runtime.personalSpaceOnly"),
-      ariaLabel: translate("runtime.workFocusPersonal")
-    };
-  }
-  if (trimmed === CHAT_FOCUS_ALL) {
-    // Default state renders as a bare, de-emphasized icon with no
-    // visible label — the chip stays invisible-ish until the user
-    // narrows the focus.
-    return {
-      label: "",
-      isDefault: true,
-      title: translate("runtime.allWorkspaces"),
-      ariaLabel: translate("runtime.workFocusAll"),
-    };
-  }
-  return {
-    label: trimmed,
-    isDefault: false,
-    title: trimmed,
-    ariaLabel: translate("runtime.workFocusNamed", { name: trimmed }),
-  };
-}
-
-export function ChatFocusChip({
-  value,
-  projects,
-  disabled,
-  onChange
-}: {
-  value: string;
-  projects: DesktopProject[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}): JSX.Element {
-  useI18n();
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-
-  // Self-contained open/close state — deliberately not lifted into the
-  // host app's shared floating-menu registry (unlike the runtime/access/
-  // branch menus above) so this control has no coupling to that
-  // registry's state or its outside-click effect. isInsideFloatingMenu
-  // is the same helper the host uses for its own menus; borrowing it
-  // here keeps "click inside the portal doesn't close it" behavior
-  // identical without requiring host wiring.
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-    function handlePointerDown(event: PointerEvent): void {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-      if (anchorRef.current?.contains(target)) {
-        return;
-      }
-      if (isInsideFloatingMenu(target, "composer-focus")) {
-        return;
-      }
-      setOpen(false);
-    }
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  const display = chatFocusChipDisplay(value);
-
-  return (
-    <div className="chat-focus-menu-anchor" ref={anchorRef}>
-      <button
-        type="button"
-        className={
-          display.isDefault
-            ? "composer-tool-button chat-focus-chip is-default"
-            : "permission-chip tone-neutral chat-focus-chip"
-        }
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={display.ariaLabel}
-        title={display.title}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <Focus aria-hidden="true" />
-        {display.isDefault ? null : <span>{display.label}</span>}
-      </button>
-      {open ? (
-        <FloatingMenuPortal
-          anchorRef={anchorRef}
-          owner="composer-focus"
-          placement="above"
-          align="left"
-          width={260}
-        >
-          <ChatFocusMenu
-            value={value}
-            projects={projects}
-            query={query}
-            setQuery={setQuery}
-            onSelect={(next) => {
-              onChange(next);
-              setOpen(false);
-            }}
-          />
-        </FloatingMenuPortal>
-      ) : null}
-    </div>
-  );
-}
-
-function ChatFocusMenu({
-  value,
-  projects,
-  query,
-  setQuery,
-  onSelect
-}: {
-  value: string;
-  projects: DesktopProject[];
-  query: string;
-  setQuery: (value: string) => void;
-  onSelect: (value: string) => void;
-}): JSX.Element {
-  const { t } = useI18n();
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredProjects = normalizedQuery
-    ? projects.filter((project) => project.name.toLocaleLowerCase().includes(normalizedQuery))
-    : projects;
-  const trimmedValue = value.trim();
-  return (
-    <div className="composer-project-menu chat-focus-menu" role="menu">
-      <button
-        role="menuitemradio"
-        aria-checked={trimmedValue === CHAT_FOCUS_ALL}
-        onClick={() => onSelect(CHAT_FOCUS_ALL)}
-      >
-        <LayoutGrid className="icon-lg" />
-        <span>{t("runtime.allWorkspaces")}</span>
-        {trimmedValue === CHAT_FOCUS_ALL ? <Check className="icon-lg" /> : null}
-      </button>
-      <div className="project-picker-divider" />
-      <label className="project-search">
-        <Search className="icon-lg" />
-        <input value={query} placeholder={t("runtime.searchProjects")} onChange={(event) => setQuery(event.target.value)} />
-      </label>
-      <div className="project-picker-list">
-        {filteredProjects.length === 0 ? <div className="project-picker-empty">{t("runtime.noMatchingProjects")}</div> : null}
-        {filteredProjects.map((project) => {
-          const selected = trimmedValue === project.name;
-          return (
-            <button
-              key={project.id}
-              role="menuitemradio"
-              aria-checked={selected}
-              onClick={() => onSelect(project.name)}
-            >
-              <Folder className="icon-lg" />
-              <span>{project.name}</span>
-              {selected ? <Check className="icon-lg" /> : null}
-            </button>
-          );
-        })}
-      </div>
-      <div className="project-picker-divider" />
-      <button
-        role="menuitemradio"
-        aria-checked={trimmedValue === CHAT_FOCUS_HOME}
-        onClick={() => onSelect(CHAT_FOCUS_HOME)}
-      >
-        <Home className="icon-lg" />
-        <span>{t("runtime.personalSpaceOnly")}</span>
-        {trimmedValue === CHAT_FOCUS_HOME ? <Check className="icon-lg" /> : null}
       </button>
     </div>
   );

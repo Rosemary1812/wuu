@@ -27,22 +27,6 @@ describe("chat.css message-flow spacing", () => {
   });
 });
 
-describe("chat.css avatar status", () => {
-  it("keeps the status dot outside the clipped avatar face", () => {
-    expect(cssRuleBody(".chat-avatar")).not.toMatch(/overflow:\s*hidden;/);
-    expect(cssRuleBody(".chat-avatar-face")).toMatch(/overflow:\s*hidden;/);
-    expect(cssRuleBody(".chat-avatar-status")).toMatch(/top:\s*-1px;/);
-    expect(cssRuleBody(".chat-avatar-status")).toMatch(/right:\s*-1px;/);
-  });
-
-  it("shows the status card on avatar hover", () => {
-    expect(cssRuleBody(".chat-avatar-status-card")).toMatch(/opacity:\s*0;/);
-    expect(cssRuleBody(".chat-avatar:hover .chat-avatar-status-card")).toMatch(
-      /opacity:\s*1;/,
-    );
-  });
-});
-
 describe("chat.css inline divider", () => {
   it("provides the shared line-flanked chat notice shape", () => {
     expect(chatCss).toMatch(
@@ -81,30 +65,6 @@ describe("chat.css bubble containment", () => {
   });
 });
 
-describe("chat.css reaction picker", () => {
-  it("opens downward from the first visible bubble so the picker is not clipped", () => {
-    const toolbar = cssRuleBody(".chat-row--top-bubble .chat-bubble-toolbar");
-    expect(toolbar).toMatch(/bottom:\s*auto;/);
-    expect(toolbar).toMatch(/top:\s*calc\(100%\s*-\s*4px\);/);
-
-    const picker = cssRuleBody(".chat-row--top-bubble .chat-reaction-picker");
-    expect(picker).toMatch(/top:\s*calc\(100%\s*\+\s*6px\);/);
-    expect(picker).toMatch(/bottom:\s*auto;/);
-    expect(picker).not.toMatch(/bottom:\s*calc/);
-  });
-
-  it("does not draw a gray rounded hover backplate inside sticker art", () => {
-    const option = cssRuleBody(".chat-bubble-toolbar .chat-reaction-picker-option");
-    expect(option).toMatch(/background:\s*transparent;/);
-
-    const hover = cssRuleBody(
-      ".chat-bubble-toolbar .chat-reaction-picker-option:hover,\n.chat-bubble-toolbar .chat-reaction-picker-option:focus-visible",
-    );
-    expect(hover).toMatch(/background:\s*transparent;/);
-    expect(hover).not.toMatch(/var\(--menu-hover\)/);
-  });
-});
-
 describe("chat.css bubble long-text collapse", () => {
   it("turns the bubble into a column flex so the toggle stacks under the preview", () => {
     // Long-card variant of `.chat-bubble`. The base bubble is a plain
@@ -134,19 +94,13 @@ describe("chat.css bubble long-text collapse", () => {
     expect(raw).toMatch(/word-break:\s*break-word;/);
   });
 
-  it("aligns the expand toggle to the bubble's empty edge (right for user, left for participant)", () => {
+  it("aligns the expand toggle to the outgoing bubble's right edge", () => {
     // The toggle is a flex child of the long-card column, so
     // `align-self` is what lands it flush against the bubble's tail
-    // corner. Reversed values would push the toggle into the avatar
-    // column on participant bubbles or crowd the corner on outgoing
-    // user bubbles — both would read as "the button is in the wrong
-    // place" and break the chat-style rhythm.
+    // corner. A reversed value would crowd the outgoing bubble's corner
+    // and break the chat-style rhythm.
     const userToggle = cssRuleBody(".chat-row--user .chat-bubble-expand-toggle");
     expect(userToggle).toMatch(/align-self:\s*flex-end;/);
-    const participantToggle = cssRuleBody(
-      ".chat-row--participant .chat-bubble-expand-toggle",
-    );
-    expect(participantToggle).toMatch(/align-self:\s*flex-start;/);
   });
 
   it("styles the toggle as a quiet ghost button that brightens on hover/focus", () => {

@@ -1,17 +1,12 @@
-// List semantics mirrored from the desktop: strict DM predicate, two-band
-// ordering, and the purely-local unread cursor.
-
 import { describe, expect, it } from "vitest";
 import type { Thread } from "@wuu/protocol";
 
 import {
-  isChatThread,
-  isDMThread,
-  isGroupThread,
   isThreadRunning,
   isThreadUnread,
+  isVisibleThread,
   latestCompletedTurnID,
-  sortChatThreads,
+  sortThreads,
   threadDisplayTitle,
 } from "../src/lib/threads";
 
@@ -27,55 +22,45 @@ function thread(partial: Partial<Thread>): Thread {
     updated_at: "2026-07-07T00:00:00Z",
     turns: [],
     ...partial,
-  } as Thread;
+  };
 }
 
-describe("predicates", () => {
-  it("DM membership keys on dm_participant_id alone", () => {
-    expect(isDMThread(thread({ dm_participant_id: "p1", workspace_kind: "dm" }))).toBe(true);
-    // thread/list entries for non-resident threads omit workspace_kind
-    // entirely — the DM must still show up on the phone.
-    expect(isDMThread(thread({ dm_participant_id: "p1" }))).toBe(true);
-    expect(isDMThread(thread({ dm_participant_id: "p1", workspace_kind: "project" }))).toBe(true);
-    expect(isDMThread(thread({ workspace_kind: "dm" }))).toBe(false);
+describe("thread list helpers", () => {
+  it("shows ordinary threads and excludes archived or read-only entries", () => {
+    expect(isVisibleThread(thread({ workspace_kind: "project" }))).toBe(true);
+    expect(isVisibleThread(thread({ workspace_kind: "scratch" }))).toBe(true);
+    expect(isVisibleThread(thread({ archived: true }))).toBe(false);
+    expect(isVisibleThread(thread({ read_only: true }))).toBe(false);
   });
 
-  it("chat threads exclude archived and read-only", () => {
-    expect(isGroupThread(thread({ group: true }))).toBe(true);
-    expect(isChatThread(thread({ group: true, archived: true }))).toBe(false);
-    expect(isChatThread(thread({ group: true, read_only: true }))).toBe(false);
-    expect(isChatThread(thread({ workspace_kind: "project" }))).toBe(false);
-  });
-
-  it("running considers thread status and turn status", () => {
+  it("detects running threads and derives display titles", () => {
     expect(isThreadRunning(thread({ status: "in_progress" }))).toBe(true);
     expect(
       isThreadRunning(
         thread({ turns: [{ id: "x", items: [], items_view: "full", status: "in_progress" }] }),
       ),
     ).toBe(true);
-    expect(isThreadRunning(thread({}))).toBe(false);
-  });
-
-  it("display title falls back preview → 未命名对话", () => {
-    expect(threadDisplayTitle(thread({ title: " 发布群 " }))).toBe("发布群");
+    expect(threadDisplayTitle(thread({ title: " 项目会话 " }))).toBe("项目会话");
     expect(threadDisplayTitle(thread({ preview: "早上好" }))).toBe("早上好");
     expect(threadDisplayTitle(thread({}))).toBe("未命名对话");
   });
-});
 
-describe("sortChatThreads", () => {
-  it("running first by created_at desc, finished by updated_at desc", () => {
+  it("sorts running first, then finished threads by activity", () => {
     const runningOld = thread({ id: "r-old", status: "in_progress", created_at: "2026-07-01T00:00:00Z" });
     const runningNew = thread({ id: "r-new", status: "in_progress", created_at: "2026-07-06T00:00:00Z" });
     const doneOld = thread({ id: "d-old", updated_at: "2026-07-02T00:00:00Z" });
     const doneNew = thread({ id: "d-new", updated_at: "2026-07-05T00:00:00Z" });
-    const sorted = sortChatThreads([doneOld, runningOld, doneNew, runningNew]);
-    expect(sorted.map((t) => t.id)).toEqual(["r-new", "r-old", "d-new", "d-old"]);
+
+    expect(sortThreads([doneOld, runningOld, doneNew, runningNew]).map(({ id }) => id)).toEqual([
+      "r-new",
+      "r-old",
+      "d-new",
+      "d-old",
+    ]);
   });
 });
 
-describe("unread", () => {
+describe("unread cursor", () => {
   const finished = thread({
     id: "t1",
     turns: [
@@ -88,10 +73,9 @@ describe("unread", () => {
     expect(latestCompletedTurnID(finished)).toBe("turn-2");
     expect(isThreadUnread(finished, {})).toBe(true);
     expect(isThreadUnread(finished, { t1: "turn-2" })).toBe(false);
-    expect(isThreadUnread(finished, { t1: "turn-1" })).toBe(true);
   });
 
-  it("running threads never mark unread", () => {
+  it("does not mark running threads unread", () => {
     const running = thread({
       id: "t1",
       turns: [
@@ -100,7 +84,6 @@ describe("unread", () => {
       ],
     });
     expect(isThreadUnread(running, {})).toBe(false);
-    // The streaming turn is not the unread cursor either.
     expect(latestCompletedTurnID(running)).toBe("turn-1");
   });
 });

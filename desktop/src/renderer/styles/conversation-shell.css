@@ -80,18 +80,6 @@
     ),
     var(--environment-panel-reserved-width)
   );
-  /*
-   * Thread (reply) panel width is deliberately NOT declared here. It is owned by
-   * useAppLayoutState and written to `.app-shell` — statically via shellStyle and
-   * live (per animation frame) during a drag — and `.conversation-pane` INHERITS
-   * it. Redeclaring `--thread-panel-width` on the pane would shadow that inherited
-   * value and pin the grid column at the local number: dragging the separator
-   * updated the app-shell var every frame while the pane stayed put and never
-   * resized (regression fixed 2026-07-06). The `var(--thread-panel-width, 372px)`
-   * readers below fall back to 372px for the first-open frame before app-shell
-   * sets it. Min/max live only in AppLayoutState.ts (clampThreadPanelWidth); no
-   * CSS reads them, so they are not mirrored here.
-   */
   /* Conversation-only tokens. Shared session-level tokens
      (outer width, horizontal padding, composer width/radius) live in
      session.css at :root — change them there and nothing else. */
@@ -165,9 +153,8 @@
   --conversation-visible-inset-right: 0px;
   --dock-composer-height: 0px;
   /*
-   * Min-height for both composer shells (main dock + thread footer).
-   * A 60px textarea plus the compact 40px toolbar lands on this shared
-   * 100px baseline without either shell reserving hidden vertical space.
+   * Min-height for the composer shell. A 60px textarea plus the compact 40px
+   * toolbar lands on this 100px baseline without reserving hidden space.
    */
   --conversation-composer-min-height: 100px;
   grid-column: 2;
@@ -176,10 +163,7 @@
   position: relative;
   min-width: 0;
   min-height: 0;
-  /* Second column hosts the thread (reply subthread) panel. 0 when closed;
-     .subthread-panel-visible widens it to --thread-panel-width, squeezing
-     the conversation column exactly like the sidebar squeezes the shell —
-     a real grid column, never an overlay. */
+  /* The second column hosts the generic side-thread panel when open. */
   grid-template-columns: minmax(0, 1fr) 0;
   grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
@@ -188,8 +172,7 @@
   transition: grid-template-columns var(--environment-panel-motion-duration) var(--environment-panel-motion-easing);
 }
 
-/* Conversation content flows in column 1; only the thread panel (and its
-   resizer, which is absolutely positioned anyway) lives in column 2. */
+/* Conversation content flows in column 1; a side-thread panel uses column 2. */
 .conversation-pane > * {
   grid-column: 1;
 }
@@ -227,21 +210,9 @@
   transition: opacity var(--content-swap-duration) var(--content-swap-easing);
 }
 
-.conversation-pane.subthread-panel-visible {
-  grid-template-columns: minmax(0, 1fr) var(--thread-panel-width, 372px);
-  /* Right-anchored floaters (jump-to-latest, …) stay left of the panel. */
-  --conversation-visible-inset-right: var(--thread-panel-width, 372px);
-}
-
 .conversation-pane.side-thread-panel-visible {
   grid-template-columns: minmax(0, 1fr) var(--side-thread-width, 400px);
   --conversation-visible-inset-right: var(--side-thread-width, 400px);
-}
-
-.conversation-pane.environment-panel-reserved.subthread-panel-visible {
-  --conversation-visible-inset-right: calc(
-    var(--environment-panel-content-inset) + var(--thread-panel-width, 372px)
-  );
 }
 
 .conversation-pane.environment-panel-reserved.side-thread-panel-visible {
@@ -250,20 +221,10 @@
   );
 }
 
-/* The environment side stack floats at the pane's top-right (z 35). With the
-   thread panel open it must sit LEFT of the panel column, or it covers the
-   panel's own header controls (the round-1 occlusion bug). */
-.conversation-pane.subthread-panel-visible .environment-side-stack {
-  right: calc(var(--thread-panel-width, 372px) + var(--environment-panel-edge-gap));
-}
-
 .conversation-pane.side-thread-panel-visible .environment-side-stack {
   right: calc(var(--side-thread-width, 400px) + var(--environment-panel-edge-gap));
 }
 
-/* Live drags mutate --thread-panel-width per frame; the squeeze must track
-   the pointer 1:1, not lag through the open/close easing. */
-.resizing-thread-panel .conversation-pane,
 .resizing-side-thread .conversation-pane,
 .window-resizing .conversation-pane {
   transition: none;
@@ -1151,32 +1112,6 @@
   flex: 0 0 auto;
   padding: 0 14px;
   cursor: pointer;
-}
-
-/*
- * Self-centered "sticky to bottom + horizontal-center" override used by
- * JumpToLatestPill.tsx (issue #5 fix). The pill is rendered as a direct
- * child of the scroll container (instead of a sibling of it), so
- * `position: sticky; left: 50%; transform: translateX(-50%)` resolves
- * against the container's visible width — no CSS variables, no
- * conversation-pane / thread-panel-width inheritance. The previous
- * `position: absolute` with `left: var(--conversation-visible-inset-left);
- * right: var(--conversation-visible-inset-right); margin-inline: auto`
- * approach bugged out when the .subthread-panel-visible class changed
- * the conversation-pane's right inset, dragging the pill off-center.
- *
- * `var(--dock-composer-height, 0px)` is preserved from the old approach
- * so the pill lifts when the composer is open (relevant for the main
- * column path; the thread path has its own composer handling and the
- * var is harmless there too).
- */
-.jump-to-latest-pill-sticky-centered {
-  position: sticky;
-  bottom: calc(var(--dock-composer-height, 0px) + 12px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  margin: 0 0 12px;
 }
 
 /*

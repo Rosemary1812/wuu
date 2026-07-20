@@ -25,17 +25,17 @@ describe("avatar assignment", () => {
     expect(avatarTintIndex("墨白")).toBe(6);
   });
 
-  it("residents draw from the dressed cast (7..11), others from plain (0..6)", () => {
-    expect(avatarMascotIndex("andy", "resident")).toBe(10);
+  it("named agents draw from the dressed cast (7..11), others from plain (0..6)", () => {
+    expect(avatarMascotIndex("andy", "named")).toBe(10);
     expect(avatarMascotIndex("andy")).toBe(3);
-    expect(avatarMascotIndex("墨白", "resident")).toBe(10);
+    expect(avatarMascotIndex("墨白", "named")).toBe(10);
     expect(avatarMascotIndex("墨白", "task")).toBe(2);
-    expect(avatarMascotIndex("shitou", "resident")).toBe(9);
+    expect(avatarMascotIndex("shitou", "named")).toBe(9);
   });
 
   it("is deterministic", () => {
     for (const seed of ["a", "b", "长长的中文名字", "participant-1"]) {
-      expect(avatarMascotIndex(seed, "resident")).toBe(avatarMascotIndex(seed, "resident"));
+      expect(avatarMascotIndex(seed, "named")).toBe(avatarMascotIndex(seed, "named"));
       expect(avatarTintIndex(seed)).toBe(avatarTintIndex(seed));
     }
   });

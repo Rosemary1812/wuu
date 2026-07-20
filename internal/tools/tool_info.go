@@ -107,12 +107,6 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isToolDisabled(name) {
 		return ToolExposureHidden
 	}
-	if isParticipantSpeechTool(name) && !t.participantSpeechEnabled() {
-		return ToolExposureHidden
-	}
-	if isResidentParticipantTool(name) && !t.residentParticipantEnabled() {
-		return ToolExposureHidden
-	}
 	// The bash-first surface collapses every command entry point into a
 	// single "bash" tool. The model never has to choose between bash and
 	// the structured git tool: git stays registered so LookupTool still
@@ -152,14 +146,6 @@ func isAdvancedCommandToolHidden(name string) bool {
 		return true
 	}
 	return false
-}
-
-func (t *Toolkit) participantSpeechEnabled() bool {
-	return t != nil && t.env != nil && t.env.ParticipantSpeechEnabled
-}
-
-func (t *Toolkit) residentParticipantEnabled() bool {
-	return t != nil && t.env != nil && t.env.ResidentParticipantEnabled
 }
 
 func (t *Toolkit) shouldExposeMCPDirectly(name string) bool {
@@ -228,7 +214,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindGoal
 	case "update_plan":
 		return ToolKindPlan
-	case "spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message", "react", "manage_participant", "list_agent_profiles", "create_agent_profile":
+	case "spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "list_agent_profiles", "create_agent_profile":
 		return ToolKindAgent
 	case "cron":
 		return ToolKindSchedule

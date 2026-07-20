@@ -11,20 +11,13 @@ import {
   Text,
   View,
 } from "react-native";
-import type { ParticipantProfile, Thread } from "@wuu/protocol";
+import type { Thread } from "@wuu/protocol";
 
 import type { AppSnapshot } from "../lib/store";
-import {
-  isDMThread,
-  isThreadRunning,
-  isThreadUnread,
-  sortChatThreads,
-  threadDisplayTitle,
-} from "../lib/threads";
+import { isThreadRunning, isThreadUnread, sortThreads, threadDisplayTitle } from "../lib/threads";
 import { formatListTimestamp } from "../lib/format";
 import { usePalette } from "../theme";
 import { Avatar } from "../components/Avatar";
-import { MemberStack } from "../components/MemberStack";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import { EmptyState } from "../components/EmptyState";
 
@@ -51,16 +44,10 @@ export function ChatsScreen({
     const pinned = snapshot.threads.filter((t) => t.pinned === true);
     const rest = snapshot.threads.filter((t) => t.pinned !== true);
     return [
-      ...sortChatThreads(pinned).map((thread) => ({ thread, pinnedSection: true })),
-      ...sortChatThreads(rest).map((thread) => ({ thread, pinnedSection: false })),
+      ...sortThreads(pinned).map((thread) => ({ thread, pinnedSection: true })),
+      ...sortThreads(rest).map((thread) => ({ thread, pinnedSection: false })),
     ];
   }, [snapshot.threads]);
-
-  const participantById = useMemo(() => {
-    const map = new Map<string, ParticipantProfile>();
-    for (const p of snapshot.participants) map.set(p.id, p);
-    return map;
-  }, [snapshot.participants]);
 
   return (
     <View style={[styles.page, { backgroundColor: palette.paper }]}>
@@ -80,7 +67,7 @@ export function ChatsScreen({
           <EmptyState
             image={EMPTY_MASCOT}
             title="还没有对话"
-            hint="在电脑上建一个群或找 agent 私聊，这里就会出现。"
+            hint="在电脑上开始一个会话，这里就会出现。"
           />
         }
         contentContainerStyle={rows.length === 0 ? styles.emptyFill : undefined}
@@ -89,11 +76,6 @@ export function ChatsScreen({
             thread={item.thread}
             pinned={item.pinnedSection}
             unread={isThreadUnread(item.thread, snapshot.lastViewed)}
-            participant={
-              item.thread.dm_participant_id
-                ? participantById.get(item.thread.dm_participant_id)
-                : undefined
-            }
             onPress={() => onOpenThread(item.thread)}
             onLongPress={() => onLongPressThread(item.thread)}
           />
@@ -107,20 +89,17 @@ function ThreadRow({
   thread,
   pinned,
   unread,
-  participant,
   onPress,
   onLongPress,
 }: {
   thread: Thread;
   pinned: boolean;
   unread: boolean;
-  participant?: ParticipantProfile;
   onPress: () => void;
   onLongPress: () => void;
 }): React.JSX.Element {
   const palette = usePalette();
   const running = isThreadRunning(thread);
-  const isDM = isDMThread(thread);
 
   return (
     <Pressable
@@ -134,20 +113,12 @@ function ThreadRow({
       ]}
     >
       <View style={styles.rowAvatar}>
-        {isDM ? (
-          <Avatar
-            id={thread.dm_participant_id}
-            name={participant?.name ?? threadDisplayTitle(thread)}
-            kind={participant?.kind ?? "resident"}
-            imageUri={participant?.avatar_image}
-            size={44}
-            status={running ? "busy" : null}
-          />
-        ) : (
-          <View style={styles.groupAvatarCell}>
-            <MemberStack members={thread.members ?? []} size={24} />
-          </View>
-        )}
+        <Avatar
+          id={thread.id}
+          name={threadDisplayTitle(thread)}
+          size={44}
+          status={running ? "busy" : null}
+        />
       </View>
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
@@ -188,7 +159,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowAvatar: { width: 48, alignItems: "center" },
-  groupAvatarCell: { width: 48, alignItems: "center" },
   rowBody: { flex: 1, gap: 3 },
   rowTop: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   rowTitle: { flex: 1, fontSize: 15.5, fontWeight: "500" },

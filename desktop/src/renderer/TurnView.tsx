@@ -34,7 +34,6 @@ export function TurnView({
   cwd,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
@@ -54,7 +53,6 @@ export function TurnView({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
@@ -129,7 +127,6 @@ export function TurnView({
         onCancelEditMessage={onCancelEditMessage}
         onSubmitEditMessage={onSubmitEditMessage}
         onOpenAgent={onOpenAgent}
-        onOpenSubthread={onOpenSubthread}
         editSummaryCard={
           runActionAttachedToMessage && item.id === actionableAgentMessageID ? (
             <TurnEditSummaryCard
@@ -192,7 +189,6 @@ export function TurnView({
           onOpenRuns={onOpenRuns}
           onCollapseComplete={onCollapseComplete}
           onOpenAgent={onOpenAgent}
-          onOpenSubthread={onOpenSubthread}
           automaticBackgroundContinuation={automaticBackgroundContinuation}
         />
       ) : null}

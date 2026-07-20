@@ -840,8 +840,6 @@ export type ThreadItemType =
   | "reasoning"
   | "tool_call"
   | "collab_agent_tool_call"
-  | "participant_message"
-  | "task_card"
   | "context_compaction"
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
@@ -884,9 +882,8 @@ export type ToolResult = {
   activity?: ToolResultActivityRef;
 };
 
-// ParticipantSummary is the wire shape of a conversation participant
-// (human, primary agent, named agent, or ephemeral task worker) embedded
-// in agents and thread items for display attribution.
+// ParticipantSummary is the wire identity attached to named Kanban workers and
+// generic subagent activity for display attribution.
 export type ParticipantSummary = {
   id: string;
   name: string;
@@ -894,28 +891,19 @@ export type ParticipantSummary = {
   role?: string;
   // avatar_image is an uploaded image data URL (see
   // ParticipantProfile.avatar_image). The backend fills it for every
-  // summary resolved from the participant store — chat bubbles and group
-  // thread members — but caps the embedded payload at
+  // summary resolved from the participant store, but caps the embedded payload at
   // 64KB raw bytes (appserver participantSummaryAvatarMaxBytes):
   // summaries are duplicated into each thread item they attribute, so
   // larger uploads degrade to the initial-letter avatar here while
   // still rendering in full-profile surfaces (profile panel,
   // participant/list). Optional because synthesized fallback summaries
-  // (legacy rows, ephemeral snapshots) never carry it.
+  // (ephemeral snapshots) never carry it.
   avatar_image?: string;
   // busy reports that this named agent is currently executing a
   // task/workflow run and cannot take a second concurrent pull
-  // (decision-five concurrency lock). The backend overlays it on group
-  // member summaries (threadWithGroupMembers); the UI shows a busy badge
-  // and can steer toward forking a copy. Optional/false when idle or not a
-  // named agent.
+  // (decision-five concurrency lock). Optional/false when idle or not a named
+  // agent.
   busy?: boolean;
-  // forked_from_id marks a temporary分身 (decision six): the母体's participant
-  // id this named agent was forked from, so the UI can badge it as "X 的分身".
-  // Distinct from the session/conversation fork (ThreadSummary.forked_from_id)
-  // — this is a named-agent identity copy with a memory snapshot. Absent for
-  // ordinary named agents.
-  forked_from_id?: string;
 };
 
 export type Agent = {
@@ -945,39 +933,6 @@ export type Agent = {
   participant?: ParticipantSummary;
 };
 
-export type TaskCard = {
-  id: string;
-  name?: string;
-  role?: string;
-  description?: string;
-  status: string;
-  agent_id?: string;
-  subthread_id?: string;
-  reply_count?: number;
-  participant?: ParticipantSummary;
-  started_at?: string;
-  completed_at?: string | null;
-  input_tokens?: number;
-  output_tokens?: number;
-  error?: string;
-};
-
-export type ParticipantStartParams = {
-  thread_id: string;
-  participant_id?: string;
-  task_name?: string;
-  description?: string;
-  prompt: string;
-  subagent_type?: string;
-  agent_profile?: string;
-  isolation?: string;
-  record_user_message?: boolean;
-};
-
-export type ParticipantStartResult = {
-  agent: Agent;
-};
-
 export type ParticipantRunEntry = {
   task_id?: string;
   summary?: string;
@@ -999,10 +954,6 @@ export type ParticipantProfile = {
   workspace?: string;
   model?: string;
   memory?: string;
-  // forked_from_id is the母体's participant id when this profile is a
-  // temporary分身 (decision six); the UI badges the copy as "X 的分身".
-  // Distinct from the session/conversation fork (ThreadSummary.forked_from_id).
-  forked_from_id?: string;
   track_record?: ParticipantRunEntry[];
   created_at?: string;
   updated_at?: string;
@@ -1049,6 +1000,146 @@ export type ParticipantRetireResult = {
 export type ParticipantUpdatedNotification = {
   participant_id?: string;
   participant?: ParticipantProfile;
+};
+
+// ---------------------------------------------------------------------------
+// Kanban board (multi-agent task board). Wire contract fixed by the
+// feat/kanban-os backend; methods are forwarded through the app-server bridge
+// with the exact JSON-RPC names and snake_case params below.
+
+export type KanbanTaskStatus =
+  | "draft"
+  | "ready"
+  | "running"
+  | "review"
+  | "done"
+  | "cancelled";
+
+export type KanbanRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "interrupted";
+
+export type KanbanRunKind = "execute" | "review";
+
+export type KanbanTask = {
+  id: string;
+  session_id: string;
+  parent_id?: string;
+  title: string;
+  brief?: string;
+  status: KanbanTaskStatus;
+  source_thread_id?: string;
+  created_by?: string;
+  sort_index: number;
+  latest_run_id?: string;
+  created_at: number;
+  updated_at: number;
+  latest_run?: KanbanRun;
+};
+
+export type KanbanRun = {
+  id: string;
+  task_id: string;
+  session_id: string;
+  kind: KanbanRunKind;
+  target_id: string;
+  thread_id?: string;
+  status: KanbanRunStatus;
+  summary?: string;
+  error_message?: string;
+  created_by?: string;
+  created_at: number;
+  started_at?: number;
+  finished_at?: number;
+};
+
+export type KanbanArtifact = {
+  id: string;
+  run_id: string;
+  task_id: string;
+  path: string;
+  display_name?: string;
+  media_type?: string;
+  size_bytes: number;
+  created_at: number;
+};
+
+export type KanbanListTasksParams = {
+  session_id: string;
+  parent_id?: string;
+};
+
+export type KanbanCreateTaskParams = {
+  session_id: string;
+  title: string;
+  brief?: string;
+  parent_id?: string;
+  source_thread_id?: string;
+  status?: KanbanTaskStatus;
+  created_by?: string;
+  sort_index?: number;
+};
+
+export type KanbanTransitionTaskParams = {
+  task_id: string;
+  status: KanbanTaskStatus;
+};
+
+export type KanbanDispatchRunParams = {
+  thread_id: string;
+  task_id: string;
+  target_id: string;
+  kind?: KanbanRunKind;
+  created_by?: string;
+};
+
+export type KanbanListRunsParams = {
+  task_id: string;
+};
+
+export type KanbanListArtifactsParams = {
+  task_id: string;
+};
+
+export type KanbanCrystallizeParams = {
+  thread_id: string;
+  session_id: string;
+  created_by?: string;
+};
+
+export type KanbanCrystallizeSubtask = KanbanTask & {
+  suggested_target_id?: string;
+  suggested_target_name?: string;
+};
+
+export type KanbanCrystallizeResult = {
+  task: KanbanTask;
+  subtasks: KanbanCrystallizeSubtask[];
+};
+
+export type KanbanUpdatedNotification = {
+  session_id?: string;
+  task_id?: string;
+};
+
+export type ParticipantManifest = {
+  skills: string[];
+  permission_tier: "workspace" | "unrestricted";
+  prompt_overlay: string;
+};
+
+export type ParticipantGetManifestParams = {
+  participant_id: string;
+};
+
+export type ParticipantSaveManifestParams = {
+  participant_id: string;
+  skills?: string[];
+  permission_tier?: "workspace" | "unrestricted";
+  prompt_overlay?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -1144,35 +1235,10 @@ export type Thread = {
   permission_mode?: string;
   cwd: string;
   // workspace_kind tags the thread with the workspace it was created in.
-  // "scratch" threads live in the desktop-managed scratch root
-  // (~/.wuu/scratch/<date>) and have no registered project; the sidebar
-  // surfaces them in the standalone "对话" section. "dm" threads are
-  // direct-message conversations with a named agent and live in a per-agent
-  // home directory (~/.wuu/agents/<id>/home). Threads loaded from
-  // older builds may omit this field — the renderer falls back to
-  // classifying them by cwd against the known project list.
-  workspace_kind?: "project" | "scratch" | "dm";
+  workspace_kind?: "project" | "scratch";
   status: ThreadStatus;
   read_only?: boolean;
   pinned?: boolean;
-  // dm_participant_id tags the thread as the DM conversation with a named
-  // participant (when started via startThread with a dm_participant_id param).
-  dm_participant_id?: string;
-  // group marks this thread as a chat-style group channel with no main
-  // agent (chat-style-threads-design.md §3). Set once at creation.
-  group?: boolean;
-  // Named participants that are members of this (group) thread. Snapshot
-  // of the thread_members table (docs/plans/2026-07-03-resident-named-agents.md
-  // §3.1). Absent or empty for DM threads and threads without members.
-  members?: ParticipantSummary[];
-  // focus_workspace is the sticky "work focus" for a chat-style (DM or
-  // group) thread's composer: "" or absent means the full workspace set
-  // (the default), "~" scopes the resident agent to its personal home
-  // directory only, and any other value names one workspace/project.
-  // The composer echoes this on thread/resume so the focus chip reflects
-  // the thread's last-known state instead of always resetting to
-  // default.
-  focus_workspace?: string;
   archived?: boolean;
   forked_from_id?: string;
   forked_from_turn_id?: string;
@@ -1186,14 +1252,9 @@ export type Thread = {
   browser_state?: ThreadBrowserState;
 };
 
-// Params for thread/start. Mutually exclusive kinds: dm_participant_id
-// starts (or reuses) a DM thread with a named participant; group starts a
-// chat-style group channel with an optional title
-// (chat-style-threads-design.md §3.1). Omit both for a plain work session.
 export type ThreadStartParams = {
-  dm_participant_id?: string;
-  group?: boolean;
-  title?: string;
+  ephemeral?: boolean;
+  collaboration?: boolean;
 };
 
 export type ThreadBrowserState = {
@@ -1393,133 +1454,6 @@ export type ThreadContextCompositionResult = {
   system_sections?: ContextCompositionSection[];
   block_kind_bytes?: Record<string, number>;
   segment_counts?: ContextSegmentCountSummary;
-};
-
-// "task" is the execution phase after a Thread is promoted
-// (open -> task -> resolved). The lead concludes it directly; there is no
-// intermediate approval state.
-// 历史库中可能残留已废弃状态的行:后端原样透传,前端把未知状态当运行中处理。
-export type ConversationSubthreadStatus = "open" | "task" | "resolved";
-
-export type ConversationSubthread = {
-  id: string;
-  thread_id: string;
-  anchor_item_id: string;
-  parent_seq?: number;
-  title?: string;
-  status: ConversationSubthreadStatus;
-  created_by?: string;
-  created_at: string;
-  reply_count: number;
-  // 弱隔离 participant subset for a reply subthread: only these participants are
-  // pushed reply/task traffic. Empty/undefined means no explicit member subset
-  // yet. Populated by the backend weak-isolation router.
-  participants?: string[];
-  // Discussion owner chosen exactly once when the Thread is created. For a
-  // named-agent message this is the author; for a human message the desktop
-  // asks which named group member should own the convergence. When promoted,
-  // this same participant becomes the immutable Task lead.
-  thread_owner_participant_id?: string;
-  // 该 reply 被(人点击)升级为 task 后由后端下发的 task_card:执行中显示活动卡、
-  // 收尾后显示 result 摘要。未升级的普通 reply 为 undefined。
-  task?: TaskCard;
-  // 收尾冒泡回主流的一句结论(同时写在 task_card 上);escalated_by 记录升级人。
-  summary?: string;
-  escalated_by?: string;
-  // 升级为 Task 后持编排权的 named lead。它由 Thread owner 派生,不是升级时
-  // 重新选择的第二个负责人。runtime workflow 网关按
-  // (caller == lead && status == task) 放行。
-  lead_participant_id?: string;
-  // 执行轴(与 status 分离):planning / executing / awaiting_lead / blocked /
-  // needs_human / completed / failed;空 = 尚未进入执行(普通 Thread)。
-  exec_state?: string;
-  // lead 声明的工作分解投到线上,供 Task 面板渲染进展层(plan §T11):一行一个节点,
-  // 带 Status 派生的展示态与两个 liveness 时间戳。普通(未编排)reply/task 为空。
-  plan?: TaskPieceView[];
-  turns?: Turn[];
-};
-
-// TaskPieceView 是一个 plan 节点在线上的投影(plan §T11):节点身份、依赖边、原始
-// status(pending/active/done/blocked/failed/retrying/cancelled)、由 status 派生的展示 state
-// 标签(done -> completed 等)、重试预算/尝试计数、最近失败原因,以及两个 liveness
-// 时间戳。时间戳原样下发,前端只显示中性的最近活动/进展时间；是否阻塞、失败或需要
-// 人处理必须来自 runtime 的显式状态,不能由桌面用固定时限猜测。
-export type TaskPieceView = {
-  id: string;
-  title: string;
-  assignee?: string;
-  depends_on?: string[];
-  status: string;
-  state?: string;
-  attempts?: number;
-  retry_budget?: number;
-  current_attempt_id?: string;
-  failure_reason?: string;
-  last_activity_at?: string;
-  last_progress_at?: string;
-};
-
-export type ThreadOpenSubResult = {
-  subthread: ConversationSubthread;
-};
-
-export type ThreadListSubResult = {
-  subthreads: ConversationSubthread[];
-};
-
-export type ThreadEscalateSubResult = {
-  subthread: ConversationSubthread;
-};
-
-export type ThreadResolveSubResult = {
-  subthread: ConversationSubthread;
-};
-
-// message/postSubthread result: the refreshed reply subthread view including the
-// just-posted human message, so the split reply panel updates immediately (cth
-// messages carry no item/thread notification of their own).
-export type MessagePostSubthreadResult = {
-  subthread: ConversationSubthread;
-};
-
-// thread/taskEvents params: read the trace timeline of an escalated subthread
-// (task) for the「轨迹」panel (plan §T11). subthread_id 是 task cth id;thread_id
-// 是它所属的父群线程,读之前按归属校验(同其它 subthread RPC)。只读。
-export type ThreadTaskEventsParams = {
-  thread_id: string;
-  subthread_id: string;
-};
-
-// TaskEventView 是线上一条 trace 事件:per-task 单调 seq(时间线顺序)、所属 plan
-// 节点(node_id,task 级事件为空)、事件 kind(task_created / node_started /
-// node_progress / handoff_created / node_failed / ...)、actor participant id、
-// 一句人读 summary、可选的结构化 payload(handoff / error JSON),以及墙钟时间。
-export type TaskEventView = {
-  seq: number;
-  node_id?: string;
-  attempt_id?: string;
-  kind: string;
-  actor?: string;
-  summary?: string;
-  payload?: string;
-  at: string;
-};
-
-export type ThreadTaskEventsResult = {
-  events: TaskEventView[];
-};
-
-// thread/subUpdated notification: pushed whenever a reply-subthread (cth) message
-// is stored (agent reply, human post, or task_card fold). cth traffic never
-// appends a main-stream turn, so this is the only live signal the split reply
-// panel and the reply-count badge get. thread_id is the PARENT group thread;
-// subthread_id identifies the cth; subthread carries the refreshed view (turns +
-// reply_count) so the panel patches in place without a follow-up RPC. Rides the
-// generic wuu:server-event channel — no dedicated IPC method.
-export type SubthreadUpdatedNotification = {
-  thread_id: string;
-  subthread_id: string;
-  subthread: ConversationSubthread;
 };
 
 export type ContextCompositionCategory = {
@@ -1729,51 +1663,10 @@ export type TurnEventNotification = {
   event: StreamEventPayload;
 };
 
-// Structured metadata for user messages that were injected into a
-// resident agent's DM thread by the envelope router rather than typed
-// by the user. Mirrors the session_messages.envelope_meta JSON column
-// (docs/plans/2026-07-03-resident-named-agents.md §3.3). Presence of
-// this field switches the DM view from a user bubble to a collapsed
-// meta row (§7.3). All fields optional so partial backend payloads
-// still render.
-// One record per envelope coalesced into this user message. Mirrors the
-// backend's envelopeMetaRecord array (resident-named-agents.md §3.3,
-// 2026-07-03 revision). Message count == array length.
-export type EnvelopeMetaRecord = {
-  id?: string;
-  source_thread_id?: string;
-  // Snapshot of the source thread title at write time (backend fills it
-  // per the revised contract; may be absent on older rows).
-  source_thread_title?: string;
-  addressed?: boolean;
-  hop?: number;
-  sender_participant_id?: string;
-  created_at?: string;
-};
-export type EnvelopeMeta = EnvelopeMetaRecord[];
-
-// FocusMeta describes a "workspace focus" declaration the backend injects
-// into a DM/group chat-style thread's message stream whenever the
-// thread's active focus changes (composer focus chip — see the desktop
-// chat-style-threads-design.md follow-up on per-thread work focus).
-// "all" = the thread can touch every workspace; "home" = scoped to the
-// resident agent's personal home directory only; "workspace" = scoped to
-// one named project/workspace, identified by `name` (display) and/or
-// `root` (absolute path). Rides on ThreadItem as a sibling to
-// envelope_meta; the renderer treats its mere presence as the signal to
-// render a divider row instead of a normal message, regardless of the
-// item's `type`.
-export type FocusMeta = {
-  kind: "all" | "home" | "workspace";
-  name?: string;
-  root?: string;
-};
-
 export type ThreadItem = {
   id: string;
   // seq is the message's stable per-thread address (session_messages.seq).
-  // The chat view keys read receipts and reactions (both addressed by seq) to
-  // the bubble carrying the same seq. Absent for synthetic/unpersisted items.
+  // Absent for synthetic or unpersisted items.
   seq?: number;
   source_id?: string;
   agent_id?: string;
@@ -1782,7 +1675,6 @@ export type ThreadItem = {
   phase?: ThreadItemPhase;
   role?: string;
   text?: string;
-  post_kind?: string;
   images?: InputImage[];
   files?: InputFile[];
   name?: string;
@@ -1792,38 +1684,6 @@ export type ThreadItem = {
   result_detail?: ToolResult;
   error?: string;
   reason?: string;
-  task?: TaskCard;
-  participant?: ParticipantSummary;
-  envelope_meta?: EnvelopeMeta;
-  focus_meta?: FocusMeta;
-};
-
-// One read-receipt or reaction row for a message, addressed by (thread, seq).
-// Mirrors the backend message_marks wire (2026-07-04-read-receipts-and-
-// reactions.md §4/§5). kind="seen" carries status; kind="reaction" carries a key.
-export type MessageMarkWire = {
-  seq: number;
-  participant_id: string;
-  kind: "seen" | "reaction";
-  status?: "in_progress" | "completed" | "failed";
-  reaction?: string;
-  at_ms?: number;
-};
-
-// thread/marks result: every mark in a thread, fetched on chat-view load.
-export type ThreadMarksResult = {
-  marks: MessageMarkWire[];
-};
-
-// message/mark notification: one incremental mark change to patch a bubble.
-export type MessageMarkNotification = MessageMarkWire & {
-  thread_id: string;
-};
-
-// message/react result: acknowledges a human-stamped reaction. The reaction
-// itself lands back on the bubble via a "message/mark" notification.
-export type MessageReactResult = {
-  ok: boolean;
 };
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
@@ -2232,7 +2092,6 @@ export type WuuDesktopApi = {
   listAgentTemplates: () => Promise<AgentTemplateListResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<ThreadResumeResult>;
-  startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;
   forkThread: (
     threadId: string,
     turnId?: string,
@@ -2316,50 +2175,35 @@ export type WuuDesktopApi = {
     scope: "restart" | "session" | "full"
   ) => Promise<ParticipantResetResult>;
   retireParticipant: (participantId: string) => Promise<ParticipantRetireResult>;
+  // Kanban board (multi-agent task board).
+  kanbanListTasks: (
+    sessionId: string,
+    parentId?: string,
+  ) => Promise<KanbanTask[]>;
+  kanbanCreateTask: (
+    params: KanbanCreateTaskParams,
+  ) => Promise<KanbanTask>;
+  kanbanTransitionTask: (
+    taskId: string,
+    status: KanbanTaskStatus,
+  ) => Promise<KanbanTask>;
+  kanbanDispatchRun: (
+    params: KanbanDispatchRunParams,
+  ) => Promise<KanbanRun>;
+  kanbanListRuns: (taskId: string) => Promise<KanbanRun[]>;
+  kanbanListArtifacts: (taskId: string) => Promise<KanbanArtifact[]>;
+  kanbanCrystallize: (
+    params: KanbanCrystallizeParams,
+  ) => Promise<KanbanCrystallizeResult>;
+  participantGetManifest: (participantId: string) => Promise<ParticipantManifest>;
+  participantSaveManifest: (
+    params: ParticipantSaveManifestParams,
+  ) => Promise<ParticipantManifest>;
   // 记忆面板（设置 → 记忆）。契约见 memory-redesign.md §8.2；后端 M2
   // 未落地时三个方法都会以 unknown method 错误拒绝，面板渲染占位态。
   getMemoryOverview: (params: MemoryOverviewParams) => Promise<MemoryOverviewResult>;
   sendMemoryChat: (params: MemoryChatParams) => Promise<MemoryChatResult>;
   readMemoryRaw: (params: MemoryReadParams) => Promise<MemoryReadResult>;
-  listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
-  openConversationSubthread: (
-    threadId: string,
-    options: {
-      subthreadId?: string;
-      anchorItemId?: string;
-      parentSeq?: number;
-      title?: string;
-      threadOwnerParticipantId?: string;
-    }
-  ) => Promise<ThreadOpenSubResult>;
-  resolveConversationSubthread: (
-    threadId: string,
-    subthreadId: string,
-    resolved: boolean
-  ) => Promise<ThreadResolveSubResult>;
-  // 把一条 Thread 升级为 Task:在同一个 cth 上挂 task_card + 推进到执行态。
-  // Task lead 由 Thread owner 派生,桌面不允许在升级时重新选人。
-  escalateConversationSubthread: (
-    threadId: string,
-    subthreadId: string,
-    options?: { title?: string }
-  ) => Promise<ThreadEscalateSubResult>;
-  // 在分屏 reply 面板里以「你」的身份往 cth 发一条消息:折进 cth(thread_id=cth,
-  // 不进主流,只推 cth 参与者子集),回执带刷新后的 subthread 视图。
-  postSubthreadMessage: (
-    threadId: string,
-    subthreadId: string,
-    text: string,
-    // 复用主对话完整 composer 后,分屏 reply 也能带附件/截图。可选:纯文本发送时留空。
-    images?: InputImage[],
-    files?: InputFile[]
-  ) => Promise<MessagePostSubthreadResult>;
-  // 读一个已升级 subthread(task)的 trace 时间线,供 Task 面板的「轨迹」懒加载
-  // (plan §T11)。只读。
-  taskEvents: (
-    threadId: string,
-    subthreadId: string
-  ) => Promise<ThreadTaskEventsResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   // Settings → Archive panel uses this to surface archived sessions across
   // every cwd after a restart; the active list above stays non-archived.
@@ -2370,25 +2214,6 @@ export type WuuDesktopApi = {
     limit?: number
   ) => Promise<ThreadPreviewResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
-  addThreadMember: (
-    threadId: string,
-    participantId: string,
-  ) => Promise<{ thread: Thread }>;
-  removeThreadMember: (
-    threadId: string,
-    participantId: string,
-  ) => Promise<{ thread: Thread }>;
-  // Read receipts + reactions for a chat thread, keyed by message seq. Live
-  // changes arrive via onServerEvent as "message/mark" notifications.
-  getThreadMarks: (threadId: string) => Promise<ThreadMarksResult>;
-  // Stamp a human reaction (an emoji from the shared reaction vocabulary) on a
-  // message, addressed by its seq. Terminal like the agent react tool: it never
-  // routes or wakes an agent. The chip appears via the "message/mark" event.
-  reactToMessage: (
-    threadId: string,
-    seq: number,
-    reaction: string,
-  ) => Promise<MessageReactResult>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   // Permanently deletes a conversation (history, artifacts, and any fork
   // worktree). Mirrors the `thread/delete` RPC; running threads are rejected
@@ -2401,18 +2226,6 @@ export type WuuDesktopApi = {
     images?: InputImage[],
     files?: InputFile[],
     permissionMode?: string,
-    // mentions carries @-mentioned participant IDs. Only attached to the
-    // turn/start request when non-empty: the server decodes params with
-    // DisallowUnknownFields, so plain sends must not carry the field
-    // before the backend supports it.
-    mentions?: string[],
-    // focusWorkspace carries the chat-style composer's "work focus" chip
-    // selection ("" all workspaces, "~" personal space, otherwise a
-    // workspace name). Only attached when the caller has computed that
-    // the in-session selection differs from Thread.focus_workspace — see
-    // focusWorkspaceSendValue in AppState.ts — so a plain send that never
-    // touched the chip carries nothing extra.
-    focusWorkspace?: string,
   ) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,
@@ -2553,13 +2366,9 @@ export type WuuDesktopApi = {
  */
 export type PopOutInitResult = {
   /** Popped-out window kind, or null when this is the main window. */
-  kind: "thread" | "draft" | "subthread" | null;
-  /** The popped-out thread id, or null when this is the main window. For a
-   *  subthread window this is the PARENT group thread (the cth's home). */
+  kind: "thread" | "draft" | null;
+  /** The popped-out thread id, or null when this is the main window. */
   threadID: string | null;
-  /** The popped-out reply subthread (cth) id, or null unless kind is
-   *  "subthread". */
-  subthreadID: string | null;
   /** Runtime context pinned to the popped-out window. */
   context: RuntimeContext | null;
 };
@@ -2572,16 +2381,6 @@ export type PopOutSessionParams =
     }
   | {
       kind: "draft";
-      context: RuntimeContext;
-    }
-  | {
-      // A reply subthread (cth) lifted into its own window. threadID is the
-      // PARENT group thread (needed for runtime routing + participants); the
-      // window renders the cth via the SAME ConversationSubthreadPanel the
-      // in-window split uses.
-      kind: "subthread";
-      threadID: string;
-      subthreadID: string;
       context: RuntimeContext;
     };
 

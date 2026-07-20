@@ -43,11 +43,10 @@ const (
 )
 
 // SurfaceKind identifies which runtime role a tool surface is compiled for.
-// It is a closed set of four values so the compiler can key decisions off a
-// single dimension instead of an open pair of booleans (a worker that is also
-// "named" is not a valid combination). Ultra workers are kept distinct from
-// main agents because they combine task orchestration with the worker-only
-// agent_report handoff and never receive helpme.
+// It is a closed set of three values so the compiler can key decisions off one
+// role dimension. Ultra workers are kept distinct from main agents because they
+// combine task orchestration with the worker-only agent_report handoff and never
+// receive helpme.
 type SurfaceKind int
 
 const (
@@ -61,14 +60,10 @@ const (
 	// SurfaceMain is the ordinary project main-agent brain surface: it
 	// carries the task-orchestration suite plus helpme.
 	SurfaceMain
-	// SurfaceNamed is a long-lived resident/named agent surface. It compiles
-	// the same base orchestration surface as SurfaceMain; resident task-rail
-	// tools are patched at runtime when the resident identity is enabled.
-	SurfaceNamed
 )
 
 // orchestrates reports whether a surface kind gets the task orchestration
-// suite. Main, named, and Ultra workers orchestrate; ordinary workers do not.
+// suite. Main and Ultra workers orchestrate; ordinary workers do not.
 func (k SurfaceKind) orchestrates() bool {
 	return k != SurfaceWorker
 }
@@ -78,7 +73,7 @@ func (k SurfaceKind) isWorker() bool {
 }
 
 func (k SurfaceKind) includesHelpme() bool {
-	return k == SurfaceMain || k == SurfaceNamed
+	return k == SurfaceMain
 }
 
 func (k SurfaceKind) includesSessionWorkspace() bool {
@@ -90,8 +85,7 @@ func (k SurfaceKind) includesSessionWorkspace() bool {
 // omit orchestration and recovery tools (the spawn_agent suite, helpme) and
 // worker-only handoff tools such as agent_report. The
 // surface is therefore consistent with the runtime boundary instead of being
-// filtered downstream. The named value remains distinct for resident/named
-// callers while compiling the same base surface as SurfaceMain.
+// filtered downstream.
 type Compiler interface {
 	Compile(p Profile, kind SurfaceKind) capability.Surface
 }
@@ -102,11 +96,10 @@ type DefaultCompiler struct{}
 
 // Compile implements Compiler. The SurfaceKind controls the orchestration
 // boundary: execution capability is equal on all surfaces, but orchestration
-// belongs to the brain (the session main agent and resident named agents,
-// which clone the main surface). Main and named
-// surfaces get the task-orchestration suite plus helpme; ordinary worker
-// surfaces are pure executors and keep only agent_report; Ultra workers get
-// task orchestration plus agent_report without helpme.
+// belongs to the session main agent. Main surfaces get the task-orchestration
+// suite plus helpme; ordinary worker surfaces are pure executors and keep only
+// agent_report; Ultra workers get task orchestration plus agent_report without
+// helpme.
 func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)

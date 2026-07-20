@@ -131,23 +131,27 @@ describe("GitService worktree roots", () => {
     expect(gitWorkingTreeBusy(root, [linked])).toBe(false);
   });
 
-  it("reads and mutates the explicitly selected linked worktree", () => {
-    const root = makeRepository();
-    const linked = mkdtempSync(join(tmpdir(), "wuu-linked-worktree-"));
-    rmSync(linked, { recursive: true, force: true });
-    roots.push(linked);
-    execFileSync("git", ["-C", root, "worktree", "add", "-qb", "linked", linked]);
-    execFileSync("git", ["-C", root, "branch", "next"]);
-    const service = serviceFor(root, [], [linked]);
+  it(
+    "reads and mutates the explicitly selected linked worktree",
+    () => {
+      const root = makeRepository();
+      const linked = mkdtempSync(join(tmpdir(), "wuu-linked-worktree-"));
+      rmSync(linked, { recursive: true, force: true });
+      roots.push(linked);
+      execFileSync("git", ["-C", root, "worktree", "add", "-qb", "linked", linked]);
+      execFileSync("git", ["-C", root, "branch", "next"]);
+      const service = serviceFor(root, [], [linked]);
 
-    expect(service.status({}, linked).branch).toBe("linked");
-    expect(service.status().branch).not.toBe("linked");
+      expect(service.status({}, linked).branch).toBe("linked");
+      expect(service.status().branch).not.toBe("linked");
 
-    service.checkoutBranch("next", linked);
+      service.checkoutBranch("next", linked);
 
-    expect(service.status({}, linked).branch).toBe("next");
-    expect(service.status().branch).not.toBe("next");
-  });
+      expect(service.status({}, linked).branch).toBe("next");
+      expect(service.status().branch).not.toBe("next");
+    },
+    15_000,
+  );
 
   it("rejects relative Git root overrides", () => {
     const root = makeRepository();

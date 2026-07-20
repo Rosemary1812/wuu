@@ -6,7 +6,6 @@ import type {
   Thread,
 } from "../shared/protocol";
 import {
-  createThreadSessionTab,
   initialSplitComposerDrafts,
   initialState,
   threadSessionTabID,
@@ -119,8 +118,10 @@ function buildActions({
     thread: thread(),
     status: "ready",
   },
+  initialCollaborationThreadID,
 }: {
   initial?: AppState;
+  initialCollaborationThreadID?: string;
 } = {}) {
   let appState = initial;
   let splitDrafts = initialSplitComposerDrafts();
@@ -149,12 +150,10 @@ function buildActions({
   };
   const cancelViewSwitch = vi.fn();
   const activateThread = vi.fn().mockResolvedValue(undefined);
-  const selectThread = vi.fn().mockResolvedValue(undefined);
-  const selectSessionTab = vi.fn().mockResolvedValue(undefined);
   const scheduleStreamScroll = vi.fn();
-  const openConversationSubthreadByID = vi.fn();
   const closeProjectMenus = vi.fn();
-  const openingDMParticipantIDRef = { current: undefined as string | undefined };
+  const openingCollaborationRef = { current: false };
+  let collaborationThreadID = initialCollaborationThreadID;
   const actions = createCollaborationActions({
     getAppState: () => appState,
     setAppState: (update) => {
@@ -180,8 +179,6 @@ function buildActions({
     
     cancelViewSwitch,
     activateThread,
-    selectThread,
-    selectSessionTab,
     setContextCompositionEntries: (update) => {
       contextCompositionEntries =
         typeof update === "function"
@@ -193,8 +190,11 @@ function buildActions({
         typeof update === "function" ? update(instructionFilesEntries) : update;
     },
     scheduleStreamScroll,
-    openingDMParticipantIDRef,
-    openConversationSubthreadByID,
+    openingCollaborationRef,
+    getCollaborationThreadID: () => collaborationThreadID,
+    setCollaborationThreadID: (threadID) => {
+      collaborationThreadID = threadID;
+    },
     closeProjectMenus,
     setSettingsMemoryFocusID: (participantID) => {
       settingsMemoryFocusID = participantID;
@@ -224,11 +224,9 @@ function buildActions({
     }),
     cancelViewSwitch,
     activateThread,
-    selectThread,
-    selectSessionTab,
     scheduleStreamScroll,
-    openingDMParticipantIDRef,
-    openConversationSubthreadByID,
+    openingCollaborationRef,
+    getCollaborationThreadID: () => collaborationThreadID,
     closeProjectMenus,
   };
 }
@@ -309,112 +307,40 @@ describe("createCollaborationActions", () => {
     });
   });
 
-  it("focuses an existing DM thread instead of starting a duplicate", async () => {
-    const api = installWuuApi();
-    const existing = thread("dm-thread", {
-      dm_participant_id: "agent-1",
-      workspace_kind: "dm",
-    });
-    const harness = buildActions({
-      initial: {
-        ...initialState,
-        activeContext: projectContext(),
-        initialized: initialized(),
-        threads: [existing],
-      },
-    });
-
-    await harness.actions.openParticipantDM(participant());
-
-    expect(harness.activateThread).toHaveBeenCalledWith("dm-thread");
-    expect(api.startThread).not.toHaveBeenCalled();
-    expect(harness.openingDMParticipantIDRef.current).toBeUndefined();
-  });
-
-  it("starts a new DM thread and makes it the active primary tab", async () => {
-    const created = thread("new-dm", {
-      dm_participant_id: "agent-1",
-      status: "in_progress",
-    });
+  it("starts the global collaboration intake as a collaboration thread", async () => {
+    const created = thread("collaboration", { status: "in_progress" });
     const api = installWuuApi(created);
     const harness = buildActions();
 
-    await harness.actions.openParticipantDM(participant());
+    await harness.actions.openCollaborationIntake();
 
-    expect(api.startThread).toHaveBeenCalledWith({
-      dm_participant_id: "agent-1",
-    });
+    expect(api.startThread).toHaveBeenCalledWith({ collaboration: true });
     expect(harness.cancelViewSwitch).toHaveBeenCalled();
     expect(harness.getComposerState()).toMatchObject({
       prompt: "",
       composerImages: [],
       composerFiles: [],
-      
     });
-    expect(harness.getAppState().thread?.id).toBe("new-dm");
+    expect(harness.getAppState().thread?.id).toBe("collaboration");
     expect(harness.getAppState().activePane).toBe("primary");
     expect(harness.getAppState().activeSessionTabID).toBe(
-      threadSessionTabID("new-dm"),
+      threadSessionTabID("collaboration"),
     );
     expect(harness.getAppState().running).toBe(true);
+    expect(harness.openingCollaborationRef.current).toBe(false);
+    expect(harness.getCollaborationThreadID()).toBe("collaboration");
   });
 
-  it("starts a group thread and opens task board tabs", async () => {
-    const group = thread("group-thread", { group: true });
-    const api = installWuuApi(group);
-    const harness = buildActions();
-
-    await harness.actions.createGroupThread("Core team");
-    harness.actions.openTaskBoardTab(group);
-
-    expect(api.startThread).toHaveBeenCalledWith({
-      group: true,
-      title: "Core team",
-    });
-    expect(harness.getAppState().thread?.id).toBe("group-thread");
-    expect(harness.getAppState().activeSessionTabID).toContain("board:");
-  });
-
-  it("does not open a task board for a DM", () => {
-    installWuuApi();
-    const harness = buildActions();
-    const before = harness.getAppState().activeSessionTabID;
-
-    harness.actions.openTaskBoardTab(
-      thread("dm-thread", {
-        workspace_kind: "dm",
-        dm_participant_id: "agent-1",
-      }),
-    );
-
-    expect(harness.getAppState().activeSessionTabID).toBe(before);
-    expect(
-      harness.getAppState().sessionTabs.some((tab) => tab.kind === "board"),
-    ).toBe(false);
-  });
-
-  it("opens a board task through an existing group tab before opening the subthread", async () => {
-    installWuuApi();
-    const group = thread("group-thread", { group: true });
-    const context = projectContext();
+  it("reuses the collaboration intake thread", async () => {
+    const api = installWuuApi();
     const harness = buildActions({
-      initial: {
-        ...initialState,
-        activeContext: context,
-        initialized: initialized(),
-        sessionTabs: [createThreadSessionTab(group, context)],
-      },
+      initialCollaborationThreadID: "collaboration",
     });
 
-    await harness.actions.openTaskFromBoard("group-thread", "subthread-1");
+    await harness.actions.openCollaborationIntake();
 
-    expect(harness.selectSessionTab).toHaveBeenCalledWith(
-      threadSessionTabID("group-thread"),
-    );
-    expect(harness.selectThread).not.toHaveBeenCalled();
-    expect(harness.openConversationSubthreadByID).toHaveBeenCalledWith(
-      "group-thread",
-      "subthread-1",
-    );
+    expect(harness.activateThread).toHaveBeenCalledWith("collaboration");
+    expect(api.startThread).not.toHaveBeenCalled();
   });
+
 });

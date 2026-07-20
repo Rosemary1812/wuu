@@ -46,11 +46,6 @@ const (
 	MethodThreadFork               = "thread/fork"
 	MethodThreadEditMessage        = "thread/edit-message"
 	MethodThreadContextComposition = "thread/context-composition"
-	MethodThreadOpenSub            = "thread/openSub"
-	MethodThreadListSub            = "thread/listSub"
-	MethodThreadResolveSub         = "thread/resolveSub"
-	MethodThreadEscalateSub        = "thread/escalateSub"
-	MethodThreadTaskEvents         = "thread/taskEvents"
 	MethodSideThreadOpen           = "sideThread/open"
 	MethodSideThreadGetHistory     = "sideThread/getHistory"
 	MethodSideThreadSend           = "sideThread/sendMessage"
@@ -66,14 +61,20 @@ const (
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
 	MethodThreadDelete             = "thread/delete"
-	MethodThreadMembersAdd         = "thread/members/add"
-	MethodThreadMembersRemove      = "thread/members/remove"
-	MethodThreadMarks              = "thread/marks"
-	MethodMessageReact             = "message/react"
-	MethodMessagePostSubthread     = "message/postSubthread"
 	MethodWorkspaceStateCleanup    = "workspace/state/cleanup"
-	MethodParticipantStart         = "participant/start"
 	MethodParticipantList          = "participant/list"
+	MethodKanbanCreateTask         = "kanban/create-task"
+	MethodKanbanListTasks          = "kanban/list-tasks"
+	MethodKanbanTransitionTask     = "kanban/transition-task"
+	MethodKanbanDispatchRun        = "kanban/dispatch-run"
+	MethodKanbanListRuns           = "kanban/list-runs"
+	MethodKanbanListArtifacts      = "kanban/list-artifacts"
+	MethodKanbanCrystallize        = "kanban/crystallize"
+	MethodKanbanAutoDispatch       = "kanban/auto-dispatch"
+	MethodKanbanSpawnSuggestions   = "kanban/spawn-suggestions"
+	MethodKanbanSpawnAgent         = "kanban/spawn-agent"
+	MethodParticipantGetManifest   = "participant/get-manifest"
+	MethodParticipantSaveManifest  = "participant/save-manifest"
 	MethodParticipantSave          = "participant/save"
 	MethodParticipantFeedback      = "participant/feedback"
 	MethodParticipantReset         = "participant/reset"
@@ -162,22 +163,9 @@ const (
 	NotificationToolCallDelta       = "item/toolCall/delta"
 	NotificationToolCallOutput      = "item/toolCall/outputDelta"
 	NotificationAgentUpdated        = "agent/updated"
+	NotificationKanbanUpdated       = "kanban/updated"
 	NotificationAgentMailbox        = "agent/mailbox"
 	NotificationMCPStatusUpdated    = "mcp/status/updated"
-	// NotificationMessageMark carries one read-receipt or reaction change for
-	// a single message so a live chat view can patch that bubble in place
-	// without reloading the thread (2026-07-04-read-receipts-and-reactions.md
-	// §5).
-	NotificationMessageMark = "message/mark"
-	// NotificationSubthreadUpdated carries a refreshed reply-subthread (cth) view
-	// whenever a message is stored in that subthread (agent reply, human post, or
-	// task_card fold). cth traffic is short-circuited off the main stream and
-	// emits no turn/item/thread notification of its own, so the split reply panel
-	// and the main-stream reply-count badge would otherwise go stale. thread_id is
-	// the PARENT group thread (needed for the renderer's global-thread gate and
-	// the reply-badge reload); subthread_id identifies which cth; the embedded
-	// subthread view lets the panel patch in place without a round-trip.
-	NotificationSubthreadUpdated = "thread/subUpdated"
 )
 
 type Request struct {
@@ -895,16 +883,11 @@ type ProviderModelVariantSummary struct {
 }
 
 type ThreadStartParams struct {
-	Ephemeral       bool   `json:"ephemeral,omitempty"`
-	DMParticipantID string `json:"dm_participant_id,omitempty"`
-	// Group requests a chat-style group channel with no primary agent
-	// (chat-style-threads-design.md §3). Mutually exclusive with
-	// DMParticipantID and Ephemeral.
-	Group bool `json:"group,omitempty"`
-	// Title names the group thread; ignored unless Group is set. Empty
-	// falls back to a generated placeholder.
-	Title string `json:"title,omitempty"`
+	Ephemeral     bool `json:"ephemeral,omitempty"`
+	Collaboration bool `json:"collaboration,omitempty"`
 }
+
+const ThreadSourceCollaboration = "collaboration"
 
 type ThreadStartResult struct {
 	Thread Thread `json:"thread"`
@@ -990,174 +973,6 @@ type ThreadContextCompositionResult struct {
 	SystemSections         []ContextCompositionSection  `json:"system_sections,omitempty"`
 	BlockKindBytes         map[string]int               `json:"block_kind_bytes,omitempty"`
 	SegmentCounts          ContextSegmentCountSummary   `json:"segment_counts,omitempty"`
-}
-
-type ConversationSubthread struct {
-	ID           string    `json:"id"`
-	ThreadID     string    `json:"thread_id"`
-	AnchorItemID string    `json:"anchor_item_id"`
-	ParentSeq    int       `json:"parent_seq,omitempty"`
-	Title        string    `json:"title,omitempty"`
-	Status       string    `json:"status"`
-	CreatedBy    string    `json:"created_by,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	// ThreadOwnerParticipantID is the named agent that owns convergence of the
-	// discussion Thread and becomes lead if it is promoted to a Task.
-	ThreadOwnerParticipantID string `json:"thread_owner_participant_id,omitempty"`
-	ReplyCount               int    `json:"reply_count"`
-	// Participants is the weak-isolation member subset for a reply subthread:
-	// only these participants are pushed reply/task traffic into their context.
-	// Empty means the subthread has no explicit member subset yet (e.g. a
-	// task_card subthread, or before the weak-isolation router seeds it).
-	// Populated by the subthread member store; the field is the shared contract
-	// the group-chat frontend reads to render who is in a reply.
-	Participants []string `json:"participants,omitempty"`
-	// Task is populated once the reply has been promoted to a task. The
-	// group-chat main stream renders it as an activity card while the
-	// task runs and as a resolved result summary once it wraps up. Nil for a
-	// plain (never-escalated) reply. Summary carries the one-line conclusion
-	// published to the main stream on wrap-up; EscalatedBy records promotion
-	// provenance.
-	Task        *TaskCard `json:"task,omitempty"`
-	Summary     string    `json:"summary,omitempty"`
-	EscalatedBy string    `json:"escalated_by,omitempty"`
-	// LeadParticipantID is the single named agent granted task-lead (workflow
-	// orchestration) authority on promotion. It is always copied from the
-	// persisted Thread owner and remains distinct from EscalatedBy provenance.
-	// The runtime workflow gate keys on (caller == lead && status == task).
-	LeadParticipantID string `json:"lead_participant_id,omitempty"`
-	// ExecState is the task's execution axis, separate from the approval
-	// Status: planning/executing/awaiting_lead/blocked/needs_human/completed/failed. Empty
-	// when the subthread never entered execution (a plain reply).
-	ExecState string `json:"exec_state,omitempty"`
-	// Plan is the lead's declared work breakdown projected onto the wire so the
-	// Task panel can render the progress layer (plan §T11): one row per node with
-	// its derived display state and its two liveness timestamps. Empty for a
-	// plain (unplanned) reply or task.
-	Plan  []TaskPieceView `json:"plan,omitempty"`
-	Turns []Turn          `json:"turns,omitempty"`
-}
-
-// TaskPieceView is one plan node projected onto the wire for the Task panel
-// (plan §T11). It carries the node identity, its dependency edges, the raw
-// Status (pending/active/done/blocked/failed/retrying/cancelled), the display State label
-// derived from that Status (deriveNodeState — done -> completed, etc.), the
-// retry budget/attempts counters, the most recent FailureReason (for the lead's
-// post-mortem), and the two activity timestamps retained for observability.
-// The timestamps do not imply a frontend stalled/slow state.
-type TaskPieceView struct {
-	ID               string    `json:"id"`
-	Title            string    `json:"title"`
-	Assignee         string    `json:"assignee,omitempty"`
-	DependsOn        []string  `json:"depends_on,omitempty"`
-	Status           string    `json:"status"`
-	State            string    `json:"state,omitempty"`
-	Attempts         int       `json:"attempts,omitempty"`
-	RetryBudget      int       `json:"retry_budget,omitempty"`
-	CurrentAttemptID string    `json:"current_attempt_id,omitempty"`
-	FailureReason    string    `json:"failure_reason,omitempty"`
-	LastActivityAt   time.Time `json:"last_activity_at,omitzero"`
-	LastProgressAt   time.Time `json:"last_progress_at,omitzero"`
-}
-
-type ThreadOpenSubParams struct {
-	ThreadID     string `json:"thread_id"`
-	SubthreadID  string `json:"subthread_id,omitempty"`
-	AnchorItemID string `json:"anchor_item_id,omitempty"`
-	ParentSeq    int    `json:"parent_seq,omitempty"`
-	Title        string `json:"title,omitempty"`
-	// ThreadOwnerParticipantID is required only when the parent message was
-	// authored by the human. It must name an active named member of the group.
-	// For a named-agent parent, the backend always uses the parent author.
-	ThreadOwnerParticipantID string `json:"thread_owner_participant_id,omitempty"`
-}
-
-type ThreadOpenSubResult struct {
-	Subthread ConversationSubthread `json:"subthread"`
-}
-
-type ThreadListSubParams struct {
-	ThreadID string `json:"thread_id"`
-}
-
-type ThreadListSubResult struct {
-	Subthreads []ConversationSubthread `json:"subthreads"`
-}
-
-type ThreadResolveSubParams struct {
-	ThreadID    string `json:"thread_id"`
-	SubthreadID string `json:"subthread_id"`
-	Resolved    bool   `json:"resolved"`
-}
-
-// MessagePostSubthreadParams posts a human-authored message into a reply
-// subthread (群中群) from the split reply panel. The message folds into the cth
-// (thread_id-tagged, kept out of the main stream, fanned out only to the cth's
-// participant subset) via publishParticipantMessage's short-circuit. Agents
-// never reach this RPC (they only have tools); like escalate/bubble it is a
-// human-only affordance.
-type MessagePostSubthreadParams struct {
-	ThreadID    string `json:"thread_id"`
-	SubthreadID string `json:"subthread_id"`
-	Text        string `json:"text"`
-	// Images/Files carry the reused full composer's inline attachments (pasted
-	// screenshots, PDFs). Optional — a plain text post leaves them empty.
-	Images []TurnStartImage `json:"images,omitempty"`
-	Files  []TurnStartFile  `json:"files,omitempty"`
-}
-
-// MessagePostSubthreadResult returns the refreshed subthread view (including the
-// just-posted message) so the split reply panel updates immediately — cth
-// messages carry no item/thread notification of their own.
-type MessagePostSubthreadResult struct {
-	Subthread ConversationSubthread `json:"subthread"`
-}
-
-type ThreadResolveSubResult struct {
-	Subthread ConversationSubthread `json:"subthread"`
-}
-
-// ThreadEscalateSubParams is the human promotion RPC. It promotes one open
-// reply exactly once; the persisted Thread owner becomes task lead.
-type ThreadEscalateSubParams struct {
-	ThreadID    string `json:"thread_id"`
-	SubthreadID string `json:"subthread_id"`
-	Title       string `json:"title,omitempty"`
-}
-
-type ThreadEscalateSubResult struct {
-	Subthread ConversationSubthread `json:"subthread"`
-}
-
-// ThreadTaskEventsParams reads the trace timeline of an escalated subthread
-// (plan §T11): the ordered task_events recorded while the task ran, so the
-// panel can render the "轨迹" timeline. subthread_id is the task cth id;
-// thread_id is its parent group thread, verified for ownership (like the other
-// subthread RPCs) before the read. Read-only.
-type ThreadTaskEventsParams struct {
-	ThreadID    string `json:"thread_id"`
-	SubthreadID string `json:"subthread_id"`
-}
-
-// TaskEventView is one trace event on the wire: the per-task monotonic Seq (the
-// stable timeline order), the plan node it belongs to (NodeID, empty for
-// task-level events), the event Kind (task_created / node_started /
-// node_progress / handoff_created / node_failed / ...), the Actor participant
-// id, a short human Summary, an optional structured Payload (handoff / error
-// JSON), and the wall-clock time.
-type TaskEventView struct {
-	Seq       int       `json:"seq"`
-	NodeID    string    `json:"node_id,omitempty"`
-	AttemptID string    `json:"attempt_id,omitempty"`
-	Kind      string    `json:"kind"`
-	Actor     string    `json:"actor,omitempty"`
-	Summary   string    `json:"summary,omitempty"`
-	Payload   string    `json:"payload,omitempty"`
-	At        time.Time `json:"at"`
-}
-
-type ThreadTaskEventsResult struct {
-	Events []TaskEventView `json:"events"`
 }
 
 // A side thread is bound at most once to a main thread and remains hidden from
@@ -1246,22 +1061,6 @@ type SideThreadEventNotification struct {
 	ErrorMessage string                 `json:"error_message,omitempty"`
 }
 
-type ParticipantStartParams struct {
-	ThreadID          string `json:"thread_id"`
-	ParticipantID     string `json:"participant_id,omitempty"`
-	TaskName          string `json:"task_name,omitempty"`
-	Description       string `json:"description,omitempty"`
-	Prompt            string `json:"prompt"`
-	SubagentType      string `json:"subagent_type,omitempty"`
-	AgentProfile      string `json:"agent_profile,omitempty"`
-	Isolation         string `json:"isolation,omitempty"`
-	RecordUserMessage bool   `json:"record_user_message,omitempty"`
-}
-
-type ParticipantStartResult struct {
-	Agent Agent `json:"agent"`
-}
-
 type ParticipantProfile struct {
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
@@ -1271,18 +1070,14 @@ type ParticipantProfile struct {
 	// (e.g. "data:image/png;base64,..."). Populated on the profile read
 	// path when the workspace contains an avatar image; omitted on the
 	// lightweight wire Summary.
-	AvatarImage string `json:"avatar_image,omitempty"`
-	Tagline     string `json:"tagline,omitempty"`
-	Workspace   string `json:"workspace,omitempty"`
-	Model       string `json:"model,omitempty"`
-	Memory      string `json:"memory,omitempty"`
-	// ForkedFromID is the母体's participant id when this profile is a
-	// temporary分身 (decision six). The UI badges the copy as "X 的分身".
-	// Distinct from the session/conversation fork (ThreadSummary.forked_from_id).
-	ForkedFromID string                `json:"forked_from_id,omitempty"`
-	TrackRecord  []ParticipantRunEntry `json:"track_record,omitempty"`
-	CreatedAt    time.Time             `json:"created_at,omitempty"`
-	UpdatedAt    time.Time             `json:"updated_at,omitempty"`
+	AvatarImage string                `json:"avatar_image,omitempty"`
+	Tagline     string                `json:"tagline,omitempty"`
+	Workspace   string                `json:"workspace,omitempty"`
+	Model       string                `json:"model,omitempty"`
+	Memory      string                `json:"memory,omitempty"`
+	TrackRecord []ParticipantRunEntry `json:"track_record,omitempty"`
+	CreatedAt   time.Time             `json:"created_at,omitempty"`
+	UpdatedAt   time.Time             `json:"updated_at,omitempty"`
 }
 
 type ParticipantRunEntry struct {
@@ -1488,22 +1283,6 @@ type WorkspaceStateCleanupResult struct {
 	MemoryArchived bool `json:"memory_archived"`
 }
 
-// ThreadMembersMutationParams is the input for the user-owned
-// `thread/members/add` and `thread/members/remove` methods. Group threads,
-// including #all, use explicit thread_members rows.
-type ThreadMembersMutationParams struct {
-	ThreadID      string `json:"thread_id"`
-	ParticipantID string `json:"participant_id"`
-}
-
-type ThreadMembersAddResult struct {
-	Thread Thread `json:"thread"`
-}
-
-type ThreadMembersRemoveResult struct {
-	Thread Thread `json:"thread"`
-}
-
 // Memory panel wire types. Each struct's json tags mirror the Memory* types
 // in desktop/src/shared/protocol.ts field-for-field; changing either side
 // requires changing both (memory-redesign contract §8.2).
@@ -1580,17 +1359,7 @@ type TurnStartParams struct {
 	Prompt         string           `json:"prompt"`
 	Images         []TurnStartImage `json:"images,omitempty"`
 	Files          []TurnStartFile  `json:"files,omitempty"`
-	Mentions       []string         `json:"mentions,omitempty"`
 	PermissionMode *string          `json:"permission_mode,omitempty"`
-	// FocusWorkspace, when non-nil, asks the thread to switch its workspace
-	// focus before this turn's user message (2026-07-03-workspace-focus.md
-	// §2). nil (field absent) means "leave focus unchanged" — the common
-	// path, which must not touch history. A non-nil value requests a
-	// switch: "" back to all registered workspaces, "~" to the agent home
-	// only, anything else a registered workspace name. Only chat-style
-	// threads honor it (DM today; groups in a follow-up); work sessions
-	// ignore it entirely.
-	FocusWorkspace *string `json:"focus_workspace,omitempty"`
 }
 
 type TurnStartImage struct {
@@ -1705,18 +1474,6 @@ type ThreadResumedNotification struct {
 
 type ThreadUpdatedNotification struct {
 	Thread Thread `json:"thread"`
-}
-
-// SubthreadUpdatedNotification is pushed when a reply-subthread (cth) message is
-// stored. Because cth traffic never appends a main-stream turn, this is the only
-// live signal the split reply panel and the reply-count badge get. ThreadID is
-// the parent group thread; SubthreadID identifies the cth; Subthread carries the
-// refreshed view (turns + reply_count) so the frontend can patch without a
-// follow-up RPC.
-type SubthreadUpdatedNotification struct {
-	ThreadID    string                `json:"thread_id"`
-	SubthreadID string                `json:"subthread_id"`
-	Subthread   ConversationSubthread `json:"subthread"`
 }
 
 // ThreadRegenerateTitleParams is the input for the `thread/regenerate-title`
@@ -1843,8 +1600,8 @@ type Agent struct {
 	Archived    bool      `json:"archived,omitempty"`
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
-	// Participant identifies which conversation participant this agent
-	// runs as. Always populated on live snapshots: resolved from the
+	// Participant identifies the Kanban agent or task worker this run uses.
+	// Always populated on live snapshots: resolved from the
 	// participant store when possible, synthesized from the snapshot's
 	// type/task name otherwise.
 	Participant *participant.Summary `json:"participant,omitempty"`
@@ -1899,11 +1656,6 @@ const (
 	// WorkspaceKindScratch threads live in the ephemeral scratch root
 	// (typically ~/.wuu/scratch/<date>) and have no registered project.
 	WorkspaceKindScratch WorkspaceKind = "scratch"
-	// WorkspaceKindDM threads are direct-message conversations with a named
-	// agent. They live in a per-agent home directory under ~/.wuu/agents/
-	// and surface in every server's thread list regardless of the active
-	// project.
-	WorkspaceKindDM WorkspaceKind = "dm"
 )
 
 type AutomationListResult struct {
@@ -1928,51 +1680,34 @@ type AutomationRemoveParams struct {
 }
 
 type Thread struct {
-	ID               string        `json:"id"`
-	Source           string        `json:"source,omitempty"`
-	ParentID         string        `json:"parent_id,omitempty"`
-	AgentPath        string        `json:"agent_path,omitempty"`
-	Preview          string        `json:"preview"`
-	Title            string        `json:"title,omitempty"`
-	ModelProvider    string        `json:"model_provider"`
-	Model            string        `json:"model"`
-	ModelVariant     string        `json:"model_variant"`
-	ModelEffort      string        `json:"model_effort"`
-	PermissionMode   string        `json:"permission_mode"`
-	CWD              string        `json:"cwd"`
-	WorkspaceKind    WorkspaceKind `json:"workspace_kind,omitempty"`
-	Status           ThreadStatus  `json:"status"`
-	ReadOnly         bool          `json:"read_only,omitempty"`
-	Ephemeral        bool          `json:"ephemeral,omitempty"`
-	Pinned           bool          `json:"pinned,omitempty"`
-	Archived         bool          `json:"archived,omitempty"`
-	ForkedFromID     string        `json:"forked_from_id,omitempty"`
-	ForkedFromTurnID string        `json:"forked_from_turn_id,omitempty"`
-	ForkedFromItemID string        `json:"forked_from_item_id,omitempty"`
-	Worktree         *WorktreeInfo `json:"worktree,omitempty"`
-	CreatedAt        time.Time     `json:"created_at"`
-	UpdatedAt        time.Time     `json:"updated_at"`
-	Turns            []Turn        `json:"turns"`
-	ChildAgents      []Agent       `json:"child_agents,omitempty"`
-	BackgroundWait   bool          `json:"background_waiting"`
-	// DMParticipantID, when non-empty, marks this thread as the direct-message
-	// conversation with the named participant of that ID. Set once at thread
-	// creation; never mutated afterward.
-	DMParticipantID string `json:"dm_participant_id,omitempty"`
-	// FocusWorkspace is the workspace focus this chat-style thread most
-	// recently declared (2026-07-03-workspace-focus.md §1): "" = all
-	// registered workspaces (default), "~" = agent home only, otherwise a
-	// registered workspace name. Unlike DMParticipantID it changes over the
-	// thread's lifetime via turn/start's focus_workspace param.
-	FocusWorkspace string `json:"focus_workspace,omitempty"`
-	// Group marks this thread as a chat-style group channel with no primary
-	// agent (chat-style-threads-design.md §3). Set once at thread creation.
-	Group bool `json:"group,omitempty"`
-	// Members lists the named participants belonging to this group thread
-	// (chips UI, chat avatars). Populated only for group threads from explicit
-	// thread_members rows; DM threads and work sessions leave this empty.
-	Members      []participant.Summary `json:"members,omitempty"`
-	BrowserState *ThreadBrowserState   `json:"browser_state,omitempty"`
+	ID               string              `json:"id"`
+	Source           string              `json:"source,omitempty"`
+	ParentID         string              `json:"parent_id,omitempty"`
+	AgentPath        string              `json:"agent_path,omitempty"`
+	Preview          string              `json:"preview"`
+	Title            string              `json:"title,omitempty"`
+	ModelProvider    string              `json:"model_provider"`
+	Model            string              `json:"model"`
+	ModelVariant     string              `json:"model_variant"`
+	ModelEffort      string              `json:"model_effort"`
+	PermissionMode   string              `json:"permission_mode"`
+	CWD              string              `json:"cwd"`
+	WorkspaceKind    WorkspaceKind       `json:"workspace_kind,omitempty"`
+	Status           ThreadStatus        `json:"status"`
+	ReadOnly         bool                `json:"read_only,omitempty"`
+	Ephemeral        bool                `json:"ephemeral,omitempty"`
+	Pinned           bool                `json:"pinned,omitempty"`
+	Archived         bool                `json:"archived,omitempty"`
+	ForkedFromID     string              `json:"forked_from_id,omitempty"`
+	ForkedFromTurnID string              `json:"forked_from_turn_id,omitempty"`
+	ForkedFromItemID string              `json:"forked_from_item_id,omitempty"`
+	Worktree         *WorktreeInfo       `json:"worktree,omitempty"`
+	CreatedAt        time.Time           `json:"created_at"`
+	UpdatedAt        time.Time           `json:"updated_at"`
+	Turns            []Turn              `json:"turns"`
+	ChildAgents      []Agent             `json:"child_agents,omitempty"`
+	BackgroundWait   bool                `json:"background_waiting"`
+	BrowserState     *ThreadBrowserState `json:"browser_state,omitempty"`
 }
 
 type WorktreeInfo struct {
@@ -2048,8 +1783,6 @@ const (
 	ThreadItemReasoning         ThreadItemType = "reasoning"
 	ThreadItemToolCall          ThreadItemType = "tool_call"
 	ThreadItemCollabAgentTool   ThreadItemType = "collab_agent_tool_call"
-	ThreadItemParticipantMsg    ThreadItemType = "participant_message"
-	ThreadItemTaskCard          ThreadItemType = "task_card"
 	ThreadItemContextCompaction ThreadItemType = "context_compaction"
 	ThreadItemError             ThreadItemType = "error"
 )
@@ -2074,8 +1807,7 @@ const (
 type ThreadItem struct {
 	ID string `json:"id"`
 	// Seq is the message's stable per-thread address (session_messages.seq),
-	// present on persisted chat messages. The chat view keys read receipts and
-	// reactions (both addressed by seq) to the bubble carrying the same seq.
+	// present on persisted chat messages.
 	// 0/absent for synthetic or not-yet-persisted items.
 	Seq          int                        `json:"seq,omitempty"`
 	SourceID     string                     `json:"source_id,omitempty"`
@@ -2085,7 +1817,6 @@ type ThreadItem struct {
 	Phase        ThreadItemPhase            `json:"phase,omitempty"`
 	Role         string                     `json:"role,omitempty"`
 	Text         string                     `json:"text,omitempty"`
-	PostKind     string                     `json:"post_kind,omitempty"`
 	Images       []ThreadItemImage          `json:"images,omitempty"`
 	Files        []ThreadItemFile           `json:"files,omitempty"`
 	Name         string                     `json:"name,omitempty"`
@@ -2098,39 +1829,6 @@ type ThreadItem struct {
 	FinishReason string                     `json:"finish_reason,omitempty"`
 	StopReason   string                     `json:"stop_reason,omitempty"`
 	Truncated    bool                       `json:"truncated,omitempty"`
-	Task         *TaskCard                  `json:"task,omitempty"`
-	// Participant attributes this item to a conversation participant.
-	// Populated for agent-originated items; nil means the thread owner.
-	Participant *participant.Summary `json:"participant,omitempty"`
-	// EnvelopeMeta marks a user_message item as a message routed in from
-	// another thread (a group channel or another agent's DM). The chat view
-	// renders items carrying it as a collapsed "收到来自…的消息" notice rather
-	// than a user bubble, keeping the message's source (context) decoupled
-	// from its text (content). Shape: an array of {id, source_thread_id,
-	// source_thread_title, ...} records. Plumbed alongside FocusMeta.
-	EnvelopeMeta json.RawMessage `json:"envelope_meta,omitempty"`
-	// FocusMeta marks a user_message item as a workspace-focus declaration
-	// (2026-07-03-workspace-focus.md §3.1). Shape:
-	// {kind:"all"|"home"|"workspace", name?, root?}. The chat view renders
-	// items carrying it as a focus divider instead of a user bubble.
-	FocusMeta json.RawMessage `json:"focus_meta,omitempty"`
-}
-
-type TaskCard struct {
-	ID           string               `json:"id"`
-	Name         string               `json:"name,omitempty"`
-	Role         string               `json:"role,omitempty"`
-	Description  string               `json:"description,omitempty"`
-	Status       string               `json:"status"`
-	AgentID      string               `json:"agent_id,omitempty"`
-	SubthreadID  string               `json:"subthread_id,omitempty"`
-	ReplyCount   int                  `json:"reply_count,omitempty"`
-	Participant  *participant.Summary `json:"participant,omitempty"`
-	StartedAt    time.Time            `json:"started_at,omitempty"`
-	CompletedAt  time.Time            `json:"completed_at,omitempty"`
-	InputTokens  int                  `json:"input_tokens,omitempty"`
-	OutputTokens int                  `json:"output_tokens,omitempty"`
-	Error        string               `json:"error,omitempty"`
 }
 
 type ThreadItemImage struct {

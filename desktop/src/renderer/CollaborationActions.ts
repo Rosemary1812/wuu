@@ -1,22 +1,15 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type {
-  ParticipantProfile,
-  RuntimeContext,
-  Thread,
-} from "../shared/protocol";
+import type { RuntimeContext, Thread } from "../shared/protocol";
 import {
   activeThreadForState,
-  createBoardSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,
   ensureSessionTab,
-  findDMThread,
   initialSplitComposerDrafts,
   isThreadRunning,
   persistActiveSessionTabDraft,
   sameRuntimeContext,
   sessionTabDraftForThread,
-  sessionTabForParticipant,
   threadSessionTabID,
   upsertThread,
   type AppState,
@@ -45,8 +38,6 @@ export type CollaborationActionsDeps = {
   
   cancelViewSwitch: () => void;
   activateThread: (threadID: string) => Promise<void>;
-  selectThread: (threadID: string) => Promise<void>;
-  selectSessionTab: (tabID: string) => Promise<void>;
   setContextCompositionEntries: Dispatch<
     SetStateAction<ContextCompositionEntry[]>
   >;
@@ -54,11 +45,9 @@ export type CollaborationActionsDeps = {
     SetStateAction<InstructionFilesEntry[]>
   >;
   scheduleStreamScroll: () => void;
-  openingDMParticipantIDRef: MutableRefObject<string | undefined>;
-  openConversationSubthreadByID: (
-    threadID: string,
-    subthreadID: string,
-  ) => void;
+  openingCollaborationRef: MutableRefObject<boolean>;
+  getCollaborationThreadID: () => string | undefined;
+  setCollaborationThreadID: (threadID: string) => void;
   closeProjectMenus: () => void;
   setSettingsMemoryFocusID: (participantID: string | undefined) => void;
   setSettingsInitialPage: (page: SettingsPage) => void;
@@ -71,13 +60,7 @@ export type CollaborationActions = {
   dismissInstructionFilesEntry: (id: string) => void;
   openInstructions: () => void;
   openContextComposition: () => void;
-  openParticipantDM: (participant: ParticipantProfile) => Promise<void>;
-  createGroupThread: (title: string) => Promise<void>;
-  openTaskBoardTab: (thread: Thread) => void;
-  openTaskFromBoard: (
-    threadID: string,
-    subthreadID: string,
-  ) => Promise<void>;
+  openCollaborationIntake: () => Promise<void>;
   openMemorySettings: (participantID?: string) => void;
 };
 
@@ -229,37 +212,28 @@ export function createCollaborationActions(
     })();
   }
 
-  async function openParticipantDM(
-    participant: ParticipantProfile,
-  ): Promise<void> {
+  async function openCollaborationIntake(): Promise<void> {
     const currentState = deps.getAppState();
     if (!currentState.activeContext || !currentState.initialized) {
       return;
     }
-    if (deps.openingDMParticipantIDRef.current === participant.id) {
+    if (deps.openingCollaborationRef.current) {
       return;
     }
-    deps.openingDMParticipantIDRef.current = participant.id;
+    deps.openingCollaborationRef.current = true;
     try {
+      const existingThreadID = deps.getCollaborationThreadID();
+      if (existingThreadID) {
+        try {
+          await deps.activateThread(existingThreadID);
+          return;
+        } catch {
+          // The remembered thread may have been deleted outside this view.
+        }
+      }
       resetComposerForThreadActivation();
-      const existing = findDMThread(currentState.threads, participant.id);
-      if (existing) {
-        await deps.activateThread(existing.id);
-        return;
-      }
-      const existingTab = sessionTabForParticipant(
-        currentState.sessionTabs,
-        currentState.threads,
-        participant.id,
-      );
-      if (existingTab) {
-        await deps.activateThread(existingTab.threadID);
-        return;
-      }
       try {
-        const { thread } = await window.wuu.startThread({
-          dm_participant_id: participant.id,
-        });
+        const { thread } = await window.wuu.startThread({ collaboration: true });
         if (
           !sameRuntimeContext(
             deps.getAppState().activeContext,
@@ -268,70 +242,20 @@ export function createCollaborationActions(
         ) {
           return;
         }
+        deps.setCollaborationThreadID(thread.id);
         selectFreshThread(thread, deps.getAppState().activeContext);
       } catch (error) {
         deps.setAppState((current) => ({
           ...current,
-          status: error instanceof Error ? error.message : translateCurrent("collaboration.agentConversationCreateFailed"),
+          status:
+            error instanceof Error
+              ? error.message
+              : translateCurrent("collaboration.intakeCreateFailed"),
         }));
       }
     } finally {
-      deps.openingDMParticipantIDRef.current = undefined;
+      deps.openingCollaborationRef.current = false;
     }
-  }
-
-  async function createGroupThread(title: string): Promise<void> {
-    const currentState = deps.getAppState();
-    if (!currentState.activeContext || !currentState.initialized) {
-      return;
-    }
-    resetComposerForThreadActivation();
-    try {
-      const { thread } = await window.wuu.startThread({ group: true, title });
-      if (
-        !sameRuntimeContext(
-          deps.getAppState().activeContext,
-          currentState.activeContext,
-        )
-      ) {
-        return;
-      }
-      selectFreshThread(thread, deps.getAppState().activeContext);
-    } catch (error) {
-      deps.setAppState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : translateCurrent("collaboration.groupCreateFailed"),
-      }));
-    }
-  }
-
-  function openTaskBoardTab(thread: Thread): void {
-    if (!thread.group) {
-      return;
-    }
-    const context = deps.getAppState().activeContext;
-    if (!context) {
-      return;
-    }
-    const tab = createBoardSessionTab(thread, context);
-    deps.setAppState((current) => ({
-      ...current,
-      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
-      activeSessionTabID: tab.id,
-    }));
-  }
-
-  async function openTaskFromBoard(
-    threadID: string,
-    subthreadID: string,
-  ): Promise<void> {
-    const tabs = deps.getAppState().sessionTabs;
-    if (tabs.some((tab) => tab.id === threadSessionTabID(threadID))) {
-      await deps.selectSessionTab(threadSessionTabID(threadID));
-    } else {
-      await deps.selectThread(threadID);
-    }
-    deps.openConversationSubthreadByID(threadID, subthreadID);
   }
 
   function openMemorySettings(participantID?: string): void {
@@ -387,10 +311,7 @@ export function createCollaborationActions(
     dismissInstructionFilesEntry,
     openInstructions,
     openContextComposition,
-    openParticipantDM,
-    createGroupThread,
-    openTaskBoardTab,
-    openTaskFromBoard,
+    openCollaborationIntake,
     openMemorySettings,
   };
 }

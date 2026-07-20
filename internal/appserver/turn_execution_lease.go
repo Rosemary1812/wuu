@@ -53,11 +53,6 @@ func (s *Server) refreshDurableThreadHistoryLocked(th *threadState) error {
 	if th == nil || !th.PersistHistory {
 		return nil
 	}
-	if th.executionLease != nil {
-		if _, err := session.RecoverResidentAdmissionCompensationsForThread(s.rt.SessionDir, th.ID); err != nil {
-			return fmt.Errorf("recover pending resident admission for thread %q: %w", th.ID, err)
-		}
-	}
 	loaded, err := s.loadPersistedThreadSnapshot(th.ID)
 	if err != nil {
 		return fmt.Errorf("refresh durable state for thread %q: %w", th.ID, err)
@@ -75,7 +70,7 @@ func (s *Server) refreshDurableThreadHistoryLocked(th *threadState) error {
 	}
 	// Durable state is authoritative once execution ownership is ours. A
 	// different app-server may have completed turns, changed focus, compacted,
-	// or edited the thread since this process loaded its resident snapshot.
+	// or edited the thread since this process loaded its cached snapshot.
 	applySessionMetadata(th, loaded.metadata)
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, th.CWD)
 	th.History = cloneHistory(loaded.history)
@@ -89,9 +84,6 @@ func (s *Server) refreshDurableThreadHistoryLocked(th *threadState) error {
 	th.activeAgentItemID = ""
 	th.activeReasoningItemID = ""
 	th.toolItems = make(map[string]string)
-	if loaded.dmRetired {
-		th.ReadOnly = true
-	}
 	return nil
 }
 
@@ -116,10 +108,6 @@ func (s *Server) tryAcquireThreadMutationLease(threadID string) (*session.Thread
 	}
 	if !acquired {
 		return nil, threadExecutionBusyError(threadID)
-	}
-	if _, err := session.RecoverResidentAdmissionCompensationsForThread(s.rt.SessionDir, threadID); err != nil {
-		releaseThreadMutationLease(threadID, lease)
-		return nil, fmt.Errorf("recover pending resident admission before mutating thread %q: %w", threadID, err)
 	}
 	return lease, nil
 }
@@ -156,7 +144,6 @@ func (th *threadState) releaseThreadExecutionLeaseLocked() {
 		return
 	}
 	th.admissionReserved = false
-	th.compensationDeferred = false
 	if th.executionLease == nil {
 		return
 	}
@@ -165,24 +152,6 @@ func (th *threadState) releaseThreadExecutionLeaseLocked() {
 	if err := lease.Release(); err != nil {
 		providers.DebugLogf("release execution lease for thread %q: %v", th.ID, err)
 	}
-}
-
-// handoffResidentCompensationToJournalLocked hands a journaled prelaunch
-// rollback to the next Server during shutdown. Unlike abortStartedThreadTurn it
-// does not publish a terminal turn or schedule more work. The durable journal
-// remains the barrier until either a live peer or boot recovery resolves it.
-func (th *threadState) handoffResidentCompensationToJournalLocked(turnID string) error {
-	if th == nil || th.currentTurn != turnID {
-		return nil
-	}
-	th.admissionReserved = false
-	lease := th.executionLease
-	th.executionLease = nil
-	th.compensationDeferred = true
-	if lease == nil {
-		return nil
-	}
-	return lease.Release()
 }
 
 // abortStartedThreadTurn rolls back the in-memory execution state when a turn

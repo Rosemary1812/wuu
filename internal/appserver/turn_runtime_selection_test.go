@@ -71,7 +71,7 @@ func writeSelectionTestConfig(t *testing.T, path string) {
 	}
 }
 
-// A resident idle runtime must never run a selection it was not built for:
+// A cached idle runtime must never run a selection it was not built for:
 // when the thread's selection changes behind the runtime's back (e.g. another
 // app-server process repinned the session and admission refreshed th from
 // disk), reuse must detach the stale runtime and rebuild.
@@ -96,7 +96,7 @@ func TestEnsureThreadRuntimeRebuildsWhenThreadSelectionChanged(t *testing.T) {
 		t.Fatalf("ensureThreadRuntime reuse: %v", err)
 	}
 	if reused != first {
-		t.Fatal("unchanged selection should reuse the resident runtime")
+		t.Fatal("unchanged selection should reuse the cached runtime")
 	}
 
 	th.mu.Lock()
@@ -142,7 +142,7 @@ func TestEnsureThreadRuntimeHealsRemovedProviderPin(t *testing.T) {
 	}
 	th := srv.thread("healed-thread")
 	if th == nil {
-		t.Fatal("resumed thread is not resident")
+		t.Fatal("resumed thread is not cached")
 	}
 
 	built, err := srv.ensureThreadRuntime(th)
@@ -212,7 +212,7 @@ func TestEnsureThreadRuntimeHealKeepsRowPermissionUnderExecOverride(t *testing.T
 	}
 	th := srv.thread("override-heal")
 	if th == nil {
-		t.Fatal("resumed thread is not resident")
+		t.Fatal("resumed thread is not cached")
 	}
 
 	if _, err := srv.ensureThreadRuntime(th); err != nil {
@@ -320,7 +320,7 @@ func TestEnsureThreadRuntimeSelectionMismatchWithOutstandingAgentWorkFailsAdmiss
 }
 
 // Permission mode is re-resolved and applied to the toolkit on every turn, so
-// pin drift on the permission dimension alone must not churn the resident
+// pin drift on the permission dimension alone must not churn the cached
 // runtime (a rebuild would break the thread's prompt-cache prefix for
 // nothing).
 func TestEnsureThreadRuntimePermissionPinDriftDoesNotRebuild(t *testing.T) {
@@ -347,6 +347,6 @@ func TestEnsureThreadRuntimePermissionPinDriftDoesNotRebuild(t *testing.T) {
 		t.Fatalf("ensureThreadRuntime after pin drift: %v", err)
 	}
 	if reused != first {
-		t.Fatal("permission pin drift alone should not rebuild the resident runtime")
+		t.Fatal("permission pin drift alone should not rebuild the cached runtime")
 	}
 }

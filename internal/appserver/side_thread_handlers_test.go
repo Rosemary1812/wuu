@@ -754,9 +754,9 @@ func TestNewSideThreadRunnerInheritsThreadModel(t *testing.T) {
 }
 
 // mainThreadModelSelection sources the conversation's pinned model from the
-// resident thread when present and otherwise from the persisted session row, so
+// cached thread when present and otherwise from the persisted session row, so
 // a side chat opened on an idle thread still inherits the conversation's model.
-func TestMainThreadModelSelectionPrefersResidentThenSession(t *testing.T) {
+func TestMainThreadModelSelectionPrefersCacheThenSession(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	srv := New(rt, &lockedBuffer{})
 
@@ -770,18 +770,18 @@ func TestMainThreadModelSelectionPrefersResidentThenSession(t *testing.T) {
 		t.Fatalf("set runtime selection: %v", err)
 	}
 
-	// Non-resident: fall back to the persisted session row.
+	// Not cached: fall back to the persisted session row.
 	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "persisted-model" {
-		t.Fatalf("non-resident selection model = %q, want persisted-model", got.Model)
+		t.Fatalf("uncached selection model = %q, want persisted-model", got.Model)
 	}
 
-	// Resident thread state wins over the persisted row.
-	th := newThreadState("sel-thread", nil, "fake-provider", "resident-model", rt.RootDir, true, time.Now().UTC())
+	// Cached thread state wins over the persisted row.
+	th := newThreadState("sel-thread", nil, "fake-provider", "cached-model", rt.RootDir, true, time.Now().UTC())
 	srv.mu.Lock()
 	srv.threads[th.ID] = th
 	srv.mu.Unlock()
-	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "resident-model" {
-		t.Fatalf("resident selection model = %q, want resident-model", got.Model)
+	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "cached-model" {
+		t.Fatalf("cached selection model = %q, want cached-model", got.Model)
 	}
 
 	// Unknown thread yields an empty (workspace-default) selection.

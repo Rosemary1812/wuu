@@ -142,6 +142,26 @@ type fakeClient struct {
 	onChat    func(call int, req providers.ChatRequest)
 }
 
+func providersResponse(content string) providers.ChatResponse {
+	return providers.ChatResponse{
+		Content:      content,
+		StopReason:   "stop",
+		FinishReason: providers.FinishReasonStop,
+	}
+}
+
+func waitForOwnedWorkerExecutions(t *testing.T, control *agentcontrol.AgentControl, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := control.OwnedWorkerExecutionCount(); got == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("owned worker executions = %d, want %d", control.OwnedWorkerExecutionCount(), want)
+}
+
 func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
 	out := make([]providers.ChatMessage, 0, len(msgs))
 	for _, msg := range msgs {
@@ -1081,7 +1101,7 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
-func TestResidentThreadRestoresPersistedModelSelection(t *testing.T) {
+func TestCachedThreadRestoresPersistedModelSelection(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "default_provider": "fake-provider",
@@ -1103,7 +1123,7 @@ func TestResidentThreadRestoresPersistedModelSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(rt, &lockedBuffer{})
-	th, err := srv.ensureResidentThread("persisted-model-thread")
+	th, err := srv.ensureThreadLoaded("persisted-model-thread")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1798,7 +1818,7 @@ func TestRunningTurnUsesModelSnapshotAfterConfigUpdate(t *testing.T) {
 		t.Fatalf("update workspace default: %v", err)
 	}
 
-	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil, nil)
+	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil)
 
 	th.mu.Lock()
 	if len(th.Turns) != 1 || th.Turns[0].UsageModel != "fake-model" {
@@ -6518,7 +6538,7 @@ func TestServerWorktreeBoundTurnExecutesInWorktree(t *testing.T) {
 	// incidental CWD — must decide where tools execute.
 	forkTh := srv.thread(fork.ID)
 	if forkTh == nil {
-		t.Fatalf("fork thread %q not resident", fork.ID)
+		t.Fatalf("fork thread %q was not loaded", fork.ID)
 	}
 	forkTh.mu.Lock()
 	forkTh.CWD = rt.RootDir
@@ -7191,152 +7211,6 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	}
 }
 
-func TestServerThreadSearchFindsParticipantMessagesAndSkipsEnvelopeCopies(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	group, err := session.CreateWithMetadata(rt.SessionDir, "group-thread", rt.RootDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := session.AppendHistoryRecord(rt.SessionDir, group.ID, session.HistoryRecord{
-		Role:          "participant",
-		Content:       "The resident answer contains helios-signal evidence.",
-		Name:          "Mina",
-		ParticipantID: "prt-mina",
-		PostKind:      "result",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := session.UpdateIndex(rt.SessionDir, group.ID, 1, "group preview"); err != nil {
-		t.Fatal(err)
-	}
-	dm, err := session.CreateWithMetadata(rt.SessionDir, "dm-thread", rt.RootDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := session.BindDMParticipant(rt.SessionDir, dm.ID, "prt-mina"); err != nil {
-		t.Fatal(err)
-	}
-	if err := session.AppendHistoryRecord(rt.SessionDir, dm.ID, session.HistoryRecord{
-		Role:         "user",
-		Content:      "Envelope copy mentioning helios-signal should not duplicate search results.",
-		EnvelopeMeta: json.RawMessage(`[{"source_thread_id":"group-thread","addressed":true,"hop":0}]`),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	payload := map[string]any{
-		"id":     "search",
-		"method": MethodThreadSearch,
-		"params": ThreadSearchParams{Query: "helios-signal"},
-	}
-	rawPayload, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal search request: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), rawPayload); err != nil {
-		t.Fatalf("thread/search: %v", err)
-	}
-	msgs := parseOutput(t, out.String())
-	result := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "search")["result"])
-	if len(result.Results) != 1 || result.Results[0].Thread.ID != group.ID {
-		t.Fatalf("expected only group participant hit, got %+v", result.Results)
-	}
-	if !strings.Contains(result.Results[0].Snippet, "helios-signal") {
-		t.Fatalf("expected participant snippet, got %q", result.Results[0].Snippet)
-	}
-}
-
-func TestServerConversationSubthreadRPCs(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	sess, err := session.CreateWithMetadata(rt.SessionDir, "parent-thread", rt.RootDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	reviewerID := saveNamedParticipant(t, rt, "SubthreadReviewer", "reviewer", "")
-	if err := session.AddThreadMember(rt.SessionDir, sess.ID, reviewerID); err != nil {
-		t.Fatal(err)
-	}
-	sub, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		ID:                        "cth-review",
-		SessionID:                 sess.ID,
-		AnchorItemID:              "parent-thread-turn-0001-item-2",
-		Title:                     "Review details",
-		CreatedBy:                 humanReactionParticipantID,
-		ThreadOwnerParticipantID:  reviewerID,
-		ParentSeq:                 1,
-		ParentAuthorParticipantID: reviewerID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, rec := range []session.HistoryRecord{
-		{Role: "assistant", Content: "main response"},
-		{Role: "user", Content: "Need the details", ThreadID: sub.ID},
-		{Role: "participant", Content: "Found one issue", ParticipantID: reviewerID, PostKind: "update", ThreadID: sub.ID},
-	} {
-		if err := session.AppendHistoryRecord(rt.SessionDir, sess.ID, rec); err != nil {
-			t.Fatalf("append history: %v", err)
-		}
-	}
-
-	requests := []map[string]any{
-		{"id": "list", "method": MethodThreadListSub, "params": ThreadListSubParams{ThreadID: sess.ID}},
-		{"id": "open", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, SubthreadID: sub.ID}},
-		{"id": "reuse", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, AnchorItemID: sub.AnchorItemID}},
-		{"id": "resolve", "method": MethodThreadResolveSub, "params": ThreadResolveSubParams{ThreadID: sess.ID, SubthreadID: sub.ID, Resolved: true}},
-	}
-	for _, payload := range requests {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			t.Fatalf("marshal request: %v", err)
-		}
-		if err := srv.handleLine(context.Background(), raw); err != nil {
-			t.Fatalf("%s: %v", payload["id"], err)
-		}
-	}
-
-	msgs := parseOutput(t, out.String())
-	listed := remarshal[ThreadListSubResult](t, responseByID(t, msgs, "list")["result"])
-	if len(listed.Subthreads) != 1 {
-		t.Fatalf("expected one listed subthread, got %+v", listed.Subthreads)
-	}
-	if listed.Subthreads[0].ID != sub.ID || listed.Subthreads[0].ReplyCount != 2 || len(listed.Subthreads[0].Turns) != 0 {
-		t.Fatalf("unexpected listed subthread: %+v", listed.Subthreads[0])
-	}
-
-	opened := remarshal[ThreadOpenSubResult](t, responseByID(t, msgs, "open")["result"])
-	if opened.Subthread.ID != sub.ID || opened.Subthread.Title != "Review details" || opened.Subthread.ReplyCount != 2 {
-		t.Fatalf("unexpected opened subthread: %+v", opened.Subthread)
-	}
-	if len(opened.Subthread.Turns) != 1 || len(opened.Subthread.Turns[0].Items) != 2 {
-		t.Fatalf("expected subthread turns with two items, got %+v", opened.Subthread.Turns)
-	}
-	if opened.Subthread.Turns[0].Items[0].Text != "Need the details" || opened.Subthread.Turns[0].Items[1].Text != "Found one issue" {
-		t.Fatalf("unexpected subthread items: %+v", opened.Subthread.Turns[0].Items)
-	}
-
-	reused := remarshal[ThreadOpenSubResult](t, responseByID(t, msgs, "reuse")["result"])
-	if reused.Subthread.ID != sub.ID {
-		t.Fatalf("open by anchor should reuse existing subthread, got %+v", reused.Subthread)
-	}
-	stored, err := session.ListConversationThreads(rt.SessionDir, sess.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stored) != 1 {
-		t.Fatalf("open by anchor created duplicate subthreads: %+v", stored)
-	}
-
-	resolved := remarshal[ThreadResolveSubResult](t, responseByID(t, msgs, "resolve")["result"])
-	if resolved.Subthread.ID != sub.ID || resolved.Subthread.Status != "resolved" {
-		t.Fatalf("unexpected resolved subthread: %+v", resolved.Subthread)
-	}
-}
-
 func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
@@ -7420,13 +7294,6 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	}
 	if len(thread.Turns) != 0 {
 		t.Fatalf("thread/list must not synthesize subagent task-card turns, got %+v", thread.Turns)
-	}
-	subthreads, err := session.ListConversationThreads(rt.SessionDir, thread.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(subthreads) != 0 {
-		t.Fatalf("thread/list must not create task-card subthreads, got %+v", subthreads)
 	}
 }
 
@@ -8254,13 +8121,13 @@ func TestServerThreadResumeDisplaysHistoryBeforeProviderCheckpoint(t *testing.T)
 	if got := result.Thread.Turns[0].Items[0].Text; got != "older question" {
 		t.Fatalf("first displayed question = %q, want older question", got)
 	}
-	resident := srv.thread(sessionID)
-	if resident == nil {
-		t.Fatal("expected resident thread")
+	cached := srv.thread(sessionID)
+	if cached == nil {
+		t.Fatal("expected cached thread")
 	}
-	resident.mu.Lock()
-	providerHistory := append([]providers.ChatMessage(nil), resident.History...)
-	resident.mu.Unlock()
+	cached.mu.Lock()
+	providerHistory := append([]providers.ChatMessage(nil), cached.History...)
+	cached.mu.Unlock()
 	if len(providerHistory) != 3 || providerHistory[1].Content != "recent question" {
 		t.Fatalf("provider history should stay checkpointed, got %+v", providerHistory)
 	}
@@ -8964,7 +8831,7 @@ func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 	}
 }
 
-func TestServerPrunesIdleResidentThreads(t *testing.T) {
+func TestServerPrunesIdleCachedThreads(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	srv := New(rt, &lockedBuffer{})
 	now := time.Now().UTC()
@@ -8982,14 +8849,14 @@ func TestServerPrunesIdleResidentThreads(t *testing.T) {
 	srv.threads[queued.ID] = queued
 	srv.enqueueQueuedUserTurn(queued.ID, queuedTurn{id: "queued-1", msg: providers.ChatMessage{Role: "user", Content: "later"}})
 
-	for i := 0; i < residentThreadLimit+4; i++ {
+	for i := 0; i < cachedThreadLimit+4; i++ {
 		id := fmt.Sprintf("idle-%02d", i)
 		th := newThreadState(id, nil, rt.ProviderName, rt.Model, rt.RootDir, true, now.Add(time.Duration(i)*time.Minute))
 		th.LastAccessedAt = now.Add(time.Duration(i) * time.Minute)
 		srv.threads[id] = th
 	}
 
-	srv.pruneResidentThreads(keep.ID)
+	srv.pruneCachedThreads(keep.ID)
 
 	if srv.thread(keep.ID) == nil {
 		t.Fatal("kept thread was pruned")
@@ -9003,8 +8870,8 @@ func TestServerPrunesIdleResidentThreads(t *testing.T) {
 	srv.mu.Lock()
 	count := len(srv.threads)
 	srv.mu.Unlock()
-	if count > residentThreadLimit {
-		t.Fatalf("resident thread count should be bounded, got %d", count)
+	if count > cachedThreadLimit {
+		t.Fatalf("cached thread count should be bounded, got %d", count)
 	}
 }
 
@@ -9028,7 +8895,7 @@ func TestServerTurnStartReloadsPrunedPersistentThread(t *testing.T) {
 
 	th := srv.thread(threadID)
 	if th == nil {
-		t.Fatal("thread should be reloaded into the resident set")
+		t.Fatal("thread should be reloaded into the cache")
 	}
 	th.mu.Lock()
 	visible := visibleMessagesForTest(th.History)
@@ -9526,69 +9393,6 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 	if got := turnCompletedCountForThread(t, out, threadID); got != 1 {
 		t.Fatalf("expected awaited agent completion not to trigger a second root turn, got %d; output:\n%s", got, out.String())
 	}
-}
-
-func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T) {
-	workerRequests := make(chan providers.ChatRequest, 1)
-	client := &fakeClient{
-		response: providers.ChatResponse{Content: "agent done"},
-		onChat: func(_ int, req providers.ChatRequest) {
-			select {
-			case workerRequests <- req:
-			default:
-			}
-		},
-	}
-	rt := newTestRuntime(t, client)
-	kit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	rt.Toolkit = kit
-
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
-		t.Fatalf("thread/start: %v", err)
-	}
-	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
-
-	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"task_name":"reviewer_card","description":"Review auth changes","prompt":"Post a concise result for the auth review."}}`, threadID)
-	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
-		t.Fatalf("participant/start: %v", err)
-	}
-	resp := responseByID(t, parseOutput(t, out.String()), "participant")
-	if got := resp["error"]; got != nil {
-		t.Fatalf("participant/start returned error: %v; output:\n%s", got, out.String())
-	}
-	result := remarshal[ParticipantStartResult](t, resp["result"])
-	if result.Agent.ID == "" || result.Agent.Participant == nil {
-		t.Fatalf("expected started participant agent with identity, got %+v", result.Agent)
-	}
-	th := srv.thread(threadID)
-	if th == nil || th.execRuntime == nil || th.execRuntime.AgentControl == nil || !th.execRuntime.AgentControl.ParticipantSpeechEnabled(result.Agent.ID) {
-		t.Fatalf("participant agent %q should be speech-authorized", result.Agent.ID)
-	}
-	t.Cleanup(func() {
-		releaseThreadRuntime(th)
-	})
-
-	var req providers.ChatRequest
-	select {
-	case req = <-workerRequests:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timed out waiting for participant worker request; output:\n%s", out.String())
-	}
-	defs := toolDefinitionNames(req.Tools)
-	if !defs["post_message"] {
-		t.Fatalf("conversation-native participant request must directly include post_message, got %v", defs)
-	}
-	if !defs["manage_participant"] {
-		t.Fatalf("conversation-native participant request must directly include manage_participant, got %v", defs)
-	}
-	waitForAgentStatus(t, th.execRuntime.AgentControl, result.Agent.ID, subagent.StatusCompleted)
-	waitForMethod(t, out, NotificationAgentMailbox)
-	waitForMethod(t, out, NotificationItemCompleted)
 }
 
 func TestServerParticipantProfileLifecycle(t *testing.T) {

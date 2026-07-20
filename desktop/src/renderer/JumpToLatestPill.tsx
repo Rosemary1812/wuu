@@ -13,34 +13,9 @@ import {
 import { useI18n } from "./i18n";
 
 /**
- * JumpToLatestPill — self-contained "scroll to bottom" pill.
- *
- * Issue #5 desktop fix: replaces the previous position-absolute pill that
- * was centered on the wrong containing block. This component subscribes to
- * its own scroll listener on `containerRef.current` so `scrolledAway` is
- * computed against the same element the click smooth-scrolls to bottom, and
- * subscribes to a ResizeObserver so a thread-panel resize re-evaluates the
- * threshold.
- *
- * Two positioning modes:
- *
- *  - Default (no `bottomAnchorRef`): the pill renders as a direct child of
- *    the scroll container with `position: sticky; left: 50%` — centered on
- *    the container's visible width. Used by the reply-subthread panel, where
- *    the scroll body's bottom edge sits exactly at the panel composer's top
- *    (they are flex siblings), so sticky-bottom lands the pill correctly.
- *
- *  - Anchored (`bottomAnchorRef` given): the pill is PORTALED to
- *    document.body and positioned `fixed`, measured to sit just above the
- *    anchor element (the dock composer). The main conversation's scroll
- *    container (`.scroll-region`) does NOT line up with the floating dock
- *    composer in the chat/group view — the sticky-bottom variant pinned the
- *    pill to the scroll container's own bottom, which floated mid-screen.
- *    Anchoring to the composer element itself is correct by construction,
- *    independent of the scroll container's height, `--dock-composer-height`,
- *    or the nested chat-thread overflow. Portaling to body escapes the
- *    scroll region's `contain: layout paint`, which would otherwise trap a
- *    `position: fixed` child.
+ * Self-contained "scroll to bottom" pill. It watches the same container it
+ * scrolls, then portals to document.body and stays measured above the dock
+ * composer so nested overflow and paint containment cannot offset it.
  */
 type JumpToLatestPillProps = {
   /**
@@ -49,12 +24,10 @@ type JumpToLatestPillProps = {
    */
   containerRef: RefObject<HTMLElement | null>;
   /**
-   * Optional element the pill should float just above (the dock composer).
-   * When this prop is PRESENT the pill switches to the portaled/measured
-   * "anchored" mode (even while the element is transiently null before mount);
-   * when the prop is omitted entirely it stays an in-container sticky pill.
+   * Element the pill should float just above (the dock composer). It may be
+   * transiently null before the composer mounts.
    */
-  bottomAnchor?: HTMLElement | null;
+  bottomAnchor: HTMLElement | null;
   /**
    * Distance (in px) from the bottom of the scroll container below which the
    * pill is considered "scrolled away" and shown. Default 80 matches the
@@ -92,9 +65,6 @@ export function JumpToLatestPill({
   const accessibleLabel = label ?? t("conversation.jumpToLatest");
   const [scrolledAway, setScrolledAway] = useState(false);
   const [position, setPosition] = useState<PillPosition | null>(null);
-  // The prop being PRESENT (even as null) selects anchored/portaled mode. The
-  // subthread panel omits it and keeps the in-container sticky pill.
-  const anchored = bottomAnchor !== undefined;
 
   // Mirror the scrolled-away boolean to the parent whenever it flips. The
   // parent uses this to swap a sibling progress pill out of the same
@@ -130,9 +100,9 @@ export function JumpToLatestPill({
     scheduleUpdate();
     node.addEventListener("scroll", scheduleUpdate, { passive: true });
 
-    // Re-evaluate on container and content resize. A thread-panel drag mutates
-    // the container's `clientHeight`, while expanding or collapsing a fold
-    // mutates its child's height and therefore the container's `scrollHeight`.
+    // Re-evaluate on container and content resize. Viewport changes mutate the
+    // container's `clientHeight`, while expanding or collapsing a fold mutates
+    // its child's height and therefore the container's `scrollHeight`.
     // Observing both prevents a transient fold layout from leaving the pill
     // stuck in its pre-settle state.
     // Guarded: test environments (jsdom) have no ResizeObserver, and the
@@ -184,12 +154,12 @@ export function JumpToLatestPill({
     });
   }, [containerRef, bottomAnchor]);
 
-  // Measured positioning for the anchored (portaled) variant. Recomputes on
+  // Measured positioning for the portaled pill. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the
   // composer, moving its top edge). The composer frame is observed separately
   // because expanded mode moves it upward without growing the outer anchor.
   useEffect(() => {
-    if (!anchored || !scrolledAway || !bottomAnchor) {
+    if (!scrolledAway || !bottomAnchor) {
       return undefined;
     }
     const resizeSettleRecompute =
@@ -253,7 +223,7 @@ export function JumpToLatestPill({
       anchorChildObserver?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, [anchored, bottomAnchor, scrolledAway, recomputePosition, containerRef]);
+  }, [bottomAnchor, scrolledAway, recomputePosition, containerRef]);
 
   if (!scrolledAway) {
     return null;
@@ -288,35 +258,22 @@ export function JumpToLatestPill({
     </>
   );
 
-  if (anchored) {
-    if (!bottomAnchor || !position) {
-      return null;
-    }
-    return createPortal(
-      <button
-        type="button"
-        className="jump-to-latest-pill jump-to-latest-pill-anchored"
-        aria-label={accessibleLabel}
-        style={{
-          left: `${position.left}px`,
-          bottom: `${position.bottom}px`,
-        }}
-        onClick={scrollToBottom}
-      >
-        {pillBody}
-      </button>,
-      document.body,
-    );
+  if (!bottomAnchor || !position) {
+    return null;
   }
-
-  return (
+  return createPortal(
     <button
       type="button"
-      className="jump-to-latest-pill jump-to-latest-pill-sticky-centered"
+      className="jump-to-latest-pill jump-to-latest-pill-anchored"
       aria-label={accessibleLabel}
+      style={{
+        left: `${position.left}px`,
+        bottom: `${position.bottom}px`,
+      }}
       onClick={scrollToBottom}
     >
       {pillBody}
-    </button>
+    </button>,
+    document.body,
   );
 }

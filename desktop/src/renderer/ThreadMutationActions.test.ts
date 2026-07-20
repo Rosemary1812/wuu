@@ -75,8 +75,6 @@ function installWuuApi(baseThread: Thread): {
       archiveThread,
       deleteThread,
       renameThread: vi.fn().mockResolvedValue({ thread: baseThread }),
-      addThreadMember: vi.fn().mockResolvedValue({ thread: baseThread }),
-      removeThreadMember: vi.fn().mockResolvedValue({ thread: baseThread }),
     },
   });
   return { pinThread, archiveThread, deleteThread };

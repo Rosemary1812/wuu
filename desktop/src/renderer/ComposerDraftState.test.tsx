@@ -118,28 +118,6 @@ function stubFileReader(result: string): void {
   });
 }
 
-function stubRevokeObjectURL(): ReturnType<typeof vi.fn> {
-  const original = URL.revokeObjectURL;
-  const revokeObjectURL = vi.fn();
-  Object.defineProperty(URL, "revokeObjectURL", {
-    configurable: true,
-    writable: true,
-    value: revokeObjectURL,
-  });
-  cleanupCallbacks.push(() => {
-    if (original) {
-      Object.defineProperty(URL, "revokeObjectURL", {
-        configurable: true,
-        writable: true,
-        value: original,
-      });
-      return;
-    }
-    delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
-  });
-  return revokeObjectURL;
-}
-
 describe("useComposerDraftState", () => {
   it("rejects unsupported primary composer attachments without changing the draft", async () => {
     const hook = await renderComposerDraftState();
@@ -242,26 +220,4 @@ describe("useComposerDraftState", () => {
     expect(snapshot.files[0]).not.toBe(hook.get().composerFiles[0]);
   });
 
-  it("revokes optimistic preview URLs when removing subthread images", async () => {
-    const hook = await renderComposerDraftState();
-    const revokeObjectURL = stubRevokeObjectURL();
-    const image: ComposerImage = {
-      id: "pending-image",
-      media_type: "image/png",
-      data: "",
-      previewSrc: "blob:pending-image",
-    };
-
-    act(() => {
-      hook.get().setSubthreadComposerDraft({
-        prompt: "",
-        images: [image],
-        files: [],
-      });
-      hook.get().removeSubthreadComposerImage("pending-image");
-    });
-
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:pending-image");
-    expect(hook.get().subthreadComposerDraft.images).toEqual([]);
-  });
 });

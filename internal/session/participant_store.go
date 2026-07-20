@@ -44,9 +44,9 @@ func UpsertParticipant(sessDir string, p participant.Participant) error {
 	}
 	_, err = db.Exec(`
 INSERT INTO participants (
-	id, kind, name, role, avatar, tagline, workspace, model, forked_from,
+	id, kind, name, role, avatar, tagline, workspace, model,
 	created_at, updated_at, retired_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	kind = excluded.kind,
 	name = excluded.name,
@@ -55,10 +55,9 @@ ON CONFLICT(id) DO UPDATE SET
 	tagline = excluded.tagline,
 	workspace = excluded.workspace,
 	model = excluded.model,
-	forked_from = excluded.forked_from,
 	updated_at = excluded.updated_at,
 	retired_at = excluded.retired_at`,
-		p.ID, string(p.Kind), p.Name, p.Role, p.Avatar, p.Tagline, p.Workspace, p.Model, p.ForkedFrom,
+		p.ID, string(p.Kind), p.Name, p.Role, p.Avatar, p.Tagline, p.Workspace, p.Model,
 		timeText(p.CreatedAt), timeText(p.UpdatedAt), nullableTimeText(p.RetiredAt),
 	)
 	if err != nil {
@@ -247,7 +246,7 @@ func GetParticipant(sessDir, id string) (participant.Participant, error) {
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, kind, name, role, avatar, tagline, workspace, model, forked_from,
+SELECT id, kind, name, role, avatar, tagline, workspace, model,
        created_at, updated_at, retired_at
 FROM participants
 WHERE id = ?`, strings.TrimSpace(id))
@@ -271,7 +270,7 @@ func ListParticipants(sessDir string, kind participant.Kind) ([]participant.Part
 	defer db.Close()
 
 	query := `
-SELECT id, kind, name, role, avatar, tagline, workspace, model, forked_from,
+SELECT id, kind, name, role, avatar, tagline, workspace, model,
        created_at, updated_at, retired_at
 FROM participants
 WHERE retired_at IS NULL`
@@ -322,20 +321,7 @@ func CountParticipantsByKind(sessDir string, kind participant.Kind) (int, error)
 	return count, nil
 }
 
-// RetireParticipant marks a participant as retired and, in the same
-// transaction, removes the rows derived from its active identity:
-//
-//   - thread_members: the participant leaves every group/conversation thread
-//     it was a member of. The CASCADE FK on thread_members only fires on
-//     participant DELETE; retire is an UPDATE, so the rows are removed here
-//     explicitly.
-//   - conversation_thread_members: same rationale — the participant leaves the
-//     weak-isolation subset of every reply subthread it was in, so it is no
-//     longer pushed that subthread's traffic.
-//   - resident_inbox: unconsumed envelopes are dropped — a retired resident
-//     never drains its inbox again, so pending envelopes would sit forever.
-//     Consumed envelopes are kept as delivery history.
-//
+// RetireParticipant marks a participant as retired.
 // The retired_at stamp uses COALESCE so retiring an already-retired
 // participant is idempotent (the original retirement time is preserved),
 // which lets callers safely re-run the retire cleanup protocol after a
@@ -357,20 +343,6 @@ func RetireParticipant(sessDir, id string) error {
 	}
 	defer tx.Rollback()
 
-	var activeOwnerships int
-	if err := tx.QueryRow(`
-SELECT COUNT(*)
-FROM conversation_threads
-WHERE (status = ? AND thread_owner_participant_id = ?)
-   OR (status = ? AND lead_participant_id = ?)`,
-		string(ConversationThreadOpen), id, string(ConversationThreadTask), id,
-	).Scan(&activeOwnerships); err != nil {
-		return fmt.Errorf("retire participant: inspect active thread ownership: %w", err)
-	}
-	if activeOwnerships > 0 {
-		return fmt.Errorf("retire participant %q: still owns an open Thread or leads an active Task", id)
-	}
-
 	now := time.Now().UTC()
 	res, err := tx.Exec(`
 UPDATE participants
@@ -385,15 +357,6 @@ WHERE id = ?`, timeText(now), timeText(now), id)
 	}
 	if affected == 0 {
 		return fmt.Errorf("%w: %q", ErrParticipantNotFound, id)
-	}
-	if _, err := tx.Exec(`DELETE FROM thread_members WHERE participant_id = ?`, id); err != nil {
-		return fmt.Errorf("retire participant: remove thread members: %w", err)
-	}
-	if _, err := tx.Exec(`DELETE FROM conversation_thread_members WHERE participant_id = ?`, id); err != nil {
-		return fmt.Errorf("retire participant: remove conversation thread members: %w", err)
-	}
-	if _, err := tx.Exec(`DELETE FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NULL`, id); err != nil {
-		return fmt.Errorf("retire participant: drop pending envelopes: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit retire participant: %w", err)
@@ -419,7 +382,7 @@ func FindRetiredParticipantByName(sessDir string, kind participant.Kind, name st
 	defer db.Close()
 
 	query := `
-SELECT id, kind, name, role, avatar, tagline, workspace, model, forked_from,
+SELECT id, kind, name, role, avatar, tagline, workspace, model,
        created_at, updated_at, retired_at
 FROM participants
 WHERE retired_at IS NOT NULL`
@@ -481,7 +444,7 @@ func scanParticipant(scanner interface {
 	var kind, createdAt, updatedAt string
 	var retiredAt sql.NullString
 	if err := scanner.Scan(
-		&p.ID, &kind, &p.Name, &p.Role, &p.Avatar, &p.Tagline, &p.Workspace, &p.Model, &p.ForkedFrom,
+		&p.ID, &kind, &p.Name, &p.Role, &p.Avatar, &p.Tagline, &p.Workspace, &p.Model,
 		&createdAt, &updatedAt, &retiredAt,
 	); err != nil {
 		return participant.Participant{}, err

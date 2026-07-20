@@ -261,7 +261,7 @@ type ThreadRuntime struct {
 	// Selection is the (trimmed, unresolved) thread model selection this
 	// runtime was built for, with PermissionMode always carrying the
 	// effective normalized mode so a constructor-built stamp is never the
-	// zero value. It is the reuse invariant's comparison key: a resident
+	// zero value. It is the reuse invariant's comparison key: a cached
 	// runtime must never run a turn after the thread's selection changed
 	// behind its back (e.g. another app-server process repinned the
 	// session), so callers compare this stamp before reusing an idle runtime.
@@ -565,10 +565,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetAgentControl(agentControl)
-				participantSpeech := agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID)
-				// Ultra workers compile the orchestrating worker surface;
-				// conversation-native participant runs keep their own surface.
-				if meta.Ultra && !participantSpeech {
+				if meta.Ultra {
 					wkit.ConfigureWorkerSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, true)
 				} else {
 					wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
@@ -577,16 +574,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 				wkit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
-				applyWorkerToolFilter(wkit, wt, participantSpeech, meta.Ultra)
-				// Group management is resident-only; spawned runs never
-				// receive the backend.
-				wkit.SetGroupManager(nil)
-				if participantSpeech {
-					wkit.SetParticipantSpeechEnabled(true)
-					// Participant task runs share the resident file scope:
-					// worker home + registered workspaces + system temp.
-					wkit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
-				}
+				applyWorkerToolFilter(wkit, wt, meta.Ultra)
 				return wkit, nil
 			},
 			WorkerWakeAuthority: workerWakeAuthority(toolkit),
@@ -1065,7 +1053,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		ConfigureToolkitPermissions(kit, s.Permissions)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
-		kit.SetConversationSessionDir(s.SessionDir)
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetBrowserTabs(browserTabs)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
@@ -1157,10 +1144,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					// the standard boundary roots, but not the user notebook
 					// extra.
 					workerKit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
-					participantSpeech := control != nil && control.ParticipantSpeechEnabled(meta.ID)
-					// Ultra workers compile the orchestrating worker surface;
-					// conversation-native participant runs keep their own surface.
-					if meta.Ultra && !participantSpeech {
+					if meta.Ultra {
 						workerKit.ConfigureWorkerSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, true)
 					} else {
 						workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
@@ -1183,22 +1167,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
 					workerKit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
-					applyWorkerToolFilter(workerKit, wt, participantSpeech, meta.Ultra)
-					// Group management is resident-only; spawned runs (task
-					// runs and ordinary subagents) never receive the backend.
-					workerKit.SetGroupManager(nil)
-					if participantSpeech {
-						workerKit.SetParticipantSpeechEnabled(true)
-						// Participant task runs share the resident file scope:
-						// worker home + registered workspaces + system temp
-						// (sidebar-groups-andy-workspaces.md §5.2).
-						workerKit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
-					} else {
-						workerKit.SetParticipantIdentity("")
-						workerKit.SetParticipantSpeech(nil)
-						workerKit.SetParticipantSpeechEnabled(false)
-						workerKit.SetResidentParticipantEnabled(false)
-					}
+					applyWorkerToolFilter(workerKit, wt, meta.Ultra)
 					return workerKit, nil
 				},
 				WorkerWakeAuthority: workerWakeAuthority(kit),
@@ -1410,13 +1379,13 @@ func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []provid
 	}
 }
 
-func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType, participantSpeech, ultra bool) {
+func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType, ultra bool) {
 	if kit == nil {
 		return
 	}
 	fullNames := kit.SurfaceToolNames()
 
-	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames, participantSpeech, ultra)
+	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames, ultra)
 	allowedSet := make(map[string]struct{}, len(allowed))
 	for _, name := range allowed {
 		allowedSet[name] = struct{}{}

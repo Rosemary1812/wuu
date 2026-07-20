@@ -73,9 +73,6 @@ func (th *threadState) snapshotLocked() Thread {
 		UpdatedAt:        th.UpdatedAt,
 		Turns:            cloneTurns(th.Turns),
 		BrowserState:     cloneThreadBrowserState(th.BrowserState),
-		DMParticipantID:  th.DMParticipantID,
-		Group:            th.Group,
-		FocusWorkspace:   th.FocusWorkspace,
 	}
 }
 
@@ -667,14 +664,6 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 			out = append(out, itemStarted(th.ID, turnID, item, now))
 			return out
 		}
-		// A compaction pass just folded this thread's older history into a
-		// summary that may not have preserved the workspace-focus
-		// declaration item (2026-07-03-workspace-focus.md §7). Mark the
-		// declaration stale so the next applyTurnWorkspaceFocus call
-		// re-declares the focus even if the requested value still matches
-		// the stored one — otherwise the idempotent no-op path would leave
-		// the agent with no focus reminder anywhere in its live context.
-		th.focusDeclarationStale = true
 		item, replacesPending := th.pendingContextCompactionItemLocked(turnID, now)
 		if !replacesPending {
 			item.ID = th.nextItemIDLocked(turnID)
@@ -1012,32 +1001,6 @@ func (th *threadState) upsertItemLocked(turnID string, item ThreadItem, now time
 	th.UpdatedAt = now
 }
 
-func (th *threadState) appendParticipantMessageLocked(rec persistedMessage, now time.Time, resolve participantSummaryResolver) (Turn, ThreadItem, bool) {
-	turnID := strings.TrimSpace(th.currentTurn)
-	createdTurn := false
-	if turnID == "" {
-		if len(th.Turns) > 0 {
-			turnID = th.Turns[len(th.Turns)-1].ID
-		} else {
-			turnID = fmt.Sprintf("%s-turn-%04d", th.ID, 1)
-			createdTurn = true
-		}
-	}
-	turn := th.ensureTurnLocked(turnID, now)
-	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
-	item := participantMessageItem(th.nextItemIDLocked(turnID), rec, resolve)
-	if msg, ok := participantModelContextMessage(rec); ok {
-		th.History = append(th.History, msg)
-	}
-	turn.Items = append(turn.Items, item)
-	if createdTurn && !th.running {
-		turn.Status = TurnStatusCompleted
-	}
-	th.replaceTurnLocked(turn)
-	th.UpdatedAt = now
-	return turn, item, createdTurn
-}
-
 func (th *threadState) nextItemIDLocked(turnID string) string {
 	th.nextItemIndex++
 	return fmt.Sprintf("%s-item-%d", turnID, th.nextItemIndex)
@@ -1078,24 +1041,12 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 type participantSummaryResolver func(string) (participant.Summary, bool)
 
 func turnsFromPersistedHistory(threadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
-	return turnsFromPersistedHistoryInScope(threadID, "", history, now, resolve)
-}
-
-func turnsFromConversationSubthreadHistory(parentThreadID, subthreadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
-	scopeID := strings.TrimSpace(parentThreadID)
-	if id := strings.TrimSpace(subthreadID); id != "" {
-		scopeID = scopeID + "-" + id
-	}
-	return turnsFromPersistedHistoryInScope(scopeID, subthreadID, history, now, resolve)
-}
-
-func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
+	_ = resolve
 	var turns []Turn
 	var current *Turn
 	itemIndex := 0
 	toolItems := make(map[string]int)
 	var pendingCompactions []ThreadItem
-	subthreadID = strings.TrimSpace(subthreadID)
 	nextItemID := func(turnID string) string {
 		itemIndex++
 		return fmt.Sprintf("%s-item-%d", turnID, itemIndex)
@@ -1125,17 +1076,7 @@ func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []pe
 		current = &turns[len(turns)-1]
 	}
 	for _, rec := range history {
-		if strings.TrimSpace(rec.ThreadID) != subthreadID {
-			continue
-		}
 		if rec.Hidden {
-			continue
-		}
-		if isParticipantPersistedMessage(rec) {
-			if current == nil {
-				startSyntheticTurn()
-			}
-			appendItem(participantMessageItem(nextItemID(current.ID), rec, resolve))
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
@@ -1314,18 +1255,16 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	switch msg.Role {
 	case "user":
 		return ThreadItem{
-			ID:           id,
-			Seq:          msg.Seq,
-			SourceID:     msg.ClientID,
-			Type:         ThreadItemUserMessage,
-			Status:       ThreadItemStatusCompleted,
-			Role:         "user",
-			Text:         chatMessageDisplayContent(msg),
-			Images:       threadItemImages(msg.Images),
-			Files:        threadItemFiles(msg.Files),
-			Name:         strings.TrimSpace(msg.Name),
-			EnvelopeMeta: append(json.RawMessage(nil), msg.EnvelopeMeta...),
-			FocusMeta:    append(json.RawMessage(nil), msg.FocusMeta...),
+			ID:       id,
+			Seq:      msg.Seq,
+			SourceID: msg.ClientID,
+			Type:     ThreadItemUserMessage,
+			Status:   ThreadItemStatusCompleted,
+			Role:     "user",
+			Text:     chatMessageDisplayContent(msg),
+			Images:   threadItemImages(msg.Images),
+			Files:    threadItemFiles(msg.Files),
+			Name:     strings.TrimSpace(msg.Name),
 		}
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {
@@ -1384,8 +1323,6 @@ func chatMessageFromPersistedMessage(rec persistedMessage) providers.ChatMessage
 		StopReason:           strings.ToLower(strings.TrimSpace(rec.StopReason)),
 		Truncated:            rec.Truncated,
 		DiscoveredTools:      providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
-		EnvelopeMeta:         append(json.RawMessage(nil), rec.EnvelopeMeta...),
-		FocusMeta:            append(json.RawMessage(nil), rec.FocusMeta...),
 	}
 	for _, image := range rec.Images {
 		if strings.TrimSpace(image.Data) == "" {
@@ -1421,111 +1358,6 @@ func chatMessageFromPersistedMessage(rec persistedMessage) providers.ChatMessage
 		})
 	}
 	return msg
-}
-
-func isParticipantPersistedMessage(rec persistedMessage) bool {
-	role := strings.ToLower(strings.TrimSpace(rec.Role))
-	return role == "participant" || (strings.TrimSpace(rec.ParticipantID) != "" && strings.TrimSpace(rec.PostKind) != "")
-}
-
-// inputImagesFromPersisted adapts stored participant-post images to the shared
-// providers.InputImage shape threadItemImages consumes.
-func inputImagesFromPersisted(images []persistedImage) []providers.InputImage {
-	if len(images) == 0 {
-		return nil
-	}
-	out := make([]providers.InputImage, 0, len(images))
-	for _, image := range images {
-		out = append(out, providers.InputImage{
-			MediaType: image.MediaType,
-			Data:      image.Data,
-			Width:     image.Width,
-			Height:    image.Height,
-		})
-	}
-	return out
-}
-
-// inputFilesFromPersisted adapts stored participant-post files to the shared
-// providers.InputFile shape threadItemFiles consumes.
-func inputFilesFromPersisted(files []persistedFile) []providers.InputFile {
-	if len(files) == 0 {
-		return nil
-	}
-	out := make([]providers.InputFile, 0, len(files))
-	for _, file := range files {
-		out = append(out, providers.InputFile{
-			MediaType: file.MediaType,
-			Data:      file.Data,
-			Filename:  file.Filename,
-		})
-	}
-	return out
-}
-
-func participantMessageItem(id string, rec persistedMessage, resolve participantSummaryResolver) ThreadItem {
-	text := rec.DisplayContent
-	if strings.TrimSpace(text) == "" {
-		text = rec.Content
-	}
-	postKind := strings.ToLower(strings.TrimSpace(rec.PostKind))
-	if postKind == "" {
-		postKind = "result"
-	}
-	item := ThreadItem{
-		ID:       id,
-		Seq:      rec.Seq,
-		SourceID: rec.ClientID,
-		AgentID:  participantMessageAgentID(rec),
-		Type:     ThreadItemParticipantMsg,
-		Status:   ThreadItemStatusCompleted,
-		Role:     "participant",
-		Text:     text,
-		PostKind: postKind,
-		Images:   threadItemImages(inputImagesFromPersisted(rec.Images)),
-		Files:    threadItemFiles(inputFilesFromPersisted(rec.Files)),
-	}
-	if id := strings.TrimSpace(rec.ParticipantID); id != "" {
-		if resolve != nil {
-			if summary, ok := resolve(id); ok {
-				item.Participant = &summary
-				return item
-			}
-		}
-		summary := participant.Summary{
-			ID:   id,
-			Name: firstNonEmpty(strings.TrimSpace(rec.Name), "Participant"),
-			Kind: string(participant.KindEphemeral),
-		}
-		item.Participant = &summary
-	}
-	return item
-}
-
-func participantMessageAgentID(rec persistedMessage) string {
-	id := strings.TrimSpace(rec.ClientID)
-	if id == "" {
-		return ""
-	}
-	if dash := strings.LastIndex(id, "-"); dash >= 0 {
-		suffix := id[dash+1:]
-		if len(suffix) >= 12 && allASCIIDigits(suffix) {
-			return ""
-		}
-	}
-	return id
-}
-
-func allASCIIDigits(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func isToolResultMessage(msg providers.ChatMessage) bool {

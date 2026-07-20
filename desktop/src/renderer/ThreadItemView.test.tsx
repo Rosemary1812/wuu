@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { streamTextKey, streamTextStore } from "./StreamText";
 import { ThreadItemView } from "./ThreadItemView";
@@ -27,38 +27,18 @@ function makeUserMessage(text: string, id = "user-1"): ThreadItem {
   };
 }
 
-function makeParticipantMessage(): ThreadItem {
-  return {
-    id: "participant-1",
-    type: "participant_message",
-    status: "completed",
-    text: "Done from the specialist.",
-    agent_id: "agent-42",
-    post_kind: "result",
-    participant: {
-      id: "agent-42",
-      name: "Reviewer",
-      kind: "agent",
-    },
-  };
-}
-
 function render({
   item,
   turnStatus,
   actionableAgentMessageID,
   latestAgentMessageID,
   streaming,
-  onOpenAgent,
-  onOpenSubthread,
 }: {
   item: ThreadItem;
   turnStatus: Turn["status"];
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   streaming: boolean;
-  onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
 }): void {
   if (!container) {
     container = document.createElement("div");
@@ -75,8 +55,6 @@ function render({
         actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={() => {}}
-        onOpenAgent={onOpenAgent}
-        onOpenSubthread={onOpenSubthread}
       />,
     );
   });
@@ -316,29 +294,6 @@ describe("ThreadItemView", () => {
     expect(streamTextStore.has(key)).toBe(false);
   });
 
-  it("opens the source agent from a participant result card", () => {
-    const onOpenAgent = vi.fn();
-
-    render({
-      item: makeParticipantMessage(),
-      turnStatus: "completed",
-      streaming: false,
-      onOpenAgent,
-    });
-
-    const openLink = container?.querySelector<HTMLAnchorElement>(
-      'a[aria-label="查看完整过程"]',
-    );
-    expect(openLink).not.toBeNull();
-    expect(openLink?.textContent).toBe("查看完整过程");
-
-    act(() => {
-      openLink?.click();
-    });
-
-    expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
-  });
-
   it("renders a subagent completion handoff with the shared system event divider", () => {
     render({
       item: {
@@ -362,51 +317,4 @@ describe("ThreadItemView", () => {
     );
   });
 
-  it("renders a task card and opens its subthread", () => {
-    const onOpenSubthread = vi.fn();
-    const item: ThreadItem = {
-      id: "task-card-agent-1",
-      type: "task_card",
-      status: "completed",
-      task: {
-        id: "agent-1",
-        name: "review auth flow",
-        role: "reviewer",
-        status: "running",
-        agent_id: "agent-1",
-        subthread_id: "cth-review",
-        reply_count: 2,
-        participant: {
-          id: "prt-reviewer",
-          name: "Reviewer",
-          kind: "ephemeral",
-          role: "reviewer",
-        },
-      },
-    };
-
-    render({
-      item,
-      turnStatus: "completed",
-      streaming: false,
-      onOpenSubthread,
-    });
-
-    expect(container?.querySelector(".task-card")?.textContent).toContain(
-      "review auth flow",
-    );
-    expect(container?.querySelector(".task-card")?.textContent).toContain(
-      "2 条回复",
-    );
-    const button = container?.querySelector<HTMLButtonElement>(
-      'button[aria-label="查看过程"]',
-    );
-    expect(button).not.toBeNull();
-
-    act(() => {
-      button?.click();
-    });
-
-    expect(onOpenSubthread).toHaveBeenCalledWith(item);
-  });
 });

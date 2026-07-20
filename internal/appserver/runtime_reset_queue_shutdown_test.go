@@ -114,7 +114,7 @@ func TestQueuedTurnRejectedAfterDurableAdmissionPersistsFailure(t *testing.T) {
 	}
 	srv := New(rt, &lockedBuffer{})
 	t.Cleanup(srv.Close)
-	if _, err := srv.ensureResidentThread(sess.ID); err != nil {
+	if _, err := srv.ensureThreadLoaded(sess.ID); err != nil {
 		t.Fatalf("load queued thread: %v", err)
 	}
 	srv.beforeQueuedTurnBackgroundForTest = func() {

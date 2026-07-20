@@ -1065,7 +1065,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	s.updateRootAgentControlWorkerDefaults()
 	if connectionChanged {
 		// Connection credentials/endpoints are workspace configuration, so every
-		// resident runtime must rebuild before its next
+		// cached runtime must rebuild before its next
 		// turn. Running turns keep their admitted snapshot until they settle.
 		s.resetThreadRuntimesForGeneralSettings("")
 	}
@@ -1370,7 +1370,7 @@ func (s *Server) beginThreadRuntimeSelectionMutation(threadID string) (*threadSt
 	if threadID == "" {
 		return nil, func() {}, nil
 	}
-	th, err := s.ensureResidentThread(threadID)
+	th, err := s.ensureThreadLoaded(threadID)
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -1485,7 +1485,7 @@ func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
 }
 
 // updateIdleThreadAdvancedRuntime propagates an advanced-settings change to
-// idle resident runtimes without rebuilding them (which would churn their
+// idle cached runtimes without rebuilding them (which would churn their
 // prompt-cache prefixes). Advanced settings split into two kinds, and the split
 // is the whole point of this function (issue #81):
 //

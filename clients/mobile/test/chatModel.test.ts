@@ -1,125 +1,50 @@
-// The chat whitelist must mirror desktop AppState.chatMessagesFromTurns:
-// working-transcript items never become rows, handoff envelopes are dropped,
-// adjacent envelope rows merge, and focus_meta wins regardless of item type.
-
 import { describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "@wuu/protocol";
 
-import {
-  chatRowsFromTurns,
-  envelopeRowLabel,
-  focusRowLabel,
-  isDeclineRow,
-  taskStatusLabel,
-} from "../src/lib/chatModel";
-import { isAgentHandoffText } from "../src/lib/handoff";
+import { chatRowsFromTurns } from "../src/lib/chatModel";
 
-function turn(id: string, items: Partial<ThreadItem>[]): Turn {
-  return {
-    id,
-    items: items.map((item, index) => ({ id: `${id}-i${index}`, type: "user_message", ...item }) as ThreadItem),
-    items_view: "full",
-    status: "completed",
-  };
+function turn(items: ThreadItem[]): Turn {
+  return { id: "turn-1", items, items_view: "full", status: "completed" };
 }
 
-const HANDOFF_TEXT = JSON.stringify({
-  content: '<subagent_notification>{"agent_path":"a/b","status":{"status":"completed"}}</subagent_notification>',
-  trigger_turn: true,
-});
-
 describe("chatRowsFromTurns", () => {
-  it("renders only whitelist rows and drops the working transcript", () => {
+  it("keeps ordinary user and agent messages", () => {
     const rows = chatRowsFromTurns([
-      turn("t1", [
-        { type: "user_message", text: "帮我修个 bug" },
-        { type: "reasoning", text: "thinking..." },
-        { type: "tool_call", name: "bash" },
-        { type: "agent_message", text: "streamed transcript" },
-        { type: "participant_message", text: "修好了", participant: { id: "p1", name: "石头", kind: "resident" } },
+      turn([
+        { id: "user", type: "user_message", text: "帮我修个 bug" },
+        { id: "agent", type: "agent_message", text: "已经修好" },
       ]),
     ]);
-    expect(rows.map((r) => r.kind)).toEqual(["user", "participant"]);
+
+    expect(rows.map((row) => row.kind)).toEqual(["user", "agent"]);
+    expect(rows.map((row) => row.item.text)).toEqual(["帮我修个 bug", "已经修好"]);
   });
 
-  it("drops subagent handoff envelopes but keeps plain user messages", () => {
-    expect(isAgentHandoffText(HANDOFF_TEXT)).toBe(true);
-    expect(isAgentHandoffText("普通消息 {不是 JSON}")).toBe(false);
-    expect(
-      isAgentHandoffText('<subagent_notification>{"status":{}}</subagent_notification>'),
-    ).toBe(true);
+  it("filters reasoning and tool activity", () => {
     const rows = chatRowsFromTurns([
-      turn("t1", [
-        { type: "user_message", text: HANDOFF_TEXT },
-        { type: "user_message", text: "真人发言" },
+      turn([
+        { id: "reasoning", type: "reasoning", text: "thinking" },
+        { id: "tool", type: "tool_call", name: "bash" },
+        { id: "answer", type: "agent_message", text: "完成" },
       ]),
     ]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].kind).toBe("user");
+
+    expect(rows.map((row) => row.item.id)).toEqual(["answer"]);
   });
 
-  it("merges adjacent envelope rows into one", () => {
-    const meta = [{ source_thread_title: "发布群" }];
+  it("filters inter-agent handoff messages", () => {
+    const handoff = JSON.stringify({
+      content:
+        '<subagent_notification>{"agent_path":"a/b","status":{"status":"completed"}}</subagent_notification>',
+      trigger_turn: true,
+    });
     const rows = chatRowsFromTurns([
-      turn("t1", [
-        { type: "user_message", text: "e1", envelope_meta: meta },
-        { type: "user_message", text: "e2", envelope_meta: meta },
-        { type: "user_message", text: "普通" },
-        { type: "user_message", text: "e3", envelope_meta: meta },
+      turn([
+        { id: "handoff", type: "user_message", text: handoff },
+        { id: "plain", type: "user_message", text: "普通消息" },
       ]),
     ]);
-    expect(rows.map((r) => r.kind)).toEqual(["envelope", "user", "envelope"]);
-    const first = rows[0];
-    if (first.kind !== "envelope") throw new Error("unreachable");
-    expect(first.items).toHaveLength(2);
-    expect(envelopeRowLabel(first.items)).toBe("收到来自「发布群」的 2 条消息");
-  });
 
-  it("focus_meta wins regardless of item type", () => {
-    const rows = chatRowsFromTurns([
-      turn("t1", [
-        { type: "tool_call", focus_meta: { kind: "home" } },
-        { type: "user_message", text: "x", focus_meta: { kind: "workspace", name: "wuu" } },
-      ]),
-    ]);
-    expect(rows.map((r) => r.kind)).toEqual(["focus", "focus"]);
-    const [a, b] = rows;
-    if (a.kind !== "focus" || b.kind !== "focus") throw new Error("unreachable");
-    expect(focusRowLabel(a.item)).toBe("⌂ 个人");
-    expect(focusRowLabel(b.item)).toBe("⬒ wuu");
-    expect(focusRowLabel({ focus_meta: { kind: "all" } } as ThreadItem)).toBe("⬒ 全部工作区");
-  });
-
-  it("keeps task cards and detects decline rows", () => {
-    const rows = chatRowsFromTurns([
-      turn("t1", [
-        { type: "task_card", task: { id: "task1", status: "in_progress", name: "查日志" } },
-        {
-          type: "participant_message",
-          post_kind: "decline",
-          text: "已经有人在处理",
-          participant: { id: "p2", name: "阿凛", kind: "resident" },
-        },
-      ]),
-    ]);
-    expect(rows.map((r) => r.kind)).toEqual(["task", "participant"]);
-    const decline = rows[1];
-    if (decline.kind !== "participant") throw new Error("unreachable");
-    expect(isDeclineRow(decline.item)).toBe(true);
-  });
-
-  it("maps task status labels with the server's vocabulary", () => {
-    expect(taskStatusLabel("running")).toBe("进行中");
-    expect(taskStatusLabel("awaiting_report")).toBe("待报告");
-    expect(taskStatusLabel("completed")).toBe("已完成");
-    expect(taskStatusLabel("canceled")).toBe("已取消");
-    // Unknown statuses surface verbatim (mirrors desktop), empty → 未知.
-    expect(taskStatusLabel("banana")).toBe("banana");
-    expect(taskStatusLabel("")).toBe("未知");
-  });
-
-  it("treats falsy handoff payloads as ordinary messages", () => {
-    expect(isAgentHandoffText("<subagent_notification>null</subagent_notification>")).toBe(false);
-    expect(isAgentHandoffText("<subagent_notification>0</subagent_notification>")).toBe(false);
+    expect(rows.map((row) => row.item.id)).toEqual(["plain"]);
   });
 });

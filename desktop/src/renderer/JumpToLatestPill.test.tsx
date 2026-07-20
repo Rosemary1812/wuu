@@ -99,14 +99,20 @@ function stubRect(node: HTMLElement, rect: Partial<DOMRect>): void {
 function mountPill(node: HTMLElement): HTMLElement {
   const host = document.createElement("div");
   node.appendChild(host);
+  const anchor = document.createElement("div");
+  document.body.appendChild(anchor);
+  mountedContainers.push(anchor);
   const root = createRoot(host);
   act(() => {
     root.render(
-      createElement(JumpToLatestPill, { containerRef: { current: node } }),
+      createElement(JumpToLatestPill, {
+        containerRef: { current: node },
+        bottomAnchor: anchor,
+      }),
     );
   });
   mountedRoots.push(root);
-  return host;
+  return document.body;
 }
 
 type MockResizeObserverRecord = {
@@ -197,7 +203,7 @@ describe("JumpToLatestPill", () => {
     });
     const pill = host.querySelector<HTMLButtonElement>(".jump-to-latest-pill");
     expect(pill).not.toBeNull();
-    expect(pill?.className).toContain("jump-to-latest-pill-sticky-centered");
+    expect(pill?.className).toContain("jump-to-latest-pill-anchored");
     expect(pill?.querySelector("span")?.textContent).toBeTruthy();
     expect(pill?.querySelector("span")?.textContent).toBe(
       pill?.getAttribute("aria-label"),
@@ -307,9 +313,8 @@ describe("JumpToLatestPill", () => {
       clientHeight: 400,
       scrollTop: 0, // scrolled away → visible
     });
-    // scroll region occupies the top portion of the viewport; its own bottom
-    // (800) sits well ABOVE the composer — the exact case the sticky variant
-    // got wrong.
+    // The scroll region occupies only the top portion of the viewport, so the
+    // pill must follow the composer rather than the scroll region's bottom.
     stubRect(node, { left: 100, top: 56, bottom: 800, width: 600, height: 744 });
     const anchor = document.createElement("div");
     document.body.appendChild(anchor);
@@ -397,6 +402,7 @@ describe("JumpToLatestPill", () => {
       root.render(
         createElement(JumpToLatestPill, {
           containerRef: { current: node },
+          bottomAnchor: null,
           onScrolledAwayChange,
         }),
       );
@@ -419,11 +425,9 @@ describe("JumpToLatestPill", () => {
     expect(onScrolledAwayChange).toHaveBeenLastCalledWith(true);
   });
 
-  it("re-evaluates visibility on container resize (thread panel drag)", () => {
-    // F1 resize: when the thread panel is dragged, the scroll container's
-    // clientHeight changes. The pill must re-evaluate its scrolled-away
-    // state — otherwise a container shrink could leave the pill stuck
-    // "scrolled away" at the new (now-taller) bottom.
+  it("re-evaluates visibility when its container resizes", () => {
+    // The pill must re-evaluate when the scroll container's clientHeight
+    // changes; otherwise a resize could leave it stuck in a stale state.
     const { node } = scrollContainer({
       scrollHeight: 1000,
       clientHeight: 100, // narrow initially

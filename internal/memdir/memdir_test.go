@@ -196,7 +196,7 @@ func TestTeachingVariants(t *testing.T) {
 		t.Errorf("SessionTeaching is %d lines; keep it ~40 or fewer", got)
 	}
 
-	resident := ResidentTeaching("/home/u/.wuu/participants/p-1/memory")
+	namedAgent := NamedAgentTeaching("/home/u/.wuu/participants/p-1/memory")
 	for _, want := range []string{
 		"## Memory notebook",
 		"`/home/u/.wuu/participants/p-1/memory`",
@@ -205,12 +205,12 @@ func TestTeachingVariants(t *testing.T) {
 		"### How to save a memory",
 		"### What NOT to save",
 	} {
-		if !strings.Contains(resident, want) {
-			t.Errorf("ResidentTeaching missing %q", want)
+		if !strings.Contains(namedAgent, want) {
+			t.Errorf("NamedAgentTeaching missing %q", want)
 		}
 	}
-	if strings.Contains(resident, "\n## Types of memory") {
-		t.Errorf("ResidentTeaching must demote ## headings to ###")
+	if strings.Contains(namedAgent, "\n## Types of memory") {
+		t.Errorf("NamedAgentTeaching must demote ## headings to ###")
 	}
 
 	worker := WorkerTeaching(dir)
