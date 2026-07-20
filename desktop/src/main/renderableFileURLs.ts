@@ -12,6 +12,8 @@ const RENDERABLE_IMAGE_EXTENSIONS = new Set([
   ".webp",
 ]);
 
+const RENDERABLE_PDF_EXTENSIONS = new Set([".pdf"]);
+
 export function renderableFileURL(filePath: string): string {
   return `wuu-file://local/${Buffer.from(filePath, "utf8").toString("base64url")}`;
 }
@@ -33,10 +35,21 @@ export function filePathFromRenderableURL(rawURL: string): string | undefined {
 }
 
 export function isRenderableImageFile(filePath: string): boolean {
+  return isRenderableFileWithExtensions(filePath, RENDERABLE_IMAGE_EXTENSIONS);
+}
+
+export function isRenderablePdfFile(filePath: string): boolean {
+  return isRenderableFileWithExtensions(filePath, RENDERABLE_PDF_EXTENSIONS);
+}
+
+function isRenderableFileWithExtensions(
+  filePath: string,
+  extensions: Set<string>,
+): boolean {
   try {
     return (
       statSync(filePath).isFile() &&
-      RENDERABLE_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase())
+      extensions.has(extname(filePath).toLowerCase())
     );
   } catch {
     return false;

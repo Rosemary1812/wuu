@@ -708,6 +708,7 @@ export type WorkspaceFileReadResult = {
   truncated: boolean;
   text?: string;
   renderable_url?: string;
+  renderable_kind?: "image" | "pdf";
 };
 
 export type WorkspaceFileSaveParams = {

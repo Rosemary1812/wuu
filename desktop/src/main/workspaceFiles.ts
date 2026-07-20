@@ -21,6 +21,7 @@ import type {
 } from "../shared/protocol";
 import {
   isRenderableImageFile,
+  isRenderablePdfFile,
   renderableFileURL,
 } from "./renderableFileURLs";
 import { writeTextFileAtomicSync } from "./atomicFile";
@@ -189,6 +190,12 @@ function readWorkspaceFileResult(
   );
   const binary = previewBuffer.includes(0);
 
+  const renderableKind = isRenderableImageFile(absolutePath)
+    ? ("image" as const)
+    : isRenderablePdfFile(absolutePath)
+      ? ("pdf" as const)
+      : undefined;
+
   return {
     root: context.cwd,
     path: relativeFilePath,
@@ -199,9 +206,10 @@ function readWorkspaceFileResult(
     binary,
     truncated,
     text: binary ? undefined : previewBuffer.toString("utf8"),
-    renderable_url: isRenderableImageFile(absolutePath)
+    renderable_url: renderableKind
       ? renderableFileURL(absolutePath)
       : undefined,
+    renderable_kind: renderableKind,
   };
 }
 

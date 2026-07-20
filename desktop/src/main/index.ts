@@ -710,6 +710,8 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // Enables Chromium's built-in PDF viewer for workspace PDF previews.
+      plugins: true,
       ...appShellWebPreferences(app.isPackaged),
     },
   });
@@ -753,6 +755,8 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // Enables Chromium's built-in PDF viewer for workspace PDF previews.
+      plugins: true,
       ...appShellWebPreferences(app.isPackaged),
     },
   };

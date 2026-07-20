@@ -635,6 +635,17 @@ export function WorkspaceFilePreview({
   }
 
   if (file.renderable_url) {
+    if (file.renderable_kind === "pdf") {
+      return (
+        <article className="workspace-file-preview readonly">
+          <iframe
+            className="workspace-file-pdf-preview"
+            src={file.renderable_url}
+            title={file.path}
+          />
+        </article>
+      );
+    }
     return (
       <article className="workspace-file-preview readonly">
         <div className="workspace-file-image-preview">
