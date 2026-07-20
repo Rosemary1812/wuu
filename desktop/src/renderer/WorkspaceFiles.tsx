@@ -152,7 +152,15 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
   const { locale, t } = useI18n();
   const treeFrameRef = useRef<HTMLDivElement | null>(null);
   const paths = useMemo(() => Object.values(directories).flatMap((directory) => directory.entries.map((entry) => entry.path)), [directories]);
-  const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths]);
+  // useFileTree builds its model once at mount and never re-reads the
+  // options object, so the prepared input is only consumed on the first
+  // render. Later directory loads stream in through model.batch below;
+  // recomputing the full sorted input on every load would be discarded
+  // work.
+  const initialPreparedInputRef = useRef<ReturnType<typeof preparePresortedFileTreeInput> | null>(null);
+  if (initialPreparedInputRef.current === null) {
+    initialPreparedInputRef.current = preparePresortedFileTreeInput(paths);
+  }
   const selectedFilePathRef = useRef(selectedFilePath);
   const onOpenFileRef = useRef(onOpenFile);
   const onLoadDirectoryRef = useRef(onLoadDirectory);
@@ -164,7 +172,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
     icons: { set: "complete", colored: true },
     itemHeight: WORKSPACE_FILE_TREE_ITEM_HEIGHT,
     overscan: 8,
-    preparedInput,
+    preparedInput: initialPreparedInputRef.current,
     search: true,
     searchBlurBehavior: "retain",
     stickyFolders: false,
