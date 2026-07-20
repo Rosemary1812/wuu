@@ -3933,7 +3933,9 @@ export function App(): JSX.Element {
                 aria-pressed={!sidebarCollapsed}
                 onClick={toggleSidebar}
                 onPointerEnter={scheduleSidebarDrawerOpen}
-                onPointerLeave={cancelSidebarDrawerOpen}
+                onPointerLeave={(event) =>
+                  scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+                }
               >
                 <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
               </button>

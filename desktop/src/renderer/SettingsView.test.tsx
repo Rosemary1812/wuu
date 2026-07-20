@@ -267,6 +267,50 @@ describe("SettingsView shell", () => {
     expect(shell?.classList.contains("sidebar-drawer-closing")).toBe(false);
   });
 
+  it("closes the drawer when the pointer leaves the shell-level toggle for a non-hover target", () => {
+    vi.useFakeTimers();
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    renderSettings({ initialized: baseInitialized(), sidebarCollapsed: true });
+
+    const shell = container.querySelector<HTMLElement>(".settings-shell");
+    const toggle = container.querySelector<HTMLElement>(
+      ".settings-titlebar .settings-sidebar-toggle",
+    );
+    expect(toggle).not.toBeNull();
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => toggle),
+    });
+    act(() => {
+      toggle?.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      vi.advanceTimersByTime(240);
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => document.body),
+    });
+    act(() => {
+      toggle?.dispatchEvent(
+        new MouseEvent("pointerout", {
+          bubbles: true,
+          clientX: 320,
+          clientY: 24,
+          relatedTarget: document.body,
+        }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(shell?.classList.contains("sidebar-drawer-closing")).toBe(true);
+  });
+
   it("starts each settings page at the top and replaces the content surface", () => {
     installBuildInfoStub({
       core: undefined,

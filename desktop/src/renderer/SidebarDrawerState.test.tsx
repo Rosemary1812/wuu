@@ -145,6 +145,60 @@ describe("useSidebarDrawerState", () => {
     expect(hook.get().sidebarDrawerPhase).toBe("closing");
   });
 
+  it("uses the leave event's relatedTarget to decide close before re-checking coordinates", async () => {
+    const hook = await renderSidebarDrawerState();
+
+    await act(async () => {
+      hook.get().openSidebarDrawerNow();
+    });
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    // relatedTarget points at the hover zone: even if clientX/Y look outside,
+    // the pointer is really moving onto a hover trigger, so keep the drawer.
+    elementFromPointTarget = document.body;
+    await act(async () => {
+      hook.get().scheduleSidebarDrawerCloseFromPointerLeave(
+        new MouseEvent("pointerout", {
+          clientX: 320,
+          clientY: 80,
+          relatedTarget: hook.hoverZone,
+        }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    // relatedTarget points at the sidebar itself: keep the drawer open.
+    await act(async () => {
+      hook.get().scheduleSidebarDrawerCloseFromPointerLeave(
+        new MouseEvent("pointerout", {
+          clientX: 320,
+          clientY: 80,
+          relatedTarget: hook.sidebar,
+        }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    // relatedTarget points at a non-hover element: close immediately, even if
+    // the coordinate re-check would have also returned false.
+    await act(async () => {
+      hook.get().scheduleSidebarDrawerCloseFromPointerLeave(
+        new MouseEvent("pointerout", {
+          clientX: 320,
+          clientY: 80,
+          relatedTarget: document.body,
+        }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("closing");
+  });
+
   it("opens after the edge hover intent delay while the pointer remains hovered", async () => {
     const hook = await renderSidebarDrawerState();
     elementFromPointTarget = hook.hoverZone;

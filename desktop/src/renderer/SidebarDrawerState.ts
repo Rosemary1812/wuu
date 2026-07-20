@@ -240,13 +240,40 @@ export function useSidebarDrawerState({
     // Sidebar geometry settles after the globalized panel and drawer swap
     // stacking contexts. Check the real pointer location on the next task,
     // so a synthetic leave caused by that swap does not close the drawer.
+    // Prefer the leave event's relatedTarget when it is available: it tells
+    // us where the pointer is actually going, which avoids the boundary
+    // rounding problem where the pointer's reported position is still inside
+    // the sidebar rect even though the user has moved outside the floating
+    // layer.
     sidebarDrawerPointerLeaveTimerRef.current = window.setTimeout(() => {
       sidebarDrawerPointerLeaveTimerRef.current = undefined;
+
+      const relatedTarget = event instanceof MouseEvent ? event.relatedTarget : null;
+      if (relatedTarget && relatedTarget instanceof Element) {
+        const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
+        const hoverTriggers = appShellRef.current?.querySelectorAll(
+          SIDEBAR_DRAWER_HOVER_TRIGGER_SELECTOR,
+        );
+        const isMovingToHoverTarget = Boolean(
+          (sidebar &&
+            (relatedTarget === sidebar || sidebar.contains(relatedTarget))) ||
+            [...(hoverTriggers ?? [])].some(
+              (trigger) =>
+                relatedTarget === trigger || trigger.contains(relatedTarget),
+            ),
+        );
+        if (!isMovingToHoverTarget) {
+          closeSidebarDrawer();
+        }
+        return;
+      }
+
       if (sidebarDrawerPointerHovered() === false) {
         closeSidebarDrawer();
       }
     }, 0);
   }, [
+    appShellRef,
     clearSidebarDrawerPointerLeaveTimer,
     closeSidebarDrawer,
     rememberSidebarPointerPosition,
