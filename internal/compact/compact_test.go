@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,91 @@ type mockCompactClient struct {
 func (m *mockCompactClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	m.lastRequest = req
 	return providers.ChatResponse{Content: m.response}, nil
+}
+
+type scriptedCompactClient struct {
+	responses  []providers.ChatResponse
+	requests   []providers.ChatRequest
+	executions []*providers.InferenceExecution
+}
+
+func (c *scriptedCompactClient) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatResponse{}, err
+	}
+	index := len(c.requests)
+	if index >= len(c.responses) {
+		return providers.ChatResponse{}, fmt.Errorf("unexpected compact request %d", index+1)
+	}
+	resp := c.responses[index]
+	c.requests = append(c.requests, req)
+	c.executions = append(c.executions, req.Execution)
+	if req.Attempt.Valid() {
+		submission, err := req.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+			Provider:  "scripted",
+			Protocol:  "test",
+			Transport: "memory",
+		})
+		if err != nil {
+			return providers.ChatResponse{}, err
+		}
+		submission.CompleteSuccess(resp.Usage)
+	}
+	return resp, nil
+}
+
+type failingCompactClient struct {
+	err   error
+	calls int
+}
+
+func (c *failingCompactClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	c.calls++
+	return providers.ChatResponse{}, c.err
+}
+
+type recordingCompactJournal struct {
+	operations  []providers.InferenceOperationJournalRecord
+	submissions map[string]providers.InferenceSubmissionJournalRecord
+	terminals   []providers.InferenceOperationTerminalRecord
+}
+
+func (j *recordingCompactJournal) PrepareOperation(record providers.InferenceOperationJournalRecord) error {
+	j.operations = append(j.operations, record)
+	return nil
+}
+
+func (*recordingCompactJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error {
+	return nil
+}
+
+func (j *recordingCompactJournal) UpsertSubmission(record providers.InferenceSubmissionJournalRecord) error {
+	if j.submissions == nil {
+		j.submissions = make(map[string]providers.InferenceSubmissionJournalRecord)
+	}
+	j.submissions[record.ID] = record
+	return nil
+}
+
+func (*recordingCompactJournal) MarkAttemptFirstEvent(string, string, string, time.Time) error {
+	return nil
+}
+
+func (*recordingCompactJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
+	return nil
+}
+
+func (*recordingCompactJournal) PrepareRecoveryAttempt(context.Context, providers.InferenceRecoveryAttemptJournalRecord) error {
+	return nil
+}
+
+func (j *recordingCompactJournal) CompleteOperation(record providers.InferenceOperationTerminalRecord) error {
+	j.terminals = append(j.terminals, record)
+	return nil
+}
+
+func (*recordingCompactJournal) CompleteWorkflow(providers.InferenceWorkflowTerminalRecord) error {
+	return nil
 }
 
 type chunkRecordingCompactClient struct {
@@ -372,12 +458,13 @@ func TestCompact_SetsSummaryOutputControls(t *testing.T) {
 
 	client := &mockCompactClient{response: "summary of older turns"}
 	options := map[string]any{"temperatureSupported": false, "textVerbosity": "high"}
-	_, err := CompactWithBudgetAndOptions(context.Background(), messages, client, "gpt-5.5", Budget{}, options)
+	budget := Budget{OutputReserveTokens: 128_000}
+	_, err := CompactWithBudgetAndOptions(context.Background(), messages, client, "gpt-5.5", budget, options)
 	if err != nil {
 		t.Fatalf("Compact: %v", err)
 	}
-	if client.lastRequest.MaxTokens != compactSummaryMaxTokens {
-		t.Fatalf("expected compact MaxTokens=%d, got %d", compactSummaryMaxTokens, client.lastRequest.MaxTokens)
+	if want := compactReservedMaxTokens * 4 / 5; client.lastRequest.MaxTokens != want {
+		t.Fatalf("expected compact MaxTokens=%d, got %d", want, client.lastRequest.MaxTokens)
 	}
 	if got := client.lastRequest.ProviderOptions["textVerbosity"]; got != "low" {
 		t.Fatalf("expected low text verbosity, got %#v", got)
@@ -387,6 +474,212 @@ func TestCompact_SetsSummaryOutputControls(t *testing.T) {
 	}
 	if got := options["textVerbosity"]; got != "high" {
 		t.Fatalf("compact request mutated caller options, got %#v", got)
+	}
+}
+
+func TestCompactSummaryMaxTokensForBudget(t *testing.T) {
+	preferred := compactReservedMaxTokens * 4 / 5
+	cases := []struct {
+		name   string
+		budget Budget
+		want   int
+	}{
+		{name: "large output model", budget: Budget{OutputReserveTokens: 131_072}, want: preferred},
+		{name: "small output model", budget: Budget{OutputReserveTokens: 2_048}, want: 2_048},
+		{name: "unknown output capability", budget: Budget{}, want: compactSummaryFallbackMaxTokens},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := compactSummaryMaxTokensForBudget(tc.budget); got != tc.want {
+				t.Fatalf("compact summary max tokens = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSummarizeCompactChunk_LengthRecoveryUsesOriginalHistoryAndFreshOperation(t *testing.T) {
+	messages := make([]providers.ChatMessage, 0, 276)
+	for i := 0; i < 276; i++ {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		messages = append(messages, providers.ChatMessage{
+			Role:    role,
+			Content: fmt.Sprintf("incident-message-%03d %s", i, strings.Repeat("detail ", 62)),
+		})
+	}
+	firstUsage := &providers.TokenUsage{InputTokens: 32_837, OutputTokens: 4_096}
+	secondUsage := &providers.TokenUsage{InputTokens: 32_910, OutputTokens: 3_100}
+	client := &scriptedCompactClient{responses: []providers.ChatResponse{
+		{Content: "partial handoff that must be discarded", FinishReason: providers.FinishReasonLength, Usage: firstUsage},
+		{Content: "complete compact handoff", FinishReason: providers.FinishReasonStop, Usage: secondUsage},
+	}}
+	journal := &recordingCompactJournal{}
+	ctx := providers.WithInferenceJournal(context.Background(), journal)
+
+	summary, err := summarizeCompactChunk(
+		ctx,
+		client,
+		"k3",
+		Budget{OutputReserveTokens: 131_072},
+		nil,
+		messages,
+		"anchored previous summary",
+	)
+	if err != nil {
+		t.Fatalf("summarizeCompactChunk: %v", err)
+	}
+	if summary != "complete compact handoff" {
+		t.Fatalf("summary = %q, want recovered complete handoff", summary)
+	}
+	if len(client.requests) != 2 || len(client.executions) != 2 {
+		t.Fatalf("requests/executions = %d/%d, want 2/2", len(client.requests), len(client.executions))
+	}
+	preferred := compactReservedMaxTokens * 4 / 5
+	for i, req := range client.requests {
+		if req.MaxTokens != preferred {
+			t.Fatalf("request %d MaxTokens = %d, want %d", i+1, req.MaxTokens, preferred)
+		}
+		if req.Execution == nil {
+			t.Fatalf("request %d has no inference execution", i+1)
+		}
+		cost := req.Execution.Snapshot().CostSummary()
+		wantUsage := firstUsage
+		if i == 1 {
+			wantUsage = secondUsage
+		}
+		if cost.KnownSubmissions != 1 || cost.KnownUsage.InputTokens != wantUsage.InputTokens || cost.KnownUsage.OutputTokens != wantUsage.OutputTokens {
+			t.Fatalf("request %d usage = %+v, want %+v", i+1, cost, *wantUsage)
+		}
+	}
+	if first, second := client.requests[0].Operation, client.requests[1].Operation; first.ID == "" || second.ID == "" || first.ID == second.ID {
+		t.Fatalf("semantic recovery must use fresh operations, got %+v / %+v", first, second)
+	}
+	if len(journal.operations) != 2 || len(journal.submissions) != 2 || len(journal.terminals) != 2 {
+		t.Fatalf("durable operations/submissions/terminals = %d/%d/%d, want 2/2/2", len(journal.operations), len(journal.submissions), len(journal.terminals))
+	}
+	for id, submission := range journal.submissions {
+		if submission.ReportedUsage == nil || submission.ReportedUsage.OutputTokens == 0 {
+			t.Fatalf("durable submission %q has no reported usage: %+v", id, submission)
+		}
+	}
+	terminalOutcomes := make(map[string]providers.InferenceTerminalOutcome, len(journal.terminals))
+	for _, terminal := range journal.terminals {
+		terminalOutcomes[terminal.OperationID] = terminal.Outcome
+	}
+	if got := terminalOutcomes[client.requests[0].Operation.ID]; got != providers.InferenceOutcomeFailed {
+		t.Fatalf("first operation outcome = %q, want failed", got)
+	}
+	if got := terminalOutcomes[client.requests[1].Operation.ID]; got != providers.InferenceOutcomeSucceeded {
+		t.Fatalf("recovery operation outcome = %q, want succeeded", got)
+	}
+	firstPrompt := client.requests[0].Messages[1].Content
+	secondPrompt := client.requests[1].Messages[1].Content
+	if tokens := EstimateTokens(firstPrompt); tokens < 30_000 || tokens > 40_000 {
+		t.Fatalf("incident-shaped summary input = %d tokens, want about 33k", tokens)
+	}
+	for _, marker := range []string{"incident-message-000", "incident-message-275", "anchored previous summary"} {
+		if !strings.Contains(firstPrompt, marker) || !strings.Contains(secondPrompt, marker) {
+			t.Fatalf("recovery did not reuse original input marker %q", marker)
+		}
+	}
+	if strings.Contains(firstPrompt, compactLengthRecoveryInstruction) || !strings.Contains(secondPrompt, compactLengthRecoveryInstruction) {
+		t.Fatal("length recovery instruction must appear only on the second attempt")
+	}
+}
+
+func TestSummarizeCompactChunk_EmptyLengthResponseRetries(t *testing.T) {
+	client := &scriptedCompactClient{responses: []providers.ChatResponse{
+		{FinishReason: providers.FinishReasonLength},
+		{Content: "complete replacement summary", FinishReason: providers.FinishReasonStop},
+	}}
+	summary, err := summarizeCompactChunk(
+		context.Background(),
+		client,
+		"test",
+		Budget{OutputReserveTokens: 16_000},
+		nil,
+		[]providers.ChatMessage{{Role: "user", Content: "history to summarize"}},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("summarizeCompactChunk: %v", err)
+	}
+	if summary != "complete replacement summary" || len(client.requests) != 2 {
+		t.Fatalf("summary/calls = %q/%d, want complete replacement/2", summary, len(client.requests))
+	}
+}
+
+func TestCompact_LengthRecoveryFailureLeavesHistoryUnchanged(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "second reply"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "third reply"},
+	}
+	original := providers.CloneChatMessages(messages)
+	client := &scriptedCompactClient{responses: []providers.ChatResponse{
+		{Content: "first incomplete summary", FinishReason: providers.FinishReasonLength},
+		{Content: "second incomplete summary", FinishReason: providers.FinishReasonLength},
+	}}
+
+	result, err := CompactWithBudget(context.Background(), messages, client, "k3", Budget{OutputReserveTokens: 131_072})
+	if err == nil || !IsSummaryOutputLimit(err) {
+		t.Fatalf("CompactWithBudget error = %v, want output-limit failure", err)
+	}
+	for _, want := range []string{"2 output attempts", "max_tokens=16000"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("terminal error %q does not contain %q", err, want)
+		}
+	}
+	if len(client.requests) != 2 {
+		t.Fatalf("compact requests = %d, want bounded total of 2", len(client.requests))
+	}
+	if !reflect.DeepEqual(result, original) || !reflect.DeepEqual(messages, original) {
+		t.Fatalf("failed compaction changed history:\nresult=%#v\noriginal=%#v", result, original)
+	}
+}
+
+func TestSummarizeCompactChunk_CancellationDoesNotRetry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &cancelingStreamCompactClient{cancel: cancel}
+	_, err := summarizeCompactChunk(
+		ctx,
+		client,
+		"test",
+		Budget{OutputReserveTokens: 16_000},
+		nil,
+		[]providers.ChatMessage{{Role: "user", Content: "history to summarize"}},
+		"",
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("summarizeCompactChunk error = %v, want context canceled", err)
+	}
+	if client.streamCalls != 1 || client.chatCalls != 0 {
+		t.Fatalf("provider calls = stream %d chat %d, want 1/0", client.streamCalls, client.chatCalls)
+	}
+}
+
+func TestSummarizeCompactChunk_NonLengthErrorDoesNotRetry(t *testing.T) {
+	wantErr := errors.New("authentication failed")
+	client := &failingCompactClient{err: wantErr}
+	_, err := summarizeCompactChunk(
+		context.Background(),
+		client,
+		"test",
+		Budget{OutputReserveTokens: 16_000},
+		nil,
+		[]providers.ChatMessage{{Role: "user", Content: "history to summarize"}},
+		"",
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("summarizeCompactChunk error = %v, want authentication failure", err)
+	}
+	if client.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", client.calls)
 	}
 }
 

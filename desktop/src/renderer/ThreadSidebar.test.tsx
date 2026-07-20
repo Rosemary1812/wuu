@@ -322,7 +322,6 @@ describe("ProjectList", () => {
   it("shows a running spinner while a direct child agent is still active", () => {
     const [thread] = summarizeThreadsForSidebar([
       makeProjectThread("group-1", "/repo/wuu", "Group work", [], {
-        group: true,
         child_agents: [
           {
             id: "agent-running",

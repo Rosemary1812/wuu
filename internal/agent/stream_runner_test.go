@@ -1337,6 +1337,22 @@ func TestFormatCompactAttemptNoticeClosesVisibleProgress(t *testing.T) {
 	}
 }
 
+func TestFormatCompactAttemptNoticeExplainsOutputLimitRecovery(t *testing.T) {
+	notice, ok := formatCompactAttemptNotice(CompactAttemptInfo{
+		Reason:      CompactReasonManual,
+		Status:      CompactAttemptFailed,
+		OutputLimit: true,
+	})
+	if !ok {
+		t.Fatal("output-limit failure must emit a terminal notice")
+	}
+	for _, want := range []string{"after retry", "history is unchanged", "Retry compaction", "larger output limit"} {
+		if !strings.Contains(notice, want) {
+			t.Fatalf("notice %q does not contain %q", notice, want)
+		}
+	}
+}
+
 func TestStreamRunner_StopsProactiveCompactAfterRepeatedFailures(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{
@@ -2498,6 +2514,47 @@ func TestStreamRunner_CrossTurnContinuitySurvivesUsageSynchronization(t *testing
 	}
 	if got := countMessagesContaining(turn2First, "[ACTIVE_FILES]"); got != 1 {
 		t.Fatalf("retained request-only context should appear exactly once across turns, got %d in %+v", got, turn2First)
+	}
+}
+
+// TestStreamRunner_DerivedLedgersDoNotReappearAcrossTurns locks the issue-128
+// acceptance behavior: a derived ledger sent by an earlier turn must not ride
+// the retained stream into later turns once the producer stops emitting it,
+// and the dropped key must not earn an inactive tombstone on every turn.
+func TestStreamRunner_DerivedLedgersDoNotReappearAcrossTurns(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "")
+	ledger := wuucontext.Block{
+		Kind: wuucontext.BlockActiveFiles, Title: "Active files", Source: "read_file", Content: "files:\n- go.mod",
+	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "turn one"}, {Type: providers.EventDone}}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "turn two"}, {Type: providers.EventDone}}},
+	}}
+	runner := &StreamRunner{
+		Client: client, Model: "m",
+		BeforeRequestContext: func() []ContextSegment { return RequestOnlyContextBlocks([]wuucontext.Block{ledger}) },
+	}
+	history1 := []providers.ChatMessage{userMsg("first ask")}
+	res1, err := runner.RunWithCallback(context.Background(), history1, nil)
+	if err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	if got := countMessagesContaining(client.requests[0].Messages, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("turn 1 should carry the ledger, got %d", got)
+	}
+
+	// Post-upgrade turn: the producer no longer emits the ledger.
+	runner.BeforeRequestContext = func() []ContextSegment { return nil }
+	history2 := append(append(providers.CloneChatMessages(history1), res1.NewMessages...), userMsg("second ask"))
+	if _, err := runner.RunWithCallback(context.Background(), history2, nil); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+	turn2 := client.requests[1].Messages
+	if got := countMessagesContaining(turn2, "[ACTIVE_FILES]"); got != 0 {
+		t.Fatalf("derived ledger must not reappear from retained state, got %d in %+v", got, turn2)
+	}
+	if got := countMessagesContaining(turn2, "status: inactive"); got != 0 {
+		t.Fatalf("dropped ledgers must not earn tombstones, got %d in %+v", got, turn2)
 	}
 }
 

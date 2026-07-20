@@ -218,18 +218,6 @@ type Env struct {
 	GoalRuntime              *goalruntime.Runtime
 	AgentID                  string
 	AgentPath                string
-	// ParticipantID is set for conversation-native named-agent runtimes.
-	// It lets participant tools act under the stable participant identity
-	// without changing the thread/root agent identity used by other tools.
-	ParticipantID string
-	// ParticipantSpeechEnabled is an internal app-server authorization for
-	// conversation-native participant runs. Ordinary subagents keep this false.
-	ParticipantSpeechEnabled bool
-	// ResidentParticipantEnabled is true only for long-lived named-agent DM
-	// runtimes. It exposes resident-only conversation tools such as
-	// fetch_thread_messages.
-	ResidentParticipantEnabled bool
-	ConversationSessionDir     string
 	// ToolSearchEnabled means deferred tools are loaded through the
 	// model-visible tool_search entrypoint. When false, the active surface is
 	// flattened and tool_search guidance must not be emitted.
@@ -249,15 +237,6 @@ type Env struct {
 	ProcessMgr           *proc.Manager
 	AgentControl         *agentcontrol.AgentControl
 	AutomationManager    *automation.Manager
-	ParticipantSpeech    ParticipantSpeech
-	// GroupManager backs the resident-only create_group / add_member actions
-	// of manage_participant. Nil means group management is unavailable in this
-	// environment (those actions return an execute-time error).
-	GroupManager GroupManager
-	// TaskManager backs the resident-only group Thread/Task workflow. Nil means
-	// that workflow is unavailable in this
-	// environment (every action returns an execute-time error).
-	TaskManager TaskManager
 	// BrowserBridge routes the browser tool's actions to the desktop host that
 	// owns the hidden WebContentsView + CDP session. Nil means no embedded
 	// browser backend is attached (for example the CLI/headless runtime), and
@@ -272,9 +251,7 @@ type Env struct {
 	// may only touch paths inside one of these roots — the agent home,
 	// the user's registered workspaces, and the system temp directory.
 	// Reads are rejected the same as writes. Empty keeps the ordinary
-	// workspace-confinement behavior; assembled only for resident turns
-	// and participant task runs
-	// (2026-07-03-sidebar-groups-andy-workspaces.md §5.2).
+	// workspace-confinement behavior for named-agent runs.
 	FileScopeRoots []string
 	Skills         []skills.Skill
 	// ActiveSurface is the compiled model profile surface currently
@@ -290,6 +267,9 @@ type Env struct {
 	// new snapshot. Consumers can bridge it to runtime events or UI
 	// notifications without coupling the plan tool to either layer.
 	OnPlanUpdated func(snapshot PlanSnapshot)
+	// OnSessionWorkspaceChanged persists and broadcasts an explicit main-agent
+	// workspace move before subsequent tools start resolving paths there.
+	OnSessionWorkspaceChanged func(root string) error
 
 	readState *readFileState
 	testState testRunState
@@ -297,6 +277,61 @@ type Env struct {
 	webState  webEvidenceState
 
 	toolTelemetry toolTelemetry
+}
+
+// prepareSessionWorkspaceChange constructs every fallible runtime dependency
+// before persistence. Its commit function only applies prepared state and is
+// called after the app-server has durably accepted the new workspace.
+func (e *Env) prepareSessionWorkspaceChange(root string) (func(), error) {
+	root = filepath.Clean(root)
+	fileScopeRoots := rebaseRuntimeFileScope(e.FileScopeRoots, e.RootDir, root)
+	commitAgentControl := func() {}
+	if e.AgentControl != nil {
+		var err error
+		commitAgentControl, err = e.AgentControl.PrepareWorkspaceRebind(root)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return func() {
+		e.RootDir = root
+		e.FileScopeRoots = fileScopeRoots
+		if e.ProcessMgr != nil {
+			e.ProcessMgr.SetRootDir(root)
+		}
+		commitAgentControl()
+	}, nil
+}
+
+func rebaseRuntimeFileScope(roots []string, oldRoot, newRoot string) []string {
+	if len(roots) == 0 {
+		return nil
+	}
+	out := append([]string(nil), roots...)
+	for i, root := range out {
+		if sameRuntimeFileScopePath(root, oldRoot) {
+			out[i] = newRoot
+			return out
+		}
+	}
+	return append([]string{newRoot}, out...)
+}
+
+func sameRuntimeFileScopePath(left, right string) bool {
+	canonical := func(path string) string {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return ""
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		return filepath.Clean(path)
+	}
+	return canonical(left) == canonical(right)
 }
 
 // BrowserScreenshotResult reports the persisted screenshot geometry and on-disk
@@ -346,204 +381,6 @@ type BrowserTabStore interface {
 	Get(tabID string) (BrowserTabRecord, bool, error)
 	Put(rec BrowserTabRecord) error
 	Delete(tabID string) error
-}
-
-type PostedMessage struct {
-	AgentID       string    `json:"agent_id,omitempty"`
-	ParticipantID string    `json:"participant_id,omitempty"`
-	Kind          string    `json:"kind"`
-	ThreadID      string    `json:"thread_id"`
-	Text          string    `json:"text,omitempty"`
-	CreatedAt     time.Time `json:"created_at,omitempty"`
-	// Held is set when the post was NOT published because the thread moved
-	// since this turn read it: newer messages arrived while the agent was
-	// composing, so the draft may now be redundant or out of date. HeldNote
-	// carries what arrived. The agent decides its next move: revise (post a
-	// new draft), resend unchanged (post again with force=true), or stay
-	// silent. Never set for the fresh-post path or for a forced post.
-	Held     bool   `json:"held,omitempty"`
-	HeldNote string `json:"held_note,omitempty"`
-	// BasisSeq echoes the message seq this post declared it was generated
-	// against (0 = the agent's read cursor was used). The freshness check holds
-	// the post if any message from someone else arrived after this basis.
-	BasisSeq int `json:"basis_seq,omitempty"`
-}
-
-type ParticipantSpeech interface {
-	// PostMessage publishes a participant message. basisSeq is the message seq
-	// the agent generated this post against (its view of "latest"); the system
-	// mechanically holds the post if the thread moved past that basis (a newer
-	// message from someone else). 0 means "use my read cursor as the basis".
-	// force=true skips the check (see PostedMessage.Held): use it to resend a
-	// draft the agent has decided is still right even though the room moved.
-	PostMessage(ctx context.Context, kind, text, targetThreadID string, basisSeq int, force bool) (PostedMessage, error)
-}
-
-// GroupManager lets resident named agents create group threads and add
-// named teammates to groups they belong to. The app server injects an
-// implementation per resident runtime; task runs and ordinary subagents
-// never receive one (the tools are additionally gated on resident
-// participant capability).
-type GroupManager interface {
-	// CreateGroup creates a group thread with the given title and adds the
-	// calling participant as its first member. Returns the new thread ID.
-	CreateGroup(ctx context.Context, title string) (string, error)
-	// AddGroupMember adds a named participant to a group thread the caller
-	// belongs to. Adding an existing member is a no-op success.
-	AddGroupMember(ctx context.Context, threadID, participantID string) error
-	// ListGroupMembers returns the named-agent members of a group thread the
-	// caller belongs to. It is the participant pool a workflow bound to that
-	// thread may dispatch named_participant slots to. Non-group or unknown
-	// threads return an empty list.
-	ListGroupMembers(ctx context.Context, threadID string) ([]GroupMember, error)
-}
-
-// GroupMember is a named agent in a group thread, identified by its stable
-// participant ID and its display Name (the identity axis). Busy reports that
-// the member is currently executing another task run (decision-five
-// concurrency lock), so another caller trying to enlist it is told busy
-// instead of racing the same resident agent.
-type GroupMember struct {
-	ID   string
-	Name string
-	Busy bool
-}
-
-// TaskView is the tool-facing snapshot of one group Thread or Task. The Thread
-// owner becomes the immutable lead on promotion; the lead orchestrates work
-// but is never a plan-piece assignee.
-type TaskView struct {
-	ID           string `json:"id"`
-	ThreadID     string `json:"thread_id"`
-	AnchorItemID string `json:"anchor_item_id,omitempty"`
-	Title        string `json:"title,omitempty"`
-	Status       string `json:"status"`
-	// ExecState is the task's execution axis, separate from the approval
-	// Status: planning/executing/awaiting_lead/blocked/needs_human/completed/failed; empty
-	// when the task never entered execution.
-	ExecState   string `json:"exec_state,omitempty"`
-	ThreadOwner string `json:"thread_owner,omitempty"`
-	Lead        string `json:"lead,omitempty"`
-	LeadName    string `json:"lead_name,omitempty"`
-	CreatedBy   string `json:"created_by,omitempty"`
-	Summary     string `json:"summary,omitempty"`
-	// Plan is the lead's declared work breakdown, present only after promotion
-	// and planning.
-	Plan []TaskPiece `json:"plan,omitempty"`
-}
-
-// TaskPiece is one unit of a team task's plan as it crosses the tool boundary
-// (mirrors session.TaskPiece). Status: pending -> active -> done. Prompt is
-// the only node field the lead authors through set_plan — handoff, attempts,
-// and retry budget are engine-owned and never settable from the tool surface.
-type TaskPiece struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	Assignee         string   `json:"assignee"`
-	DependsOn        []string `json:"depends_on,omitempty"`
-	Status           string   `json:"status,omitempty"`
-	CurrentAttemptID string   `json:"current_attempt_id,omitempty"`
-	// Prompt is the lead-authored briefing the assignee is woken with when
-	// the engine dispatches the piece.
-	Prompt string `json:"prompt,omitempty"`
-	// State is the display label the task panel renders, derived purely from
-	// Status (completed/failed/blocked/retrying/active/pending) so the panel
-	// never depends on the internal status vocabulary (plan §T9).
-	State string `json:"state,omitempty"`
-	// LastActivityAt / LastProgressAt are the node's two liveness timestamps,
-	// exposed raw: activity is any observable action by the assignee (a tool
-	// call), progress is a declared step forward (a filed handoff, a public
-	// task-thread update). They are surfaced as raw runtime facts; the frontend
-	// may describe their recency but does not infer a hidden execution state.
-	LastActivityAt time.Time `json:"last_activity_at,omitzero"`
-	LastProgressAt time.Time `json:"last_progress_at,omitzero"`
-}
-
-// TaskHandoff is the structured result a node hands to its downstream as it
-// crosses the tool boundary (mirrors session.TaskHandoff). An assignee attaches
-// it to manage_task action=piece_done; the engine writes it onto the downstream
-// node and renders it into that node's wake. It is the next node's real input —
-// deliberately distinct from a public post_message update, which is prose for the
-// human and is never a node's input.
-type TaskHandoff struct {
-	Done       string   `json:"done,omitempty"`
-	Findings   string   `json:"findings,omitempty"`
-	Artifacts  []string `json:"artifacts,omitempty"`
-	Limits     string   `json:"limits,omitempty"`
-	NextGoal   string   `json:"next_goal,omitempty"`
-	Acceptance string   `json:"acceptance,omitempty"`
-	Notes      string   `json:"notes,omitempty"`
-}
-
-type TaskEvent struct {
-	Seq       int       `json:"seq"`
-	NodeID    string    `json:"node_id,omitempty"`
-	AttemptID string    `json:"attempt_id,omitempty"`
-	Kind      string    `json:"kind"`
-	Actor     string    `json:"actor,omitempty"`
-	Summary   string    `json:"summary,omitempty"`
-	Payload   string    `json:"payload,omitempty"`
-	At        time.Time `json:"at"`
-}
-
-// TaskManager lets resident named agents run the group-only Thread -> Task
-// workflow. The app server injects one per resident runtime; task workers and
-// ordinary subagents never receive it.
-type TaskManager interface {
-	// OpenThread starts or returns the durable Thread anchored to one real group
-	// message. anchorSeq is required. A named parent author owns it; a human
-	// parent is owned by the caller. Existing ownership is never transferred.
-	OpenThread(ctx context.Context, threadID string, anchorSeq int, title string) (TaskView, error)
-	// PromoteThread converts an open Thread to a Task. Only its persisted owner
-	// may call it, and that owner becomes immutable Task lead.
-	PromoteThread(ctx context.Context, subthreadID, title string) (TaskView, error)
-	// ConcludeTask files the task's conclusion and completes it in one act:
-	// the summary bubbles to the parent main stream under the caller's
-	// identity and the task resolves immediately — no review gate. The
-	// task can only be concluded by its lead.
-	ConcludeTask(ctx context.Context, subthreadID, summary string) (TaskView, error)
-	// NeedHuman flags the task as waiting on a decision that genuinely
-	// belongs to the human (exec state needs_human + a blocked trace event
-	// with the reason). It wakes nobody — the human decides from the board.
-	NeedHuman(ctx context.Context, subthreadID, reason string) (TaskView, error)
-	// NeedUpstream is the assignee's fallback when the handoff its upstream
-	// gave it is insufficient (plan §T8): it bounces the work back instead of
-	// working around a bad input or rewriting the plan. The caller must be the
-	// piece's assignee, actively running it, and the piece must depend on an
-	// upstream. The downstream node is parked to pending and each upstream is
-	// re-dispatched with a directive naming what was missing; when an upstream
-	// re-files piece_done the engine re-runs the downstream with its fresh
-	// handoff.
-	NeedUpstream(ctx context.Context, subthreadID, pieceID, reason string) (TaskView, error)
-	// UnfollowTask removes the caller from the task's push subset; the task
-	// stays readable via fetch_thread_messages.
-	UnfollowTask(ctx context.Context, subthreadID string) error
-	// ListWorkflowThreads returns the group's open Threads and active Tasks.
-	ListWorkflowThreads(ctx context.Context, threadID string) ([]TaskView, error)
-	TraceTask(ctx context.Context, subthreadID string) ([]TaskEvent, error)
-	// SetPlan declares the lead's work breakdown for a team task (task-rail
-	// design §8): pieces with assignees and dependencies. The engine then
-	// dispatches every piece whose dependencies are already satisfied by
-	// @-waking its assignee into the task thread. The caller must belong to
-	// the task's thread; assignees must be members.
-	SetPlan(ctx context.Context, subthreadID string, pieces []TaskPiece) (TaskView, error)
-	AddTaskPiece(ctx context.Context, subthreadID string, piece TaskPiece) (TaskView, error)
-	ReviseTaskPiece(ctx context.Context, subthreadID, pieceID, title, prompt string, dependsOn []string) (TaskView, error)
-	ReassignTaskPiece(ctx context.Context, subthreadID, pieceID, assignee string) (TaskView, error)
-	RetryTaskPiece(ctx context.Context, subthreadID, pieceID, reason string) (TaskView, error)
-	CancelTaskPiece(ctx context.Context, subthreadID, pieceID, reason string) (TaskView, error)
-	ResumeTask(ctx context.Context, subthreadID, reason string) (TaskView, error)
-	// PieceDone marks one plan piece complete (called by its assignee) and
-	// hands the structured result to the downstream node(s). The engine writes
-	// handoff onto every piece that depends on this one — or, for a terminal
-	// piece, onto the piece itself — then dispatches any piece whose
-	// dependencies are now satisfied (carrying the handoff into its wake), or —
-	// when every piece is done — wakes the lead to wrap up and report. handoff
-	// is nil when the assignee reported no structured result; the handoff is the
-	// downstream's input, not a public thread update. It is the early / rich
-	// completion path: a node also completes when its dispatched turn ends, so
-	// piece_done is how an assignee finishes early or hands a structured result.
-	PieceDone(ctx context.Context, subthreadID, pieceID string, handoff *TaskHandoff) (TaskView, error)
 }
 
 // RecordRead records a successful read_file invocation.

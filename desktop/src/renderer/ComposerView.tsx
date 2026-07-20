@@ -1,5 +1,4 @@
 import {
-  AtSign,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -8,6 +7,7 @@ import {
   FolderOpen,
   FolderX,
   Send,
+  Sparkles,
   Square,
   X
 } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type Ref,
   type RefObject,
+  type ReactNode,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,8 +28,6 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
-  ParticipantProfile,
-  ParticipantSummary,
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
@@ -57,7 +56,6 @@ import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSect
 import { ComposerGoalStrip } from "./ComposerGoalStrip";
 import {
   AccessMenu,
-  ChatFocusChip,
   ComposerPlusButton,
   ProjectPickerMenu,
   RuntimePicker,
@@ -78,7 +76,6 @@ import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
-import { GroupMembersCapsule } from "./GroupMembersCapsule";
 
 type CollapsedComposerPromptBlock = {
   id: string;
@@ -105,6 +102,7 @@ export { permissionModeFromSummary, permissionModeHasAdvancedOverrides } from ".
 export function Composer({
   variant = "dock",
   mainConversation = false,
+  topAccessory,
   containerRef,
   prompt,
   setPrompt,
@@ -162,6 +160,8 @@ export function Composer({
   onToggleUltra,
   onEditGuideMessage,
   onSend,
+  onSteer,
+  onQueue,
   onInterrupt,
   goalSummary,
   onEditGoal,
@@ -174,19 +174,16 @@ export function Composer({
   contextUsage,
   queryHistorySessionID,
   queryHistory = [],
-  participants = [],
-  chatFocusValue,
-  onSelectChatFocus,
-  groupMembers,
-  onOpenGroupInfo,
   hideRuntimeControls = false,
   placeholder,
   textOnly = false,
   slashCommandsOverride,
-  onResetSideThread
+  onResetSideThread,
+  onConvertToTask,
 }: {
   variant?: ComposerVariant;
   mainConversation?: boolean;
+  topAccessory?: ReactNode;
   containerRef?: Ref<HTMLElement>;
   prompt: string;
   setPrompt: (value: string) => void;
@@ -250,6 +247,8 @@ export function Composer({
   onToggleUltra?: (enabled: boolean) => void;
   onEditGuideMessage: (id: string) => void;
   onSend: () => void;
+  onSteer?: () => void;
+  onQueue?: () => void;
   onInterrupt: () => void;
   goalSummary?: ComposerGoalSummary | null;
   onEditGoal?: (nextText: string) => void | Promise<void>;
@@ -265,26 +264,13 @@ export function Composer({
   contextUsage?: TurnContextUsage | null;
   queryHistorySessionID?: string;
   queryHistory?: string[];
-  participants?: ParticipantProfile[];
-  // Chat-style (DM/group) thread "work focus" chip. `chatFocusValue`
-  // doubles as the visibility switch: undefined means the active thread
-  // is not chat-style and the chip is not rendered at all; "" renders
-  // the de-emphasized default (全部工作区), "~" the personal space, any
-  // other string a workspace name. The host owns the per-thread sticky
-  // state (App.tsx chatFocusOverrides + Thread.focus_workspace echo).
-  chatFocusValue?: string;
-  onSelectChatFocus?: (value: string) => void;
-  groupMembers?: ParticipantSummary[];
-  onOpenGroupInfo?: () => void;
   // Suppress the model/context/token runtime chrome on the bar's right edge.
-  // The split reply panel reuses this same composer for a cth, where the
-  // token gauge / context meter / model picker are meaningless — only the
-  // 附件/命令/盾牌 controls and the send button carry over.
+  // Side-thread composers reuse this input without a separate runtime picker.
   hideRuntimeControls?: boolean;
   // A shared composer can be embedded in a conversation surface whose
   // transport accepts text only. The editor, keyboard handling, expansion,
   // context menu, and send/stop controls remain the canonical Composer; only
-  // unsupported attachment, slash-command, mention, and permission affordances
+  // unsupported attachment, slash-command, and permission affordances
   // are removed.
   textOnly?: boolean;
   placeholder?: string;
@@ -295,6 +281,8 @@ export function Composer({
   slashCommandsOverride?: ComposerSlashCommand[];
   // Reset the side thread this composer is embedded in.
   onResetSideThread?: () => void;
+  // Convert the current conversation to a kanban task (main conversation only).
+  onConvertToTask?: () => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const statusText = composerStatusText(status);
@@ -323,8 +311,6 @@ export function Composer({
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
-  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
-  const [mentionDismissedValue, setMentionDismissedValue] = useState("");
   useEffect(() => {
     if (previousUltraEnabledRef.current === ultraEnabled) {
       return;
@@ -387,23 +373,6 @@ export function Composer({
   const slashMenuOpen = Boolean(!readOnly && slashDraft && slashDismissedValue !== prompt);
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
-  const mentionDraft = textOnly ? undefined : parseComposerMentionDraft(visiblePromptValue);
-  const mentionQuery = mentionDraft?.query ?? "";
-  const visibleMentionParticipants = useMemo(
-    () => filterMentionParticipants(participants, mentionQuery),
-    [mentionQuery, participants]
-  );
-  const mentionMenuOpen = Boolean(
-    !readOnly &&
-      !slashMenuOpen &&
-      mentionDraft &&
-      mentionDismissedValue !== prompt &&
-      visibleMentionParticipants.length > 0
-  );
-  const selectedMentionParticipant = mentionMenuOpen
-    ? visibleMentionParticipants[selectedMentionIndex]
-    : undefined;
-  const mentionMenuID = `composer-mentions-${variant}`;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
     disabled: readOnly || hasAttachments || hasCollapsedPromptBlocks,
     prompt,
@@ -417,9 +386,6 @@ export function Composer({
     setSelectedSlashIndex(firstEnabledSlashCommandIndex(visibleSlashCommands));
   }, [visibleSlashCommands]);
 
-  useEffect(() => {
-    setSelectedMentionIndex(0);
-  }, [visibleMentionParticipants]);
 
   useEffect(() => {
     if (!slashRuntimeReady || readOnly || textOnly) {
@@ -565,7 +531,7 @@ export function Composer({
     focusComposerSoon();
   }
 
-  function submitComposer(): void {
+  function submitComposerWith(onSubmit: () => void): void {
     resetQueryHistoryNavigation();
     const actionCommand = slashDraft
       ? exactActionSlashCommand(slashCommands, slashDraft)
@@ -574,14 +540,17 @@ export function Composer({
       applySlashCommand(actionCommand, slashDraft);
       return;
     }
-    onSend();
+    onSubmit();
     focusComposerSoon();
+  }
+
+  function submitComposer(): void {
+    submitComposerWith(onSend);
   }
 
   function updateVisiblePrompt(value: string): void {
     resetQueryHistoryNavigation();
     setSlashDismissedValue("");
-    setMentionDismissedValue("");
     setPrompt(hasCollapsedPromptBlocks ? `${collapsedPromptPrefix}${value}` : value);
   }
 
@@ -719,20 +688,6 @@ export function Composer({
     focusComposerSoon();
   }
 
-  function applyMentionParticipant(participant: ParticipantProfile | undefined): void {
-    if (!participant || !mentionDraft) {
-      return;
-    }
-    setMentionDismissedValue("");
-    const nextVisiblePrompt = `${visiblePromptValue.slice(0, mentionDraft.start)}@${participant.name} `;
-    setPrompt(
-      hasCollapsedPromptBlocks
-        ? `${collapsedPromptPrefix}${nextVisiblePrompt}`
-        : nextVisiblePrompt
-    );
-    focusComposerSoon();
-  }
-
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (readOnly) {
       return;
@@ -768,39 +723,26 @@ export function Composer({
         return;
       }
     }
-    if (mentionMenuOpen) {
-      if (event.key === "ArrowDown" && visibleMentionParticipants.length > 0) {
-        event.preventDefault();
-        setSelectedMentionIndex((current) =>
-          (current + 1) % visibleMentionParticipants.length
-        );
-        return;
-      }
-      if (event.key === "ArrowUp" && visibleMentionParticipants.length > 0) {
-        event.preventDefault();
-        setSelectedMentionIndex((current) =>
-          (current - 1 + visibleMentionParticipants.length) %
-          visibleMentionParticipants.length
-        );
-        return;
-      }
-      if ((event.key === "Enter" || event.key === "Tab") && selectedMentionParticipant) {
-        event.preventDefault();
-        applyMentionParticipant(selectedMentionParticipant);
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setMentionDismissedValue(prompt);
-        return;
-      }
-    }
     if (handleQueryHistoryKeyDown(event)) {
+      return;
+    }
+    if (
+      event.key === "Tab" &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      running &&
+      hasDraft &&
+      onQueue
+    ) {
+      event.preventDefault();
+      submitComposerWith(onQueue);
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submitComposer();
+      submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
     }
   }
 
@@ -824,6 +766,7 @@ export function Composer({
 
   const content = (
     <div className={`composer-stack${isComposerExpanded ? " is-expanded" : ""}`}>
+      {topAccessory ? <div className="composer-top-accessory">{topAccessory}</div> : null}
       <div className="composer-shell" ref={composerShellRef}>
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label={t("composer.slashCommands")}>
@@ -871,38 +814,6 @@ export function Composer({
             ) : (
               <div className="slash-command-empty">{t("composer.noMatchingCommand", { query: slashQuery })}</div>
             )}
-          </div>
-        ) : null}
-        {mentionMenuOpen ? (
-          <div className="mention-menu" id={mentionMenuID} role="listbox" aria-label={t("composer.mentionAgent")}>
-            <div className="mention-list scrollbar-hidden">
-              {visibleMentionParticipants.map((participant, index) => {
-                const selected = index === selectedMentionIndex;
-                const optionID = `${mentionMenuID}-${participant.id}`;
-                return (
-                  <button
-                    className={`mention-item${selected ? " selected" : ""}`}
-                    id={optionID}
-                    key={participant.id}
-                    role="option"
-                    type="button"
-                    aria-selected={selected}
-                    onMouseEnter={() => setSelectedMentionIndex(index)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => applyMentionParticipant(participant)}
-                  >
-                    <span className="mention-avatar" aria-hidden="true">
-                      <AtSign className="icon" />
-                    </span>
-                    <span className="mention-copy">
-                      <strong>{participant.name}</strong>
-                      <small>{participant.tagline || participant.role || "named"}</small>
-                    </span>
-                    <span className="mention-name">@{participant.name}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         ) : null}
         {onToggleUltra ? (
@@ -1011,17 +922,13 @@ export function Composer({
               placeholder={composerPlaceholder}
               disabled={readOnly}
               aria-readonly={readOnly}
-              aria-controls={
-                slashMenuOpen ? slashMenuID : mentionMenuOpen ? mentionMenuID : undefined
-              }
+              aria-controls={slashMenuOpen ? slashMenuID : undefined}
               aria-activedescendant={
                 selectedSlashCommand
                   ? `${slashMenuID}-${selectedSlashCommand.id}`
-                  : selectedMentionParticipant
-                    ? `${mentionMenuID}-${selectedMentionParticipant.id}`
-                    : undefined
+                  : undefined
               }
-              aria-expanded={slashMenuOpen || mentionMenuOpen || undefined}
+              aria-expanded={slashMenuOpen || undefined}
               onChange={(event) => {
                 updateVisiblePrompt(event.target.value);
               }}
@@ -1029,9 +936,6 @@ export function Composer({
               onBlur={() => {
                 if (slashMenuOpen) {
                   setSlashDismissedValue(prompt);
-                }
-                if (mentionMenuOpen) {
-                  setMentionDismissedValue(prompt);
                 }
               }}
               onKeyDown={handleComposerKeyDown}
@@ -1050,21 +954,7 @@ export function Composer({
             </button>
             <div className="composer-bar">
               <div className="composer-bar-left">
-                {chatFocusValue !== undefined && onSelectChatFocus ? (
-                  // Chat-style (DM/group) threads swap the project control
-                  // for the work-focus chip in the same leading slot. The
-                  // project pill / "打开项目" button switches the whole
-                  // app's project context — activating it from inside a DM
-                  // yanks the user out of the conversation — so it must
-                  // not render here at all, in either variant; the focus
-                  // chip is the only scope control a chat thread offers.
-                  <ChatFocusChip
-                    value={chatFocusValue}
-                    projects={projects}
-                    disabled={readOnly}
-                    onChange={onSelectChatFocus}
-                  />
-                ) : variant === "hero" ? (
+                {variant === "hero" ? (
                   // Hero (empty/unsent) project & 对话 conversations: the
                   // project pill both shows and edits the workspace/cwd. Once
                   // the conversation is sent it drops to the dock variant below,
@@ -1153,16 +1043,7 @@ export function Composer({
                 )}
               </div>
               <div className="composer-bar-right">
-                {hideRuntimeControls ? null : groupMembers ? (
-                  // Group threads have no primary agent turn, so the token
-                  // gauge / context meter / model picker are meaningless
-                  // noise there — the members capsule takes their place on
-                  // the right edge of the bar instead.
-                  <GroupMembersCapsule
-                    members={groupMembers}
-                    onOpen={onOpenGroupInfo}
-                  />
-                ) : (
+                {hideRuntimeControls ? null : (
                   <>
                     <ComposerTokenGauge
                       running={running}
@@ -1203,6 +1084,17 @@ export function Composer({
                       {statusText}
                     </span>
                   </span>
+                ) : null}
+                {onConvertToTask ? (
+                  <button
+                    className="composer-action-button composer-convert-task-button"
+                    type="button"
+                    aria-label={t("composer.convertToTask")}
+                    title={t("composer.convertToTask")}
+                    onClick={onConvertToTask}
+                  >
+                    <Sparkles size={16} aria-hidden="true" />
+                  </button>
                 ) : null}
                 <button
                   className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
@@ -1290,41 +1182,6 @@ function CollapsedComposerPromptCard({
       </button>
     </div>
   );
-}
-
-type ComposerMentionDraft = {
-  query: string;
-  start: number;
-};
-
-function parseComposerMentionDraft(value: string): ComposerMentionDraft | undefined {
-  const match = /(^|\s)@([^\s@]*)$/.exec(value);
-  if (!match) {
-    return undefined;
-  }
-  return {
-    query: match[2] ?? "",
-    start: match.index + (match[1]?.length ?? 0),
-  };
-}
-
-function filterMentionParticipants(
-  participants: ParticipantProfile[],
-  query: string,
-): ParticipantProfile[] {
-  const normalized = query.trim().toLowerCase();
-  const named = participants.filter((participant) => participant.name.trim() !== "");
-  if (normalized === "") {
-    return named.slice(0, 8);
-  }
-  return named
-    .filter((participant) =>
-      [participant.name, participant.role ?? "", participant.tagline ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized),
-    )
-    .slice(0, 8);
 }
 
 function composerRuntimeContextKey(context: RuntimeContext): string {

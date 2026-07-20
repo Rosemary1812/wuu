@@ -74,17 +74,13 @@ async function run() {
   );
   await capture(win, "permission-mode-menu-open.png");
 
-  await chooseMode(win, "只读", "只读");
-  await chooseMode(win, "无边界", "无边界");
-  await chooseMode(win, "工作区内完全信任", "标准");
+  await chooseMode(win, "只读", "只读", 1);
+  await chooseMode(win, "无边界", "无边界", 2);
+  await chooseMode(win, "工作区内完全信任", "标准", 3);
 
   const finalState = await waitFor(win, permissionState, 3000);
   assert.equal(finalState.chipText, "标准", "Returning to standard mode should update the chip label.");
-  assert.deepEqual(
-    finalState.updatePermissionModes,
-    [],
-    "Visible permission preset changes should stay local until the next send."
-  );
+  assert.deepEqual(finalState.updatePermissionModes, ["read_only", "unconfined", "standard"]);
   assert.equal(finalState.menuOpen, false, "Permission menu should close after selection.");
   await capture(win, "permission-mode-final.png");
 
@@ -109,7 +105,7 @@ async function openPermissionMenu(win) {
   await waitFor(win, permissionStateWithOpenMenu, 3000);
 }
 
-async function chooseMode(win, label, expectedChipText) {
+async function chooseMode(win, label, expectedChipText, expectedUpdateCount) {
   await openPermissionMenu(win);
   await evaluate(
     win,
@@ -128,12 +124,12 @@ async function chooseMode(win, label, expectedChipText) {
     () => {
       const state = window.permissionE2E.state();
       const chipText = document.querySelector(".permission-chip span")?.textContent?.trim() ?? "";
-      return chipText === window.__EXPECTED_CHIP__ && state.updateCalls.length === 0
+      return chipText === window.__EXPECTED_CHIP__ && state.updateCalls.length === __ARG__.expectedUpdateCount
         ? permissionState()
         : null;
     },
     3000,
-    { expectedChipText }
+    { expectedChipText, expectedUpdateCount }
   );
   assert.equal(updated.chipText, expectedChipText, `${label} mode should update the visible chip.`);
 }

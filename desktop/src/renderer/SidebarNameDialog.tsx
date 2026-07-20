@@ -24,7 +24,7 @@ export interface SidebarNameDialogProps {
 }
 
 // Shared floating name dialog for the sidebar flows that need a single text
-// input (rename conversation, create new group chat). Same visual shell as
+// input (for example, renaming a conversation). Same visual shell as
 // the conversation-search overlay so the product stays consistent.
 export function SidebarNameDialog({
   open,

@@ -144,19 +144,14 @@ function makeToolCall(name = "lookup"): ThreadItem {
   };
 }
 
-function makeParticipantMessage(text: string): ThreadItem {
+function makeCollabAgentToolCall(): ThreadItem {
   return {
-    id: nextID("participant"),
-    type: "participant_message",
+    id: nextID("collab-tool"),
+    type: "collab_agent_tool_call",
     status: "completed",
-    text,
-    agent_id: "agent-42",
-    post_kind: "result",
-    participant: {
-      id: "agent-42",
-      name: "Reviewer",
-      kind: "agent",
-    },
+    name: "spawn_agent",
+    arguments: JSON.stringify({ name: "reviewer", prompt: "Review authentication" }),
+    result: JSON.stringify({ agent_id: "agent-42", status: "completed" }),
   };
 }
 
@@ -177,7 +172,6 @@ type RenderOptions = {
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
   onCollapseComplete?: () => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
 };
 
 function defaultItemRenderer(
@@ -216,7 +210,6 @@ function renderShell(
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
         onOpenAgent: options.onOpenAgent,
-        onOpenSubthread: options.onOpenSubthread,
       }),
     );
   });
@@ -245,7 +238,6 @@ function rerenderShell(
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
         onOpenAgent: options.onOpenAgent,
-        onOpenSubthread: options.onOpenSubthread,
       }),
     );
   });
@@ -712,57 +704,15 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(collapseCompletions).toBe(0);
   });
 
-  it("renders participant result cards and opens their source agent", () => {
-    const onOpenAgent = vi.fn();
-    const turn = makeTurn("completed", [
-      makeParticipantMessage("Done from the specialist."),
-    ]);
-    const { container } = renderShell(turn, { onOpenAgent });
+  it("keeps collaboration agent tool calls in process activity", () => {
+    const turn = makeTurn("completed", [makeCollabAgentToolCall()]);
+    const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(true);
-    expect(container.textContent).toContain("Done from the specialist.");
-
-    const openLink = container.querySelector<HTMLAnchorElement>(
-      'a[aria-label="查看完整过程"]',
-    );
-    expect(openLink).not.toBeNull();
-    expect(openLink?.textContent).toBe("查看完整过程");
-
-    act(() => {
-      openLink?.click();
-    });
-
-    expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
+    expect(container.querySelector(".turn-process-entry-activity")).not.toBeNull();
+    expect(container.querySelector(".process-surface")).not.toBeNull();
   });
 
-  it("opens task-card subthreads from the process fold", () => {
-    const onOpenSubthread = vi.fn();
-    const item: ThreadItem = {
-      id: "task-card-1",
-      type: "task_card",
-      status: "completed",
-      task: {
-        id: "task-1",
-        name: "Review authentication",
-        status: "running",
-        subthread_id: "cth-task-1",
-      },
-    };
-    const { container } = renderShell(makeTurn("completed", [item]), {
-      onOpenSubthread,
-    });
-
-    const openButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="查看过程"]',
-    );
-    expect(openButton).not.toBeNull();
-
-    act(() => {
-      openButton?.click();
-    });
-
-    expect(onOpenSubthread).toHaveBeenCalledWith(item);
-  });
 });
 
 describe("AssistantTurnShell — reasoning fold (rule 3)", () => {

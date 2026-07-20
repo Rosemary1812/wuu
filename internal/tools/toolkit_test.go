@@ -19,7 +19,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
-	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
@@ -1034,149 +1033,61 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 -old name
 +new name
 *** End Patch`
-	expectedOldSHAs := map[string]string{
-		"a.txt":       formatFileSHA(sha256Hex([]byte("line one\nline two\nline three\n"))),
-		"remove.txt":  formatFileSHA(sha256Hex([]byte("remove me\n"))),
-		"oldname.txt": formatFileSHA(sha256Hex([]byte("old name\n"))),
-	}
 	args, err := json.Marshal(map[string]any{
 		"patchText": patchText,
 	})
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+	result, err := kit.ExecuteResult(context.Background(), providers.ToolCall{
 		Name:      "apply_patch",
 		Arguments: string(args),
 	})
 	if err != nil {
 		t.Fatalf("apply_patch: %v", err)
 	}
-	if !strings.Contains(resp, `"action":"update"`) || !strings.Contains(resp, `"action":"add"`) ||
-		!strings.Contains(resp, `"action":"delete"`) || !strings.Contains(resp, `"action":"move"`) {
-		t.Fatalf("expected per-file actions in response: %s", resp)
+	resp := result.TextProjection()
+	wantResponse := strings.Join([]string{
+		"Success. Updated the following files:",
+		"M a.txt",
+		"A dir/new.txt",
+		"D remove.txt",
+		"M oldname.txt -> renamed.txt",
+	}, "\n")
+	if resp != wantResponse {
+		t.Fatalf("unexpected apply_patch model response:\ngot:\n%s\nwant:\n%s", resp, wantResponse)
 	}
-	var parsed struct {
-		DryRun            bool                  `json:"dry_run"`
-		HunkCount         int                   `json:"hunk_count"`
-		ChangedFiles      []string              `json:"changed_files"`
-		RiskSummary       applyPatchRiskSummary `json:"risk_summary"`
-		WorkspaceRevision string                `json:"workspace_revision"`
-		Suggestions       []string              `json:"next_suggestions"`
-		Provenance        struct {
-			Tool   string `json:"tool"`
-			Source string `json:"source"`
-		} `json:"provenance"`
-		PatchJournalPath string                    `json:"patch_journal_path"`
-		ManifestPath     string                    `json:"manifest_path"`
-		PatchPath        string                    `json:"patch_path"`
-		PatchJournal     applyPatchJournalManifest `json:"patch_journal"`
-		Files            []struct {
-			Path       string `json:"path"`
-			Action     string `json:"action"`
-			OldFileSHA string `json:"old_file_sha"`
-			NewFileSHA string `json:"new_file_sha"`
-		} `json:"files"`
+	var detail map[string]json.RawMessage
+	if err := json.Unmarshal(result.StructuredContent, &detail); err != nil {
+		t.Fatalf("parse apply_patch structured detail: %v", err)
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse apply_patch response: %v", err)
+	if len(detail) != 1 || detail["files"] == nil {
+		t.Fatalf("structured detail should contain only actual file changes: %s", result.StructuredContent)
 	}
-	if parsed.DryRun || parsed.HunkCount != 4 {
-		t.Fatalf("unexpected patch summary: %+v", parsed)
+	var files []applyPatchFileResult
+	if err := json.Unmarshal(detail["files"], &files); err != nil {
+		t.Fatalf("parse apply_patch file changes: %v", err)
 	}
-	if parsed.RiskSummary.FileCount != 4 ||
-		parsed.RiskSummary.HunkCount != 4 ||
-		parsed.RiskSummary.AddedLines != 3 ||
-		parsed.RiskSummary.DeletedLines != 3 ||
-		parsed.RiskSummary.Actions["update"] != 1 ||
-		parsed.RiskSummary.Actions["add"] != 1 ||
-		parsed.RiskSummary.Actions["delete"] != 1 ||
-		parsed.RiskSummary.Actions["move"] != 1 ||
-		!parsed.RiskSummary.MultiFile ||
-		!parsed.RiskSummary.ContainsDelete ||
-		!parsed.RiskSummary.ContainsMove ||
-		parsed.RiskSummary.RiskLevel != "high" {
-		t.Fatalf("unexpected patch risk summary: %+v", parsed.RiskSummary)
+	if len(files) != 4 {
+		t.Fatalf("file changes = %+v, want four entries", files)
 	}
-	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
-		t.Fatalf("apply_patch response missing filesystem workspace revision: %+v", parsed)
-	}
-	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
-	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
-		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
-	}
-	if parsed.Provenance.Tool != "apply_patch" || parsed.Provenance.Source != "model_tool_call" {
-		t.Fatalf("unexpected provenance: %+v", parsed.Provenance)
-	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "command execution") {
-		t.Fatalf("apply_patch response missing validation suggestion: %+v", parsed.Suggestions)
-	}
-	if parsed.PatchJournalPath == "" || parsed.ManifestPath != parsed.PatchJournalPath || parsed.PatchPath == "" {
-		t.Fatalf("apply_patch response missing journal artifact paths: %+v", parsed)
-	}
-	if !strings.HasPrefix(parsed.PatchJournalPath, filepath.Join(sessionDir, "patch-journal")) ||
-		!strings.HasPrefix(parsed.PatchPath, filepath.Join(sessionDir, "patch-journal")) {
-		t.Fatalf("journal paths should be session-scoped: manifest=%q patch=%q", parsed.PatchJournalPath, parsed.PatchPath)
-	}
-	if parsed.PatchJournal.ID == "" || parsed.PatchJournal.SessionID != "session-apply-patch" ||
-		parsed.PatchJournal.HunkCount != 4 || parsed.PatchJournal.PatchPath != parsed.PatchPath {
-		t.Fatalf("unexpected inline patch journal: %+v", parsed.PatchJournal)
-	}
-	if parsed.PatchJournal.RiskSummary.RiskLevel != "high" || parsed.PatchJournal.RiskSummary.AddedLines != 3 {
-		t.Fatalf("patch journal missing risk summary: %+v", parsed.PatchJournal.RiskSummary)
-	}
-	if got := mustReadFile(t, parsed.PatchPath); got != patchText {
-		t.Fatalf("patch artifact mismatch:\n%s", got)
-	}
-	var manifest applyPatchJournalManifest
-	data, err := os.ReadFile(parsed.PatchJournalPath)
-	if err != nil {
-		t.Fatalf("read patch journal manifest: %v", err)
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		t.Fatalf("parse patch journal manifest: %v\n%s", err, data)
-	}
-	if manifest.ID != parsed.PatchJournal.ID || manifest.Tool != "apply_patch" ||
-		manifest.WorkspaceRevisionBefore == "" || manifest.WorkspaceRevisionAfter != parsed.WorkspaceRevision ||
-		!reflect.DeepEqual(manifest.ChangedFiles, wantChanged) || len(manifest.Snapshots) != 5 {
-		t.Fatalf("unexpected patch journal manifest: %+v", manifest)
-	}
-	for _, snapshot := range manifest.Snapshots {
-		if snapshot.Path == "a.txt" && (!snapshot.Existed || snapshot.FileSHA != expectedOldSHAs["a.txt"] || snapshot.SnapshotPath == "") {
-			t.Fatalf("unexpected a.txt snapshot: %+v", snapshot)
+	actions := map[string]string{}
+	for _, file := range files {
+		actions[file.Path] = file.Action
+		if file.Action != "add" && len(file.Diff.Hunks) == 0 {
+			t.Fatalf("file change missing diff: %+v", file)
 		}
-		if snapshot.Path == "dir/new.txt" && snapshot.Existed {
-			t.Fatalf("added file should be recorded as absent before patch: %+v", snapshot)
-		}
+	}
+	wantActions := map[string]string{"a.txt": "update", "dir/new.txt": "add", "remove.txt": "delete", "oldname.txt": "move"}
+	if !reflect.DeepEqual(actions, wantActions) {
+		t.Fatalf("file actions = %+v, want %+v", actions, wantActions)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "patch-journal")); !os.IsNotExist(err) {
+		t.Fatalf("apply_patch should not create a journal, stat err=%v", err)
 	}
 	records := kit.ToolTelemetry()
-	if len(records) != 1 || !containsString(records[0].ArtifactRefs, parsed.PatchJournalPath) || !containsString(records[0].ArtifactRefs, parsed.PatchPath) {
-		t.Fatalf("patch telemetry missing journal artifacts: %+v", records)
-	}
-	if records[0].PatchRiskSummary == nil ||
-		records[0].PatchRiskSummary.RiskLevel != "high" ||
-		records[0].PatchRiskSummary.FileCount != 4 ||
-		records[0].PatchRiskSummary.Actions["move"] != 1 {
-		t.Fatalf("patch telemetry missing risk summary: %+v", records[0].PatchRiskSummary)
-	}
-	seenSHA := map[string]struct {
-		old string
-		new string
-	}{}
-	for _, file := range parsed.Files {
-		seenSHA[file.Path] = struct {
-			old string
-			new string
-		}{old: file.OldFileSHA, new: file.NewFileSHA}
-	}
-	if got := seenSHA["a.txt"]; got.old != expectedOldSHAs["a.txt"] || !strings.HasPrefix(got.new, "sha256:") {
-		t.Fatalf("update sha metadata = %+v", got)
-	}
-	if got := seenSHA["dir/new.txt"]; got.old != "" || !strings.HasPrefix(got.new, "sha256:") {
-		t.Fatalf("add sha metadata = %+v", got)
-	}
-	if got := seenSHA["remove.txt"]; got.old != expectedOldSHAs["remove.txt"] || got.new != "" {
-		t.Fatalf("delete sha metadata = %+v", got)
+	if len(records) != 1 || len(records[0].ArtifactRefs) != 0 || records[0].PatchRiskSummary != nil {
+		t.Fatalf("apply_patch telemetry should not duplicate client file changes: %+v", records)
 	}
 
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "line one\nline 2\nline three\n" {
@@ -1193,6 +1104,32 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	}
 	if got := mustReadFile(t, filepath.Join(root, "renamed.txt")); got != "new name\n" {
 		t.Fatalf("unexpected moved content: %q", got)
+	}
+}
+
+func TestApplyPatchModelSummaryContainsOnlyStableFileRecords(t *testing.T) {
+	files := make([]applyPatchFileResult, 1000)
+	for i := range files {
+		files[i] = applyPatchFileResult{
+			Path:   fmt.Sprintf("generated/%04d-%s.txt", i, strings.Repeat("long-name-", 8)),
+			Action: "update",
+			Diff: DiffResult{Hunks: []DiffHunk{{
+				Lines: []DiffLine{{Op: "insert", Content: strings.Repeat("large diff content ", 100)}},
+			}}},
+		}
+	}
+	first := applyPatchModelSummary(false, files)
+	second := applyPatchModelSummary(false, files)
+	if first != second {
+		t.Fatal("apply_patch model summary changed for identical input")
+	}
+	if !strings.Contains(first, "M generated/0000-") || !strings.Contains(first, "M generated/0999-") {
+		t.Fatalf("apply_patch model summary should list every changed file:\n%s", first)
+	}
+	for _, extra := range []string{"files omitted", "large diff content", "Workspace revision:", "Patch journal:", "Recovery:", "Warning:"} {
+		if strings.Contains(first, extra) {
+			t.Fatalf("apply_patch model summary contains unsupported extra %q:\n%s", extra, first)
+		}
 	}
 }
 
@@ -1232,38 +1169,30 @@ func TestToolkit_ApplyPatchDryRunDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+	result, err := kit.ExecuteResult(context.Background(), providers.ToolCall{
 		Name:      "apply_patch",
 		Arguments: string(args),
 	})
 	if err != nil {
 		t.Fatalf("apply_patch dry-run: %v", err)
 	}
-	var parsed struct {
-		DryRun            bool     `json:"dry_run"`
-		HunkCount         int      `json:"hunk_count"`
-		ChangedFiles      []string `json:"changed_files"`
-		WorkspaceRevision string   `json:"workspace_revision"`
-		Suggestions       []string `json:"next_suggestions"`
-		Files             []struct {
-			Action string `json:"action"`
-		} `json:"files"`
+	var detail map[string]json.RawMessage
+	if err := json.Unmarshal(result.StructuredContent, &detail); err != nil {
+		t.Fatalf("parse apply_patch structured detail: %v", err)
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse apply_patch response: %v", err)
+	if len(detail) != 1 || detail["files"] == nil {
+		t.Fatalf("dry-run structured detail should contain only file changes: %s", result.StructuredContent)
 	}
-	if !parsed.DryRun || parsed.HunkCount != 4 || len(parsed.Files) != 4 {
-		t.Fatalf("unexpected dry-run summary: %+v", parsed)
+	var files []applyPatchFileResult
+	if err := json.Unmarshal(detail["files"], &files); err != nil {
+		t.Fatalf("parse apply_patch dry-run file changes: %v", err)
 	}
-	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
-		t.Fatalf("apply_patch dry-run response missing filesystem workspace revision: %+v", parsed)
+	if len(files) != 4 {
+		t.Fatalf("unexpected dry-run file changes: %+v", files)
 	}
-	wantChanged := []string{"a.txt", "dir/new.txt", "remove.txt", "renamed.txt"}
-	if !reflect.DeepEqual(parsed.ChangedFiles, wantChanged) {
-		t.Fatalf("changed_files = %+v, want %+v", parsed.ChangedFiles, wantChanged)
-	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "without dry_run") {
-		t.Fatalf("apply_patch dry-run response missing apply suggestion: %+v", parsed.Suggestions)
+	resp := result.TextProjection()
+	if !strings.HasPrefix(resp, "Patch validation succeeded.") || strings.Contains(resp, `"diff"`) || strings.Contains(resp, "Patch journal:") {
+		t.Fatalf("unexpected dry-run model response:\n%s", resp)
 	}
 	if changedHookCalls != 0 {
 		t.Fatalf("dry-run should not fire file-change hooks, got %d", changedHookCalls)
@@ -1360,25 +1289,21 @@ func TestToolkit_ApplyPatchUsesCurrentAnchorsWithoutReadBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+	result, err := kit.ExecuteResult(context.Background(), providers.ToolCall{
 		Name:      "apply_patch",
 		Arguments: string(args),
 	})
 	if err != nil {
 		t.Fatalf("apply_patch without read baseline: %v", err)
 	}
-	currentSHA := formatFileSHA(sha256Hex([]byte("alpha\n")))
 	var parsed struct {
-		Files []struct {
-			OldFileSHA string `json:"old_file_sha"`
-			NewFileSHA string `json:"new_file_sha"`
-		} `json:"files"`
+		Files []applyPatchFileResult `json:"files"`
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse apply_patch response: %v", err)
+	if err := json.Unmarshal(result.StructuredContent, &parsed); err != nil {
+		t.Fatalf("parse apply_patch structured detail: %v", err)
 	}
-	if len(parsed.Files) != 1 || parsed.Files[0].OldFileSHA != currentSHA || !strings.HasPrefix(parsed.Files[0].NewFileSHA, "sha256:") {
-		t.Fatalf("unexpected patch sha metadata: %+v", parsed.Files)
+	if len(parsed.Files) != 1 || parsed.Files[0].Path != "a.txt" || parsed.Files[0].Action != "update" || len(parsed.Files[0].Diff.Hunks) == 0 {
+		t.Fatalf("unexpected file change: %+v", parsed.Files)
 	}
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "bravo\n" {
 		t.Fatalf("unexpected patched content: %q", got)
@@ -2298,7 +2223,6 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "send_message", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "post_message", kind: ToolKindAgent, exposure: ToolExposureHidden, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "session_memory", kind: ToolKindMemory, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: false, concurrencySafe: false},
 		{name: "goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
@@ -3687,6 +3611,7 @@ func TestToolkit_ToolTelemetry_RecordsToolError(t *testing.T) {
 }
 
 func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
 	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "API_KEY=secret-value-1234567890\n")
@@ -3942,7 +3867,72 @@ func TestToolkit_ToolResultSummaryContextBlockLimitsRenderedCalls(t *testing.T) 
 	}
 }
 
+// TestToolkit_ContextBlocksOmitsDerivedLedgersByDefault locks the issue-128
+// behavior: the four derived ledgers (plan TASK_STATE, ACTIVE_FILES,
+// TOOL_RESULT_SUMMARY, WEB_EVIDENCE) stay out of the default model projection
+// even when their underlying state exists, and WUU_DERIVED_CONTEXT_LEDGERS=on
+// restores them as the A/B baseline.
+func TestToolkit_ContextBlocksOmitsDerivedLedgersByDefault(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "one\ntwo\n")
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, call := range []providers.ToolCall{
+		{Name: "update_plan", Arguments: `{"plan":[{"step":"ship it","status":"in_progress"}]}`},
+		{Name: "read_file", Arguments: `{"path":"a.txt"}`},
+		{Name: "web_fetch", Arguments: `{"url":"http://127.0.0.1/"}`},
+	} {
+		if _, err := kit.Execute(context.Background(), call); err != nil {
+			t.Fatalf("%s: %v", call.Name, err)
+		}
+	}
+	// Sanity: every ledger producer holds state, so gating is what excludes
+	// the blocks, not empty inputs.
+	if len(kit.PlanContextBlocks()) == 0 {
+		t.Fatal("expected plan state for update_plan")
+	}
+	if _, ok := kit.ActiveFilesContextBlock(); !ok {
+		t.Fatal("expected active files state for read_file")
+	}
+	if _, ok := kit.ToolResultSummaryContextBlock(); !ok {
+		t.Fatal("expected tool telemetry state")
+	}
+	if _, ok := kit.WebEvidenceContextBlock(); !ok {
+		t.Fatal("expected web evidence state for web_fetch")
+	}
+
+	ledgerKinds := []wuucontext.BlockKind{
+		wuucontext.BlockTaskState,
+		wuucontext.BlockActiveFiles,
+		wuucontext.BlockToolResultSummary,
+		wuucontext.BlockWebEvidence,
+	}
+	present := func() map[wuucontext.BlockKind]bool {
+		got := map[wuucontext.BlockKind]bool{}
+		for _, block := range kit.ContextBlocks() {
+			got[block.Kind] = true
+		}
+		return got
+	}
+
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "")
+	if got := present(); len(got) != 0 {
+		t.Fatalf("default projection must omit derived ledgers and carry no other toolkit blocks: %+v", got)
+	}
+
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
+	got := present()
+	for _, kind := range ledgerKinds {
+		if !got[kind] {
+			t.Fatalf("A/B baseline should restore %s: %+v", kind, got)
+		}
+	}
+}
+
 func TestToolkit_ActiveFilesContextBlockTracksReadFiles(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
 	t.Setenv(wuucontext.DynamicContextProjectionEnvVar, "off")
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "dir", "a.txt"), "line one\nAPI_KEY=secret-value-1234567890\nline three\nline four\n")
@@ -4805,46 +4795,6 @@ func TestToolkit_HelpMeRequiresExplicitOptInAndCloneInheritsIt(t *testing.T) {
 	}
 	if _, ok := clone.env.ActiveSurface.Tools[helpMeToolName]; !ok {
 		t.Fatal("clone Env surface must inherit HelpMe opt-in")
-	}
-}
-
-// Regression: the resident/named-agent setters used to republish
-// env.ActiveSurface without the disabled-tools filter, resurrecting the gated
-// helpme tool for surface consumers (skill filtering) even though
-// Definitions() hid it and Execute() rejected it.
-func TestToolkit_ResidentSettersKeepDisabledHelpMeOffSurface(t *testing.T) {
-	kit, err := New(t.TempDir())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	kit.SetSkills([]skills.Skill{{
-		Name:         "recovery",
-		Description:  "Escalate a stuck task.",
-		WhenToUse:    "Use when the task is stuck.",
-		Content:      "Call the helpme tool.",
-		AllowedTools: []string{helpMeToolName},
-	}})
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
-	kit.SetParticipantSpeechEnabled(true)
-	kit.SetResidentParticipantEnabled(true)
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
-
-	if _, ok := kit.env.ActiveSurface.Tools[helpMeToolName]; ok {
-		t.Fatal("resident setters must not restore disabled HelpMe on the Env surface")
-	}
-	if containsProfileDef(kit.Definitions(), helpMeToolName) {
-		t.Fatal("HelpMe must stay hidden from definitions after resident setup")
-	}
-	for _, skill := range kit.env.VisibleSkills() {
-		if skill.Name == "recovery" {
-			t.Fatal("skills declaring the disabled HelpMe tool must be filtered out")
-		}
-	}
-
-	kit.SetHelpMeEnabled(true)
-	kit.SetResidentParticipantEnabled(true)
-	if _, ok := kit.env.ActiveSurface.Tools[helpMeToolName]; !ok {
-		t.Fatal("explicit opt-in must survive resident setter republish")
 	}
 }
 

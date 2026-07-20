@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Turn } from "../shared/protocol";
 import { queryTextForUserItem } from "./AppState";
 import {
@@ -67,6 +74,19 @@ export function ConversationTurnList({
     turns.length - TURN_LIST_RECENT_FULL_TURNS,
   );
 
+  // Identity-stable expander: TurnListEntry memoizes its children on turn
+  // identity, which only works if this callback never changes between renders.
+  const expandTurn = useCallback((turnID: string) => {
+    setExpandedTurnIDs((current) => {
+      if (current.has(turnID)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(turnID);
+      return next;
+    });
+  }, []);
+
   return (
     <>
       {renderBeforeTurns}
@@ -82,16 +102,7 @@ export function ConversationTurnList({
             key={turn.id}
             turn={turn}
             full={full}
-            onExpand={() =>
-              setExpandedTurnIDs((current) => {
-                if (current.has(turn.id)) {
-                  return current;
-                }
-                const next = new Set(current);
-                next.add(turn.id);
-                return next;
-              })
-            }
+            onExpand={expandTurn}
             renderTurn={renderTurn}
             renderAfterTurn={renderAfterTurn}
           />
@@ -111,23 +122,30 @@ function TurnListEntry({
 }: {
   turn: Turn;
   full: boolean;
-  onExpand: () => void;
+  onExpand: (turnID: string) => void;
   renderTurn: (turn: Turn) => ReactNode;
   renderAfterTurn?: (turn: Turn) => ReactNode;
 }): JSX.Element {
+  // CollapsedTurnView is memoized on turn identity (untouched turns keep
+  // their object across server events); the expand callback must be equally
+  // stable or it defeats that memo on every list render.
+  const handleExpand = useCallback(() => onExpand(turn.id), [onExpand, turn.id]);
   return (
     <>
       {full ? (
         renderTurn(turn)
       ) : (
-        <CollapsedTurnView turn={turn} onExpand={onExpand} />
+        <CollapsedTurnView turn={turn} onExpand={handleExpand} />
       )}
       {renderAfterTurn?.(turn)}
     </>
   );
 }
 
-function CollapsedTurnView({
+// Memoized on turn identity: server events rebuild the thread object but
+// keep untouched turns referentially equal, so hundreds of collapsed rows
+// skip re-rendering (and skip re-running their snippet scans) on each event.
+const CollapsedTurnView = memo(function CollapsedTurnView({
   turn,
   onExpand,
 }: {
@@ -179,7 +197,7 @@ function CollapsedTurnView({
       </button>
     </section>
   );
-}
+});
 
 function compactPreview(text: string, maxLength = 180): string {
   const compact = text.replace(/\s+/g, " ").trim();

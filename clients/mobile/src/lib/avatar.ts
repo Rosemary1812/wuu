@@ -5,7 +5,7 @@
 
 export const DEFAULT_AVATAR_COUNT = 12;
 
-// Resident (named) agents draw from the dressed cast (mascot-7..11: 巫师、
+// Named agents draw from the dressed cast (mascot-7..11: 巫师、
 // 耳机程序员、侦探、读书人、学者); everything else from the plain
 // expression cast (mascot-0..6).
 export const DRESSED_CAST_INDICES = [7, 8, 9, 10, 11] as const;
@@ -28,7 +28,7 @@ export function avatarTintIndex(seed: string): number {
 
 /** Which mascot-N.png this participant falls back to. */
 export function avatarMascotIndex(seed: string, kind?: string): number {
-  const cast = kind === "resident" ? DRESSED_CAST_INDICES : PLAIN_CAST_INDICES;
+  const cast = kind === "named" ? DRESSED_CAST_INDICES : PLAIN_CAST_INDICES;
   return cast[fnv1a(seed) % cast.length];
 }
 

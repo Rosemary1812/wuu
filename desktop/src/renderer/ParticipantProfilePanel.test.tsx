@@ -165,7 +165,6 @@ function mount(props: {
   onSave?: (params: Parameters<typeof ParticipantProfilePanel>[0]["onSave"] extends (p: infer P) => void ? P : never) => void;
   onOpenMemoryPanel?: (id: string) => void;
   onRetire?: (id: string) => void;
-  forkedFromName?: string;
   // initialName seeds the form's name field in "new" mode. The
   // Agents sidebar collects the agent name through SidebarNameDialog
   // first and passes it down so the profile editor opens pre-filled.
@@ -187,7 +186,6 @@ function mount(props: {
         onFeedback={() => {}}
         onOpenMemoryPanel={props.onOpenMemoryPanel ?? (() => {})}
         onRetire={props.onRetire ?? (() => {})}
-        forkedFromName={props.forkedFromName}
         initialName={props.initialName}
       />,
     );
@@ -324,16 +322,6 @@ function chooseSelectMenuOption(field: string, value: string): void {
 }
 
 describe("ParticipantProfilePanel — fork badge", () => {
-  it("shows \"X 的分身\" for a forked participant using the resolved母体 name", () => {
-    mount({
-      mode: "edit",
-      participant: participantFixture({ forked_from_id: "p-mother" }),
-      forkedFromName: "小青",
-    });
-    const badge = container.querySelector(".participant-profile-fork-badge");
-    expect(badge?.textContent).toBe("小青 的分身");
-  });
-
   it("omits the fork badge for an ordinary participant", () => {
     mount({ mode: "edit", participant: participantFixture() });
     expect(
@@ -717,7 +705,7 @@ describe("ParticipantProfilePanel — archive confirm dialog", () => {
 
     expect(onRetire).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
-      "该 Agent 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。",
+      "该 Agent 的配置和记忆会完整保留，但不再用于新任务；之后可以随时复职。",
     );
     expect(dialogButton("归档")).toBeDefined();
     expect(dialogButton("再想想")).toBeDefined();

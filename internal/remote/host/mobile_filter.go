@@ -57,7 +57,6 @@ func filterMobileChatNotification(env map[string]json.RawMessage, method string)
 		}
 	case appserver.NotificationTurnQueued,
 		appserver.NotificationTurnDequeued,
-		appserver.NotificationMessageMark,
 		appserver.NotificationParticipantUpdated:
 		// Direct chat state.
 	default:
@@ -257,11 +256,7 @@ func isMobileChatThread(raw json.RawMessage) bool {
 	if err := json.Unmarshal(raw, &thread); err != nil {
 		return true
 	}
-	if jsonBool(thread["group"]) {
-		return true
-	}
-	return jsonString(thread["workspace_kind"]) == string(appserver.WorkspaceKindDM) ||
-		strings.TrimSpace(jsonString(thread["dm_participant_id"])) != ""
+	return strings.TrimSpace(jsonString(thread["source"])) == appserver.ThreadSourceCollaboration
 }
 
 func isMobileChatItem(raw json.RawMessage) bool {
@@ -269,13 +264,9 @@ func isMobileChatItem(raw json.RawMessage) bool {
 	if err := json.Unmarshal(raw, &item); err != nil {
 		return true
 	}
-	if _, ok := item["focus_meta"]; ok {
-		return true
-	}
 	switch appserver.ThreadItemType(jsonString(item["type"])) {
 	case appserver.ThreadItemUserMessage,
-		appserver.ThreadItemParticipantMsg,
-		appserver.ThreadItemTaskCard:
+		appserver.ThreadItemAgentMessage:
 		return true
 	default:
 		return false
@@ -286,10 +277,4 @@ func jsonString(raw json.RawMessage) string {
 	var s string
 	_ = json.Unmarshal(raw, &s)
 	return s
-}
-
-func jsonBool(raw json.RawMessage) bool {
-	var b bool
-	_ = json.Unmarshal(raw, &b)
-	return b
 }

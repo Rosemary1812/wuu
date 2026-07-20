@@ -1,4 +1,5 @@
 /* The single JS-side bridge to the motion tokens in styles/base.css.
+ * WUU_TEST_MARKER
  * CSS owns the values. JS reads them at call time, so a timeout that waits
  * for a transition always matches the stylesheet, and prefers-reduced-motion
  * (which zeroes the token ladder) collapses the JS waits with it.

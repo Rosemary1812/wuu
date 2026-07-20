@@ -142,30 +142,4 @@ describe("IPC channel parity", () => {
     expect(handler).not.toContain("model,");
   });
 
-  it("forwards Thread owner and does not expose desktop lead override or completion", () => {
-    const index = source("index.ts");
-    const preload = source("preload.ts");
-    const openStart = index.indexOf('"wuu:thread-open-sub"');
-    const openEnd = index.indexOf('"wuu:thread-resolve-sub"', openStart);
-    const openHandler = index.slice(openStart, openEnd);
-    expect(openHandler).toContain("threadOwnerParticipantId?: string");
-    expect(openHandler).toContain("parentSeq?: number");
-    expect(openHandler).toContain("parent_seq: options?.parentSeq");
-    expect(openHandler).toContain(
-      "thread_owner_participant_id: options?.threadOwnerParticipantId",
-    );
-    expect(openHandler).not.toContain("createdBy");
-    expect(openHandler).not.toContain("created_by");
-    expect(openHandler).not.toContain("participants");
-
-    const escalateStart = index.indexOf('"wuu:thread-escalate-sub"');
-    const escalateEnd = index.indexOf('"wuu:thread-task-events"', escalateStart);
-    const escalateHandler = index.slice(escalateStart, escalateEnd);
-    expect(escalateHandler).not.toContain("leadParticipantId");
-    expect(escalateHandler).not.toContain("lead_participant_id");
-    expect(escalateHandler).not.toContain("createdBy");
-    expect(escalateHandler).not.toContain("created_by");
-    expect(index).not.toContain('"wuu:thread-bubble-sub"');
-    expect(preload).not.toContain('"wuu:thread-bubble-sub"');
-  });
 });

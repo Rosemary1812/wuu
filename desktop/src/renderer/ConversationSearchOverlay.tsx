@@ -385,11 +385,6 @@ function pickUserText(turn: Turn): string {
 // When no final_answer item exists yet (streaming in progress, legacy
 // items without a phase) fall back to the last non-empty agent_message
 // so the preview still surfaces something readable.
-//
-// Go-side `finalAgentMessageText` (appserver/resident_turn_failure.go)
-// intentionally does not filter by phase because the turn-failure path
-// only runs once the agent has stopped emitting; the preview can fire
-// mid-stream and benefits from a phase-aware fallback.
 function pickAssistantText(turn: Turn): string {
   let finalAnswer = "";
   let lastAgentMessage = "";

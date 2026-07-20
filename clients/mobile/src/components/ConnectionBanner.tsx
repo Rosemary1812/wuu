@@ -1,13 +1,11 @@
 // Connection-state strip under the header. Quiet by design: nothing renders
 // while attached and synchronized; connecting/reconnecting or a sync failure
-// shows a hairline strip with the eyes sticker.
+// shows a hairline status strip.
 
-import { Image, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import type { ConnectionPhase } from "../lib/store";
 import { usePalette } from "../theme";
-
-import EYES from "../../assets/reactions/eyes.png";
 
 export function ConnectionBanner({
   phase,
@@ -25,7 +23,6 @@ export function ConnectionBanner({
       : "重连中…";
   return (
     <View style={[styles.strip, { backgroundColor: palette.overlay4, borderColor: palette.hairline }]}>
-      <Image source={EYES} style={styles.sticker} resizeMode="contain" />
       <Text style={[styles.label, { color: syncError ? palette.danger : palette.inkMuted }]}>
         {label}
       </Text>
@@ -42,6 +39,5 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sticker: { width: 18, height: 18 },
   label: { fontSize: 12 },
 });

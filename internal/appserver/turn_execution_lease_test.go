@@ -154,7 +154,7 @@ func TestServerThreadExecutionLeaseGuardsAllTurnEntrypoints(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 	t.Cleanup(srv.Close)
-	th, err := srv.ensureResidentThread(sess.ID)
+	th, err := srv.ensureThreadLoaded(sess.ID)
 	if err != nil {
 		t.Fatalf("load thread: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestServerQueuedTurnWaitsForExternalThreadExecutionLease(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 	t.Cleanup(srv.Close)
-	th, err := srv.ensureResidentThread(sess.ID)
+	th, err := srv.ensureThreadLoaded(sess.ID)
 	if err != nil {
 		t.Fatalf("load thread: %v", err)
 	}
@@ -313,8 +313,8 @@ func TestServerThreadExecutionLeaseRefreshDropsRemovedDurableTail(t *testing.T) 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 	t.Cleanup(srv.Close)
-	if _, err := srv.ensureResidentThread(sess.ID); err != nil {
-		t.Fatalf("load stale resident thread: %v", err)
+	if _, err := srv.ensureThreadLoaded(sess.ID); err != nil {
+		t.Fatalf("load stale thread: %v", err)
 	}
 	if err := rewriteChatHistory(rt.SessionDir, sess.ID, durable[:2]); err != nil {
 		t.Fatalf("shorten durable history: %v", err)
@@ -480,7 +480,7 @@ func TestServerHelpMeCompletionRewriteWaitsForExecutionLease(t *testing.T) {
 		}
 		return rewriteChatHistory(sessDir, threadID, history)
 	}
-	th, err := srv.ensureResidentThread(sess.ID)
+	th, err := srv.ensureThreadLoaded(sess.ID)
 	if err != nil {
 		t.Fatalf("load root thread: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestServerThreadExecutionLeaseRollsBackPrelaunchFailures(t *testing.T) {
 		writeErr := errors.New("transport unavailable")
 		srv := New(rt, errorWriter{err: writeErr})
 		t.Cleanup(srv.Close)
-		th, err := srv.ensureResidentThread(sess.ID)
+		th, err := srv.ensureThreadLoaded(sess.ID)
 		if err != nil {
 			t.Fatalf("load thread: %v", err)
 		}
@@ -627,7 +627,7 @@ func TestServerThreadExecutionLeaseRollsBackPrelaunchFailures(t *testing.T) {
 		writeErr := errors.New("transport unavailable")
 		srv := New(rt, errorWriter{err: writeErr})
 		t.Cleanup(srv.Close)
-		th, err := srv.ensureResidentThread(sess.ID)
+		th, err := srv.ensureThreadLoaded(sess.ID)
 		if err != nil {
 			t.Fatalf("load thread: %v", err)
 		}

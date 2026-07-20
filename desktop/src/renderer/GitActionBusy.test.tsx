@@ -59,6 +59,7 @@ describe("useGitActionBusy", () => {
 
     expect(busy).toBe(true);
     expect(gitActionBusy).toHaveBeenCalledTimes(1);
+    expect(gitActionBusy).toHaveBeenLastCalledWith("/repo");
 
     act(() => {
       emitServerEvent?.({

@@ -10,7 +10,6 @@ import type {
   CodexPetSettingsUpdate,
   RuntimeConnectionUpdate,
   RuntimeGeneralSettingsUpdate,
-  SettingsUsageRange,
   SettingsUsageResponse,
   WuuDesktopApi
 } from "../shared/protocol";
@@ -38,6 +37,9 @@ afterEach(() => {
   // Drop the stub so each test installs its own.
   delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   delete (window as { wuu?: WuuDesktopApi }).wuu;
+  Reflect.deleteProperty(document, "elementFromPoint");
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function installBuildInfoStub(info: BuildInfoResult): void {
@@ -92,7 +94,6 @@ function emptyCodexPetsSnapshot(overrides: Partial<CodexPetsSnapshot> = {}): Cod
 function renderSettings(props: {
   initialized: InitializeResult | undefined;
   usage?: SettingsUsageResponse;
-  usageRange?: SettingsUsageRange;
   initialPage?: SettingsPage;
   runningProviderNames?: string[];
   codexPets?: CodexPetsSnapshot;
@@ -104,6 +105,7 @@ function renderSettings(props: {
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onToggleSidebar?: () => void;
+  sidebarCollapsed?: boolean;
   // ArchivedSessionView 是结构子集（id/title?/updated_at），这里
   // 直接传对象字面量，避免引入 ThreadSummary（它要求 turns/turn_count
   // 等计算字段，测试场景下冗余）。
@@ -111,8 +113,6 @@ function renderSettings(props: {
   onUnarchiveThread?: (thread: ArchivedSessionView) => void;
   locale?: "zh-CN" | "en-US";
 }): { about: Element | null; text: () => string; rootText: () => string } {
-  const usageRange: SettingsUsageRange = props.usageRange ?? "all";
-  const setUsageRange = vi.fn();
   if (props.locale) {
     window.wuu.initialLanguagePreference = props.locale;
     window.wuu.initialSystemLocale = props.locale;
@@ -123,8 +123,6 @@ function renderSettings(props: {
         initialPage={props.initialPage ?? "general"}
         running={false}
         usage={props.usage}
-        usageRange={usageRange}
-        setUsageRange={setUsageRange}
         runningProviderNames={props.runningProviderNames}
         codexPets={props.codexPets ?? emptyCodexPetsSnapshot()}
         codexPetsLoading={props.codexPetsLoading ?? false}
@@ -139,7 +137,7 @@ function renderSettings(props: {
         resizingSidebar={false}
         // Mirror the App-level collapse/hover wiring so existing render
         // assertions still produce a sensible non-collapsed shell by default.
-        sidebarCollapsed={false}
+        sidebarCollapsed={props.sidebarCollapsed ?? false}
         sidebarAnimating={false}
         onToggleSidebar={props.onToggleSidebar ?? (() => {})}
         sidebarMotionMs={240}
@@ -214,7 +212,7 @@ describe("SettingsView shell", () => {
     renderSettings({ initialized: baseInitialized(), onToggleSidebar });
 
     const toggle = container.querySelector<HTMLButtonElement>(
-      ".settings-titlebar .sidebar-toggle-button",
+      ".settings-shell > .settings-sidebar-toggle",
     );
     expect(toggle).not.toBeNull();
     expect(toggle?.classList.contains("icon-button")).toBe(true);
@@ -225,6 +223,48 @@ describe("SettingsView shell", () => {
       toggle?.click();
     });
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the drawer open while the pointer crosses onto the shell-level toggle", () => {
+    vi.useFakeTimers();
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    renderSettings({ initialized: baseInitialized(), sidebarCollapsed: true });
+
+    const shell = container.querySelector<HTMLElement>(".settings-shell");
+    const sidebar = container.querySelector<HTMLElement>(".settings-sidebar");
+    const toggle = container.querySelector<HTMLElement>(
+      ".settings-shell > .settings-sidebar-toggle",
+    );
+    expect(sidebar).not.toBeNull();
+    expect(toggle).not.toBeNull();
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => toggle),
+    });
+    act(() => {
+      toggle?.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      vi.advanceTimersByTime(240);
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+
+    act(() => {
+      sidebar?.dispatchEvent(
+        new MouseEvent("pointerout", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 24,
+          relatedTarget: toggle,
+        }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-closing")).toBe(false);
   });
 
   it("starts each settings page at the top and replaces the content surface", () => {
@@ -498,7 +538,7 @@ describe("SettingsView provider configuration", () => {
 });
 
 describe("SettingsView advanced settings", () => {
-  it("renders and saves BYOK context and compaction controls", async () => {
+  it("renders compaction controls and saves each field on commit", async () => {
     installBuildInfoStub({
       core: undefined,
       desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
@@ -532,6 +572,12 @@ describe("SettingsView advanced settings", () => {
     expect(rootText()).toContain("当前服务上下文上限");
     expect(rootText()).toContain("来自当前通道输入上限");
     expect(rootText()).toContain("400,000");
+    // Instant-apply: no draft form, no Save button.
+    expect(
+      Array.from(container.querySelectorAll("button")).some((button) =>
+        button.textContent?.includes("保存"),
+      ),
+    ).toBe(false);
 
     const inputs = Array.from(container.querySelectorAll("input"));
     expect(inputs.length).toBeGreaterThanOrEqual(6);
@@ -539,36 +585,65 @@ describe("SettingsView advanced settings", () => {
     expect((temperature as HTMLInputElement).value).toBe("");
     // The placeholder carries the automatic-value meaning instead of the row description.
     expect((temperature as HTMLInputElement).placeholder).toBe("自动");
+
+    const commit = async (input: Element) => {
+      await act(async () => {
+        input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        await Promise.resolve();
+      });
+    };
+
     await act(async () => {
       setInputValue(compactThreshold, "50");
-      setInputValue(compactKeepRecent, "20000");
-      setInputValue(providerContextWindow, "512000");
-      setInputValue(maxContextTokens, "256000");
-      setInputValue(maxSteps, "12");
-      setInputValue(temperature, "0.4");
-    });
-
-    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("保存"),
-    ) as HTMLButtonElement | undefined;
-    expect(submitButton?.disabled).toBe(false);
-    await act(async () => {
-      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      compactThreshold.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       await Promise.resolve();
     });
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ compact_threshold_pct: 0.5 });
 
-    expect(onAdvancedSave).toHaveBeenCalledWith({
-      disable_auto_compact: false,
-      compact_threshold_pct: 0.5,
-      compact_keep_recent_tokens: 20000,
-      provider_context_window: 512000,
-      max_context_tokens: 256000,
-      max_steps: 12,
-      temperature: 0.4,
+    await act(async () => {
+      setInputValue(compactKeepRecent, "30000");
     });
+    await commit(compactKeepRecent);
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ compact_keep_recent_tokens: 30000 });
+
+    await act(async () => {
+      setInputValue(providerContextWindow, "512000");
+    });
+    await commit(providerContextWindow);
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ provider_context_window: 512000 });
+
+    await act(async () => {
+      setInputValue(maxContextTokens, "256000");
+    });
+    await commit(maxContextTokens);
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ max_context_tokens: 256000 });
+
+    await act(async () => {
+      setInputValue(maxSteps, "12");
+    });
+    await commit(maxSteps);
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ max_steps: 12 });
+
+    await act(async () => {
+      setInputValue(temperature, "0.4");
+    });
+    await commit(temperature);
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ temperature: 0.4 });
+
+    // Blurring an untouched field does not round-trip the same value.
+    const callsBefore = onAdvancedSave.mock.calls.length;
+    await commit(temperature);
+    expect(onAdvancedSave.mock.calls.length).toBe(callsBefore);
+
+    const switchButton = container.querySelector(".settings-switch") as HTMLButtonElement;
+    await act(async () => {
+      switchButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ disable_auto_compact: true });
   });
 
-  it("saves blank temperature as Auto", async () => {
+  it("saves cleared temperature as Auto on commit", async () => {
     installBuildInfoStub({
       core: undefined,
       desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
@@ -592,19 +667,20 @@ describe("SettingsView advanced settings", () => {
       await Promise.resolve();
     });
 
-    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("保存"),
-    ) as HTMLButtonElement | undefined;
+    const temperature = Array.from(container.querySelectorAll("input")).at(-1) as HTMLInputElement;
     await act(async () => {
-      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      setInputValue(temperature, "0.4");
+      temperature.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
       await Promise.resolve();
     });
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ temperature: 0.4 });
 
-    expect(onAdvancedSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        temperature: 0,
-      }),
-    );
+    await act(async () => {
+      setInputValue(temperature, "");
+      temperature.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onAdvancedSave).toHaveBeenLastCalledWith({ temperature: 0 });
   });
 });
 
@@ -684,14 +760,25 @@ describe("SettingsView general settings", () => {
     await act(async () => {
       setInputValue(textarea!, "默认用中文回答。");
     });
+    // The prompt commits on blur, sending only its own field.
+    await act(async () => {
+      textarea!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onGeneralSave).toHaveBeenCalledWith({
+      append_system_prompt: "默认用中文回答。",
+    });
 
+    // The memory switch saves immediately, optimistic with rollback on failure.
     const memorySwitch = Array.from(container.querySelectorAll("button[role=\"switch\"]")).find((button) =>
       button.textContent?.includes("关闭记忆"),
     ) as HTMLButtonElement | undefined;
     expect(memorySwitch).not.toBeUndefined();
     await act(async () => {
       memorySwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
     });
+    expect(onGeneralSave).toHaveBeenCalledWith({ memory_disable: true });
 
     // MCP toggles now save immediately on switch, sending only the toggle map.
     const docsSwitch = container.querySelector("[data-testid=\"settings-mcp-enabled-docs\"]") as HTMLButtonElement | null;
@@ -707,19 +794,12 @@ describe("SettingsView general settings", () => {
       },
     });
 
-    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("保存"),
-    ) as HTMLButtonElement | undefined;
-    expect(submitButton?.disabled).toBe(false);
-    await act(async () => {
-      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(onGeneralSave).toHaveBeenCalledWith({
-      append_system_prompt: "默认用中文回答。",
-      memory_disable: true,
-    });
+    // Instant-apply: no draft form, no Save button on the page.
+    expect(
+      Array.from(container.querySelectorAll("button")).some((button) =>
+        button.textContent?.includes("保存"),
+      ),
+    ).toBe(false);
   });
 
   it("renders Codex Pets controls and saves pet selection", async () => {
@@ -755,7 +835,7 @@ describe("SettingsView general settings", () => {
       initialPage: "general",
       initialized: baseInitialized(),
       codexPets: emptyCodexPetsSnapshot({
-        enabled: false,
+        enabled: true,
         selected_id: "alpha",
         pets: [
           {
@@ -781,7 +861,6 @@ describe("SettingsView general settings", () => {
 
     expect(rootText()).toContain("Codex Pet");
     expect(rootText()).toContain("Alpha Pet");
-    expect(rootText()).toContain("Beta Pet");
 
     const petSwitch = container.querySelector("[data-testid=\"settings-codex-pet-enabled\"]") as HTMLButtonElement | null;
     expect(petSwitch).not.toBeNull();
@@ -789,13 +868,21 @@ describe("SettingsView general settings", () => {
       petSwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
     });
-    expect(onCodexPetsUpdate).toHaveBeenCalledWith({ enabled: true });
+    expect(onCodexPetsUpdate).toHaveBeenCalledWith({ enabled: false });
 
-    const select = container.querySelector("[data-testid=\"settings-codex-pet-select\"]") as HTMLSelectElement | null;
-    expect(select).not.toBeNull();
+    // The pet picker is the shared SelectMenu, not a native select.
+    const petSelect = container.querySelector("[data-testid=\"settings-codex-pet-select\"]") as HTMLButtonElement | null;
+    expect(petSelect).not.toBeNull();
+    expect(petSelect?.tagName).toBe("BUTTON");
     await act(async () => {
-      select!.value = "beta";
-      select?.dispatchEvent(new Event("change", { bubbles: true }));
+      petSelect?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const betaOption = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".select-menu-panel .select-menu-item"),
+    ).find((item) => item.getAttribute("data-value") === "beta");
+    expect(betaOption?.textContent).toContain("Beta Pet");
+    await act(async () => {
+      betaOption?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
     });
     expect(onCodexPetsUpdate).toHaveBeenCalledWith({ selected_id: "beta" });
@@ -1026,7 +1113,6 @@ describe("SettingsView About section", () => {
       ].join("-");
     });
     const usage: SettingsUsageResponse = {
-      range: "all",
       total_sessions: 1,
       generated_at: "2026-06-18T12:00:00Z",
       metrics: {

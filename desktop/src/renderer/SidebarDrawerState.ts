@@ -29,6 +29,8 @@ export type SidebarDrawerStateController = {
 // match either rail, otherwise moving the pointer from the hover zone into
 // the revealed drawer counts as "left the drawer" and closes it.
 const SIDEBAR_RAIL_SELECTOR = ".sidebar, .settings-sidebar";
+const SIDEBAR_DRAWER_HOVER_TRIGGER_SELECTOR =
+  ".sidebar-hover-zone, .sidebar-toggle-button";
 
 export function useSidebarDrawerState({
   appShellRef,
@@ -102,8 +104,10 @@ export function useSidebarDrawerState({
       return undefined;
     }
     const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
-    const hoverZone = sidebarHoverZoneRef.current;
-    for (const element of [sidebar, hoverZone]) {
+    const hoverTriggers = appShellRef.current?.querySelectorAll(
+      SIDEBAR_DRAWER_HOVER_TRIGGER_SELECTOR,
+    );
+    for (const element of [sidebar, ...(hoverTriggers ?? [])]) {
       if (!element) continue;
       const rect = element.getBoundingClientRect();
       if (
@@ -126,7 +130,7 @@ export function useSidebarDrawerState({
     }
     return Boolean(
       (sidebar && sidebar.contains(target)) ||
-        (hoverZone && hoverZone.contains(target)),
+        [...(hoverTriggers ?? [])].some((trigger) => trigger.contains(target)),
     );
   }, [appShellRef]);
 

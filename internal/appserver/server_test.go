@@ -142,6 +142,26 @@ type fakeClient struct {
 	onChat    func(call int, req providers.ChatRequest)
 }
 
+func providersResponse(content string) providers.ChatResponse {
+	return providers.ChatResponse{
+		Content:      content,
+		StopReason:   "stop",
+		FinishReason: providers.FinishReasonStop,
+	}
+}
+
+func waitForOwnedWorkerExecutions(t *testing.T, control *agentcontrol.AgentControl, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := control.OwnedWorkerExecutionCount(); got == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("owned worker executions = %d, want %d", control.OwnedWorkerExecutionCount(), want)
+}
+
 func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
 	out := make([]providers.ChatMessage, 0, len(msgs))
 	for _, msg := range msgs {
@@ -1081,7 +1101,7 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
-func TestResidentThreadRestoresPersistedModelSelection(t *testing.T) {
+func TestCachedThreadRestoresPersistedModelSelection(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "default_provider": "fake-provider",
@@ -1103,7 +1123,7 @@ func TestResidentThreadRestoresPersistedModelSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(rt, &lockedBuffer{})
-	th, err := srv.ensureResidentThread("persisted-model-thread")
+	th, err := srv.ensureThreadLoaded("persisted-model-thread")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1798,7 +1818,7 @@ func TestRunningTurnUsesModelSnapshotAfterConfigUpdate(t *testing.T) {
 		t.Fatalf("update workspace default: %v", err)
 	}
 
-	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil, nil)
+	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil)
 
 	th.mu.Lock()
 	if len(th.Turns) != 1 || th.Turns[0].UsageModel != "fake-model" {
@@ -5050,6 +5070,126 @@ func TestServerGoalContinuationSkipsQueuedAgentCompletionWork(t *testing.T) {
 	assertFakeClientRequestCount(t, client, 0)
 }
 
+func TestServerGoalContinuationWaitsForRunningBackgroundProcess(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+	srv, _, threadID, threadRuntime := startThreadWithRuntimeGoal(t, client, "goal-process-running")
+	manager, err := process.NewManager(srv.rt.RootDir, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("process.NewManager: %v", err)
+	}
+	threadRuntime.ProcessManager = manager
+	background, err := manager.Start(context.Background(), process.StartOptions{
+		Command:        "sleep 30",
+		OwnerKind:      process.OwnerMainAgent,
+		OwnerID:        threadID,
+		Lifecycle:      process.LifecycleManaged,
+		CompletionMode: process.CompletionModeResume,
+	})
+	if err != nil {
+		t.Fatalf("start background process: %v", err)
+	}
+	t.Cleanup(func() { _, _ = manager.Stop(background.ID) })
+
+	started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		t.Fatalf("startGoalContinuationTurn: %v", err)
+	}
+	if started {
+		t.Fatal("goal continuation should wait for a running background process to wake the thread")
+	}
+	assertFakeClientRequestCount(t, client, 0)
+}
+
+func TestServerGoalContinuationWaitsForRunningSubagent(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "integrated result"}}
+	srv, out, threadID, threadRuntime := startThreadWithRuntimeGoal(t, client, "goal-agent-running")
+	workerClient := newBlockingStreamClient("agent done")
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       workerClient,
+		DefaultModel: "fake-model",
+		ParentRepo:   srv.rt.RootDir,
+		WorktreeRoot: filepath.Join(srv.rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    threadID,
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("agentcontrol.New: %v", err)
+	}
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	oldSubscription := th.runtimeSubscription
+	th.runtimeSubscription = nil
+	th.mu.Unlock()
+	releaseThreadRuntimeSubscription(threadRuntime, oldSubscription)
+	threadRuntime.AgentControl = control
+	th.mu.Lock()
+	th.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	th.mu.Unlock()
+	var releaseWorker sync.Once
+	t.Cleanup(func() {
+		releaseWorker.Do(func() { close(workerClient.release) })
+		releaseThreadRuntime(th)
+		control.StopAll()
+		control.Close()
+	})
+
+	spawned, err := control.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "goal_waiting_worker",
+		Description: "finish after release",
+		Prompt:      "wait until released",
+		Isolation:   string(agentcontrol.IsolationInplace),
+	})
+	if err != nil {
+		t.Fatalf("spawn background agent: %v", err)
+	}
+	select {
+	case <-workerClient.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background agent did not start")
+	}
+
+	startReq := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"wait for the worker"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	time.Sleep(100 * time.Millisecond)
+	if got := turnCompletedCountForThread(t, out, threadID); got != 1 {
+		t.Fatalf("active goal started a turn while waiting for the subagent: completed turns=%d", got)
+	}
+	assertFakeClientRequestCount(t, client, 1)
+
+	if _, err := threadRuntime.GoalRuntime.Complete(time.Now().UTC()); err != nil {
+		t.Fatalf("complete goal before worker wake: %v", err)
+	}
+	releaseWorker.Do(func() { close(workerClient.release) })
+	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+	time.Sleep(50 * time.Millisecond)
+	if got := turnCompletedCountForThread(t, out, threadID); got != 2 {
+		t.Fatalf("subagent completion should wake exactly one turn, got %d", got)
+	}
+	assertFakeClientRequestCount(t, client, 2)
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if got := goalCompletionMessageForTest(requests[1].Messages, spawned.AgentID); got == "" {
+		t.Fatalf("subagent wake request missing completion result for %s: %+v", spawned.AgentID, requests[1].Messages)
+	}
+}
+
+func goalCompletionMessageForTest(messages []providers.ChatMessage, agentID string) string {
+	for _, msg := range messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, agentID) && strings.Contains(msg.Content, "agent done") {
+			return msg.Content
+		}
+	}
+	return ""
+}
+
 func TestServerTurnErrorStopsActiveGoal(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -6225,7 +6365,7 @@ func TestServerWorktreeBoundTurnExecutesInWorktree(t *testing.T) {
 	// incidental CWD — must decide where tools execute.
 	forkTh := srv.thread(fork.ID)
 	if forkTh == nil {
-		t.Fatalf("fork thread %q not resident", fork.ID)
+		t.Fatalf("fork thread %q was not loaded", fork.ID)
 	}
 	forkTh.mu.Lock()
 	forkTh.CWD = rt.RootDir
@@ -6898,152 +7038,6 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	}
 }
 
-func TestServerThreadSearchFindsParticipantMessagesAndSkipsEnvelopeCopies(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	group, err := session.CreateWithMetadata(rt.SessionDir, "group-thread", rt.RootDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := session.AppendHistoryRecord(rt.SessionDir, group.ID, session.HistoryRecord{
-		Role:          "participant",
-		Content:       "The resident answer contains helios-signal evidence.",
-		Name:          "Mina",
-		ParticipantID: "prt-mina",
-		PostKind:      "result",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := session.UpdateIndex(rt.SessionDir, group.ID, 1, "group preview"); err != nil {
-		t.Fatal(err)
-	}
-	dm, err := session.CreateWithMetadata(rt.SessionDir, "dm-thread", rt.RootDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := session.BindDMParticipant(rt.SessionDir, dm.ID, "prt-mina"); err != nil {
-		t.Fatal(err)
-	}
-	if err := session.AppendHistoryRecord(rt.SessionDir, dm.ID, session.HistoryRecord{
-		Role:         "user",
-		Content:      "Envelope copy mentioning helios-signal should not duplicate search results.",
-		EnvelopeMeta: json.RawMessage(`[{"source_thread_id":"group-thread","addressed":true,"hop":0}]`),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	payload := map[string]any{
-		"id":     "search",
-		"method": MethodThreadSearch,
-		"params": ThreadSearchParams{Query: "helios-signal"},
-	}
-	rawPayload, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal search request: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), rawPayload); err != nil {
-		t.Fatalf("thread/search: %v", err)
-	}
-	msgs := parseOutput(t, out.String())
-	result := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "search")["result"])
-	if len(result.Results) != 1 || result.Results[0].Thread.ID != group.ID {
-		t.Fatalf("expected only group participant hit, got %+v", result.Results)
-	}
-	if !strings.Contains(result.Results[0].Snippet, "helios-signal") {
-		t.Fatalf("expected participant snippet, got %q", result.Results[0].Snippet)
-	}
-}
-
-func TestServerConversationSubthreadRPCs(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	sess, err := session.CreateWithMetadata(rt.SessionDir, "parent-thread", rt.RootDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	reviewerID := saveNamedParticipant(t, rt, "SubthreadReviewer", "reviewer", "")
-	if err := session.AddThreadMember(rt.SessionDir, sess.ID, reviewerID); err != nil {
-		t.Fatal(err)
-	}
-	sub, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		ID:                        "cth-review",
-		SessionID:                 sess.ID,
-		AnchorItemID:              "parent-thread-turn-0001-item-2",
-		Title:                     "Review details",
-		CreatedBy:                 humanReactionParticipantID,
-		ThreadOwnerParticipantID:  reviewerID,
-		ParentSeq:                 1,
-		ParentAuthorParticipantID: reviewerID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, rec := range []session.HistoryRecord{
-		{Role: "assistant", Content: "main response"},
-		{Role: "user", Content: "Need the details", ThreadID: sub.ID},
-		{Role: "participant", Content: "Found one issue", ParticipantID: reviewerID, PostKind: "update", ThreadID: sub.ID},
-	} {
-		if err := session.AppendHistoryRecord(rt.SessionDir, sess.ID, rec); err != nil {
-			t.Fatalf("append history: %v", err)
-		}
-	}
-
-	requests := []map[string]any{
-		{"id": "list", "method": MethodThreadListSub, "params": ThreadListSubParams{ThreadID: sess.ID}},
-		{"id": "open", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, SubthreadID: sub.ID}},
-		{"id": "reuse", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, AnchorItemID: sub.AnchorItemID}},
-		{"id": "resolve", "method": MethodThreadResolveSub, "params": ThreadResolveSubParams{ThreadID: sess.ID, SubthreadID: sub.ID, Resolved: true}},
-	}
-	for _, payload := range requests {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			t.Fatalf("marshal request: %v", err)
-		}
-		if err := srv.handleLine(context.Background(), raw); err != nil {
-			t.Fatalf("%s: %v", payload["id"], err)
-		}
-	}
-
-	msgs := parseOutput(t, out.String())
-	listed := remarshal[ThreadListSubResult](t, responseByID(t, msgs, "list")["result"])
-	if len(listed.Subthreads) != 1 {
-		t.Fatalf("expected one listed subthread, got %+v", listed.Subthreads)
-	}
-	if listed.Subthreads[0].ID != sub.ID || listed.Subthreads[0].ReplyCount != 2 || len(listed.Subthreads[0].Turns) != 0 {
-		t.Fatalf("unexpected listed subthread: %+v", listed.Subthreads[0])
-	}
-
-	opened := remarshal[ThreadOpenSubResult](t, responseByID(t, msgs, "open")["result"])
-	if opened.Subthread.ID != sub.ID || opened.Subthread.Title != "Review details" || opened.Subthread.ReplyCount != 2 {
-		t.Fatalf("unexpected opened subthread: %+v", opened.Subthread)
-	}
-	if len(opened.Subthread.Turns) != 1 || len(opened.Subthread.Turns[0].Items) != 2 {
-		t.Fatalf("expected subthread turns with two items, got %+v", opened.Subthread.Turns)
-	}
-	if opened.Subthread.Turns[0].Items[0].Text != "Need the details" || opened.Subthread.Turns[0].Items[1].Text != "Found one issue" {
-		t.Fatalf("unexpected subthread items: %+v", opened.Subthread.Turns[0].Items)
-	}
-
-	reused := remarshal[ThreadOpenSubResult](t, responseByID(t, msgs, "reuse")["result"])
-	if reused.Subthread.ID != sub.ID {
-		t.Fatalf("open by anchor should reuse existing subthread, got %+v", reused.Subthread)
-	}
-	stored, err := session.ListConversationThreads(rt.SessionDir, sess.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stored) != 1 {
-		t.Fatalf("open by anchor created duplicate subthreads: %+v", stored)
-	}
-
-	resolved := remarshal[ThreadResolveSubResult](t, responseByID(t, msgs, "resolve")["result"])
-	if resolved.Subthread.ID != sub.ID || resolved.Subthread.Status != "resolved" {
-		t.Fatalf("unexpected resolved subthread: %+v", resolved.Subthread)
-	}
-}
-
 func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")
@@ -7127,13 +7121,6 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	}
 	if len(thread.Turns) != 0 {
 		t.Fatalf("thread/list must not synthesize subagent task-card turns, got %+v", thread.Turns)
-	}
-	subthreads, err := session.ListConversationThreads(rt.SessionDir, thread.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(subthreads) != 0 {
-		t.Fatalf("thread/list must not create task-card subthreads, got %+v", subthreads)
 	}
 }
 
@@ -7961,13 +7948,13 @@ func TestServerThreadResumeDisplaysHistoryBeforeProviderCheckpoint(t *testing.T)
 	if got := result.Thread.Turns[0].Items[0].Text; got != "older question" {
 		t.Fatalf("first displayed question = %q, want older question", got)
 	}
-	resident := srv.thread(sessionID)
-	if resident == nil {
-		t.Fatal("expected resident thread")
+	cached := srv.thread(sessionID)
+	if cached == nil {
+		t.Fatal("expected cached thread")
 	}
-	resident.mu.Lock()
-	providerHistory := append([]providers.ChatMessage(nil), resident.History...)
-	resident.mu.Unlock()
+	cached.mu.Lock()
+	providerHistory := append([]providers.ChatMessage(nil), cached.History...)
+	cached.mu.Unlock()
 	if len(providerHistory) != 3 || providerHistory[1].Content != "recent question" {
 		t.Fatalf("provider history should stay checkpointed, got %+v", providerHistory)
 	}
@@ -8671,7 +8658,7 @@ func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 	}
 }
 
-func TestServerPrunesIdleResidentThreads(t *testing.T) {
+func TestServerPrunesIdleCachedThreads(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	srv := New(rt, &lockedBuffer{})
 	now := time.Now().UTC()
@@ -8689,14 +8676,14 @@ func TestServerPrunesIdleResidentThreads(t *testing.T) {
 	srv.threads[queued.ID] = queued
 	srv.enqueueQueuedUserTurn(queued.ID, queuedTurn{id: "queued-1", msg: providers.ChatMessage{Role: "user", Content: "later"}})
 
-	for i := 0; i < residentThreadLimit+4; i++ {
+	for i := 0; i < cachedThreadLimit+4; i++ {
 		id := fmt.Sprintf("idle-%02d", i)
 		th := newThreadState(id, nil, rt.ProviderName, rt.Model, rt.RootDir, true, now.Add(time.Duration(i)*time.Minute))
 		th.LastAccessedAt = now.Add(time.Duration(i) * time.Minute)
 		srv.threads[id] = th
 	}
 
-	srv.pruneResidentThreads(keep.ID)
+	srv.pruneCachedThreads(keep.ID)
 
 	if srv.thread(keep.ID) == nil {
 		t.Fatal("kept thread was pruned")
@@ -8710,8 +8697,8 @@ func TestServerPrunesIdleResidentThreads(t *testing.T) {
 	srv.mu.Lock()
 	count := len(srv.threads)
 	srv.mu.Unlock()
-	if count > residentThreadLimit {
-		t.Fatalf("resident thread count should be bounded, got %d", count)
+	if count > cachedThreadLimit {
+		t.Fatalf("cached thread count should be bounded, got %d", count)
 	}
 }
 
@@ -8735,7 +8722,7 @@ func TestServerTurnStartReloadsPrunedPersistentThread(t *testing.T) {
 
 	th := srv.thread(threadID)
 	if th == nil {
-		t.Fatal("thread should be reloaded into the resident set")
+		t.Fatal("thread should be reloaded into the cache")
 	}
 	th.mu.Lock()
 	visible := visibleMessagesForTest(th.History)
@@ -9233,69 +9220,6 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 	if got := turnCompletedCountForThread(t, out, threadID); got != 1 {
 		t.Fatalf("expected awaited agent completion not to trigger a second root turn, got %d; output:\n%s", got, out.String())
 	}
-}
-
-func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T) {
-	workerRequests := make(chan providers.ChatRequest, 1)
-	client := &fakeClient{
-		response: providers.ChatResponse{Content: "agent done"},
-		onChat: func(_ int, req providers.ChatRequest) {
-			select {
-			case workerRequests <- req:
-			default:
-			}
-		},
-	}
-	rt := newTestRuntime(t, client)
-	kit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	rt.Toolkit = kit
-
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
-		t.Fatalf("thread/start: %v", err)
-	}
-	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
-
-	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"task_name":"reviewer_card","description":"Review auth changes","prompt":"Post a concise result for the auth review."}}`, threadID)
-	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
-		t.Fatalf("participant/start: %v", err)
-	}
-	resp := responseByID(t, parseOutput(t, out.String()), "participant")
-	if got := resp["error"]; got != nil {
-		t.Fatalf("participant/start returned error: %v; output:\n%s", got, out.String())
-	}
-	result := remarshal[ParticipantStartResult](t, resp["result"])
-	if result.Agent.ID == "" || result.Agent.Participant == nil {
-		t.Fatalf("expected started participant agent with identity, got %+v", result.Agent)
-	}
-	th := srv.thread(threadID)
-	if th == nil || th.execRuntime == nil || th.execRuntime.AgentControl == nil || !th.execRuntime.AgentControl.ParticipantSpeechEnabled(result.Agent.ID) {
-		t.Fatalf("participant agent %q should be speech-authorized", result.Agent.ID)
-	}
-	t.Cleanup(func() {
-		releaseThreadRuntime(th)
-	})
-
-	var req providers.ChatRequest
-	select {
-	case req = <-workerRequests:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timed out waiting for participant worker request; output:\n%s", out.String())
-	}
-	defs := toolDefinitionNames(req.Tools)
-	if !defs["post_message"] {
-		t.Fatalf("conversation-native participant request must directly include post_message, got %v", defs)
-	}
-	if !defs["manage_participant"] {
-		t.Fatalf("conversation-native participant request must directly include manage_participant, got %v", defs)
-	}
-	waitForAgentStatus(t, th.execRuntime.AgentControl, result.Agent.ID, subagent.StatusCompleted)
-	waitForMethod(t, out, NotificationAgentMailbox)
-	waitForMethod(t, out, NotificationItemCompleted)
 }
 
 func TestServerParticipantProfileLifecycle(t *testing.T) {
@@ -9802,7 +9726,6 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"id":     "1",
 		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": string(SettingsUsageRangeAll)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -9814,9 +9737,6 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	msgs := parseOutput(t, out.String())
 	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
 
-	if result.Range != SettingsUsageRangeAll {
-		t.Fatalf("range=%q, want %q", result.Range, SettingsUsageRangeAll)
-	}
 	if result.TotalSessions != 2 {
 		t.Fatalf("total_sessions=%d, want 2", result.TotalSessions)
 	}
@@ -9877,7 +9797,6 @@ func TestSettingsUsageModelBreakdownsSkipZeroUsageBuckets(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"id":     "1",
 		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": string(SettingsUsageRangeAll)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -9897,11 +9816,11 @@ func TestSettingsUsageModelBreakdownsSkipZeroUsageBuckets(t *testing.T) {
 	}
 }
 
-func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
+func TestSettingsUsageModelBreakdownsCoverFullHistory(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	now := time.Now().UTC()
 
-	sess, err := session.CreateWithMetadata(rt.SessionDir, "usage-range-models", rt.RootDir)
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "usage-full-history-models", rt.RootDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9926,7 +9845,6 @@ func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"id":     "1",
 		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": string(SettingsUsageRange7d)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -9937,68 +9855,23 @@ func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
 
 	msgs := parseOutput(t, out.String())
 	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
-	if len(result.ModelBreakdowns) != 1 {
-		t.Fatalf("expected one in-range breakdown, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
+
+	// Every token_usage row counts, however old: openai totals 900+0+100
+	// ahead of openai-codex 100+300+20.
+	if len(result.ModelBreakdowns) != 2 {
+		t.Fatalf("expected two breakdowns, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
 	}
-	got := result.ModelBreakdowns[0]
-	if got.Provider != "openai-codex" || got.Model != "gpt-5-codex" {
-		t.Fatalf("unexpected model breakdown: %+v", got)
+	if result.ModelBreakdowns[0].Provider != "openai" || result.ModelBreakdowns[0].InputTokens != 900 {
+		t.Fatalf("expected the older openai bucket first, got %+v", result.ModelBreakdowns[0])
 	}
-	if got.InputTokens != 100 || got.CacheReadTokens != 300 || got.OutputTokens != 20 {
-		t.Fatalf("unexpected model usage totals: %+v", got)
+	codex := result.ModelBreakdowns[1]
+	if codex.Provider != "openai-codex" || codex.Model != "gpt-5-codex" {
+		t.Fatalf("unexpected model breakdown: %+v", codex)
 	}
-	if result.Metrics.PromptTokens != 400 || result.Metrics.CacheReadTokens != 300 || result.Metrics.CacheHitRate != 0.75 {
+	if codex.InputTokens != 100 || codex.CacheReadTokens != 300 || codex.OutputTokens != 20 {
+		t.Fatalf("unexpected model usage totals: %+v", codex)
+	}
+	if result.Metrics.PromptTokens != 1300 || result.Metrics.CacheReadTokens != 300 {
 		t.Fatalf("unexpected headline usage: %+v", result.Metrics)
-	}
-}
-
-func TestSettingsUsageRangeCutoff(t *testing.T) {
-	now := time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)
-
-	if c := settingsUsageRangeCutoff(SettingsUsageRangeAll, now); c != nil {
-		t.Fatalf("all range: expected nil cutoff, got %v", c)
-	}
-	if c := settingsUsageRangeCutoff("", now); c != nil {
-		t.Fatalf("empty range: expected nil cutoff, got %v", c)
-	}
-
-	cases := []struct {
-		name string
-		r    SettingsUsageRange
-		days int
-	}{
-		{"7d", SettingsUsageRange7d, 7},
-		{"30d", SettingsUsageRange30d, 30},
-		{"90d", SettingsUsageRange90d, 90},
-	}
-	for _, tc := range cases {
-		want := now.AddDate(0, 0, -tc.days)
-		got := settingsUsageRangeCutoff(tc.r, now)
-		if got == nil || !got.Equal(want) {
-			t.Fatalf("%s: expected %v, got %v", tc.name, want, got)
-		}
-	}
-}
-
-func TestSettingsUsageRejectsInvalidRange(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	raw, err := json.Marshal(map[string]any{
-		"id":     "1",
-		"method": MethodSettingsUsage,
-		"params": map[string]any{"range": "nonsense"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := srv.handleLine(context.Background(), raw); err != nil {
-		t.Fatalf("handleLine: %v", err)
-	}
-
-	msgs := parseOutput(t, out.String())
-	if got := responseByID(t, msgs, "1")["error"]; got == nil {
-		t.Fatalf("expected error response, got %+v", msgs)
 	}
 }

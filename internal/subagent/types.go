@@ -61,10 +61,8 @@ type SpawnOptions struct {
 	// thread metadata, and visible agent IDs aligned.
 	ID string
 
-	// ParticipantID is the conversation participant identity created
-	// for this worker. The subagent package carries it through to
-	// snapshots so history records and notifications can attribute
-	// output to the right participant.
+	// ParticipantID is the named-agent identity assigned to this Kanban run.
+	// The subagent package carries it through runtime snapshots and history.
 	ParticipantID string
 
 	// Type is a label like "explorer", "worker", "verifier" that the

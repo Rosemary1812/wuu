@@ -32,7 +32,7 @@ func TestBuildTurnError_SerializesFactsWithoutActions(t *testing.T) {
 	}
 }
 
-func TestBuildTurnError_InvalidRequestIsNotRetryable(t *testing.T) {
+func TestBuildTurnError_InvalidRequestCategory(t *testing.T) {
 	tests := []error{
 		&providers.HTTPError{StatusCode: 400},
 		&providers.HTTPError{
@@ -47,14 +47,10 @@ func TestBuildTurnError_InvalidRequestIsNotRetryable(t *testing.T) {
 		if out.Category != "invalid_request" {
 			t.Fatalf("%T category = %q, want invalid_request", err, out.Category)
 		}
-		turn := Turn{Status: TurnStatusFailed, Error: &out}
-		if isRetryableTurnFailure(turn) {
-			t.Fatalf("%T invalid request must not be retried", err)
-		}
 	}
 }
 
-func TestBuildTurnError_TerminalUsageLimitIsNotRetryable(t *testing.T) {
+func TestBuildTurnError_TerminalUsageLimit(t *testing.T) {
 	tests := []error{
 		&providers.HTTPError{
 			StatusCode: 429,
@@ -68,10 +64,7 @@ func TestBuildTurnError_TerminalUsageLimitIsNotRetryable(t *testing.T) {
 	}
 	for _, err := range tests {
 		out := BuildTurnError(err, "kimi-code")
-		turn := Turn{Status: TurnStatusFailed, Error: &out}
-		if isRetryableTurnFailure(turn) {
-			t.Fatalf("%T terminal usage limit must not be retried: %+v", err, out)
-		}
+		_ = out
 	}
 }
 

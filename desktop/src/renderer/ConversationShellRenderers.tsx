@@ -1,11 +1,9 @@
 import type {
   ComponentProps,
-  Dispatch,
   KeyboardEvent as ReactKeyboardEvent,
   MutableRefObject,
   PointerEvent as ReactPointerEvent,
   RefObject,
-  SetStateAction,
 } from "react";
 import {
   Bug,
@@ -18,32 +16,24 @@ import type {
   Agent,
   InputFile,
   InputImage,
-  RuntimeContext,
   Thread,
   ThreadItem,
 } from "../shared/protocol";
 import {
-  chatReaderCountForThread,
   emptyComposerDraft,
-  isGroupThread,
   queryTextsForThread,
-  threadForTab,
   turnStreamStatusForThread,
   type AppState,
   type ComposerDraftState,
   type ConversationPaneID,
-  type OpenSubthreadPanel,
 } from "./AppState";
 import {
   CONVERSATION_SPLIT_MAX_PERCENT,
   CONVERSATION_SPLIT_MIN_PERCENT,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
-  THREAD_PANEL_MAX_WIDTH,
-  THREAD_PANEL_MIN_WIDTH,
 } from "./AppLayoutState";
 import { ChipGalleryPanel } from "./ChipGalleryPanel";
-import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { EnvironmentSideStack } from "./EnvironmentSideStack";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 import type { ParticipantPanelState } from "./ParticipantState";
@@ -61,120 +51,12 @@ import { ViewSwitchLoading } from "./LoadingViews";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { useI18n } from "./i18n";
 
-type ComposerProps = ComponentProps<typeof Composer>;
 type RunDebugPanelProps = ComponentProps<typeof RunDebugPanel>;
 type EnvironmentSideStackProps = ComponentProps<typeof EnvironmentSideStack>;
 type ParticipantProfilePanelProps = ComponentProps<
   typeof ParticipantProfilePanel
 >;
 type SettingsViewProps = ComponentProps<typeof SettingsView>;
-
-const noop = () => {};
-
-export type SubthreadComposerRendererProps = {
-  draft: ComposerDraftState;
-  setDraft: Dispatch<SetStateAction<ComposerDraftState>>;
-  readOnly: boolean;
-  initialized: ComposerProps["initialized"];
-  projects: ComposerProps["projects"];
-  activeContext: ComposerProps["activeContext"];
-  activeProject: ComposerProps["activeProject"];
-  codexModels: ComposerProps["codexModels"];
-  codexRuntimeRef: ComposerProps["codexRuntimeRef"];
-  runtimeMenuRef: ComposerProps["menuRef"];
-  accessMenuRef: ComposerProps["accessMenuRef"];
-  queryHistorySessionID?: string;
-  participants: NonNullable<ComposerProps["participants"]>;
-  onPasteAttachmentFiles: (files: File[]) => void;
-  onRemoveFile: (id: string) => void;
-  onRemoveImage: (id: string) => void;
-  onSend: () => void;
-};
-
-export function SubthreadComposerRenderer({
-  draft,
-  setDraft,
-  readOnly,
-  initialized,
-  projects,
-  activeContext,
-  activeProject,
-  codexModels,
-  codexRuntimeRef,
-  runtimeMenuRef,
-  accessMenuRef,
-  queryHistorySessionID,
-  participants,
-  onPasteAttachmentFiles,
-  onRemoveFile,
-  onRemoveImage,
-  onSend,
-}: SubthreadComposerRendererProps): JSX.Element {
-  return (
-    <Composer
-      variant="dock"
-      hideRuntimeControls
-      prompt={draft.prompt}
-      setPrompt={(value) =>
-        setDraft((current) => ({ ...current, prompt: value }))
-      }
-      files={draft.files}
-      images={draft.images}
-      queuedMessages={[]}
-      guideMessages={[]}
-      running={false}
-      runtimeControlsDisabled
-      tokensPerSecond={0}
-      status=""
-      readOnly={readOnly}
-      initialized={initialized}
-      projects={projects}
-      activeContext={activeContext}
-      activeProject={activeProject}
-      codexModels={codexModels}
-      codexRuntimeMenu={null}
-      codexRuntimeRef={codexRuntimeRef}
-      menuOpen={false}
-      accessMenuOpen={false}
-      branchMenuOpen={false}
-      menuRef={runtimeMenuRef}
-      accessMenuRef={accessMenuRef}
-      projectFilter=""
-      setProjectFilter={noop}
-      onToggleMenu={noop}
-      onToggleAccessMenu={noop}
-      onToggleBranchMenu={noop}
-      onToggleCodexRuntimeMenu={noop}
-      onSelectRuntimeModel={noop}
-      onSelectRuntimeEffort={noop}
-      onSelectPermissionMode={noop}
-      onOpenSettings={noop}
-      onOpenMemorySettings={noop}
-      onOpenSkillsCatalog={noop}
-      onSelectProject={noop}
-      onSelectNoProject={noop}
-      onSelectGitBranch={noop}
-      onCreateProject={noop}
-      onOpenProject={noop}
-      onStartNewThread={noop}
-      onOpenWorkspaceTool={noop}
-      onOpenInstructions={noop}
-      onPasteAttachmentFiles={onPasteAttachmentFiles}
-      onRemoveFile={onRemoveFile}
-      onRemoveImage={onRemoveImage}
-      onRemoveQueuedMessage={noop}
-      onRemoveGuideMessage={noop}
-      onGuideQueuedMessage={noop}
-      onEditQueuedMessage={noop}
-      onEditGuideMessage={noop}
-      onSend={onSend}
-      onInterrupt={noop}
-      queryHistorySessionID={queryHistorySessionID}
-      queryHistory={[]}
-      participants={participants}
-    />
-  );
-}
 
 export type ConversationSplitPaneRendererProps = {
   state: AppState;
@@ -355,10 +237,6 @@ export function ConversationSplitLayoutRenderer({
 export type ConversationTitleContentProps = {
   state: AppState;
   sessionTabsVisible: boolean;
-  // Live busy set (computeBusyParticipantIDs) forwarded to the tab strip so
-  // group-thread tabs spin off the member's actual turn lifecycle instead of
-  // the server's stale members[].busy snapshot.
-  busyParticipantIDs?: ReadonlySet<string>;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   activeTitle: string;
@@ -373,7 +251,6 @@ export type ConversationTitleContentProps = {
 export function ConversationTitleContent({
   state,
   sessionTabsVisible,
-  busyParticipantIDs,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
   activeTitle,
@@ -388,7 +265,6 @@ export function ConversationTitleContent({
     return (
       <SessionTabStrip
         state={state}
-        busyParticipantIDs={busyParticipantIDs}
         pendingSwitchThreadID={pendingSwitchThreadID}
         pendingComposerMessagesByThread={pendingComposerMessagesByThread}
         canStartNewThread={Boolean(state.activeContext)}
@@ -431,12 +307,8 @@ export type ConversationTitleActionsProps = {
   onCloseRunDebug: () => void;
   chipGalleryOpen: boolean;
   onCloseChipGallery: () => void;
-  poppedOutMode: boolean;
-  activeThread?: Thread;
-  onOpenTaskBoard: (thread: Thread) => void;
   environmentToggleRef: RefObject<HTMLButtonElement | null>;
   environmentPanelVisible: boolean;
-  activeThreadIsGroup: boolean;
   onToggleEnvironmentPanel: () => void;
   rightPanelOpen: boolean;
   onToggleRightPanel: () => void;
@@ -467,30 +339,13 @@ export function ConversationTitleActions({
   onCloseRunDebug,
   chipGalleryOpen,
   onCloseChipGallery,
-  poppedOutMode,
-  activeThread,
-  onOpenTaskBoard,
   environmentToggleRef,
   environmentPanelVisible,
-  activeThreadIsGroup,
   onToggleEnvironmentPanel,
   rightPanelOpen,
   onToggleRightPanel,
 }: ConversationTitleActionsProps): JSX.Element {
   const { t } = useI18n();
-  const showTaskBoardAction =
-    activeThreadIsGroup ||
-    state.sessionTabs.some((tab) => {
-      if (tab.kind === "board") {
-        return true;
-      }
-      return (
-        tab.kind === "thread" &&
-        isGroupThread(threadForTab(state, tab.threadID) ?? {})
-      );
-    });
-  const taskBoardAvailable = activeThreadIsGroup && Boolean(activeThread);
-
   return (
     <div className="title-actions">
       {debugControlsVisible && enableLaunchPreview ? (
@@ -561,47 +416,21 @@ export function ConversationTitleActions({
         </div>
       ) : null}
       <ChipGalleryPanel open={chipGalleryOpen} onClose={onCloseChipGallery} />
-      {poppedOutMode ? null : (
-        <>
-          {showTaskBoardAction ? (
-            <button
-              className="icon-button task-board-button"
-              type="button"
-              aria-label={t(
-                taskBoardAvailable ? "shell.openTaskBoard" : "shell.noTaskBoard",
-              )}
-              title={t(
-                taskBoardAvailable ? "shell.taskBoard" : "shell.noTaskBoard",
-              )}
-              disabled={!taskBoardAvailable}
-              onClick={() => {
-                if (activeThreadIsGroup && activeThread) {
-                  onOpenTaskBoard(activeThread);
-                }
-              }}
-            >
-              <ListChecks className="icon-lg" size={18} viewBox="2 2 20 20" />
-            </button>
-          ) : null}
-          <button
+      <button
             ref={environmentToggleRef}
             className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
             type="button"
             aria-label={
               environmentPanelVisible
-                ? activeThreadIsGroup
-                  ? t("shell.hideGroupInfo")
-                  : t("shell.hideEnvironmentInfo")
-                : activeThreadIsGroup
-                  ? t("shell.showGroupInfo")
-                  : t("shell.showEnvironmentInfo")
+                ? t("shell.hideEnvironmentInfo")
+                : t("shell.showEnvironmentInfo")
             }
             aria-pressed={environmentPanelVisible}
             onClick={onToggleEnvironmentPanel}
           >
             <Info className="icon-lg" size={18} />
-          </button>
-          <button
+      </button>
+      <button
             className="icon-button side-panel-toggle-button"
             type="button"
             aria-label={t(
@@ -611,9 +440,7 @@ export function ConversationTitleActions({
             onClick={onToggleRightPanel}
           >
             <SidePanelToggleIcon side="right" open={rightPanelOpen} />
-          </button>
-        </>
-      )}
+      </button>
     </div>
   );
 }
@@ -644,43 +471,6 @@ export type ConversationSidePanelsProps = {
   onToggleSubagentPinned: (agent: Agent) => void;
   onArchiveSubagent: (agent: Agent) => void;
   onClearSubagentArchiveConfirm: (id: string) => void;
-  participants: NonNullable<EnvironmentSideStackProps["participants"]>;
-  onAddThreadMember: (threadID: string, participantID: string) => void;
-  onRemoveThreadMember: (threadID: string, participantID: string) => void;
-  openSubthreadPanel?: OpenSubthreadPanel;
-  onCloseSubthreadPanel: () => void;
-  onResolveSubthread: ComponentProps<
-    typeof ConversationSubthreadPanel
-  >["onResolve"];
-  onEscalateSubthread: ComponentProps<
-    typeof ConversationSubthreadPanel
-  >["onEscalate"];
-  onReactSubthread: ComponentProps<
-    typeof ConversationSubthreadPanel
-  >["onReact"];
-  poppedOutMode: boolean;
-  activeContext?: RuntimeContext;
-  onPopOutSubthread: (
-    threadID: string,
-    subthreadID: string,
-    context: RuntimeContext,
-  ) => void;
-  subthreadComposer: Omit<
-    SubthreadComposerRendererProps,
-    "readOnly" | "queryHistorySessionID"
-  >;
-  resolveParticipantName: (id: string) => string;
-  busyParticipantIDs: ComponentProps<
-    typeof ConversationSubthreadPanel
-  >["busyParticipantIDs"];
-  chatReaderCount: number;
-  debugControlsVisible: boolean;
-  clampedThreadPanelWidth: number;
-  onThreadPanelResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onThreadPanelReset: () => void;
-  onThreadPanelSeparatorKey: (
-    event: ReactKeyboardEvent<HTMLDivElement>,
-  ) => void;
   participantPanel?: ParticipantPanelState;
   onCloseParticipantPanel: () => void;
   onSaveParticipant: ParticipantProfilePanelProps["onSave"];
@@ -716,26 +506,6 @@ export function ConversationSidePanels({
   onToggleSubagentPinned,
   onArchiveSubagent,
   onClearSubagentArchiveConfirm,
-  participants,
-  onAddThreadMember,
-  onRemoveThreadMember,
-  openSubthreadPanel,
-  onCloseSubthreadPanel,
-  onResolveSubthread,
-  onEscalateSubthread,
-  onReactSubthread,
-  poppedOutMode,
-  activeContext,
-  onPopOutSubthread,
-  subthreadComposer,
-  resolveParticipantName,
-  busyParticipantIDs,
-  chatReaderCount,
-  debugControlsVisible,
-  clampedThreadPanelWidth,
-  onThreadPanelResizeStart,
-  onThreadPanelReset,
-  onThreadPanelSeparatorKey,
   participantPanel,
   onCloseParticipantPanel,
   onSaveParticipant,
@@ -744,7 +514,6 @@ export function ConversationSidePanels({
   onRetireParticipant,
   viewContextSwitchPending,
 }: ConversationSidePanelsProps): JSX.Element {
-  const { t } = useI18n();
   return (
     <>
       <EnvironmentSideStack
@@ -775,84 +544,7 @@ export function ConversationSidePanels({
         }
         onArchiveSubagent={(agent) => onArchiveSubagent(agent as Agent)}
         onClearSubagentArchiveConfirm={onClearSubagentArchiveConfirm}
-        participants={participants}
-        onAddThreadMember={onAddThreadMember}
-        onRemoveThreadMember={onRemoveThreadMember}
       />
-
-      {openSubthreadPanel ? (
-        <ConversationSubthreadPanel
-          threadID={openSubthreadPanel.threadID}
-          cwd={activeThread?.cwd ?? activeContext?.cwd}
-          subthread={openSubthreadPanel.subthread}
-          loading={openSubthreadPanel.loading}
-          error={openSubthreadPanel.error}
-          onClose={onCloseSubthreadPanel}
-          onResolve={onResolveSubthread}
-          onEscalate={onEscalateSubthread}
-          onReact={onReactSubthread}
-          sourceItem={
-            activeThread?.id === openSubthreadPanel.threadID
-              ? activeThread.turns
-                  .flatMap((turn) => turn.items)
-                  .find(
-                    (item) =>
-                      item.id === openSubthreadPanel.subthread?.anchor_item_id ||
-                      (Boolean(openSubthreadPanel.subthread?.parent_seq) &&
-                        item.seq === openSubthreadPanel.subthread?.parent_seq),
-                  )
-              : undefined
-          }
-          onPopOut={
-            !poppedOutMode && openSubthreadPanel.subthread && activeContext
-              ? () =>
-                  onPopOutSubthread(
-                    openSubthreadPanel.threadID,
-                    openSubthreadPanel.subthread!.id,
-                    activeContext,
-                  )
-              : undefined
-          }
-          composer={
-            <SubthreadComposerRenderer
-              {...subthreadComposer}
-              readOnly={openSubthreadPanel.subthread?.status === "resolved"}
-              queryHistorySessionID={openSubthreadPanel.subthread?.id}
-            />
-          }
-          resolveParticipantName={resolveParticipantName}
-          busyParticipantIDs={busyParticipantIDs}
-          readerCount={
-            // A weak-isolation reply subthread routes only to its
-            // participant subset, so that subset is the ring denominator.
-            // Otherwise fall back to the parent thread's own reader count
-            // (group members / DM peer), then the full roster.
-            openSubthreadPanel.subthread?.participants?.length ||
-            chatReaderCountForThread(
-              activeThread?.id === openSubthreadPanel.threadID
-                ? activeThread
-                : undefined,
-              chatReaderCount,
-            )
-          }
-          showTechnicalTrace={debugControlsVisible}
-        />
-      ) : null}
-      {openSubthreadPanel ? (
-        <div
-          className="thread-panel-resizer"
-          role="separator"
-          aria-label={t("shell.resizeThreadPanel")}
-          aria-orientation="vertical"
-          aria-valuemin={THREAD_PANEL_MIN_WIDTH}
-          aria-valuemax={THREAD_PANEL_MAX_WIDTH}
-          aria-valuenow={clampedThreadPanelWidth}
-          tabIndex={0}
-          onPointerDown={onThreadPanelResizeStart}
-          onDoubleClick={onThreadPanelReset}
-          onKeyDown={onThreadPanelSeparatorKey}
-        />
-      ) : null}
 
       {participantPanel ? (
         <ParticipantProfilePanel
@@ -876,11 +568,6 @@ export function ConversationSidePanels({
           onFeedback={onFeedbackParticipant}
           onOpenMemoryPanel={onOpenMemoryPanel}
           onRetire={onRetireParticipant}
-          forkedFromName={
-            participantPanel.participant?.forked_from_id
-              ? resolveParticipantName(participantPanel.participant.forked_from_id)
-              : undefined
-          }
         />
       ) : null}
 

@@ -22,10 +22,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
-	"github.com/blueberrycongee/wuu/internal/memdir"
-	"github.com/blueberrycongee/wuu/internal/modelbudget"
-	"github.com/blueberrycongee/wuu/internal/modelcatalog"
-	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -34,7 +30,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
-	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
 type queuedTurn struct {
@@ -61,8 +56,7 @@ type startedThreadTurn struct {
 	history    []providers.ChatMessage
 	admittedAt time.Time
 	// userMsgSeq is the persisted seq of this turn's user message (0 when not
-	// persisted). Carried so group/member routing can stamp it onto envelopes
-	// for read receipts and reactions.
+	// persisted). It lets prelaunch failures record a durable terminal state.
 	userMsgSeq int
 }
 
@@ -84,10 +78,6 @@ type turnAdmissionHooks struct {
 	// lease are held. Its commit callback runs only after the synthetic/user
 	// message has been durably appended.
 	beforeUserAppendLocked func(*threadState) (func() error, error)
-	// residentReadReceipts are committed in the same transaction as the
-	// resident user marker and push-envelope consumption. They are empty for
-	// ordinary user, queued, goal, and completion turns.
-	residentReadReceipts []session.MessageMark
 }
 
 type turnRuntimeSnapshot struct {
@@ -140,7 +130,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	th, err := s.ensureThreadLoaded(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -148,26 +138,11 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	th.mu.Lock()
-	dmParticipantID := strings.TrimSpace(th.DMParticipantID)
-	isResidentDM := dmParticipantID != ""
-	isGroup := th.Group
-	th.mu.Unlock()
-	if isResidentDM {
-		// Retire cleanup protocol: a retired participant's DM history stays
-		// browsable, but the conversation is frozen — no new turns.
-		if p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID); err == nil && p.RetiredAt != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is retired; this conversation is read-only", firstNonEmpty(p.Name, dmParticipantID)))
-		}
-	}
 	if isManualCompactPrompt(params.Prompt) {
 		if len(images) > 0 || len(files) > 0 {
 			return s.writeResponse(req.ID, nil, errors.New("compact does not accept attachments"))
 		}
 		return s.startThreadCompactTurn(ctx, req, th, params.Prompt)
-	}
-	if isGroup {
-		return s.handleGroupTurnStart(req, th, params, images, files)
 	}
 	userMsg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
 	if err != nil {
@@ -179,7 +154,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	// The user turn snapshots the session-level Ultra setting once, at
 	// admission. Mid-turn changes affect only the next user turn.
 	snapshot.Ultra = s.rt.UltraMode()
-	var mentioned map[string]bool
 	var threadRuntime *runtime.ThreadRuntime
 	started, ok, err := s.startThreadUserTurnWithAdmission(
 		ctx,
@@ -189,20 +163,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		true,
 		turnReadOnlyIgnore,
 		turnAdmissionHooks{afterLease: func(admitted *threadState, _ *providers.ChatMessage) error {
-			// Focus declarations, membership changes, and runtime construction are
-			// durable/model-visible side effects. A busy contender must perform
-			// none of them, so all three happen only after lease ownership and the
-			// full disk-state refresh.
-			if isResidentDM && params.FocusWorkspace != nil {
-				if err := s.applyTurnWorkspaceFocus(admitted, params.FocusWorkspace); err != nil {
-					return err
-				}
-			}
 			var err error
-			mentioned, err = s.prepareThreadMentions(admitted, params.Mentions)
-			if err != nil {
-				return err
-			}
 			threadRuntime, err = s.ensureThreadRuntimeAfterAdmission(admitted)
 			if err != nil {
 				return err
@@ -236,9 +197,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return errors.Join(err, s.abortStartedThreadTurnDurably(th, started, err))
 	}
 	launch.Commit()
-	if !isResidentDM {
-		s.routeUserMessageToResidents(th, userMsg, mentioned, started.userMsgSeq)
-	}
 	return nil
 }
 
@@ -276,7 +234,7 @@ func (s *Server) handleThreadCompactStart(ctx context.Context, req Request) erro
 	if params.ThreadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	th, err := s.ensureThreadLoaded(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -295,14 +253,10 @@ func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *th
 	th.mu.Lock()
 	threadID := th.ID
 	readOnly := th.ReadOnly
-	isGroup := th.Group
 	running := th.running
 	th.mu.Unlock()
 	if readOnly {
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
-	}
-	if isGroup {
-		return s.writeResponse(req.ID, nil, errors.New("group threads do not support context compaction"))
 	}
 	if running {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", threadID))
@@ -315,11 +269,6 @@ func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *th
 		th.mu.Unlock()
 		cancel()
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
-	}
-	if th.Group {
-		th.mu.Unlock()
-		cancel()
-		return s.writeResponse(req.ID, nil, errors.New("group threads do not support context compaction"))
 	}
 	if th.running {
 		threadID = th.ID
@@ -371,12 +320,6 @@ func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *th
 		th.mu.Unlock()
 		cancel()
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
-	}
-	if th.Group {
-		th.releaseThreadExecutionLeaseLocked()
-		th.mu.Unlock()
-		cancel()
-		return s.writeResponse(req.ID, nil, errors.New("group threads do not support context compaction"))
 	}
 	if th.running {
 		threadID = th.ID
@@ -454,7 +397,7 @@ func (s *Server) handleTurnQueue(req Request) error {
 		}
 		return s.writeResponse(req.ID, nil, errors.New("compact cannot be queued; wait for the current turn to finish"))
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	th, err := s.ensureThreadLoaded(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -464,15 +407,10 @@ func (s *Server) handleTurnQueue(req Request) error {
 	}
 	th.mu.Lock()
 	readOnly := th.ReadOnly
-	isGroup := th.Group
 	th.mu.Unlock()
 	if readOnly {
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
 	}
-	if isGroup {
-		return s.writeResponse(req.ID, nil, errors.New("group threads do not support queued turns"))
-	}
-
 	queueID := strings.TrimSpace(params.ClientID)
 	if queueID == "" {
 		queueID = session.NewID()
@@ -534,7 +472,7 @@ func (s *Server) handleTurnUpdateQueued(req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	th, err := s.ensureThreadLoaded(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -630,7 +568,7 @@ func (s *Server) handleTurnSteer(req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th, err := s.ensureResidentThread(params.ThreadID)
+	th, err := s.ensureThreadLoaded(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -801,11 +739,6 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		releaseDetachedThreadRuntime(detached)
 	}
 	if existing != nil {
-		if !running {
-			if err := s.configureResidentThreadRuntime(th, existing); err != nil {
-				return nil, err
-			}
-		}
 		return existing, nil
 	}
 	if s.rt == nil {
@@ -837,12 +770,18 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		return nil, err
 	}
 	if threadRuntime.Toolkit != nil {
-		// Inject the embedded-browser bridge for every thread here (not only
-		// resident participants in configureResidentThreadRuntime): the bridge
+		// Inject the embedded-browser bridge for every thread here. The bridge
 		// closure must carry this thread's id + workdir so tab operations route
 		// to the desktop views keyed by (workdir, tab_id). Set once at runtime
 		// creation; the existing-runtime fast path above keeps it attached.
 		threadRuntime.Toolkit.SetBrowserBridge(s.browserBridgeForThread(browserWorkdir, th.ID))
+		threadRuntime.Toolkit.SetOnSessionWorkspaceChanged(func(root string) error {
+			if err := s.rebindThreadWorkspace(th.ID, root); err != nil {
+				return err
+			}
+			threadRuntime.Toolkit.SetBrowserBridge(s.browserBridgeForThread(root, th.ID))
+			return nil
+		})
 		if _, restoreErr := threadRuntime.Toolkit.RestorePlanFromHistory(history); restoreErr != nil {
 			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
 		}
@@ -857,10 +796,6 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		}
 	}
 	sub := s.subscribeThreadRuntime(th.ID, threadRuntime)
-	if err := s.configureResidentThreadRuntime(th, threadRuntime); err != nil {
-		releaseThreadRuntimeSubscription(threadRuntime, sub)
-		return nil, err
-	}
 	th.mu.Lock()
 	if s.closed.Load() {
 		th.mu.Unlock()
@@ -874,7 +809,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		if threadRuntime.AgentControl != nil {
 			threadRuntime.AgentControl.StartWorkerTerminalRecovery()
 			// New only restores durable queue metadata. Start restored workers after
-			// this runtime has won installation, resident configuration is complete,
+			// this runtime has won installation, configuration is complete,
 			// and subscribeThreadRuntime has attached the model resolver and reliable
 			// terminal finalizer. A zero-latency worker can now safely resolve and
 			// finalize against the installed thread runtime.
@@ -926,7 +861,7 @@ func (s *Server) healThreadSelectionForRemovedProvider(th *threadState) session.
 	return healed
 }
 
-// threadRuntimeMatchesSelectionLocked reports whether an idle resident runtime
+// threadRuntimeMatchesSelectionLocked reports whether an idle cached runtime
 // was built for the thread's current model selection. Another app-server
 // process can repin the session between turns; admission refreshes th.* from
 // disk, and this single chokepoint keeps a reused runtime from ever running a
@@ -975,174 +910,11 @@ func (s *Server) replayPendingAgentCompletions(threadID string, threadRuntime *r
 	}
 }
 
-func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *runtime.ThreadRuntime) error {
-	if s == nil || s.rt == nil || th == nil || threadRuntime == nil {
-		return nil
-	}
-	th.mu.Lock()
-	participantID := strings.TrimSpace(th.DMParticipantID)
-	threadCWD := th.CWD
-	focusWorkspace := th.FocusWorkspace
-	running := th.running
-	th.mu.Unlock()
-	if participantID == "" || running {
-		return nil
-	}
-	p, err := session.GetParticipant(s.rt.SessionDir, participantID)
-	if err != nil {
-		return err
-	}
-	if p.Kind != participant.KindNamed {
-		return fmt.Errorf("dm participant %q is not a named agent", participantID)
-	}
-	prompt, err := s.residentPromptForParticipant(p)
-	if err != nil {
-		return err
-	}
-
-	providerName := strings.TrimSpace(s.rt.ProviderName)
-	modelName := strings.TrimSpace(s.rt.Model)
-	apiModel := ""
-	var client providers.StreamClient
-	if s.rt.StreamRunner != nil {
-		if modelName == "" {
-			modelName = strings.TrimSpace(s.rt.StreamRunner.Model)
-		}
-		apiModel = strings.TrimSpace(s.rt.StreamRunner.APIModel)
-		client = s.rt.StreamRunner.Client
-	}
-	if apiModel == "" {
-		apiModel = modelName
-	}
-	pinnedBudget := modelbudget.Budget{}
-	havePinnedBudget := false
-	if rawPin := strings.TrimSpace(p.Model); rawPin != "" {
-		pinProvider, _ := parseParticipantModelPin(rawPin)
-		modelOverride, clientOverride, err := resolveParticipantModelOverride(
-			newRuntimeSessionReference(s.rt),
-			p.Name,
-			rawPin,
-			providerName,
-		)
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(pinProvider) != "" {
-			providerName = strings.TrimSpace(pinProvider)
-		}
-		if strings.TrimSpace(modelOverride) != "" {
-			modelName = strings.TrimSpace(modelOverride)
-			apiModel = modelName
-		}
-		if clientOverride != nil {
-			client = clientOverride
-		}
-		// A pinned model may have a different context window than the global
-		// default the thread runner was cloned with. Resolve the pinned
-		// model's real budget the same way the Session model switcher does
-		// (handleConfigAdvancedUpdate) so proactive compaction and the
-		// context meter both key off this agent's actual window rather than
-		// the default's. An unknown window leaves the cloned global budget in
-		// place instead of zeroing the ceiling.
-		pinnedBudget, havePinnedBudget = s.residentModelBudget(providerName, modelName)
-	}
-	if threadRuntime.StreamRunner != nil {
-		if client != nil {
-			threadRuntime.StreamRunner.Client = client
-		}
-		threadRuntime.StreamRunner.ProviderName = providerName
-		if modelName != "" {
-			threadRuntime.StreamRunner.Model = modelName
-		}
-		threadRuntime.StreamRunner.APIModel = apiModel
-		threadRuntime.StreamRunner.UpdateSystemPrompt(prompt)
-		if havePinnedBudget {
-			threadRuntime.StreamRunner.ContextWindowOverride = pinnedBudget.ContextWindowTokens
-			threadRuntime.StreamRunner.MaxInputTokens = pinnedBudget.InputLimitTokens
-			threadRuntime.StreamRunner.OutputReserveTokens = pinnedBudget.OutputReserveTokens
-			threadRuntime.StreamRunner.CompactThresholdTokens = pinnedBudget.CompactThresholdTokens
-		}
-	}
-	if threadRuntime.Toolkit != nil {
-		threadRuntime.Toolkit.SetParticipantIdentity(participantID)
-		threadRuntime.Toolkit.SetParticipantSpeechEnabled(true)
-		threadRuntime.Toolkit.SetResidentParticipantEnabled(true)
-		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
-		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
-		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
-		// Resident file tools work inside the home + registered workspaces
-		// + temp whitelist (design doc §5.2), plus the agent's own identity
-		// memory notebook (memory-redesign §3); reads and writes alike. The
-		// user notebook is deliberately NOT added: residents only see its
-		// index read-only via the prompt.
-		threadRuntime.Toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(
-			threadCWD,
-			s.rt.WuuHome,
-			memdir.ParticipantMemdir(s.rt.WuuHome, participantID),
-		))
-		// The declared workspace focus decides where tools work by default
-		// (2026-07-03-workspace-focus.md §5): a workspace focus roots them
-		// at that workspace, "" (all) and "~" (home) keep the agent home.
-		// The file-scope whitelist above stays untouched — focus does not
-		// narrow what the resident may read or write.
-		if roster, err := workspaces.List(s.rt.WuuHome); err == nil {
-			threadRuntime.Toolkit.SetRootDir(focusWorkspaceRoot(focusWorkspace, threadCWD, roster))
-		}
-	}
-	if threadRuntime.AgentControl != nil {
-		threadRuntime.AgentControl.EnableParticipantSpeech(participantID)
-		threadRuntime.AgentControl.SetAgentParticipantID(participantID, participantID)
-	}
-	th.mu.Lock()
-	if !th.running {
-		th.ModelProvider = providerName
-		if modelName != "" {
-			th.Model = modelName
-		}
-		th.History = ensureResidentSystemPrompt(th.History, prompt)
-	}
-	th.mu.Unlock()
-	return nil
-}
-
-// residentModelBudget resolves the context/input budget for a resident DM
-// thread's actual (provider, model) using the same pipeline the Session model
-// switcher uses (handleConfigAdvancedUpdate): load config, resolve + enrich the
-// provider, then ResolveModelBudget. It returns ok=false when the model's
-// window is unknown (or config cannot be read) so callers keep whatever budget
-// the thread runner already carries instead of zeroing the ceiling — which
-// would disable proactive compaction entirely.
-func (s *Server) residentModelBudget(providerName, modelName string) (modelbudget.Budget, bool) {
-	providerName = strings.TrimSpace(providerName)
-	modelName = strings.TrimSpace(modelName)
-	if s == nil || s.rt == nil || providerName == "" || modelName == "" {
-		return modelbudget.Budget{}, false
-	}
-	cfg, _, err := s.rt.LoadEffectiveConfig()
-	if err != nil {
-		return modelbudget.Budget{}, false
-	}
-	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
-	if err != nil {
-		return modelbudget.Budget{}, false
-	}
-	providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
-	_, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, modelName)
-	budget := runtime.ResolveModelBudget(modelName, ruleProviderCfg, cfg.Agent.MaxContextTokens)
-	if budget.ContextWindowTokens <= 0 && budget.InputLimitTokens <= 0 {
-		return modelbudget.Budget{}, false
-	}
-	return budget, true
-}
-
 func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) *threadRuntimeSubscription {
 	if threadRuntime == nil || (threadRuntime.AgentControl == nil && threadRuntime.ProcessManager == nil) {
 		return nil
 	}
 	control := threadRuntime.AgentControl
-	if control != nil {
-		control.SetParticipantRoster(s.participantRosterForTool())
-	}
 	// Per-participant model pins persist the raw pin but not the stream
 	// client (StreamClient is not serializable). When a queued spawn
 	// restores after a process restart the AgentControl calls the
@@ -1171,12 +943,11 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		})
 	}
 	sub := &threadRuntimeSubscription{
-		statusCh:             make(chan subagent.Notification, 64),
-		streamCh:             make(chan subagent.StreamNotification, 256),
-		participantMessageCh: make(chan agentcontrol.ParticipantMessage, 64),
-		processCh:            make(chan process.Event, 64),
-		processManager:       threadRuntime.ProcessManager,
-		done:                 make(chan struct{}),
+		statusCh:       make(chan subagent.Notification, 64),
+		streamCh:       make(chan subagent.StreamNotification, 256),
+		processCh:      make(chan process.Event, 64),
+		processManager: threadRuntime.ProcessManager,
+		done:           make(chan struct{}),
 	}
 	if control != nil {
 		sub.terminalUnsubscribe = control.SubscribeWorkerTerminalFinalizer(func(notification subagent.Notification) error {
@@ -1194,13 +965,6 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		go func() {
 			defer sub.wg.Done()
 			s.forwardAgentStreamNotifications(threadID, control, sub.streamCh, sub.done)
-		}()
-
-		control.SubscribeParticipantMessages(sub.participantMessageCh)
-		sub.wg.Add(1)
-		go func() {
-			defer sub.wg.Done()
-			s.forwardParticipantMessages(threadID, control, sub.participantMessageCh, sub.done)
 		}()
 	}
 	if threadRuntime.ProcessManager != nil {
@@ -1263,6 +1027,14 @@ func threadRuntimeHasOutstandingAgentWork(threadRuntime *runtime.ThreadRuntime) 
 	return false
 }
 
+func threadRuntimeAwaitsAutoContinuation(threadID string, threadRuntime *runtime.ThreadRuntime) bool {
+	if threadRuntime == nil {
+		return false
+	}
+	return threadRuntimeHasOutstandingAgentWork(threadRuntime) ||
+		threadHasOutstandingProcessCompletion(threadID, threadRuntime.AgentControl, threadRuntime.ProcessManager)
+}
+
 func threadRuntimeHasOutstandingWork(threadID string, threadRuntime *runtime.ThreadRuntime) bool {
 	if threadRuntimeHasOutstandingAgentWork(threadRuntime) {
 		return true
@@ -1291,7 +1063,6 @@ func releaseThreadRuntimeSubscription(threadRuntime *runtime.ThreadRuntime, sub 
 	if threadRuntime != nil && threadRuntime.AgentControl != nil && sub != nil {
 		threadRuntime.AgentControl.Unsubscribe(sub.statusCh)
 		threadRuntime.AgentControl.UnsubscribeStream(sub.streamCh)
-		threadRuntime.AgentControl.UnsubscribeParticipantMessages(sub.participantMessageCh)
 	}
 	if sub != nil && sub.processManager != nil {
 		sub.processManager.Unsubscribe(sub.processCh)
@@ -1452,9 +1223,20 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	}
 	th.mu.Lock()
 	cancel := th.cancel
+	threadRuntime := th.execRuntime
 	if cancel == nil {
+		hasAgentWork := threadRuntimeHasOutstandingAgentWork(threadRuntime)
+		if hasAgentWork {
+			th.workerTreeFrozen = true
+		}
 		th.mu.Unlock()
-		return s.writeResponse(req.ID, nil, errors.New("thread has no running turn"))
+		if hasAgentWork && threadRuntime.AgentControl != nil {
+			threadRuntime.AgentControl.FreezeWorkerTree()
+		}
+		if err := s.stopResumeProcessesForThread(threadID, threadRuntime); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		return s.writeResponse(req.ID, OKResult{OK: true}, nil)
 	}
 	pendingSteers := queuedTurnsFromSteers(th.pendingSteers)
 	for index := range pendingSteers {
@@ -1497,11 +1279,48 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	if control != nil {
 		control.FreezeWorkerTree()
 	}
+	if err := s.stopResumeProcessesForThread(threadID, threadRuntime); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 		return err
 	}
 	s.notifyQueuedTurnsDequeued(threadID, automationIDs)
 	s.notifyHeldUserTurns(threadID, held)
+	return nil
+}
+
+// stopResumeProcessesForThread stops only processes whose completion would
+// automatically resume this thread. Detached services intentionally outlive
+// the thread's waiting state and are left alone.
+func (s *Server) stopResumeProcessesForThread(threadID string, threadRuntime *runtime.ThreadRuntime) error {
+	var manager *process.Manager
+	if threadRuntime != nil {
+		manager = threadRuntime.ProcessManager
+	}
+	if manager == nil {
+		manager = s.processManagerForThread(threadID)
+	}
+	if manager == nil {
+		return nil
+	}
+	processes, err := manager.List()
+	if err != nil {
+		return fmt.Errorf("list background processes: %w", err)
+	}
+	for _, p := range processes {
+		if p.Lifecycle != process.LifecycleManaged ||
+			p.CompletionMode != process.CompletionModeResume ||
+			!s.processBelongsToThread(threadID, p) {
+			continue
+		}
+		switch p.Status {
+		case process.StatusStarting, process.StatusRunning:
+			if _, err := manager.Stop(p.ID); err != nil {
+				return fmt.Errorf("stop background process %q: %w", p.ID, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -1632,7 +1451,7 @@ func frozenWorkerTreeBlock(pending []agentCompletionTurn, frozen []agentcontrol.
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
-	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, turnRuntime.RequestContext, nil)
+	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, turnRuntime.RequestContext)
 }
 
 func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
@@ -1724,7 +1543,7 @@ func usageContextWindowTokens(runner *agent.StreamRunner) int {
 	return 0
 }
 
-func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, requestContext []agent.ContextSegment, residentEnvelopes []MessageEnvelope) {
+func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, requestContext []agent.ContextSegment) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -1736,12 +1555,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
 	}
-	residentParticipantID := ""
 	turnWorktreePath := ""
 	var frozenTreeContext []agent.ContextSegment
 	if th != nil {
 		th.mu.Lock()
-		residentParticipantID = strings.TrimSpace(th.DMParticipantID)
 		turnWorktreePath = strings.TrimSpace(th.WorktreePath)
 		frozenTreeContext = th.frozenTreeContext
 		th.frozenTreeContext = nil
@@ -1776,9 +1593,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		})
 	}
 	defer restoreRunner()
-	if s.taskLeadManagementTurn(residentParticipantID, residentEnvelopes) {
-		runner.Tools = allowlistedToolExecutor{base: baseTurnTools, allowed: taskLeadManagementTools}
-	}
 	// Fork-to-worktree step 5: bind the thread's isolated checkout into the
 	// tool execution context. All turn variants funnel through here, so a
 	// worktree-bound thread's file/shell tools switch their execution CWD to
@@ -1971,17 +1785,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		}
 		return segments
 	}
-	// Node liveness wiring (plan §T9): if this resident turn was dispatched to
-	// run a plan node, resolve that node ONCE now (not per stream event). A tool
-	// call during the turn then refreshes the node's LastActivityAt (activity =
-	// "still alive"), kept strictly distinct from progress ("real headway").
-	// resolveExecutingNode returns ok=false for any non-node turn (ordinary
-	// DM/chat, a lead's planning/wrap-up wake), so the activity hook below no-ops
-	// there.
-	nodeTaskID, nodePieceID, nodeAttemptID, nodeExecuting := "", "", "", false
-	if residentParticipantID != "" && len(residentEnvelopes) > 0 {
-		nodeTaskID, nodePieceID, nodeAttemptID, nodeExecuting = s.resolveExecutingAttempt(residentParticipantID, residentEnvelopes)
-	}
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		if ev.Type == providers.EventUsage && ev.Usage != nil {
 			usagePushMu.Lock()
@@ -1996,37 +1799,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
 		th.mu.Unlock()
-		// Node liveness (plan §T9): every observable action by the assignee is an
-		// activity ("still alive") signal that refreshes the executing node's
-		// LastActivityAt — a tool call, its result, and assistant commentary —
-		// each kept strictly apart from progress ("real headway", noteNodeProgress).
-		// This runtime fuses a tool call and its result into one EventToolUseEnd
-		// (the call plus ev.ToolResult), and streams commentary as content deltas
-		// plus a per-message EventMessage; we take the per-message event as the
-		// commentary signal so the trace is one entry per narration, not one per
-		// delta. Do the store writes AFTER releasing th.mu — noteNodeActivity
-		// acquires the store write lock, which must never nest under th.mu. The
-		// guard no-ops on empty ids, so an ordinary DM/chat turn (which resolves no
-		// executing node) is untouched.
-		if nodeExecuting {
-			switch ev.Type {
-			case providers.EventToolUseEnd:
-				if ev.ToolCall != nil {
-					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolCall, strings.TrimSpace(ev.ToolCall.Name), nodeAttemptID)
-				}
-				if strings.TrimSpace(ev.ToolResult) != "" {
-					toolName := ""
-					if ev.ToolCall != nil {
-						toolName = strings.TrimSpace(ev.ToolCall.Name)
-					}
-					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolResult, toolName, nodeAttemptID)
-				}
-			case providers.EventMessage:
-				if ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Content) != "" {
-					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventCommentary, commentaryTraceSummary(ev.Message.Content), nodeAttemptID)
-				}
-			}
-		}
 		notifyBatch(batch)
 		notify(NotificationTurnEvent, TurnEventNotification{
 			ThreadID: th.ID,
@@ -2223,33 +1995,15 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			}
 		}
 	}
-	residentTurn := strings.TrimSpace(residentParticipantID) != ""
-	if residentTurn {
-		// Receipts, task-attempt settlement, and fallback delivery are part of
-		// this turn's durable finalization. Keep the execution lease while they
-		// run so another process cannot admit the successor against a half-
-		// finalized resident turn. They may take th.mu, so do not hold it here.
-		th.mu.Unlock()
-		if s.beforeResidentTurnFinalizeForTest != nil {
-			s.beforeResidentTurnFinalizeForTest(th.ID)
-		}
-		s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
-		th.mu.Lock()
-		th.releaseTurnExecutionLocked(turnID)
-		th.mu.Unlock()
-	} else {
-		th.releaseTurnExecutionLocked(turnID)
-		th.mu.Unlock()
-	}
+	th.releaseTurnExecutionLocked(turnID)
+	th.mu.Unlock()
 	// A terminal notification is the client-visible completion barrier. By the
-	// time it is published all durable resident settlement and runtime cleanup
+	// time it is published all durable settlement and runtime cleanup
 	// is finished, and the execution lease is available for the next request.
 	// Local queue drains are kicked only after this write, preserving terminal
 	// before successor ordering on this server without making an immediate user
 	// turn spuriously fail as busy.
-	awaitingAutoContinuation := err == nil && threadRuntime != nil &&
-		(threadRuntimeHasOutstandingAgentWork(threadRuntime) ||
-			threadHasOutstandingProcessCompletion(th.ID, threadRuntime.AgentControl, threadRuntime.ProcessManager))
+	awaitingAutoContinuation := err == nil && threadRuntimeAwaitsAutoContinuation(th.ID, threadRuntime)
 	if runID := strings.TrimSpace(turnRuntime.AutomationRunID); runID != "" && s.rt != nil && s.rt.AutomationManager != nil {
 		if completeErr := s.rt.AutomationManager.CompleteRun(runID, th.ID, turnID, err); completeErr != nil {
 			providers.DebugLogf("complete automation run %q: %v", runID, completeErr)
@@ -2282,9 +2036,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			TracePath:                tracePath,
 			AwaitingAutoContinuation: awaitingAutoContinuation,
 		})
-	}
-	if residentTurn {
-		s.kickResidentAgent(residentParticipantID)
 	}
 	if completionClaimFailed {
 		s.scheduleThreadExecutionLeaseRetry(func() {
@@ -2861,22 +2612,8 @@ func (s *Server) startThreadUserTurnWithAdmission(ctx context.Context, th *threa
 			}
 		}
 	}
-	if th.PersistHistory && userAlreadyPersisted && (len(userMsg.ConsumeResidentEnvelopeIDs) > 0 || len(hooks.residentReadReceipts) > 0) {
-		if err := session.CommitExistingResidentAdmission(s.rt.SessionDir, userMsg.ConsumeResidentEnvelopeIDs, hooks.residentReadReceipts, now); err != nil {
-			th.releaseThreadExecutionLeaseLocked()
-			th.mu.Unlock()
-			cancel()
-			return startedThreadTurn{}, false, err
-		}
-	}
 	if th.PersistHistory && !userAlreadyPersisted {
-		var seq int
-		var err error
-		if len(hooks.residentReadReceipts) > 0 {
-			seq, err = appendResidentAdmissionChatMessage(s.rt.SessionDir, th.ID, userMsg, hooks.residentReadReceipts, now)
-		} else {
-			seq, err = appendChatMessage(s.rt.SessionDir, th.ID, userMsg)
-		}
+		seq, err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg)
 		if err != nil {
 			th.releaseThreadExecutionLeaseLocked()
 			th.mu.Unlock()
@@ -2973,12 +2710,6 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	th := s.thread(threadID)
 	if th == nil {
 		return false, fmt.Errorf("thread %q not found", threadID)
-	}
-	th.mu.Lock()
-	isGroup := th.Group
-	th.mu.Unlock()
-	if isGroup {
-		return false, errors.New("group threads do not support queued turns")
 	}
 	var threadRuntime *runtime.ThreadRuntime
 	// Permissions are re-resolved at start time, never trusted from the
@@ -3367,7 +3098,7 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	// A synthetic completion turn belongs to the orchestration tree that
 	// produced it: reuse the completing worker's inherited Ultra value
 	// instead of the current session setting (turn boundary and inheritance,
-	// docs/app-server-protocol.md).
+	// docs/en/integrations/app-server-protocol.md).
 	completionUltra := false
 	for _, turn := range pending {
 		if turn.snapshot != nil && turn.snapshot.Ultra {
@@ -3662,7 +3393,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 
 	// Construct and restore the runtime only from the snapshot protected by the
 	// execution lease. In particular, plan state, usage, CWD, and model settings
-	// must not come from the stale resident copy that lost the prior admission.
+	// must not come from the stale cached copy that lost the prior admission.
 	threadRuntime, err := s.ensureThreadRuntimeAfterAdmission(th)
 	if err != nil {
 		releaseAdmission()
@@ -3675,7 +3406,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 
 	// The goal and all queue gates may have changed while another app-server
 	// owned the thread. Evaluate them only after acquiring ownership.
-	decision, err := threadRuntime.GoalRuntime.DecideContinuation(s.goalContinuationInput(th, threadID))
+	decision, err := threadRuntime.GoalRuntime.DecideContinuation(s.goalContinuationInput(th, threadID, threadRuntime))
 	if err != nil {
 		releaseAdmission()
 		return false, err
@@ -3723,7 +3454,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 		Turn:     turn,
 	})
 	if !s.startBackground(func() {
-		s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal), nil)
+		s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal))
 	}) {
 		abortStartedThreadTurn(th, startedThreadTurn{
 			ctx:     turnCtx,
@@ -3738,7 +3469,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 	return true, nil
 }
 
-func (s *Server) goalContinuationInput(th *threadState, threadID string) goalruntime.ContinuationInput {
+func (s *Server) goalContinuationInput(th *threadState, threadID string, threadRuntime *runtime.ThreadRuntime) goalruntime.ContinuationInput {
 	var running, readOnly bool
 	if th != nil {
 		th.mu.Lock()
@@ -3747,11 +3478,12 @@ func (s *Server) goalContinuationInput(th *threadState, threadID string) goalrun
 		th.mu.Unlock()
 	}
 	return goalruntime.ContinuationInput{
-		ThreadIdle:      !running,
-		ActiveTurn:      running,
-		QueuedUserWork:  s.hasQueuedUserWork(threadID),
-		QueuedAgentWork: s.hasQueuedAgentCompletionWork(threadID),
-		ReadOnly:        readOnly,
+		ThreadIdle:             !running,
+		ActiveTurn:             running,
+		QueuedUserWork:         s.hasQueuedUserWork(threadID),
+		QueuedAgentWork:        s.hasQueuedAgentCompletionWork(threadID),
+		AwaitingBackgroundWork: threadRuntimeAwaitsAutoContinuation(threadID, threadRuntime),
+		ReadOnly:               readOnly,
 	}
 }
 
@@ -3961,7 +3693,7 @@ func agentCompletionMarkerAnswered(history []providers.ChatMessage, resultID str
 			}
 		}
 		if strings.EqualFold(strings.TrimSpace(msg.Role), "user") &&
-			!msg.Hidden && !msg.Steered && len(msg.FocusMeta) == 0 && !compact.IsInternalContextMessage(msg) {
+			!msg.Hidden && !msg.Steered && !compact.IsInternalContextMessage(msg) {
 			return false
 		}
 	}
@@ -4053,8 +3785,8 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 		if err := rewriteChatHistoryAtBaseline(s.rt.SessionDir, th.ID, th.History, historyBaselineSeq); err != nil {
 			return err
 		}
-		// The transaction may have merged participant/meta tail records that
-		// arrived while the model ran. Count the committed history rather than
+		// The transaction may have merged meta tail records that arrived while
+		// the model ran. Count the committed history rather than
 		// overwriting the session index from the turn's pre-merge snapshot.
 		if committedRecords, committedHeadSeq, err := loadProviderPersistedMessages(s.rt.SessionDir, th.ID, false); err != nil {
 			return err
@@ -4063,11 +3795,6 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 			indexHistory = committed
 			th.History = cloneHistory(committed)
 			th.historyHeadSeq = committedHeadSeq
-		}
-		if display, err := loadPersistedMessages(s.rt.SessionDir, th.ID, false); err != nil {
-			return err
-		} else {
-			mergeConcurrentParticipantTailIntoTurnsLocked(th, display, historyBaselineSeq, time.Now().UTC(), s.resolveParticipantSummary)
 		}
 	} else {
 		if err := appendChatMessages(s.rt.SessionDir, th.ID, res.NewMessages); err != nil {
@@ -4097,111 +3824,36 @@ func (s *Server) persistFailedTurnResultLocked(th *threadState, res agent.LoopRe
 	}, res.ContextTokens)
 }
 
-func mergeConcurrentParticipantTailIntoTurnsLocked(th *threadState, records []persistedMessage, baselineSeq int, now time.Time, resolve participantSummaryResolver) {
-	if th == nil || th.currentTurn == "" {
-		return
-	}
-	existingSeq := make(map[int]bool)
-	turn := th.ensureTurnLocked(th.currentTurn, now)
-	for _, item := range turn.Items {
-		if item.Seq > 0 {
-			existingSeq[item.Seq] = true
-		}
-	}
-	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
-	changed := false
-	for _, rec := range records {
-		if rec.Seq <= baselineSeq || rec.Seq <= 0 || existingSeq[rec.Seq] || strings.TrimSpace(rec.ThreadID) != "" || !isParticipantPersistedMessage(rec) {
-			continue
-		}
-		turn.Items = append(turn.Items, participantMessageItem(th.nextItemIDLocked(turn.ID), rec, resolve))
-		existingSeq[rec.Seq] = true
-		changed = true
-	}
-	if changed {
-		th.replaceTurnLocked(turn)
-	}
-}
-
 // handleSettingsUsage returns the aggregated token usage snapshot for
-// the desktop settings page. Range selects a time window ("all" / "7d"
-// / "30d" / "90d"); empty defaults to "all". Range filtering is applied
-// to each token_usage row's At timestamp (UTC), not to the session
-// CreatedAt, so a long-running session that crosses a range boundary
-// contributes only the rows inside the window. Rows with a zero At
-// (legacy imports written before the timestamp was added) are kept
-// under "all" and dropped from any time-windowed query so they cannot
-// masquerade as fresh activity.
+// the desktop settings page. The snapshot always covers the full
+// token_usage trail — every row, including zero-At legacy imports, so
+// long-running sessions and migrated history contribute their real
+// totals.
 func (s *Server) handleSettingsUsage(req Request) error {
-	var params SettingsUsageQuery
-	if err := decodeParams(req.Params, &params); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	rangeFilter := params.Range
-	if rangeFilter == "" {
-		rangeFilter = SettingsUsageRangeAll
-	}
-	if err := validateSettingsUsageRange(rangeFilter); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-
 	sessDir := s.rt.SessionDir
 	now := time.Now().UTC()
-	cutoff := settingsUsageRangeCutoff(rangeFilter, now)
 
 	rows, err := insight.CollectTokenUsageRows(sessDir)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("collect usage rows: %w", err))
 	}
-	filteredRows := filterUsageRowsByCutoff(rows, cutoff)
 
-	metrics, days := aggregateUsageRows(filteredRows)
-	totalSessions := countSessionsInRange(rows, cutoff)
+	metrics, days := aggregateUsageRows(rows)
 
 	return s.writeResponse(req.ID, SettingsUsageResponse{
-		Range:           rangeFilter,
-		TotalSessions:   totalSessions,
+		TotalSessions:   countUsageSessions(rows),
 		GeneratedAt:     now.Format(time.RFC3339Nano),
 		Metrics:         metrics,
-		ModelBreakdowns: buildUsageModelBreakdowns(filteredRows),
+		ModelBreakdowns: buildUsageModelBreakdowns(rows),
 		Days:            days,
 	}, nil)
 }
 
-// filterUsageRowsByCutoff returns rows that fall inside the requested
-// range. "all" (cutoff == nil) keeps every row, including zero-At
-// legacy imports; time-windowed queries drop zero-At rows so they
-// cannot be pinned to "today" or "this week" by accident.
-func filterUsageRowsByCutoff(rows []insight.TokenUsageRow, cutoff *time.Time) []insight.TokenUsageRow {
-	if cutoff == nil {
-		return rows
-	}
-	out := make([]insight.TokenUsageRow, 0, len(rows))
-	for _, r := range rows {
-		if r.At.IsZero() {
-			continue
-		}
-		if r.At.Before(*cutoff) {
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
-}
-
-// countSessionsInRange returns the number of distinct session IDs that
-// have at least one token_usage row inside the cutoff. Sessions with
-// only zero-At legacy rows are excluded from time-windowed counts but
-// still counted under "all".
-func countSessionsInRange(rows []insight.TokenUsageRow, cutoff *time.Time) int {
+// countUsageSessions returns the number of distinct session IDs present
+// in the token_usage trail.
+func countUsageSessions(rows []insight.TokenUsageRow) int {
 	seen := make(map[string]struct{})
 	for _, r := range rows {
-		if cutoff != nil && r.At.IsZero() {
-			continue
-		}
-		if cutoff != nil && r.At.Before(*cutoff) {
-			continue
-		}
 		seen[r.SessionID] = struct{}{}
 	}
 	return len(seen)
@@ -4358,34 +4010,4 @@ func cloneStringIntMap(in map[string]int) map[string]int {
 		out[key] = value
 	}
 	return out
-}
-
-// validateSettingsUsageRange rejects unknown range strings so the
-// desktop gets a clear error instead of a silently empty snapshot.
-func validateSettingsUsageRange(r SettingsUsageRange) error {
-	switch r {
-	case SettingsUsageRangeAll, SettingsUsageRange7d, SettingsUsageRange30d, SettingsUsageRange90d:
-		return nil
-	}
-	return fmt.Errorf("invalid settings/usage range %q", r)
-}
-
-// settingsUsageRangeCutoff returns the exclusive lower-bound timestamp
-// for the requested range. "all" (and the empty string) returns nil,
-// meaning no time filter applies.
-func settingsUsageRangeCutoff(r SettingsUsageRange, now time.Time) *time.Time {
-	switch r {
-	case SettingsUsageRangeAll, "":
-		return nil
-	case SettingsUsageRange7d:
-		c := now.AddDate(0, 0, -7)
-		return &c
-	case SettingsUsageRange30d:
-		c := now.AddDate(0, 0, -30)
-		return &c
-	case SettingsUsageRange90d:
-		c := now.AddDate(0, 0, -90)
-		return &c
-	}
-	return nil
 }

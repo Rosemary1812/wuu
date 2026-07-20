@@ -164,7 +164,7 @@ func (c *AgentControl) reportArtifactWorkspaceRoot(taskID string) string {
 	if task, ok := c.harnessTask(taskID); ok && strings.TrimSpace(task.Workspace.Root) != "" {
 		return task.Workspace.Root
 	}
-	return c.parentRepo
+	return c.ParentRepo()
 }
 
 func (c *AgentControl) sessionDir() string {

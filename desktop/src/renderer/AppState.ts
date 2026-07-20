@@ -1,13 +1,9 @@
 import type {
   Agent,
   AppServerNotification,
-  ConversationSubthread,
-  SubthreadUpdatedNotification,
   DesktopProject,
   GitStatusResult,
   InitializeResult,
-  MessageMarkWire,
-  ParticipantSummary,
   PlanUpdate,
   RuntimeContext,
   ServerEvent,
@@ -16,11 +12,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
-import { agentHandoffDisplayItem } from "./AgentHandoff";
-import {
-  isInternalUserNotificationItem,
-  isProcessNotificationItem,
-} from "./InternalUserNotification";
+import { isInternalUserNotificationItem } from "./InternalUserNotification";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { sortChildAgents } from "./ThreadAgents";
 import {
@@ -111,8 +103,7 @@ type SessionTab =
       title: string;
     }
   | {
-      // Group board tab: lists the group's anchored Threads and Tasks.
-      // threadID points to the owning group conversation.
+      // Kanban board tab for the owning conversation.
       id: string;
       kind: "board";
       context: RuntimeContext;
@@ -160,12 +151,6 @@ type AppState = {
   // entry is older). Active-tab tracking is what advances this map; running
   // threads are never flagged unread because they have not finished yet.
   lastViewedTurnByThreadID: Record<string, string>;
-  // lastViewedMessageSeqByThreadID is the chat-style counterpart: the
-  // highest actual chat-message seq the user has been on the thread for.
-  // DM/group unread compares the thread's latest message seq against this
-  // offset, so a turn that settles without sending a message never flags a
-  // chat thread unread. Advanced by the same active-tab tracking.
-  lastViewedMessageSeqByThreadID: Record<string, number>;
 };
 
 export type ThreadTurnSummary = Pick<
@@ -179,19 +164,12 @@ export type ThreadSummary = Omit<
 > & {
   turns: ThreadTurnSummary[];
   turn_count: number;
-  // Latest incoming chat-message seq (session_messages offset of the newest
-  // participant post) in the thread's main stream, computed from the full
-  // thread's items before they are stripped from the summary. Chat-style
-  // (DM/group) unread derives from this — turn settlement without a
-  // message, or the user's own posts, never flag unread there.
-  last_incoming_message_seq?: number;
 };
 
 type ThreadRunningCandidate = {
   status: Thread["status"];
   turns?: Array<Pick<Turn, "status">>;
   child_agents?: Array<Pick<Agent, "status" | "nested_running_count">>;
-  members?: Array<Pick<ParticipantSummary, "busy">>;
 };
 
 type TurnTokenSample = {
@@ -285,7 +263,6 @@ const initialState: AppState = {
   turnStreamStatus: {},
   turnStreamTransport: {},
   lastViewedTurnByThreadID: {},
-  lastViewedMessageSeqByThreadID: {},
 };
 
 function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
@@ -318,51 +295,6 @@ function serverEventTargetsActiveContext(
   state: AppState,
 ): boolean {
   return event.workdir === state.activeContext?.cwd;
-}
-
-/**
- * True when a server event carries a global-collaboration thread (DM or
- * group). Such events are stamped with the originating app-server client's
- * workdir, which may not be the active context's cwd (the conversation can
- * run under a backgrounded project client). They must bypass the workdir
- * gate so the roster's busy/unread state — derived from state.threads —
- * stays live across project switches (issue #9).
- *
- * Thread lifecycle notifications carry the full Thread, so we classify from
- * its markers directly. turn/* and item/* carry only a thread_id, so we
- * match it against a global thread already known to state (its thread/started
- * always precedes its turn/item events, so the thread is present by then).
- */
-function serverEventTargetsGlobalThread(
-  event: ServerEvent,
-  state: AppState,
-): boolean {
-  if (event.kind !== "notification") {
-    return false;
-  }
-  const params = event.message.params as Record<string, unknown> | undefined;
-  const thread = params?.thread;
-  if (isThread(thread)) {
-    return threadIsGlobalCollaboration(thread);
-  }
-  const threadID = threadIDFromParams(params);
-  if (!threadID) {
-    return false;
-  }
-  for (const candidate of [
-    state.thread,
-    state.secondaryThread,
-    ...state.threads,
-  ]) {
-    if (
-      candidate &&
-      candidate.id === threadID &&
-      threadIsGlobalCollaboration(candidate)
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 type StreamingNotificationHandling =
@@ -625,48 +557,52 @@ function reduceNotification(
       if (!thread) {
         return state;
       }
-      // Global-collaboration threads (DM/group) are homed off the project
-      // tree, so they never match the active context; they still upsert so
-      // the roster's busy/unread state stays live (issue #9).
-      if (
-        !threadMatchesActiveContext(thread, state.activeContext) &&
-        !threadIsGlobalCollaboration(thread)
-      ) {
+      if (!threadMatchesActiveContext(thread, state.activeContext)) {
         return state;
       }
+      const currentThread =
+        state.thread?.id === thread.id
+          ? state.thread
+          : state.secondaryThread?.id === thread.id
+            ? state.secondaryThread
+            : state.threads.find((item) => item.id === thread.id);
+      // thread/start emits its notification before the matching RPC response.
+      // If the renderer has already inserted an optimistic first turn, the
+      // notification's empty snapshot must not erase it and briefly restore
+      // the empty-conversation hero.
+      const mergedThread = currentThread
+        ? {
+            ...thread,
+            turns: thread.turns.length > 0 ? thread.turns : currentThread.turns,
+            child_agents: thread.child_agents ?? currentThread.child_agents,
+          }
+        : thread;
       const knownThread = state.threads.some((item) => item.id === thread.id);
       const updatesVisibleThread =
         state.thread?.id === thread.id ||
         state.secondaryThread?.id === thread.id;
-      // A backgrounded DM/group must not hijack the main pane on auto-activate;
-      // it is only upserted into state.threads for the sidebar.
       const activateThread =
         state.thread?.id === thread.id ||
         (state.allowThreadAutoActivation &&
           !state.thread &&
-          !knownThread &&
-          !threadIsGlobalCollaboration(thread));
+          !knownThread);
       return {
         ...state,
-        thread: activateThread ? thread : state.thread,
+        thread: activateThread ? mergedThread : state.thread,
         secondaryThread:
           state.secondaryThread?.id === thread.id
-            ? thread
+            ? mergedThread
             : state.secondaryThread,
         allowThreadAutoActivation: activateThread
           ? true
           : state.allowThreadAutoActivation,
-        threads: upsertThread(state.threads, thread),
+        threads: upsertThread(state.threads, mergedThread),
         status: activateThread || updatesVisibleThread ? "ready" : state.status,
       };
     }
     case "thread/updated": {
       const thread = threadFromRecord(recordValue(params, "thread"));
-      if (
-        !thread ||
-        (!threadMatchesActiveContext(thread, state.activeContext) &&
-          !threadIsGlobalCollaboration(thread))
-      ) {
+      if (!thread || !threadMatchesActiveContext(thread, state.activeContext)) {
         return state;
       }
       return updateThreadByID(state, thread.id, (current) => ({
@@ -1023,12 +959,78 @@ function streamStatusFromLifecycle(
         },
       )
     : attemptText;
+  // While the stream is being retried, this chip is the only place the
+  // failure shows up — name the cause (429, auth refresh, …) instead of the
+  // transport so the single line answers "what is being retried".
+  const cause = reconnectCauseLabel(lifecycle);
+  if (cause) {
+    return {
+      text: waitText
+        ? t("appState.reconnectingCauseAfter", {
+            cause,
+            wait: waitText,
+            progress: progressText,
+          })
+        : t("appState.reconnectingCause", { cause, progress: progressText }),
+      liveProgress: true,
+    };
+  }
   return {
     text: waitText
       ? t("appState.reconnectingAfter", { subject, wait: waitText, progress: progressText })
       : t("appState.reconnecting", { subject, progress: progressText }),
     liveProgress: true,
   };
+}
+
+/**
+ * Short localized label for the failure that triggered a stream reconnect,
+ * or undefined when nothing specific is known (the chip then falls back to
+ * the transport-subject wording). Prefers the lifecycle's structured
+ * `failure_category`; the redacted `reason` summary is only consulted for
+ * app-servers that predate the category field.
+ */
+function reconnectCauseLabel(lifecycle: JsonRecord): string | undefined {
+  const category = stringValue(lifecycle, "failure_category");
+  if (category) {
+    switch (category) {
+      case "authentication":
+        return t("error.authTitle");
+      case "rate_limit":
+      case "quota":
+        return `429 ${t("error.http429")}`;
+      case "overloaded":
+        return t("error.upstreamOverloaded");
+      case "server":
+        return t("error.providerTitle");
+      case "deadline":
+        return t("error.requestTimeout");
+      case "network":
+      case "incomplete_stream":
+        return t("error.networkTitle");
+      default:
+        // A category with no user-meaningful cause (replay_unsafe, budget
+        // limits, context overflow, …) keeps the transport wording.
+        return undefined;
+    }
+  }
+  const reason = stringValue(lifecycle, "reason")?.toLowerCase() ?? "";
+  if (!reason) {
+    return undefined;
+  }
+  if (reason.includes("authentication") || reason.includes("unauthorized")) {
+    return t("error.authTitle");
+  }
+  if (reason.includes("rate limit") || reason.includes("too many requests")) {
+    return `429 ${t("error.http429")}`;
+  }
+  if (reason.includes("overloaded")) {
+    return t("error.upstreamOverloaded");
+  }
+  if (reason.includes("timeout") || reason.includes("deadline")) {
+    return t("error.requestTimeout");
+  }
+  return undefined;
 }
 
 function retryWaitText(retryInMs: number | undefined): string | undefined {
@@ -1425,7 +1427,6 @@ function summarizeAgentForSidebar(agent: Agent): Agent {
     completed_at: agent.completed_at,
     pinned: agent.pinned,
     archived: agent.archived,
-    participant: agent.participant,
   };
 }
 
@@ -1453,9 +1454,6 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
     status: thread.status,
     read_only: thread.read_only,
     pinned: thread.pinned,
-    dm_participant_id: thread.dm_participant_id,
-    group: thread.group,
-    members: thread.members,
     archived: thread.archived,
     forked_from_id: thread.forked_from_id,
     forked_from_turn_id: thread.forked_from_turn_id,
@@ -1465,9 +1463,6 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
     updated_at: thread.updated_at,
     turns: thread.turns.map(summarizeTurnForSidebar),
     turn_count: thread.turns.length,
-    last_incoming_message_seq: isChatStyleThread(thread)
-      ? latestIncomingChatMessageSeq(thread)
-      : undefined,
     child_agents: thread.child_agents?.map(summarizeAgentForSidebar),
   };
 }
@@ -1531,10 +1526,6 @@ function mergeListedThread(existing: Thread, listed: Thread): Thread {
       listed.child_agents !== undefined
         ? listed.child_agents
         : existing.child_agents,
-    members:
-      listed.members !== undefined
-        ? listed.members
-        : existing.members,
   };
 }
 
@@ -1680,25 +1671,19 @@ export function isScratchThread(
   if (thread.workspace_kind === "project") {
     return false;
   }
-  // DM threads live under the agent roster, never under the 对话 scratch
-  // group. Their cwd (~/.wuu/agents/<id>/home) does not match any registered
-  // project, so the fallthrough below would otherwise bucket them here.
-  if (thread.workspace_kind === "dm") {
-    return false;
-  }
   const projectPath = threadProjectPath(thread);
   return !projects.some((project) => project.path === projectPath);
 }
 
 /**
  * Resolve the RuntimeContext a thread should open under, independent of
- * whichever sidebar group the user clicked it from (对话 scratch list, 置顶,
- * 群聊, or the agent roster's DM tab). Precedence mirrors isScratchThread:
+ * whichever sidebar group the user clicked it from. Precedence mirrors
+ * isScratchThread:
  * a cwd match against a registered project always wins, even when the
  * thread's own workspace_kind says otherwise (e.g. a thread created before
- * a project was registered at that path). Everything else — scratch, dm,
- * group, or unrecognized — resolves to a no_project context rooted at the
- * thread's own cwd, which is what makes the workspace panel (file tree /
+ * a project was registered at that path). Everything else resolves to a
+ * no_project context rooted at the thread's own cwd, which is what makes the
+ * workspace panel (file tree /
  * terminal / git) follow the thread instead of staying on the previously
  * active project.
  */
@@ -1765,633 +1750,8 @@ export function scratchThreadSummaries(
   return sortThreadSummaries(threads).filter(
     (thread) =>
       !thread.pinned &&
-      !thread.dm_participant_id &&
-      !thread.group &&
       isScratchThread(thread, projects),
   );
-}
-
-/**
- * Predicate that mirrors the wire-level Thread.dm_participant_id field. A
- * thread is a "DM" when it was started (or already exists) as a 1:1
- * conversation with a named participant. DMs are bucketed under the agent
- * roster and never under the 对话 scratch group or any project.
- */
-export function isDMThread(
-  thread: { dm_participant_id?: string },
-): boolean {
-  return typeof thread.dm_participant_id === "string" &&
-    thread.dm_participant_id.length > 0;
-}
-
-/**
- * Predicate that mirrors the wire-level Thread.group field
- * (chat-style-threads-design.md §3). Group threads are chat-style
- * channels with no main agent — bucketed under the sidebar's 群聊
- * section, never under 对话 or any project.
- */
-export function isGroupThread(thread: { group?: boolean }): boolean {
-  return thread.group === true;
-}
-
-/**
- * Chat-style threads (DM + group) render as a message stream and follow
- * chat semantics throughout: send is fire-and-forget, and unread means
- * "there is an actual message you have not seen" (see isThreadUnread) —
- * not "a turn settled". Matches App.tsx's activeThreadIsChatStyle.
- */
-export function isChatStyleThread(thread: {
-  dm_participant_id?: string;
-  group?: boolean;
-}): boolean {
-  return isDMThread(thread) || isGroupThread(thread);
-}
-
-/**
- * Read-receipt ring denominator for a chat-style thread: how many named
- * readers CAN mark a message seen there. A group counts its own member
- * roster (a 2-member group reads x/2, regardless of how many agents exist
- * globally); a DM has exactly one reader. `rosterCount` (the full named
- * roster) is only the fallback for group threads whose members snapshot
- * has not arrived yet.
- */
-export function chatReaderCountForThread(
-  thread:
-    | {
-        dm_participant_id?: string;
-        group?: boolean;
-        members?: ParticipantSummary[];
-      }
-    | undefined,
-  rosterCount: number,
-): number {
-  if (!thread) {
-    return rosterCount;
-  }
-  if (isDMThread(thread)) {
-    return 1;
-  }
-  if (isGroupThread(thread) && (thread.members?.length ?? 0) > 0) {
-    return thread.members?.length ?? rosterCount;
-  }
-  return rosterCount;
-}
-
-/**
- * Threads that belong to the global collaboration layer rather than to a
- * single project/workspace: DM conversations with a named participant and
- * chat-style group channels. Unlike project sessions these are homed off
- * the project tree (a DM's cwd is the agent's home; a group's is the
- * runtime root), so their events must NOT be filtered by the active
- * workspace's workdir/cwd — see serverEventTargetsGlobalThread and the
- * thread lifecycle reducers. Named-agent busy/unread badges derive from
- * state.threads, so dropping these events (issue #9) leaves the roster
- * stale until the next context switch.
- */
-export function threadIsGlobalCollaboration(thread: {
-  dm_participant_id?: string;
-  group?: boolean;
-  workspace_kind?: string;
-}): boolean {
-  return (
-    isDMThread(thread) ||
-    isGroupThread(thread) ||
-    thread.workspace_kind === "dm"
-  );
-}
-
-/**
- * Group threads for the sidebar's 群聊 section. Same move/remove
- * semantics as the 对话 list: pinning MOVES the thread under 置顶 (so
- * pinned ones are excluded here — no duplicates), and archiving removes
- * it entirely (sortThreadSummaries drops archived threads).
- */
-export function groupThreadSummaries(
-  threads: ThreadSummary[],
-): ThreadSummary[] {
-  return sortThreadSummaries(threads).filter(
-    (thread) => !thread.pinned && isGroupThread(thread),
-  );
-}
-
-type DMThreadCandidate = {
-  id: string;
-  archived?: boolean;
-  updated_at: string;
-  created_at: string;
-  dm_participant_id?: string;
-  workspace_kind?: "project" | "scratch" | "dm";
-};
-
-/**
- * Pick the latest non-archived DM thread for a given participant id. The
- * picker matches by dm_participant_id AND requires workspace_kind === "dm"
- * so legacy stray DMs (created before per-agent home dirs existed, when DMs
- * were seeded with the active project cwd and carry workspace_kind "project")
- * are deliberately skipped — a fresh, correctly-homed DM thread must be
- * created via startThread instead, or turn execution will keep running in
- * the wrong project directory. Among the survivors the picker prefers the
- * thread with the largest updated_at, falling back to created_at when
- * updated_at is missing. Archived threads are ignored so re-archiving a DM
- * does not resurrect it as the active target. Returns undefined when no
- * live DM exists, which is the signal for the sidebar to create a fresh
- * thread via startThread.
- *
- * Note: `isDMThread` deliberately only checks dm_participant_id. It is used
- * to EXCLUDE DM-tagged threads from project/scratch sidebar sections, and
- * legacy stray threads must remain excluded there too. findDMThread is the
- * reverse direction (picking one DM to re-open) and therefore needs the
- * stricter workspace_kind check.
- */
-export function findDMThread<T extends DMThreadCandidate>(
-  threads: readonly T[] | undefined,
-  participantID: string,
-): T | undefined {
-  if (typeof participantID !== "string" || participantID.length === 0) {
-    return undefined;
-  }
-  if (!threads) {
-    return undefined;
-  }
-  let best: T | undefined;
-  let bestTime = -Infinity;
-  for (const thread of threads) {
-    if (!thread || thread.dm_participant_id !== participantID) continue;
-    if (thread.archived) continue;
-    // Only proper DM-kind threads qualify: legacy strays (workspace_kind
-    // "project" or missing) intentionally fall through so a fresh
-    // per-agent-homed DM is created via startThread instead of resurrecting
-    // the mis-homed legacy.
-    if (thread.workspace_kind !== "dm") continue;
-    const time = threadTime(thread);
-    if (time > bestTime) {
-      best = thread;
-      bestTime = time;
-    }
-  }
-  return best;
-}
-
-type SessionTabParticipantCandidate = {
-  id: string;
-  dm_participant_id?: string;
-  updated_at: string;
-  created_at: string;
-};
-
-/**
- * Find an already-open session tab whose thread belongs to the given DM
- * participant (issue #3: the same agent, e.g. "Andy", could end up with two
- * content-different, indistinguishable tabs). thread/start is now an
- * idempotent find-or-create on the server, but openParticipantDM should
- * still prefer focusing a tab that is already open locally instead of
- * round-tripping to the server at all — and this also guards against any
- * pre-existing duplicate tabs left over from before the server-side fix, or
- * a cross-window race, by always converging on one tab per participant.
- * Only "thread"-kind tabs are considered; ties (more than one open tab for
- * the same participant) are broken by the associated thread's most recent
- * activity, mirroring findDMThread.
- */
-export function sessionTabForParticipant(
-  tabs: readonly SessionTab[],
-  threads: readonly SessionTabParticipantCandidate[] | undefined,
-  participantID: string,
-): (SessionTab & { kind: "thread" }) | undefined {
-  if (typeof participantID !== "string" || participantID.length === 0) {
-    return undefined;
-  }
-  if (!threads || threads.length === 0) {
-    return undefined;
-  }
-  const threadByID = new Map(threads.map((thread) => [thread.id, thread]));
-  let best: (SessionTab & { kind: "thread" }) | undefined;
-  let bestTime = -Infinity;
-  for (const tab of tabs) {
-    if (tab.kind !== "thread") continue;
-    const thread = threadByID.get(tab.threadID);
-    if (!thread || thread.dm_participant_id !== participantID) continue;
-    const time = threadTime(thread);
-    if (time > bestTime) {
-      best = tab;
-      bestTime = time;
-    }
-  }
-  return best;
-}
-
-/**
- * Collect participant IDs whose resident DM thread is currently running.
- * A resident named agent's DM thread IS the agent's brain, so the roster's
- * busy dot follows that thread's live work state (turns and still-running
- * child agents), not child agents from unrelated workspace/group threads
- * (see docs/plans/2026-07-03-resident-named-agents.md §7.2).
- * Applies the same qualification as findDMThread: non-archived,
- * workspace_kind "dm" — legacy mis-homed strays never drive the busy dot.
- */
-export function busyDMParticipantIDs(
-  threads:
-    | readonly (DMThreadCandidate & {
-        status: Thread["status"];
-        turns: Array<Pick<Turn, "status">>;
-      })[]
-    | undefined,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const thread of threads ?? []) {
-    if (!thread?.dm_participant_id) continue;
-    if (thread.archived) continue;
-    if (thread.workspace_kind !== "dm") continue;
-    if (isThreadRunning(thread)) {
-      ids.add(thread.dm_participant_id);
-    }
-  }
-  return ids;
-}
-
-type BusyMessageMarkCandidate = Pick<
-  MessageMarkWire,
-  "seq" | "participant_id" | "kind" | "status"
->;
-
-export function busyMessageMarkParticipantIDs(
-  marks: readonly BusyMessageMarkCandidate[] | undefined,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const mark of marks ?? []) {
-    if (mark.kind !== "seen" || mark.status !== "in_progress") {
-      continue;
-    }
-    const participantID = mark.participant_id?.trim();
-    if (!participantID) {
-      continue;
-    }
-    ids.add(participantID);
-  }
-  return ids;
-}
-
-/**
- * Aggregate participant IDs whose roster busy dot should be lit.
- *
- * A resident named agent's status dot expresses that agent's OWN stable
- * state, so the baseline source is `busyDMParticipantIDs` — the agent's
- * resident DM thread (its "brain") being in a running state (design §7.2:
- * "busy 改为 resident thread 的 running 状态"). Chat read receipts add a second
- * explicit source: a participant with a `seen: in_progress` mark is currently
- * processing that visible group/DM message, so the roster should match the
- * bubble's "处理中" hover.
- *
- * We deliberately do NOT walk unrelated threads' running child_agents to light
- * the dispatcher's dot: a child agent is a per-run worker owned by whichever
- * thread is dispatching it, so lighting the dispatcher couples the roster dot
- * to transient, thread-scoped child-agent state. Because a thread's child_agents
- * are only refreshed in state.threads when that thread is opened/resumed, that
- * coupling made an agent's dot flip as the user selected or left a group chat
- * (ISSUE-12) — a status that read as belonging to the agent but was really
- * driven by group-chat selection.
- */
-export function computeBusyParticipantIDs(input: {
-  threads: readonly Thread[];
-  marks?: readonly BusyMessageMarkCandidate[];
-}): ReadonlySet<string> {
-  const ids = new Set<string>(busyDMParticipantIDs(input.threads));
-  for (const participantID of busyMessageMarkParticipantIDs(input.marks)) {
-    ids.add(participantID);
-  }
-  return ids;
-}
-
-/**
- * Overlay the live busy set onto a sidebar thread summary's group members.
- *
- * `Thread.members[].busy` is a pull-time overlay on the server: it is
- * accurate at fetch time but the server pushes no thread/updated when a
- * member's busy flips (busy is in-memory state, only re-read on the next
- * snapshot). Left as-is, a group row's spinner freezes on whatever the last
- * snapshot said — it misses a member that started running and, worse, keeps
- * spinning after the turn ended.
- *
- * The roster dot already solves this with computeBusyParticipantIDs: the
- * resident agent's DM thread is its brain, its turn lifecycle events are
- * pushed globally, so that set tracks the actual turn (start → settle,
- * output or not). Rewriting members[].busy from the same set keeps the
- * group spinner and the roster dot on one source of truth, and because
- * isThreadRunning already consults members[].busy, the spinner, sorting,
- * and unread suppression all pick it up without further special-casing.
- */
-export function overlayMemberBusy<
-  T extends { members?: ParticipantSummary[] },
->(thread: T, busyParticipantIDs: ReadonlySet<string>): T {
-  const members = thread.members;
-  if (!members || members.length === 0) {
-    return thread;
-  }
-  let changed = false;
-  const next = members.map((member) => {
-    const busy = busyParticipantIDs.has(member.id);
-    if ((member.busy === true) === busy) {
-      return member;
-    }
-    changed = true;
-    return { ...member, busy };
-  });
-  return changed ? { ...thread, members: next } : thread;
-}
-
-export type ChatMessageRow =
-  | { kind: "user"; id: string; turnID: string; item: ThreadItem }
-  | { kind: "envelope"; id: string; turnID: string; items: ThreadItem[] }
-  | { kind: "participant"; id: string; turnID: string; item: ThreadItem }
-  | {
-      kind: "system";
-      id: string;
-      turnID: string;
-      text: string;
-      item: ThreadItem;
-      count?: number;
-    }
-  | { kind: "focus"; id: string; turnID: string; item: ThreadItem };
-
-/**
- * Reply-count badge token with a hard cap: any count above 99 renders as
- * "99+" so a runaway reply thread never blows out the badge width
- * (群聊 reply 徽标封顶 99)。返回纯数字 token,调用方自行拼接单位("条回复")。
- * 负数被夹到 0,防御脏数据。
- */
-export function replyCountBadge(count: number): string {
-  if (count > 99) {
-    return "99+";
-  }
-  return String(Math.max(0, Math.trunc(count)));
-}
-
-// The open split reply (cth) panel state. Mirrors App.tsx's local useState shape
-// so the pure patch helper below can be unit-tested without React.
-export type OpenSubthreadPanel = {
-  threadID: string;
-  subthread?: ConversationSubthread;
-  loading: boolean;
-  error?: string;
-};
-
-// applySubthreadUpdatedNotification patches an open reply (cth) panel in place
-// when a thread/subUpdated notification arrives for the subthread it is showing.
-// cth messages carry no turn/item/thread notification of their own, so this is
-// what makes an open panel stream as agents reply. Returns prev unchanged when
-// the panel is closed, the update targets a different subthread, or the payload
-// carried no view to patch with (the minimal error-fallback payload) — in that
-// last case the reply-count badge still refreshes via the separate nonce bump.
-export function applySubthreadUpdatedNotification(
-  prev: OpenSubthreadPanel | undefined,
-  note: SubthreadUpdatedNotification,
-): OpenSubthreadPanel | undefined {
-  if (!prev) {
-    return prev;
-  }
-  const subthreadID = note?.subthread_id;
-  if (!subthreadID || prev.subthread?.id !== subthreadID) {
-    return prev;
-  }
-  if (!note.subthread?.turns) {
-    return prev;
-  }
-  return {
-    ...prev,
-    subthread: note.subthread,
-    loading: false,
-    error: undefined,
-  };
-}
-
-/**
- * Flatten a thread's turns into the chat-view message stream. Whitelist
- * semantics (chat-style-threads-design.md §2): only user messages,
- * envelope meta rows, tool-posted participant messages, and workspace-
- * focus divider rows are chat messages; the agent's working transcript
- * never reaches the DOM.
- *
- * The focus_meta check runs before the `item.type` branches and does
- * not gate on a particular type value — the wire contract only commits
- * to focus_meta riding on *some* item in the stream (mirroring how
- * envelope_meta rides on a user_message), so any item carrying it
- * becomes a "focus" row regardless of what type the backend tags it
- * with.
- *
- * Internal user-role notifications never render as user-authored chat.
- * Trigger-turn agent handoffs become system event divider rows; non-trigger
- * handoffs and process completion notifications stay hidden.
- */
-export function chatMessagesFromTurns(
-  turns: ReadonlyArray<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>,
-): ChatMessageRow[] {
-  const rows: ChatMessageRow[] = [];
-  for (const turn of turns) {
-    for (const item of turn.items ?? []) {
-      const id = `${turn.id}:${item.id}`;
-      if (item.focus_meta) {
-        rows.push({ kind: "focus", id, turnID: turn.id, item });
-      } else if (item.type === "user_message") {
-        if (isProcessNotificationItem(item)) {
-          continue;
-        }
-        // Subagent notifications / inter-agent handoffs are delivered to the
-        // resident as a self-addressed user_message (a JSON envelope wrapping
-        // a <subagent_notification> payload). They are working-transcript
-        // machinery, not user-authored chat. Trigger-turn handoffs become a
-        // neutral system divider; stored mailbox payloads are still hidden.
-        // The item-aware helper is the primary gate (see AgentHandoff.ts for
-        // why `name` is the reliable signal and `text` sniff is a fallback).
-        const handoff = agentHandoffDisplayItem(item);
-        if (handoff) {
-          const previous = rows[rows.length - 1];
-          if (
-            previous?.kind === "system" &&
-            previous.turnID === turn.id &&
-            previous.text === handoff.label
-          ) {
-            previous.count = (previous.count ?? 1) + 1;
-          } else {
-            rows.push({
-              kind: "system",
-              id,
-              turnID: turn.id,
-              text: handoff.label,
-              item,
-            });
-          }
-          continue;
-        }
-        if (isInternalUserNotificationItem(item)) {
-          continue;
-        }
-        if (item.envelope_meta && item.envelope_meta.length > 0) {
-          const previous = rows[rows.length - 1];
-          if (previous?.kind === "envelope" && previous.turnID === turn.id) {
-            previous.items.push(item);
-          } else {
-            rows.push({ kind: "envelope", id, turnID: turn.id, items: [item] });
-          }
-        } else {
-          rows.push({ kind: "user", id, turnID: turn.id, item });
-        }
-      } else if (item.type === "participant_message") {
-        rows.push({ kind: "participant", id, turnID: turn.id, item });
-      }
-    }
-  }
-  return rows;
-}
-
-function latestChatMessageSeqOfKinds(
-  turns: ReadonlyArray<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>,
-  kinds: ReadonlySet<ChatMessageRow["kind"]>,
-): number | undefined {
-  let latest: number | undefined;
-  for (const row of chatMessagesFromTurns(turns)) {
-    if (!kinds.has(row.kind)) {
-      continue;
-    }
-    const seq = "item" in row ? row.item.seq : undefined;
-    if (typeof seq === "number" && (latest === undefined || seq > latest)) {
-      latest = seq;
-    }
-  }
-  return latest;
-}
-
-/**
- * Latest actual chat-message seq in a thread's main stream (user posts and
- * participant send_message posts alike), or undefined when the thread has
- * none. Envelope machinery, focus dividers, handoff notices, reasoning, and
- * tool traffic never count — chatMessagesFromTurns already encodes that
- * classification. This is the VIEWED offset: being on the thread advances
- * the user's read position to it.
- */
-export function latestChatMessageSeq(
-  thread: { turns?: Array<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>> } | undefined,
-): number | undefined {
-  if (!thread) {
-    return undefined;
-  }
-  return latestChatMessageSeqOfKinds(
-    thread.turns ?? [],
-    new Set(["user", "participant"]),
-  );
-}
-
-/**
- * Latest INCOMING chat-message seq — participant (send_message tool) posts
- * only. This is the unread trigger: the user's own posts never flag their
- * own thread unread, and a turn that settles without any participant post
- * leaves the thread read.
- *
- * ThreadSummary strips turn items, so summaries carry the value in
- * last_incoming_message_seq (filled by summarizeThreadForSidebar); that
- * field wins when present so both shapes flow through the same check.
- */
-export function latestIncomingChatMessageSeq(
-  thread:
-    | {
-        last_incoming_message_seq?: number;
-        turns?: Array<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>;
-      }
-    | undefined,
-): number | undefined {
-  if (!thread) {
-    return undefined;
-  }
-  if (typeof thread.last_incoming_message_seq === "number") {
-    return thread.last_incoming_message_seq;
-  }
-  return latestChatMessageSeqOfKinds(
-    thread.turns ?? [],
-    new Set(["participant"]),
-  );
-}
-
-/**
- * Resolve @Name mentions in a prompt to participant IDs for the
- * turn/start `mentions` param (docs/plans/2026-07-03-resident-named-
- * agents.md §3.1). Whole-word matching: "@Noel" never resolves to a
- * roster entry named "Noe" because the lookahead requires the name to
- * end at whitespace, end-of-text, or CJK/latin punctuation.
- */
-export function mentionedParticipantIDsFromText(
-  text: string,
-  participants: ReadonlyArray<{ id: string; name: string }>,
-): string[] {
-  const source = text.trim();
-  if (source === "") {
-    return [];
-  }
-  const ids = new Set<string>();
-  const candidates = [...participants]
-    .filter((participant) => participant.name.trim() !== "")
-    .sort((a, b) => b.name.length - a.name.length);
-  for (const participant of candidates) {
-    const escaped = escapeRegExp(participant.name.trim());
-    const pattern = new RegExp(`(^|\\s)@${escaped}(?=$|\\s|[,.!?，。；：、])`);
-    if (pattern.test(source)) {
-      ids.add(participant.id);
-    }
-  }
-  return [...ids];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Resolve the chat-style composer's "work focus" chip value for a
- * thread: the in-session override (once the user has touched the menu
- * for this thread) if present, otherwise the thread's own echoed
- * `focus_workspace` from the last resume, defaulting to "" (全部工作区)
- * when the thread has never set one.
- */
-export function chatFocusValueForThread(
-  thread: Pick<Thread, "id" | "focus_workspace"> | undefined,
-  overrides: Readonly<Record<string, string>>,
-  projects: readonly Pick<DesktopProject, "name">[],
-): string {
-  if (!thread) {
-    return "";
-  }
-  const resolved = overrides[thread.id] ?? thread.focus_workspace ?? "";
-  const trimmed = resolved.trim();
-  // "" (全部工作区 / the union of all registered workspaces) and "~" (仅个人
-  //空间) are reserved values that are always valid. A named-project focus
-  // instead falls back to the union when that project is no longer registered
-  // — moved away or removed via 移除工作区 — so the chip, the menu's checked
-  // state, and the value resolved for the thread all agree the focus is now
-  // "全部工作区", and the stale project quietly drops out of the picker.
-  if (trimmed === "" || trimmed === "~") {
-    return resolved;
-  }
-  const known = projects.some((project) => project.name === trimmed);
-  return known ? resolved : "";
-}
-
-/**
- * Compute the value to send as turn/start's optional `focus_workspace`
- * param. `overrideValue` is the composer's current in-session chip
- * selection for the target thread — undefined means the user never
- * touched the chip this session, so nothing is sent (the thread keeps
- * whatever focus it already has). When the user did pick a value, it is
- * only sent if it actually differs from the thread's own last-known
- * `focus_workspace`; re-selecting the same option (or a value that has
- * since caught up via a resume) sends nothing, keeping ordinary chat
- * turns free of the extra param.
- */
-export function focusWorkspaceSendValue(
-  thread: Pick<Thread, "focus_workspace"> | undefined,
-  overrideValue: string | undefined,
-): string | undefined {
-  if (overrideValue === undefined) {
-    return undefined;
-  }
-  const current = thread?.focus_workspace ?? "";
-  return overrideValue === current ? undefined : overrideValue;
 }
 
 function createDraftSessionTab(
@@ -2776,13 +2136,12 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
     return t("skills.title");
   }
   if (tab.kind === "board") {
-    // 看板 tab 跟随群名(群改名后下次渲染即更新),前缀区分于群聊 tab 本身。
-    const groupTitle = threadDisplayTitle(
+    const threadTitle = threadDisplayTitle(
       threadForTab(state, tab.threadID),
       state.threads,
-      tab.title || t("sidebar.groups"),
+      tab.title || t("search.untitledConversation"),
     );
-    return t("appState.tasksForGroup", { group: groupTitle });
+    return `${t("kanban.title")} · ${threadTitle}`;
   }
   return threadDisplayTitle(
     threadForTab(state, tab.threadID),
@@ -2995,8 +2354,7 @@ function isThreadRunning(
   return Boolean(
     thread?.status === "in_progress" ||
     thread?.turns?.some((turn) => turn.status === "in_progress") ||
-    thread?.child_agents?.some(agentRunning) ||
-    thread?.members?.some((member) => member.busy === true),
+    thread?.child_agents?.some(agentRunning),
   );
 }
 
@@ -3032,42 +2390,14 @@ function latestCompletedTurnID(thread: {
   return undefined;
 }
 
-/**
- * Whether a thread should carry the unread dot. Two regimes, matching the
- * user mental model:
- *
- *   - Chat-style (DM / group): unread ⇔ the thread holds an actual chat
- *     message (user post or send_message tool post, i.e. something with a
- *     session_messages seq) newer than the last one the user was on the
- *     thread for. A turn that settles WITHOUT sending a message — however
- *     it ended — never lights the dot.
- *   - Work sessions (project / 对话): unread ⇔ the latest completed turn
- *     (final text produced or the turn otherwise ended) is not the one the
- *     user last viewed.
- *
- * Running threads are never unread — the spinner owns that state until the
- * turn settles.
- */
 function isThreadUnread(
-  thread:
-    | (ThreadRunningCandidate & {
-        turns: Array<Pick<Turn, "id" | "status"> & Partial<Pick<Turn, "items">>>;
-        dm_participant_id?: string;
-        group?: boolean;
-        last_incoming_message_seq?: number;
-      })
-    | undefined,
+  thread: (ThreadRunningCandidate & {
+    turns: Array<Pick<Turn, "id" | "status">>;
+  }) | undefined,
   lastViewedTurnID: string | undefined,
-  lastViewedMessageSeq?: number,
 ): boolean {
   if (!thread) return false;
   if (isThreadRunning(thread)) return false;
-  if (isChatStyleThread(thread)) {
-    const latestSeq = latestIncomingChatMessageSeq(thread);
-    if (latestSeq === undefined) return false;
-    if (lastViewedMessageSeq === undefined) return true;
-    return latestSeq > lastViewedMessageSeq;
-  }
   const lastTurnID = latestCompletedTurnID(thread);
   if (!lastTurnID) return false;
   if (!lastViewedTurnID) return true;
@@ -3080,33 +2410,17 @@ function markThreadTurnsViewed(
 ): AppState {
   const thread = threadForTab(state, threadID);
   if (!thread) return state;
-  let next = state;
   const lastTurnID = latestCompletedTurnID(thread);
-  if (lastTurnID && next.lastViewedTurnByThreadID[threadID] !== lastTurnID) {
-    next = {
-      ...next,
+  if (lastTurnID && state.lastViewedTurnByThreadID[threadID] !== lastTurnID) {
+    return {
+      ...state,
       lastViewedTurnByThreadID: {
-        ...next.lastViewedTurnByThreadID,
+        ...state.lastViewedTurnByThreadID,
         [threadID]: lastTurnID,
       },
     };
   }
-  const latestSeq = isChatStyleThread(thread)
-    ? latestChatMessageSeq(thread)
-    : undefined;
-  if (
-    latestSeq !== undefined &&
-    next.lastViewedMessageSeqByThreadID[threadID] !== latestSeq
-  ) {
-    next = {
-      ...next,
-      lastViewedMessageSeqByThreadID: {
-        ...next.lastViewedMessageSeqByThreadID,
-        [threadID]: latestSeq,
-      },
-    };
-  }
-  return next;
+  return state;
 }
 
 function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
@@ -3393,26 +2707,6 @@ function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {
     nested_running_count: numberValue(record, "nested_running_count"),
     started_at: stringValue(record, "started_at"),
     completed_at: stringValue(record, "completed_at"),
-    participant: participantFromRecord(recordValue(record, "participant")),
-  };
-}
-
-// participantFromRecord validates the participant payload embedded in
-// agent/updated notifications. A payload missing id or name is treated
-// as absent so the renderer falls back to the legacy label chain.
-function participantFromRecord(
-  record: JsonRecord | undefined,
-): ParticipantSummary | undefined {
-  const id = stringValue(record, "id");
-  const name = stringValue(record, "name");
-  if (!id || !name) {
-    return undefined;
-  }
-  return {
-    id,
-    name,
-    kind: stringValue(record, "kind") ?? "",
-    role: stringValue(record, "role"),
   };
 }
 
@@ -3864,7 +3158,6 @@ export {
   sameRuntimeContext,
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
-  serverEventTargetsGlobalThread,
   sessionTabDraftForThread,
   sessionTabDraftForThreadID,
   sessionTabForLoadedRuntime,

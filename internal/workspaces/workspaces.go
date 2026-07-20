@@ -1,7 +1,7 @@
 // Package workspaces reads the user's registered workspace roots — the
 // projects added through the desktop sidebar's 添加工作区 entry. The desktop
 // main process persists them to <wuuHome>/projects.json; the Go core reads
-// the same file as its source of truth for the resident prompt manifest and
+// the same file as its source of truth for the workspace prompt manifest and
 // the file-tool scope whitelist.
 package workspaces
 
@@ -71,8 +71,8 @@ func Roots(list []Workspace) []string {
 	return out
 }
 
-// FileScopeRoots assembles the file-tool whitelist for resident turns and
-// participant task runs (2026-07-03-sidebar-groups-andy-workspaces.md §5.2):
+// FileScopeRoots assembles the file-tool whitelist for ordinary turns and
+// Kanban task runs:
 // the agent home (the runtime root), every registered workspace root, and
 // the system temp directory. A missing or unreadable projects store simply
 // contributes no workspace roots.

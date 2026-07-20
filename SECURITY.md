@@ -3,7 +3,7 @@
 This document explains which versions receive fixes and how to report security
 vulnerabilities in wuu. For the product's file, command, network, model,
 credential, and remote-control trust boundaries, read the
-[Security Model](docs/security-model.md).
+[Security Model](docs/en/reference/security-model.md).
 
 ## Supported versions
 

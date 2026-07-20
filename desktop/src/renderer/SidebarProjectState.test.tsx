@@ -6,7 +6,6 @@ import {
   SCRATCH_PSEUDO_PROJECT_ID,
 } from "./AppState";
 import {
-  SIDEBAR_SECTION_AGENTS,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
 import {
@@ -120,13 +119,12 @@ describe("useSidebarProjectState", () => {
   it("prunes missing project IDs while preserving pseudo section collapse IDs", async () => {
     window.localStorage.setItem(
       "wuu.desktop.collapsedProjectIDs",
-      JSON.stringify(["missing-project", SIDEBAR_SECTION_PINNED, SIDEBAR_SECTION_AGENTS]),
+      JSON.stringify(["missing-project", SIDEBAR_SECTION_PINNED]),
     );
 
     const hook = await renderSidebarProjectState({ projects: [] });
 
-    expect([...hook.get().collapsedSidebarSectionIDs].sort()).toEqual([
-      SIDEBAR_SECTION_AGENTS,
+    expect([...hook.get().collapsedSidebarSectionIDs]).toEqual([
       SIDEBAR_SECTION_PINNED,
     ]);
   });

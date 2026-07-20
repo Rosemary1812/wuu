@@ -303,7 +303,7 @@ func TestServerThreadDeleteRejectsDurableNestedAgentFromAnotherServer(t *testing
 
 	owner := New(ownerRuntime, &lockedBuffer{})
 	t.Cleanup(owner.Close)
-	rootThread, err := owner.ensureResidentThread(rootID)
+	rootThread, err := owner.ensureThreadLoaded(rootID)
 	if err != nil {
 		t.Fatalf("load owner thread: %v", err)
 	}

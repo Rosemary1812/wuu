@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatListTimestamp, memberSummary } from "../src/lib/format";
+import { formatListTimestamp } from "../src/lib/format";
 
 describe("formatListTimestamp", () => {
   const now = new Date("2026-07-07T20:30:00");
@@ -19,13 +19,5 @@ describe("formatListTimestamp", () => {
   it("handles garbage safely", () => {
     expect(formatListTimestamp(undefined, now)).toBe("");
     expect(formatListTimestamp("not-a-date", now)).toBe("");
-  });
-});
-
-describe("memberSummary", () => {
-  it("joins up to three names, then 等 N 位", () => {
-    expect(memberSummary([], 0)).toBe("暂无成员");
-    expect(memberSummary(["甲", "乙"], 2)).toBe("甲、乙");
-    expect(memberSummary(["甲", "乙", "丙", "丁"], 5)).toBe("甲、乙、丙 等 5 位");
   });
 });

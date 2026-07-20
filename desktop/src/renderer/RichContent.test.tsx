@@ -78,6 +78,9 @@ function renderWithImagePreview(element: JSX.Element): void {
   render(<ImagePreviewProvider>{element}</ImagePreviewProvider>);
 }
 
+const BOLD_TEXT_WITH_INLINE_CODE =
+  "**不是让 `apply_patch` 模仿现有 `edit_file` 的裁剪行为，而是让整个 edit 工具族一起采用 Codex 式分轨结果设计。**";
+
 async function settleFileReferenceResolution(): Promise<void> {
   for (let index = 0; index < 3; index += 1) {
     await act(async () => {
@@ -100,6 +103,21 @@ function resolvedFileReference(
 }
 
 describe("RichContent code block", () => {
+  it("renders inline code inside bold CJK prose without exposing markdown markers", () => {
+    render(<RichContent text={BOLD_TEXT_WITH_INLINE_CODE} />);
+
+    const paragraph = container.querySelector(".rich-paragraph");
+    const strong = paragraph?.querySelector("strong");
+    expect(paragraph?.textContent).toBe(
+      "不是让 apply_patch 模仿现有 edit_file 的裁剪行为，而是让整个 edit 工具族一起采用 Codex 式分轨结果设计。",
+    );
+    expect(strong?.textContent).toBe(paragraph?.textContent);
+    expect(Array.from(strong?.querySelectorAll("code") ?? []).map((code) => code.textContent)).toEqual([
+      "apply_patch",
+      "edit_file",
+    ]);
+  });
+
   it("rerenders Mermaid diagrams when the applied theme changes", async () => {
     render(<RichContent text={"```mermaid\ngraph TD\nA --> B\n```"} />);
 

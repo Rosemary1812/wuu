@@ -213,7 +213,12 @@ function readableToolActivityCommandInner(
         : t("toolActivity.viewProjectDirectory");
     case "grep":
     case "glob":
-      return t("toolActivity.searchTarget", { target: formatSearchTarget(pattern) });
+      return path && path !== "."
+        ? t("toolActivity.searchTargetInScope", {
+            target: formatSearchTarget(pattern),
+            scope: formatPathTarget(path, t("toolActivity.currentDirectory")),
+          })
+        : t("toolActivity.searchTarget", { target: formatSearchTarget(pattern) });
     case "web_search":
       return pattern
         ? t("toolActivity.searchWebTarget", { target: formatSearchTarget(pattern) })

@@ -35,18 +35,6 @@ type fakeController struct {
 	interrupted       string
 	shutdown          bool
 	startCount        int
-
-	participantStart  appserver.ParticipantStartParams
-	participantAgent  appserver.Agent
-	participantCalled bool
-
-	calls       []recordedCall
-	callResults map[string]json.RawMessage
-}
-
-type recordedCall struct {
-	method string
-	params json.RawMessage
 }
 
 func newFakeController(events ...Notification) *fakeController {
@@ -103,40 +91,6 @@ func (f *fakeController) StartTurn(_ context.Context, threadID string, input Tur
 	turn := f.turn
 	turn.ID = fmt.Sprintf("turn-%d", f.startCount)
 	return turn, nil
-}
-
-func (f *fakeController) StartParticipantTurn(_ context.Context, params appserver.ParticipantStartParams) (appserver.Agent, error) {
-	f.startCount++
-	f.participantCalled = true
-	f.participantStart = params
-	agent := f.participantAgent
-	if strings.TrimSpace(agent.ID) == "" {
-		agent.ID = "named-agent-1"
-	}
-	if strings.TrimSpace(agent.Status) == "" {
-		agent.Status = "running"
-	}
-	return agent, nil
-}
-
-func (f *fakeController) Call(_ context.Context, method string, params any, result any) error {
-	var raw json.RawMessage
-	if params != nil {
-		data, err := json.Marshal(params)
-		if err != nil {
-			return err
-		}
-		raw = append(json.RawMessage(nil), data...)
-	}
-	f.calls = append(f.calls, recordedCall{method: method, params: raw})
-	if result == nil {
-		return nil
-	}
-	data := f.callResults[method]
-	if len(data) == 0 {
-		data = json.RawMessage(`{}`)
-	}
-	return json.Unmarshal(data, result)
 }
 
 func (f *fakeController) Interrupt(_ context.Context, threadID string) error {
@@ -857,142 +811,6 @@ func TestRunOutputSchemaRetriesInvalidFinalMessage(t *testing.T) {
 	result := events[len(events)-1]
 	if result["status"] != "completed" {
 		t.Fatalf("unexpected result: %+v", result)
-	}
-}
-
-func TestRunParticipantTurnStartsNamedRunAndCompletesOnAgentTerminal(t *testing.T) {
-	controller := newFakeController(
-		notification(appserver.NotificationItemCompleted, appserver.ItemCompletedNotification{
-			ThreadID: "named-agent-1",
-			TurnID:   "named-turn-1",
-			Item: appserver.ThreadItem{
-				ID:       "msg-1",
-				Type:     appserver.ThreadItemParticipantMsg,
-				AgentID:  "named-agent-1",
-				PostKind: "update",
-				Text:     "hello group",
-			},
-		}),
-		// A child turn/completed on the named agent's own thread must NOT end
-		// the participant run — only the agent/updated terminal status does.
-		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
-			ThreadID: "named-agent-1",
-			Turn:     appserver.Turn{ID: "named-turn-1"},
-			Content:  "child content",
-		}),
-		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
-			ThreadID: "group-1",
-			Agent:    appserver.Agent{ID: "named-agent-1", Type: "resident", TaskName: "Ada", Status: "running"},
-		}),
-		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
-			ThreadID: "group-1",
-			Agent:    appserver.Agent{ID: "named-agent-1", Type: "resident", TaskName: "Ada", Status: "completed", Result: "posted to group"},
-		}),
-	)
-	var stdout bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		Prompt:     "greet the group",
-		JSON:       true,
-		Stdout:     &stdout,
-		Controller: controller,
-		Participant: ParticipantRun{
-			ParticipantID: "ada",
-			ThreadID:      "group-1",
-		},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !controller.participantCalled {
-		t.Fatal("StartParticipantTurn was not called")
-	}
-	if controller.participantStart.ParticipantID != "ada" || controller.participantStart.ThreadID != "group-1" || controller.participantStart.Prompt != "greet the group" {
-		t.Fatalf("unexpected participant/start params: %+v", controller.participantStart)
-	}
-	if controller.startedThread {
-		t.Fatal("an explicit thread id should not start a new thread")
-	}
-	events := parseJSONLines(t, stdout.String())
-	types := eventTypes(events)
-	for _, want := range []string{"participant_turn_started", "participant_message", "subagent_started", "subagent_completed", "result"} {
-		if !containsString(types, want) {
-			t.Fatalf("missing %s in events %#v\n%s", want, types, stdout.String())
-		}
-	}
-	started := firstEventOfType(t, events, "participant_turn_started")
-	if started["agent_id"] != "named-agent-1" || started["participant_id"] != "ada" {
-		t.Fatalf("unexpected participant_turn_started: %+v", started)
-	}
-	msg := firstEventOfType(t, events, "participant_message")
-	if msg["text"] != "hello group" || msg["post_kind"] != "update" {
-		t.Fatalf("unexpected participant_message: %+v", msg)
-	}
-	result := events[len(events)-1]
-	if result["status"] != "completed" || result["thread_id"] != "group-1" || result["final_message"] != "posted to group" {
-		t.Fatalf("unexpected result: %+v", result)
-	}
-}
-
-func TestRunParticipantTurnStartsThreadWhenUnset(t *testing.T) {
-	controller := newFakeController(
-		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
-			ThreadID: "thread-1",
-			Agent:    appserver.Agent{ID: "named-agent-1", Status: "completed", Result: "done"},
-		}),
-	)
-	var stdout bytes.Buffer
-
-	if err := Run(context.Background(), Options{
-		Prompt:     "introduce yourself",
-		JSON:       true,
-		Stdout:     &stdout,
-		Controller: controller,
-		Participant: ParticipantRun{
-			ParticipantID: "ada",
-		},
-	}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !controller.startedThread {
-		t.Fatal("participant run without a thread id should start a fresh thread")
-	}
-	if controller.participantStart.ThreadID != "thread-1" {
-		t.Fatalf("participant/start should target the freshly started thread, got %q", controller.participantStart.ThreadID)
-	}
-	events := parseJSONLines(t, stdout.String())
-	types := eventTypes(events)
-	if !containsString(types, "thread_started") {
-		t.Fatalf("missing thread_started in %#v", types)
-	}
-}
-
-func TestRunParticipantTurnFailsOnAgentFailure(t *testing.T) {
-	controller := newFakeController(
-		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
-			ThreadID: "group-1",
-			Agent:    appserver.Agent{ID: "named-agent-1", Status: "failed", Error: "resident run failed"},
-		}),
-	)
-	var stdout bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		Prompt:     "do work",
-		JSON:       true,
-		Stdout:     &stdout,
-		Controller: controller,
-		Participant: ParticipantRun{
-			ParticipantID: "ada",
-			ThreadID:      "group-1",
-		},
-	})
-	if ExitCode(err) != ExitTurnFailed {
-		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
-	}
-	events := parseJSONLines(t, stdout.String())
-	result := events[len(events)-1]
-	if result["status"] != "failed" || result["error"] != "resident run failed" {
-		t.Fatalf("unexpected failure result: %+v", result)
 	}
 }
 

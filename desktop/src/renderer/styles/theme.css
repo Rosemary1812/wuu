@@ -260,11 +260,10 @@
   --settings-heatmap-level-3: #3d74cc;
   --settings-heatmap-level-4: #6ea3e8;
 
-  /* responsive-design.css / participants.css
+  /* responsive-design.css
      (image-preview.css is a dark overlay in both themes — no override) */
   --responsive-secondary-button-bg: #2b2f34;
   --responsive-secondary-button-text: #ccd1d5;
-  --participants-roster-focus-ring: rgba(228, 232, 235, 0.25);
 
   /* sidebar.css */
   /* macOS's `under-window` vibrancy material can remain light even when the

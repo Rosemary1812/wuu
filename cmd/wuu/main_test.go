@@ -18,6 +18,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
@@ -134,67 +135,29 @@ func TestRunExecJSONUsesControllerPath(t *testing.T) {
 	}
 }
 
-func TestRunExecParticipantFlagsRunNamedTurn(t *testing.T) {
-	controller := newCLIExecFakeController(
-		cliExecNotification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
-			ThreadID: "group-1",
-			Agent:    appserver.Agent{ID: "named-agent-1", Status: "completed", Result: "spoke in group"},
-		}),
-	)
-	restore := installExecControllerOverride(t, controller)
-	defer restore()
-
-	output := captureStdout(t, func() {
-		if err := run([]string{"exec", "--json", "--participant", "ada", "--thread", "group-1", "say hi"}); err != nil {
-			t.Fatalf("run exec: %v", err)
-		}
-	})
-
-	if controller.startedThread {
-		t.Fatal("participant run with an explicit thread should not start a new thread")
-	}
-	if controller.participantStart.ParticipantID != "ada" || controller.participantStart.ThreadID != "group-1" || controller.participantStart.Prompt != "say hi" {
-		t.Fatalf("unexpected participant/start params: %+v", controller.participantStart)
-	}
-	events := parseCLIJSONLines(t, output)
-	types := make([]string, 0, len(events))
-	for _, e := range events {
-		types = append(types, e["type"].(string))
-	}
-	found := false
-	for _, ty := range types {
-		if ty == "participant_turn_started" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("missing participant_turn_started in %#v\n%s", types, output)
-	}
-	if got := events[len(events)-1]["type"]; got != "result" {
-		t.Fatalf("last event = %v, want result", got)
+func TestRunExecRejectsRemovedParticipantFlags(t *testing.T) {
+	for _, flagName := range []string{"participant", "thread"} {
+		t.Run(flagName, func(t *testing.T) {
+			err := run([]string{"exec", "--" + flagName, "legacy-value", "hello"})
+			if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+				t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+			}
+			if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -"+flagName) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 
-func TestExecOptionsFromInputJSONAcceptsParticipant(t *testing.T) {
-	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
-	cfg := addExecFlags(fs)
-	input := &execInputPayload{
-		Prompt: "greet",
-		Participant: &execParticipantInput{
-			ParticipantID: "ada",
-			ThreadID:      "group-1",
-			TaskName:      "welcome",
-		},
+func TestRunExecInputJSONRejectsRemovedActionsWithoutPrompt(t *testing.T) {
+	err := withStdin(t, `{"actions":[{"action":"create_group"}]}`, func() error {
+		return run([]string{"exec", "--input-json"})
+	})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
 	}
-	opts, err := execOptionsFromCLI(cfg, "greet", "", false, input)
-	if err != nil {
-		t.Fatalf("execOptionsFromCLI: %v", err)
-	}
-	if !opts.Participant.Requested() {
-		t.Fatal("participant run should be requested")
-	}
-	if opts.Participant.ParticipantID != "ada" || opts.Participant.ThreadID != "group-1" || opts.Participant.TaskName != "welcome" {
-		t.Fatalf("unexpected participant options: %+v", opts.Participant)
+	if err == nil || !strings.Contains(err.Error(), "prompt is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -369,46 +332,6 @@ func TestRunExecInputJSONUsesMachineInput(t *testing.T) {
 	events := parseCLIJSONLines(t, output)
 	if got := events[0]["type"]; got != "session_configured" {
 		t.Fatalf("expected JSONL output from input JSON, got %v\n%s", got, output)
-	}
-}
-
-// --input-json with an "actions" array (and no prompt) drives the scripted
-// group/reply/task sequence: each step maps onto an existing app-server RPC,
-// var-threaded across steps via save_as/$vars.
-func TestRunExecInputJSONDrivesGroupActions(t *testing.T) {
-	controller := newCLIExecFakeController()
-	controller.callResults = map[string]json.RawMessage{
-		"thread/start":       json.RawMessage(`{"thread":{"id":"grp-1"}}`),
-		"thread/openSub":     json.RawMessage(`{"subthread":{"id":"cth-1","reply_count":0}}`),
-		"thread/escalateSub": json.RawMessage(`{"subthread":{"id":"cth-1","status":"task","lead_participant_id":"ada"}}`),
-	}
-	restore := installExecControllerOverride(t, controller)
-	defer restore()
-	input := `{
-		"json": true,
-		"actions": [
-			{"action": "create_group", "params": {"title": "Bug triage"}, "save_as": {"group": "thread.id"}},
-			{"action": "open_reply", "params": {"thread_id": "$group", "anchor_item_id": "seq-3"}, "save_as": {"cth": "subthread.id"}},
-			{"action": "escalate_task", "params": {"thread_id": "$group", "subthread_id": "$cth", "lead_participant_id": "ada"}, "expect": {"subthread.lead_participant_id": "ada"}}
-		]
-	}`
-
-	output := withStdin(t, input, func() string {
-		return captureStdout(t, func() {
-			if err := run([]string{"exec", "--input-json"}); err != nil {
-				t.Fatalf("run exec actions: %v", err)
-			}
-		})
-	})
-
-	wantMethods := []string{"thread/start", "thread/openSub", "thread/escalateSub"}
-	if strings.Join(controller.calledMethods, ",") != strings.Join(wantMethods, ",") {
-		t.Fatalf("methods = %v, want %v", controller.calledMethods, wantMethods)
-	}
-	events := parseCLIJSONLines(t, output)
-	result := events[len(events)-1]
-	if result["type"] != "result" || result["status"] != "completed" {
-		t.Fatalf("unexpected final result: %+v\n%s", result, output)
 	}
 }
 
@@ -1163,6 +1086,7 @@ func TestEvalModelProfileObservation(t *testing.T) {
 }
 
 func TestEvalContextBlockObservationsSummarizeRuntimeBlocks(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/eval\n"), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
@@ -1618,17 +1542,13 @@ type cliExecFakeController struct {
 	turn       appserver.Turn
 	events     []wuuexec.Notification
 
-	startedThread    bool
-	startEphemeral   bool
-	resumedThread    string
-	forkedThread     string
-	startedPrompt    string
-	startedImages    []appserver.TurnStartImage
-	startedFiles     []appserver.TurnStartFile
-	participantStart appserver.ParticipantStartParams
-
-	calledMethods []string
-	callResults   map[string]json.RawMessage
+	startedThread  bool
+	startEphemeral bool
+	resumedThread  string
+	forkedThread   string
+	startedPrompt  string
+	startedImages  []appserver.TurnStartImage
+	startedFiles   []appserver.TurnStartFile
 }
 
 func newCLIExecFakeController(events ...wuuexec.Notification) *cliExecFakeController {
@@ -1676,24 +1596,6 @@ func (f *cliExecFakeController) StartTurn(_ context.Context, _ string, input wuu
 	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)
 	f.startedFiles = append([]appserver.TurnStartFile(nil), input.Files...)
 	return f.turn, nil
-}
-
-func (f *cliExecFakeController) StartParticipantTurn(_ context.Context, params appserver.ParticipantStartParams) (appserver.Agent, error) {
-	f.participantStart = params
-	agent := appserver.Agent{ID: "named-agent-1", Status: "running"}
-	return agent, nil
-}
-
-func (f *cliExecFakeController) Call(_ context.Context, method string, _ any, result any) error {
-	f.calledMethods = append(f.calledMethods, method)
-	if result == nil {
-		return nil
-	}
-	data := f.callResults[method]
-	if len(data) == 0 {
-		data = json.RawMessage(`{}`)
-	}
-	return json.Unmarshal(data, result)
 }
 
 func (f *cliExecFakeController) Interrupt(context.Context, string) error {

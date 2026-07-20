@@ -303,9 +303,8 @@ func (s *Server) handleParticipantRetire(req Request) error {
 	if p.Kind != participant.KindNamed {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is not a named agent (kind=%s)", id, p.Kind))
 	}
-	// Full cleanup protocol: store retire transaction, directory archival
-	// (participants/<id>/ and agents/<id>/home move under .archived/ — never
-	// deleted), and DM thread freeze. See retireNamedParticipant.
+	// Retire the stored profile and archive its workspace without deleting
+	// memory so the identity can be restored later.
 	if err := s.retireNamedParticipant(p); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -356,19 +355,18 @@ func (s *Server) participantProfile(p participant.Participant) (ParticipantProfi
 		})
 	}
 	return ParticipantProfile{
-		ID:           p.ID,
-		Kind:         string(p.Kind),
-		Name:         p.Name,
-		Role:         p.Role,
-		AvatarImage:  avatarImage,
-		Tagline:      p.Tagline,
-		Workspace:    p.Workspace,
-		Model:        p.Model,
-		Memory:       memory,
-		ForkedFromID: p.ForkedFrom,
-		TrackRecord:  trackRecord,
-		CreatedAt:    p.CreatedAt,
-		UpdatedAt:    p.UpdatedAt,
+		ID:          p.ID,
+		Kind:        string(p.Kind),
+		Name:        p.Name,
+		Role:        p.Role,
+		AvatarImage: avatarImage,
+		Tagline:     p.Tagline,
+		Workspace:   p.Workspace,
+		Model:       p.Model,
+		Memory:      memory,
+		TrackRecord: trackRecord,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
 	}, nil
 }
 

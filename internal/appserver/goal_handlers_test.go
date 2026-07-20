@@ -156,7 +156,7 @@ func TestGoalLookupDoesNotConstructThreadRuntime(t *testing.T) {
 
 	srv := New(rt, &lockedBuffer{})
 	t.Cleanup(srv.Close)
-	th, err := srv.ensureResidentThread(sess.ID)
+	th, err := srv.ensureThreadLoaded(sess.ID)
 	if err != nil {
 		t.Fatalf("load thread: %v", err)
 	}

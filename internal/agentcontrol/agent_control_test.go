@@ -199,6 +199,73 @@ func TestNew_NonGitRepoSucceeds(t *testing.T) {
 	}
 }
 
+func TestPrepareWorkspaceRebindMovesSubsequentInplaceSpawnAndFork(t *testing.T) {
+	parent := t.TempDir()
+	initRepo(t, parent)
+	linked := filepath.Join(t.TempDir(), "linked")
+	cmd := exec.Command("git", "worktree", "add", "-q", "-b", "rebound-workspace", linked)
+	cmd.Dir = parent
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+
+	spawnRoots := make(chan string, 2)
+	c, err := New(Config{
+		Client:       &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel: "fake-model",
+		ParentRepo:   parent,
+		WorktreeRoot: filepath.Join(t.TempDir(), "worktrees"),
+		SessionID:    "workspace-rebind",
+		ThreadDir:    filepath.Join(t.TempDir(), "threads"),
+		WorkerFactory: func(root string, _ WorkerType, _ agentthread.Metadata) (agent.ToolExecutor, error) {
+			spawnRoots <- root
+			return fakeToolkit{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
+
+	commit, err := c.PrepareWorkspaceRebind(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ParentRepo() != parent {
+		t.Fatalf("workspace changed before commit: %q", c.ParentRepo())
+	}
+	commit()
+	if c.ParentRepo() != linked {
+		t.Fatalf("parent repo = %q, want %q", c.ParentRepo(), linked)
+	}
+	_, manager := c.workspaceSnapshot()
+	if manager == nil {
+		t.Fatal("rebound workspace lost worktree support")
+	}
+
+	if _, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "after_rebind",
+		Prompt:      "inspect the rebound workspace",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if got := <-spawnRoots; got != linked {
+		t.Fatalf("inplace spawn root = %q, want %q", got, linked)
+	}
+	if _, err := c.Fork(context.Background(), ForkRequest{
+		TaskName:    "fork_after_rebind",
+		Prompt:      "continue in the rebound workspace",
+		Synchronous: true,
+	}, []providers.ChatMessage{{Role: "user", Content: "continue"}}); err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	if got := <-spawnRoots; got != linked {
+		t.Fatalf("inplace fork root = %q, want %q", got, linked)
+	}
+}
+
 func TestSpawn_SyncHappyPath(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
@@ -240,147 +307,6 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 	}
 	if res.WorktreePath != "" {
 		t.Fatalf("inplace spawn should not produce a worktree path, got %q", res.WorktreePath)
-	}
-}
-
-func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
-	dir := t.TempDir()
-	client := &blockingStreamClient{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	c, err := New(Config{
-		Client:        client,
-		DefaultModel:  "fake-model",
-		ParentRepo:    dir,
-		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
-		SessionID:     "sess-1",
-		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		c.BeginShutdown()
-		c.StopAll()
-		c.YieldWorkerTerminalFinalizations()
-		c.Close()
-	})
-
-	events := make(chan ParticipantMessage, 1)
-	c.SubscribeParticipantMessages(events)
-	defer c.UnsubscribeParticipantMessages(events)
-
-	_, err = c.manager.Spawn(context.Background(), subagent.SpawnOptions{
-		ID:            "agent-1",
-		ParticipantID: "prt-1",
-		Type:          DefaultSubagentType,
-		TaskName:      "diff-review",
-		AgentPath:     "root/agent-1",
-		ParentID:      c.SessionID(),
-		Description:   "review",
-		Prompt:        "review",
-		SystemPrompt:  "system",
-		Toolkit:       fakeToolkit{},
-	})
-	if err != nil {
-		t.Fatalf("spawn: %v", err)
-	}
-	<-client.started
-
-	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Not allowed yet.", ""); err == nil {
-		t.Fatal("expected participant speech capability error")
-	}
-	c.EnableParticipantSpeech("agent-1")
-
-	posted, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Found one bug.", "")
-	if err != nil {
-		t.Fatalf("PostParticipantMessage: %v", err)
-	}
-	if posted.ParticipantID != "prt-1" || posted.Kind != "result" || posted.Text != "Found one bug." {
-		t.Fatalf("unexpected posted message: %+v", posted)
-	}
-	select {
-	case got := <-events:
-		if got.AgentID != "agent-1" || got.ParticipantID != "prt-1" || got.Text != "Found one bug." {
-			t.Fatalf("unexpected event: %+v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for participant message event")
-	}
-	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "update", "Checking tests.", ""); err == nil {
-		t.Fatal("expected update without thread_id error")
-	}
-	updated, err := c.PostParticipantMessage(context.Background(), "agent-1", "update", "Checking tests.", "cth-review")
-	if err != nil {
-		t.Fatalf("PostParticipantMessage update: %v", err)
-	}
-	if updated.Kind != "update" || updated.ThreadID != "cth-review" {
-		t.Fatalf("unexpected update message: %+v", updated)
-	}
-	select {
-	case got := <-events:
-		if got.Kind != "update" || got.ThreadID != "cth-review" || got.Text != "Checking tests." {
-			t.Fatalf("unexpected update event: %+v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for participant update event")
-	}
-	brief, err := c.PostParticipantMessage(context.Background(), "agent-1", "brief", "Decision made; reviewer starts next.", "group-1")
-	if err != nil {
-		t.Fatalf("PostParticipantMessage brief: %v", err)
-	}
-	if brief.Kind != "brief" || brief.ThreadID != "group-1" {
-		t.Fatalf("unexpected brief message: %+v", brief)
-	}
-	select {
-	case got := <-events:
-		if got.Kind != "brief" || got.ThreadID != "group-1" {
-			t.Fatalf("unexpected brief event: %+v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for participant brief event")
-	}
-	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Second result.", ""); err == nil {
-		t.Fatal("expected duplicate result error")
-	}
-}
-
-func TestSpawnInternalSpeechCapabilityMarksAgentBeforeWorkerFactory(t *testing.T) {
-	dir := t.TempDir()
-	initRepo(t, dir)
-
-	var c *AgentControl
-	var sawSpeech bool
-	var err error
-	c, err = New(Config{
-		Client:       &fakeClient{resp: providers.ChatResponse{Content: "done"}},
-		DefaultModel: "fake-model",
-		ParentRepo:   dir,
-		WorktreeRoot: filepath.Join(dir, ".wuu", "worktrees"),
-		SessionID:    "sess-1",
-		WorkerFactory: func(_ string, _ WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
-			sawSpeech = c.ParticipantSpeechEnabled(meta.ID)
-			return fakeToolkit{}, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type:             DefaultSubagentType,
-		TaskName:         "review_result",
-		Description:      "review",
-		Prompt:           "review",
-		Synchronous:      true,
-		SpeechCapability: true,
-	})
-	if err != nil {
-		t.Fatalf("Spawn: %v", err)
-	}
-	if !sawSpeech || !c.ParticipantSpeechEnabled(res.AgentID) {
-		t.Fatalf("expected speech capability before worker factory, saw=%t enabled=%t", sawSpeech, c.ParticipantSpeechEnabled(res.AgentID))
 	}
 }
 

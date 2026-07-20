@@ -180,6 +180,7 @@ func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
 }
 
 func TestToolkitWebEvidenceContextBlockTracksMetadataOnly(t *testing.T) {
+	t.Setenv(wuucontext.DerivedContextLedgersEnvVar, "on")
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)

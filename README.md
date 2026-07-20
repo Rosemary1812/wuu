@@ -12,6 +12,7 @@
     <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
     <a href="https://github.com/blueberrycongee/wuu/blob/main/go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/blueberrycongee/wuu?style=flat-square"></a>
     <a href="https://github.com/blueberrycongee/wuu/graphs/commit-activity"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/blueberrycongee/wuu?style=flat-square"></a>
+    <a href="https://github.com/blueberrycongee/wuu/releases"><img alt="GitHub release downloads" src="https://img.shields.io/github/downloads/blueberrycongee/wuu/total?style=flat-square&label=downloads"></a>
   </p>
 </div>
 
@@ -24,7 +25,7 @@
 Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
 
 > [!WARNING]
-> **Project status:** The mobile app has not been released yet. wuu is still pre-1.0 and evolving quickly, so features, interfaces, and behavior may change between versions. If you need a stable, production-ready tool, please evaluate carefully before adopting it.
+> **Project status:** Packaged desktop builds currently support Apple silicon Macs. wuu is still pre-1.0 and evolving quickly, so features, interfaces, and behavior may change between versions. If you need a stable, production-ready tool, please evaluate carefully before adopting it.
 
 ## Start Here
 
@@ -32,17 +33,17 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 |---|---|
 | Install and run your first task | [Install](#install) and [Quick Start](#quick-start) |
 | Use the desktop app | [Desktop App](#desktop-app) |
-| Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`docs/exec.md`](docs/exec.md) |
+| Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`wuu exec`](docs/en/automation/exec.md) |
 | Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
-| Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/app-server-protocol.md) |
+| Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
-| Review the security and trust boundaries | [Security model](docs/security-model.md) |
+| Review the security and trust boundaries | [Security model](docs/en/reference/security-model.md) |
 | Inspect reproducible public evaluations | [Public evaluations](evals/) |
 
-## News
+## Release Status
 
-- **macOS desktop releases** — tagged GitHub Releases contain only the unsigned macOS Electron app; the CLI remains available from source for automation.
-- **2026-07-10** Tagged **v0.1.0** — the first packaged desktop milestone: unsigned macOS Electron preview builds on GitHub Releases, plus open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
+- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide unsigned Apple silicon macOS builds. The CLI remains available from source for automation.
+- **Latest changes** — see the [latest release](https://github.com/blueberrycongee/wuu/releases/latest) and [CHANGELOG](CHANGELOG.md).
 
 ## Why wuu
 
@@ -98,7 +99,7 @@ go run ./cmd/wuu --version
 ## Quick Start
 
 For installation, provider setup, sessions, attachments, trust boundaries, and
-common problems, read the [user guide](docs/user-guide.md).
+common problems, read the [user guide](docs/en/getting-started/index.md).
 
 **Desktop**
 
@@ -155,7 +156,7 @@ wuu session list --json
 **Providers and integration**
 - **BYOK / multi-provider** — bring your own API key; works with Anthropic and OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
 - **JSONL output** — scriptable, streamable output for CI and other agents
-- **Desktop app** — packaged macOS Electron app, or source-built UI for interactive use alongside the CLI
+- **Desktop app** — packaged Apple silicon macOS Electron app, or source-built UI for interactive use alongside the CLI
 
 ## Architecture
 
@@ -166,11 +167,11 @@ Wuu is split into a reusable **Go core** and a thin **shell**:
 - **Future shells** (VS Code extension, JetBrains plugin, etc.) can consume the same core by spawning `wuu app-server` — no need to import or fork the Go code.
 
 > [!TIP]
-> Building a new shell or integration? Start with the [`app-server` protocol](docs/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
+> Building a new shell or integration? Start with the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
 
 ## Desktop App
 
-The first packaged desktop release is a macOS Electron app on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
+Packaged Apple silicon macOS builds are available on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
 The DMG/ZIP assets are currently unsigned; see the install section for the Gatekeeper
 quarantine workaround.
 
@@ -198,7 +199,7 @@ wuu exec --file plan.md "implement this plan"
 wuu exec review --uncommitted
 ```
 
-See [`docs/exec.md`](docs/exec.md) for JSONL output, attachments, resume, fork, review, and automation options.
+See [`wuu exec`](docs/en/automation/exec.md) for JSONL output, attachments, resume, fork, review, and automation options.
 
 ## Providers
 
@@ -260,11 +261,11 @@ For another provider, the same config shape applies:
 ## Docs
 
 - Browse all maintained documentation: [Documentation index](docs/README.md)
-- Install, configure, and use wuu: [User guide](docs/user-guide.md)
-- Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/exec.md)
-- Parse the streaming output: [JSONL events](docs/jsonl-events.md)
-- Embed the core in a new shell: [`app-server` protocol](docs/app-server-protocol.md)
-- Consume Claude Code–compatible stream output: [cc-stream-json](docs/compat/cc-stream-json.md)
+- Install, configure, and use wuu: [User guide](docs/en/getting-started/index.md)
+- Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/en/automation/exec.md)
+- Parse the streaming output: [JSONL events](docs/en/automation/jsonl-events.md)
+- Embed the core in a new shell: [`app-server` protocol](docs/en/integrations/app-server-protocol.md)
+- Consume Claude Code–compatible stream output: [Claude Code stream compatibility](docs/en/integrations/compatibility/claude-code-stream-json.md)
 - Set up a development environment: [Contributing](CONTRIBUTING.md)
 
 ## Contributing

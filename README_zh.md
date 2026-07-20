@@ -12,6 +12,7 @@
     <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
     <a href="https://github.com/blueberrycongee/wuu/blob/main/go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/blueberrycongee/wuu?style=flat-square"></a>
     <a href="https://github.com/blueberrycongee/wuu/graphs/commit-activity"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/blueberrycongee/wuu?style=flat-square"></a>
+    <a href="https://github.com/blueberrycongee/wuu/releases"><img alt="GitHub release downloads" src="https://img.shields.io/github/downloads/blueberrycongee/wuu/total?style=flat-square&label=downloads"></a>
   </p>
 </div>
 
@@ -24,7 +25,7 @@
 除了单轮任务，wuu 还能规划多步工作、委派给专门的子智能体、应用任务专属技能，并跨会话记住上下文。桌面应用用于交互式工作，`wuu exec` 则适合脚本、CI 和其他 agent 调用。
 
 > [!WARNING]
-> **项目状态：** 移动端目前尚未正式推出。wuu 仍处于 1.0 之前的高速迭代阶段，不同版本之间的功能、接口和行为可能发生变化。如果你需要稳定、可用于生产环境的工具，请在采用前谨慎评估。
+> **项目状态：** 打包好的桌面版目前仅支持 Apple 芯片 Mac。wuu 仍处于 1.0 之前的高速迭代阶段，不同版本之间的功能、接口和行为可能发生变化。如果你需要稳定、可用于生产环境的工具，请在采用前谨慎评估。
 
 ## 从这里开始
 
@@ -32,17 +33,17 @@
 |---|---|
 | 安装并跑通第一个任务 | [安装](#安装) 和 [快速开始](#快速开始) |
 | 使用桌面应用 | [桌面应用](#桌面应用) |
-| 在脚本、CI 或其他 agent 中调用 wuu | [CLI 和自动化](#cli-和自动化) 和 [`docs/exec.md`](docs/exec.md) |
+| 在脚本、CI 或其他 agent 中调用 wuu | [CLI 和自动化](#cli-和自动化) 和 [`wuu exec`](docs/en/automation/exec.md) |
 | 接入模型提供商（Anthropic、OpenAI 兼容、本地） | [模型提供商](#模型提供商) |
-| 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/app-server-protocol.md) |
+| 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) |
 | 参与贡献 | [贡献指南](CONTRIBUTING.md) |
-| 了解安全和信任边界 | [安全模型](docs/security-model.md) |
+| 了解安全和信任边界 | [安全模型](docs/en/reference/security-model.md) |
 | 查看可复现的公开评测 | [公开评测记录](evals/) |
 
-## 动态
+## 发布状态
 
-- **macOS 桌面版发布** —— 带标签的 GitHub Release 只提供未签名的 macOS Electron 应用；CLI 仍可从源码安装，用于自动化。
-- **2026-07-10** 发布 **v0.1.0** —— 第一个打包桌面端里程碑：GitHub Releases 提供未签名 macOS Electron 预览包，同时开源治理文件就位。详见 [CHANGELOG](CHANGELOG.md)。
+- **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供未签名的 Apple 芯片 macOS 安装包；CLI 仍可从源码安装，用于自动化。
+- **最新变化** —— 查看[最新版本](https://github.com/blueberrycongee/wuu/releases/latest)和 [CHANGELOG](CHANGELOG.md)。
 
 ## 为什么选 wuu
 
@@ -95,7 +96,7 @@ go run ./cmd/wuu --version
 
 ## 快速开始
 
-安装、提供商配置、会话、附件、信任边界和常见问题见[用户指南](docs/user-guide-zh.md)。
+安装、提供商配置、会话、附件、信任边界和常见问题见[用户指南](docs/zh-cn/getting-started/index.md)。
 
 **桌面端**
 
@@ -151,7 +152,7 @@ wuu session list --json
 **提供商与集成**
 - **BYOK / 多提供商** — 自带 API Key；支持 Anthropic 和 OpenAI 兼容网关（OpenAI、OpenRouter、one-api、本地等）
 - **JSONL 输出** — 可脚本化、可流式的输出，适合 CI 和其他 agent
-- **桌面应用** — 打包好的 macOS Electron 应用，也可以从源码运行，与 CLI 配合使用
+- **桌面应用** — 打包好的 Apple 芯片 macOS Electron 应用，也可以从源码运行，与 CLI 配合使用
 
 ## 架构
 
@@ -162,12 +163,12 @@ Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
 - **未来的 Shell**（VS Code 插件、JetBrains 插件等）可以通过派生 `wuu app-server` 来复用同一个核心——无需导入或 fork Go 代码。
 
 > [!TIP]
-> 想构建新的 Shell 或集成？从 [`app-server` 协议](docs/app-server-protocol.md) 开始——它完整记录了桌面应用所使用的 JSON-RPC 接口。
+> 想构建新的 Shell 或集成？从 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) 开始——它完整记录了桌面应用所使用的 JSON-RPC 接口。
 
 ## 桌面应用
 
-第一版桌面安装包是 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 上的 macOS Electron 应用。
-它目前是未签名版本；Gatekeeper 的 quarantine 处理方式见安装章节。
+[GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供 Apple 芯片 macOS 桌面安装包。
+安装包目前未签名；Gatekeeper 的 quarantine 处理方式见安装章节。
 
 桌面端代码在 `desktop/`。从源码启动：
 
@@ -187,7 +188,7 @@ wuu exec --file plan.md "实现这个计划"
 wuu exec review --uncommitted
 ```
 
-JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`docs/exec.md`](docs/exec.md)。
+JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`wuu exec`](docs/en/automation/exec.md)。
 
 ## 模型提供商
 
@@ -242,12 +243,12 @@ export ANTHROPIC_API_KEY="..."
 ## 文档
 
 - 浏览所有持续维护的文档：[文档索引](docs/README.md)
-- 安装、配置和使用 wuu：[用户指南](docs/user-guide-zh.md)
-- 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/exec.md)
-- 解析流式输出：[JSONL 事件](docs/jsonl-events.md)
-- 将核心嵌入新的 Shell：[`app-server` 协议](docs/app-server-protocol.md)
-- 消费 Claude Code 兼容的流式输出：[cc-stream-json](docs/compat/cc-stream-json.md)
-- 了解配置加载和自动化入口：[`wuu exec`](docs/exec.md)
+- 安装、配置和使用 wuu：[用户指南](docs/zh-cn/getting-started/index.md)
+- 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/en/automation/exec.md)
+- 解析流式输出：[JSONL 事件](docs/en/automation/jsonl-events.md)
+- 将核心嵌入新的 Shell：[`app-server` 协议](docs/en/integrations/app-server-protocol.md)
+- 消费 Claude Code 兼容的流式输出：[Claude Code 流兼容说明](docs/en/integrations/compatibility/claude-code-stream-json.md)
+- 了解配置加载和自动化入口：[`wuu exec`](docs/en/automation/exec.md)
 - 搭建开发环境：[贡献指南](CONTRIBUTING.md)
 
 ## 参与贡献

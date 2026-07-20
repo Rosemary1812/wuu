@@ -239,6 +239,14 @@ function shouldSuppressProcessErrorItem(turn: Turn, item: ThreadItem): boolean {
   if (turn.status === "failed") {
     return true;
   }
+  // A stream error item only lands while a retryable attempt has just failed
+  // terminally. If the turn is still running, the reconnect chip already
+  // names the cause; if it completed, the retry recovered — in both cases a
+  // settled error line would either pile up per attempt or stay behind as
+  // stale noise after a successful recovery.
+  if (turn.status === "in_progress" || turn.status === "completed") {
+    return true;
+  }
   // The turn-level interruption notice already explains user-initiated stops.
   // Rendering the matching cancellation error item here would show the same
   // stop twice in one turn.

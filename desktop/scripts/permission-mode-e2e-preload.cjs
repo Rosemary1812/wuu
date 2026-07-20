@@ -144,6 +144,7 @@ contextBridge.exposeInMainWorld("wuu", {
   resumeThread: async () => ({ thread: null }),
   forkThread: async () => ({ thread: null }),
   listThreads: async () => ({ threads: [] }),
+  listArchivedThreads: async () => ({ threads: [] }),
   searchThreads: async () => ({ threads: [] }),
   pinThread: async (id, pinned) => ({ thread: { id, pinned } }),
   archiveThread: async (id) => ({ thread: { id, archived: true } }),

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { InitializeResult, Thread } from "../shared/protocol";
+import type { InitializeResult } from "../shared/protocol";
 import { initialState, type AppState } from "./AppState";
 import { environmentPanelScaleForWidth } from "./EnvironmentPanelScale";
 import {
@@ -53,25 +53,6 @@ function initialized(): InitializeResult {
   };
 }
 
-function groupThread(): Thread {
-  return {
-    id: "thread-group",
-    preview: "讨论群聊信息",
-    title: "前端小队",
-    model_provider: "test",
-    model: "test-model",
-    cwd: "/repo",
-    status: "idle",
-    group: true,
-    created_at: "2026-07-04T00:00:00Z",
-    updated_at: "2026-07-04T00:00:00Z",
-    turns: [],
-    members: [
-      { id: "participant-1", name: "小青", kind: "named", role: "评审" },
-    ],
-  };
-}
-
 function renderStack(
   stateOverrides: Partial<AppState> = {},
   subagentSessions?: SubagentRowSummary[],
@@ -103,9 +84,6 @@ function renderStack(
         onOpenCommit={() => {}}
         onOpenPullRequest={() => {}}
         subagentSessions={subagentSessions}
-        participants={[
-          { id: "participant-1", name: "小青", kind: "named", role: "评审" },
-        ]}
       />,
     );
   });
@@ -152,16 +130,6 @@ describe("EnvironmentSideStack", () => {
     const rule = cssRule(".environment-side-stack.environment-info-side-stack");
     expect(rule).toContain("transform: scale(var(--environment-panel-scale, 1))");
     expect(rule).toContain("transform-origin: top right");
-  });
-
-  it("renders group info instead of session environment rows for group threads", () => {
-    renderStack({ thread: groupThread() });
-
-    expect(container.querySelector(".group-info-panel")).not.toBeNull();
-    expect(container.textContent).toContain("群聊信息");
-    expect(container.textContent).toContain("前端小队");
-    expect(container.textContent).not.toContain("群内容");
-    expect(container.textContent).not.toContain("创建拉取请求");
   });
 
   it("renders a subagent's pooled name and source in its tooltip", () => {

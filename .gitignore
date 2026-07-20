@@ -47,24 +47,11 @@ desktop/.node_modules.synced
 thirdparty/
 
 # ============================================================
-# Local docs / notes
+# Documentation and local plans
 # ============================================================
-# /docs is mostly personal scratch; an explicit allow-list keeps
-# the small set of shared project docs tracked.
+# Published documentation under /docs is tracked. Only temporary implementation
+# plans remain local.
 
-/docs/*
-!/docs/README.md
-!/docs/user-guide.md
-!/docs/user-guide-zh.md
-!/docs/exec.md
-!/docs/app-server-protocol.md
-!/docs/jsonl-events.md
-!/docs/configuration-model-zh.md
-!/docs/development.md
-!/docs/release.md
-!/docs/security-model.md
-!/docs/compat/
-!/docs/plans/
 /docs/plans/*
 
 # per-thread goal scratch

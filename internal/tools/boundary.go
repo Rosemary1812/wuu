@@ -18,9 +18,8 @@ type WorkspaceBoundary struct {
 	Guards         []Guard
 }
 
-// StandardBoundary is the default for every resident, group member, and
-// project session: confined to reachable roots, full authority inside, no
-// approval.
+// StandardBoundary is the default for every agent run and project session:
+// confined to reachable roots, full authority inside, no approval.
 func StandardBoundary() WorkspaceBoundary {
 	return WorkspaceBoundary{Enforce: true, AllowMutations: true}
 }

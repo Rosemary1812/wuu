@@ -1438,8 +1438,6 @@ type execCLIConfig struct {
 	maxTurns          *int
 	ultra             *bool
 	outputSchema      *string
-	participant       *string
-	thread            *string
 }
 
 var execControllerOverride wuuexec.Controller
@@ -1703,8 +1701,6 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		maxTurns:          fs.Int("max-turns", 0, "max agent turns"),
 		ultra:             fs.Bool("ultra", false, "enable proactive multi-agent delegation"),
 		outputSchema:      fs.String("output-schema", "", "JSON schema for structured final output"),
-		participant:       fs.String("participant", "", "run the turn as this named participant (id or name) with the group-chat tool surface"),
-		thread:            fs.String("thread", "", "run the participant turn inside this existing group/DM thread id"),
 	}
 }
 
@@ -1745,27 +1741,6 @@ type execInputPayload struct {
 	Timeout           string                     `json:"timeout"`
 	OutputLastMessage string                     `json:"output_last_message"`
 	OutputSchema      string                     `json:"output_schema"`
-	// Participant, when set, runs the turn AS a named conversation participant
-	// inside a group/DM thread (the group-chat tool surface) instead of a
-	// plain SurfaceMain turn. This is the headless entry that lets CI/agents
-	// drive named group chat.
-	Participant *execParticipantInput `json:"participant,omitempty"`
-	// Actions, when non-empty, runs a scripted group/reply/task sequence (build a
-	// group, add named members, open a reply, escalate to a task, speak as a
-	// named member) driven against the existing app-server RPCs instead of a
-	// single turn. Each step is an exec.GroupAction (action + params + save_as +
-	// expect). Prompt is optional in this mode.
-	Actions []wuuexec.GroupAction `json:"actions,omitempty"`
-}
-
-type execParticipantInput struct {
-	ParticipantID string `json:"participant_id"`
-	ThreadID      string `json:"thread_id"`
-	TaskName      string `json:"task_name"`
-	Description   string `json:"description"`
-	SubagentType  string `json:"subagent_type"`
-	AgentProfile  string `json:"agent_profile"`
-	Isolation     string `json:"isolation"`
 }
 
 func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast bool, input *execInputPayload) (wuuexec.Options, error) {
@@ -1798,10 +1773,6 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		Stdout:            os.Stdout,
 		Stderr:            os.Stderr,
 		Controller:        execControllerOverride,
-		Participant: wuuexec.ParticipantRun{
-			ParticipantID: valueOfStringFlag(cfg.participant),
-			ThreadID:      valueOfStringFlag(cfg.thread),
-		},
 	}
 	if err := applyExecInputPayload(&opts, input); err != nil {
 		return wuuexec.Options{}, err
@@ -1876,32 +1847,6 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 		}
 		opts.Timeout = timeout
 	}
-	if len(input.Actions) > 0 && len(opts.Actions) == 0 {
-		opts.Actions = input.Actions
-	}
-	if p := input.Participant; p != nil {
-		if opts.Participant.ParticipantID == "" {
-			opts.Participant.ParticipantID = strings.TrimSpace(p.ParticipantID)
-		}
-		if opts.Participant.ThreadID == "" {
-			opts.Participant.ThreadID = strings.TrimSpace(p.ThreadID)
-		}
-		if opts.Participant.TaskName == "" {
-			opts.Participant.TaskName = strings.TrimSpace(p.TaskName)
-		}
-		if opts.Participant.Description == "" {
-			opts.Participant.Description = strings.TrimSpace(p.Description)
-		}
-		if opts.Participant.SubagentType == "" {
-			opts.Participant.SubagentType = strings.TrimSpace(p.SubagentType)
-		}
-		if opts.Participant.AgentProfile == "" {
-			opts.Participant.AgentProfile = strings.TrimSpace(p.AgentProfile)
-		}
-		if opts.Participant.Isolation == "" {
-			opts.Participant.Isolation = strings.TrimSpace(p.Isolation)
-		}
-	}
 	return nil
 }
 
@@ -1924,7 +1869,7 @@ func resolveExecPromptAndInput(cfg execCLIConfig, args []string, allowEmpty bool
 		return "", nil, err
 	}
 	prompt := input.promptText()
-	if prompt == "" && !allowEmpty && !input.hasAttachments() && len(input.Actions) == 0 {
+	if prompt == "" && !allowEmpty && !input.hasAttachments() {
 		return "", nil, errors.New("prompt is required in --input-json input")
 	}
 	return prompt, input, nil

@@ -167,9 +167,6 @@ export default function App(): React.JSX.Element {
           }}
           onSend={(thread, text) => controller.sendMessage(thread, text)}
           onInterrupt={(threadId) => void controller.interrupt(threadId).catch(() => {})}
-          onReact={(threadId, seq, reaction) =>
-            void controller.react(threadId, seq, reaction).catch(() => {})
-          }
         />
       )}
     </View>

@@ -9,16 +9,9 @@ import {
   RemoteClient,
   pair as corePair,
 } from "@wuu/remote-core";
-import type {
-  MessageMarkWire,
-  ParticipantProfile,
-  Thread,
-  ThreadItem,
-  Turn,
-} from "@wuu/protocol";
+import type { Thread, Turn } from "@wuu/protocol";
 
 import { AppStore } from "./store";
-import { mentionedParticipantIDsFromText } from "./mentions";
 import { isThreadRunning } from "./threads";
 import { parseDeepLink, type DeepLink } from "./deepLink";
 import {
@@ -41,8 +34,6 @@ export interface CredentialStore {
 
 type ThreadListResult = { threads: Thread[] };
 type ThreadResult = { thread: Thread };
-type ParticipantListResult = { participants: ParticipantProfile[] };
-type MarksResult = { marks: MessageMarkWire[] };
 type TurnResult = { turn: Turn };
 type QueueResult = { queued: { id: string } };
 type PushRegisterResult = { ok: boolean };
@@ -57,7 +48,6 @@ export class WuuMobile {
   readonly store = new AppStore();
   private client: RemoteClient | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private rosterTimer: ReturnType<typeof setTimeout> | null = null;
   private lastViewedTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private nextClientId = 0;
@@ -67,14 +57,6 @@ export class WuuMobile {
 
   constructor(private readonly credStore: CredentialStore) {
     this.store.onUnknownThread = () => this.scheduleThreadsRefresh();
-    // participant/updated → debounced roster re-pull (plan §3.4).
-    this.store.onParticipantsStale = () => {
-      if (this.rosterTimer) return;
-      this.rosterTimer = setTimeout(() => {
-        this.rosterTimer = null;
-        void this.refreshParticipants().catch(() => {});
-      }, 300);
-    };
     // Unread cursors persist (debounced) so a cold start doesn't mark every
     // conversation unread again.
     this.store.onLastViewedChanged = (lastViewed) => {
@@ -157,8 +139,7 @@ export class WuuMobile {
         await this.call("initialize");
       }
       await this.refreshThreads();
-      await this.refreshParticipants();
-      // The thread the user is looking at lost its full history (and marks)
+      // The thread the user is looking at lost its full history
       // with the reset — re-resume it in place so the open chat refills.
       const active = this.store.getSnapshot().activeThreadId;
       if (!resumed && active) {
@@ -199,11 +180,6 @@ export class WuuMobile {
     this.store.setThreads(result.threads ?? []);
   }
 
-  async refreshParticipants(): Promise<void> {
-    const result = await this.call<ParticipantListResult>("participant/list");
-    this.store.setParticipants(result.participants ?? []);
-  }
-
   private scheduleThreadsRefresh(): void {
     if (this.refreshTimer) return;
     this.refreshTimer = setTimeout(() => {
@@ -212,19 +188,12 @@ export class WuuMobile {
     }, 400);
   }
 
-  /** thread/resume returns the FULL history in its result; marks load
-   *  alongside so receipts/reactions render on first paint. */
+  /** thread/resume returns the full history in its result. */
   async openThread(threadId: string): Promise<void> {
     this.store.setActiveThread(threadId);
     const result = await this.call<ThreadResult>("thread/resume", { session_id: threadId });
     this.store.applyNotification("thread/resumed", result);
     this.store.setActiveThread(threadId); // re-advance unread cursor on fresh turns
-    try {
-      const marks = await this.call<MarksResult>("thread/marks", { thread_id: threadId });
-      this.store.setThreadMarks(threadId, marks.marks ?? []);
-    } catch {
-      // Older hosts without marks: chat still renders.
-    }
   }
 
   closeThread(): void {
@@ -247,10 +216,7 @@ export class WuuMobile {
       queued: false,
     });
     try {
-      // Group threads NEVER queue: the server rejects turn/queue for groups
-      // outright (every group send lands as a completed turn; routing is
-      // envelope-driven), mirroring the desktop's send policy.
-      if (isThreadRunning(thread) && !thread.group) {
+      if (isThreadRunning(thread)) {
         await this.call<QueueResult>("turn/queue", {
           thread_id: thread.id,
           prompt,
@@ -266,12 +232,6 @@ export class WuuMobile {
           images: [],
           files: [],
         };
-        // Server rejects unknown fields — mentions only travels when non-empty.
-        const mentions = mentionedParticipantIDsFromText(
-          prompt,
-          this.store.getSnapshot().participants,
-        );
-        if (mentions.length > 0) params.mentions = mentions;
         const result = await this.call<TurnResult>("turn/start", params);
         // Apply the result turn before dropping the pending bubble so the
         // sent message never flickers out while waiting for turn/started.
@@ -288,10 +248,6 @@ export class WuuMobile {
 
   async interrupt(threadId: string): Promise<void> {
     await this.call("turn/interrupt", { thread_id: threadId });
-  }
-
-  async react(threadId: string, seq: number, reaction: string): Promise<void> {
-    await this.call("message/react", { thread_id: threadId, seq, reaction });
   }
 
   async togglePin(thread: Thread): Promise<void> {
@@ -336,15 +292,5 @@ export class WuuMobile {
       const link = parseDeepLink(data.url);
       if (link) this.onDeepLink?.(link);
     });
-  }
-
-  /** Item helper for tests and the read-receipt line. */
-  itemBySeq(thread: Thread, seq: number): ThreadItem | undefined {
-    for (const turn of thread.turns ?? []) {
-      for (const item of turn.items ?? []) {
-        if (item.seq === seq) return item;
-      }
-    }
-    return undefined;
   }
 }

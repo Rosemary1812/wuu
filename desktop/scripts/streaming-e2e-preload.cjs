@@ -11,7 +11,7 @@ function projectList() {
   };
 }
 
-function mockThread(id) {
+function mockThread(id, source) {
   const now = new Date().toISOString();
   return {
     id,
@@ -20,6 +20,7 @@ function mockThread(id) {
     model: "mock-stream",
     cwd,
     status: "idle",
+    ...(source ? { source } : {}),
     created_at: now,
     updated_at: now,
     turns: []
@@ -76,19 +77,24 @@ contextBridge.exposeInMainWorld("wuu", {
     model,
     providers: [{ name: provider, type: "mock", model }]
   }),
-  startThread: async () => {
+  startThread: async (params = {}) => {
     startedThreadCount += 1;
-    const id =
-      startedThreadCount === 1
+    const collaboration = params.collaboration === true;
+    const id = collaboration
+      ? "thread-collaboration-e2e"
+      : startedThreadCount === 1
         ? "thread-immediate-title-e2e"
         : startedThreadCount === 2
           ? "thread-streaming-e2e"
           : `thread-started-e2e-${startedThreadCount}`;
-    return { thread: mockThread(id) };
+    return { thread: mockThread(id, collaboration ? "collaboration" : undefined) };
   },
   resumeThread: async () => ({ thread: null }),
   forkThread: async () => ({ thread: null }),
   listThreads: async () => ({ threads: [] }),
+  listArchivedThreads: async () => ({ threads: [] }),
+  listParticipants: async () => ({ participants: [] }),
+  kanbanListTasks: async () => [],
   startTurn: async (threadId, text, images = []) => {
     const now = new Date().toISOString();
     return {

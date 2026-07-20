@@ -115,6 +115,10 @@ export class AppServerClientPool {
     return [...cwds];
   }
 
+  threadCwdsForWorkdir(workdir: string): string[] {
+    return this.clients.get(resolve(workdir))?.knownThreadCwds() ?? [];
+  }
+
   respondToServerRequest(id: string, result: unknown): void {
     const route = this.serverRequestRoutes.get(id);
     if (!route) {
@@ -340,6 +344,10 @@ export class AppServerClient {
 
   isBusy(): boolean {
     return this.pending.size > 0 || this.runningThreadIDs.size > 0;
+  }
+
+  knownThreadCwds(): string[] {
+    return [...new Set([this.workdir, ...this.threadCwdsByID.values()])];
   }
 
   runningThreadCwds(): string[] {

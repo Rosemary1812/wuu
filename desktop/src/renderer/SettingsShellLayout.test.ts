@@ -28,3 +28,16 @@ describe("settings shell titlebar", () => {
     );
   });
 });
+
+describe("settings row stacking", () => {
+  it("stacks rows only when the content column itself is narrow", () => {
+    // The column — not the viewport — owns the breakpoint: the rail width
+    // is user-adjustable, so a viewport query would stack rows while the
+    // column still has room for label + control side by side.
+    expect(cssRule(".settings-page")).toMatch(/container-type:\s*inline-size;/);
+    expect(settingsCSS).toMatch(
+      /@container settings-page \(max-width:\s*360px\)[\s\S]*?\.settings-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+    expect(settingsCSS).not.toMatch(/@media \(max-width:\s*900px\)/);
+  });
+});

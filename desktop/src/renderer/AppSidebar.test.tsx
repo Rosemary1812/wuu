@@ -3,13 +3,13 @@ import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type {
-  InitializeResult,
-  ParticipantProfile,
-  ParticipantSaveParams,
-} from "../shared/protocol";
-import { AppSidebar, SIDEBAR_SECTION_AGENTS } from "./AppSidebar";
-import { initialState, SCRATCH_PSEUDO_PROJECT_ID, type AppState, type ThreadSummary } from "./AppState";
+import type { DesktopProject, InitializeResult } from "../shared/protocol";
+import { AppSidebar } from "./AppSidebar";
+import {
+  initialState,
+  SCRATCH_PSEUDO_PROJECT_ID,
+  type AppState,
+} from "./AppState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -24,9 +24,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => {
-    root?.unmount();
-  });
+  act(() => root?.unmount());
   root = null;
   container.remove();
 });
@@ -40,127 +38,82 @@ function initialized(): InitializeResult {
   };
 }
 
-function makeThreadSummary(
-  id: string,
-  title: string,
-  overrides: Partial<ThreadSummary> = {},
-): ThreadSummary {
-  return {
-    id,
-    preview: title,
-    title,
-    model_provider: "test",
-    model: "test-model",
-    cwd: "/repo",
-    workspace_kind: "project",
-    status: "idle",
-    pinned: false,
-    archived: false,
+const sidebarProjects: DesktopProject[] = [
+  {
+    id: SCRATCH_PSEUDO_PROJECT_ID,
+    name: "对话",
+    path: "",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    turns: [],
-    turn_count: 0,
-    ...overrides,
-  };
-}
+  },
+  {
+    id: "project-1",
+    name: "wuu",
+    path: "/repo/wuu",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: "project-2",
+    name: "interview",
+    path: "/repo/interview",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
+];
 
-// Drives React's controlled onChange handler for the SidebarNameDialog
-// input: setting `input.value` directly bypasses the controlled state
-// and the dialog's submit button stays disabled. Mirrors the helper in
-// AppSidebarSections.test.tsx.
-function setControlledInputValue(input: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(input, value);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
+interface RenderOptions {
+  collaborationActive?: boolean;
+  onOpenCollaboration?: () => void;
+  sectionOrder?: string[];
+  state?: AppState;
 }
 
 function renderSidebar({
-  projectMenuOpen = false,
-  pinnedThreads = [],
-  participants = [],
-  busyParticipantIDs = new Set<string>(),
-  onTogglePinned = () => {},
-  onImportParticipants = () => {},
-  onExportParticipants = () => {},
-  onSelectParticipant = () => {},
-  onSaveParticipant = async () => null as never,
-  onStartNewThread = () => {},
-}: {
-  projectMenuOpen?: boolean;
-  pinnedThreads?: ThreadSummary[];
-  participants?: ParticipantProfile[];
-  busyParticipantIDs?: Set<string>;
-  onTogglePinned?: (thread: ThreadSummary) => void;
-  onImportParticipants?: (file: File) => void;
-  onExportParticipants?: () => void;
-  onSelectParticipant?: (participant: ParticipantProfile) => void;
-  onSaveParticipant?: (
-    params: ParticipantSaveParams,
-  ) => Promise<ParticipantProfile>;
-  onStartNewThread?: () => void;
-} = {}): void {
-  const state: AppState = {
+  collaborationActive = false,
+  onOpenCollaboration = () => {},
+  sectionOrder = [SCRATCH_PSEUDO_PROJECT_ID, "project-1", "project-2"],
+  state = {
     ...initialState,
     initialized: initialized(),
     activeContext: {
       kind: "project",
       project_id: "project-1",
-      cwd: "/repo",
+      cwd: "/repo/wuu",
     },
-  };
-
+  },
+}: RenderOptions = {}): void {
   act(() => {
     root = createRoot(container);
     root.render(
       <AppSidebar
         state={state}
-        sidebarProjects={[
-          {
-            id: SCRATCH_PSEUDO_PROJECT_ID,
-            name: "对话",
-            path: "",
-            created_at: "2026-01-01T00:00:00Z",
-            updated_at: "2026-01-01T00:00:00Z",
-          },
-        ]}
-        pinnedThreads={pinnedThreads}
-        groupThreads={[]}
+        sidebarProjects={sidebarProjects}
+        pinnedThreads={[]}
         activeThreadID={undefined}
-        activeDMParticipantID={undefined}
-        dmThreadByParticipantID={new Map()}
-        unreadDMParticipantIDs={new Set()}
-        participants={participants}
-        busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
-        
         collapsedSidebarSectionIDs={new Set()}
         expandedSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
-        projectMenuOpen={projectMenuOpen}
+        projectMenuOpen={false}
         projectMenuRef={createRef<HTMLDivElement>()}
         searchOpen={false}
         debugFixturesVisible={false}
-        sectionOrder={[SIDEBAR_SECTION_AGENTS, SCRATCH_PSEUDO_PROJECT_ID]}
-        onStartNewThread={onStartNewThread}
+        sectionOrder={sectionOrder}
+        onStartNewThread={() => {}}
         onOpenSkillsTab={() => {}}
+        collaborationActive={collaborationActive}
+        onOpenCollaboration={onOpenCollaboration}
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
         onSelectThread={() => {}}
-        onSelectParticipant={onSelectParticipant}
-        onSaveParticipant={onSaveParticipant}
-        onImportParticipants={onImportParticipants}
-        onExportParticipants={onExportParticipants}
-        onTogglePinned={onTogglePinned}
+        onTogglePinned={() => {}}
         onArchiveThread={() => {}}
         onDeleteThread={() => {}}
         onRenameThread={() => {}}
-        
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
@@ -208,6 +161,14 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toMatch(
       /\.sidebar-collapsed\.sidebar-drawer-open :is\(\.sidebar, \.settings-sidebar\)[\s\S]*?transition:\s*transform\s+var\(--sidebar-drawer-enter-duration\)\s+var\(--sidebar-drawer-enter-easing\);/,
     );
+    // The titlebar toggle stays above the drawer (140) as a stationary click
+    // target while the panel slides underneath it.
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed :is\(\.titlebar, \.settings-titlebar\) \.sidebar-toggle-button\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*150;/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed\.sidebar-drawer-open :is\(\.sidebar, \.settings-sidebar\),[\s\S]*?z-index:\s*140;/,
+    );
     // Closing slides the panel back off-screen with the exit tokens; the old
     // whole-panel opacity fade must not come back.
     expect(sidebarCSS).toMatch(
@@ -249,311 +210,51 @@ describe("AppSidebar layout", () => {
     expect(brand?.nextElementSibling).toBe(primaryNav);
   });
 
-  it("orders the primary actions by starting, finding, then extending work", () => {
-    renderSidebar();
+  it("keeps collaboration in the fixed primary navigation and opens it", () => {
+    let opened = 0;
+    renderSidebar({
+      collaborationActive: true,
+      onOpenCollaboration: () => {
+        opened += 1;
+      },
+    });
 
     const labels = Array.from(
       container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
     ).map((button) => button.textContent?.trim());
+    expect(labels).toEqual(["新对话", "搜索会话", "技能", "协作"]);
 
-    expect(labels).toEqual(["新对话", "搜索会话", "技能"]);
+    const collaborationButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
+    ).find((button) => button.textContent?.trim() === "协作");
+    expect(collaborationButton?.classList.contains("active")).toBe(true);
+    act(() => collaborationButton?.click());
+    expect(opened).toBe(1);
   });
 
-  it("moves the workspace add action into the workspace group header", () => {
-    renderSidebar({ projectMenuOpen: true });
+  it("shows collaboration even before the runtime initializes", () => {
+    renderSidebar({ state: initialState });
 
-    const primaryNav = container.querySelector(".primary-nav");
-    const workspaceGroup = container.querySelector(
-      'section[aria-label="工作区"]',
-    );
-    const addWorkspaceButton = workspaceGroup?.querySelector(
-      'button[aria-label="添加工作区"]',
-    );
-    const settings = container.querySelector(".sidebar-settings");
-
-    expect(primaryNav?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
-    expect(addWorkspaceButton?.classList.contains("sidebar-functional-action")).toBe(true);
-    expect(workspaceGroup?.querySelector(".project-add-menu")).not.toBeNull();
-    expect(settings?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
-    expect(settings?.textContent).toBe("设置");
+    const collaborationButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
+    ).find((button) => button.textContent?.trim() === "协作");
+    expect(collaborationButton).toBeDefined();
   });
 
-  it("hides the pinned group when there are no pinned conversations", () => {
-    renderSidebar();
-
-    expect(container.querySelector('section[aria-label="置顶"]')).toBeNull();
-    expect(container.textContent).not.toContain("还没有会话");
-  });
-
-  it("defines a 4px-based functional spacing rhythm", () => {
-    expect(sidebarCSS).toMatch(/--sidebar-functional-row-gap:\s*4px/);
-    expect(sidebarCSS).toMatch(/--sidebar-functional-heading-gap:\s*8px/);
-    expect(sidebarCSS).toMatch(/--sidebar-functional-group-gap:\s*24px/);
-  });
-
-  it("keeps the workspace menu inside a narrow sidebar with restrained elevation", () => {
-    expect(sidebarCSS).toMatch(
-      /\.sidebar-functional-heading \.project-add-menu \{[^}]*right:\s*calc\(-1 \* var\(--sidebar-row-pad-x\)\)[^}]*box-shadow:\s*var\(--shadow-card\)/,
-    );
-  });
-
-  // The sidebar entry shares the same current-workspace new-session action
-  // as the session-tab strip. This test pins the sidebar click boundary.
-  it("fires onStartNewThread when the primary-nav 新对话 button is clicked", () => {
-    let started = 0;
-    renderSidebar({ onStartNewThread: () => { started += 1; } });
-
-    const primaryNav = container.querySelector(".primary-nav");
-    const newThreadButton = Array.from(
-      primaryNav?.querySelectorAll("button.nav-item") ?? [],
-    ).find((button) => button.textContent?.includes("新对话"));
-    expect(newThreadButton).toBeTruthy();
-
-    act(() => {
-      (newThreadButton as HTMLButtonElement).click();
-    });
-    expect(started).toBe(1);
-  });
-
-  it("renders pinned sessions above the project list", () => {
-    const pinned = makeThreadSummary("thread-pinned", "Pinned session", {
-      pinned: true,
-    });
-    let toggled: ThreadSummary | undefined;
+  it("renders only scratch and projects in the workspace order", () => {
     renderSidebar({
-      pinnedThreads: [pinned],
-      onTogglePinned: (thread) => {
-        toggled = thread;
-      },
+      sectionOrder: ["project-2", SCRATCH_PSEUDO_PROJECT_ID, "project-1"],
     });
 
-    const pinnedSection = container.querySelector(
-      'section[aria-label="置顶"]',
+    const sections = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        ".sidebar-functional-group-body > section[data-section-id]",
+      ),
     );
-    const projectSection = container.querySelector(
-      'section[aria-label="项目"]',
-    );
-    expect(pinnedSection).not.toBeNull();
-    expect(pinnedSection?.textContent).toContain("Pinned session");
-    expect(
-      pinnedSection?.compareDocumentPosition(projectSection as Node) ?? 0,
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-
-    const unpinButton = pinnedSection?.querySelector<HTMLButtonElement>(
-      'button[aria-label="取消置顶"]',
-    );
-    expect(unpinButton).not.toBeNull();
-    act(() => {
-      unpinButton?.click();
-    });
-    expect(toggled?.id).toBe("thread-pinned");
-  });
-});
-
-describe("AppSidebar participant roster", () => {
-  const participants: ParticipantProfile[] = [
-    {
-      id: "p-image",
-      kind: "named",
-      name: "Image Agent",
-      role: "writer",
-      avatar_image: "data:image/png;base64,AAA",
-    },
-    {
-      id: "p-plain",
-      kind: "named",
-      name: "Plain Agent",
-      role: "reader",
-    },
-    {
-      id: "p-bare",
-      kind: "named",
-      name: "Bare Agent",
-    },
-  ];
-
-  it("does not show team template actions", () => {
-    renderSidebar({ participants });
-
-    expect(container.querySelector('[aria-label="团队模板操作"]')).toBeNull();
-    expect(container.textContent).not.toContain("导入团队模板");
-    expect(container.textContent).not.toContain("导出团队模板");
-  });
-
-  it("renders the avatar column only for uploaded images and shows only the name", () => {
-    renderSidebar({ participants });
-
-    const rows = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".participant-roster-row"),
-    );
-    const byName = new Map<string, HTMLButtonElement>();
-    for (const row of rows) {
-      const name = row.querySelector(".participant-roster-name")?.textContent ?? "";
-      byName.set(name, row);
-    }
-
-    const imageRow = byName.get("Image Agent");
-    expect(imageRow?.querySelector("img.participant-roster-avatar-image")).not.toBeNull();
-    expect(imageRow?.querySelector(".participant-roster-avatar-image")?.getAttribute("src"))
-      .toBe("data:image/png;base64,AAA");
-
-    // Without an uploaded avatar there is no placeholder glyph and no
-    // reserved avatar column — the name flows right after the status dot.
-    const plainRow = byName.get("Plain Agent");
-    expect(plainRow?.querySelector(".participant-roster-avatar")).toBeNull();
-
-    const bareRow = byName.get("Bare Agent");
-    expect(bareRow?.querySelector(".participant-roster-avatar")).toBeNull();
-
-    // Rows carry no tagline/role meta line: the roster shows the name only.
-    for (const row of rows) {
-      expect(row.querySelector(".participant-roster-meta")).toBeNull();
-    }
-  });
-
-  it("marks busy participants with a busy status dot", () => {
-    renderSidebar({
-      participants,
-      busyParticipantIDs: new Set(["p-plain"]),
-    });
-
-    const rows = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".participant-roster-row"),
-    );
-    const statusByName = new Map<string, string | null | undefined>();
-    for (const row of rows) {
-      const name = row.querySelector(".participant-roster-name")?.textContent ?? "";
-      statusByName.set(
-        name,
-        row.querySelector(".participant-roster-status")?.getAttribute("data-status"),
-      );
-    }
-
-    expect(statusByName.get("Image Agent")).toBe("online");
-    expect(statusByName.get("Plain Agent")).toBe("busy");
-    expect(statusByName.get("Bare Agent")).toBe("online");
-  });
-
-  it("saves an existing agent from the floating editor with its id", async () => {
-    const saved: ParticipantSaveParams[] = [];
-    const existing: ParticipantProfile = {
-      id: "p-edit",
-      kind: "named",
-      name: "Old Name",
-      role: "reviewer",
-      tagline: "Check changes",
-      model: "",
-    };
-    renderSidebar({
-      participants: [existing],
-      onSaveParticipant: async (params) => {
-        saved.push(params);
-        return { ...existing, ...params };
-      },
-    });
-
-    const row = container.querySelector<HTMLButtonElement>(
-      ".participant-roster-row",
-    );
-    act(() => {
-      row?.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          clientX: 80,
-          clientY: 200,
-        }),
-      );
-    });
-    const editItem = document.body.querySelector<HTMLButtonElement>(
-      ".thread-row-context-menu-item",
-    );
-    act(() => {
-      editItem?.click();
-    });
-
-    const dialog = document.body.querySelector(".new-participant-dialog");
-    const nameInput = dialog?.querySelector<HTMLInputElement>(
-      'input[data-field="name"]',
-    );
-    expect(nameInput?.value).toBe("Old Name");
-    setControlledInputValue(nameInput!, "Updated Name");
-
-    await act(async () => {
-      dialog
-        ?.querySelector<HTMLButtonElement>('button[type="submit"]')
-        ?.click();
-      await Promise.resolve();
-    });
-
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).toMatchObject({
-      id: "p-edit",
-      name: "Updated Name",
-      role: "reviewer",
-      tagline: "Check changes",
-    });
-    expect(document.body.querySelector(".new-participant-dialog")).toBeNull();
-  });
-
-  it("renders the empty-state CTA when there are no participants", async () => {
-    // The empty-state row opens the NewParticipantDialog — a self-contained
-    // popup that collects every field (name + role + tagline + model +
-    // avatar) and calls onSaveParticipant with full save params. The
-    // test asserts:
-    //   1. clicking the row reveals the floating dialog
-    //   2. filling the name field enables submit
-    //   3. submitting the dialog forwards the trimmed name to
-    //      onSaveParticipant and closes (awaited — the dialog only
-    //      closes once the parent's save promise resolves)
-    const created: ParticipantSaveParams[] = [];
-    renderSidebar({
-      onSaveParticipant: async (params) => {
-        created.push(params);
-        // The dialog treats any truthy return as a successful save and
-        // closes itself. Return a minimal saved-profile stub.
-        return {
-          id: `p-${params.name}`,
-          kind: "named",
-          name: params.name,
-          role: params.role,
-          tagline: params.tagline,
-          model: params.model,
-        };
-      },
-    });
-
-    const empty = container.querySelector<HTMLButtonElement>(
-      ".sidebar-section-empty-note-action",
-    );
-    expect(empty).not.toBeNull();
-    expect(empty?.textContent).toContain("添加 Agent");
-    expect(document.body.querySelector(".new-participant-dialog")).toBeNull();
-    act(() => {
-      empty?.click();
-    });
-
-    const dialog = document.body.querySelector(".new-participant-dialog");
-    expect(dialog).not.toBeNull();
-    expect(
-      dialog?.querySelector(".new-participant-title")?.textContent,
-    ).toBe("新建 Agent");
-    const input = dialog?.querySelector<HTMLInputElement>(
-      'input[data-field="name"]',
-    );
-    expect(input).not.toBeNull();
-    expect(input?.getAttribute("placeholder")).toBe("例如 Noel");
-    setControlledInputValue(input!, "  Noel  ");
-    const submitButton = Array.from(
-      dialog?.querySelectorAll("button[type=submit]") ?? [],
-    ).find((el) => /\u521b\u5efa/.test(el.textContent ?? ""));
-    expect(submitButton).not.toBeUndefined();
-    await act(async () => {
-      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      // Let the parent's save promise resolve so the dialog's onClose
-      // fires and the portal node unmounts before the final assertion.
-      await Promise.resolve();
-    });
-    expect(created.map((c) => c.name)).toEqual(["Noel"]);
-    expect(document.body.querySelector(".new-participant-dialog")).toBeNull();
+    expect(sections.map((section) => section.dataset.sectionId)).toEqual([
+      "project-2",
+      SCRATCH_PSEUDO_PROJECT_ID,
+      "project-1",
+    ]);
   });
 });

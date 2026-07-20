@@ -1,26 +1,50 @@
 /* =========================================================================
- * Settings page — grouped-list design
+ * Settings page — flat grouped list on the shared paper chassis
  *
- * The page follows the classic settings-surface pattern (macOS System
- * Settings / Linear): a muted canvas, white rounded cards carrying rows,
- * hairlines between rows, and a grouped navigation rail on the left.
+ * The surface speaks the app's chassis language (see desktop/DESIGN.md):
+ * one paper canvas; grouping carried by structure — a group label,
+ * hairlines between rows, whitespace between groups. Enclosure signals
+ * (fill steps, borders, radii on grouped lists) are banned: one grouping
+ * reads from one signal, and the signal is label-plus-whitespace.
  *
- * Rhythm: everything derives from the 8px baseline. One control height
- * (32px), one control radius (--radius-sm), one card radius (--radius-md),
- * one row padding (14px 16px). Do not introduce new values.
+ * Color budget: paper canvas, the --ink-* text ramp, controls filled from
+ * the --surface-1/2 steps (hover one step deeper, paper + hairline on
+ * focus). Semantic colors only carry state (success/danger/accent). No
+ * local hex values — the usage heatmap is the sanctioned data-viz
+ * exception.
  *
- * Color: neutrals come only from the --gray-* ramp / semantic aliases
- * (see base.css). No local hex values.
+ * Line budget: the only content lines are the hairlines between rows,
+ * running the full column width. Chrome separators (titlebar, rail) and
+ * focus/state rings are structure and state, not decoration. To add a
+ * line, first remove one.
+ *
+ * Rhythm — the 4/8/24/40 ladder, one role each; do not introduce new
+ * values:
+ *   4px   micro: label title ↔ description, icon ↔ text
+ *   8px   row beat: row vertical padding, group label → first row
+ *   24px  frame: page margin on all sides, page title → first group
+ *   40px  inter-group: ≈ one control row tall, reads as an empty line
+ * Type stays on the global ramp: page title --font-heading semibold;
+ * group labels --font-sm muted regular — always quieter than the rows
+ * they name; row titles --font-ui medium; row descriptions --font-sm.
+ *
+ * Alignment: one left axis. Page title, group labels, and row text all
+ * start at x=0 of the content column (640px; archive keeps 1088px for
+ * its wide lists); controls end at the column's right edge.
+ *
+ * Data modules (usage stats, heatmap, module-level empty states) are
+ * content, not group containers: they may carry one quiet --surface-1
+ * fill with --radius-sm, never a border.
  *
  * Primitives:
  *   .settings-shell                  full-bleed grid (sidebar + main)
  *   .settings-sidebar                left navigation rail
  *   .settings-main                   scrollable content surface
  *   .settings-page                   content column
- *   .settings-page-header            page title + description
- *   .settings-section                a logical group (label + card)
- *   .settings-card                   grouped-list card holding rows
- *   .settings-row                    one label/control pair inside a card
+ *   .settings-page-header            page title
+ *   .settings-section                a logical group (label + rows)
+ *   .settings-card                   structural group wrapper — paints nothing
+ *   .settings-row                    one label/control pair
  *   .settings-input / .settings-select   shared form controls
  *   .settings-switch                 boolean toggle
  *   .settings-status-pill            semantic status badge
@@ -176,16 +200,17 @@
 
 /* --- Content surface ------------------------------------------------------- */
 
-/* The settings canvas is the muted `--surface-1`: white grouped-list cards
- * need a tonal step behind them to read as cards. This is what separates a
- * designed settings surface from a flat white page with lines on it. */
+/* The settings canvas is the same paper as the conversation surface: one
+ * quiet chassis for the whole app. Grouping is carried by structure —
+ * a group label, hairlines between rows, and whitespace between groups —
+ * never by a tonal step behind boxed cards. */
 .settings-main {
   display: grid;
   min-width: 0;
   min-height: 0;
   grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
-  background: var(--surface-1);
+  background: var(--paper);
 }
 
 /* Full-width draggable strip mirroring the main conversation titlebar, so
@@ -208,10 +233,32 @@
   padding-left: max(24px, var(--window-controls-inset-left));
 }
 
-/* Toggle button lives inside the titlebar drag strip but itself is a no-drag
- * control so the click target still works. */
+/* Keep the toggle in the shell stacking context so the hover drawer cannot
+ * cover either its pixels or its hit target. Its left edge follows the live
+ * sidebar column while docked and clears the native window controls when the
+ * column is collapsed. */
 .settings-sidebar-toggle {
+  position: absolute;
+  top: 9px;
+  left: calc(var(--sidebar-width, 326px) + 24px);
+  z-index: 150;
+  transition:
+    left var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    background-color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    box-shadow var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing);
   -webkit-app-region: no-drag;
+}
+
+.settings-shell.sidebar-collapsed .settings-sidebar-toggle {
+  left: max(24px, var(--window-controls-inset-left));
+}
+
+.settings-shell.sidebar-collapsed:is(.sidebar-drawer-open, .sidebar-drawer-closing)
+  > .settings-sidebar-toggle {
+  background-color: var(--surface-3);
+  box-shadow: 0 4px 12px var(--ink-overlay-8);
+  color: var(--ink);
 }
 
 /* Column direction is load-bearing, not cosmetic: .settings-page carries
@@ -233,13 +280,20 @@
 
 /* Content column. Two spacing values only: --settings-pad is the gap
  * between the content and the frame, --settings-gap the gap between
- * modules. Every spacing decision below derives from these. */
+ * groups. Every spacing decision below derives from the 4/8/24/40 ladder
+ * documented at the top of this file. */
 .settings-page {
   display: flex;
   min-height: 100%;
-  --settings-page-max-width: 800px;
-  --settings-pad: clamp(24px, 4vw, 40px);
-  --settings-gap: 32px;
+  /* The column is the container for its own breakpoints: whether rows may
+   * stack depends on the column's width, never on the window's — the
+   * rail's width is user-adjustable, so a viewport query would fire with
+   * hundreds of px of slack left in the column. */
+  container-name: settings-page;
+  container-type: inline-size;
+  --settings-page-max-width: 640px;
+  --settings-pad: 24px;
+  --settings-gap: 40px;
   width: min(var(--settings-page-max-width), 100%);
   /* flex-shrink: 0 keeps the bottom padding inside the scrollable area
    * when content exceeds the viewport height. */
@@ -267,45 +321,36 @@
 .settings-page-title {
   margin: 0;
   color: var(--ink-strong);
-  font-size: 28px;
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  font-size: var(--font-heading);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
-.settings-page-description {
-  margin: 0;
-  max-width: 60ch;
-  color: var(--ink-soft);
-  font-size: var(--font-ui);
-  line-height: var(--line-body);
-}
-
-/* --- Section + card ---------------------------------------------------------
- * A section is a quiet 13px label above a card. A card is the grouped
- * list: white, 1px hairline, 12px radius; rows inside separate with
- * hairlines. Groups separate by whitespace (--settings-gap), not boxes.
+/* --- Section + rows ---------------------------------------------------------
+ * A section is a quiet 12px label above a run of rows — no box. The label
+ * must read quieter than the row titles it names, so it stays one ramp
+ * step below them and regular weight. Groups separate by whitespace
+ * (--settings-gap), rows by full-width hairlines.
  * ------------------------------------------------------------------------- */
 
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .settings-section-header {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 2px;
 }
 
 .settings-section-title {
   margin: 0;
-  color: var(--ink-strong);
-  font-size: 17px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: -0.01em;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: 400;
   line-height: 1.3;
 }
 
@@ -317,13 +362,12 @@
   line-height: 1.5;
 }
 
+/* The card is a structural grouping only: it paints nothing. Enclosure
+ * signals (fill, border, radius) are banned from grouped lists — one
+ * grouping, one signal, and the signal is the label-plus-whitespace. */
 .settings-card {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
 }
 
 .settings-card .settings-row:last-child {
@@ -332,8 +376,11 @@
 
 /* --- Row -------------------------------------------------------------------
  * Two columns: a growing label on the left, a natural-width control pinned
- * right. `settings-row-block` stacks label over a full-width control for
- * form-style rows (inputs, textareas, compound controls).
+ * right. Rows sit directly on the canvas: text starts at the column's left
+ * axis (x=0), controls end at its right edge, and the separator hairline
+ * runs the full column width. `settings-row-block` stacks label over a
+ * full-width control for form-style rows (inputs, textareas, compound
+ * controls).
  * ------------------------------------------------------------------------- */
 
 .settings-row {
@@ -342,33 +389,33 @@
   align-items: center;
   gap: 24px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 16px 20px;
+  padding: 8px 0;
 }
 
 .settings-row-block {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: 8px;
 }
 
 .settings-row-label {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
 }
 
 .settings-row-label-title {
   color: var(--ink);
-  font-size: var(--font-title);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.4;
 }
 
 .settings-row-label-description {
   color: var(--ink-muted);
-  font-size: var(--font-ui);
+  font-size: var(--font-sm);
   font-weight: 400;
   line-height: 1.5;
 }
@@ -660,20 +707,12 @@
 
 /* --- Feedback text, empty states, quiet lines ---------------------------------- */
 
-.settings-error,
-.settings-saved {
+.settings-error {
   margin-right: auto;
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: 1.4;
-}
-
-.settings-error {
   color: var(--danger);
-}
-
-.settings-saved {
-  color: var(--success);
 }
 
 .settings-empty {
@@ -682,7 +721,7 @@
   min-height: 48px;
   color: var(--ink-muted);
   font-size: var(--font-ui);
-  padding: 8px 20px;
+  padding: 8px 0;
 }
 
 .settings-muted-line {
@@ -695,8 +734,8 @@
 
 /* --- Provider overview tiles ---------------------------------------------------
  * Selectable grid — the one place where selection needs an enclosure.
- * Tiles are paper cards on the muted canvas; the active tile marks itself
- * with a strong border instead of a fill.
+ * Tiles keep a resting hairline border on the paper canvas; the active
+ * tile marks itself with a strong border instead of a fill.
  * ----------------------------------------------------------------------------- */
 
 .settings-provider-overview {
@@ -720,7 +759,7 @@
   gap: 2px;
   min-height: 76px;
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
   padding: 12px 14px;
@@ -819,7 +858,7 @@
   gap: 8px;
   min-height: 76px;
   border: 1px dashed var(--gray-350);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
   padding: 12px 14px;
@@ -851,6 +890,129 @@
 
 .settings-provider-add-card-empty {
   border-style: solid;
+}
+
+/* --- Theme picker ------------------------------------------------------------
+ * Visual radio cards, same selection language as the provider tiles: a
+ * resting hairline, a strong border on the active card instead of a fill.
+ * Each preview is a tiny window mockup of the theme — "system" splits
+ * light/dark — so previews use fixed local colors, never theme tokens.
+ * ----------------------------------------------------------------------------- */
+
+.settings-theme-options {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  background: transparent;
+  padding: 0;
+}
+
+.settings-theme-preview {
+  display: block;
+  overflow: hidden;
+  width: 120px;
+  height: 76px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--motion-fast) var(--menu-enter-easing),
+    box-shadow var(--motion-fast) var(--menu-enter-easing);
+}
+
+.settings-theme-card:hover .settings-theme-preview {
+  border-color: var(--hairline-strong);
+}
+
+.settings-theme-card.active .settings-theme-preview {
+  border-color: var(--gray-800);
+  box-shadow: inset 0 0 0 1px var(--gray-800);
+}
+
+.settings-theme-card-label {
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+}
+
+.settings-theme-card.active .settings-theme-card-label {
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+}
+
+.settings-theme-preview-window {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.settings-theme-preview-sidebar {
+  flex: 0 0 26%;
+}
+
+.settings-theme-preview-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.settings-theme-preview-line {
+  display: block;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.settings-theme-preview-line-title {
+  width: 60%;
+  height: 5px;
+}
+
+.settings-theme-preview-line-short {
+  width: 45%;
+}
+
+.settings-theme-preview-light .settings-theme-preview-window {
+  background: #ffffff;
+}
+
+.settings-theme-preview-light .settings-theme-preview-sidebar {
+  background: #f7f7f5;
+}
+
+.settings-theme-preview-light .settings-theme-preview-line {
+  background: #e5e5e1;
+}
+
+.settings-theme-preview-dark .settings-theme-preview-window {
+  background: #1d2024;
+}
+
+.settings-theme-preview-dark .settings-theme-preview-sidebar {
+  background: #141618;
+}
+
+.settings-theme-preview-dark .settings-theme-preview-line {
+  background: #3a4046;
+}
+
+.settings-theme-preview-system .settings-theme-preview-window {
+  background: linear-gradient(to right, #ffffff 50%, #1d2024 50%);
+}
+
+.settings-theme-preview-system .settings-theme-preview-sidebar {
+  background: linear-gradient(to right, #f7f7f5 50%, #141618 50%);
+}
+
+.settings-theme-preview-system .settings-theme-preview-line {
+  background: linear-gradient(to right, #e5e5e1 50%, #3a4046 50%);
 }
 
 /* --- MCP list + extensions + pets ------------------------------------------------ */
@@ -887,21 +1049,12 @@
   min-height: 48px;
   color: var(--ink-muted);
   font-size: var(--font-ui);
-  padding: 8px 20px;
-}
-
-.settings-codex-pets-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
+  padding: 8px 0;
 }
 
 .settings-codex-pet-select {
-  flex: 1;
+  max-width: 200px;
   min-width: 0;
-  max-width: 280px;
 }
 
 /* --- Usage page ------------------------------------------------------------------ */
@@ -911,18 +1064,10 @@
   flex-direction: column;
   container-name: settings-usage;
   container-type: inline-size;
-  gap: var(--settings-gap, 32px);
+  gap: var(--settings-gap, 40px);
 }
 
-.settings-usage-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-/* Range selector + memory tabs share one segmented-control shape. */
-.settings-usage-range,
+/* Memory tabs use a segmented-control shape. */
 .settings-memory-tabs {
   display: inline-flex;
   align-items: center;
@@ -933,7 +1078,6 @@
   width: fit-content;
 }
 
-.settings-usage-range-button,
 .settings-memory-tab {
   height: 28px;
   border-radius: calc(var(--radius-sm) - 2px);
@@ -947,21 +1091,20 @@
     color var(--motion-fast) var(--menu-enter-easing);
 }
 
-.settings-usage-range-button:hover,
 .settings-memory-tab:hover {
   color: var(--ink);
 }
 
-.settings-usage-range-button.active,
 .settings-memory-tab.active {
   background: var(--paper);
   color: var(--ink);
   box-shadow: var(--shadow-soft);
 }
 
-/* Stat strip: one full-width row of mini cards, big tabular number over
- * a label. Five fit side by side at the default column width; they fold
- * evenly below it. */
+/* Stat strip: one full-width row of quiet data modules, big tabular number
+ * over a label. Data modules are content, not group containers: they may
+ * carry one --surface-1 fill, no border. Five fit side by side at the
+ * default column width; they fold evenly below it. */
 .settings-usage-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -974,10 +1117,9 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
-  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  padding: 12px 14px;
 }
 
 .settings-usage-stat-value {
@@ -998,16 +1140,12 @@
   font-size: var(--font-sm);
 }
 
-/* Heatmap panel: a card whose grid is the content. */
+/* Heatmap grid: flat on the canvas, no panel — the cells, their month
+ * labels, and the legend carry themselves. */
 .settings-heatmap-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
-  padding: 16px 20px;
 }
 
 /* Month labels: same column grid as the cell grid, labels positioned by col */
@@ -1099,13 +1237,12 @@
   background: var(--gray-100);
 }
 
-/* The usage empty state reads as a quiet card, not a bare line. */
+/* The usage empty state reads as one quiet filled module, not a bare line. */
 .settings-usage-page > .settings-empty {
   justify-content: center;
   min-height: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
   padding: 48px 16px;
 }
 
@@ -1115,26 +1252,31 @@
   overflow: visible;
 }
 
+/* The model table reads as one group: a quiet group label over full-width
+ * rows, same language as the grouped list. */
 .settings-usage-table-title {
   margin: 0;
-  padding: 16px 20px 8px;
-  color: var(--ink);
-  font-size: var(--font-title);
-  font-weight: var(--weight-medium);
-  line-height: 1.35;
+  padding: 0 0 8px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  line-height: 1.3;
 }
 
+/* The model table is a content-sized grid: number columns are nowrap
+ * shrink-to-fit, so width pressure folds the model column's whitespace
+ * first and the rightmost value always ends flush with the column edge. */
 .settings-usage-table {
   width: 100%;
   min-width: 0;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .settings-usage-table th,
 .settings-usage-table td {
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 12px 20px;
+  padding: 12px 0 12px 16px;
   text-align: right;
   vertical-align: middle;
   color: var(--ink);
@@ -1154,12 +1296,13 @@
 
 .settings-usage-table th:first-child,
 .settings-usage-table td:first-child {
-  width: 40%;
+  padding-left: 0;
   text-align: left;
 }
 
 .settings-usage-table .settings-usage-num {
-  width: 20%;
+  width: 1%;
+  white-space: nowrap;
 }
 
 .settings-usage-number {
@@ -1170,52 +1313,32 @@
   white-space: nowrap;
 }
 
-.settings-usage-table td:first-child {
+.settings-usage-model {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
-.settings-usage-table td:first-child small {
+.settings-usage-model small {
   color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: 400;
 }
 
-.settings-usage-table td:first-child strong,
-.settings-usage-table td:first-child small {
+.settings-usage-model strong,
+.settings-usage-model small {
   overflow-wrap: anywhere;
 }
 
-.settings-usage-rate {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--ink-muted);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  padding: 0 8px;
-  font-variant-numeric: tabular-nums;
-}
-
-.settings-usage-rate.rate-2,
-.settings-usage-rate.rate-3,
-.settings-usage-rate.rate-4 {
-  background: var(--success-soft);
-  color: var(--success);
-}
-
-.settings-usage-rate.rate-1 {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
 /* Keep the model table part of the page instead of turning it into a nested
- * horizontal scroller. Once four columns stop reading comfortably, each row
- * folds into a model heading followed by the three values. */
-@container settings-usage (max-width: 640px) {
+ * horizontal scroller. Once four columns stop reading comfortably — model
+ * name + three nowrap numbers + gaps ≈ 440px, so fold below 520 — each row
+ * folds into a model heading followed by the three values, right-aligned so
+ * the last metric still lands on the column's right edge. The threshold
+ * moved with the content column: at the column's own 640px cap the full
+ * table always fits. */
+@container settings-usage (max-width: 520px) {
   .settings-usage-table {
     display: block;
     table-layout: auto;
@@ -1239,7 +1362,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px 16px;
     border-bottom: 1px solid var(--hairline-soft);
-    padding: 16px 20px;
+    padding: 16px 0;
   }
 
   .settings-usage-table tbody tr:last-child {
@@ -1263,6 +1386,11 @@
   .settings-usage-table tbody td:first-child {
     grid-column: 1 / -1;
     padding-bottom: 2px;
+  }
+
+  .settings-usage-table tbody td:nth-child(n + 2) {
+    align-items: flex-end;
+    text-align: right;
   }
 
   .settings-usage-table tbody td:nth-child(n + 2)::before {
@@ -1296,7 +1424,7 @@
   align-items: center;
   gap: 18px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 12px 16px;
+  padding: 12px 0;
 }
 
 .settings-usage-entry:last-child {
@@ -1343,7 +1471,7 @@
 }
 
 .settings-archive-groups {
-  gap: 24px;
+  gap: 40px;
 }
 
 .settings-archive-toolbar {
@@ -1352,6 +1480,8 @@
   gap: 8px;
 }
 
+/* Archive toolbar controls share the settings input chrome: a surface-1
+ * box at rest, one step deeper on hover, paper + hairline on focus. */
 .settings-archive-search {
   display: flex;
   min-width: 0;
@@ -1359,16 +1489,22 @@
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border: 1px solid var(--hairline);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--paper);
+  background: var(--surface-1);
   color: var(--ink-faint);
   transition:
+    background var(--motion-fast) var(--menu-enter-easing),
     border-color var(--motion-fast) var(--menu-enter-easing),
     box-shadow var(--motion-fast) var(--menu-enter-easing);
 }
 
+.settings-archive-search:hover {
+  background: var(--surface-2);
+}
+
 .settings-archive-search:focus-within {
+  background: var(--paper);
   border-color: var(--gray-350);
   box-shadow: 0 0 0 3px var(--ink-overlay-8);
 }
@@ -1390,8 +1526,14 @@
 
 .select-menu-trigger.settings-archive-filter-trigger {
   height: 32px;
+  border-color: transparent;
   border-radius: var(--radius-sm);
-  background: var(--paper);
+  background: var(--surface-1);
+}
+
+.select-menu-trigger.settings-archive-filter-trigger:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--surface-2);
 }
 
 .settings-archive-group {
@@ -1403,7 +1545,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 2px 8px;
+  padding: 0 0 8px;
 }
 
 .settings-archive-group-name {
@@ -1429,10 +1571,7 @@
 }
 
 .settings-archive-list {
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
+  min-width: 0;
 }
 
 .settings-archive-row {
@@ -1442,7 +1581,7 @@
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 14px 20px;
+  padding: 8px 0;
 }
 
 .settings-archive-row:last-child {
@@ -1516,13 +1655,12 @@
 .settings-memory {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 
 .settings-memory-header {
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 8px;
 }
 
 /* The memory header keeps the shared page header's row direction (title
@@ -1566,7 +1704,6 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
 }
 
 /* 短文/原文/空态在骨架屏之后挂载：轻微淡入 + 2px 上移。子 Tab 或同事
@@ -1600,7 +1737,6 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
-  padding: 16px;
 }
 
 /* 骨架屏：仓库没有现成 skeleton 组件，这里是记忆面板专用的简洁灰条。 */
@@ -1608,7 +1744,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 16px;
 }
 
 /* shimmer 渐变从左向右扫过灰条；只用主题 overlay token，亮暗自适配。 */
@@ -1655,11 +1790,16 @@
 .settings-memory-file-table th,
 .settings-memory-file-table td {
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 10px 20px;
+  padding: 10px 0 10px 16px;
   text-align: left;
   vertical-align: middle;
   color: var(--ink);
   font-size: var(--font-sm);
+}
+
+.settings-memory-file-table th:first-child,
+.settings-memory-file-table td:first-child {
+  padding-left: 0;
 }
 
 .settings-memory-file-table th {
@@ -1675,12 +1815,11 @@
   font-size: var(--font-sm);
 }
 
-/* chat 区与概览卡共用分组列表卡外观；气泡复用消息流的浅灰。 */
+/* chat 区与概览卡共用分组列表结构；气泡复用消息流的浅灰。 */
 .settings-memory-chat-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
 }
 
 .settings-memory-chat-log {
@@ -1814,7 +1953,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 24px 16px;
+  padding: 24px 0;
 }
 
 /* The QR carries its own white quiet zone so phones can scan it in dark
@@ -1861,25 +2000,24 @@
   white-space: nowrap;
 }
 
-@media (max-width: 900px) {
-  .settings-archive-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
+/* Stack only when the column itself can no longer fit label + control.
+ * 360px = the widest minimum control (160px select) + 24px gap + a label
+ * that stays readable; the archive toolbar stacks at its own minimum. */
+@container settings-page (max-width: 360px) {
   .settings-row {
     grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
+    gap: 8px;
     align-items: stretch;
   }
 
   .settings-row-control {
     justify-content: flex-start;
   }
+}
 
-  .settings-page-header:not(.settings-memory-header) {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+@container settings-page (max-width: 440px) {
+  .settings-archive-toolbar {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1892,7 +2030,6 @@
   .settings-select,
   .settings-switch,
   .settings-switch-thumb,
-  .settings-usage-range-button,
   .settings-memory-tab,
   .settings-usage-heatmap-cell {
     transition: none;

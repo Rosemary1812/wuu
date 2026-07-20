@@ -64,7 +64,7 @@ func workerSystemMessage(t *testing.T, c *AgentControl, agentID string) string {
 
 // The turn snapshot decides a root spawn's Ultra value, the parent's stored
 // value decides a nested spawn's, and later session flips never touch an
-// already-spawned subtree (docs/app-server-protocol.md, turn boundary and
+// already-spawned subtree (docs/en/integrations/app-server-protocol.md, turn boundary and
 // inheritance).
 func TestSpawnInheritsUltraFromTurnAndParent(t *testing.T) {
 	c := newUltraTestControl(t)

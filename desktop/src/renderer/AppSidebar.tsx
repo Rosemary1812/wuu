@@ -7,7 +7,6 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  Hash,
   LayoutGrid,
   List as ListIcon,
   MessageSquare,
@@ -17,8 +16,6 @@ import {
   Plus,
   Search,
   Settings,
-  UserRound,
-  UsersRound,
   Wrench,
 } from "lucide-react";
 import {
@@ -50,22 +47,12 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type {
-  DesktopProject,
-  ParticipantProfile,
-  ParticipantSaveParams,
-  ProviderSummary,
-} from "../shared/protocol";
+import type { DesktopProject } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
-import { isGroupThread, SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
+import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
-import { baseThreadTitle } from "./ThreadTitles";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
-import { ThreadContextMenu } from "./ThreadContextMenu";
-import { SidebarNameDialog } from "./SidebarNameDialog";
-import { NewParticipantDialog } from "./NewParticipantDialog";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { useI18n } from "./i18n";
 
 /**
@@ -73,15 +60,11 @@ import { useI18n } from "./i18n";
  *
  * - `SIDEBAR_SECTION_PINNED` is FIXED-position (always first, above the
  *   reorderable list). It is intentionally NOT in `sectionOrder`.
- * - `SIDEBAR_SECTION_AGENTS` and `SIDEBAR_SECTION_GROUP` belong to the fixed
- *   collaboration functional group. Their relative order is customizable.
  * - `SCRATCH_PSEUDO_PROJECT_ID` ("__wuu_scratch__") is the 对话
  *   pseudo-project entry. It belongs to the workspace functional group and
  *   can be reordered with real projects.
  */
 export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
-export const SIDEBAR_SECTION_AGENTS = "__wuu_agents__";
-export const SIDEBAR_SECTION_GROUP = "__wuu_group__";
 
 /**
  * Reconcile the persisted sidebar section order against the current
@@ -89,29 +72,19 @@ export const SIDEBAR_SECTION_GROUP = "__wuu_group__";
  *
  * Rules:
  *   1. Drop any stored key that is neither a real project id nor
- *      `SCRATCH_PSEUDO_PROJECT_ID` (unknown pseudo ids; the pinned section
- *      is fixed-position so it never appears in the stored list, and we
- *      also defensively strip `SIDEBAR_SECTION_PINNED` if a stale write
- *      included it). AGENTS and GROUP are allowed through — both are
- *      part of the reorderable list
- *      (sidebar-groups-andy-workspaces.md §2).
+ *      `SCRATCH_PSEUDO_PROJECT_ID` (including stale fixed or legacy section
+ *      ids).
  *   2. Append newly-seen project ids in `projectIDs` order.
- *   3. Normalize legacy flat orders into fixed functional groups while
- *      preserving relative order inside collaboration and workspace.
+ *   3. Ensure the scratch entry is present while preserving workspace order.
  */
 export function reconcileSidebarSectionOrder(
   stored: string[] | undefined,
   projectIDs: string[],
-  collaborationEnabled = ENABLE_COLLABORATION,
 ): string[] {
   const knownIDs = new Set<string>([
     SCRATCH_PSEUDO_PROJECT_ID,
     ...projectIDs,
   ]);
-  if (collaborationEnabled) {
-    knownIDs.add(SIDEBAR_SECTION_AGENTS);
-    knownIDs.add(SIDEBAR_SECTION_GROUP);
-  }
   const out: string[] = [];
   if (Array.isArray(stored)) {
     for (const key of stored) {
@@ -128,51 +101,9 @@ export function reconcileSidebarSectionOrder(
     }
   }
   if (!out.includes(SCRATCH_PSEUDO_PROJECT_ID)) {
-    // Insert scratch right after AGENTS (or at the head if AGENTS isn't
-    // present). Mirrors the default below so the first reconcile keeps
-    // scratch anchored at the top.
-    const anchor = out.indexOf(SIDEBAR_SECTION_AGENTS);
-    if (anchor === -1) {
-      out.unshift(SCRATCH_PSEUDO_PROJECT_ID);
-    } else {
-      out.splice(anchor + 1, 0, SCRATCH_PSEUDO_PROJECT_ID);
-    }
+    out.unshift(SCRATCH_PSEUDO_PROJECT_ID);
   }
-  if (collaborationEnabled) {
-    if (!out.includes(SIDEBAR_SECTION_AGENTS)) {
-      out.unshift(SIDEBAR_SECTION_AGENTS);
-    }
-    if (!out.includes(SIDEBAR_SECTION_GROUP)) {
-      // Migration for orders persisted before 群聊 joined the reorderable
-      // list: seed it at the head, matching its previous fixed spot right
-      // below 置顶. A stored GROUP position is preserved above.
-      out.unshift(SIDEBAR_SECTION_GROUP);
-    }
-  }
-  const collaboration = collaborationEnabled
-    ? out.filter(
-        (id) => id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
-      )
-    : [];
-  const workspaces = out.filter(
-    (id) => id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS,
-  );
-  return [...collaboration, ...workspaces];
-}
-
-type SidebarFunctionalGroupID = "collaboration" | "workspace";
-
-function functionalGroupForSectionID(
-  sectionID: string,
-): SidebarFunctionalGroupID | undefined {
-  if (sectionID === SIDEBAR_SECTION_PINNED) return undefined;
-  if (
-    sectionID === SIDEBAR_SECTION_GROUP ||
-    sectionID === SIDEBAR_SECTION_AGENTS
-  ) {
-    return "collaboration";
-  }
-  return "workspace";
+  return out;
 }
 
 /**
@@ -196,8 +127,6 @@ export function reorderSidebarSections(
   const from = order.indexOf(activeId);
   const to = order.indexOf(overId);
   if (from === -1 || to === -1) return order;
-  const activeGroup = functionalGroupForSectionID(activeId);
-  if (activeGroup !== functionalGroupForSectionID(overId)) return order;
   return arrayMove(order, from, to);
 }
 
@@ -321,13 +250,7 @@ export function AppSidebar({
   state,
   sidebarProjects,
   pinnedThreads,
-  groupThreads,
   activeThreadID,
-  activeDMParticipantID,
-  dmThreadByParticipantID,
-  unreadDMParticipantIDs,
-  participants,
-  busyParticipantIDs,
   pendingThreadID,
   pendingProjectID,
   collapsedSidebarSectionIDs,
@@ -341,14 +264,13 @@ export function AppSidebar({
   sectionOrder,
   onStartNewThread,
   onOpenSkillsTab,
+  collaborationActive = false,
+  onOpenCollaboration = () => {},
   onToggleConversationSearch,
   onSeedConversationFixture,
   onSeedAgentTreeDemo,
   onOpenChipGallery,
   onSelectThread,
-  onSelectParticipant,
-  onSaveParticipant,
-  onCreateGroupThread,
   onTogglePinned,
   onArchiveThread,
   onDeleteThread,
@@ -365,7 +287,6 @@ export function AppSidebar({
   onPointerEnter,
   onPointerLeave,
   onOpenSettings,
-  providers,
 }: {
   state: AppState;
   // The sidebar renders scratch conversations through the same ProjectList
@@ -375,30 +296,7 @@ export function AppSidebar({
   // actually shows.
   sidebarProjects: DesktopProject[];
   pinnedThreads: ThreadSummary[];
-  // Group (chat-style) threads for the sidebar's 群聊 section, between
-  // 置顶 and 对话 (chat-style-threads-design.md §1, §3). Empty when the
-  // roster has no named agents yet (the backend auto-creates the # all
-  // channel once one exists) — the section then renders the inert
-  // "# all" placeholder instead.
-  groupThreads: ThreadSummary[];
   activeThreadID?: string;
-  // The active thread's dm_participant_id (when the active thread is a
-  // DM with a named participant). Drives the highlighted row in the agent
-  // roster; collapses to undefined for any non-DM thread.
-  activeDMParticipantID?: string;
-  // Most-recent non-archived DM thread per participant id, derived in
-  // App.tsx. Drives the context menu's pin/unpin DM affordance and any
-  // future per-row DM metadata.
-  dmThreadByParticipantID: Map<string, ThreadSummary>;
-  // Participants whose DM thread holds an unseen actual chat message.
-  // Drives the `.has-unread` indicator on the roster row so the user can
-  // spot new messages at a glance without opening the conversation.
-  unreadDMParticipantIDs: Set<string>;
-  participants: ParticipantProfile[];
-  // Set of participant IDs with at least one running run. Drives the busy
-  // status dot in the roster. Derived in App.tsx by walking child agents
-  // across all threads; participants not in the set render as online.
-  busyParticipantIDs: ReadonlySet<string>;
   pendingThreadID?: string;
   pendingProjectID?: string;
   collapsedSidebarSectionIDs: Set<string>;
@@ -411,37 +309,17 @@ export function AppSidebar({
   debugFixturesVisible: boolean;
   // Order of reorderable sections. The pinned section is rendered first
   // (fixed position) and is NOT included. Each key maps to either
-  // SCRATCH_PSEUDO_PROJECT_ID or a real project id. The Agents section
-  // key may appear here too (it's persisted as part of the order list).
+  // SCRATCH_PSEUDO_PROJECT_ID or a real project id.
   sectionOrder: string[];
   onStartNewThread: () => void;
   onOpenSkillsTab: () => void;
+  collaborationActive?: boolean;
+  onOpenCollaboration?: () => void;
   onToggleConversationSearch: () => void;
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
   onSeedAgentTreeDemo: () => void;
   onOpenChipGallery: () => void;
   onSelectThread: (id: string) => void;
-  // Fires when the user clicks an agent row. The current product flow
-  // routes this to opening (or creating) the DM conversation with that
-  // named participant; profile editing lives in the local floating dialog.
-  onSelectParticipant: (participant: ParticipantProfile) => void;
-  // Fires when the user clicks the Agents section's + button (or the
-  // Saves create and edit submissions from NewParticipantDialog. App.tsx
-  // upserts the returned participant without opening the right-side profile
-  // panel. Optional so test harnesses can render the sidebar without wiring
-  // participant persistence.
-  onSaveParticipant?: (params: ParticipantSaveParams) => Promise<ParticipantProfile>;
-  // Provider summaries from the runtime, used to populate the model
-  // SelectMenu in the NewParticipantDialog. Optional so the dialog can
-  // still render with just the "跟随全局" fallback.
-  providers?: ProviderSummary[];
-  // Fires when the user submits a name in the 群聊 section's inline
-  // creator. App.tsx starts the group thread via
-  // startThread({ group: true, title }) and selects it. Optional so test
-  // harnesses can render the sidebar without wiring thread creation.
-  onCreateGroupThread?: (title: string) => void;
-  onImportParticipants: (file: File) => void;
-  onExportParticipants: () => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
@@ -468,27 +346,6 @@ export function AppSidebar({
   const { t } = useI18n();
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
-  // Floating create-group dialog for the 群聊 section: the + button opens a
-  // shared overlay (same shell as the rename-conversation dialog) that
-  // submits on Enter and dismisses on Escape / overlay click. Controlled
-  // title state keeps the input value available to both the form and the
-  // commit handler.
-  const [creatingGroupThread, setCreatingGroupThread] = useState(false);
-  const [groupNameDraft, setGroupNameDraft] = useState("");
-  // Floating agent dialog shared by create and edit. The + button starts an
-  // empty form; the row context menu seeds the same form from the participant.
-  const [creatingParticipant, setCreatingParticipant] = useState(false);
-  const [editingParticipant, setEditingParticipant] =
-    useState<ParticipantProfile>();
-  // Right-click menu on an individual agent row. The menu hosts the
-  // profile-editing entry plus a pin/unpin DM affordance that drives off
-  // the latest DM thread for that participant. The roster header's own
-  // overflow menu is unchanged; only the per-row context menu is new.
-  const [rosterContextMenu, setRosterContextMenu] = useState<{
-    x: number;
-    y: number;
-    participant: ParticipantProfile;
-  } | null>(null);
   // The scratch pseudo project is "active" when the runtime context is in
   // no-project mode (i.e. the user is viewing a scratch conversation).
   // Active state is passed into ProjectList so the row highlights even though
@@ -537,41 +394,16 @@ export function AppSidebar({
   const draggingSectionInfo = draggingSectionID
     ? sectionHeaderInfoByIDRef.current.get(draggingSectionID)
     : undefined;
-  const pinnedRows: ThreadSummary[] = pinnedThreads.map((thread) =>
-    isGroupThread(thread)
-      ? {
-          ...thread,
-          title: `#${baseThreadTitle(thread, pinnedThreads)}`,
-        }
-      : thread,
-  );
+  const pinnedRows = pinnedThreads;
   const pinnedCollapsed = collapsedSidebarSectionIDs.has(
     SIDEBAR_SECTION_PINNED,
   );
-  const functionalGroups = ([
-    ...(ENABLE_COLLABORATION
-      ? [
-          {
-            id: "collaboration" as const,
-            label: t("sidebar.collaboration"),
-            sectionIDs: sectionOrder.filter(
-              (id) =>
-                id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
-            ),
-          },
-        ]
-      : []),
-    {
-      id: "workspace" as const,
-      label: t("sidebar.workspace"),
-      sectionIDs: sectionOrder.filter(
-        (id) =>
-          !ENABLE_COLLABORATION ||
-          (id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS),
-      ),
-    },
-  ] satisfies Array<{
-    id: SidebarFunctionalGroupID;
+  const functionalGroups = ([{
+    id: "workspace" as const,
+    label: t("sidebar.workspace"),
+    sectionIDs: sectionOrder,
+  }] satisfies Array<{
+    id: "workspace";
     label: string;
     sectionIDs: string[];
   }>).filter((group) => group.sectionIDs.length > 0);
@@ -619,6 +451,16 @@ export function AppSidebar({
           >
             <Wrench className="icon-lg" />
             <span>{t("skills.sectionSkills")}</span>
+          </button>
+          <button
+            className={`nav-item collaboration-nav-item${collaborationActive ? " active" : ""}`}
+            type="button"
+            aria-current={collaborationActive ? "page" : undefined}
+            onClick={onOpenCollaboration}
+            disabled={!hasRuntimeContext}
+          >
+            <MessagesSquare className="icon-lg" />
+            <span>{t("sidebar.collaboration")}</span>
           </button>
           {debugFixturesVisible ? (
             <div className="dev-fixture-nav" aria-label={t("sidebar.devFixtures.label")}>
@@ -700,7 +542,6 @@ export function AppSidebar({
                       pendingThreadID={pendingThreadID}
                       
                       lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                      lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                       onSelect={onSelectThread}
                       onTogglePinned={onTogglePinned}
                       onArchive={onArchiveThread}
@@ -769,290 +610,6 @@ export function AppSidebar({
                     </div>
                     <div className="sidebar-functional-group-body">
                       {group.sectionIDs.map((key) => {
-            if (key === SIDEBAR_SECTION_GROUP) {
-              // 群聊 — first-class reorderable section
-              // (sidebar-groups-andy-workspaces.md §2). The backend
-              // guarantees the # all channel exists once the roster is
-              // non-empty, so an empty list just shows the empty note —
-              // no placeholder row.
-              const groupCollapsed = collapsedSidebarSectionIDs.has(
-                SIDEBAR_SECTION_GROUP,
-              );
-              const groupRows: ThreadSummary[] = groupThreads.map((thread) => ({
-                ...thread,
-                title: `#${baseThreadTitle(thread, groupThreads)}`,
-              }));
-              const openGroupThreadDialog = (): void => {
-                setGroupNameDraft("");
-                setCreatingGroupThread(true);
-              };
-              const groupActions = (
-                <div className="sidebar-section-actions group-thread-actions">
-                  <button
-                    type="button"
-                    className="participant-roster-add"
-                    aria-label={t("sidebar.newGroup")}
-                    title={t("sidebar.newGroup")}
-                    disabled={!state.initialized}
-                    onClick={openGroupThreadDialog}
-                  >
-                    <Plus aria-hidden="true" />
-                  </button>
-                </div>
-              );
-              return (
-                <SortableSection
-                  key={SIDEBAR_SECTION_GROUP}
-                  id={SIDEBAR_SECTION_GROUP}
-                  className="group-thread-section"
-                  ariaLabel={t("sidebar.groups")}
-                  headerInfo={{
-                    label: t("sidebar.groups"),
-                    iconKind: "group",
-                    CollapsedIcon: Hash,
-                    ExpandedIcon: Hash,
-                  }}
-                  registerHeaderInfo={registerSectionHeaderInfo}
-                >
-                  <SidebarSection
-                    expanded={!groupCollapsed}
-                    iconKind="group"
-                    CollapsedIcon={Hash}
-                    ExpandedIcon={Hash}
-                    label={t("sidebar.groups")}
-                    ariaLabel={t(groupCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.groups") })}
-                    title={t(groupCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.groups") })}
-                    onToggle={() =>
-                      onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_GROUP)
-                    }
-                    actions={groupActions}
-                  >
-                    {groupRows.length > 0 ? (
-                      <PinnedThreadList
-                        threads={groupRows}
-                        activeID={activeThreadID}
-                        pendingThreadID={pendingThreadID}
-                        
-                        lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                        lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
-                        onSelect={onSelectThread}
-                        onTogglePinned={onTogglePinned}
-                        onArchive={onArchiveThread}
-                        onDelete={onDeleteThread}
-                        onRename={onRenameThread}
-                        
-                      />
-                    ) : (
-                      <div className="sidebar-section-empty-list">
-                        <button
-                          type="button"
-                          className="sidebar-section-empty-note sidebar-section-empty-note-action"
-                          disabled={!state.initialized}
-                          onClick={openGroupThreadDialog}
-                        >
-                          {t("sidebar.addGroup")}
-                        </button>
-                      </div>
-                    )}
-                  </SidebarSection>
-                </SortableSection>
-              );
-            }
-            if (key === SIDEBAR_SECTION_AGENTS) {
-              const collapsed = collapsedSidebarSectionIDs.has(
-                SIDEBAR_SECTION_AGENTS,
-              );
-              // Pinning MOVES a conversation under 置顶 — same semantics as
-              // the 对话 and 群聊 lists. A participant whose DM is pinned is
-              // represented by its pinned thread row, so its roster row is
-              // hidden here; unpinning brings it back.
-              const visibleParticipants = participants.filter(
-                (participant) =>
-                  !dmThreadByParticipantID.get(participant.id)?.pinned,
-              );
-              const rosterMenu = rosterContextMenu ? (
-                <ThreadContextMenu
-                  x={rosterContextMenu.x}
-                  y={rosterContextMenu.y}
-                  items={[
-                    {
-                      label: t("sidebar.editAgentSettings"),
-                      onSelect: () =>
-                        setEditingParticipant(rosterContextMenu.participant),
-                    },
-                    {
-                      label: (() => {
-                        const dm = dmThreadByParticipantID.get(
-                          rosterContextMenu.participant.id,
-                        );
-                        return dm?.pinned ? t("sidebar.unpinDM") : t("sidebar.pinDM");
-                      })(),
-                      disabled: !dmThreadByParticipantID.has(
-                        rosterContextMenu.participant.id,
-                      ),
-                      onSelect: () => {
-                        const dm = dmThreadByParticipantID.get(
-                          rosterContextMenu.participant.id,
-                        );
-                        if (!dm) return;
-                        onTogglePinned(dm);
-                      },
-                    },
-                  ]}
-                  onClose={() => setRosterContextMenu(null)}
-                />
-              ) : null;
-              const rosterActions = (
-                <div className="sidebar-section-actions participant-roster-actions">
-                  <button
-                    type="button"
-                    className="participant-roster-add"
-                    aria-label={t("sidebar.newAgent")}
-                    title={t("sidebar.newAgent")}
-                    disabled={!state.initialized}
-                    onClick={() => {
-                      setCreatingParticipant(true);
-                    }}
-                  >
-                    <Plus aria-hidden="true" />
-                  </button>
-                </div>
-              );
-              return (
-                <SortableSection
-                  key={SIDEBAR_SECTION_AGENTS}
-                  id={SIDEBAR_SECTION_AGENTS}
-                  className="participant-roster-section"
-                  ariaLabel={t("sidebar.agents")}
-                  headerInfo={{
-                    label: t("sidebar.agents"),
-                    iconKind: "agents",
-                    CollapsedIcon: UserRound,
-                    ExpandedIcon: UsersRound,
-                  }}
-                  registerHeaderInfo={registerSectionHeaderInfo}
-                >
-                  <SidebarSection
-                    expanded={!collapsed}
-                    iconKind="agents"
-                    CollapsedIcon={UserRound}
-                    ExpandedIcon={UsersRound}
-                    label={t("sidebar.agents")}
-                    ariaLabel={t(collapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.agents") })}
-                    title={t(collapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.agents") })}
-                    onToggle={() =>
-                      onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_AGENTS)
-                    }
-                    actions={rosterActions}
-                  >
-                    <div className="participant-roster-list">
-                      {participants.length === 0 ? (
-                        <button
-                          type="button"
-                          className="sidebar-section-empty-note sidebar-section-empty-note-action"
-                          disabled={!state.initialized}
-                          onClick={() => {
-                            setCreatingParticipant(true);
-                          }}
-                        >
-                          {t("sidebar.addAgent")}
-                        </button>
-                      ) : (
-                        visibleParticipants.map((participant) => {
-                          const isBusy = busyParticipantIDs.has(participant.id);
-                          const isActiveDM =
-                            activeDMParticipantID === participant.id;
-                          const isUnread = unreadDMParticipantIDs.has(participant.id);
-                          const status = isBusy ? "busy" : "online";
-                          const dm = dmThreadByParticipantID.get(participant.id);
-                          // No placeholder glyph when the participant has no
-                          // uploaded avatar: the name flows right after the
-                          // status dot, and the avatar column only exists
-                          // when there is an image to fill it.
-                          const avatar = participant.avatar_image ? (
-                            <span className="participant-roster-avatar" aria-hidden="true">
-                              <img
-                                className="participant-roster-avatar-image"
-                                src={participant.avatar_image}
-                                alt=""
-                                loading="lazy"
-                              />
-                            </span>
-                          ) : null;
-                          const className = [
-                            "participant-roster-row",
-                            "sidebar-session-row",
-                            isActiveDM ? "active" : "",
-                            isUnread ? "has-unread" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ");
-                          return (
-                            <div
-                              key={participant.id}
-                              className={className}
-                              onContextMenu={(event) => {
-                                event.preventDefault();
-                                setRosterContextMenu({
-                                  x: event.clientX,
-                                  y: event.clientY,
-                                  participant,
-                                });
-                              }}
-                            >
-                              <button
-                                type="button"
-                                className="participant-roster-main"
-                                aria-busy={isBusy}
-                                onClick={() => onSelectParticipant(participant)}
-                              >
-                                <span
-                                  className="participant-roster-status"
-                                  data-status={status}
-                                  title={isBusy ? t("sidebar.running") : t("sidebar.online")}
-                                />
-                                {avatar}
-                                <span className="participant-roster-copy">
-                                  <span className="participant-roster-name">
-                                    {participant.name}
-                                  </span>
-                                </span>
-                              </button>
-                              {dm ? (
-                                <div
-                                  className="thread-row-actions"
-                                  aria-label={t("sidebar.dmActions")}
-                                >
-                                  <button
-                                    className={`sidebar-row-icon-button thread-row-action ${dm.pinned ? "active" : ""}`}
-                                    type="button"
-                                    aria-label={dm.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-                                    title={dm.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-                                    onClick={() => onTogglePinned(dm)}
-                                  >
-                                    <Pin className="icon-sm" />
-                                  </button>
-                                  <button
-                                    className="sidebar-row-icon-button thread-row-action archive"
-                                    type="button"
-                                    aria-label={t("sidebar.archiveAction")}
-                                    title={t("sidebar.archiveAction")}
-                                    onClick={() => onArchiveThread(dm)}
-                                  >
-                                    <Archive className="icon-sm" />
-                                  </button>
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </SidebarSection>
-                  {rosterMenu}
-                </SortableSection>
-              );
-            }
             // For SCRATCH_PSEUDO_PROJECT_ID or any real project id, look up
             // the synthetic DesktopProject (App.tsx prepends the scratch
             // pseudo so `sidebarProjects` contains every key).
@@ -1094,7 +651,6 @@ export function AppSidebar({
                   pendingThreadID={pendingThreadID}
                   
                   lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                  lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                   scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
                   scratchPseudoActive={sidebarScratchPseudoActive}
                   onToggleSidebarSectionCollapsed={
@@ -1142,57 +698,6 @@ export function AppSidebar({
           </button>
         </div>
       </div>
-      <SidebarNameDialog
-        open={creatingGroupThread}
-        title={groupNameDraft}
-        onTitleChange={setGroupNameDraft}
-        onSubmit={() => {
-          const nextTitle = groupNameDraft.trim();
-          if (nextTitle === "") {
-            return;
-          }
-          setCreatingGroupThread(false);
-          setGroupNameDraft("");
-          onCreateGroupThread?.(nextTitle);
-        }}
-        onClose={() => {
-          setCreatingGroupThread(false);
-          setGroupNameDraft("");
-        }}
-        dialogTitle={t("sidebar.newGroupTitle")}
-        dialogTitleId="group-thread-create-title"
-        fieldLabel={t("sidebar.groupName")}
-        fieldAriaLabel={t("sidebar.groupName")}
-        placeholder={t("sidebar.groupName")}
-        icon={Hash}
-        submitLabel={t("common.create")}
-        cancelLabel={t("common.cancel")}
-      />
-      <NewParticipantDialog
-        open={creatingParticipant || Boolean(editingParticipant)}
-        participant={editingParticipant}
-        providers={providers}
-        onSubmit={async (params) => {
-          // The dialog owns its own saving/error UI; the sidebar is just the
-          // messenger. App.tsx's onSaveParticipant handler is responsible
-          // for calling saveParticipant, updating the participants list, and
-          // returning the saved participant so the dialog can close on
-          // success. Errors thrown here surface inline inside the dialog.
-          if (!onSaveParticipant) {
-            throw new Error("onSaveParticipant handler is not wired");
-          }
-          return onSaveParticipant(params);
-        }}
-        onCreated={() => {
-          // No-op: closing is driven by the dialog itself on success. Kept
-          // for symmetry with the prop signature and to give App.tsx a
-          // hook for future side effects (e.g. focus a thread).
-        }}
-        onClose={() => {
-          setCreatingParticipant(false);
-          setEditingParticipant(undefined);
-        }}
-      />
     </aside>
   );
 }

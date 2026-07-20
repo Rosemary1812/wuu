@@ -17,7 +17,7 @@ import (
 // A user turn admitted under Ultra injects the root delegation policy as
 // request-only TOOL_POLICY context and publishes the snapshot to the thread's
 // orchestration control; the next turn re-reads the session setting
-// (docs/app-server-protocol.md, Ultra Mode Configuration).
+// (docs/en/integrations/app-server-protocol.md, Ultra Mode Configuration).
 func TestUltraTurnInjectsRootPolicyAndSnapshotsPerTurn(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -35,53 +35,22 @@ func listParticipantsForTest(t *testing.T, srv *Server) ParticipantListResult {
 	return remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
 }
 
-func TestEnsureDefaultParticipantSeedsAndy(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
-	srv := New(rt, &lockedBuffer{})
-
-	ensureDefaultParticipantForTest(t, srv)
-
-	list := listParticipantsForTest(t, srv)
-	if len(list.Participants) != 1 {
-		t.Fatalf("participant list = %d, want 1: %+v", len(list.Participants), list.Participants)
+func saveNamedParticipant(t *testing.T, rt *runtime.Session, name, role, model string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	p := participant.Participant{
+		ID:        participant.NewID(),
+		Kind:      participant.KindNamed,
+		Name:      name,
+		Role:      role,
+		Model:     model,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
-	andy := list.Participants[0]
-	if andy.Name != andyName {
-		t.Errorf("name = %q, want %q", andy.Name, andyName)
+	if err := session.UpsertParticipant(rt.SessionDir, p); err != nil {
+		t.Fatalf("upsert participant: %v", err)
 	}
-	if andy.Kind != string(participant.KindNamed) {
-		t.Errorf("kind = %q, want %q", andy.Kind, participant.KindNamed)
-	}
-	if andy.Role != defaultSeedParticipantRole {
-		t.Errorf("role = %q, want %q", andy.Role, defaultSeedParticipantRole)
-	}
-	if andy.Tagline != defaultSeedParticipantTagline {
-		t.Errorf("tagline = %q, want %q", andy.Tagline, defaultSeedParticipantTagline)
-	}
-	if andy.Model != "" {
-		t.Errorf("model = %q, want empty", andy.Model)
-	}
-	if !strings.Contains(andy.Workspace, filepath.Join("participants", andy.ID)) {
-		t.Errorf("workspace should contain participants/<id>, got %q", andy.Workspace)
-	}
-	if !strings.Contains(andy.Memory, "团队组建者") {
-		t.Errorf("memory should carry the preset persona, got %q", andy.Memory)
-	}
-
-	memPath := filepath.Join(andy.Workspace, participantMemoryFileName)
-	data, err := os.ReadFile(memPath)
-	if err != nil {
-		t.Fatalf("MEMORY.md should exist: %v", err)
-	}
-	if !strings.Contains(string(data), "团队组建者") || !strings.Contains(string(data), "create_group") {
-		t.Errorf("MEMORY.md should contain the preset persona, got %q", string(data))
-	}
-
-	markerPath := filepath.Join(rt.WuuHome, defaultAgentSeededMarkerName)
-	if _, err := os.Stat(markerPath); err != nil {
-		t.Errorf("seed marker should exist after seeding: %v", err)
-	}
+	return p.ID
 }
 
 func TestEnsureDefaultParticipantSkipsWhenMarkerPresent(t *testing.T) {

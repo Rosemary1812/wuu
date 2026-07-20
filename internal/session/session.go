@@ -51,8 +51,7 @@ type Session struct {
 	// this session belongs to (the desktop's registered-project id). Sessions
 	// of a workspace with an id are listed by that id, so they follow the
 	// project across moves/renames even though CWD still records the old path.
-	// Empty for location-anchored threads (对话 scratch, DMs, groups), which
-	// are matched by cwd / the DM-group bypass instead.
+	// Empty for location-anchored scratch threads, which are matched by cwd.
 	WorkspaceID      string     `json:"workspace_id,omitempty"`
 	ForkedFromID     string     `json:"forked_from_id,omitempty"`
 	ForkedFromTurnID string     `json:"forked_from_turn_id,omitempty"`
@@ -62,21 +61,6 @@ type Session struct {
 	WorktreePath     string     `json:"worktree_path,omitempty"`
 	WorktreeBaseHEAD string     `json:"worktree_base_head,omitempty"`
 	WorktreeBaseRepo string     `json:"worktree_base_repo,omitempty"`
-	// DMParticipantID pins the named participant this thread is a direct-message
-	// conversation with. Set once at thread creation; never mutated afterward.
-	DMParticipantID string `json:"dm_participant_id,omitempty"`
-	// Group marks this session as a chat-style group channel with no primary
-	// agent (chat-style-threads-design.md §3). Set once at thread creation.
-	Group bool `json:"group,omitempty"`
-	// FocusWorkspace pins the workspace-focus a chat-style thread has most
-	// recently declared (2026-07-03-workspace-focus.md §1): "" means every
-	// registered workspace (default, unchanged behavior), "~" means the
-	// agent's home directory only, any other value names a registered
-	// workspace (internal/workspaces.Workspace.Name). Unlike DMParticipantID
-	// this is re-settable across the thread's lifetime via
-	// SetFocusWorkspace — focus is expected to change as the user or the
-	// resident agent switches between projects.
-	FocusWorkspace string `json:"focus_workspace,omitempty"`
 }
 
 type ForkMetadata struct {
@@ -98,42 +82,30 @@ type HistoryRecord struct {
 	// stable address within the thread. Ordinary appends ignore it and allocate
 	// the next physical sequence. History checkpoints retain positive addresses
 	// and allocate a new physical sequence for records whose Seq is zero.
-	Seq               int             `json:"seq,omitempty"`
-	Role              string          `json:"role"`
-	Content           string          `json:"content"`
-	DisplayContent    string          `json:"display_content,omitempty"`
-	Phase             string          `json:"phase,omitempty"`
-	ProviderItemID    string          `json:"provider_item_id,omitempty"`
-	ProviderItemModel string          `json:"provider_item_model,omitempty"`
-	ClientID          string          `json:"client_id,omitempty"`
-	Hidden            bool            `json:"hidden,omitempty"`
-	Steered           bool            `json:"steered,omitempty"`
-	ReasoningContent  string          `json:"reasoning_content,omitempty"`
-	ReasoningBlocks   json.RawMessage `json:"reasoning_blocks,omitempty"`
-	Images            json.RawMessage `json:"images,omitempty"`
-	Files             json.RawMessage `json:"files,omitempty"`
-	ToolCalls         json.RawMessage `json:"tool_calls,omitempty"`
-	DiscoveredTools   json.RawMessage `json:"discovered_tools,omitempty"`
-	ToolCallID        string          `json:"tool_call_id,omitempty"`
-	ToolInvocationID  string          `json:"tool_invocation_id,omitempty"`
-	ToolResultKind    string          `json:"tool_result_kind,omitempty"`
-	ToolResult        json.RawMessage `json:"tool_result,omitempty"`
-	FinishReason      string          `json:"finish_reason,omitempty"`
-	StopReason        string          `json:"stop_reason,omitempty"`
-	Truncated         bool            `json:"truncated,omitempty"`
-	Name              string          `json:"name,omitempty"`
-	ParticipantID     string          `json:"participant_id,omitempty"`
-	PostKind          string          `json:"post_kind,omitempty"`
-	ThreadID          string          `json:"thread_id,omitempty"`
-	// BasisSeq is the message seq a participant post declared it was generated
-	// against (0 = the poster's read cursor was used / not applicable). The
-	// freshness/rebase check holds a post whose basis is stale; persisted here
-	// for audit and task trace.
-	BasisSeq     int             `json:"basis_seq,omitempty"`
-	EnvelopeMeta json.RawMessage `json:"envelope_meta,omitempty"`
-	// FocusMeta is the structured {kind,name,root} metadata for a
-	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
-	FocusMeta           json.RawMessage `json:"focus_meta,omitempty"`
+	Seq                 int             `json:"seq,omitempty"`
+	Role                string          `json:"role"`
+	Content             string          `json:"content"`
+	DisplayContent      string          `json:"display_content,omitempty"`
+	Phase               string          `json:"phase,omitempty"`
+	ProviderItemID      string          `json:"provider_item_id,omitempty"`
+	ProviderItemModel   string          `json:"provider_item_model,omitempty"`
+	ClientID            string          `json:"client_id,omitempty"`
+	Hidden              bool            `json:"hidden,omitempty"`
+	Steered             bool            `json:"steered,omitempty"`
+	ReasoningContent    string          `json:"reasoning_content,omitempty"`
+	ReasoningBlocks     json.RawMessage `json:"reasoning_blocks,omitempty"`
+	Images              json.RawMessage `json:"images,omitempty"`
+	Files               json.RawMessage `json:"files,omitempty"`
+	ToolCalls           json.RawMessage `json:"tool_calls,omitempty"`
+	DiscoveredTools     json.RawMessage `json:"discovered_tools,omitempty"`
+	ToolCallID          string          `json:"tool_call_id,omitempty"`
+	ToolInvocationID    string          `json:"tool_invocation_id,omitempty"`
+	ToolResultKind      string          `json:"tool_result_kind,omitempty"`
+	ToolResult          json.RawMessage `json:"tool_result,omitempty"`
+	FinishReason        string          `json:"finish_reason,omitempty"`
+	StopReason          string          `json:"stop_reason,omitempty"`
+	Truncated           bool            `json:"truncated,omitempty"`
+	Name                string          `json:"name,omitempty"`
 	At                  time.Time       `json:"at,omitempty"`
 	InputTokens         int             `json:"input_tokens,omitempty"`
 	OutputTokens        int             `json:"output_tokens,omitempty"`
@@ -179,8 +151,8 @@ func Create(sessDir string, id ...string) (*Session, error) {
 }
 
 // CreateWithMetadata initializes a new session with thread-level metadata.
-// The workspace identity is bound separately via SetWorkspaceID (mirroring
-// BindDMParticipant / SetGroupThread), so this signature stays stable.
+// The workspace identity is bound separately via SetWorkspaceID, so this
+// signature stays stable.
 func CreateWithMetadata(sessDir, id, cwd string) (*Session, error) {
 	return createWithMetadata(sessDir, id, cwd, ForkMetadata{})
 }
@@ -245,7 +217,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group, focus_workspace, workspace_id, source,
+       workspace_id, source,
 	       provider, model, variant, effort, permission_mode
 FROM sessions`)
 	if err != nil {
@@ -276,20 +248,10 @@ FROM sessions`)
 // (a registered project) sessions are matched by that stable id so they follow
 // the project across moves; otherwise they are matched by cwd.
 func ListForCWD(sessDir, cwd, workspaceID string, limit int) ([]Session, error) {
-	return listForCWD(sessDir, cwd, workspaceID, limit, false)
+	return listForCWD(sessDir, cwd, workspaceID, limit)
 }
 
-// ListForCWDWithDMs reads sessions scoped to a workspace (by stable id when
-// workspaceID is set, else by cwd), plus all direct-message sessions
-// (DMParticipantID != "") and group channels (Group == true) regardless of
-// their workspace, so DM and group threads surface in every app server's
-// thread list and search results. Callers that need strict scoping
-// (MostRecentForCWD, CLI listings, the insight scanner) should use ListForCWD.
-func ListForCWDWithDMs(sessDir, cwd, workspaceID string, limit int) ([]Session, error) {
-	return listForCWD(sessDir, cwd, workspaceID, limit, true)
-}
-
-func listForCWD(sessDir, cwd, workspaceID string, limit int, includeDMs bool) ([]Session, error) {
+func listForCWD(sessDir, cwd, workspaceID string, limit int) ([]Session, error) {
 	target := normalizeCWD(cwd)
 	wsID := strings.TrimSpace(workspaceID)
 	if target == "" && wsID == "" {
@@ -305,10 +267,6 @@ func listForCWD(sessDir, cwd, workspaceID string, limit int, includeDMs bool) ([
 	}
 	filtered := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
-		if includeDMs && (strings.TrimSpace(s.DMParticipantID) != "" || s.Group) {
-			filtered = append(filtered, s)
-			continue
-		}
 		if wsID != "" {
 			// A workspace with a stable id (a registered project) matches by
 			// that id, so its sessions follow the project across moves even
@@ -385,6 +343,23 @@ func UpdateTitle(sessDir, id string, title string) (Session, error) {
 	})
 }
 
+// UpdateWorkspaceBinding persists the workspace used by a session after the
+// main agent explicitly moves the task into a linked worktree.
+func UpdateWorkspaceBinding(
+	sessDir, id, cwd, worktreePath, worktreeBaseHEAD, worktreeBaseRepo string,
+) (Session, error) {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return Session{}, errors.New("workspace cwd is required")
+	}
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.CWD = cwd
+		s.WorktreePath = strings.TrimSpace(worktreePath)
+		s.WorktreeBaseHEAD = strings.TrimSpace(worktreeBaseHEAD)
+		s.WorktreeBaseRepo = strings.TrimSpace(worktreeBaseRepo)
+	})
+}
+
 // UpdatePinned marks a session as pinned or unpinned.
 func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 	now := time.Now().UTC()
@@ -397,44 +372,11 @@ func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 	})
 }
 
-// BindDMParticipant permanently tags a session as the direct-message
-// conversation with a named participant. The tag is set once at creation;
-// callers should not invoke this for arbitrary session IDs in normal flows.
-// Empty participant IDs are stored as empty strings; callers must validate
-// the participant before calling.
-func BindDMParticipant(sessDir, id, participantID string) (Session, error) {
-	return updateMetadata(sessDir, id, false, func(s *Session) {
-		s.DMParticipantID = strings.TrimSpace(participantID)
-	})
-}
-
-// SetGroupThread permanently tags a session as a chat-style group channel.
-// Like BindDMParticipant, this is set once at creation; callers should not
-// invoke this for arbitrary session IDs in normal flows.
-func SetGroupThread(sessDir, id string, group bool) (Session, error) {
-	return updateMetadata(sessDir, id, false, func(s *Session) {
-		s.Group = group
-	})
-}
-
-// SetFocusWorkspace updates the workspace-focus declared for a chat-style
-// thread (2026-07-03-workspace-focus.md §4). Unlike BindDMParticipant this
-// is freely re-settable across the thread's lifetime — focus is expected
-// to change repeatedly as the user or the resident agent switches between
-// projects. Callers are responsible for validating focus against the
-// registered workspace roster before calling; this setter stores whatever
-// it is given (trimmed).
-func SetFocusWorkspace(sessDir, id, focus string) (Session, error) {
-	return updateMetadata(sessDir, id, false, func(s *Session) {
-		s.FocusWorkspace = strings.TrimSpace(focus)
-	})
-}
-
 // SetWorkspaceID binds a session to a stable, location-independent workspace
 // identity (the desktop's registered-project id), so the session's state and
 // thread listing follow the workspace across moves/renames. Set once at
 // creation for registered-project threads; left empty for location-anchored
-// threads (对话 scratch, DMs, groups), which match by cwd / the DM-group bypass.
+// scratch threads, which match by cwd.
 func SetWorkspaceID(sessDir, id, workspaceID string) (Session, error) {
 	return updateMetadata(sessDir, id, false, func(s *Session) {
 		s.WorkspaceID = strings.TrimSpace(workspaceID)
@@ -565,16 +507,6 @@ func Delete(sessDir, id string) (Session, error) {
 	if !ok {
 		return Session{}, fmt.Errorf("%w: %q", ErrSessionNotFound, id)
 	}
-	var pendingCompensations int
-	if err := tx.QueryRow(`SELECT COUNT(1) FROM resident_admission_compensations WHERE thread_id = ?`, id).Scan(&pendingCompensations); err != nil {
-		return Session{}, fmt.Errorf("inspect pending resident admission compensation: %w", err)
-	}
-	if pendingCompensations > 0 {
-		return Session{}, fmt.Errorf("session %q has pending resident admission compensation", id)
-	}
-	if err := deletePendingResidentEnvelopesFromSourceThreadTx(tx, id); err != nil {
-		return Session{}, fmt.Errorf("clean pending resident envelopes for deleted session: %w", err)
-	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
 		return Session{}, fmt.Errorf("delete session: %w", err)
 	}
@@ -659,9 +591,7 @@ func AppendHistoryRecord(sessDir, id string, rec HistoryRecord) error {
 }
 
 // AppendHistoryRecordReturningSeq is AppendHistoryRecord but also returns the
-// seq assigned to the new record — its stable address within the thread, which
-// callers stamp onto routed envelopes so read receipts and reactions can point
-// back at this exact message.
+// seq assigned to the new record — its stable address within the thread.
 func AppendHistoryRecordReturningSeq(sessDir, id string, rec HistoryRecord) (int, error) {
 	db, err := openStore(sessDir)
 	if err != nil {
@@ -777,35 +707,6 @@ func LoadHistoryRecords(sessDir, id string, includeMeta bool) ([]HistoryRecord, 
 		return nil, fmt.Errorf("%w: %q", ErrSessionNotFound, id)
 	}
 	return loadHistoryRecordsDB(db, id, includeMeta)
-}
-
-// ChatMessagesSince returns the visible chat messages in a thread with seq
-// strictly greater than afterSeq, oldest first: user messages, and participant
-// posts (a participant record carries a post kind; participant records with no
-// post kind are telemetry/meta, not speech). It is the pull-inbox read — "the
-// messages in this thread I have not read yet" — and the shared body of the
-// held-draft freshness check. Non-chat roles (system/assistant/tool/meta) are
-// excluded.
-func ChatMessagesSince(sessDir, id string, afterSeq int) ([]HistoryRecord, error) {
-	all, err := LoadHistoryRecords(sessDir, id, false)
-	if err != nil {
-		return nil, err
-	}
-	var out []HistoryRecord
-	for _, rec := range all {
-		if rec.Seq <= afterSeq {
-			continue
-		}
-		role := strings.ToLower(strings.TrimSpace(rec.Role))
-		if role == "user" {
-			out = append(out, rec)
-			continue
-		}
-		if role == "participant" && strings.TrimSpace(rec.PostKind) != "" {
-			out = append(out, rec)
-		}
-	}
-	return out, nil
 }
 
 func openStore(sessDir string) (*sql.DB, error) {
@@ -963,11 +864,6 @@ func migrateSchema(db *sql.DB) error {
 			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
 			provider TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
-			participant_id TEXT NOT NULL DEFAULT '',
-			post_kind TEXT NOT NULL DEFAULT '',
-			thread_id TEXT NOT NULL DEFAULT '',
-			envelope_meta TEXT NOT NULL DEFAULT '',
-			focus_meta TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY(session_id, seq),
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
@@ -993,18 +889,6 @@ func migrateSchema(db *sql.DB) error {
 			PRIMARY KEY(session_id, version),
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
-		`CREATE TABLE IF NOT EXISTS conversation_threads (
-			id             TEXT PRIMARY KEY,
-			session_id     TEXT NOT NULL,
-			anchor_item_id TEXT NOT NULL,
-			title          TEXT NOT NULL DEFAULT '',
-			status         TEXT NOT NULL,
-			created_by     TEXT NOT NULL DEFAULT '',
-			created_at     TEXT NOT NULL,
-			thread_owner_participant_id TEXT NOT NULL DEFAULT '',
-			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_conversation_threads_session ON conversation_threads(session_id, created_at, id)`,
 		`CREATE TABLE IF NOT EXISTS participants (
 			id         TEXT PRIMARY KEY,
 			kind       TEXT NOT NULL,
@@ -1031,137 +915,67 @@ func migrateSchema(db *sql.DB) error {
 			updated_at     TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_participant_runs_participant ON participant_runs(participant_id, created_at, id)`,
-		`CREATE TABLE IF NOT EXISTS thread_members (
-			session_id     TEXT NOT NULL,
-			participant_id TEXT NOT NULL,
-			joined_at      INTEGER NOT NULL,
-			PRIMARY KEY (session_id, participant_id),
-			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
-		)`,
-		// conversation_thread_members is the weak-isolation participant subset of
-		// a reply subthread (cth-*). Keyed on conversation_thread_id (not
-		// session_id) because a cth is a conversation_threads row, not a session;
-		// the FK cascades membership away when the subthread or participant is
-		// deleted. Retire is an UPDATE, not a DELETE, so RetireParticipant clears
-		// these rows explicitly (mirrors thread_members).
-		`CREATE TABLE IF NOT EXISTS conversation_thread_members (
-			conversation_thread_id TEXT NOT NULL,
-			participant_id         TEXT NOT NULL,
-			joined_at              INTEGER NOT NULL,
-			PRIMARY KEY (conversation_thread_id, participant_id),
-			FOREIGN KEY(conversation_thread_id) REFERENCES conversation_threads(id) ON DELETE CASCADE,
-			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
-		)`,
-		// resident_inbox pivots for issue #3 — replay → settle/expire (user
-		// spec: "桌面应用关着即世界暂停，重启不替过去补课"). Three-state
-		// isolation is enforced at the index level: a row is in the
-		// `pending` set iff BOTH `consumed_at IS NULL` AND `expired_at IS
-		// NULL`; `processed` is `consumed_at IS NOT NULL`; `expired` is
-		// `consumed_at IS NULL AND expired_at IS NOT NULL`. The
-		// idx_resident_inbox_pending partial index MUST exclude expired
-		// rows, otherwise the existing PendingResidentEnvelopes query
-		// would surface settled-expired envelopes as "pending" and the
-		// pivot invariant "boot can't burn tokens" silently fails.
-		`CREATE TABLE IF NOT EXISTS resident_inbox (
-			id             TEXT PRIMARY KEY,
-			participant_id TEXT NOT NULL,
-			envelope_json  TEXT NOT NULL,
-			created_at     INTEGER NOT NULL,
-			consumed_at    INTEGER,
-			expired_at     INTEGER,
-			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending ON resident_inbox(participant_id, created_at) WHERE consumed_at IS NULL AND expired_at IS NULL`,
-		// resident_admission_compensations is a short-lived recovery journal for
-		// resident turns that committed admission state but failed before their
-		// model runner launched. The rollback and journal deletion happen in one
-		// transaction, so a crash either leaves a replayable intent or a fully
-		// compensated admission.
-		`CREATE TABLE IF NOT EXISTS resident_admission_compensations (
-			id           TEXT PRIMARY KEY,
-			thread_id    TEXT NOT NULL,
-			payload_json TEXT NOT NULL,
-			created_at   INTEGER NOT NULL
-		)`,
-		// resident_wake_intents is the durable handoff from a resolved admission
-		// rollback to a live app-server. The rollback transaction restores the
-		// inbox/read state and publishes this wake atomically; a resident drain
-		// acknowledges it only after launch ownership is registered (or after it
-		// proves there is no work). Cold-boot settlement discards these intents so
-		// reopening the desktop never spends tokens replaying work from downtime.
-		`CREATE TABLE IF NOT EXISTS resident_wake_intents (
-			id             TEXT PRIMARY KEY,
-			participant_id TEXT NOT NULL,
-			thread_id      TEXT NOT NULL,
-			created_at     INTEGER NOT NULL,
-			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE,
-			FOREIGN KEY(thread_id) REFERENCES sessions(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_resident_wake_intents_participant
-			ON resident_wake_intents(participant_id, created_at, id)`,
-		// message_marks backs read receipts + message reactions
-		// (2026-07-04-read-receipts-and-reactions.md §4): one row per
-		// (message, participant, kind). kind='seen' carries a lifecycle
-		// status (in_progress|completed|failed); kind='reaction' carries a
-		// reaction key in payload. A message is addressed by (session_id, seq).
-		`CREATE TABLE IF NOT EXISTS message_marks (
-			session_id     TEXT NOT NULL,
-			seq            INTEGER NOT NULL,
-			participant_id TEXT NOT NULL,
-			kind           TEXT NOT NULL,
-			status         TEXT NOT NULL DEFAULT '',
-			payload        TEXT NOT NULL DEFAULT '',
-			at             INTEGER NOT NULL,
-			PRIMARY KEY (session_id, seq, participant_id, kind),
-			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_message_marks_message ON message_marks(session_id, seq)`,
-		// task_attempts is the durable scheduler truth: one row per concrete
-		// execution of one plan node. queued/running attempts hold an assignee
-		// reservation, enforced globally by the partial unique index.
-		`CREATE TABLE IF NOT EXISTS task_attempts (
+		// kanban_tasks is the kanban-OS unit of work: agent-neutral by
+		// construction (no assignee column). Assignment lives only on
+		// kanban_runs; the task merely denormalizes latest_run_id for board
+		// projection. parent_id nests decomposition subtasks.
+		`CREATE TABLE IF NOT EXISTS kanban_tasks (
 			id               TEXT PRIMARY KEY,
 			session_id       TEXT NOT NULL,
-			task_id          TEXT NOT NULL,
-			node_id          TEXT NOT NULL,
-			assignee_id      TEXT NOT NULL,
-			ordinal          INTEGER NOT NULL,
+			parent_id        TEXT NOT NULL DEFAULT '',
+			title            TEXT NOT NULL,
+			brief            TEXT NOT NULL DEFAULT '',
 			status           TEXT NOT NULL,
-			failure_category TEXT NOT NULL DEFAULT '',
-			failure_message  TEXT NOT NULL DEFAULT '',
+			source_thread_id TEXT NOT NULL DEFAULT '',
+			created_by       TEXT NOT NULL DEFAULT '',
+			sort_index       INTEGER NOT NULL DEFAULT 0,
+			latest_run_id    TEXT NOT NULL DEFAULT '',
 			created_at       INTEGER NOT NULL,
-			started_at       INTEGER NOT NULL DEFAULT 0,
-			finished_at      INTEGER NOT NULL DEFAULT 0,
-			FOREIGN KEY(task_id) REFERENCES conversation_threads(id) ON DELETE CASCADE,
-			FOREIGN KEY(assignee_id) REFERENCES participants(id) ON DELETE CASCADE,
-			UNIQUE(task_id, node_id, ordinal)
+			updated_at       INTEGER NOT NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_attempts_task ON task_attempts(task_id, node_id, ordinal)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_attempts_active_assignee
-		 ON task_attempts(assignee_id) WHERE status IN ('queued', 'running')`,
-		// task_events is the durable, append-only execution trace for a task
-		// (one conversation_thread upgraded to a task). It is the record the
-		// system, the lead/supervisor, and humans read to understand what
-		// happened — especially on failure. task_id is the cth id; node_id is a
-		// plan piece id (empty for task-level events). seq is a per-task
-		// monotonic order key. Never overwritten: state transitions are new
-		// rows, so history is preserved (unlike the plan JSON column).
-		`CREATE TABLE IF NOT EXISTS task_events (
-			id         TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL,
-			task_id    TEXT NOT NULL,
-			node_id    TEXT NOT NULL DEFAULT '',
-			seq        INTEGER NOT NULL,
-			kind       TEXT NOT NULL,
-			actor      TEXT NOT NULL DEFAULT '',
-			attempt_id TEXT NOT NULL DEFAULT '',
-			summary    TEXT NOT NULL DEFAULT '',
-			payload    TEXT NOT NULL DEFAULT '',
-			at         INTEGER NOT NULL
+		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_session ON kanban_tasks(session_id, status, sort_index)`,
+		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_parent ON kanban_tasks(parent_id, sort_index)`,
+		// kanban_runs binds a task to one concrete named-agent execution.
+		// Creating a run with target_id IS the dispatch action and its entire
+		// record; kind distinguishes execution from second-eyes review. The
+		// partial unique index enforces one active run per target participant.
+		`CREATE TABLE IF NOT EXISTS kanban_runs (
+			id            TEXT PRIMARY KEY,
+			task_id       TEXT NOT NULL,
+			session_id    TEXT NOT NULL,
+			kind          TEXT NOT NULL,
+			target_id     TEXT NOT NULL,
+			thread_id     TEXT NOT NULL DEFAULT '',
+			host_thread_id TEXT NOT NULL DEFAULT '',
+			status        TEXT NOT NULL,
+			summary       TEXT NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL DEFAULT '',
+			created_by    TEXT NOT NULL DEFAULT '',
+			created_at    INTEGER NOT NULL,
+			started_at    INTEGER NOT NULL DEFAULT 0,
+			finished_at   INTEGER NOT NULL DEFAULT 0,
+			FOREIGN KEY(task_id) REFERENCES kanban_tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY(target_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, seq)`,
+		`CREATE INDEX IF NOT EXISTS idx_kanban_runs_task ON kanban_runs(task_id, created_at)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_kanban_runs_active_target
+		 ON kanban_runs(target_id) WHERE status IN ('queued', 'running')`,
+		// kanban_artifacts attributes produced output files to a run and its
+		// task; references resolve lazily from these rows.
+		`CREATE TABLE IF NOT EXISTS kanban_artifacts (
+			id           TEXT PRIMARY KEY,
+			run_id       TEXT NOT NULL,
+			task_id      TEXT NOT NULL,
+			session_id   TEXT NOT NULL,
+			path         TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
+			media_type   TEXT NOT NULL DEFAULT '',
+			size_bytes   INTEGER NOT NULL DEFAULT 0,
+			created_at   INTEGER NOT NULL,
+			FOREIGN KEY(run_id) REFERENCES kanban_runs(id) ON DELETE CASCADE,
+			FOREIGN KEY(task_id) REFERENCES kanban_tasks(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_kanban_artifacts_task ON kanban_artifacts(task_id, created_at)`,
 		// inference_journal_runtimes is the cross-process liveness lease used to
 		// distinguish a crashed writer from another live app-server or CLI.
 		`CREATE TABLE IF NOT EXISTS inference_journal_runtimes (
@@ -1456,33 +1270,6 @@ WHERE workflow_id = ''`); err != nil {
 	if err := addColumnIfMissing(db, "session_messages", "model", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	if err := addColumnIfMissing(db, "session_messages", "participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "session_messages", "post_kind", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "session_messages", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "session_messages", "basis_seq", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "session_messages", "envelope_meta", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "session_messages", "focus_meta", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_session_messages_thread ON session_messages(session_id, thread_id, seq)`); err != nil {
-		return fmt.Errorf("migrate sessions database: %w", err)
-	}
-	// forked_from marks a named participant as a temporary分身 forked from
-	// another named agent (decision six): it holds the母体's participant id.
-	// Empty for ordinary participants.
-	if err := addColumnIfMissing(db, "participants", "forked_from", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
 	if err := addColumnIfMissing(db, "sessions", "worktree_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -1490,15 +1277,6 @@ WHERE workflow_id = ''`); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "sessions", "worktree_base_repo", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "sessions", "dm_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "sessions", "is_group", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "sessions", "focus_workspace", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "sessions", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
@@ -1525,524 +1303,10 @@ WHERE workflow_id = ''`); err != nil {
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id)`); err != nil {
 		return fmt.Errorf("migrate sessions database: %w", err)
 	}
-	// thread_id tags a read receipt / mention mark with the reply subthread the
-	// marked message belongs to ('' = main stream, cth-* = a reply subthread).
-	// It is a redundant descriptor of the message that seq addresses (a given seq
-	// carries one consistent tag), added so per-cth read cursors can be computed
-	// without joining session_messages: ThreadReadWatermarkScoped filters seen
-	// rows by this tag so a cth read never advances the main-stream cursor and
-	// vice versa (T3 independent per-cth cursor). Legacy rows default '' — they
-	// are historical main-stream marks, no data migration needed.
-	if err := addColumnIfMissing(db, "message_marks", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// Task-escalation columns on conversation_threads: escalated_at/escalated_by
-	// mark a reply promoted to a task (survives resolve); summary holds the
-	// one-line conclusion bubbled back to the main stream on wrap-up.
-	if err := addColumnIfMissing(db, "conversation_threads", "escalated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "conversation_threads", "escalated_by", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "conversation_threads", "summary", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// lead_participant_id records the single named agent assigned as the task's
-	// lead on promotion. Distinct from escalated_by provenance; it survives
-	// resolve for history, and resolved Tasks cannot be reopened.
-	if err := addColumnIfMissing(db, "conversation_threads", "lead_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// thread_owner_participant_id is the durable owner of the discussion Thread.
-	// On promotion this identity becomes lead_participant_id. Existing active tasks
-	// preserve their active named lead as owner; open Threads use their active named
-	// parent author. Legacy Task rows without a valid lead remain ownerless; they
-	// never fall back to their parent author.
-	if err := addColumnIfMissing(db, "conversation_threads", "thread_owner_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// plan holds the lead's declared work breakdown (JSON array of TaskPiece)
-	// for a team task (task-rail design §8). Empty string for a plain task.
-	if err := addColumnIfMissing(db, "conversation_threads", "plan", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// exec_state is the execution axis of a task cth (planning/executing/
-	// blocked/needs_human/completed/failed), deliberately separate from the
-	// approval status column. Empty = never entered execution.
-	if err := addColumnIfMissing(db, "conversation_threads", "exec_state", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// parent_seq / parent_author_participant_id bind a reply subthread to the
-	// exact main-stream message it was opened from (T3 Thread-first-class): the
-	// message's seq and its author's participant id ("human" for a user/thread-
-	// owner message). AnchorItemID stays for GUI rendering; these two are the
-	// durable, seq-addressable parent binding used to select the Thread owner.
-	// Legacy rows created before anchored Threads may leave them empty.
-	if err := addColumnIfMissing(db, "conversation_threads", "parent_seq", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "conversation_threads", "parent_author_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "task_events", "attempt_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
 	if err := addColumnIfMissing(db, "inference_journal_runtimes", "pid", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	if err := addColumnIfMissing(db, "resident_admission_compensations", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_resident_admission_compensations_thread
-		ON resident_admission_compensations(thread_id, created_at, id)`); err != nil {
-		return fmt.Errorf("migrate resident admission compensation index: %w", err)
-	}
-	if _, err := db.Exec(`
-UPDATE conversation_threads
-SET thread_owner_participant_id = CASE
-	WHEN status = 'task'
-	 AND lead_participant_id <> ''
-	 AND EXISTS (
-		SELECT 1 FROM participants p
-		WHERE p.id = conversation_threads.lead_participant_id
-		  AND p.kind = 'named' AND p.retired_at IS NULL
-	 )
-	 AND EXISTS (
-		SELECT 1 FROM thread_members tm
-		WHERE tm.session_id = conversation_threads.session_id
-		  AND tm.participant_id = conversation_threads.lead_participant_id
-	 )
-	THEN lead_participant_id
-	WHEN status = 'open'
-	 AND parent_author_participant_id <> ''
-	 AND EXISTS (
-		SELECT 1 FROM participants p
-		WHERE p.id = conversation_threads.parent_author_participant_id
-		  AND p.kind = 'named' AND p.retired_at IS NULL
-	 )
-	 AND EXISTS (
-		SELECT 1 FROM thread_members tm
-		WHERE tm.session_id = conversation_threads.session_id
-		  AND tm.participant_id = conversation_threads.parent_author_participant_id
-	 )
-	THEN parent_author_participant_id
-	ELSE ''
-END
-WHERE thread_owner_participant_id = ''
-  AND status IN ('open', 'task')`); err != nil {
-		return fmt.Errorf("migrate conversation thread owners: %w", err)
-	}
-	if err := ensureConversationThreadAnchorUniqueness(db); err != nil {
-		return err
-	}
-	if err := ensureConversationThreadParentUniqueness(db); err != nil {
-		return err
-	}
 	return nil
-}
-
-// ensureConversationThreadAnchorUniqueness repairs the only state that could
-// predate the durable one-message/one-Thread invariant: two rows created for
-// the same rendered parent message by concurrent desktop windows. References
-// and memberships are folded into the most advanced row before the partial
-// unique index is installed, so migration never fixes startup by discarding
-// reachable discussion history.
-func ensureConversationThreadAnchorUniqueness(db *sql.DB) error {
-	var installed int
-	if err := db.QueryRow(`
-SELECT EXISTS(
-	SELECT 1 FROM sqlite_master
-	WHERE type = 'index' AND name = 'idx_conversation_threads_anchor'
-)`).Scan(&installed); err != nil {
-		return fmt.Errorf("check conversation thread anchor index: %w", err)
-	}
-	if installed != 0 {
-		return nil
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin conversation thread anchor migration: %w", err)
-	}
-	defer tx.Rollback()
-
-	rows, err := tx.Query(`
-SELECT session_id, anchor_item_id
-FROM conversation_threads
-WHERE anchor_item_id <> ''
-GROUP BY session_id, anchor_item_id
-HAVING COUNT(*) > 1`)
-	if err != nil {
-		return fmt.Errorf("list duplicate conversation thread anchors: %w", err)
-	}
-	type anchorKey struct{ sessionID, anchorItemID string }
-	var keys []anchorKey
-	for rows.Next() {
-		var key anchorKey
-		if err := rows.Scan(&key.sessionID, &key.anchorItemID); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan duplicate conversation thread anchor: %w", err)
-		}
-		keys = append(keys, key)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close duplicate conversation thread anchors: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("scan duplicate conversation thread anchors: %w", err)
-	}
-
-	for _, key := range keys {
-		duplicates, err := loadConversationThreadDuplicates(tx,
-			"session_id = ? AND anchor_item_id = ?", key.sessionID, key.anchorItemID)
-		if err != nil {
-			return fmt.Errorf("load duplicate conversation threads: %w", err)
-		}
-		if err := mergeConversationThreadDuplicates(tx, key.sessionID, duplicates); err != nil {
-			return err
-		}
-	}
-
-	if _, err := tx.Exec(`
-CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_threads_anchor
-ON conversation_threads(session_id, anchor_item_id)
-WHERE anchor_item_id <> ''`); err != nil {
-		return fmt.Errorf("create conversation thread anchor index: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit conversation thread anchor migration: %w", err)
-	}
-	return nil
-}
-
-// ensureConversationThreadParentUniqueness makes the durable parent message
-// address, not a transient rendered item id, the one-message/one-Thread key.
-// Rows created before parent_seq existed remain untouched at zero.
-func ensureConversationThreadParentUniqueness(db *sql.DB) error {
-	var installed int
-	if err := db.QueryRow(`
-SELECT EXISTS(
-	SELECT 1 FROM sqlite_master
-	WHERE type = 'index' AND name = 'idx_conversation_threads_parent_seq'
-)`).Scan(&installed); err != nil {
-		return fmt.Errorf("check conversation thread parent index: %w", err)
-	}
-	if installed != 0 {
-		return nil
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin conversation thread parent migration: %w", err)
-	}
-	defer tx.Rollback()
-
-	rows, err := tx.Query(`
-SELECT session_id, parent_seq
-FROM conversation_threads
-WHERE parent_seq > 0
-GROUP BY session_id, parent_seq
-HAVING COUNT(*) > 1`)
-	if err != nil {
-		return fmt.Errorf("list duplicate conversation thread parents: %w", err)
-	}
-	type parentKey struct {
-		sessionID string
-		parentSeq int
-	}
-	var keys []parentKey
-	for rows.Next() {
-		var key parentKey
-		if err := rows.Scan(&key.sessionID, &key.parentSeq); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan duplicate conversation thread parent: %w", err)
-		}
-		keys = append(keys, key)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close duplicate conversation thread parents: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("scan duplicate conversation thread parents: %w", err)
-	}
-
-	for _, key := range keys {
-		duplicates, err := loadConversationThreadDuplicates(tx,
-			"session_id = ? AND parent_seq = ?", key.sessionID, key.parentSeq)
-		if err != nil {
-			return fmt.Errorf("load duplicate conversation thread parents: %w", err)
-		}
-		if err := mergeConversationThreadDuplicates(tx, key.sessionID, duplicates); err != nil {
-			return err
-		}
-	}
-
-	if _, err := tx.Exec(`
-CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_threads_parent_seq
-ON conversation_threads(session_id, parent_seq)
-WHERE parent_seq > 0`); err != nil {
-		return fmt.Errorf("create conversation thread parent index: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit conversation thread parent migration: %w", err)
-	}
-	return nil
-}
-
-func loadConversationThreadDuplicates(tx *sql.Tx, where string, args ...any) ([]ConversationThread, error) {
-	threadRows, err := tx.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at,
-       thread_owner_participant_id, escalated_at, escalated_by, summary,
-       lead_participant_id, plan, exec_state, parent_seq,
-       parent_author_participant_id
-FROM conversation_threads
-WHERE `+where+`
-ORDER BY
-  CASE
-    WHEN status = 'resolved' AND escalated_at <> '' THEN 5
-    WHEN status = 'task' THEN 4
-    WHEN status = 'open' THEN 3
-    WHEN status = 'resolved' THEN 2
-    ELSE 1
-  END DESC,
-  CASE WHEN summary <> '' THEN 1 ELSE 0 END DESC,
-  created_at ASC,
-  id ASC`, args...)
-	if err != nil {
-		return nil, err
-	}
-	var duplicates []ConversationThread
-	for threadRows.Next() {
-		thread, err := scanConversationThread(threadRows)
-		if err != nil {
-			threadRows.Close()
-			return nil, fmt.Errorf("scan duplicate conversation thread: %w", err)
-		}
-		duplicates = append(duplicates, thread)
-	}
-	if err := threadRows.Close(); err != nil {
-		return nil, fmt.Errorf("close duplicate conversation threads: %w", err)
-	}
-	if err := threadRows.Err(); err != nil {
-		return nil, fmt.Errorf("scan duplicate conversation threads: %w", err)
-	}
-	return duplicates, nil
-}
-
-func mergeConversationThreadDuplicates(tx *sql.Tx, sessionID string, duplicates []ConversationThread) error {
-	if len(duplicates) < 2 {
-		return nil
-	}
-	keeper := duplicates[0]
-	for _, duplicate := range duplicates[1:] {
-		mergeConversationThreadMigrationFields(&keeper, duplicate)
-		if _, err := tx.Exec(`
-INSERT INTO conversation_thread_members (conversation_thread_id, participant_id, joined_at)
-SELECT ?, participant_id, joined_at
-FROM conversation_thread_members
-WHERE conversation_thread_id = ?
-ON CONFLICT(conversation_thread_id, participant_id) DO NOTHING`, keeper.ID, duplicate.ID); err != nil {
-			return fmt.Errorf("merge conversation thread members: %w", err)
-		}
-		if _, err := tx.Exec(`
-UPDATE session_messages
-SET thread_id = ?
-WHERE session_id = ? AND thread_id = ?`, keeper.ID, sessionID, duplicate.ID); err != nil {
-			return fmt.Errorf("merge conversation thread messages: %w", err)
-		}
-		if _, err := tx.Exec(`
-UPDATE message_marks
-SET thread_id = ?
-WHERE session_id = ? AND thread_id = ?`, keeper.ID, sessionID, duplicate.ID); err != nil {
-			return fmt.Errorf("merge conversation thread marks: %w", err)
-		}
-		if _, err := tx.Exec(`
-UPDATE participant_runs
-SET task_id = ?
-WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
-			return fmt.Errorf("merge conversation thread participant runs: %w", err)
-		}
-		if err := rewriteResidentInboxSubthread(tx, duplicate.ID, keeper.ID); err != nil {
-			return err
-		}
-		var eventOffset int
-		if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM task_events WHERE task_id = ?`, keeper.ID).Scan(&eventOffset); err != nil {
-			return fmt.Errorf("load conversation thread event offset: %w", err)
-		}
-		if _, err := tx.Exec(`
-UPDATE task_events
-SET task_id = ?, seq = seq + ?
-WHERE task_id = ?`, keeper.ID, eventOffset, duplicate.ID); err != nil {
-			return fmt.Errorf("merge conversation thread events: %w", err)
-		}
-		if _, err := tx.Exec(`
-UPDATE task_attempts
-SET ordinal = ordinal + COALESCE((
-	SELECT MAX(existing.ordinal)
-	FROM task_attempts AS existing
-	WHERE existing.task_id = ?
-	  AND existing.node_id = task_attempts.node_id
-), 0)
-WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
-			return fmt.Errorf("resequence conversation thread attempts: %w", err)
-		}
-		if _, err := tx.Exec(`
-UPDATE task_attempts
-SET task_id = ?
-WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
-			return fmt.Errorf("merge conversation thread attempts: %w", err)
-		}
-		if _, err := tx.Exec(`DELETE FROM conversation_threads WHERE id = ?`, duplicate.ID); err != nil {
-			return fmt.Errorf("remove duplicate conversation thread: %w", err)
-		}
-	}
-	if err := reconcileMergedConversationThreadAttempts(tx, &keeper); err != nil {
-		return err
-	}
-	planJSON, err := json.Marshal(keeper.Plan)
-	if err != nil {
-		return fmt.Errorf("marshal merged conversation thread plan: %w", err)
-	}
-	if len(keeper.Plan) == 0 {
-		planJSON = nil
-	}
-	if _, err := tx.Exec(`
-UPDATE conversation_threads
-SET title = ?, created_by = ?, thread_owner_participant_id = ?,
-    escalated_at = ?, escalated_by = ?, summary = ?, lead_participant_id = ?,
-    plan = ?, exec_state = ?, parent_seq = ?,
-    parent_author_participant_id = ?
-WHERE id = ?`, keeper.Title, keeper.CreatedBy, keeper.ThreadOwnerParticipantID,
-		timeText(keeper.EscalatedAt), keeper.EscalatedBy, keeper.Summary,
-		keeper.LeadParticipantID, string(planJSON),
-		keeper.ExecState, keeper.ParentSeq, keeper.ParentAuthorParticipantID,
-		keeper.ID); err != nil {
-		return fmt.Errorf("persist merged conversation thread: %w", err)
-	}
-	return nil
-}
-
-func reconcileMergedConversationThreadAttempts(tx *sql.Tx, thread *ConversationThread) error {
-	if thread == nil || len(thread.Plan) == 0 {
-		return nil
-	}
-	for i := range thread.Plan {
-		piece := &thread.Plan[i]
-		var maxOrdinal int
-		if err := tx.QueryRow(`
-SELECT COALESCE(MAX(ordinal), 0)
-FROM task_attempts
-WHERE task_id = ? AND node_id = ?`, thread.ID, piece.ID).Scan(&maxOrdinal); err != nil {
-			return fmt.Errorf("load merged task attempt count for node %q: %w", piece.ID, err)
-		}
-		if maxOrdinal > piece.Attempts {
-			piece.Attempts = maxOrdinal
-		}
-
-		var activeAttemptID string
-		err := tx.QueryRow(`
-SELECT id
-FROM task_attempts
-WHERE task_id = ? AND node_id = ? AND status IN (?, ?)
-ORDER BY ordinal DESC, created_at DESC, id DESC
-LIMIT 1`, thread.ID, piece.ID, TaskAttemptQueued, TaskAttemptRunning).Scan(&activeAttemptID)
-		switch {
-		case err == nil:
-			piece.CurrentAttemptID = activeAttemptID
-			piece.Status = TaskPieceActive
-		case errors.Is(err, sql.ErrNoRows):
-			piece.CurrentAttemptID = ""
-			if piece.Status == TaskPieceActive {
-				piece.Status = TaskPieceBlocked
-				piece.FailureReason = "attempt history repaired while merging duplicate Thread records"
-				if thread.Status == ConversationThreadTask {
-					thread.ExecState = ExecStateBlocked
-				}
-			}
-		default:
-			return fmt.Errorf("load merged active task attempt for node %q: %w", piece.ID, err)
-		}
-	}
-	return nil
-}
-
-func rewriteResidentInboxSubthread(tx *sql.Tx, fromID, toID string) error {
-	rows, err := tx.Query(`SELECT id, envelope_json FROM resident_inbox`)
-	if err != nil {
-		return fmt.Errorf("load resident inbox for conversation thread merge: %w", err)
-	}
-	type inboxUpdate struct{ id, payload string }
-	var updates []inboxUpdate
-	for rows.Next() {
-		var id, raw string
-		if err := rows.Scan(&id, &raw); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan resident inbox for conversation thread merge: %w", err)
-		}
-		var envelope map[string]any
-		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
-			continue
-		}
-		if value, _ := envelope["source_subthread_id"].(string); value != fromID {
-			continue
-		}
-		envelope["source_subthread_id"] = toID
-		payload, err := json.Marshal(envelope)
-		if err != nil {
-			rows.Close()
-			return fmt.Errorf("encode resident inbox %q for conversation thread merge: %w", id, err)
-		}
-		updates = append(updates, inboxUpdate{id: id, payload: string(payload)})
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close resident inbox for conversation thread merge: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("scan resident inbox for conversation thread merge: %w", err)
-	}
-	for _, update := range updates {
-		if _, err := tx.Exec(`UPDATE resident_inbox SET envelope_json = ? WHERE id = ?`, update.payload, update.id); err != nil {
-			return fmt.Errorf("rewrite resident inbox %q for conversation thread merge: %w", update.id, err)
-		}
-	}
-	return nil
-}
-
-func mergeConversationThreadMigrationFields(dst *ConversationThread, src ConversationThread) {
-	if dst.Title == "" {
-		dst.Title = src.Title
-	}
-	if dst.CreatedBy == "" {
-		dst.CreatedBy = src.CreatedBy
-	}
-	if dst.ThreadOwnerParticipantID == "" {
-		dst.ThreadOwnerParticipantID = src.ThreadOwnerParticipantID
-	}
-	if dst.EscalatedAt.IsZero() {
-		dst.EscalatedAt = src.EscalatedAt
-	}
-	if dst.EscalatedBy == "" {
-		dst.EscalatedBy = src.EscalatedBy
-	}
-	if dst.Summary == "" {
-		dst.Summary = src.Summary
-	}
-	if dst.LeadParticipantID == "" {
-		dst.LeadParticipantID = src.LeadParticipantID
-	}
-	if len(dst.Plan) == 0 {
-		dst.Plan = src.Plan
-	}
-	if dst.ExecState == "" {
-		dst.ExecState = src.ExecState
-	}
-	if dst.ParentSeq <= 0 {
-		dst.ParentSeq = src.ParentSeq
-	}
-	if dst.ParentAuthorParticipantID == "" {
-		dst.ParentAuthorParticipantID = src.ParentAuthorParticipantID
-	}
 }
 
 func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
@@ -2086,9 +1350,9 @@ func insertSessionSQL() string {
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
 		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo,
-		dm_participant_id, is_group, focus_workspace, workspace_id, source,
+		workspace_id, source,
 		provider, model, variant, effort, permission_mode
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 }
 
 func updateSessionTx(tx *sql.Tx, sess Session) error {
@@ -2097,14 +1361,14 @@ UPDATE sessions
 SET created_at = ?, updated_at = ?, title = ?, summary = ?, entries = ?, cwd = ?,
     forked_from_id = ?, forked_from_turn_id = ?, forked_from_item_id = ?,
     pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?,
-    dm_participant_id = ?, is_group = ?, focus_workspace = ?, workspace_id = ?, source = ?,
+    workspace_id = ?, source = ?,
 	provider = ?, model = ?, variant = ?, effort = ?, permission_mode = ?
 WHERE id = ?`,
 		timeText(sess.CreatedAt), timeText(sess.UpdatedAt), sess.Title, sess.Summary, sess.Entries, normalizeCWD(sess.CWD),
 		sess.ForkedFromID, sess.ForkedFromTurnID, sess.ForkedFromItemID,
 		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt),
 		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo),
-		strings.TrimSpace(sess.DMParticipantID), boolToInt(sess.Group), strings.TrimSpace(sess.FocusWorkspace), strings.TrimSpace(sess.WorkspaceID), strings.TrimSpace(sess.Source),
+		strings.TrimSpace(sess.WorkspaceID), strings.TrimSpace(sess.Source),
 		strings.TrimSpace(sess.Provider), strings.TrimSpace(sess.Model), strings.TrimSpace(sess.Variant),
 		strings.TrimSpace(sess.Effort), strings.TrimSpace(sess.PermissionMode),
 		sess.ID,
@@ -2132,9 +1396,6 @@ func sessionArgs(sess Session) []any {
 		normalizeCWD(sess.WorktreePath),
 		sess.WorktreeBaseHEAD,
 		normalizeCWD(sess.WorktreeBaseRepo),
-		strings.TrimSpace(sess.DMParticipantID),
-		boolToInt(sess.Group),
-		strings.TrimSpace(sess.FocusWorkspace),
 		strings.TrimSpace(sess.WorkspaceID),
 		strings.TrimSpace(sess.Source),
 		strings.TrimSpace(sess.Provider),
@@ -2145,20 +1406,13 @@ func sessionArgs(sess Session) []any {
 	}
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
 func findSessionDB(db *sql.DB, id string) (Session, bool, error) {
 	row := db.QueryRow(`
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group, focus_workspace, workspace_id, source,
+       workspace_id, source,
 	       provider, model, variant, effort, permission_mode
 FROM sessions
 WHERE id = ?`, id)
@@ -2171,7 +1425,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group, focus_workspace, workspace_id, source,
+       workspace_id, source,
 	       provider, model, variant, effort, permission_mode
 FROM sessions
 WHERE id = ?`, id)
@@ -2197,18 +1451,16 @@ func scanSession(scanner interface {
 	var s Session
 	var createdAt, updatedAt string
 	var pinnedAt, archivedAt sql.NullString
-	var isGroup int
 	if err := scanner.Scan(
 		&s.ID, &createdAt, &updatedAt, &s.Title, &s.Summary, &s.Entries, &s.CWD,
 		&s.ForkedFromID, &s.ForkedFromTurnID, &s.ForkedFromItemID,
 		&pinnedAt, &archivedAt,
 		&s.WorktreePath, &s.WorktreeBaseHEAD, &s.WorktreeBaseRepo,
-		&s.DMParticipantID, &isGroup, &s.FocusWorkspace, &s.WorkspaceID, &s.Source,
+		&s.WorkspaceID, &s.Source,
 		&s.Provider, &s.Model, &s.Variant, &s.Effort, &s.PermissionMode,
 	); err != nil {
 		return Session{}, err
 	}
-	s.Group = isGroup != 0
 	s.CreatedAt = parseTime(createdAt)
 	s.UpdatedAt = parseTime(updatedAt)
 	if pinnedAt.Valid {
@@ -2242,7 +1494,7 @@ func sessionExistsTx(tx *sql.Tx, id string) (bool, error) {
 
 // appendHistoryRecordTx inserts a record with the next per-session seq and
 // returns that seq. seq is the message's stable address within the thread
-// (used by message_marks for read receipts and reactions).
+// The returned seq is the stable address of the appended record.
 func appendHistoryRecordTx(tx *sql.Tx, id string, rec HistoryRecord) (int, error) {
 	var nextSeq int
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM session_messages WHERE session_id = ?`, id).Scan(&nextSeq); err != nil {
@@ -2260,12 +1512,16 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 				session_id, seq, role, content, display_content, phase, provider_item_id, provider_item_model, client_id, hidden, steered, reasoning_content,
 				reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 				tool_call_id, tool_invocation_id, tool_result_kind, tool_result_json, finish_reason, stop_reason, truncated, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-				provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				provider, model
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), strings.TrimSpace(rec.ProviderItemID), strings.TrimSpace(rec.ProviderItemModel), rec.ClientID, boolInt(rec.Hidden), boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolInvocationID, rec.ToolResultKind, rawJSONText(rec.ToolResult), rec.FinishReason, rec.StopReason, boolInt(rec.Truncated), rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.ContextTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
-		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID), rec.BasisSeq, rawJSONText(rec.EnvelopeMeta), rawJSONText(rec.FocusMeta),
+		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model),
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
@@ -2311,7 +1567,7 @@ const historyRecordsSelect = `
 	       provider_item_id, provider_item_model,
 	       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_invocation_id, tool_result_kind, tool_result_json, finish_reason, stop_reason, truncated, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-	       provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
+	       provider, model
 	FROM session_messages`
 
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
@@ -2336,7 +1592,7 @@ func scanHistoryRecords(rows *sql.Rows) ([]HistoryRecord, error) {
 	for rows.Next() {
 		var rec HistoryRecord
 		var hidden, steered, truncated int
-		var reasoningBlocks, images, files, toolCalls, discoveredTools, toolResult, envelopeMeta, focusMeta string
+		var reasoningBlocks, images, files, toolCalls, discoveredTools, toolResult string
 		var at sql.NullString
 		if err := rows.Scan(
 			&rec.Seq,
@@ -2344,7 +1600,7 @@ func scanHistoryRecords(rows *sql.Rows) ([]HistoryRecord, error) {
 			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolInvocationID, &rec.ToolResultKind, &toolResult, &rec.FinishReason, &rec.StopReason, &truncated, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.ContextTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
-			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID, &rec.BasisSeq, &envelopeMeta, &focusMeta,
+			&rec.Provider, &rec.Model,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
 		}
@@ -2357,8 +1613,6 @@ func scanHistoryRecords(rows *sql.Rows) ([]HistoryRecord, error) {
 		rec.ToolCalls = rawMessage(toolCalls)
 		rec.DiscoveredTools = rawMessage(discoveredTools)
 		rec.ToolResult = rawMessage(toolResult)
-		rec.EnvelopeMeta = rawMessage(envelopeMeta)
-		rec.FocusMeta = rawMessage(focusMeta)
 		if at.Valid {
 			rec.At = parseTime(at.String)
 		}

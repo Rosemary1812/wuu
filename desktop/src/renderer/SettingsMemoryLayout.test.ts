@@ -12,8 +12,5 @@ describe("settings memory header layout", () => {
     expect(settingsCSS).toMatch(
       /\.settings-memory-actions\s*\{[\s\S]*?margin-left:\s*auto;/,
     );
-    expect(settingsCSS).toMatch(
-      /@media \(max-width:\s*900px\)[\s\S]*?\.settings-page-header:not\(\.settings-memory-header\)/,
-    );
   });
 });

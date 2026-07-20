@@ -20,11 +20,8 @@ import {
 } from "./AppState";
 import {
   reconcileSidebarSectionOrder,
-  SIDEBAR_SECTION_AGENTS,
-  SIDEBAR_SECTION_GROUP,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { translateCurrent } from "./i18n";
 
@@ -207,7 +204,6 @@ export function useSidebarProjectState({
       reconcileSidebarSectionOrder(
         storedSidebarSectionOrder(),
         [],
-        ENABLE_COLLABORATION,
       ),
   );
   const loadingProjectThreadIDsRef = useRef(new Set<string>());
@@ -256,7 +252,6 @@ export function useSidebarProjectState({
       reconcileSidebarSectionOrder(
         current,
         validProjectIDs,
-        ENABLE_COLLABORATION,
       ),
     );
   }, [projects]);
@@ -268,10 +263,6 @@ export function useSidebarProjectState({
       SIDEBAR_SECTION_PINNED,
       SCRATCH_PSEUDO_PROJECT_ID,
     ]);
-    if (ENABLE_COLLABORATION) {
-      validSectionIDs.add(SIDEBAR_SECTION_AGENTS);
-      validSectionIDs.add(SIDEBAR_SECTION_GROUP);
-    }
     setCollapsedSidebarSectionIDs((current) =>
       removeMissingIDs(current, validSectionIDs),
     );
@@ -411,13 +402,9 @@ export function useSidebarProjectState({
   }
 
   function toggleSidebarSectionCollapsed(sectionID: string): void {
-    // Pinned / Agents / 群聊 sections are pure manual sidebar sections:
+    // Pinned is a pure manual sidebar section:
     // expanded ⇔ !collapsedSidebarSectionIDs.has(id).
-    if (
-      sectionID === SIDEBAR_SECTION_PINNED ||
-      sectionID === SIDEBAR_SECTION_AGENTS ||
-      sectionID === SIDEBAR_SECTION_GROUP
-    ) {
+    if (sectionID === SIDEBAR_SECTION_PINNED) {
       setCollapsedSidebarSectionIDs((current) => {
         if (!current.has(sectionID)) {
           return new Set(current).add(sectionID);

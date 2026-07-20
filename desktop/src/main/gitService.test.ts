@@ -29,9 +29,17 @@ function makeRepository(): string {
   return root;
 }
 
-function serviceFor(root: string, runningThreadCwds: string[] = []): GitService {
+function serviceFor(
+  root: string,
+  runningThreadCwds: string[] = [],
+  knownThreadCwds: string[] = [],
+): GitService {
   const context: RuntimeContext = { kind: "no_project", cwd: root };
-  return new GitService(() => context, () => runningThreadCwds);
+  return new GitService(
+    () => context,
+    () => runningThreadCwds,
+    () => knownThreadCwds,
+  );
 }
 
 afterEach(() => {
@@ -121,6 +129,45 @@ describe("GitService worktree roots", () => {
     execFileSync("git", ["-C", root, "worktree", "add", "-qb", "linked", linked]);
 
     expect(gitWorkingTreeBusy(root, [linked])).toBe(false);
+  });
+
+  it(
+    "reads and mutates the explicitly selected linked worktree",
+    () => {
+      const root = makeRepository();
+      const linked = mkdtempSync(join(tmpdir(), "wuu-linked-worktree-"));
+      rmSync(linked, { recursive: true, force: true });
+      roots.push(linked);
+      execFileSync("git", ["-C", root, "worktree", "add", "-qb", "linked", linked]);
+      execFileSync("git", ["-C", root, "branch", "next"]);
+      const service = serviceFor(root, [], [linked]);
+
+      expect(service.status({}, linked).branch).toBe("linked");
+      expect(service.status().branch).not.toBe("linked");
+
+      service.checkoutBranch("next", linked);
+
+      expect(service.status({}, linked).branch).toBe("next");
+      expect(service.status().branch).not.toBe("next");
+    },
+    15_000,
+  );
+
+  it("rejects relative Git root overrides", () => {
+    const root = makeRepository();
+
+    expect(() => serviceFor(root).status({}, "relative/worktree")).toThrow(
+      "Git working directory must be absolute",
+    );
+  });
+
+  it("rejects Git roots that are not bound to the current project", () => {
+    const root = makeRepository();
+    const unrelated = makeRepository();
+
+    expect(() => serviceFor(root).status({}, unrelated)).toThrow(
+      "Git working directory is not associated with the current project",
+    );
   });
 
   it("rechecks the authoritative running cwd before checkout", () => {

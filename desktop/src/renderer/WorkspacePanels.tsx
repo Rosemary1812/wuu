@@ -580,7 +580,10 @@ export function WorkspaceRightPanel({
                     onClose={() => onCloseTab(activeTab.id)}
                   />
                 ) : activeTab.kind === "review" ? (
-                  <WorkspaceReviewPanel gitStatus={gitStatus} />
+                  <WorkspaceReviewPanel
+                    gitStatus={gitStatus}
+                    workspaceRoot={workspaceContext?.cwd}
+                  />
                 ) : activeTab.kind === "terminal" ? (
                   <WorkspaceTerminalPanel
                     activeContext={workspaceContext}

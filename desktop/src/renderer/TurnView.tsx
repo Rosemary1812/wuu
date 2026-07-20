@@ -32,7 +32,6 @@ export function TurnView({
   cwd,
   onOpenFile,
   onOpenAgent,
-  onOpenSubthread,
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
@@ -50,7 +49,6 @@ export function TurnView({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
@@ -74,6 +72,20 @@ export function TurnView({
     turn.status === "completed"
       ? messageFlowAgentMessageItemID(turn)
       : undefined;
+  // The edit summary card should sit inside the actionable answer message
+  // (between its text and its action bar) when that message actually renders
+  // an action bar. Otherwise it falls back to its turn-level slot below the
+  // assistant shell.
+  const actionableAnswerItem = actionableAgentMessageID
+    ? turn.items.find(
+        (item) =>
+          item.id === actionableAgentMessageID &&
+          item.type === "agent_message" &&
+          item.phase !== "commentary" &&
+          item.text?.trim(),
+      )
+    : undefined;
+  const runActionAttachedToMessage = actionableAnswerItem != null;
 
   function renderThreadItem(
     item: ThreadItem,
@@ -107,7 +119,16 @@ export function TurnView({
         onCancelEditMessage={onCancelEditMessage}
         onSubmitEditMessage={onSubmitEditMessage}
         onOpenAgent={onOpenAgent}
-        onOpenSubthread={onOpenSubthread}
+        editSummaryCard={
+          runActionAttachedToMessage && item.id === actionableAgentMessageID ? (
+            <TurnEditSummaryCard
+              turn={turn}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
+              onOpenFileDiff={onOpenFileDiff}
+            />
+          ) : undefined
+        }
       />
     );
   }
@@ -123,17 +144,8 @@ export function TurnView({
     rawAssistantDisplay,
   );
   const hasTurnRuns =
-    turn.status !== "in_progress" && turn.items.some(isCommandToolCall);
-  const runActionAttachedToMessage = Boolean(
-    actionableAgentMessageID &&
-      turn.items.some(
-        (item) =>
-          item.id === actionableAgentMessageID &&
-          item.type === "agent_message" &&
-          item.phase !== "commentary" &&
-          item.text?.trim(),
-      ),
-  );
+    (turn.status === "completed" || turn.status === "failed") &&
+    turn.items.some(isCommandToolCall);
   // `buildAssistantTurnDisplay` already classifies "turn completed but
   // only commentary, no `final_answer`" and surfaces it as
   // `missingReplyMessage`. Forward that to the event pipeline so the
@@ -167,18 +179,19 @@ export function TurnView({
           onOpenRuns={onOpenRuns}
           onCollapseComplete={onCollapseComplete}
           onOpenAgent={onOpenAgent}
-          onOpenSubthread={onOpenSubthread}
         />
       ) : null}
       {hasTurnRuns && onOpenRuns && !runActionAttachedToMessage ? (
         <TurnRunActions onOpenRuns={onOpenRuns} />
       ) : null}
-      <TurnEditSummaryCard
-        turn={turn}
-        cwd={cwd}
-        onOpenFile={onOpenFile}
-        onOpenFileDiff={onOpenFileDiff}
-      />
+      {!runActionAttachedToMessage ? (
+        <TurnEditSummaryCard
+          turn={turn}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+          onOpenFileDiff={onOpenFileDiff}
+        />
+      ) : null}
       {isLatestTurn && turn.status === "in_progress" && streamStatus?.liveProgress ? (
         <StreamReconnectNotice text={streamStatus.text} />
       ) : null}

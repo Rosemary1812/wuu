@@ -12,9 +12,8 @@ import (
 )
 
 // TestParticipantSaveEnforcesRosterCap covers the active named-agent roster
-// cap. #all no longer mirrors this roster, but the product still keeps the
-// named roster bounded while the team UI and resident runtime are tuned
-// around small groups. Retired participants free a slot.
+// cap. The Kanban team stays deliberately small; retired participants free a
+// slot.
 func TestParticipantSaveEnforcesRosterCap(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})

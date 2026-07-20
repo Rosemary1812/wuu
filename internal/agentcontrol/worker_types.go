@@ -212,20 +212,10 @@ var defaultWorkerBlockedTools = map[string]struct{}{
 	"close_agent":  {},
 }
 
-var participantSpeechTools = map[string]struct{}{
-	"post_message":       {},
-	"react":              {},
-	"manage_participant": {},
-	"manage_task":        {},
-}
-
 // FilterToolsForWorker returns the subset of fullList that this worker
-// type is allowed to call. participantSpeech is an internal capability for
-// conversation-native named-agent runs; ordinary subagents never receive the
-// chat and task coordination tools even when their worker type otherwise has
-// an unrestricted tool list. ultraMode is optional so existing default-mode
+// type is allowed to call. ultraMode is optional so existing default-mode
 // callers retain byte-for-byte behavior without supplying a new argument.
-func FilterToolsForWorker(wt WorkerType, fullList []string, participantSpeech bool, ultraMode ...bool) []string {
+func FilterToolsForWorker(wt WorkerType, fullList []string, ultraMode ...bool) []string {
 	ultra := len(ultraMode) > 0 && ultraMode[0]
 	out := make([]string, 0, len(fullList))
 	allowSet := map[string]struct{}{}
@@ -246,12 +236,6 @@ func FilterToolsForWorker(wt WorkerType, fullList []string, participantSpeech bo
 			}
 		}
 		if _, denied := denySet[name]; denied {
-			continue
-		}
-		if _, conversationNative := participantSpeechTools[name]; conversationNative {
-			if participantSpeech {
-				out = append(out, name)
-			}
 			continue
 		}
 		if len(wt.AllowedTools) == 0 {

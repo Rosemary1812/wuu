@@ -62,6 +62,7 @@ type FeatherReveal = {
 const DEFAULT_CLASS_NAME = "streaming-markdown rich-content";
 const CURSOR_CLASS_NAME = "stream-cursor";
 const CURSOR_SENTINEL = "";
+const CURSOR_MARKDOWN_BOUNDARY = " ";
 const FEATHER_RETENTION_MS = 110;
 const MAX_FEATHER_BATCHES = 8;
 
@@ -253,7 +254,14 @@ export function StreamingMarkdown({
     () => splitIntoStableBlocks(visibleText),
     [visibleText]
   );
-  const tailText = showCursor ? `${split.tail}${CURSOR_SENTINEL}` : split.tail;
+  // Keep the synthetic cursor separated from the Markdown source. Appending
+  // the private-use sentinel directly after a closing emphasis delimiter can
+  // make that delimiter non-right-flanking (for example `。**`), exposing
+  // the raw `**` in the rendered message. The text renderer removes this
+  // parsing-only boundary before it reaches the DOM.
+  const tailText = showCursor
+    ? `${split.tail}${CURSOR_MARKDOWN_BOUNDARY}${CURSOR_SENTINEL}`
+    : split.tail;
 
   /* ------------------------------- Render -------------------------------- */
   return (
@@ -298,7 +306,10 @@ function createCursorTextRenderer(
 ): RichTextRenderer {
   return (text, keyPrefix, context) => {
     const cursorIndex = text.indexOf(CURSOR_SENTINEL);
-    const visibleText = cursorIndex >= 0 ? text.slice(0, cursorIndex) : text;
+    const textBeforeCursor = cursorIndex >= 0 ? text.slice(0, cursorIndex) : text;
+    const visibleText = cursorIndex >= 0 && textBeforeCursor.endsWith(CURSOR_MARKDOWN_BOUNDARY)
+      ? textBeforeCursor.slice(0, -CURSOR_MARKDOWN_BOUNDARY.length)
+      : textBeforeCursor;
     const output: Array<JSX.Element | string> = [];
 
     const ranges = featherRangesForNode(

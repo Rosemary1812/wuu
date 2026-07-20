@@ -19,12 +19,10 @@ import (
 
 // handleThreadDelete permanently removes a conversation. Unlike archive
 // (which only hides the thread), delete is the storage-hygiene path: it
-// removes the session row (chat history, conversation threads, and group
-// membership cascade via foreign keys), the workspace-scoped session
-// artifact directory (workers/threads/harness/goal_runtime.json), and any
-// fork worktree still bound to the thread. Only archived or otherwise idle
-// (not running) threads are eligible; the built-in #all channel is never
-// deletable.
+// removes the session row and chat history, the workspace-scoped session
+// artifact directory (workers/threads/harness/goal_runtime.json), and any fork
+// worktree still bound to the thread. Only archived or otherwise idle (not
+// running) threads are eligible.
 func (s *Server) handleThreadDelete(req Request) error {
 	var params ThreadDeleteParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -44,9 +42,6 @@ func (s *Server) handleThreadDelete(req Request) error {
 		if threadHasActiveAgents(th) {
 			return s.writeResponse(req.ID, nil, errors.New("cannot delete a thread with active agents"))
 		}
-	}
-	if err := s.rejectAllChannelMutation(id, "delete"); err != nil {
-		return s.writeResponse(req.ID, nil, err)
 	}
 	mutationLease, err := s.tryAcquireThreadMutationLease(id)
 	if err != nil {

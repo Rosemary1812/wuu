@@ -15,34 +15,25 @@ import {
   applyLoadedRuntimeWithDraftCarry,
   appendStreamingTokenSample,
   appendTurnTokenSample,
-  chatFocusValueForThread,
-  chatMessagesFromTurns,
-  chatReaderCountForThread,
   composerDraftHasContent,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
-  groupThreadSummaries,
   createDraftSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,
-  focusWorkspaceSendValue,
   sessionTabLabel,
   handleStreamingNotification,
   initialState,
-  isGroupThread,
   isScratchThread,
   isStateActiveThreadRunning,
   isThreadRunning,
   isThreadUnread,
   latestCompletedTurnID,
-  latestIncomingChatMessageSeq,
-  overlayMemberBusy,
   latestContextUsageForThread,
   mergeListedThreads,
   markThreadTurnsViewed,
-  mentionedParticipantIDsFromText,
   openForkThreadAsPrimary,
   pinnedThreads,
   pinnedThreadSummaries,
@@ -50,7 +41,6 @@ import {
   queryTextsForThread,
   reconcileResumedThreadTurns,
   reduceServerEvent,
-  replyCountBadge,
   resolveThreadRuntimeContext,
   scratchThreadSummaries,
   sortThreads,
@@ -302,6 +292,36 @@ describe("AppState protocol normalization", () => {
       expect.objectContaining({ id: "turn-auto-continue", items: [] }),
     ]);
   });
+
+  it("keeps an optimistic first turn when thread/started carries an empty snapshot", () => {
+    const current = threadWithUserTexts(["first query"]);
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread: current,
+        threads: [current],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "thread/started",
+          params: {
+            thread: {
+              ...current,
+              turns: [],
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.thread?.turns).toEqual(current.turns);
+    expect(next.threads.find((thread) => thread.id === current.id)?.turns).toEqual(
+      current.turns,
+    );
+  });
 });
 
 function sessionTabPrompt(
@@ -414,17 +434,6 @@ describe("summarizeThreadsForSidebar", () => {
     expect(JSON.stringify(summary)).not.toContain("secret message body");
   });
 
-  it("preserves dm_participant_id through summarization", () => {
-    const [summary] = summarizeThreadsForSidebar([
-      {
-        ...threadWithUserTexts(["dm hi"]),
-        dm_participant_id: "participant-7",
-      },
-    ]);
-
-    expect(summary.dm_participant_id).toBe("participant-7");
-  });
-
   it("groups worktree fork sessions by their base repo", () => {
     const project = {
       id: "project-1",
@@ -450,49 +459,6 @@ describe("summarizeThreadsForSidebar", () => {
     expect(threadProjectPath(summary)).toBe("/repo/project");
     expect(threadBelongsToProject(summary, project)).toBe(true);
     expect(isScratchThread(summary, [project])).toBe(false);
-  });
-});
-
-describe("overlayMemberBusy", () => {
-  function groupSummary(
-    members: Array<{ id: string; busy?: boolean }>,
-  ): ReturnType<typeof summarizeThreadsForSidebar>[number] {
-    const [summary] = summarizeThreadsForSidebar([
-      {
-        ...threadWithUserTexts(["group hello"]),
-        group: true,
-        members: members.map((member) => ({
-          id: member.id,
-          name: member.id,
-          busy: member.busy,
-        })),
-      } as unknown as Thread,
-    ]);
-    return summary;
-  }
-
-  it("lights a member the live busy set says is running", () => {
-    const summary = groupSummary([{ id: "andy", busy: false }]);
-    const next = overlayMemberBusy(summary, new Set(["andy"]));
-    expect(next.members?.[0]?.busy).toBe(true);
-    expect(isThreadRunning(next)).toBe(true);
-  });
-
-  it("clears a stale busy=true once the member's turn settled", () => {
-    const summary = groupSummary([{ id: "andy", busy: true }]);
-    const next = overlayMemberBusy(summary, new Set());
-    expect(next.members?.[0]?.busy).toBe(false);
-    expect(isThreadRunning(next)).toBe(false);
-  });
-
-  it("returns the same reference when nothing changes", () => {
-    const summary = groupSummary([
-      { id: "andy", busy: true },
-      { id: "bob", busy: false },
-    ]);
-    expect(overlayMemberBusy(summary, new Set(["andy"]))).toBe(summary);
-    const memberless = groupSummary([]);
-    expect(overlayMemberBusy(memberless, new Set(["andy"]))).toBe(memberless);
   });
 });
 
@@ -528,20 +494,6 @@ describe("resolveThreadRuntimeContext", () => {
     });
   });
 
-  it("resolves a DM thread to a no_project context rooted at its own cwd", () => {
-    const thread: Thread = {
-      ...threadWithUserTexts(["hi Andy"]),
-      cwd: "/Users/me/.wuu/agents/andy/home",
-      workspace_kind: "dm",
-      dm_participant_id: "andy",
-    };
-
-    expect(resolveThreadRuntimeContext(thread, [project])).toEqual({
-      kind: "no_project",
-      cwd: thread.cwd,
-    });
-  });
-
   it("has no registered project to match against and falls back to no_project", () => {
     const thread = threadWithUserTexts(["hello"]);
     thread.cwd = "/Users/me/some/random/cwd";
@@ -554,7 +506,7 @@ describe("resolveThreadRuntimeContext", () => {
   });
 
   it("prefers a cwd match against a registered project over a stale workspace_kind label, consistent with isScratchThread", () => {
-    // Same fixture shape as the "groups worktree fork sessions" case above:
+    // Same fixture shape as the worktree fork session case above:
     // cwd belongs to the project, but workspace_kind still says "scratch"
     // (e.g. a legacy thread from before the project was registered at that
     // path). isScratchThread treats the cwd match as authoritative and
@@ -1068,6 +1020,214 @@ describe("AppState token usage", () => {
 
     expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
       text: "HTTP 消息流正在恢复（第 3/4 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("names the failure cause in the single reconnect chip instead of the transport", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+    const reconnectEvent = {
+      kind: "notification" as const,
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 2,
+              max_attempts: 6,
+              retry_in_ms: 5000,
+              failure_category: "rate_limit",
+              reason: "Provider is overloaded",
+            },
+          },
+        },
+      },
+    };
+
+    const first = reduceServerEvent(state, reconnectEvent);
+    expect(turnStreamStatusForThread(first, first.thread)).toEqual({
+      text: "429 触发限流，约 5 秒后继续（第 2/6 次尝试）",
+      liveProgress: true,
+    });
+
+    // A later attempt with a shorter wait updates the same chip in place —
+    // the turn keeps exactly one status entry, never one per attempt.
+    const second = reduceServerEvent(first, {
+      ...reconnectEvent,
+      message: {
+        ...reconnectEvent.message,
+        params: {
+          ...reconnectEvent.message.params,
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 3,
+              max_attempts: 6,
+              retry_in_ms: 2000,
+              failure_category: "rate_limit",
+              reason: "Provider is overloaded",
+            },
+          },
+        },
+      },
+    });
+    expect(Object.keys(second.turnStreamStatus)).toEqual(["turn-1"]);
+    expect(turnStreamStatusForThread(second, second.thread)).toEqual({
+      text: "429 触发限流，约 2 秒后继续（第 3/6 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("names auth recovery in the reconnect chip without a wait hint", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 2,
+              failure_category: "authentication",
+              reason: "Authentication failed",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "认证失败，正在重连中（第 2 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("falls back to the redacted reason summary when failure_category is absent", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 1,
+              reason: "Provider is overloaded",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "上游过载，正在重连中（第 1 次尝试）",
+      liveProgress: true,
+    });
+  });
+
+  it("keeps the transport wording when the reconnect cause is unknown", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 1,
+              failure_category: "replay_unsafe",
+              reason: "Automatic replay blocked to avoid duplicate tool execution",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "消息流正在恢复（第 1 次尝试）",
       liveProgress: true,
     });
   });
@@ -1937,118 +2097,6 @@ describe("AppState unread tracking", () => {
     expect(markThreadTurnsViewed(state, "thread-1")).toBe(state);
   });
 
-  function makeGroupThreadWithMessages(
-    threadID: string,
-    items: Array<{
-      type: "user_message" | "participant_message";
-      seq?: number;
-    }>,
-  ): Thread {
-    const base = makeThreadWithTurns(threadID, [
-      { id: "turn-1", status: "completed" },
-    ]);
-    return {
-      ...base,
-      group: true,
-      turns: [
-        {
-          id: "turn-1",
-          items_view: "full" as const,
-          status: "completed" as const,
-          items: items.map((item, index) => ({
-            id: `item-${index + 1}`,
-            type: item.type,
-            text: `message ${index + 1}`,
-            seq: item.seq,
-            ...(item.type === "participant_message"
-              ? { participant: { id: "andy", name: "Andy", kind: "agent" } }
-              : {}),
-          })),
-        },
-      ],
-    };
-  }
-
-  it("chat-style unread requires an actual incoming message, not a settled turn", () => {
-    // A group turn that completed WITHOUT any participant post (e.g. the
-    // model settled without using send_message) must not flag unread.
-    const silent = makeGroupThreadWithMessages("group-1", [
-      { type: "user_message", seq: 1 },
-    ]);
-    expect(isThreadUnread(silent, undefined)).toBe(false);
-
-    const spoke = makeGroupThreadWithMessages("group-2", [
-      { type: "user_message", seq: 1 },
-      { type: "participant_message", seq: 2 },
-    ]);
-    expect(isThreadUnread(spoke, undefined)).toBe(true);
-    expect(isThreadUnread(spoke, undefined, 2)).toBe(false);
-    expect(isThreadUnread(spoke, undefined, 1)).toBe(true);
-  });
-
-  it("chat-style unread flows through ThreadSummary.last_incoming_message_seq", () => {
-    const spoke = makeGroupThreadWithMessages("group-1", [
-      { type: "participant_message", seq: 5 },
-    ]);
-    const [summary] = summarizeThreadsForSidebar([spoke]);
-    expect(summary.last_incoming_message_seq).toBe(5);
-    expect(isThreadUnread(summary, undefined)).toBe(true);
-    expect(isThreadUnread(summary, undefined, 5)).toBe(false);
-  });
-
-  it("the user's own post never flags a chat thread unread", () => {
-    const thread = makeGroupThreadWithMessages("group-1", [
-      { type: "participant_message", seq: 3 },
-      { type: "user_message", seq: 4 },
-    ]);
-    // Viewed up to the agent's message (3); the trailing message is the
-    // user's own — nothing incoming is pending.
-    expect(isThreadUnread(thread, undefined, 3)).toBe(false);
-  });
-
-  it("markThreadTurnsViewed advances the chat message offset to the latest post", () => {
-    const thread = makeGroupThreadWithMessages("group-1", [
-      { type: "participant_message", seq: 3 },
-      { type: "user_message", seq: 4 },
-    ]);
-    const state = {
-      ...initialState,
-      thread,
-      threads: [thread],
-    };
-    const next = markThreadTurnsViewed(state, "group-1");
-    expect(next.lastViewedMessageSeqByThreadID["group-1"]).toBe(4);
-    expect(isThreadUnread(thread, undefined, 4)).toBe(false);
-  });
-
-  it("latestIncomingChatMessageSeq ignores unpersisted items without seq", () => {
-    const thread = makeGroupThreadWithMessages("group-1", [
-      { type: "participant_message", seq: 2 },
-      { type: "participant_message" },
-    ]);
-    expect(latestIncomingChatMessageSeq(thread)).toBe(2);
-  });
-});
-
-describe("chatReaderCountForThread", () => {
-  const member = (id: string) => ({ id, name: id, kind: "agent" });
-
-  it("uses the group's own member roster, not the global roster", () => {
-    const group = {
-      group: true,
-      members: [member("andy"), member("bob")],
-    };
-    expect(chatReaderCountForThread(group, 3)).toBe(2);
-  });
-
-  it("counts a DM as exactly one reader", () => {
-    expect(chatReaderCountForThread({ dm_participant_id: "andy" }, 3)).toBe(1);
-  });
-
-  it("falls back to the roster while a group's members snapshot is missing", () => {
-    expect(chatReaderCountForThread({ group: true }, 3)).toBe(3);
-    expect(chatReaderCountForThread(undefined, 3)).toBe(3);
-  });
 });
 
 describe("AppState sortThreads (sidebar order)", () => {
@@ -2059,8 +2107,6 @@ describe("AppState sortThreads (sidebar order)", () => {
     status?: "idle" | "in_progress";
     turns?: Array<{ id: string; status: "completed" | "in_progress" | "failed" | "interrupted" }>;
     childAgents?: Agent[];
-    members?: Thread["members"];
-    group?: boolean;
     pinned?: boolean;
     archived?: boolean;
     readOnly?: boolean;
@@ -2077,8 +2123,6 @@ describe("AppState sortThreads (sidebar order)", () => {
       archived: args.archived,
       read_only: args.readOnly,
       child_agents: args.childAgents,
-      members: args.members,
-      group: args.group,
       pinned: args.pinned,
       turns: (args.turns ?? []).map((turn) => ({
         id: turn.id,
@@ -2205,15 +2249,14 @@ describe("AppState sortThreads (sidebar order)", () => {
   });
 
   it("treats a direct running child agent as active sidebar work", () => {
-    const groupWithRunningAgent = makeSortableThread({
-      id: "group-with-agent",
+    const threadWithRunningAgent = makeSortableThread({
+      id: "thread-with-agent",
       createdAt: "2026-06-18T00:00:00Z",
       updatedAt: "2026-06-18T00:00:00Z",
-      group: true,
       childAgents: [
         {
           id: "agent-running",
-          parent_id: "group-with-agent",
+          parent_id: "thread-with-agent",
           status: "running",
           task_name: "review",
         },
@@ -2225,39 +2268,12 @@ describe("AppState sortThreads (sidebar order)", () => {
       updatedAt: "2099-01-01T00:00:00Z",
     });
 
-    const sorted = sortThreads([settledRecent, groupWithRunningAgent]);
+    const sorted = sortThreads([settledRecent, threadWithRunningAgent]);
     expect(sorted.map((thread) => thread.id)).toEqual([
-      "group-with-agent",
+      "thread-with-agent",
       "thread-settled-recent",
     ]);
-    expect(isThreadUnread(groupWithRunningAgent, undefined)).toBe(false);
-  });
-
-  it("treats a busy group member as active sidebar work", () => {
-    const groupWithBusyMember = makeSortableThread({
-      id: "group-with-busy-member",
-      createdAt: "2026-06-18T00:00:00Z",
-      updatedAt: "2026-06-18T00:00:00Z",
-      group: true,
-      members: [
-        {
-          id: "participant-running",
-          name: "Runner",
-          kind: "named",
-          busy: true,
-        },
-      ],
-    });
-    const settledRecent = makeSortableThread({
-      id: "thread-settled-recent",
-      createdAt: "2026-06-17T00:00:00Z",
-      updatedAt: "2099-01-01T00:00:00Z",
-    });
-
-    expect(sortThreads([settledRecent, groupWithBusyMember]).map((thread) => thread.id)).toEqual([
-      "group-with-busy-member",
-      "thread-settled-recent",
-    ]);
+    expect(isThreadUnread(threadWithRunningAgent, undefined)).toBe(false);
   });
 
   it("keeps archived and read-only threads in the sortable list so Settings → Archive can show them", () => {
@@ -2357,13 +2373,12 @@ describe("AppState sortThreads (sidebar order)", () => {
 describe("mergeListedThreads", () => {
   it("does not clear known child-agent state when a listed snapshot omits it", () => {
     const current: Thread = {
-      ...threadWithUserTexts(["group work"]),
-      id: "group-1",
-      group: true,
+      ...threadWithUserTexts(["thread work"]),
+      id: "thread-1",
       child_agents: [
         {
           id: "agent-running",
-          parent_id: "group-1",
+          parent_id: "thread-1",
           status: "running",
           task_name: "review",
         },
@@ -2734,501 +2749,6 @@ describe("activePlanUpdateForThread", () => {
   });
 });
 
-describe("mentionedParticipantIDsFromText", () => {
-  const roster = [
-    { id: "prt-noel", name: "Noel" },
-    { id: "prt-noe", name: "Noe" },
-    { id: "prt-qing", name: "小青" },
-    { id: "prt-blank", name: "  " },
-  ];
-
-  it("matches whole-word @Name mentions", () => {
-    expect(mentionedParticipantIDsFromText("@Noel 看下这个 PR", roster)).toEqual([
-      "prt-noel",
-    ]);
-  });
-
-  it("prefers the longest name when one is a prefix of another", () => {
-    expect(mentionedParticipantIDsFromText("@Noel hi", roster)).toEqual([
-      "prt-noel",
-    ]);
-    expect(mentionedParticipantIDsFromText("@Noe hi", roster)).toEqual([
-      "prt-noe",
-    ]);
-  });
-
-  it("matches CJK names followed by punctuation", () => {
-    expect(mentionedParticipantIDsFromText("@小青，帮忙评审", roster)).toEqual([
-      "prt-qing",
-    ]);
-  });
-
-  it("collects multiple distinct mentions without duplicates", () => {
-    expect(
-      mentionedParticipantIDsFromText("@Noel @小青 @Noel 一起看看", roster),
-    ).toEqual(["prt-noel", "prt-qing"]);
-  });
-
-  it("returns empty for text without mentions or blank text", () => {
-    expect(mentionedParticipantIDsFromText("没有提及任何人", roster)).toEqual([]);
-    expect(mentionedParticipantIDsFromText("   ", roster)).toEqual([]);
-    expect(mentionedParticipantIDsFromText("mail@Noel.com", roster)).toEqual([]);
-  });
-
-  it("ignores blank-named participants", () => {
-    expect(mentionedParticipantIDsFromText("@   hello", roster)).toEqual([]);
-  });
-});
-
-describe("chatMessagesFromTurns", () => {
-  function turn(id: string, items: ThreadItem[]): Pick<Turn, "id" | "items"> {
-    return { id, items };
-  }
-
-  it("maps a plain user_message to a user row", () => {
-    const item: ThreadItem = { id: "item-1", type: "user_message", text: "hi" };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "user", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
-  });
-
-  it("maps a user_message with non-empty envelope_meta to an envelope row", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      text: "hi",
-      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 1 }],
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      {
-        kind: "envelope",
-        id: "turn-1:item-1",
-        turnID: "turn-1",
-        items: [item],
-      },
-    ]);
-  });
-
-  it("does not coalesce consecutive envelope rows across turns", () => {
-    const first: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      text: "first forwarded message",
-      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 0 }],
-    };
-    const second: ThreadItem = {
-      id: "item-2",
-      type: "user_message",
-      text: "second forwarded message",
-      envelope_meta: [{ source_thread_id: "thread-x", addressed: false, hop: 1 }],
-    };
-    const rows = chatMessagesFromTurns([
-      turn("turn-1", [first]),
-      turn("turn-2", [second]),
-    ]);
-    expect(rows).toEqual([
-      {
-        kind: "envelope",
-        id: "turn-1:item-1",
-        turnID: "turn-1",
-        items: [first],
-      },
-      {
-        kind: "envelope",
-        id: "turn-2:item-2",
-        turnID: "turn-2",
-        items: [second],
-      },
-    ]);
-  });
-
-  it("starts a new envelope group after a user message", () => {
-    const first: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      text: "forwarded before query",
-      envelope_meta: [{ source_thread_id: "thread-x", addressed: false, hop: 0 }],
-    };
-    const query: ThreadItem = {
-      id: "item-2",
-      type: "user_message",
-      text: "new query",
-    };
-    const second: ThreadItem = {
-      id: "item-3",
-      type: "user_message",
-      text: "forwarded after query",
-      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 0 }],
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [first, query, second])]);
-    expect(rows).toEqual([
-      {
-        kind: "envelope",
-        id: "turn-1:item-1",
-        turnID: "turn-1",
-        items: [first],
-      },
-      { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: query },
-      {
-        kind: "envelope",
-        id: "turn-1:item-3",
-        turnID: "turn-1",
-        items: [second],
-      },
-    ]);
-  });
-
-  it("keeps a user_message with an empty envelope_meta array as a user row", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      text: "hi",
-      envelope_meta: [],
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "user", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
-  });
-
-  it("maps a subagent_notification handoff to a system event row", () => {
-    // The backend delivers a triggering subagent notification to the resident
-    // as a user_message whose text is an InterAgentCommunication envelope
-    // wrapping a <subagent_notification> payload. The chat stream renders the
-    // lifecycle fact as a system divider, never as a raw JSON bubble.
-    const notification: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      text: JSON.stringify({
-        author: "/root/planner",
-        recipient: "/root",
-        content: `<subagent_notification>\n${JSON.stringify({
-          agent_path: "/root/design_pop_out_session_tab",
-          status: {
-            type: "agent_result",
-            agent_id: "planner-aef57366",
-            task_name: "design_pop_out_session_tab",
-            status: "cancelled",
-          },
-        })}\n</subagent_notification>`,
-        trigger_turn: true,
-      }),
-    };
-    const realMessage: ThreadItem = {
-      id: "item-2",
-      type: "user_message",
-      text: "重跑一下",
-    };
-    const rows = chatMessagesFromTurns([
-      turn("turn-1", [notification, realMessage]),
-    ]);
-    expect(rows).toEqual([
-      {
-        kind: "system",
-        id: "turn-1:item-1",
-        turnID: "turn-1",
-        text: "subagent 任务已取消",
-        item: notification,
-      },
-      { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: realMessage },
-    ]);
-  });
-
-  it("coalesces equivalent system events only within the same turn", () => {
-    const first: ThreadItem = {
-      id: "handoff-1",
-      type: "user_message",
-      text: handoffText(),
-    };
-    const second: ThreadItem = {
-      id: "handoff-2",
-      type: "user_message",
-      text: handoffText(),
-    };
-    const third: ThreadItem = {
-      id: "handoff-3",
-      type: "user_message",
-      text: handoffText(),
-    };
-
-    expect(
-      chatMessagesFromTurns([
-        turn("turn-1", [first, second]),
-        turn("turn-2", [third]),
-      ]),
-    ).toEqual([
-      {
-        kind: "system",
-        id: "turn-1:handoff-1",
-        turnID: "turn-1",
-        text: "subagent 完成了任务",
-        item: first,
-        count: 2,
-      },
-      {
-        kind: "system",
-        id: "turn-2:handoff-3",
-        turnID: "turn-2",
-        text: "subagent 完成了任务",
-        item: third,
-      },
-    ]);
-  });
-
-  it("hides named and legacy process notifications from chat rows", () => {
-    const named: ThreadItem = {
-      id: "process-named",
-      type: "user_message",
-      name: PROCESS_NOTIFICATION_NAME,
-      text: handoffText(),
-    };
-    const legacy: ThreadItem = {
-      id: "process-legacy",
-      type: "user_message",
-      text: processNotificationText(),
-    };
-    const realMessage: ThreadItem = {
-      id: "user-1",
-      type: "user_message",
-      text: "继续检查",
-    };
-
-    expect(
-      chatMessagesFromTurns([turn("turn-1", [named, legacy, realMessage])]),
-    ).toEqual([
-      { kind: "user", id: "turn-1:user-1", turnID: "turn-1", item: realMessage },
-    ]);
-  });
-
-  it("maps a participant_message to a participant row", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "participant_message",
-      text: "看这里",
-      post_kind: "result",
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "participant", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
-  });
-
-  it("keeps a decline participant_message as a participant row", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "participant_message",
-      text: "无需回应",
-      post_kind: "decline",
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "participant", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
-  });
-
-  it("drops agent_message, tool_call, reasoning, and other non-whitelisted items", () => {
-    const items: ThreadItem[] = [
-      { id: "item-1", type: "agent_message", text: "final answer" },
-      { id: "item-2", type: "tool_call", name: "bash" },
-      { id: "item-3", type: "reasoning", text: "thinking..." },
-      { id: "item-5", type: "context_compaction" },
-      { id: "item-6", type: "error" },
-    ];
-    const rows = chatMessagesFromTurns([turn("turn-1", items)]);
-    expect(rows).toEqual([]);
-  });
-
-  it("drops top-level task_card items from chat rows", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "task_card",
-      task: { id: "task-1", name: "跑测试", status: "running", reply_count: 3 },
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([]);
-  });
-
-  it("uses stable `${turn.id}:${item.id}` row ids across multiple turns", () => {
-    const rows = chatMessagesFromTurns([
-      turn("turn-1", [{ id: "item-1", type: "user_message", text: "a" }]),
-      turn("turn-2", [{ id: "item-1", type: "user_message", text: "b" }]),
-    ]);
-    expect(rows.map((row) => row.id)).toEqual(["turn-1:item-1", "turn-2:item-1"]);
-  });
-
-  it("maps an item with focus_meta to a focus row regardless of its type", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      focus_meta: { kind: "workspace", name: "wuu", root: "/home/user/wuu" },
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "focus", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
-  });
-
-  it("prefers focus_meta over envelope_meta when (implausibly) both are present", () => {
-    const item: ThreadItem = {
-      id: "item-1",
-      type: "user_message",
-      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 1 }],
-      focus_meta: { kind: "all" },
-    };
-    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "focus", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
-  });
-});
-
-describe("replyCountBadge", () => {
-  it("renders small counts verbatim", () => {
-    expect(replyCountBadge(0)).toBe("0");
-    expect(replyCountBadge(1)).toBe("1");
-    expect(replyCountBadge(42)).toBe("42");
-    expect(replyCountBadge(99)).toBe("99");
-  });
-
-  it("caps counts above 99 at '99+'", () => {
-    expect(replyCountBadge(100)).toBe("99+");
-    expect(replyCountBadge(1000)).toBe("99+");
-  });
-
-  it("clamps negative / fractional garbage defensively", () => {
-    expect(replyCountBadge(-5)).toBe("0");
-    expect(replyCountBadge(3.9)).toBe("3");
-  });
-});
-
-describe("chatFocusValueForThread", () => {
-  const registered = [{ name: "wuu" }];
-
-  it("returns the empty string (全部工作区) when there is no active thread", () => {
-    expect(chatFocusValueForThread(undefined, {}, registered)).toBe("");
-  });
-
-  it("falls back to the thread's own focus_workspace when unset in this session", () => {
-    expect(
-      chatFocusValueForThread(
-        { id: "thread-1", focus_workspace: "~" },
-        {},
-        registered,
-      ),
-    ).toBe("~");
-    expect(
-      chatFocusValueForThread(
-        { id: "thread-1", focus_workspace: "wuu" },
-        {},
-        registered,
-      ),
-    ).toBe("wuu");
-  });
-
-  it("defaults to the empty string when the thread has never set a focus", () => {
-    expect(chatFocusValueForThread({ id: "thread-1" }, {}, registered)).toBe("");
-  });
-
-  it("prefers the in-session override for the thread over the thread's own value", () => {
-    expect(
-      chatFocusValueForThread(
-        { id: "thread-1", focus_workspace: "wuu" },
-        { "thread-1": "~" },
-        registered,
-      ),
-    ).toBe("~");
-  });
-
-  it("ignores overrides keyed to a different thread", () => {
-    expect(
-      chatFocusValueForThread(
-        { id: "thread-1", focus_workspace: "wuu" },
-        { "thread-2": "~" },
-        registered,
-      ),
-    ).toBe("wuu");
-  });
-
-  it("falls back to 全部工作区 when the focused project is no longer registered", () => {
-    // The DM was focused on "gone", but that workspace has since been removed
-    // (or moved away), so it drops out of the roster and the focus resolves to
-    // the union — from thread.focus_workspace...
-    expect(
-      chatFocusValueForThread(
-        { id: "thread-1", focus_workspace: "gone" },
-        {},
-        registered,
-      ),
-    ).toBe("");
-    // ...and from a stale in-session override too.
-    expect(
-      chatFocusValueForThread(
-        { id: "thread-1", focus_workspace: "wuu" },
-        { "thread-1": "gone" },
-        registered,
-      ),
-    ).toBe("");
-  });
-});
-
-describe("focusWorkspaceSendValue", () => {
-  it("sends nothing when the chip was never touched this session", () => {
-    expect(
-      focusWorkspaceSendValue({ focus_workspace: "wuu" }, undefined),
-    ).toBeUndefined();
-    expect(focusWorkspaceSendValue(undefined, undefined)).toBeUndefined();
-  });
-
-  it("sends nothing when the override matches the thread's own value", () => {
-    expect(
-      focusWorkspaceSendValue({ focus_workspace: "wuu" }, "wuu"),
-    ).toBeUndefined();
-    // Undefined/absent focus_workspace on the thread is equivalent to "".
-    expect(focusWorkspaceSendValue({}, "")).toBeUndefined();
-    expect(focusWorkspaceSendValue(undefined, "")).toBeUndefined();
-  });
-
-  it("sends the override when it differs from the thread's own value", () => {
-    expect(focusWorkspaceSendValue({ focus_workspace: "wuu" }, "~")).toBe("~");
-    expect(focusWorkspaceSendValue({}, "~")).toBe("~");
-    // Resetting back to "全部工作区" from something else must still send
-    // the empty string explicitly — it is a real, intentional change.
-    expect(focusWorkspaceSendValue({ focus_workspace: "wuu" }, "")).toBe("");
-  });
-});
-
-describe("isGroupThread", () => {
-  it("returns true when group is true", () => {
-    expect(isGroupThread({ group: true })).toBe(true);
-  });
-
-  it("returns false when group is false", () => {
-    expect(isGroupThread({ group: false })).toBe(false);
-  });
-
-  it("returns false when group is undefined", () => {
-    expect(isGroupThread({})).toBe(false);
-  });
-});
-
-describe("scratchThreadSummaries excludes group threads", () => {
-  it("drops group threads the same way it drops DM threads", () => {
-    const [groupSummary] = summarizeThreadsForSidebar([
-      { ...threadWithUserTexts(["群聊消息"]), id: "thread-group", group: true },
-    ]);
-    const [scratchSummary] = summarizeThreadsForSidebar([
-      { ...threadWithUserTexts(["普通会话"]), id: "thread-scratch" },
-    ]);
-    const results = scratchThreadSummaries(
-      [groupSummary, scratchSummary],
-      [],
-    );
-    expect(results.map((thread) => thread.id)).toEqual([scratchSummary.id]);
-  });
-});
-
 describe("sidebar pin/archive matrix", () => {
   // Mental model under test: pinning MOVES an entity to 置顶 (no
   // duplicate left in its own section); archiving removes it from the
@@ -3244,34 +2764,17 @@ describe("sidebar pin/archive matrix", () => {
     );
   }
 
-  it("groupThreadSummaries lists only live, unpinned group threads", () => {
-    const all = summaries([
-      { id: "group-live", group: true },
-      { id: "group-pinned", group: true, pinned: true },
-      { id: "group-archived", group: true, archived: true },
-      { id: "scratch-live" },
-      { id: "dm-live", dm_participant_id: "prt-1" },
-    ]);
-    expect(groupThreadSummaries(all).map((thread) => thread.id)).toEqual([
-      "group-live",
-    ]);
-  });
-
-  it("pinnedThreadSummaries hosts pinned entities of every kind, never archived ones", () => {
+  it("pinnedThreadSummaries hosts pinned threads, never archived ones", () => {
     const all = summaries([
       { id: "scratch-pinned", pinned: true },
-      { id: "group-pinned", group: true, pinned: true },
-      { id: "dm-pinned", dm_participant_id: "prt-1", pinned: true },
       { id: "scratch-live" },
-      { id: "group-archived-pinned", group: true, pinned: true, archived: true },
+      { id: "scratch-archived-pinned", pinned: true, archived: true },
     ]);
     const pinned = pinnedThreadSummaries(all).map((thread) => thread.id);
     expect(pinned).toContain("scratch-pinned");
-    expect(pinned).toContain("group-pinned");
-    expect(pinned).toContain("dm-pinned");
     expect(pinned).not.toContain("scratch-live");
     // Archived-but-pinned must not ghost in 置顶.
-    expect(pinned).not.toContain("group-archived-pinned");
+    expect(pinned).not.toContain("scratch-archived-pinned");
   });
 
   it("scratchThreadSummaries drops pinned and archived entries (move semantics)", () => {
@@ -3703,26 +3206,19 @@ describe("reconcileResumedThreadTurns", () => {
     expect(merged.turns[2]).toBe(local.turns[2]);
   });
 
-  it("salvages client tail items when a resumed turn snapshot lags behind live participant messages", () => {
+  it("salvages client tail items when a resumed turn snapshot lags behind live items", () => {
     const resumed = threadWithTurnIDs(["turn-1", "turn-2"]);
     const local = threadWithTurnIDs(["turn-1", "turn-2"]);
-    const liveParticipant: ThreadItem = {
-      id: "turn-2-participant",
+    const liveItem: ThreadItem = {
+      id: "turn-2-tool",
       seq: 8,
-      type: "participant_message",
+      type: "tool_call",
       status: "completed",
-      role: "participant",
-      post_kind: "result",
-      text: "我已经回复了",
-      participant: {
-        id: "prt-andy",
-        kind: "named",
-        name: "Andy",
-      },
+      name: "bash",
     };
     local.turns[1] = {
       ...local.turns[1],
-      items: [...local.turns[1].items, liveParticipant],
+      items: [...local.turns[1].items, liveItem],
     };
 
     const merged = reconcileResumedThreadTurns(resumed, local);
@@ -3730,12 +3226,7 @@ describe("reconcileResumedThreadTurns", () => {
     expect(merged.turns).toHaveLength(2);
     expect(merged.turns[1].items).toEqual([
       resumed.turns[1].items[0],
-      liveParticipant,
-    ]);
-    expect(chatMessagesFromTurns(merged.turns).map((row) => row.kind)).toEqual([
-      "user",
-      "user",
-      "participant",
+      liveItem,
     ]);
   });
 

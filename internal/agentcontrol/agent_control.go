@@ -48,7 +48,7 @@ type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.M
 // instructions.
 type WorkerSystemPromptFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error)
 
-// ParticipantStore persists conversation participant identities. It is
+// ParticipantStore persists Kanban agent and task-worker identities. It is
 // defined here (instead of importing internal/session) so agentcontrol
 // stays decoupled from the session storage layer.
 type ParticipantStore interface {
@@ -58,6 +58,7 @@ type ParticipantStore interface {
 // AgentControl owns the orchestration runtime for one wuu session.
 type AgentControl struct {
 	manager       *subagent.Manager
+	workspaceMu   sync.RWMutex
 	worktrees     *worktree.Manager // nil when workspace is not a git repo
 	parentRepo    string            // absolute path to workspace root
 	worktreeRoot  string            // workspace-state worktrees directory
@@ -162,18 +163,8 @@ type AgentControl struct {
 	helpMeRecoveryMu sync.Mutex
 	helpMeRecoveries map[string]HelpMeRecovery
 
-	participantMessagesMu  sync.Mutex
-	participantMessages    []chan<- ParticipantMessage
-	participantSpeech      map[string]struct{}
-	participantResultPosts map[string]struct{}
-	participantResponses   map[string]struct{}
-
-	// participantRosterMu guards participantRoster and
-	// participantRosterBindings, the dispatch table for the
-	// manage_participant tool.
-	participantRosterMu       sync.Mutex
-	participantRoster         ParticipantRoster
-	participantRosterBindings map[string]string
+	participantBindingMu sync.Mutex
+	participantBindings  map[string]string
 
 	// workerProviderName is the provider name the AgentControl's worker
 	// runtime is currently configured for. The model-pin resolver
@@ -345,6 +336,75 @@ func New(cfg Config) (*AgentControl, error) {
 	}()
 	c.reconcileOrphanedHarnessTasks()
 	return c, nil
+}
+
+// PrepareWorkspaceRebind builds any fallible workspace-specific state before
+// the caller persists a session move. The returned commit function only swaps
+// prepared in-memory state, so a successful durable update cannot leave the
+// current turn on the old workspace.
+func (c *AgentControl) PrepareWorkspaceRebind(parentRepo string) (func(), error) {
+	if c == nil {
+		return func() {}, nil
+	}
+	parentRepo = strings.TrimSpace(parentRepo)
+	if parentRepo == "" {
+		return nil, errors.New("parent repository is required")
+	}
+	abs, err := filepath.Abs(parentRepo)
+	if err != nil {
+		return nil, fmt.Errorf("resolve parent repository: %w", err)
+	}
+	abs = filepath.Clean(abs)
+
+	var manager *worktree.Manager
+	if worktree.IsGitRepo(abs) {
+		manager, err = worktree.NewManager(abs, c.worktreeRoot)
+		if err != nil {
+			return nil, fmt.Errorf("prepare worktree manager: %w", err)
+		}
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.workspaceMu.Lock()
+			c.parentRepo = abs
+			c.worktrees = manager
+			c.workspaceMu.Unlock()
+			c.updateRootThreadWorkspace(abs)
+		})
+	}, nil
+}
+
+func (c *AgentControl) workspaceSnapshot() (string, *worktree.Manager) {
+	if c == nil {
+		return "", nil
+	}
+	c.workspaceMu.RLock()
+	defer c.workspaceMu.RUnlock()
+	return c.parentRepo, c.worktrees
+}
+
+// ParentRepo returns the workspace used by future inplace workers and forks.
+func (c *AgentControl) ParentRepo() string {
+	parentRepo, _ := c.workspaceSnapshot()
+	return parentRepo
+}
+
+func (c *AgentControl) updateRootThreadWorkspace(root string) {
+	if c == nil || c.threads == nil || c.threadStore == nil {
+		return
+	}
+	sessionID := strings.TrimSpace(c.sessionID)
+	if sessionID == "" || sessionID == "session-pending" {
+		return
+	}
+	model := ""
+	if existing, ok := c.threads.Resolve(sessionID); ok {
+		model = existing.Model
+	}
+	meta := c.threads.RegisterRoot(sessionID, sessionID, root, model, time.Now().UTC())
+	_ = c.threadStore.UpsertThread(meta)
 }
 
 // Manager exposes the underlying subagent.Manager for advanced use
@@ -730,9 +790,6 @@ type SpawnRequest struct {
 	BaseRepo      string // optional: chain off another worktree (worktree mode only)
 	Synchronous   bool
 	Timeout       time.Duration
-	// SpeechCapability is internal-only. It is set by conversation-native
-	// app-server paths, never by the LLM-facing spawn_agent tool.
-	SpeechCapability bool
 	// Isolation overrides the worker type's DefaultIsolation when set.
 	// Empty string means "use the type default". Use this from
 	// spawn_agent to opt a normally-inplace worker into a worktree
@@ -759,6 +816,13 @@ type SpawnRequest struct {
 	// and must not be exposed through the LLM-facing spawn_agent
 	// tool.
 	ModelPin string
+	// FileScopeRoots is an internal-only per-spawn file-tool whitelist
+	// override. Nil means the worker inherits the factory default scope;
+	// a non-nil slice (including an empty one, which clears the whitelist)
+	// is applied to the freshly built worker toolkit when it supports
+	// SetFileScopeRoots. Like ModelOverride it must never be exposed
+	// through the LLM-facing spawn_agent tool.
+	FileScopeRoots []string
 	// AdmissionPrepare is an internal-only transactional hook for state that
 	// must exist before the worker can become observable or runnable. It is not
 	// exposed through the LLM-facing spawn_agent tool.
@@ -789,19 +853,18 @@ type SpawnResult struct {
 }
 
 type preparedSpawn struct {
-	WorkerID         string
-	ParticipantID    string
-	WorkerType       WorkerType
-	ThreadMeta       agentthread.Metadata
-	Description      string
-	Prompt           string
-	Isolation        IsolationMode
-	SpeechCapability bool
-	BaseRepo         string
-	BaseRevision     string
-	IsFork           bool
-	ForkMode         string
-	ParentHistory    []providers.ChatMessage
+	WorkerID      string
+	ParticipantID string
+	WorkerType    WorkerType
+	ThreadMeta    agentthread.Metadata
+	Description   string
+	Prompt        string
+	Isolation     IsolationMode
+	BaseRepo      string
+	BaseRevision  string
+	IsFork        bool
+	ForkMode      string
+	ParentHistory []providers.ChatMessage
 	// ModelOverride and ClientOverride carry a per-participant model
 	// pin across the queue boundary so that even queued spawns honor
 	// the pin once they dequeue.
@@ -824,19 +887,18 @@ type preparedSpawn struct {
 }
 
 type queuedSpawnPayload struct {
-	WorkerID         string                  `json:"worker_id"`
-	ParticipantID    string                  `json:"participant_id,omitempty"`
-	WorkerType       string                  `json:"worker_type"`
-	ThreadMeta       agentthread.Metadata    `json:"thread_meta"`
-	Description      string                  `json:"description,omitempty"`
-	Prompt           string                  `json:"prompt"`
-	Isolation        string                  `json:"isolation"`
-	SpeechCapability bool                    `json:"speech_capability,omitempty"`
-	BaseRepo         string                  `json:"base_repo,omitempty"`
-	BaseRevision     string                  `json:"base_revision,omitempty"`
-	IsFork           bool                    `json:"is_fork,omitempty"`
-	ForkMode         string                  `json:"fork_mode,omitempty"`
-	ParentHistory    []providers.ChatMessage `json:"parent_history,omitempty"`
+	WorkerID      string                  `json:"worker_id"`
+	ParticipantID string                  `json:"participant_id,omitempty"`
+	WorkerType    string                  `json:"worker_type"`
+	ThreadMeta    agentthread.Metadata    `json:"thread_meta"`
+	Description   string                  `json:"description,omitempty"`
+	Prompt        string                  `json:"prompt"`
+	Isolation     string                  `json:"isolation"`
+	BaseRepo      string                  `json:"base_repo,omitempty"`
+	BaseRevision  string                  `json:"base_revision,omitempty"`
+	IsFork        bool                    `json:"is_fork,omitempty"`
+	ForkMode      string                  `json:"fork_mode,omitempty"`
+	ParentHistory []providers.ChatMessage `json:"parent_history,omitempty"`
 	// ModelOverride is persisted with the queued payload so the
 	// per-participant model pin survives session restart. The
 	// ClientOverride is intentionally NOT persisted — reconstructing a
@@ -975,7 +1037,6 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 			Description:       req.Description,
 			Prompt:            req.Prompt,
 			Isolation:         isolation,
-			SpeechCapability:  req.SpeechCapability,
 			BaseRepo:          queuedBaseRepo,
 			BaseRevision:      queuedBaseRevision,
 			ModelOverride:     strings.TrimSpace(req.ModelOverride),
@@ -1029,21 +1090,22 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	// 1. Determine the worker's working directory.
 	//    - inplace: share the parent repo (no checkout cost)
 	//    - worktree: `git worktree add --detach` based on parent HEAD
+	parentRepo, worktrees := c.workspaceSnapshot()
 	var (
 		workerRoot  string
 		worktreeRef *worktree.Worktree
 	)
 	if isolation == IsolationWorktree {
-		if c.worktrees == nil {
+		if worktrees == nil {
 			return nil, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
+		worktreeRef, err = worktrees.Create(c.sessionID, workerID, req.BaseRepo)
 		if err != nil {
 			return nil, fmt.Errorf("worktree create: %w", err)
 		}
 		workerRoot = worktreeRef.Path
 	} else {
-		workerRoot = c.parentRepo
+		workerRoot = parentRepo
 	}
 
 	// 2. Register the child thread before launch so the visible worker
@@ -1051,20 +1113,16 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, ultra)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, err
 	}
 	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
-	// Create the worker's conversation participant identity. Failure to
-	// persist never blocks the spawn.
+	// Create the worker identity. Failure to persist never blocks the spawn.
 	participantID := strings.TrimSpace(req.ParticipantID)
 	if participantID == "" {
 		participantID = c.newEphemeralParticipant(threadMeta.TaskName, wt).ID
-	}
-	if req.SpeechCapability {
-		c.EnableParticipantSpeech(workerID)
 	}
 
 	// 3. Build worker's toolkit rooted at the chosen working directory.
@@ -1072,9 +1130,14 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if err != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
+	}
+	if req.FileScopeRoots != nil {
+		if scoped, ok := workerKit.(interface{ SetFileScopeRoots([]string) }); ok {
+			scoped.SetFileScopeRoots(req.FileScopeRoots)
+		}
 	}
 
 	// 4. Compose system prompt: type-specific role + working dir + base prompt.
@@ -1082,7 +1145,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if err != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker system prompt: %w", err))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker system prompt: %w", err)
 	}
@@ -1136,7 +1199,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if err != nil {
 		c.clearReportSettlement(workerID)
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
@@ -1253,7 +1316,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		if synchronous {
 			return []string{
 				"Inspect the worker result and any agent_report artifacts before relying on the handoff.",
-				"Use manage_task or a thread reply when this result must be bound into a larger group task." + worktreeHint,
+				"Record the handoff in the parent task or thread when this result belongs to a larger workflow." + worktreeHint,
 			}
 		}
 		return []string{
@@ -1421,21 +1484,22 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		}
 	}()
 
+	parentRepo, worktrees := c.workspaceSnapshot()
 	var (
 		workerRoot  string
 		worktreeRef *worktree.Worktree
 	)
 	if isolation == IsolationWorktree {
-		if c.worktrees == nil {
+		if worktrees == nil {
 			return nil, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
+		worktreeRef, err = worktrees.Create(c.sessionID, workerID, req.BaseRepo)
 		if err != nil {
 			return nil, fmt.Errorf("worktree create: %w", err)
 		}
 		workerRoot = worktreeRef.Path
 	} else {
-		workerRoot = c.parentRepo
+		workerRoot = parentRepo
 	}
 
 	forkPrompt := req.Prompt
@@ -1446,21 +1510,20 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, ultra)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, err
 	}
 	c.recordHarnessTaskStart(threadMeta, wt.Name, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
-	// Create the worker's conversation participant identity. Failure to
-	// persist never blocks the spawn.
+	// Create the worker identity. Failure to persist never blocks the spawn.
 	prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
 
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
 	if err != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker toolkit: %w", err)
 	}
@@ -1475,7 +1538,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if sysErr != nil {
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return nil, fmt.Errorf("worker system prompt: %w", sysErr)
 	}
@@ -1507,7 +1570,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	})
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
@@ -2012,7 +2075,7 @@ func (c *AgentControl) registerRootThread() {
 	if c.rootThreadID == sessionID && c.rootThreadDir == c.threadDir {
 		return
 	}
-	meta := c.threads.RegisterRoot(sessionID, sessionID, c.parentRepo, "", time.Now().UTC())
+	meta := c.threads.RegisterRoot(sessionID, sessionID, c.ParentRepo(), "", time.Now().UTC())
 	_ = c.threadStore.UpsertThread(meta)
 	c.rootThreadID = sessionID
 	c.rootThreadDir = c.threadDir
@@ -2076,7 +2139,7 @@ func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile,
 		AgentProfile:    strings.TrimSpace(agentProfile),
 		Role:            role,
 		LastTaskMessage: message,
-		CWD:             c.parentRepo,
+		CWD:             c.ParentRepo(),
 		Ultra:           ultra,
 		SourceKind:      source,
 		ForkMode:        strings.TrimSpace(forkMode),
@@ -2649,21 +2712,20 @@ func (c *AgentControl) rollbackSpawnAdmissionReliably(workerID string, rollback 
 
 func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 	return queuedSpawnPayload{
-		WorkerID:         prepared.WorkerID,
-		ParticipantID:    prepared.ParticipantID,
-		WorkerType:       prepared.WorkerType.Name,
-		ThreadMeta:       prepared.ThreadMeta,
-		Description:      prepared.Description,
-		Prompt:           prepared.Prompt,
-		Isolation:        string(prepared.Isolation),
-		SpeechCapability: prepared.SpeechCapability,
-		BaseRepo:         prepared.BaseRepo,
-		BaseRevision:     prepared.BaseRevision,
-		IsFork:           prepared.IsFork,
-		ForkMode:         prepared.ForkMode,
-		ParentHistory:    providers.CloneChatMessages(prepared.ParentHistory),
-		ModelOverride:    prepared.ModelOverride,
-		ModelPin:         prepared.ModelPin,
+		WorkerID:      prepared.WorkerID,
+		ParticipantID: prepared.ParticipantID,
+		WorkerType:    prepared.WorkerType.Name,
+		ThreadMeta:    prepared.ThreadMeta,
+		Description:   prepared.Description,
+		Prompt:        prepared.Prompt,
+		Isolation:     string(prepared.Isolation),
+		BaseRepo:      prepared.BaseRepo,
+		BaseRevision:  prepared.BaseRevision,
+		IsFork:        prepared.IsFork,
+		ForkMode:      prepared.ForkMode,
+		ParentHistory: providers.CloneChatMessages(prepared.ParentHistory),
+		ModelOverride: prepared.ModelOverride,
+		ModelPin:      prepared.ModelPin,
 	}
 }
 
@@ -2687,21 +2749,20 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		payload.ThreadMeta.ID = workerID
 	}
 	return preparedSpawn{
-		WorkerID:         workerID,
-		ParticipantID:    payload.ParticipantID,
-		WorkerType:       wt,
-		ThreadMeta:       payload.ThreadMeta,
-		Description:      payload.Description,
-		Prompt:           payload.Prompt,
-		Isolation:        isolation,
-		SpeechCapability: payload.SpeechCapability,
-		BaseRepo:         payload.BaseRepo,
-		BaseRevision:     payload.BaseRevision,
-		IsFork:           payload.IsFork,
-		ForkMode:         payload.ForkMode,
-		ParentHistory:    providers.CloneChatMessages(payload.ParentHistory),
-		ModelOverride:    payload.ModelOverride,
-		ModelPin:         payload.ModelPin,
+		WorkerID:      workerID,
+		ParticipantID: payload.ParticipantID,
+		WorkerType:    wt,
+		ThreadMeta:    payload.ThreadMeta,
+		Description:   payload.Description,
+		Prompt:        payload.Prompt,
+		Isolation:     isolation,
+		BaseRepo:      payload.BaseRepo,
+		BaseRevision:  payload.BaseRevision,
+		IsFork:        payload.IsFork,
+		ForkMode:      payload.ForkMode,
+		ParentHistory: providers.CloneChatMessages(payload.ParentHistory),
+		ModelOverride: payload.ModelOverride,
+		ModelPin:      payload.ModelPin,
 	}, nil
 }
 
@@ -2779,10 +2840,11 @@ func (c *AgentControl) resolveSpawnModelPin(label, modelOverride, rawPin string,
 }
 
 func (c *AgentControl) resolveQueuedWorktreeBase(baseRepo string) (worktree.ResolvedBase, error) {
-	if c.worktrees == nil {
+	_, worktrees := c.workspaceSnapshot()
+	if worktrees == nil {
 		return worktree.ResolvedBase{}, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 	}
-	resolved, err := c.worktrees.ResolveBase(baseRepo, "")
+	resolved, err := worktrees.ResolveBase(baseRepo, "")
 	if err != nil {
 		return worktree.ResolvedBase{}, fmt.Errorf("resolve queued worktree base: %w", err)
 	}
@@ -2883,13 +2945,14 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 			returnErr = errors.Join(returnErr, ackErr)
 		}
 	}()
-	workerRoot := c.parentRepo
+	parentRepo, worktrees := c.workspaceSnapshot()
+	workerRoot := parentRepo
 	var worktreeRef *worktree.Worktree
 	if prepared.Isolation == IsolationWorktree {
-		if c.worktrees == nil {
+		if worktrees == nil {
 			return queuedSpawnStartUnknown, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.OpenOrCreate(worktree.OpenOrCreateOptions{
+		worktreeRef, err = worktrees.OpenOrCreate(worktree.OpenOrCreateOptions{
 			SessionID:    c.sessionID,
 			WorkerID:     prepared.WorkerID,
 			BaseRepo:     prepared.BaseRepo,
@@ -2904,13 +2967,10 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		_ = c.threadStore.RecordStatus(running)
 	}
 	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo)
-	if prepared.SpeechCapability {
-		c.EnableParticipantSpeech(prepared.WorkerID)
-	}
 	workerKit, err := c.workerFact(workerRoot, prepared.WorkerType, prepared.ThreadMeta)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, fmt.Errorf("worker toolkit: %w", err)
 	}
@@ -2918,7 +2978,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	systemPrompt, err := c.workerSystemPrompt(workerRoot, prepared.WorkerType, prepared.ThreadMeta, prepared.Isolation)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, fmt.Errorf("worker system prompt: %w", err)
 	}
@@ -2949,7 +3009,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	modelOverride, clientOverride, providerOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("queued spawn %s", prepared.WorkerID), prepared.ModelOverride, prepared.ModelPin, prepared.ClientOverride)
 	if err != nil {
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, err
 	}
@@ -3018,12 +3078,12 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		c.clearReportSettlement(prepared.WorkerID)
 		if errors.Is(err, errAgentControlStopping) {
 			if worktreeRef != nil {
-				_ = c.worktrees.Cleanup(worktreeRef)
+				_ = worktrees.Cleanup(worktreeRef)
 			}
 			return queuedSpawnRetryPending, err
 		}
 		if worktreeRef != nil {
-			_ = c.worktrees.Cleanup(worktreeRef)
+			_ = worktrees.Cleanup(worktreeRef)
 		}
 		return queuedSpawnStartUnknown, fmt.Errorf("spawn: %w", err)
 	}
@@ -3636,7 +3696,7 @@ func (c *AgentControl) ensureTerminalHarnessProjection(n subagent.Notification) 
 		}
 	}
 	if workerRoot == "" {
-		workerRoot = c.parentRepo
+		workerRoot = c.ParentRepo()
 	}
 	if role == "" {
 		role = meta.Role
@@ -4730,10 +4790,11 @@ If a worker seems stuck, close it with close_agent and respawn with clearer inst
 
 // CleanupSession removes all worktrees belonging to this session.
 func (c *AgentControl) CleanupSession() error {
-	if c.worktrees == nil {
+	_, worktrees := c.workspaceSnapshot()
+	if worktrees == nil {
 		return nil // non-git workspace, no worktrees to clean
 	}
-	return c.worktrees.CleanupSession(c.sessionID)
+	return worktrees.CleanupSession(c.sessionID)
 }
 
 func appendForkWorktreeReminder(prompt, workerRoot string, isolation IsolationMode) string {

@@ -331,6 +331,28 @@
   display: block;
 }
 
+/* Keep the control that summoned the hover drawer above the drawer itself.
+   The drawer slides underneath this stationary control island instead of
+   replacing its hit target, so the pointer can remain on the toggle and click
+   it to pin the sidebar open after the preview has appeared. This applies to
+   both the conversation and settings titlebars. */
+.sidebar-collapsed :is(.titlebar, .settings-titlebar) .sidebar-toggle-button {
+  position: relative;
+  z-index: 150;
+  transition:
+    background-color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    box-shadow var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing);
+}
+
+.sidebar-collapsed:is(.sidebar-drawer-open, .sidebar-drawer-closing)
+  :is(.titlebar, .settings-titlebar)
+  .sidebar-toggle-button {
+  background-color: var(--surface-3);
+  box-shadow: 0 4px 12px var(--ink-overlay-8);
+  color: var(--ink);
+}
+
 /* While a sidebar drag is in flight the pointer can sit exactly where the
    collapsed-hover zone appears; hide the zone so it cannot steal the pointer
    or trigger the drawer mid-drag. */
@@ -661,14 +683,10 @@
   font-size: var(--font-sm);
 }
 
-/* Shared row spec (sidebar-groups-andy-workspaces.md §1.1): thread rows
- * and DM/participant rows are one family — same height, padding, font,
- * hover, and focus treatment. Each family only overrides its own grid
- * columns (icon vs status+avatar); never fork the base spec. */
+/* Shared navigation and thread row spec. */
 .nav-item,
 .project-row,
-.thread-row,
-.participant-roster-row {
+.thread-row {
   display: grid;
   position: relative;
   width: 100%;
@@ -719,8 +737,7 @@
 
 .nav-item:hover,
 .project-row:hover,
-.thread-row:hover,
-.participant-roster-row:hover {
+.thread-row:hover {
   background: var(--sidebar-glass-hover);
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--sidebar-nav-item-hover-ring);
@@ -732,15 +749,13 @@
   transform: translateX(1px) scale(0.992);
 }
 
-.thread-row.active,
-.participant-roster-row.active {
+.thread-row.active {
   background: var(--sidebar-row-selected-bg);
   color: var(--ink);
   transform: none;
 }
 
-.thread-row.active:hover,
-.participant-roster-row.active:hover {
+.thread-row.active:hover {
   background: var(--sidebar-row-selected-bg);
   box-shadow: none;
   transform: none;
@@ -748,23 +763,19 @@
 
 .nav-item:focus-visible,
 .project-row:focus-visible,
-.thread-row:focus-visible,
-.participant-roster-row:focus-visible {
+.thread-row:focus-visible {
   outline: 0;
   box-shadow: inset 0 0 0 2px var(--sidebar-nav-item-focus-shadow);
 }
 
-/* Sidebar section containers. All four section types (置顶 / Agents /
- * 对话 scratch / 项目) share the same flex-column rhythm so the panel
+/* Sidebar section containers share the same flex-column rhythm so the panel
  * reads as one continuous tree. No gap here: the header → body offset
- * comes solely from `.thread-list-collapse`'s margin-top so all four
+ * comes solely from `.thread-list-collapse`'s margin-top so all
  * sections measure identically (project bodies sit one `.project-group`
  * wrapper deeper, and a container gap would double-count for the
  * sections whose body is a direct child). */
 .project-section,
-.pinned-thread-section,
-.group-thread-section,
-.participant-roster-section {
+.pinned-thread-section {
   display: flex;
   min-width: 0;
   flex: 0 0 auto;
@@ -1366,16 +1377,7 @@
   transform: scale(var(--sidebar-session-status-unread-scale));
 }
 
-/* Unread badge language shared across both row families (§1.1): the
- * leading dot turns --info and the title bumps to semibold. Thread rows
- * use their ::before dot; DM rows reuse their status dot column. */
-.participant-roster-row.has-unread .participant-roster-status {
-  background: var(--sidebar-session-status-unread-bg);
-  transform: scale(var(--sidebar-session-status-unread-scale));
-}
-
-.thread-row.has-unread .thread-row-title,
-.participant-roster-row.has-unread .participant-roster-name {
+.thread-row.has-unread .thread-row-title {
   color: var(--ink);
   font-weight: var(--weight-semibold);
 }
@@ -1650,36 +1652,20 @@
  * which on the hover background reads as nearly invisible; bumping to
  * --ink makes pin / archive immediately discoverable the moment the
  * user parks the cursor on the row. */
-.thread-row:hover .thread-row-action,
-.participant-roster-row:hover .thread-row-action {
+.thread-row:hover .thread-row-action {
   color: var(--ink);
 }
 
 .thread-row:hover .thread-row-actions,
-.thread-row:has(.thread-row-action:focus-visible) .thread-row-actions,
-.participant-roster-row:hover .thread-row-actions,
-.participant-roster-row:has(.thread-row-action:focus-visible) .thread-row-actions {
+.thread-row:has(.thread-row-action:focus-visible) .thread-row-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, -50%, 0);
 }
 
-/* DM rows overlay the same pin/archive actions as thread rows; push the
- * name clear of the icons while they are visible (same 58px clearance
- * as .thread-row-main > .thread-row-title on hover). */
-.participant-roster-copy {
-  transition: padding-right var(--motion-base) var(--ease-out);
-}
-
-.participant-roster-row:hover:has(.thread-row-actions) .participant-roster-copy,
-.participant-roster-row:has(.thread-row-action:focus-visible) .participant-roster-copy {
-  padding-right: 58px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .thread-row-main > .thread-row-title,
-  .thread-row-actions,
-  .participant-roster-copy {
+  .thread-row-actions {
     transition: none;
   }
 }
@@ -1826,45 +1812,14 @@
 }
 
 /* Unified sidebar section header:
- *   Every section (置顶 / Agents / 对话 / 项目) renders through the same
+ *   Every section renders through the same
  *   SidebarSection component with `.project-row.sidebar-section-row`
- *   headers. Section-specific decoration (Pin rotate, agents +/…
- *   actions overlay, project + new-thread button) lives below; the
+ *   headers. Section-specific decoration (Pin rotate and the project
+ *   new-thread button) lives below; the
  *   header-group container is positioned so absolutely-positioned
  *   sibling overlays keep their existing right-edge anchor. */
 .sidebar-section-header-group {
   position: relative;
-}
-
-/* Right-edge action overlay (Agents section). Same hover/focus reveal
- * pattern as .project-row-new-thread so the two affordances share
- * one rhythm. */
-.sidebar-section-actions {
-  position: absolute;
-  top: 4px;
-  right: var(--sidebar-row-pad-x, 8px);
-  display: flex;
-  height: 24px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate3d(4px, 0, 0);
-  transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-
-.pinned-thread-section:hover .sidebar-section-actions,
-.pinned-thread-section:focus-within .sidebar-section-actions,
-.group-thread-section:hover .sidebar-section-actions,
-.group-thread-section:focus-within .sidebar-section-actions,
-.participant-roster-section:hover .sidebar-section-actions,
-.participant-roster-section:focus-within .sidebar-section-actions {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translate3d(0, 0, 0);
 }
 
 /* Pinned icon: rotate the expanded-state Pin -45deg so it reads as a
@@ -1889,40 +1844,7 @@
     );
 }
 
-/* Action variant of the empty-note — used by the Agents section's
- * "添加 Agent" affordance. Resets button defaults so the interactive row
- * still inherits the empty-note's size / color / indent, and adds a
- * subtle hover / focus treatment so it stays discoverable as a button
- * without drifting back to the heavier .participant-roster-row spec. */
-.sidebar-section-empty-note-action {
-  display: block;
-  width: 100%;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  transition:
-    background-color var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out);
-}
-
-.sidebar-section-empty-note-action:hover {
-  color: var(--ink);
-  background: var(--sidebar-glass-hover);
-}
-
-.sidebar-section-empty-note-action:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.sidebar-section-empty-note-action:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-/* Header right-edge spacing: 置顶 / Agents have no right-side button,
+/* Header right-edge spacing: sections without a right-side button
  * so col 3 stays an empty 24px slot that pushes the label leftward.
  * Collapse to 2 cols when no .project-row-new-thread button is present
  * so the label spans the full row width. */
@@ -1968,7 +1890,3 @@
     inset 0 0 0 1px var(--sidebar-glass-overlay-bright),
     0 9px 24px var(--ink-overlay-12);
 }
-
-/* 群聊 section (sidebar-groups-andy-workspaces.md §2). The create dialog
-   reuses the shared .sidebar-name-dialog shell — its styles live next to
-   .thread-rename-overlay / .thread-rename-dialog in environment.css. */

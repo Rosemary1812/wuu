@@ -134,6 +134,9 @@ func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *ag
 			}
 			time.Sleep(participantRunCompletionRetryDelay)
 		}
+		// Kanban-OS hook: if this execution site is bound to a kanban run,
+		// fold the same terminal outcome into it (no-op otherwise).
+		s.completeKanbanRunForAgent(participantID, agentID, n.Status, summary)
 	}
 
 	// Commit the in-memory dedupe only after the durable core succeeds. Two
@@ -157,19 +160,10 @@ func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *ag
 		s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
 	}
 	if participantID != "" {
-		// Release the run's participant reservation and re-kick chat only
-		// after the durable run record reflects the terminal outcome.
 		s.releaseParticipantBusy(participantID, agentID)
-		s.kickResidentAgent(participantID)
 	}
 	if closed {
 		return nil
-	}
-	if n.Status == subagent.StatusCompleted &&
-		control != nil &&
-		control.ParticipantSpeechEnabled(n.Snapshot.ID) &&
-		!control.ParticipantResponded(n.Snapshot.ID) {
-		_, _ = control.PostParticipantMessage(context.Background(), n.Snapshot.ID, "decline", "没有需要占用主对话的回应。", "")
 	}
 	if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
 		mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
@@ -180,7 +174,7 @@ func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *ag
 			ThreadID: threadID,
 			Message:  mailboxMessage,
 		})
-		if control != nil && !control.ParticipantSpeechEnabled(n.Snapshot.ID) {
+		if control != nil {
 			resultID := control.AgentResultDeliveryID(n.Snapshot)
 			s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath), &n.Snapshot)
 		}
@@ -219,218 +213,6 @@ func (s *Server) forwardAgentStreamNotifications(threadID string, control *agent
 			})
 		}
 	}
-}
-
-func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.AgentControl, ch <-chan agentcontrol.ParticipantMessage, done <-chan struct{}) {
-	for {
-		select {
-		case <-done:
-			return
-		case msg, ok := <-ch:
-			if !ok {
-				return
-			}
-			participantID := strings.TrimSpace(msg.ParticipantID)
-			speech, ok := s.residentParticipantSpeech(participantID).(residentParticipantSpeech)
-			if !ok {
-				providers.DebugLogf("resolve participant message target for thread %q: speech router unavailable", threadID)
-				continue
-			}
-			targetThreadID, subthreadID, err := speech.resolveTargetThread(strings.TrimSpace(msg.ThreadID))
-			if err != nil {
-				providers.DebugLogf("resolve participant message target for thread %q: %v", threadID, err)
-				continue
-			}
-			msg.ThreadID = subthreadID
-			if err := s.publishParticipantMessage(targetThreadID, msg); err != nil {
-				providers.DebugLogf("publish participant message for thread %q: %v", targetThreadID, err)
-			}
-		}
-	}
-}
-
-// persistedImagesFromParticipant maps a human post's inline images onto the
-// stored image shape, skipping entries with no data.
-func persistedImagesFromParticipant(images []agentcontrol.ParticipantImage) []persistedImage {
-	if len(images) == 0 {
-		return nil
-	}
-	out := make([]persistedImage, 0, len(images))
-	for _, image := range images {
-		if strings.TrimSpace(image.Data) == "" {
-			continue
-		}
-		out = append(out, persistedImage{
-			MediaType: image.MediaType,
-			Data:      image.Data,
-		})
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// persistedFilesFromParticipant maps a human post's inline files onto the
-// stored file shape, skipping entries with no data.
-func persistedFilesFromParticipant(files []agentcontrol.ParticipantFile) []persistedFile {
-	if len(files) == 0 {
-		return nil
-	}
-	out := make([]persistedFile, 0, len(files))
-	for _, file := range files {
-		if strings.TrimSpace(file.Data) == "" {
-			continue
-		}
-		out = append(out, persistedFile{
-			MediaType: file.MediaType,
-			Data:      file.Data,
-			Filename:  file.Filename,
-		})
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.ParticipantMessage) error {
-	threadID = strings.TrimSpace(threadID)
-	if threadID == "" {
-		return errors.New("thread_id is required")
-	}
-	var lifecycleLease *session.ThreadLifecycleLease
-	if s != nil && s.rt != nil && strings.TrimSpace(s.rt.SessionDir) != "" {
-		var err error
-		lifecycleLease, err = s.acquireThreadLifecycleWriteLease(threadID)
-		if err != nil {
-			return err
-		}
-		defer releaseThreadLifecycleWriteLease(threadID, lifecycleLease)
-	}
-	now := msg.CreatedAt
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	name := firstNonEmpty(msg.TaskName, msg.AgentType, msg.AgentID)
-	if summary, ok := s.resolveParticipantSummary(msg.ParticipantID); ok && strings.TrimSpace(summary.Name) != "" {
-		name = summary.Name
-	}
-	rec := persistedMessage{
-		Role:          "participant",
-		Content:       msg.Text,
-		ClientID:      strings.TrimSpace(msg.AgentID),
-		Name:          name,
-		ParticipantID: msg.ParticipantID,
-		PostKind:      msg.Kind,
-		ThreadID:      msg.ThreadID,
-		Images:        persistedImagesFromParticipant(msg.Images),
-		Files:         persistedFilesFromParticipant(msg.Files),
-		At:            now,
-	}
-	var sourceSeq int
-	if strings.TrimSpace(s.rt.SessionDir) != "" {
-		seq, err := session.AppendHistoryRecordReturningSeq(s.rt.SessionDir, threadID, session.HistoryRecord{
-			Role:          rec.Role,
-			Content:       rec.Content,
-			ClientID:      rec.ClientID,
-			Name:          rec.Name,
-			ParticipantID: rec.ParticipantID,
-			PostKind:      rec.PostKind,
-			ThreadID:      rec.ThreadID,
-			BasisSeq:      msg.BasisSeq,
-			Images:        mustJSON(rec.Images),
-			Files:         mustJSON(rec.Files),
-			At:            rec.At,
-		})
-		if err != nil {
-			return err
-		}
-		sourceSeq = seq
-		if meta, ok, findErr := session.Find(s.rt.SessionDir, threadID); findErr == nil && ok {
-			_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
-		}
-	}
-	if hook := s.afterLifecycleHistoryAppendForTest; hook != nil {
-		hook(threadID)
-	}
-	if subthreadID := strings.TrimSpace(rec.ThreadID); subthreadID != "" {
-		// Reply-subthread (cth-*) message: stored in the parent thread's history
-		// tagged with thread_id=cth, kept OUT of the main stream (no turn append,
-		// no thread notification, no full-roster fan-out). Weak isolation routes
-		// it only to the subthread's participant subset — non-participants are
-		// never woken and never take it into context; they can still pull it via
-		// fetch_thread_messages. This replaces the old bare `return nil` that
-		// dropped all subthread routing on the floor.
-		s.routeSubthreadParticipantMessage(threadID, subthreadID, msg, name, sourceSeq)
-		s.notifySubthreadUpdated(threadID, subthreadID)
-		return nil
-	}
-
-	th := s.thread(threadID)
-	if th == nil {
-		return nil
-	}
-	rec.Seq = sourceSeq
-	th.mu.Lock()
-	turn, item, createdTurn := th.appendParticipantMessageLocked(rec, now, s.resolveParticipantSummary)
-	thread := th.snapshotLocked()
-	th.mu.Unlock()
-	if createdTurn {
-		_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
-			ThreadID: threadID,
-			Turn:     turn,
-		})
-	}
-	_ = s.writeNotification(NotificationItemStarted, ItemStartedNotification{
-		ThreadID:    threadID,
-		TurnID:      turn.ID,
-		Item:        item,
-		StartedAtMS: now.UnixMilli(),
-	})
-	_ = s.writeNotification(NotificationItemCompleted, ItemCompletedNotification{
-		ThreadID:      threadID,
-		TurnID:        turn.ID,
-		Item:          item,
-		CompletedAtMS: now.UnixMilli(),
-	})
-	_ = s.notifyThreadUpdated(thread)
-	s.routeParticipantMessageToResidents(th, msg, name, sourceSeq)
-	return nil
-}
-
-// notifySubthreadUpdated pushes a subthread-scoped notification whenever a cth
-// (reply-subthread) message is stored. cth traffic is short-circuited off the
-// main stream and emits no turn/item/thread notification, so this is the sole
-// live signal that keeps an open split reply panel streaming and the main-stream
-// reply-count badge fresh (including agent replies, human posts, and task_card
-// folds — they all flow through publishParticipantMessage's short-circuit).
-//
-// Best-effort: on a lookup/build error we still emit a minimal payload carrying
-// only ThreadID/SubthreadID so the frontend can fall back to a nonce reload; the
-// full embedded view lets it patch in place without a round-trip. ThreadID is
-// the PARENT group thread id — the renderer's global-thread gate and reply-badge
-// reload both key off it.
-func (s *Server) notifySubthreadUpdated(parentThreadID, subthreadID string) {
-	parentThreadID = strings.TrimSpace(parentThreadID)
-	subthreadID = strings.TrimSpace(subthreadID)
-	if parentThreadID == "" || subthreadID == "" {
-		return
-	}
-	note := SubthreadUpdatedNotification{
-		ThreadID:    parentThreadID,
-		SubthreadID: subthreadID,
-	}
-	if thread, err := s.findConversationSubthread(parentThreadID, subthreadID, ""); err == nil {
-		if view, viewErr := s.conversationSubthreadView(parentThreadID, thread, true); viewErr == nil {
-			note.Subthread = view
-		} else {
-			providers.DebugLogf("build subthread view for %q/%q: %v", parentThreadID, subthreadID, viewErr)
-		}
-	} else {
-		providers.DebugLogf("find subthread %q in %q: %v", subthreadID, parentThreadID, err)
-	}
-	_ = s.writeNotification(NotificationSubthreadUpdated, note)
 }
 
 func (s *Server) isRootAgentSnapshot(control *agentcontrol.AgentControl, threadID string, snap subagent.SubAgentSnapshot) bool {

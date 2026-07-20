@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -64,24 +63,11 @@ type threadState struct {
 	WorktreeBaseRepo string
 	PinnedAt         *time.Time
 	ArchivedAt       *time.Time
-	DMParticipantID  string
-	Group            bool
-	// FocusWorkspace mirrors session.Session.FocusWorkspace: the workspace
-	// focus this chat-style thread most recently declared ("" = all
-	// registered workspaces, "~" = agent home only, otherwise a registered
-	// workspace name). Kept in sync with the session store on every switch.
-	FocusWorkspace string
-	// focusDeclarationStale is set when a context-compaction pass folds this
-	// thread's history into a summary that may not have preserved the
-	// current focus declaration (2026-07-03-workspace-focus.md §7). While
-	// set, the next applyTurnWorkspaceFocus call re-declares the focus even
-	// if the requested value matches the stored one, and clears the flag.
-	focusDeclarationStale bool
-	Turns                 []Turn
-	PersistHistory        bool
-	ReadOnly              bool
-	Ephemeral             bool
-	BrowserState          ThreadBrowserState
+	Turns            []Turn
+	PersistHistory   bool
+	ReadOnly         bool
+	Ephemeral        bool
+	BrowserState     ThreadBrowserState
 
 	execRuntime              *runtime.ThreadRuntime
 	pendingRuntimeReset      bool
@@ -98,12 +84,8 @@ type threadState struct {
 	cancel              context.CancelFunc
 	executionLease      *session.ThreadExecutionLease
 	admissionReserved   bool
-	// compensationDeferred means shutdown left a durable resident admission
-	// rollback journal for the next Server. Close must not wait forever for an
-	// operation deliberately handed to boot recovery.
-	compensationDeferred bool
-	pendingSteers        []providers.ChatMessage
-	interrupting         bool
+	pendingSteers       []providers.ChatMessage
+	interrupting        bool
 	// Worker-tree freeze (turn/interrupt): while set, agent-completion drains
 	// hold their pending synthetic turns. The next user-initiated turn folds
 	// the whole-tree snapshot into its request (frozenTreeContext) and marks
@@ -120,15 +102,14 @@ type threadState struct {
 }
 
 type threadRuntimeSubscription struct {
-	statusCh             chan subagent.Notification
-	streamCh             chan subagent.StreamNotification
-	participantMessageCh chan agentcontrol.ParticipantMessage
-	processCh            chan process.Event
-	processManager       *process.Manager
-	terminalUnsubscribe  func()
-	done                 chan struct{}
-	wg                   sync.WaitGroup
-	once                 sync.Once
+	statusCh            chan subagent.Notification
+	streamCh            chan subagent.StreamNotification
+	processCh           chan process.Event
+	processManager      *process.Manager
+	terminalUnsubscribe func()
+	done                chan struct{}
+	wg                  sync.WaitGroup
+	once                sync.Once
 }
 
 func (sub *threadRuntimeSubscription) stop() {
@@ -199,64 +180,19 @@ type Server struct {
 	goalContinuationMu       sync.Mutex
 	drainingGoalContinuation map[string]bool
 
-	residentDrainMu       sync.Mutex
-	drainingResidentAgent map[string]bool
-	pendingResidentDrain  map[string]bool
-
-	idleUnreadWakeMu                       sync.Mutex
-	idleUnreadWakeTimers                   map[string]*time.Timer
-	idleUnreadWakeWaveByThread             map[string]int
-	idleUnreadWakeLastSpeaker              map[string]string
-	idleUnreadWakeDelayForTest             func(wave int) time.Duration
-	idleUnreadWakeRand                     *rand.Rand
-	rewriteChatHistoryForTest              func(string, string, []providers.ChatMessage) error
-	beforeResidentTurnFinalizeForTest      func(threadID string)
-	afterLifecycleHistoryAppendForTest     func(threadID string)
-	resolveResidentCompensationForTest     func(session.ResidentAdmissionCompensation) error
-	deleteSessionForTest                   func(string) (session.Session, error)
-	beforeResidentCompensationRetryForTest func(phase string, attempt int, err error)
-	afterWorkerShutdownStopWavesForTest    func()
-	beforeQueuedTurnBackgroundForTest      func()
-
-	// residentTurnSpeech maps a participant id to its current turn's speech
-	// limiter, so afterResidentTurn can tell whether the resident already spoke
-	// through post_message/decline before deciding to fire the plain-text
-	// fallback. One resident turn at a time (drain lock + th.running) keeps the
-	// per-key writes sequential.
-	residentTurnSpeech sync.Map
-
-	// threadPostMu serializes the freshness-check-then-publish critical section
-	// per target thread (threadID -> *sync.Mutex). The held-draft check reads
-	// the thread tail and then publishParticipantMessage appends to it as two
-	// steps; without this lock, N residents racing to post the same thing all
-	// pass the staleness read before any of them commits, then all publish
-	// duplicates (TOCTOU). Holding the per-thread lock across both makes each
-	// racer's freshness check observe the prior committed post and hold.
-	threadPostMu sync.Map
+	rewriteChatHistoryForTest           func(string, string, []providers.ChatMessage) error
+	afterLifecycleHistoryAppendForTest  func(threadID string)
+	deleteSessionForTest                func(string) (session.Session, error)
+	afterWorkerShutdownStopWavesForTest func()
+	beforeQueuedTurnBackgroundForTest   func()
 
 	// participantBusyMu guards participantBusy, the registry of named
 	// agents currently executing a task run (decision-five
 	// concurrency lock). A named agent is "busy" for exactly the lifetime
-	// of a live participant run: acquired when the run reports Running (or
-	// synchronously at participant/start), released when it terminates.
-	// While busy, a second task-pull is refused and an @-mention chat drain
-	// is deferred, so two callers never grab the same resident agent at
-	// once. See internal/appserver/participant_busy.go.
+	// of a live participant run: acquired when the Run starts and released when
+	// it terminates. While busy, a second Run for that target is refused.
 	participantBusyMu sync.Mutex
 	participantBusy   map[string]participantBusyEntry
-
-	// forkMergeMu guards forkMergeLocks, the per-母体 merge-back queue
-	// (decision six). A fork's memory回流 into its母体 acquires the母体's
-	// lock so concurrent merges (母体 forked twice, both副本 retiring at once)
-	// serialize their append-merge — deterministic same-topic conflict
-	// resolution requires it (internal/memdir has no locking). See
-	// internal/appserver/participant_fork.go.
-	forkMergeMu    sync.Mutex
-	forkMergeLocks map[string]*sync.Mutex
-
-	// allChannelMu serializes ensureAllChannel so concurrent thread/list
-	// calls cannot race to create two "all" group threads.
-	allChannelMu sync.Mutex
 
 	codexModelsMu   sync.Mutex
 	codexModelCache map[string]map[string]config.ProviderModelConfig
@@ -281,8 +217,6 @@ type Server struct {
 	activityUnsubscribe          func()
 	backgroundMu                 sync.Mutex
 	backgroundWG                 sync.WaitGroup
-	residentCompensationOnce     sync.Once
-	residentCompensationDone     chan struct{}
 	closeOnce                    sync.Once
 	closed                       atomic.Bool
 	presenceLease                *session.AppServerPresenceLease
@@ -315,12 +249,6 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
 		drainingGoalContinuation:     make(map[string]bool),
-		drainingResidentAgent:        make(map[string]bool),
-		pendingResidentDrain:         make(map[string]bool),
-		idleUnreadWakeTimers:         make(map[string]*time.Timer),
-		idleUnreadWakeWaveByThread:   make(map[string]int),
-		idleUnreadWakeLastSpeaker:    make(map[string]string),
-		idleUnreadWakeRand:           rand.New(rand.NewSource(time.Now().UnixNano())),
 		participantBusy:              make(map[string]participantBusyEntry),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
@@ -342,24 +270,6 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		s.sideThreadStore = sidethread.NewStore(filepath.Join(rt.SessionDir, "sidethreads"))
 	}
 	if bootOwner {
-		// Only the first live app-server owns crash recovery. A second server
-		// sharing SessionDir must not expire the first server's live resident
-		// admission, task attempt, or inference operation.
-		if err := session.MigrateResidentInboxExpiredAt(rt.SessionDir); err != nil {
-			providers.DebugLogf("resident_inbox expired_at migration: %v", err)
-		}
-		recovered, err := session.RecoverResidentAdmissionCompensations(rt.SessionDir)
-		if err != nil {
-			s.startupErr = fmt.Errorf("recover resident admission compensation: %w", err)
-			return s
-		}
-		if recovered > 0 {
-			providers.DebugLogf("recovered %d resident admission compensation(s)", recovered)
-		}
-		if _, err := session.DiscardResidentWakeIntents(rt.SessionDir); err != nil {
-			s.startupErr = fmt.Errorf("settle resident wake intents: %w", err)
-			return s
-		}
 		s.recoverSideThreadsOnBoot()
 		s.settleOnBoot()
 	}
@@ -371,7 +281,6 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 			return s
 		}
 	}
-	s.startResidentCompensationRecovery()
 	if store != nil && rt != nil && rt.Toolkit != nil {
 		if manager := rt.Toolkit.MCPManager(); manager != nil {
 			manager.SetOAuthManager(mcp.NewOAuthManager(store, httpClient))
@@ -401,62 +310,13 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 	return s
 }
 
-// settleOnBoot is the issue #3 pivot's boot-time replace for the
-// previous "drain and replay" path (issue #3 round 1). The user pivot
-// was "replay → settle/expire": boot can't burn tokens for the
-// previous process's unprocessed envelopes. Two passes run, each
-// against a single SQL statement:
-//
-//	pass 1: scan resident_inbox WHERE consumed_at IS NULL AND
-//	        expired_at IS NULL, set expired_at=now (terminal "expired"
-//	        state, distinguishable from "failed" by the front-end).
-//	pass 2: scan message_marks WHERE kind='seen' AND status='in_progress',
-//	        set status='expired_unprocessed' (terminal "we didn't get a
-//	        turn" state, distinguishable from "failed" by the front-end).
-//	pass 3: interrupt queued/running task attempts, clear their node binding,
-//	        and pause each Task for its lead without starting a turn.
-//
-// ❌ Does NOT call kickResidentAgent.
-// ❌ Does NOT start any turn.
-// ❌ Does NOT burn any token.
-//
-// Errors per pass are logged + swallowed — boot settle is best-effort,
-// a transient DB error must not block New() (issue #3 spec: "settle
-// 自身失败不能阻塞 New() 返回"). Both passes use the same `now`
-// timestamp so an audit log shows the boot moment uniformly.
+// settleOnBoot reconciles orphaned provider operations without starting a turn.
+// Recovery is best-effort so a transient journal error does not block startup.
 func (s *Server) settleOnBoot() {
 	if s == nil || s.rt == nil {
 		return
 	}
 	now := time.Now().UTC()
-	if n, err := session.MarkPendingResidentEnvelopesExpired(s.rt.SessionDir, now); err != nil {
-		providers.DebugLogf("settleOnBoot pass1 (envelope expire): %v", err)
-	} else if n > 0 {
-		providers.DebugLogf("settleOnBoot pass1: %d envelope(s) expired", n)
-	}
-	if n, err := session.MarkStuckInProgressReadReceiptsExpired(s.rt.SessionDir, now); err != nil {
-		providers.DebugLogf("settleOnBoot pass2 (receipt settle): %v", err)
-	} else if n > 0 {
-		providers.DebugLogf("settleOnBoot pass2: %d receipt(s) flipped to expired_unprocessed", n)
-	}
-	attempts, err := session.SettleActiveTaskAttempts(s.rt.SessionDir, now)
-	if err != nil {
-		providers.DebugLogf("settleOnBoot pass3 (task attempts): %v", err)
-		attempts = nil
-	}
-	for _, attempt := range attempts {
-		task, loadErr := session.FindConversationThreadByID(s.rt.SessionDir, attempt.TaskID)
-		if loadErr != nil {
-			providers.DebugLogf("settleOnBoot load interrupted task %q: %v", attempt.TaskID, loadErr)
-			continue
-		}
-		s.recordTaskEventForAttempt(task, attempt.NodeID, attempt.ID, session.TaskEventBlocked,
-			attempt.AssigneeID, "attempt interrupted by app restart", "")
-		s.notifySubthreadUpdated(task.SessionID, task.ID)
-	}
-	if len(attempts) > 0 {
-		providers.DebugLogf("settleOnBoot pass3: %d task attempt(s) interrupted", len(attempts))
-	}
 	if s.rt.InferenceJournalRuntime != nil {
 		recoveries, recoverErr := s.rt.InferenceJournalRuntime.ReconcileOrphans(now)
 		if recoverErr != nil {
@@ -633,17 +493,6 @@ func (s *Server) Close() {
 		// never wedge the process on a shutdown drain.
 		s.failPendingClientCalls()
 
-		s.idleUnreadWakeMu.Lock()
-		for threadID, timer := range s.idleUnreadWakeTimers {
-			if timer != nil {
-				timer.Stop()
-			}
-			delete(s.idleUnreadWakeTimers, threadID)
-		}
-		clear(s.idleUnreadWakeWaveByThread)
-		clear(s.idleUnreadWakeLastSpeaker)
-		s.idleUnreadWakeMu.Unlock()
-
 		s.queuedTurnMu.Lock()
 		clear(s.pendingQueuedTurns)
 		clear(s.drainingQueuedTurns)
@@ -655,11 +504,6 @@ func (s *Server) Close() {
 		s.goalContinuationMu.Lock()
 		clear(s.drainingGoalContinuation)
 		s.goalContinuationMu.Unlock()
-		s.residentDrainMu.Lock()
-		clear(s.drainingResidentAgent)
-		clear(s.pendingResidentDrain)
-		s.residentDrainMu.Unlock()
-
 		s.waitForOwnedShutdown(threads, controls)
 		for _, th := range threads {
 			releaseThreadRuntime(th)
@@ -874,16 +718,6 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadContextComposition(req)
 	case MethodInstructionsList:
 		return s.handleInstructionsList(req)
-	case MethodThreadOpenSub:
-		return s.handleThreadOpenSub(req)
-	case MethodThreadListSub:
-		return s.handleThreadListSub(req)
-	case MethodThreadResolveSub:
-		return s.handleThreadResolveSub(req)
-	case MethodThreadEscalateSub:
-		return s.handleThreadEscalateSub(req)
-	case MethodThreadTaskEvents:
-		return s.handleThreadTaskEvents(req)
 	case MethodSideThreadOpen:
 		return s.handleSideThreadOpen(req)
 	case MethodSideThreadGetHistory:
@@ -914,20 +748,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadDelete(req)
 	case MethodWorkspaceStateCleanup:
 		return s.handleWorkspaceStateCleanup(req)
-	case MethodThreadMembersAdd:
-		return s.handleThreadMembersAdd(req)
-	case MethodThreadMembersRemove:
-		return s.handleThreadMembersRemove(req)
-	case MethodThreadMarks:
-		return s.handleThreadMarks(req)
-	case MethodMessageReact:
-		return s.handleMessageReact(req)
-	case MethodMessagePostSubthread:
-		return s.handleMessagePostSubthread(req)
 	case MethodThreadRegenerateTitle:
 		return s.handleThreadRegenerateTitle(ctx, req)
-	case MethodParticipantStart:
-		return s.handleParticipantStart(ctx, req)
 	case MethodParticipantList:
 		return s.handleParticipantList(req)
 	case MethodParticipantSave:
@@ -938,6 +760,30 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleParticipantReset(req)
 	case MethodParticipantRetire:
 		return s.handleParticipantRetire(req)
+	case MethodKanbanCreateTask:
+		return s.handleKanbanCreateTask(req)
+	case MethodKanbanListTasks:
+		return s.handleKanbanListTasks(req)
+	case MethodKanbanTransitionTask:
+		return s.handleKanbanTransitionTask(req)
+	case MethodKanbanDispatchRun:
+		return s.handleKanbanDispatchRun(ctx, req)
+	case MethodKanbanListRuns:
+		return s.handleKanbanListRuns(req)
+	case MethodKanbanListArtifacts:
+		return s.handleKanbanListArtifacts(req)
+	case MethodKanbanCrystallize:
+		return s.handleKanbanCrystallize(ctx, req)
+	case MethodKanbanAutoDispatch:
+		return s.handleKanbanAutoDispatch(ctx, req)
+	case MethodKanbanSpawnSuggestions:
+		return s.handleKanbanSpawnSuggestions(req)
+	case MethodKanbanSpawnAgent:
+		return s.handleKanbanSpawnAgent(req)
+	case MethodParticipantGetManifest:
+		return s.handleParticipantGetManifest(req)
+	case MethodParticipantSaveManifest:
+		return s.handleParticipantSaveManifest(req)
 	case MethodMemoryRead:
 		return s.handleMemoryRead(req)
 	case MethodMemoryOverview:

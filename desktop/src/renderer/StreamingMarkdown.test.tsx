@@ -108,6 +108,30 @@ afterEach(() => {
 });
 
 describe("StreamingMarkdown", () => {
+  it("keeps bold CJK prose with inline code parsed after the stream settles", async () => {
+    const key = streamTextKey("turn", "s2", "text");
+    const text =
+      "**不是让 `apply_patch` 模仿现有 `edit_file` 的裁剪行为，而是让整个 edit 工具族一起采用 Codex 式分轨结果设计。**";
+    streamTextStore.seed(key, text);
+    mount({ streamKey: key, initialText: text, isLive: false, phase: "final_answer" });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    const paragraph = surface.querySelector(".rich-paragraph");
+    const strong = paragraph?.querySelector("strong");
+    expect(paragraph?.textContent).toBe(
+      "不是让 apply_patch 模仿现有 edit_file 的裁剪行为，而是让整个 edit 工具族一起采用 Codex 式分轨结果设计。",
+    );
+    expect(strong?.textContent).toBe(paragraph?.textContent);
+    expect(Array.from(strong?.querySelectorAll("code") ?? []).map((code) => code.textContent)).toEqual([
+      "apply_patch",
+      "edit_file",
+    ]);
+  });
+
   it("renders the visible text as markdown during streaming", async () => {
     const key = streamTextKey("turn", "s1", "text");
     streamTextStore.seed(key, "");

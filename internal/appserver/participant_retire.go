@@ -11,51 +11,21 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/session"
-	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 // archivedDirName is the sibling directory that receives a retired
-// participant's on-disk state: participants/.archived/<id>/ for the
-// workspace (including the memory/ identity notebook) and
-// agents/.archived/<id>-home/ for the DM agent home.
+// participant's on-disk profile state under participants/.archived/<id>/.
 //
 // Archival is a MOVE, never a delete. Memory directories must survive
 // retirement so a future 复职 (rehire) can restore them — memory-redesign
 // §9 marks "cleanup must not delete memory directories" as a red line.
 const archivedDirName = ".archived"
 
-// retireNamedParticipant runs the full retire cleanup protocol for one named
-// participant (consistency repair plan §1 #7). Steps, in order:
-//
-//  1. Storage: session.RetireParticipant stamps retired_at and, in the same
-//     transaction, removes the participant's thread_members rows and drops
-//     its unconsumed resident_inbox envelopes.
-//  2. Disk: the participant workspace (participants/<id>/, containing
-//     MEMORY.md, avatar, and the memory/ notebook) moves to
-//     participants/.archived/<id>/; the DM agent home (agents/<id>/home)
-//     moves to agents/.archived/<id>-home/. Nothing is deleted.
-//  3. Storage again: the participants row's workspace column is repointed at
-//     the archived location so profile reads and a future rehire see the
-//     real on-disk path.
-//  4. Runtime: any loaded DM thread bound to the participant is frozen
-//     read-only. Persisted-but-unloaded DM threads get the same freeze at
-//     load time (loadPersistedThreadState checks retired_at), so the freeze
-//     survives restarts without a schema change.
-//
-// The storage retire is the source of truth and runs first; the follow-up
-// steps are collected with errors.Join so a disk failure never leaves the
-// participant half-active. Re-running the protocol is safe: the store call
-// is idempotent, and archiving skips sources that are already gone.
+// retireNamedParticipant retires the profile in storage, archives its profile
+// directory without deleting memory, and repoints the stored workspace path.
 func (s *Server) retireNamedParticipant(p participant.Participant) error {
 	if s == nil || s.rt == nil {
 		return errors.New("retire participant: server runtime is not configured")
-	}
-	// Decision six memory回流: if this is a temporary分身, append-merge its
-	// accumulated notebook back into its母体 before the workspace is archived.
-	// Best-effort and serialized per母体; a failure never blocks retirement
-	// (archival preserves the fork's memory on disk regardless).
-	if strings.TrimSpace(p.ForkedFrom) != "" {
-		s.mergeForkMemoryBack(p)
 	}
 	if err := session.RetireParticipant(s.rt.SessionDir, p.ID); err != nil {
 		return err
@@ -65,9 +35,6 @@ func (s *Server) retireNamedParticipant(p participant.Participant) error {
 	var errs []error
 	archivedWorkspace, err := archiveParticipantWorkspace(p.Workspace)
 	if err != nil {
-		errs = append(errs, err)
-	}
-	if err := s.archiveAgentHome(p.ID); err != nil {
 		errs = append(errs, err)
 	}
 	if archivedWorkspace != "" {
@@ -81,7 +48,6 @@ func (s *Server) retireNamedParticipant(p participant.Participant) error {
 			}
 		}
 	}
-	s.freezeParticipantDMThreads(p.ID)
 	return errors.Join(errs...)
 }
 
@@ -102,33 +68,6 @@ func archiveParticipantWorkspace(workspace string) (string, error) {
 		return "", nil
 	}
 	return finalDst, nil
-}
-
-// archiveAgentHome moves agents/<id>/home into agents/.archived/<id>-home/.
-// The wuu home is resolved the same way createResidentDMThreadState resolves
-// it when creating the home, so the archive looks where the home was made.
-func (s *Server) archiveAgentHome(participantID string) error {
-	wuuHome := strings.TrimSpace(s.rt.WuuHome)
-	if wuuHome == "" {
-		home, err := statepath.Home("")
-		if err != nil {
-			// No resolvable wuu home means no agent home was ever created.
-			return nil
-		}
-		wuuHome = home
-	}
-	src := statepath.AgentHomeDir(wuuHome, participantID)
-	dst := filepath.Join(wuuHome, "agents", archivedDirName, participantID+"-home")
-	moved, _, err := archiveDir(src, dst)
-	if err != nil {
-		return fmt.Errorf("archive agent home: %w", err)
-	}
-	if moved {
-		// The agents/<id>/ container only held home/. os.Remove refuses
-		// non-empty directories, so this can never destroy data.
-		_ = os.Remove(filepath.Dir(src))
-	}
-	return nil
 }
 
 // archiveDir moves src to dst, creating dst's parent directory. A missing
@@ -152,41 +91,4 @@ func archiveDir(src, dst string) (bool, string, error) {
 		return false, "", err
 	}
 	return true, dst, nil
-}
-
-// freezeParticipantDMThreads marks every loaded DM thread bound to the
-// participant read-only, reusing Thread.ReadOnly's existing semantics
-// (turn/queue and queued-turn drains reject read-only threads; the history
-// stays browsable). turn/start additionally rejects retired DM participants
-// with an explicit error so the user learns why the thread is frozen.
-func (s *Server) freezeParticipantDMThreads(participantID string) {
-	participantID = strings.TrimSpace(participantID)
-	if s == nil || participantID == "" {
-		return
-	}
-	s.mu.Lock()
-	threads := make([]*threadState, 0, len(s.threads))
-	for _, th := range s.threads {
-		if th != nil {
-			threads = append(threads, th)
-		}
-	}
-	s.mu.Unlock()
-	for _, th := range threads {
-		th.mu.Lock()
-		if strings.TrimSpace(th.DMParticipantID) == participantID {
-			th.ReadOnly = true
-		}
-		th.mu.Unlock()
-	}
-}
-
-// participantRetired reports whether the participant exists in the store and
-// carries a retired_at stamp.
-func (s *Server) participantRetired(participantID string) bool {
-	if s == nil || s.rt == nil {
-		return false
-	}
-	p, err := session.GetParticipant(s.rt.SessionDir, strings.TrimSpace(participantID))
-	return err == nil && p.RetiredAt != nil
 }

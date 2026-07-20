@@ -345,6 +345,12 @@ func reconciledRetainedContext(retained []RetainedContextMessage, currentSegment
 	current := requestContextContentByKey(currentSegments)
 	out := make([]RetainedContextMessage, 0, len(retained))
 	for _, entry := range retained {
+		// Derived ledgers removed from the default projection must not ride
+		// the retained stream across turns: drop stale copies instead of
+		// re-splicing (and later tombstoning) them on every request.
+		if !wuucontext.DerivedContextLedgersEnabled() && wuucontext.IsDerivedLedgerBlockName(entry.Message.Name) {
+			continue
+		}
 		// Typed runtime blocks form an ordered update stream. Keeping every
 		// prior update preserves the previous request byte-for-byte; the latest
 		// active/inactive update determines current semantics. Generic request

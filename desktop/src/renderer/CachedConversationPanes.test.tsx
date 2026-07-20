@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Thread } from "../shared/protocol";
 import type { TurnStreamStatus } from "./AppState";
 import { CachedConversationPanes } from "./CachedConversationPanes";
+import { OPTIMISTIC_TURN_ID_PREFIX } from "./ComposerMessages";
 import { ImagePreviewProvider } from "./ImagePreview";
 
 const turnListRenders = vi.hoisted(() => new Map<string, number>());
@@ -61,9 +62,8 @@ function chatThread(
 
 function renderPane(
   thread: Thread,
-  onOpenSubthread = vi.fn(),
   turnStreamStatus: Record<string, TurnStreamStatus> = {},
-): { container: HTMLElement; onOpenSubthread: ReturnType<typeof vi.fn> } {
+): { container: HTMLElement } {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -82,18 +82,11 @@ function renderPane(
     canEditThreadMessage: () => false,
     onForkMessage: () => {},
     onOpenAgent: () => {},
-    onOpenSubthread,
-    onReact: () => {},
     onEditMessage: () => {},
     onCancelEditMessage: () => {},
     onSubmitEditMessage: () => {},
     onOpenFileDiff: () => {},
     turnStreamStatus,
-    busyParticipantIDs: new Set(),
-    activeThreadMarks: [],
-    resolveParticipantName: (id) => id,
-    chatReaderCount: 0,
-    pendingChatMessagesByThread: {},
   };
   act(() => {
     root.render(
@@ -104,89 +97,28 @@ function renderPane(
       ),
     );
   });
-  return { container, onOpenSubthread };
+  return { container };
 }
 
-describe("CachedConversationPanes Thread wiring", () => {
-  it("surfaces reconnect progress and terminal failures inside DM streams", () => {
-    const running = chatThread("dm-running", {
-      workspace_kind: "dm",
-      dm_participant_id: "prt-a",
+describe("CachedConversationPanes session switching", () => {
+  it("keeps an optimistic first query visible during the new-thread handoff", () => {
+    const thread = chatThread("thread-a", {
       turns: [
         {
-          id: "turn-running",
+          id: `${OPTIMISTIC_TURN_ID_PREFIX}1`,
           status: "in_progress",
           items_view: "full",
-          items: [{ id: "human-running", type: "user_message", text: "继续" }],
+          items: [],
         },
       ],
     });
-    const reconnecting = renderPane(running, vi.fn(), {
-      "turn-running": {
-        text: "消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）",
-        liveProgress: true,
-      },
-    }).container;
-    expect(
-      reconnecting.querySelector(".chat-row--reconnecting .turn-event-title")
-        ?.textContent,
-    ).toContain("消息流暂时中断");
 
-    const failed = chatThread("dm-failed", {
-      workspace_kind: "dm",
-      dm_participant_id: "prt-a",
-      turns: [
-        {
-          id: "turn-failed",
-          status: "failed",
-          items_view: "full",
-          items: [{ id: "human-failed", type: "user_message", text: "继续" }],
-          error: { message: "stream request failed: context deadline exceeded" },
-        },
-      ],
-    });
-    const terminal = renderPane(failed).container;
-    expect(
-      terminal.querySelector(".chat-row--turn-event .turn-event-title")?.textContent,
-    ).toBe("请求超时");
+    const { container } = renderPane(thread);
+    const pane = container.querySelector<HTMLElement>(".cached-conversation-pane");
+
+    expect(pane?.hasAttribute("data-layout-settled")).toBe(true);
   });
 
-  it("does not expose Thread entry points in a DM", () => {
-    const { container, onOpenSubthread } = renderPane(
-      chatThread("dm-1", {
-        workspace_kind: "dm",
-        dm_participant_id: "prt-a",
-      }),
-    );
-
-    expect(container.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
-    expect(container.querySelector(".chat-reply-badge")).toBeNull();
-    expect(onOpenSubthread).not.toHaveBeenCalled();
-  });
-
-  it("wires the current group's named members as human Thread owner choices", () => {
-    const group = chatThread("group-1", {
-      group: true,
-      members: [{ id: "prt-a", name: "Ada", kind: "named" }],
-    });
-    const { container, onOpenSubthread } = renderPane(group);
-
-    act(() => {
-      container
-        .querySelector<HTMLButtonElement>(".chat-bubble-toolbar-reply")!
-        .click();
-    });
-
-    expect(onOpenSubthread).toHaveBeenCalledWith(
-      group,
-      expect.objectContaining({ id: "human-1" }),
-      "prt-a",
-      undefined,
-    );
-  });
-});
-
-describe("CachedConversationPanes session switching", () => {
   it("waits until the mounted message DOM height is stable before entering", () => {
     const frameCallbacks: FrameRequestCallback[] = [];
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
@@ -269,18 +201,11 @@ describe("CachedConversationPanes session switching", () => {
       canEditThreadMessage: () => false,
       onForkMessage: () => {},
       onOpenAgent: () => {},
-      onOpenSubthread: () => {},
-      onReact: () => {},
       onEditMessage: () => {},
       onCancelEditMessage: () => {},
       onSubmitEditMessage: () => {},
       onOpenFileDiff: () => {},
       turnStreamStatus: {},
-      busyParticipantIDs: new Set<string>(),
-      activeThreadMarks: [],
-      resolveParticipantName: (id: string) => id,
-      chatReaderCount: 0,
-      pendingChatMessagesByThread: {},
     } satisfies Omit<
       ComponentProps<typeof CachedConversationPanes>,
       "activeThreadID" | "threadsByID"
@@ -441,18 +366,11 @@ describe("CachedConversationPanes session switching", () => {
       canEditThreadMessage: () => false,
       onForkMessage: () => {},
       onOpenAgent: () => {},
-      onOpenSubthread: () => {},
-      onReact: () => {},
       onEditMessage: () => {},
       onCancelEditMessage: () => {},
       onSubmitEditMessage: () => {},
       onOpenFileDiff: () => {},
       turnStreamStatus: {},
-      busyParticipantIDs: new Set<string>(),
-      activeThreadMarks: [],
-      resolveParticipantName: (id: string) => id,
-      chatReaderCount: 0,
-      pendingChatMessagesByThread: {},
     } satisfies Omit<
       ComponentProps<typeof CachedConversationPanes>,
       "activeThreadID"

@@ -188,9 +188,9 @@ func (s *Server) mainTaskSnapshot(mainThreadID string) *MainTaskSnapshot {
 }
 
 // mainThreadModelSelection resolves the pinned model selection of the
-// conversation a side chat is attached to. It prefers the resident thread state
+// conversation a side chat is attached to. It prefers the loaded thread state
 // and falls back to the persisted session row, so a side chat opened on an idle
-// (non-resident) thread still inherits the conversation's model instead of the
+// (not currently loaded) thread still inherits the conversation's model instead of the
 // workspace default. An empty selection means "use the workspace defaults",
 // which NewSideThreadRunner treats as the plain workspace clone.
 func (s *Server) mainThreadModelSelection(mainID string) runtime.ThreadModelSelection {
@@ -1047,9 +1047,6 @@ func renderSideThreadLiveItem(body *strings.Builder, item ThreadItem) {
 			body.WriteString(strings.TrimSpace(text))
 			body.WriteByte('\n')
 		}
-	}
-	if item.Task != nil {
-		fmt.Fprintf(body, "Task: %s (%s)\n", firstNonEmpty(item.Task.Name, item.Task.Description, item.Task.ID), item.Task.Status)
 	}
 }
 

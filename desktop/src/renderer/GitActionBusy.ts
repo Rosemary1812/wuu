@@ -32,10 +32,11 @@ export function useGitActionBusy(
         "\0",
       )
     : "";
+  const workspaceRoot = context?.cwd;
   const lookupKey = `${contextKey}\0${runningThreadKey}`;
 
   useEffect(() => {
-    if (!contextKey) {
+    if (!workspaceRoot) {
       return;
     }
     let cancelled = false;
@@ -47,7 +48,7 @@ export function useGitActionBusy(
         setSnapshot({ lookupKey, busy: true });
         return;
       }
-      void query()
+      void query(workspaceRoot)
         .then((busy) => {
           if (!cancelled && currentRequestID === requestID) {
             setSnapshot({ lookupKey, busy });
@@ -72,7 +73,7 @@ export function useGitActionBusy(
       cancelled = true;
       off();
     };
-  }, [contextKey, lookupKey]);
+  }, [lookupKey, workspaceRoot]);
 
   if (!context) {
     return false;

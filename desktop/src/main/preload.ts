@@ -6,7 +6,6 @@ import {
   type PopOutInitResult,
   type RemoteControlEvent,
   type ServerEvent,
-  type SettingsUsageRange,
   type SideThreadEventEnvelope,
   type SideThreadSendParams,
   type ThreadStartParams,
@@ -126,18 +125,19 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:project-relocate", projectId),
   selectNoProject: (fresh?: boolean, cwd?: string) =>
     ipcRenderer.invoke("wuu:project-select-none", fresh, cwd),
-  gitStatus: () => ipcRenderer.invoke("wuu:git-status"),
-  listGitChanges: () => ipcRenderer.invoke("wuu:git-changes"),
+  gitStatus: (root?: string) => ipcRenderer.invoke("wuu:git-status", root),
+  listGitChanges: (root?: string) => ipcRenderer.invoke("wuu:git-changes", root),
   readGitFileDiff: (path: string, root?: string) =>
     ipcRenderer.invoke("wuu:git-file-diff", path, root),
-  gitActionBusy: () => ipcRenderer.invoke("wuu:git-action-busy"),
-  checkoutGitBranch: (branch: string) =>
-    ipcRenderer.invoke("wuu:git-checkout-branch", branch),
-  createCheckoutGitBranch: (branch: string) =>
-    ipcRenderer.invoke("wuu:git-create-checkout-branch", branch),
-  commitGitChanges: (params) => ipcRenderer.invoke("wuu:git-commit", params),
-  createPullRequest: (params) =>
-    ipcRenderer.invoke("wuu:git-create-pr", params),
+  gitActionBusy: (root?: string) => ipcRenderer.invoke("wuu:git-action-busy", root),
+  checkoutGitBranch: (branch: string, root?: string) =>
+    ipcRenderer.invoke("wuu:git-checkout-branch", branch, root),
+  createCheckoutGitBranch: (branch: string, root?: string) =>
+    ipcRenderer.invoke("wuu:git-create-checkout-branch", branch, root),
+  commitGitChanges: (params, root?: string) =>
+    ipcRenderer.invoke("wuu:git-commit", params, root),
+  createPullRequest: (params, root?: string) =>
+    ipcRenderer.invoke("wuu:git-create-pr", params, root),
   listWorkspaceFiles: (root?: string) =>
     ipcRenderer.invoke("wuu:file-tree-list", root),
   listWorkspaceDirectory: (path?: string, root?: string) =>
@@ -201,8 +201,7 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   listAgentTemplates: () => ipcRenderer.invoke("wuu:agent-template-list"),
-  getSettingsUsage: (range?: SettingsUsageRange) =>
-    ipcRenderer.invoke("wuu:settings-usage", range),
+  getSettingsUsage: () => ipcRenderer.invoke("wuu:settings-usage"),
   listMCPServers: () => ipcRenderer.invoke("wuu:mcp-list"),
   connectMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-connect", name),
   disconnectMCPServer: (name: string) =>
@@ -231,7 +230,6 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-start", params),
   resumeThread: (sessionId?: string) =>
     ipcRenderer.invoke("wuu:thread-resume", sessionId),
-  startParticipant: (params) => ipcRenderer.invoke("wuu:participant-start", params),
   forkThread: (
     threadId: string,
     turnId?: string,
@@ -313,35 +311,28 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:participant-reset", participantId, scope),
   retireParticipant: (participantId) =>
     ipcRenderer.invoke("wuu:participant-retire", participantId),
+  kanbanListTasks: (sessionId, parentId) =>
+    ipcRenderer.invoke("wuu:kanban-list-tasks", { session_id: sessionId, parent_id: parentId }),
+  kanbanCreateTask: (params) =>
+    ipcRenderer.invoke("wuu:kanban-create-task", params),
+  kanbanTransitionTask: (taskId, status) =>
+    ipcRenderer.invoke("wuu:kanban-transition-task", { task_id: taskId, status }),
+  kanbanDispatchRun: (params) =>
+    ipcRenderer.invoke("wuu:kanban-dispatch-run", params),
+  kanbanListRuns: (taskId) =>
+    ipcRenderer.invoke("wuu:kanban-list-runs", { task_id: taskId }),
+  kanbanListArtifacts: (taskId) =>
+    ipcRenderer.invoke("wuu:kanban-list-artifacts", { task_id: taskId }),
+  kanbanCrystallize: (params) =>
+    ipcRenderer.invoke("wuu:kanban-crystallize", params),
+  participantGetManifest: (participantId) =>
+    ipcRenderer.invoke("wuu:participant-get-manifest", { participant_id: participantId }),
+  participantSaveManifest: (params) =>
+    ipcRenderer.invoke("wuu:participant-save-manifest", params),
   getMemoryOverview: (params) =>
     ipcRenderer.invoke("wuu:memory-overview", params),
   sendMemoryChat: (params) => ipcRenderer.invoke("wuu:memory-chat", params),
   readMemoryRaw: (params) => ipcRenderer.invoke("wuu:memory-read", params),
-  listConversationSubthreads: (threadId: string) =>
-    ipcRenderer.invoke("wuu:thread-list-sub", threadId),
-  openConversationSubthread: (threadId: string, options) =>
-    ipcRenderer.invoke("wuu:thread-open-sub", threadId, options),
-  resolveConversationSubthread: (threadId: string, subthreadId: string, resolved: boolean) =>
-    ipcRenderer.invoke("wuu:thread-resolve-sub", threadId, subthreadId, resolved),
-  escalateConversationSubthread: (threadId: string, subthreadId: string, options) =>
-    ipcRenderer.invoke("wuu:thread-escalate-sub", threadId, subthreadId, options),
-  postSubthreadMessage: (
-    threadId: string,
-    subthreadId: string,
-    text: string,
-    images?: import("../shared/protocol").InputImage[],
-    files?: import("../shared/protocol").InputFile[],
-  ): Promise<import("../shared/protocol").MessagePostSubthreadResult> =>
-    ipcRenderer.invoke(
-      "wuu:message-post-subthread",
-      threadId,
-      subthreadId,
-      text,
-      images,
-      files,
-    ),
-  taskEvents: (threadId: string, subthreadId: string) =>
-    ipcRenderer.invoke("wuu:thread-task-events", threadId, subthreadId),
   listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   listArchivedThreads: () =>
     ipcRenderer.invoke("wuu:thread-list-archived"),
@@ -354,20 +345,6 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-preview", threadId, limit),
   pinThread: (threadId: string, pinned: boolean) =>
     ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
-  addThreadMember: (threadId: string, participantId: string) =>
-    ipcRenderer.invoke("wuu:thread-members-add", threadId, participantId),
-  removeThreadMember: (threadId: string, participantId: string) =>
-    ipcRenderer.invoke("wuu:thread-members-remove", threadId, participantId),
-  getThreadMarks: (
-    threadId: string,
-  ): Promise<import("../shared/protocol").ThreadMarksResult> =>
-    ipcRenderer.invoke("wuu:thread-marks", threadId),
-  reactToMessage: (
-    threadId: string,
-    seq: number,
-    reaction: string,
-  ): Promise<import("../shared/protocol").MessageReactResult> =>
-    ipcRenderer.invoke("wuu:message-react", threadId, seq, reaction),
   archiveThread: (threadId: string, archived: boolean) =>
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
   deleteThread: (threadId: string) =>
@@ -382,8 +359,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:file-show-in-folder", path),
   openExternal: (url: string) =>
     ipcRenderer.invoke("wuu:open-external", url),
-  startTurn: (threadId: string, prompt: string, images, files, permissionMode, mentions, focusWorkspace) =>
-    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files, permissionMode, mentions, focusWorkspace),
+  startTurn: (threadId: string, prompt: string, images, files, permissionMode) =>
+    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files, permissionMode),
   queueTurn: (threadId: string, prompt: string, images, clientId, files, permissionMode) =>
     ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId, files, permissionMode),
   updateQueuedTurn: (threadId: string, queueId: string, prompt: string, images, files) =>

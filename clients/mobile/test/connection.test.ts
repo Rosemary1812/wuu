@@ -52,11 +52,9 @@ vi.mock("@wuu/remote-core", () => {
       const result =
         method === "thread/list"
           ? { threads: [] }
-          : method === "participant/list"
-            ? { participants: [] }
-            : method === "device/push_register"
-              ? { ok: true }
-              : {};
+          : method === "device/push_register"
+            ? { ok: true }
+            : {};
       return result as T;
     }
     async stop(): Promise<void> {}

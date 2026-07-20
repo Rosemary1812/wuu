@@ -1,21 +1,12 @@
-import {
-  type Dispatch,
-  type SetStateAction,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   CodexPetSettingsUpdate,
   CodexPetsSnapshot,
-  SettingsUsageRange,
   SettingsUsageResponse,
 } from "../shared/protocol";
 import { translateCurrent } from "./i18n";
 
 export type SettingsRuntimeState = {
-  usageRange: SettingsUsageRange;
-  setUsageRange: Dispatch<SetStateAction<SettingsUsageRange>>;
   settingsUsage: SettingsUsageResponse | undefined;
   codexPets: CodexPetsSnapshot | undefined;
   codexPetsLoading: boolean;
@@ -35,7 +26,6 @@ export function useSettingsRuntimeState({
 }: {
   settingsOpen: boolean;
 }): SettingsRuntimeState {
-  const [usageRange, setUsageRange] = useState<SettingsUsageRange>("all");
   const [settingsUsage, setSettingsUsage] = useState<
     SettingsUsageResponse | undefined
   >(undefined);
@@ -102,7 +92,7 @@ export function useSettingsRuntimeState({
     }
     let cancelled = false;
     void window.wuu
-      .getSettingsUsage(usageRange)
+      .getSettingsUsage()
       .then((response) => {
         if (cancelled) {
           return;
@@ -118,7 +108,7 @@ export function useSettingsRuntimeState({
     return () => {
       cancelled = true;
     };
-  }, [settingsOpen, usageRange]);
+  }, [settingsOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,8 +147,6 @@ export function useSettingsRuntimeState({
   }, []);
 
   return {
-    usageRange,
-    setUsageRange,
     settingsUsage,
     codexPets,
     codexPetsLoading,

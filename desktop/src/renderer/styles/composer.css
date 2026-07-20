@@ -82,6 +82,12 @@
   margin: 0 auto;
 }
 
+.composer-top-accessory {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
 /* Hero (welcome) composer inherits the same dialog width as the dock composer
    so the input box stays the same width whether or not a turn has been sent. */
 
@@ -1483,6 +1489,18 @@
     color var(--motion-base) var(--ease-out),
     opacity var(--motion-base) var(--ease-out),
     box-shadow var(--motion-base) var(--ease-out);
+}
+
+.composer-convert-task-button {
+  background: transparent;
+  color: var(--ink-muted);
+  border: 1px solid var(--hairline);
+}
+
+.composer-convert-task-button:hover {
+  background: var(--surface-2);
+  color: var(--info);
+  border-color: var(--info);
 }
 
 /* Send and stop share the utility-button footprint so the primary action

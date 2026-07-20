@@ -98,6 +98,16 @@ describe("readableToolActivityCommand", () => {
         arguments: JSON.stringify({ pattern: "**/AGENTS.md", path: "." })
       })
     ).toBe("搜索 AGENTS.md");
+
+    expect(
+      readableToolActivityCommand({
+        name: "grep",
+        arguments: JSON.stringify({
+          pattern: "\\]\\([^h#][^:)]*\\)",
+          path: "docs/app-server-protocol.md",
+        }),
+      })
+    ).toBe("在 app-server-protocol.md 中搜索 \\]\\([^h#][^:)]*\\)");
   });
 
   it("keeps explicit shell commands readable", () => {

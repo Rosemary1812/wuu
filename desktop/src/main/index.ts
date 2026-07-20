@@ -60,31 +60,30 @@ import type {
   ParticipantRetireResult,
   ParticipantSaveParams,
   ParticipantSaveResult,
-  ParticipantStartParams,
-  ParticipantStartResult,
+  ParticipantGetManifestParams,
+  ParticipantSaveManifestParams,
+  ParticipantManifest,
+  KanbanTask,
+  KanbanCreateTaskParams,
+  KanbanTransitionTaskParams,
+  KanbanDispatchRunParams,
+  KanbanRun,
+  KanbanArtifact,
+  KanbanCrystallizeParams,
+  KanbanCrystallizeResult,
   RemoteControlSnapshot,
   RemoteControlStatus,
   ServerEvent,
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
-  SettingsUsageQuery,
-  SettingsUsageRange,
   SettingsUsageResponse,
   TerminalSessionStartParams,
   Thread,
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
   ThreadForkResult,
-  ThreadEscalateSubResult,
-  ThreadListSubResult,
-  ThreadMarksResult,
-  MessageReactResult,
-  MessagePostSubthreadResult,
-  ThreadOpenSubResult,
-  ThreadResolveSubResult,
   ThreadResumeResult,
-  ThreadTaskEventsResult,
   ThreadStartParams,
   Turn,
   PopOutInitResult,
@@ -376,6 +375,10 @@ function gitServiceForEvent(event: IpcMainInvokeEvent): GitService {
   return new GitService(
     () => runtimeContextForEvent(event),
     () => appServerClientPool.runningThreadCwds(),
+    () => {
+      const context = runtimeContextForEvent(event);
+      return appServerClientPool.threadCwdsForWorkdir(context.cwd);
+    },
   );
 }
 
@@ -657,13 +660,6 @@ type PopOutWindowParams =
       kind: "draft";
       context: RuntimeContext;
       sourceWindow?: BrowserWindow | null;
-    }
-  | {
-      kind: "subthread";
-      threadID: string;
-      subthreadID: string;
-      context: RuntimeContext;
-      sourceWindow?: BrowserWindow | null;
     };
 
 function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
@@ -700,9 +696,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   const placeholderTitle =
     params.kind === "thread"
       ? `wuu · ${params.threadID.slice(0, 8)}`
-      : params.kind === "subthread"
-        ? `wuu · Thread ${params.subthreadID.slice(0, 8)}`
-        : `wuu · ${mainTranslate("conversation")}`;
+      : `wuu · ${mainTranslate("conversation")}`;
   const win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
@@ -725,14 +719,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   windowRegistry.registerWindow(win, "popped-out", {
     workdir: params.context.cwd,
     runtimeContext: params.context,
-    // A subthread window stores its PARENT threadID too so window-routed
-    // app-server calls (escalate/postSubthread/react/bubble) resolve against
-    // the right thread; the cth identity rides in subthreadID.
-    threadID:
-      params.kind === "thread" || params.kind === "subthread"
-        ? params.threadID
-        : undefined,
-    subthreadID: params.kind === "subthread" ? params.subthreadID : undefined,
+    threadID: params.kind === "thread" ? params.threadID : undefined,
   });
   windowRegistry.attachResizeHandlers(win, () => {
     setWindowResizeState(true);
@@ -740,10 +727,6 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   });
   if (params.kind === "thread") {
     windowRegistry.setThreadWindow(params.threadID, windowID);
-  } else if (params.kind === "subthread") {
-    // NOT setThreadWindow — that would clobber the parent group thread's own
-    // pop-out dedup mapping. cth windows dedup via the separate subthread map.
-    windowRegistry.setSubthreadWindow(params.subthreadID, windowID);
   }
   win.on("closed", () => {
     unregisterWindow(windowID);
@@ -935,46 +918,6 @@ app.whenReady().then(async () => {
         });
         return { windowID: win.webContents.id };
       }
-      if (params?.kind === "subthread") {
-        const parentThreadID =
-          typeof params.threadID === "string" ? params.threadID.trim() : "";
-        const subthreadID =
-          typeof params.subthreadID === "string"
-            ? params.subthreadID.trim()
-            : "";
-        if (!parentThreadID || !subthreadID) {
-          throw new Error("threadID and subthreadID are required");
-        }
-        const existingWindowID =
-          windowRegistry.subthreadHostWindowID(subthreadID);
-        const existing = windowRegistry.popOutWindowForSubthread(subthreadID);
-        if (
-          existing &&
-          !existing.isDestroyed() &&
-          !existing.webContents.isDestroyed()
-        ) {
-          if (existing.isMinimized()) {
-            existing.restore();
-          }
-          existing.show();
-          existing.focus();
-          return { windowID: existing.webContents.id };
-        }
-        if (existing) {
-          windowRegistry.clearSubthreadWindow(subthreadID);
-          if (existingWindowID !== undefined) {
-            unregisterWindow(existingWindowID);
-          }
-        }
-        const win = createPopOutWindow({
-          kind: "subthread",
-          threadID: parentThreadID,
-          subthreadID,
-          context,
-          sourceWindow,
-        });
-        return { windowID: win.webContents.id };
-      }
       const threadID =
         typeof params?.threadID === "string" ? params.threadID.trim() : "";
       if (!threadID) {
@@ -1022,21 +965,14 @@ app.whenReady().then(async () => {
     "wuu:pop-out-init",
     (event) => {
       const threadID = windowRegistry.threadForWindow(event.sender.id);
-      const subthreadID = windowRegistry.subthreadForWindow(event.sender.id);
       const context = windowRegistry.runtimeContextForWindow(event.sender.id);
-      // Check subthreadID BEFORE threadID: a subthread window intentionally
-      // stores the parent threadID too (for runtime routing), so ordering it
-      // first would misreport kind as "thread".
       event.returnValue = {
         kind: context
-          ? subthreadID
-            ? "subthread"
-            : threadID
-              ? "thread"
-              : "draft"
+          ? threadID
+            ? "thread"
+            : "draft"
           : null,
         threadID: threadID ?? null,
-        subthreadID: subthreadID ?? null,
         context: context ?? null,
       } satisfies PopOutInitResult;
     },
@@ -1078,29 +1014,29 @@ app.whenReady().then(async () => {
     (_event, fresh?: boolean, cwd?: string) =>
       projectManager.selectNoProject(Boolean(fresh), cwd),
   );
-  ipcMain.handle("wuu:git-status", (event) =>
-    gitServiceForEvent(event).status(),
+  ipcMain.handle("wuu:git-status", (event, root?: string) =>
+    gitServiceForEvent(event).status({}, root),
   );
-  ipcMain.handle("wuu:git-changes", (event) =>
-    gitServiceForEvent(event).changes(),
+  ipcMain.handle("wuu:git-changes", (event, root?: string) =>
+    gitServiceForEvent(event).changes(root),
   );
   ipcMain.handle("wuu:git-file-diff", (event, path: string, root?: string) =>
     gitServiceForEvent(event).fileDiff(path, root),
   );
-  ipcMain.handle("wuu:git-action-busy", (event) =>
-    gitServiceForEvent(event).actionBusy(),
+  ipcMain.handle("wuu:git-action-busy", (event, root?: string) =>
+    gitServiceForEvent(event).actionBusy(root),
   );
-  ipcMain.handle("wuu:git-checkout-branch", (event, branch: string) =>
-    gitServiceForEvent(event).checkoutBranch(branch),
+  ipcMain.handle("wuu:git-checkout-branch", (event, branch: string, root?: string) =>
+    gitServiceForEvent(event).checkoutBranch(branch, root),
   );
-  ipcMain.handle("wuu:git-create-checkout-branch", (event, branch: string) =>
-    gitServiceForEvent(event).createCheckoutBranch(branch),
+  ipcMain.handle("wuu:git-create-checkout-branch", (event, branch: string, root?: string) =>
+    gitServiceForEvent(event).createCheckoutBranch(branch, root),
   );
-  ipcMain.handle("wuu:git-commit", (event, params: GitCommitParams) =>
-    gitServiceForEvent(event).commit(params ?? {}),
+  ipcMain.handle("wuu:git-commit", (event, params: GitCommitParams, root?: string) =>
+    gitServiceForEvent(event).commit(params ?? {}, root),
   );
-  ipcMain.handle("wuu:git-create-pr", (event, params: GitPullRequestParams) =>
-    gitServiceForEvent(event).createPullRequest(params ?? {}),
+  ipcMain.handle("wuu:git-create-pr", (event, params: GitPullRequestParams, root?: string) =>
+    gitServiceForEvent(event).createPullRequest(params ?? {}, root),
   );
   ipcMain.handle("wuu:file-tree-list", (event, root?: string) =>
     workspaceFilesForEvent(event).fileTreeList(root),
@@ -1351,14 +1287,8 @@ app.whenReady().then(async () => {
     (_event, hints: CodexPetHint[] | null) =>
       codexPetWindowManager.setHints(hints ?? []),
   );
-  ipcMain.handle(
-    "wuu:settings-usage",
-    (event, range?: SettingsUsageRange) =>
-      appServerRequest<SettingsUsageResponse>(
-        event,
-        "settings/usage",
-        { range } satisfies SettingsUsageQuery,
-      ),
+  ipcMain.handle("wuu:settings-usage", (event) =>
+    appServerRequest<SettingsUsageResponse>(event, "settings/usage"),
   );
   ipcMain.handle("wuu:mcp-list", (event) =>
     appServerRequest<MCPListResult>(event, "mcp/list"),
@@ -1422,9 +1352,6 @@ app.whenReady().then(async () => {
     appServerRequest<ThreadResumeResult>(event, "thread/resume", {
       session_id: sessionId ?? "",
     }),
-  );
-  ipcMain.handle("wuu:participant-start", (event, params: ParticipantStartParams) =>
-    appServerRequest<ParticipantStartResult>(event, "participant/start", params),
   );
   ipcMain.handle(
     "wuu:thread-fork",
@@ -1580,6 +1507,51 @@ app.whenReady().then(async () => {
       participant_id: participantId,
     }),
   );
+  ipcMain.handle(
+    "wuu:participant-get-manifest",
+    (event, params: ParticipantGetManifestParams) =>
+      appServerRequest<ParticipantManifest>(event, "participant/get-manifest", params),
+  );
+  ipcMain.handle(
+    "wuu:participant-save-manifest",
+    (event, params: ParticipantSaveManifestParams) =>
+      appServerRequest<ParticipantManifest>(event, "participant/save-manifest", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-list-tasks",
+    (event, params: { session_id: string; parent_id?: string }) =>
+      appServerRequest<KanbanTask[]>(event, "kanban/list-tasks", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-create-task",
+    (event, params: KanbanCreateTaskParams) =>
+      appServerRequest<KanbanTask>(event, "kanban/create-task", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-transition-task",
+    (event, params: KanbanTransitionTaskParams) =>
+      appServerRequest<KanbanTask>(event, "kanban/transition-task", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-dispatch-run",
+    (event, params: KanbanDispatchRunParams) =>
+      appServerRequest<KanbanRun>(event, "kanban/dispatch-run", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-list-runs",
+    (event, params: { task_id: string }) =>
+      appServerRequest<KanbanRun[]>(event, "kanban/list-runs", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-list-artifacts",
+    (event, params: { task_id: string }) =>
+      appServerRequest<KanbanArtifact[]>(event, "kanban/list-artifacts", params),
+  );
+  ipcMain.handle(
+    "wuu:kanban-crystallize",
+    (event, params: KanbanCrystallizeParams) =>
+      appServerRequest<KanbanCrystallizeResult>(event, "kanban/crystallize", params),
+  );
   // 记忆面板 RPC（memory-redesign.md §8.2）。participant_id 只在
   // participant scope 下附带，避免后端 DisallowUnknownFields 之外的
   // 空字段歧义；user scope 的请求只带 scope。
@@ -1602,64 +1574,6 @@ app.whenReady().then(async () => {
       scope: params.scope,
       ...(params.participant_id ? { participant_id: params.participant_id } : {}),
     }),
-  );
-  ipcMain.handle("wuu:thread-list-sub", (event, threadId: string) =>
-    appServerRequest<ThreadListSubResult>(event, "thread/listSub", {
-      thread_id: threadId,
-    }),
-  );
-  ipcMain.handle(
-    "wuu:thread-open-sub",
-    (
-      event,
-      threadId: string,
-      options?: {
-        subthreadId?: string;
-        anchorItemId?: string;
-        parentSeq?: number;
-        title?: string;
-        threadOwnerParticipantId?: string;
-      },
-    ) =>
-      appServerRequest<ThreadOpenSubResult>(event, "thread/openSub", {
-        thread_id: threadId,
-        subthread_id: options?.subthreadId ?? "",
-        anchor_item_id: options?.anchorItemId ?? "",
-        parent_seq: options?.parentSeq ?? 0,
-        title: options?.title ?? "",
-        thread_owner_participant_id: options?.threadOwnerParticipantId ?? "",
-      }),
-  );
-  ipcMain.handle(
-    "wuu:thread-resolve-sub",
-    (event, threadId: string, subthreadId: string, resolved: boolean) =>
-      appServerRequest<ThreadResolveSubResult>(event, "thread/resolveSub", {
-        thread_id: threadId,
-        subthread_id: subthreadId,
-        resolved,
-      }),
-  );
-  ipcMain.handle(
-    "wuu:thread-escalate-sub",
-    (
-      event,
-      threadId: string,
-      subthreadId: string,
-      options?: { title?: string },
-    ) =>
-      appServerRequest<ThreadEscalateSubResult>(event, "thread/escalateSub", {
-        thread_id: threadId,
-        subthread_id: subthreadId,
-        title: options?.title ?? "",
-      }),
-  );
-  ipcMain.handle(
-    "wuu:thread-task-events",
-    (event, threadId: string, subthreadId: string) =>
-      appServerRequest<ThreadTaskEventsResult>(event, "thread/taskEvents", {
-        thread_id: threadId,
-        subthread_id: subthreadId,
-      }),
   );
   ipcMain.handle("wuu:thread-list", (event, cwd?: string) =>
     appServerRequest<{ threads: Thread[] }>(
@@ -1712,58 +1626,6 @@ app.whenReady().then(async () => {
     }),
   );
   ipcMain.handle(
-    "wuu:thread-members-add",
-    (event, threadId: string, participantId: string) =>
-      appServerRequest<{ thread: Thread }>(event, "thread/members/add", {
-        thread_id: threadId,
-        participant_id: participantId,
-      }),
-  );
-  ipcMain.handle(
-    "wuu:thread-members-remove",
-    (event, threadId: string, participantId: string) =>
-      appServerRequest<{ thread: Thread }>(event, "thread/members/remove", {
-        thread_id: threadId,
-        participant_id: participantId,
-      }),
-  );
-  ipcMain.handle("wuu:thread-marks", (event, threadId: string) =>
-    appServerRequest<ThreadMarksResult>(event, "thread/marks", {
-      thread_id: threadId,
-    }),
-  );
-  ipcMain.handle(
-    "wuu:message-react",
-    (event, threadId: string, seq: number, reaction: string) =>
-      appServerRequest<MessageReactResult>(event, "message/react", {
-        thread_id: threadId,
-        seq,
-        reaction,
-      }),
-  );
-  ipcMain.handle(
-    "wuu:message-post-subthread",
-    (
-      event,
-      threadId: string,
-      subthreadId: string,
-      text: string,
-      images?: InputImage[],
-      files?: InputFile[],
-    ) =>
-      appServerRequest<MessagePostSubthreadResult>(
-        event,
-        "message/postSubthread",
-        {
-          thread_id: threadId,
-          subthread_id: subthreadId,
-          text,
-          images: images ?? [],
-          files: files ?? [],
-        },
-      ),
-  );
-  ipcMain.handle(
     "wuu:thread-rename",
     (event, threadId: string, title: string) =>
       appServerRequest<{ thread: Thread }>(event, "thread/rename", {
@@ -1798,8 +1660,6 @@ app.whenReady().then(async () => {
       images?: InputImage[],
       files?: InputFile[],
       permissionMode?: string,
-      mentions?: string[],
-      focusWorkspace?: string,
     ) =>
       appServerRequest<{ turn: Turn }>(event, "turn/start", {
         thread_id: threadId,
@@ -1807,15 +1667,6 @@ app.whenReady().then(async () => {
         images: images ?? [],
         files: files ?? [],
         ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
-        // Attached only when non-empty: the server rejects unknown params
-        // fields, so plain sends stay compatible with backends that have
-        // not landed mentions support yet.
-        ...(mentions && mentions.length > 0 ? { mentions } : {}),
-        // Attached only when the renderer computed an explicit chat-focus
-        // change for this send (see focusWorkspaceSendValue in
-        // AppState.ts) — omitted entirely otherwise, same compatibility
-        // reasoning as mentions above.
-        ...(focusWorkspace === undefined ? {} : { focus_workspace: focusWorkspace }),
       }),
   );
   ipcMain.handle(

@@ -8,6 +8,7 @@ type SetAppState = (update: SetStateAction<AppState>) => void;
 
 export type EnvironmentActionsDeps = {
   getAppState: () => AppState;
+  getEnvironmentRoot: () => string | undefined;
   setAppState: SetAppState;
   getAnyThreadIsRunning: () => boolean;
   closeProjectMenus: () => void;
@@ -51,19 +52,30 @@ export function createEnvironmentActions(
     }));
   }
 
+  function environmentRootIsCurrent(root: string): boolean {
+    return deps.getEnvironmentRoot() === root;
+  }
+
   async function checkoutBranch(branch: string): Promise<void> {
-    if (!branch || deps.getAnyThreadIsRunning()) {
+    const root = deps.getEnvironmentRoot();
+    if (!branch || !root || deps.getAnyThreadIsRunning()) {
       return;
     }
     deps.closeProjectMenus();
     try {
-      const gitStatus = await window.wuu.checkoutGitBranch(branch);
+      const gitStatus = await window.wuu.checkoutGitBranch(branch, root);
+      if (!environmentRootIsCurrent(root)) {
+        return;
+      }
       deps.setAppState((current) => ({
         ...current,
         gitStatus,
         status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
+      if (!environmentRootIsCurrent(root)) {
+        return;
+      }
       setStatus(
         error instanceof Error
           ? error.message
@@ -74,7 +86,8 @@ export function createEnvironmentActions(
 
   async function refreshGitStatus(): Promise<void> {
     const context = deps.getAppState().activeContext;
-    if (!context) {
+    const root = deps.getEnvironmentRoot();
+    if (!context || !root) {
       return;
     }
     if (deps.gitRefreshInFlightRef.current) {
@@ -83,8 +96,11 @@ export function createEnvironmentActions(
     }
     deps.gitRefreshInFlightRef.current = true;
     try {
-      const gitStatus = await window.wuu.gitStatus();
-      if (!sameRuntimeContext(deps.getAppState().activeContext, context)) {
+      const gitStatus = await window.wuu.gitStatus(root);
+      if (
+        !sameRuntimeContext(deps.getAppState().activeContext, context) ||
+        deps.getEnvironmentRoot() !== root
+      ) {
         return;
       }
       deps.setAppState((current) => ({
@@ -93,7 +109,10 @@ export function createEnvironmentActions(
         status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
-      if (!sameRuntimeContext(deps.getAppState().activeContext, context)) {
+      if (
+        !sameRuntimeContext(deps.getAppState().activeContext, context) ||
+        deps.getEnvironmentRoot() !== root
+      ) {
         return;
       }
       setStatus(
@@ -111,7 +130,7 @@ export function createEnvironmentActions(
   }
 
   function scheduleGitStatusRefresh(delayMs: number): void {
-    if (!deps.getAppState().activeContext) {
+    if (!deps.getAppState().activeContext || !deps.getEnvironmentRoot()) {
       return;
     }
     if (deps.gitRefreshTimerRef.current !== undefined) {
@@ -124,11 +143,15 @@ export function createEnvironmentActions(
   }
 
   async function createAndCheckoutBranch(branch: string): Promise<void> {
-    if (!branch || deps.getAnyThreadIsRunning()) {
+    const root = deps.getEnvironmentRoot();
+    if (!branch || !root || deps.getAnyThreadIsRunning()) {
       return;
     }
     try {
-      const result = await window.wuu.createCheckoutGitBranch(branch);
+      const result = await window.wuu.createCheckoutGitBranch(branch, root);
+      if (!environmentRootIsCurrent(root)) {
+        return;
+      }
       deps.setAppState((current) => ({
         ...current,
         gitStatus: result.status,
@@ -136,6 +159,9 @@ export function createEnvironmentActions(
       }));
       deps.setEnvironmentPanelMenu(null);
     } catch (error) {
+      if (!environmentRootIsCurrent(root)) {
+        throw error;
+      }
       setStatus(error instanceof Error ? error.message : translateCurrent("git.branch.createFailed"));
       throw error;
     }
@@ -145,15 +171,24 @@ export function createEnvironmentActions(
     message: string;
     includeUnstaged: boolean;
   }): Promise<GitCommitResult> {
-    const result = await window.wuu.commitGitChanges({
-      message: params.message,
-      include_unstaged: params.includeUnstaged,
-    });
-    deps.setAppState((current) => ({
-      ...current,
-      gitStatus: result.status,
-      status: localizedText("git.commit.completed", { commit: result.commit }),
-    }));
+    const root = deps.getEnvironmentRoot();
+    if (!root) {
+      throw new Error("session working directory is unavailable");
+    }
+    const result = await window.wuu.commitGitChanges(
+      {
+        message: params.message,
+        include_unstaged: params.includeUnstaged,
+      },
+      root,
+    );
+    if (environmentRootIsCurrent(root)) {
+      deps.setAppState((current) => ({
+        ...current,
+        gitStatus: result.status,
+        status: localizedText("git.commit.completed", { commit: result.commit }),
+      }));
+    }
     return result;
   }
 
@@ -162,18 +197,27 @@ export function createEnvironmentActions(
     body: string;
     draft: boolean;
   }): Promise<GitPullRequestResult> {
-    const result = await window.wuu.createPullRequest({
-      title: params.title,
-      body: params.body,
-      draft: params.draft,
-    });
-    deps.setAppState((current) => ({
-      ...current,
-      gitStatus: result.status,
-      status: result.already_exists
-        ? translateCurrent("git.pr.exists")
-        : translateCurrent("git.pr.created"),
-    }));
+    const root = deps.getEnvironmentRoot();
+    if (!root) {
+      throw new Error("session working directory is unavailable");
+    }
+    const result = await window.wuu.createPullRequest(
+      {
+        title: params.title,
+        body: params.body,
+        draft: params.draft,
+      },
+      root,
+    );
+    if (environmentRootIsCurrent(root)) {
+      deps.setAppState((current) => ({
+        ...current,
+        gitStatus: result.status,
+        status: result.already_exists
+          ? translateCurrent("git.pr.exists")
+          : translateCurrent("git.pr.created"),
+      }));
+    }
     return result;
   }
 

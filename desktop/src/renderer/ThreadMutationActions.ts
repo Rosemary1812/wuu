@@ -4,8 +4,6 @@ import {
   activeThreadIDForState,
   draftSessionTabForContext,
   ensureSessionTab,
-  isDMThread,
-  isGroupThread,
   isThreadRunning,
   removeSessionTab,
   threadSessionTabID,
@@ -39,14 +37,6 @@ export type ThreadMutationActionsDeps = {
 export type ThreadMutationActions = {
   toggleThreadPinned: (thread: ThreadSummary) => Promise<void>;
   renameThread: (thread: ThreadSummary, title: string) => Promise<void>;
-  removeThreadMemberByID: (
-    threadID: string,
-    participantID: string,
-  ) => Promise<void>;
-  addThreadMemberByID: (
-    threadID: string,
-    participantID: string,
-  ) => Promise<void>;
   archiveThread: (thread: ThreadSummary) => Promise<ThreadArchiveOutcome>;
   unarchiveThread: (thread: Pick<ThreadSummary, "id">) => Promise<void>;
   deleteThread: (thread: ThreadSummary) => Promise<void>;
@@ -160,9 +150,7 @@ export function createThreadMutationActions(
             ? result.thread
             : current.secondaryThread,
         threads:
-          current.activeContext?.cwd === result.thread.cwd ||
-          isDMThread(result.thread) ||
-          isGroupThread(result.thread)
+          current.activeContext?.cwd === result.thread.cwd
             ? upsertThread(current.threads, result.thread)
             : current.threads,
         status: current.status === "ready" ? "ready" : current.status,
@@ -211,65 +199,13 @@ export function createThreadMutationActions(
             : current.secondaryThread,
         threads:
           current.threads.some((item) => item.id === result.thread.id) ||
-          current.activeContext?.cwd === result.thread.cwd ||
-          isDMThread(result.thread) ||
-          isGroupThread(result.thread)
+          current.activeContext?.cwd === result.thread.cwd
             ? upsertThread(current.threads, result.thread)
             : current.threads,
         status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
       setStatus(desktopApiErrorMessage(error, translateCurrent("thread.rename.failed")));
-    }
-  }
-
-  async function removeThreadMemberByID(
-    threadID: string,
-    participantID: string,
-  ): Promise<void> {
-    try {
-      const result = await window.wuu.removeThreadMember(threadID, participantID);
-      deps.updateCachedSidebarThread(result.thread);
-      deps.setAppState((current) => ({
-        ...current,
-        thread: current.thread?.id === threadID ? result.thread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === threadID
-            ? result.thread
-            : current.secondaryThread,
-        threads: upsertThread(current.threads, result.thread),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : translateCurrent("thread.memberRemove.failed"),
-      );
-    }
-  }
-
-  async function addThreadMemberByID(
-    threadID: string,
-    participantID: string,
-  ): Promise<void> {
-    try {
-      const result = await window.wuu.addThreadMember(threadID, participantID);
-      deps.updateCachedSidebarThread(result.thread);
-      deps.setAppState((current) => ({
-        ...current,
-        thread: current.thread?.id === threadID ? result.thread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === threadID
-            ? result.thread
-            : current.secondaryThread,
-        threads: upsertThread(current.threads, result.thread),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : translateCurrent("thread.memberAdd.failed"),
-      );
     }
   }
 
@@ -523,8 +459,6 @@ export function createThreadMutationActions(
   return {
     toggleThreadPinned,
     renameThread,
-    removeThreadMemberByID,
-    addThreadMemberByID,
     archiveThread,
     unarchiveThread,
     deleteThread,

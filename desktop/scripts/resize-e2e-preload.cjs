@@ -116,8 +116,7 @@ contextBridge.exposeInMainWorld("wuu", {
     paths: workspacePaths,
     truncated: false
   }),
-  getSettingsUsage: async (range = "all") => ({
-    range,
+  getSettingsUsage: async () => ({
     total_sessions: 0,
     generated_at: now,
     metrics: {

@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,6 +94,11 @@ func (t *ApplyPatchTool) ValidateInput(argsJSON string) error {
 }
 
 func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	result, err := t.ExecuteResult(ctx, argsJSON)
+	return result.TextProjection(), err
+}
+
+func (t *ApplyPatchTool) ExecuteResult(ctx context.Context, argsJSON string) (toolresult.Result, error) {
 	var args struct {
 		PatchText  string `json:"patchText"`
 		Patch      string `json:"patch"`
@@ -102,7 +107,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		DryRun2    bool   `json:"dryRun"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
+		return toolresult.Result{}, err
 	}
 	patchText := args.PatchText
 	if strings.TrimSpace(patchText) == "" {
@@ -112,31 +117,28 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		patchText = args.Patch
 	}
 	if strings.TrimSpace(patchText) == "" {
-		return "", errors.New("apply_patch requires patchText")
+		return toolresult.Result{}, errors.New("apply_patch requires patchText")
 	}
 
 	patch, err := parseApplyPatch(patchText)
 	if err != nil {
-		return "", fmt.Errorf("apply_patch verification failed: %w", err)
+		return toolresult.Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 	}
 	if len(patch.Hunks) == 0 {
-		return "", errors.New("apply_patch verification failed: no hunks found")
+		return toolresult.Result{}, errors.New("apply_patch verification failed: no hunks found")
 	}
 
 	dryRun := args.DryRun || args.DryRun2
-	revisionBefore := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
 
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
-	changedFiles := make([]string, 0, len(patch.Hunks))
 	plans := make([]applyPatchHunkPlan, 0, len(patch.Hunks))
 	for _, hunk := range patch.Hunks {
 		plan, err := t.planHunk(ctx, hunk)
 		if err != nil {
-			return "", fmt.Errorf("apply_patch verification failed: %w", err)
+			return toolresult.Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 		}
 		plans = append(plans, plan)
 		files = append(files, plan.Result)
-		changedFiles = append(changedFiles, plan.Result.changedPath())
 	}
 
 	var snapshots []patchPathSnapshot
@@ -144,57 +146,62 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		var err error
 		snapshots, err = snapshotPatchPlans(plans)
 		if err != nil {
-			return "", fmt.Errorf("apply_patch verification failed: %w", err)
+			return toolresult.Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 		}
 		if err := t.commitPatchPlans(plans); err != nil {
 			_ = rollbackPatchSnapshots(snapshots)
-			return "", fmt.Errorf("apply_patch apply failed: %w", err)
+			return toolresult.Result{}, fmt.Errorf("apply_patch apply failed: %w", err)
 		}
 		t.recordPatchPlanBaselines(plans)
 		t.notifyPatchPlans(plans)
 	}
-	revisionAfter := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
-	warnings := []string(nil)
-	riskSummary := summarizeApplyPatchRisk(files, len(patch.Hunks))
-	var journal *applyPatchJournalManifest
-	if !dryRun {
-		var err error
-		journal, err = t.writePatchJournal(patchText, files, uniqueNonEmptyStrings(changedFiles), len(patch.Hunks), revisionBefore, revisionAfter, snapshots, riskSummary)
-		if err != nil {
-			warnings = append(warnings, "patch journal could not be written: "+err.Error())
-		}
-	}
-
-	result := map[string]any{
-		"dry_run":            dryRun,
-		"hunk_count":         len(patch.Hunks),
-		"changed_files":      uniqueNonEmptyStrings(changedFiles),
-		"risk_summary":       riskSummary,
-		"workspace_revision": revisionAfter,
-		"next_suggestions":   applyPatchNextSuggestions(dryRun),
-		"provenance": map[string]any{
-			"tool":   "apply_patch",
-			"source": "model_tool_call",
-		},
+	detail := map[string]any{
 		"files": files,
 	}
-	if journal != nil {
-		result["patch_journal"] = journal
-		result["patch_journal_path"] = journal.ManifestPath
-		result["manifest_path"] = journal.ManifestPath
-		result["patch_path"] = journal.PatchPath
+	structured, err := json.Marshal(detail)
+	if err != nil {
+		return toolresult.Result{}, fmt.Errorf("marshal apply_patch detail: %w", err)
 	}
-	if len(warnings) > 0 {
-		result["warnings"] = warnings
-	}
-	return mustJSON(result)
+	return toolresult.Result{
+		Content: []toolresult.ContentPart{{
+			Type: toolresult.ContentTypeText,
+			Text: applyPatchModelSummary(dryRun, files),
+		}},
+		StructuredContent: structured,
+	}, nil
 }
 
-func applyPatchNextSuggestions(dryRun bool) []string {
+func applyPatchModelSummary(dryRun bool, files []applyPatchFileResult) string {
+	header := "Success. Updated the following files:"
 	if dryRun {
-		return []string{"inspect the previewed diffs, then rerun apply_patch without dry_run only if the preview matches the intended change"}
+		header = "Patch validation succeeded. The following files would be updated:"
 	}
-	return []string{"run targeted validation with command execution if that capability is exposed, then inspect the resulting diff before finishing"}
+
+	records := make([]string, 0, len(files))
+	seen := make(map[string]bool, len(files))
+	for _, file := range files {
+		path := strings.TrimSpace(file.Path)
+		displayPath := path
+		if movePath := strings.TrimSpace(file.MovePath); movePath != "" {
+			displayPath = path + " -> " + movePath
+		}
+		action := strings.ToLower(strings.TrimSpace(file.Action))
+		key := action + "\x00" + displayPath
+		if displayPath == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		marker := "M"
+		switch action {
+		case "add":
+			marker = "A"
+		case "delete":
+			marker = "D"
+		}
+		records = append(records, marker+" "+displayPath)
+	}
+
+	return strings.Join(append([]string{header}, records...), "\n")
 }
 
 type applyPatch struct {
@@ -217,12 +224,10 @@ type applyPatchChunk struct {
 }
 
 type applyPatchFileResult struct {
-	Path       string     `json:"path"`
-	MovePath   string     `json:"move_path,omitempty"`
-	Action     string     `json:"action"`
-	OldFileSHA string     `json:"old_file_sha,omitempty"`
-	NewFileSHA string     `json:"new_file_sha,omitempty"`
-	Diff       DiffResult `json:"diff"`
+	Path     string     `json:"path"`
+	MovePath string     `json:"move_path,omitempty"`
+	Action   string     `json:"action"`
+	Diff     DiffResult `json:"diff"`
 }
 
 type applyPatchHunkPlan struct {
@@ -235,123 +240,6 @@ type applyPatchHunkPlan struct {
 	RemoveSource bool
 	DeleteSource bool
 	NotifyPaths  []string
-}
-
-type applyPatchJournalManifest struct {
-	ID                      string                      `json:"id"`
-	CreatedAt               time.Time                   `json:"created_at"`
-	RestoredAt              time.Time                   `json:"restored_at,omitempty"`
-	Tool                    string                      `json:"tool"`
-	SessionID               string                      `json:"session_id,omitempty"`
-	AgentID                 string                      `json:"agent_id,omitempty"`
-	WorkspaceRevisionBefore string                      `json:"workspace_revision_before,omitempty"`
-	WorkspaceRevisionAfter  string                      `json:"workspace_revision_after,omitempty"`
-	ChangedFiles            []string                    `json:"changed_files"`
-	HunkCount               int                         `json:"hunk_count"`
-	ManifestPath            string                      `json:"manifest_path"`
-	PatchPath               string                      `json:"patch_path"`
-	Snapshots               []applyPatchJournalSnapshot `json:"snapshots,omitempty"`
-	Files                   []applyPatchFileResult      `json:"files"`
-	RiskSummary             applyPatchRiskSummary       `json:"risk_summary"`
-	Provenance              map[string]string           `json:"provenance"`
-	RollbackHint            string                      `json:"rollback_hint,omitempty"`
-}
-
-type applyPatchRiskSummary struct {
-	FileCount      int            `json:"file_count"`
-	HunkCount      int            `json:"hunk_count"`
-	AddedLines     int            `json:"added_lines"`
-	DeletedLines   int            `json:"deleted_lines"`
-	Actions        map[string]int `json:"actions,omitempty"`
-	MultiFile      bool           `json:"multi_file,omitempty"`
-	ContainsDelete bool           `json:"contains_delete,omitempty"`
-	ContainsMove   bool           `json:"contains_move,omitempty"`
-	RiskLevel      string         `json:"risk_level"`
-	ReviewHint     string         `json:"review_hint"`
-}
-
-type applyPatchJournalSnapshot struct {
-	Path         string `json:"path"`
-	Existed      bool   `json:"existed"`
-	FileSHA      string `json:"file_sha,omitempty"`
-	Size         int64  `json:"size,omitempty"`
-	Mode         string `json:"mode,omitempty"`
-	SnapshotPath string `json:"snapshot_path,omitempty"`
-}
-
-func (r applyPatchFileResult) changedPath() string {
-	if strings.TrimSpace(r.MovePath) != "" {
-		return strings.TrimSpace(r.MovePath)
-	}
-	return strings.TrimSpace(r.Path)
-}
-
-func uniqueNonEmptyStrings(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
-}
-
-func summarizeApplyPatchRisk(files []applyPatchFileResult, hunkCount int) applyPatchRiskSummary {
-	summary := applyPatchRiskSummary{
-		FileCount: len(files),
-		HunkCount: hunkCount,
-		Actions:   map[string]int{},
-		RiskLevel: "low",
-	}
-	for _, file := range files {
-		action := strings.TrimSpace(file.Action)
-		if action == "" {
-			action = "unknown"
-		}
-		summary.Actions[action]++
-		switch action {
-		case "add":
-			summary.AddedLines += file.Diff.Lines
-		case "delete":
-			summary.ContainsDelete = true
-		case "move":
-			summary.ContainsMove = true
-		}
-		added, deleted := diffLineChangeCounts(file.Diff)
-		summary.AddedLines += added
-		summary.DeletedLines += deleted
-	}
-	summary.MultiFile = summary.FileCount > 1
-	totalChanged := summary.AddedLines + summary.DeletedLines
-	switch {
-	case summary.ContainsDelete || summary.ContainsMove || summary.FileCount > 5 || totalChanged > 300:
-		summary.RiskLevel = "high"
-		summary.ReviewHint = "Inspect the full diff and rollback journal before synthesis; run targeted validation after applying the patch."
-	case summary.MultiFile || totalChanged > 50:
-		summary.RiskLevel = "medium"
-		summary.ReviewHint = "Review changed files as a set and run targeted validation before finishing."
-	default:
-		summary.ReviewHint = "Review the compact diff and run the smallest relevant validation before finishing."
-	}
-	return summary
-}
-
-func diffLineChangeCounts(diff DiffResult) (added, deleted int) {
-	for _, hunk := range diff.Hunks {
-		for _, line := range hunk.Lines {
-			switch line.Op {
-			case "insert":
-				added++
-			case "delete":
-				deleted++
-			}
-		}
-	}
-	return added, deleted
 }
 
 func parseApplyPatch(raw string) (applyPatch, error) {
@@ -525,9 +413,8 @@ func (t *ApplyPatchTool) planAddHunk(ctx context.Context, hunk applyPatchHunk) (
 	content := []byte(joinPatchLines(hunk.Contents))
 	return applyPatchHunkPlan{
 		Result: applyPatchFileResult{
-			Path:       t.env.NormalizeDisplayPathExec(ctx, resolved),
-			Action:     "add",
-			NewFileSHA: formatFileSHA(sha256Hex(content)),
+			Path:   t.env.NormalizeDisplayPathExec(ctx, resolved),
+			Action: "add",
 			Diff: DiffResult{
 				NewFile: true,
 				Lines:   countContentLines(string(content)),
@@ -606,12 +493,10 @@ func (t *ApplyPatchTool) planUpdateHunk(ctx context.Context, hunk applyPatchHunk
 	newBytes := []byte(newContent)
 	return applyPatchHunkPlan{
 		Result: applyPatchFileResult{
-			Path:       t.env.NormalizeDisplayPathExec(ctx, resolved),
-			MovePath:   displayMovePath,
-			Action:     action,
-			OldFileSHA: formatFileSHA(sha256Hex(oldBytes)),
-			NewFileSHA: formatFileSHA(sha256Hex(newBytes)),
-			Diff:       computeDiff(oldContent, newContent, 3),
+			Path:     t.env.NormalizeDisplayPathExec(ctx, resolved),
+			MovePath: displayMovePath,
+			Action:   action,
+			Diff:     computeDiff(oldContent, newContent, 3),
 		},
 		SourceAbs:    resolved,
 		TargetAbs:    target,
@@ -650,10 +535,9 @@ func (t *ApplyPatchTool) planDeleteHunk(ctx context.Context, hunk applyPatchHunk
 	}
 	return applyPatchHunkPlan{
 		Result: applyPatchFileResult{
-			Path:       t.env.NormalizeDisplayPathExec(ctx, resolved),
-			Action:     "delete",
-			OldFileSHA: formatFileSHA(sha256Hex(oldBytes)),
-			Diff:       computeDiff(string(oldBytes), "", 3),
+			Path:   t.env.NormalizeDisplayPathExec(ctx, resolved),
+			Action: "delete",
+			Diff:   computeDiff(string(oldBytes), "", 3),
 		},
 		SourceAbs:    resolved,
 		DeleteSource: true,
@@ -778,103 +662,6 @@ func (t *ApplyPatchTool) notifyPatchPlans(plans []applyPatchHunkPlan) {
 			t.notifyFileChanged(path)
 		}
 	}
-}
-
-func (t *ApplyPatchTool) writePatchJournal(patchText string, files []applyPatchFileResult, changedFiles []string, hunkCount int, revisionBefore, revisionAfter string, snapshots []patchPathSnapshot, riskSummary applyPatchRiskSummary) (*applyPatchJournalManifest, error) {
-	root := strings.TrimSpace(t.env.SessionDir)
-	if root == "" {
-		root = t.env.StateDir
-	}
-	if root == "" {
-		return nil, errors.New("no session or state directory configured")
-	}
-	patchID := generatedApplyPatchJournalID(patchText)
-	dir := filepath.Join(root, "patch-journal", patchID)
-	filesDir := filepath.Join(dir, "files")
-	if err := os.MkdirAll(filesDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create patch journal directory: %w", err)
-	}
-
-	patchPath := filepath.Join(dir, "patch.txt")
-	if err := os.WriteFile(patchPath, []byte(patchText), 0o644); err != nil {
-		return nil, fmt.Errorf("write patch artifact: %w", err)
-	}
-	journalSnapshots, err := t.writePatchJournalSnapshots(filesDir, snapshots)
-	if err != nil {
-		return nil, err
-	}
-
-	manifestPath := filepath.Join(dir, "manifest.json")
-	manifest := applyPatchJournalManifest{
-		ID:                      patchID,
-		CreatedAt:               time.Now().UTC(),
-		Tool:                    "apply_patch",
-		SessionID:               strings.TrimSpace(t.env.SessionID),
-		AgentID:                 strings.TrimSpace(t.env.AgentID),
-		WorkspaceRevisionBefore: revisionBefore,
-		WorkspaceRevisionAfter:  revisionAfter,
-		ChangedFiles:            append([]string(nil), changedFiles...),
-		HunkCount:               hunkCount,
-		ManifestPath:            manifestPath,
-		PatchPath:               patchPath,
-		Snapshots:               journalSnapshots,
-		Files:                   append([]applyPatchFileResult(nil), files...),
-		RiskSummary:             riskSummary,
-		Provenance: map[string]string{
-			"tool":   "apply_patch",
-			"source": "model_tool_call",
-		},
-		RollbackHint: "Use the snapshots in this journal or a prior checkpoint to reconstruct rollback, then inspect git diff and rerun validation.",
-	}
-	if err := writeApplyPatchJournalManifest(manifestPath, manifest); err != nil {
-		return nil, err
-	}
-	return &manifest, nil
-}
-
-func (t *ApplyPatchTool) writePatchJournalSnapshots(filesDir string, snapshots []patchPathSnapshot) ([]applyPatchJournalSnapshot, error) {
-	out := make([]applyPatchJournalSnapshot, 0, len(snapshots))
-	for i, snapshot := range snapshots {
-		entry := applyPatchJournalSnapshot{
-			Path:    t.env.NormalizeDisplayPath(snapshot.Path),
-			Existed: snapshot.Exists,
-		}
-		if snapshot.Exists {
-			entry.FileSHA = formatFileSHA(sha256Hex(snapshot.Content))
-			entry.Size = int64(len(snapshot.Content))
-			entry.Mode = fmt.Sprintf("%04o", snapshot.Mode.Perm())
-			snapshotName := fmt.Sprintf("%03d-%s.snapshot", i, sha256Hex([]byte(entry.Path))[:12])
-			snapshotPath := filepath.Join(filesDir, snapshotName)
-			if err := os.WriteFile(snapshotPath, snapshot.Content, snapshot.Mode.Perm()); err != nil {
-				return nil, fmt.Errorf("write patch journal snapshot %s: %w", entry.Path, err)
-			}
-			entry.SnapshotPath = snapshotPath
-		}
-		out = append(out, entry)
-	}
-	return out, nil
-}
-
-func generatedApplyPatchJournalID(patchText string) string {
-	hash := sha256Hex([]byte(patchText))
-	return "patch-" + time.Now().UTC().Format("20060102T150405.000000000Z") + "-" + hash[:12]
-}
-
-func writeApplyPatchJournalManifest(path string, manifest applyPatchJournalManifest) error {
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal patch journal: %w", err)
-	}
-	data = append(data, '\n')
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write patch journal manifest: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("replace patch journal manifest: %w", err)
-	}
-	return nil
 }
 
 func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {

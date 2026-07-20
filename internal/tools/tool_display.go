@@ -159,8 +159,6 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("agent", "关闭子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "agent_report":
 		return toolDisplay("agent", "读取子任务报告 "+displayTarget(displayString(args, "target", "task_name"), ""))
-	case "post_message":
-		return toolDisplay("agent", "发布参与者结果")
 	case "cron":
 		switch displayString(args, "action") {
 		case "add":

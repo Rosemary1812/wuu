@@ -1,7 +1,6 @@
 import type { ParticipantSummary } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { participantRoleLabel } from "./ParticipantLabels";
-import { useI18n } from "./i18n";
 
 export type ParticipantChipProps = {
   /**
@@ -16,12 +15,6 @@ export type ParticipantChipProps = {
   /** Legacy `Agent.task_name` for threads recorded before participants. */
   fallbackTaskName?: string;
   size?: "sm" | "md";
-  /**
-   * Resolves a母体's participant id to a display name so a forked分身 can be
-   * badged "X 的分身". forked_from_id is only an id on the wire; when no
-   * resolver is supplied the chip degrades to a bare "分身" tag.
-   */
-  resolveName?: (id: string) => string;
 };
 
 /**
@@ -39,9 +32,7 @@ export function ParticipantChip({
   fallbackType,
   fallbackTaskName,
   size = "md",
-  resolveName,
 }: ParticipantChipProps): JSX.Element {
-  const { t } = useI18n();
   const name =
     participant?.name.trim() ||
     fallbackTaskName?.trim() ||
@@ -52,12 +43,6 @@ export function ParticipantChip({
     : (fallbackType?.trim() ?? "");
   const role = roleSource !== name ? participantRoleLabel(roleSource) : "";
   const avatarImage = participant?.avatar_image?.trim() ?? "";
-  const forkedFromID = participant?.forked_from_id?.trim() ?? "";
-  // Compact "分身" pill in the tight inline chip; the母体 name rides in the
-  // tooltip so the row stays a single line even for long母体 names.
-  const forkTooltip = forkedFromID
-    ? t("participant.profile.forkOf", { name: resolveName ? resolveName(forkedFromID) : forkedFromID })
-    : "";
   const className = `participant-chip${size === "sm" ? " participant-chip--sm" : ""}`;
   return (
     <span className={className} title={role ? `${name} · ${role}` : name}>
@@ -76,15 +61,6 @@ export function ParticipantChip({
           </span>
           <span className="participant-chip-role">{role}</span>
         </>
-      ) : null}
-      {forkedFromID ? (
-        <span
-          className="participant-chip-fork"
-          title={forkTooltip}
-          aria-label={forkTooltip}
-        >
-          {t("participant.fork")}
-        </span>
       ) : null}
     </span>
   );

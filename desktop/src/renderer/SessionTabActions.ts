@@ -26,7 +26,6 @@ import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type ViewSwitchKind = "thread" | "project" | "runtime";
-type MutableSetRef = { current: Set<string> };
 
 export type SessionTabActionsDeps = {
   getAppState: () => AppState;
@@ -39,8 +38,6 @@ export type SessionTabActionsDeps = {
     context: NonNullable<AppState["activeContext"]>,
   ) => SessionTab;
   selectThread: (threadID: string) => Promise<void>;
-  
-  poppingOutTabIDsRef: MutableSetRef;
   beginViewSwitch: (kind: ViewSwitchKind, targetID: string) => number;
   finishViewSwitch: (requestID: number) => boolean;
   cancelViewSwitch: () => void;
@@ -63,6 +60,7 @@ export function createSessionTabActions(
   const loadRuntime = deps.loadRuntime ?? defaultLoadRuntime;
   const selectRuntimeContext =
     deps.selectRuntimeContext ?? defaultSelectRuntimeContext;
+  const poppingOutThreadIDs = new Set<string>();
 
   function setStatus(status: string): void {
     deps.setAppState((current) => ({
@@ -426,10 +424,10 @@ export function createSessionTabActions(
     if (!tab || (tab.kind !== "thread" && tab.kind !== "draft")) {
       return;
     }
-    if (deps.poppingOutTabIDsRef.current.has(tabID)) {
+    if (poppingOutThreadIDs.has(tabID)) {
       return;
     }
-    deps.poppingOutTabIDsRef.current.add(tabID);
+    poppingOutThreadIDs.add(tabID);
     try {
       await window.wuu.popOutSession(
         tab.kind === "thread"
@@ -451,7 +449,7 @@ export function createSessionTabActions(
           : translateCurrent("window.openDetachedFailed"),
       );
     } finally {
-      deps.poppingOutTabIDsRef.current.delete(tabID);
+      poppingOutThreadIDs.delete(tabID);
     }
   }
 

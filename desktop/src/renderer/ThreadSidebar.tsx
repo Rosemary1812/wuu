@@ -43,9 +43,7 @@ export function ProjectList({
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
-  
   lastViewedTurnByThreadID,
-  lastViewedMessageSeqByThreadID,
   scratchPseudoProjectID,
   scratchPseudoActive,
   onToggleSidebarSectionCollapsed,
@@ -63,11 +61,7 @@ export function ProjectList({
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
-  
   lastViewedTurnByThreadID: Record<string, string>;
-  // Chat-style (DM/group) unread offset map; optional so test harnesses can
-  // omit it. Absent entries mean "never viewed".
-  lastViewedMessageSeqByThreadID?: Record<string, number>;
   // The scratch pseudo project lives at the top of the sidebar tree and
   // groups all no-project (scratch) conversations under one collapsible
   // header, just like a real project. App.tsx injects a synthetic
@@ -98,9 +92,7 @@ export function ProjectList({
           threadsByProjectID={threadsByProjectID}
           activeThreadID={activeThreadID}
           pendingThreadID={pendingThreadID}
-          
           lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-          lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
           scratchPseudoProjectID={scratchPseudoProjectID}
           scratchPseudoActive={scratchPseudoActive}
           onToggleSidebarSectionCollapsed={onToggleSidebarSectionCollapsed}
@@ -132,9 +124,7 @@ export function ProjectGroup({
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
-  
   lastViewedTurnByThreadID,
-  lastViewedMessageSeqByThreadID,
   scratchPseudoProjectID,
   scratchPseudoActive,
   onToggleSidebarSectionCollapsed,
@@ -156,11 +146,7 @@ export function ProjectGroup({
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
-  
   lastViewedTurnByThreadID: Record<string, string>;
-  // Chat-style (DM/group) unread offset map; optional so test harnesses can
-  // omit it. Absent entries mean "never viewed".
-  lastViewedMessageSeqByThreadID?: Record<string, number>;
   scratchPseudoProjectID: string;
   scratchPseudoActive: boolean;
   onToggleSidebarSectionCollapsed: (id: string) => void;
@@ -230,7 +216,6 @@ export function ProjectGroup({
       activeThreadID,
       pendingThreadID,
       lastViewedTurnByThreadID,
-      lastViewedMessageSeqByThreadID,
     ),
   );
   const CollapsedIcon = isScratchPseudo ? MessageSquare : Folder;
@@ -301,9 +286,7 @@ export function ProjectGroup({
             threads={projectThreads}
             activeID={activeThreadID}
             pendingThreadID={pendingThreadID}
-            
             lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-            lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
             visibleCount={visibleThreadCount}
             onSelect={(threadID) => onSelectThread(project.id, threadID)}
             onTogglePinned={onToggleThreadPinned}
@@ -384,9 +367,7 @@ function ThreadList({
   threads,
   activeID,
   pendingThreadID,
-  
   lastViewedTurnByThreadID,
-  lastViewedMessageSeqByThreadID,
   visibleCount,
   onSelect,
   onTogglePinned,
@@ -399,11 +380,7 @@ function ThreadList({
   threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
-  
   lastViewedTurnByThreadID: Record<string, string>;
-  // Chat-style (DM/group) unread offset map; optional so test harnesses can
-  // omit it. Absent entries mean "never viewed".
-  lastViewedMessageSeqByThreadID?: Record<string, number>;
   visibleCount: number;
   onSelect: (id: string) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
@@ -457,9 +434,7 @@ function ThreadList({
         threads={limitedThreads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
-        
         lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-        lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
         onSelect={onSelect}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
@@ -540,7 +515,6 @@ function projectThreadUnread(
   activeID: string | undefined,
   pendingThreadID: string | undefined,
   lastViewedTurnByThreadID: Record<string, string>,
-  lastViewedMessageSeqByThreadID?: Record<string, number>,
 ): boolean {
   return (
     !isThreadRunning(thread) &&
@@ -549,7 +523,6 @@ function projectThreadUnread(
     isThreadUnread(
       thread,
       lastViewedTurnByThreadID[thread.id],
-      lastViewedMessageSeqByThreadID?.[thread.id],
     )
   );
 }
@@ -558,9 +531,7 @@ function ThreadRows({
   threads,
   activeID,
   pendingThreadID,
-  
   lastViewedTurnByThreadID,
-  lastViewedMessageSeqByThreadID,
   onSelect,
   onTogglePinned,
   onArchive,
@@ -570,11 +541,7 @@ function ThreadRows({
   threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
-  
   lastViewedTurnByThreadID: Record<string, string>;
-  // Chat-style (DM/group) unread offset map; optional so test harnesses can
-  // omit it. Absent entries mean "never viewed".
-  lastViewedMessageSeqByThreadID?: Record<string, number>;
   onSelect: (id: string) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
@@ -645,7 +612,6 @@ function ThreadRows({
           isThreadUnread(
             thread,
             lastViewedTurnByThreadID[thread.id],
-            lastViewedMessageSeqByThreadID?.[thread.id],
           );
         return (
           <div
@@ -780,9 +746,7 @@ export function PinnedThreadList({
   threads,
   activeID,
   pendingThreadID,
-  
   lastViewedTurnByThreadID,
-  lastViewedMessageSeqByThreadID,
   onSelect,
   onTogglePinned,
   onArchive,
@@ -793,11 +757,7 @@ export function PinnedThreadList({
   threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
-  
   lastViewedTurnByThreadID: Record<string, string>;
-  // Chat-style (DM/group) unread offset map; optional so test harnesses can
-  // omit it. Absent entries mean "never viewed".
-  lastViewedMessageSeqByThreadID?: Record<string, number>;
   onSelect: (id: string) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
@@ -811,9 +771,7 @@ export function PinnedThreadList({
         threads={threads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
-        
         lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-        lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
         onSelect={onSelect}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}

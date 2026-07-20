@@ -166,64 +166,6 @@ describe("runtime load helpers", () => {
     expect(state.threads?.some((item) => item.id === "latest")).toBe(true);
   });
 
-  it("does not auto-resume a DM when collaboration is disabled", async () => {
-    const activeContext: RuntimeContext = {
-      kind: "no_project",
-      cwd: "/tmp/wuu",
-    };
-    const latestDM = thread("andy-dm", {
-      dm_participant_id: "participant-andy",
-      workspace_kind: "dm",
-      updated_at: "2026-03-02T00:00:00Z",
-    });
-    const regular = thread("regular", {
-      updated_at: "2026-03-01T00:00:00Z",
-    });
-    const resumeThread = vi.fn().mockResolvedValue({ thread: regular });
-    installWuuStub({
-      initialize: vi.fn().mockResolvedValue({ model: "gpt-test" }),
-      listThreads: vi
-        .fn()
-        .mockResolvedValue({ threads: [latestDM, regular] }),
-      listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
-      resumeThread,
-    });
-
-    const state = await loadRuntime(projectList(activeContext), {
-      collaborationEnabled: false,
-    });
-
-    expect(resumeThread).toHaveBeenCalledWith("regular");
-    expect(state.thread?.id).toBe("regular");
-    expect(state.threads?.map((item) => item.id)).toContain("andy-dm");
-  });
-
-  it("keeps DM auto-resume available when collaboration is enabled", async () => {
-    const activeContext: RuntimeContext = {
-      kind: "no_project",
-      cwd: "/tmp/wuu",
-    };
-    const latestDM = thread("andy-dm", {
-      dm_participant_id: "participant-andy",
-      workspace_kind: "dm",
-      updated_at: "2026-03-02T00:00:00Z",
-    });
-    const resumeThread = vi.fn().mockResolvedValue({ thread: latestDM });
-    installWuuStub({
-      initialize: vi.fn().mockResolvedValue({ model: "gpt-test" }),
-      listThreads: vi.fn().mockResolvedValue({ threads: [latestDM] }),
-      listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
-      resumeThread,
-    });
-
-    const state = await loadRuntime(projectList(activeContext), {
-      collaborationEnabled: true,
-    });
-
-    expect(resumeThread).toHaveBeenCalledWith("andy-dm");
-    expect(state.thread?.id).toBe("andy-dm");
-  });
-
   it("skips archived conversations when resuming, even if one is the most recent", async () => {
     const activeContext: RuntimeContext = {
       kind: "no_project",

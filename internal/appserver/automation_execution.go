@@ -33,7 +33,7 @@ func (s *Server) ExecuteAutomation(ctx context.Context, task automation.Task, ru
 		if threadID == "" {
 			return automation.ExecutionResult{}, fmt.Errorf("automation task %q has no heartbeat thread", task.ID)
 		}
-		th, err = s.ensureResidentThread(threadID)
+		th, err = s.ensureThreadLoaded(threadID)
 	default:
 		return automation.ExecutionResult{}, fmt.Errorf("automation task %q has invalid mode %q", task.ID, task.Mode)
 	}
@@ -108,7 +108,7 @@ func (s *Server) createAutomationThread() (*threadState, error) {
 	if err := s.notifyThreadStarted(thread); err != nil {
 		return nil, err
 	}
-	s.pruneResidentThreads(id)
+	s.pruneCachedThreads(id)
 	return th, nil
 }
 

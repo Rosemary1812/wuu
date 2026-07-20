@@ -101,7 +101,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	full := []string{
 		"read_file", "write_file", "edit_file", "bash",
 		"grep", "glob", "spawn_agent", "helpme", "send_message",
-		"close_agent", "agent_report", "post_message",
+		"close_agent", "agent_report",
 	}
 	filtered := FilterToolsForWorker(wt, full, false)
 	allowed := map[string]bool{}
@@ -113,7 +113,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 			t.Errorf("general-purpose agent missing %s", expected)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "helpme", "send_message", "close_agent", "post_message", "react", "manage_participant", "manage_task"} {
+	for _, blocked := range []string{"spawn_agent", "helpme", "send_message", "close_agent"} {
 		if allowed[blocked] {
 			t.Errorf("general-purpose agent should not receive recursive control tool %s", blocked)
 		}
@@ -125,7 +125,7 @@ func TestFilterToolsForWorker_DisallowedToolsRespected(t *testing.T) {
 		Name:            "restricted",
 		DisallowedTools: []string{"write_file", "edit_file", "apply_patch"},
 	}
-	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "agent_report", "post_message"}
+	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "agent_report"}
 	filtered := FilterToolsForWorker(wt, full, false)
 	allowed := map[string]bool{}
 	for _, n := range filtered {
@@ -141,9 +141,6 @@ func TestFilterToolsForWorker_DisallowedToolsRespected(t *testing.T) {
 			t.Errorf("restricted worker missing %s", expected)
 		}
 	}
-	if allowed["post_message"] {
-		t.Error("worker without an allowlist should not receive participant speech tool")
-	}
 }
 
 func TestFilterToolsForWorker_UltraUnlocksOrchestrationButNotHelpme(t *testing.T) {
@@ -152,7 +149,7 @@ func TestFilterToolsForWorker_UltraUnlocksOrchestrationButNotHelpme(t *testing.T
 		t.Fatal(err)
 	}
 	full := []string{"read_file", "spawn_agent", "send_message", "close_agent", "helpme", "agent_report"}
-	filtered := FilterToolsForWorker(wt, full, false, true)
+	filtered := FilterToolsForWorker(wt, full, true)
 	allowed := map[string]bool{}
 	for _, name := range filtered {
 		allowed[name] = true
@@ -185,27 +182,6 @@ func TestFilterToolsForWorker_AllowlistRespected(t *testing.T) {
 	}
 	if !allowed["read_file"] || !allowed["bash"] || !allowed["agent_report"] {
 		t.Errorf("allowlisted worker missing expected read/report tools: %v", filtered)
-	}
-}
-
-func TestFilterToolsForWorker_ConversationNativeCapabilityAddsCoordinationTools(t *testing.T) {
-	wt, err := LookupWorkerType(DefaultSubagentType)
-	if err != nil {
-		t.Fatal(err)
-	}
-	full := []string{"read_file", "post_message", "react", "manage_participant", "manage_task", "spawn_agent"}
-	filtered := FilterToolsForWorker(wt, full, true)
-	allowed := map[string]bool{}
-	for _, name := range filtered {
-		allowed[name] = true
-	}
-	for _, expected := range []string{"read_file", "post_message", "react", "manage_participant", "manage_task"} {
-		if !allowed[expected] {
-			t.Errorf("conversation-native worker missing %s: %v", expected, filtered)
-		}
-	}
-	if allowed["spawn_agent"] {
-		t.Errorf("conversation-native capability must not grant recursive orchestration: %v", filtered)
 	}
 }
 

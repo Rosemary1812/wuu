@@ -17,7 +17,6 @@ import type {
   DesktopProject,
   ComposerGoalSummary,
   InitializeResult,
-  ParticipantProfile,
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
@@ -96,6 +95,8 @@ function renderComposer(props: {
   readOnly?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
+  onSteer?: () => void;
+  onQueue?: () => void;
   onStartNewThread?: () => void;
   onOpenContextComposition?: () => void;
   onOpenSideThread?: () => void;
@@ -119,9 +120,6 @@ function renderComposer(props: {
   onClearGoal?: () => void | Promise<void>;
   activeProject?: DesktopProject;
   projects?: DesktopProject[];
-  participants?: ParticipantProfile[];
-  chatFocusValue?: string;
-  onSelectChatFocus?: (value: string) => void;
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -191,6 +189,8 @@ function renderComposer(props: {
           onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
           onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
           onSend={props.onSend ?? (() => {})}
+          onSteer={props.onSteer}
+          onQueue={props.onQueue}
           onInterrupt={props.onInterrupt ?? (() => {})}
           goalSummary={props.goalSummary}
           onEditGoal={props.onEditGoal}
@@ -200,9 +200,6 @@ function renderComposer(props: {
           tokensPerSecond={props.tokensPerSecond ?? 0}
           tokenSpeedSampledAt={props.tokenSpeedSampledAt}
           tokenSpeedSource={props.tokenSpeedSource}
-          participants={props.participants}
-          chatFocusValue={props.chatFocusValue}
-          onSelectChatFocus={props.onSelectChatFocus}
         />
       </ImagePreviewProvider>,
     );
@@ -381,6 +378,77 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
 }
 
 describe("Composer send control", () => {
+  it("steers with Enter and queues with Tab while a turn is running", () => {
+    const onSend = vi.fn();
+    const onSteer = vi.fn();
+    const onQueue = vi.fn();
+    renderComposer({
+      prompt: "change direction",
+      running: true,
+      onSend,
+      onSteer,
+      onQueue,
+    });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onSteer).toHaveBeenCalledTimes(1);
+    expect(onQueue).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    });
+    expect(onQueue).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tab available for focus navigation when there is no running draft", () => {
+    const onQueue = vi.fn();
+    renderComposer({ prompt: "", running: true, onQueue });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      textarea?.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onQueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tab and Shift+Tab available outside a running draft", () => {
+    const onQueue = vi.fn();
+    renderComposer({ prompt: "not running", running: false, onQueue });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const tabEvent = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    const reverseTabEvent = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      textarea?.dispatchEvent(tabEvent);
+      textarea?.dispatchEvent(reverseTabEvent);
+    });
+
+    expect(tabEvent.defaultPrevented).toBe(false);
+    expect(reverseTabEvent.defaultPrevented).toBe(false);
+    expect(onQueue).not.toHaveBeenCalled();
+  });
+
   it("keeps a send (queue) button while running when the input has a draft", () => {
     const onInterrupt = vi.fn();
     const onSend = vi.fn();
@@ -1124,62 +1192,6 @@ describe("Composer send control", () => {
     expect(setPrompt).toHaveBeenCalledWith("/slides ");
   });
 
-  it("inserts a selected participant mention into the composer", () => {
-    const setPrompt = vi.fn();
-    renderComposer({
-      prompt: "@No",
-      setPrompt,
-      participants: [
-        {
-          id: "prt-noel",
-          kind: "named",
-          name: "Noel",
-          role: "reviewer",
-          tagline: "Find regressions",
-        },
-      ],
-    });
-
-    const mentionButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".mention-item"),
-    ).find((button) => button.textContent?.includes("@Noel"));
-    expect(mentionButton).not.toBeUndefined();
-
-    act(() => {
-      mentionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-
-    expect(setPrompt).toHaveBeenCalledWith("@Noel ");
-  });
-
-  it("dismisses the mention menu on Escape", () => {
-    renderComposer({
-      prompt: "@No",
-      participants: [
-        {
-          id: "prt-noel",
-          kind: "named",
-          name: "Noel",
-        },
-      ],
-    });
-
-    expect(container.querySelector(".mention-menu")).not.toBeNull();
-
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    act(() => {
-      textarea?.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-
-    expect(container.querySelector(".mention-menu")).toBeNull();
-  });
-
   it("sends an exact slash command with arguments on Enter", () => {
     const onSend = vi.fn();
     renderComposer({
@@ -1828,215 +1840,6 @@ describe("Composer permission menu", () => {
     });
 
     expect(onSelectPermissionMode).toHaveBeenCalledWith("unconfined");
-  });
-});
-
-describe("Composer chat focus chip", () => {
-  const projects: DesktopProject[] = [
-    {
-      id: "proj-wuu",
-      name: "wuu",
-      path: "/home/user/wuu",
-      created_at: "2026-07-01T00:00:00Z",
-      updated_at: "2026-07-01T00:00:00Z",
-    },
-    {
-      id: "proj-blog",
-      name: "blog",
-      path: "/home/user/blog",
-      created_at: "2026-07-01T00:00:00Z",
-      updated_at: "2026-07-01T00:00:00Z",
-    },
-  ];
-
-  function click(element: Element | null | undefined): void {
-    expect(element).not.toBeNull();
-    expect(element).not.toBeUndefined();
-    act(() => {
-      element?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-  }
-
-  it("does not render at all for non-chat threads (chatFocusValue undefined)", () => {
-    // Hero variant: a non-chat (project/对话) conversation shows the project
-    // pill, never the focus chip. (In the dock variant the cwd control is gone
-    // entirely once sent — covered by the dock-variant test above.)
-    renderComposer({ projects, variant: "hero" });
-    expect(container.querySelector(".chat-focus-chip")).toBeNull();
-    // The regular project control (hero pill) keeps its leading slot untouched.
-    expect(
-      container.querySelector(".composer-bar-left .composer-project-control"),
-    ).not.toBeNull();
-  });
-
-  it("replaces the dock '+ 打开项目' button and takes the leading slot in chat threads", () => {
-    renderComposer({
-      variant: "dock",
-      projects,
-      chatFocusValue: "",
-      onSelectChatFocus: vi.fn(),
-    });
-    const leftGroup = container.querySelector(".composer-bar-left");
-    // The old control switches the whole app's project context — it must
-    // not exist anywhere in a chat composer, not merely be out-ranked.
-    expect(leftGroup?.querySelector(".composer-project-control")).toBeNull();
-    expect(
-      container.querySelector("button[aria-label=\"打开项目\"]"),
-    ).toBeNull();
-    expect(
-      leftGroup?.firstElementChild?.classList.contains("chat-focus-menu-anchor"),
-    ).toBe(true);
-    expect(leftGroup?.querySelector(".chat-focus-chip")).not.toBeNull();
-  });
-
-  it("replaces the hero project pill and takes the leading slot in chat threads", () => {
-    renderComposer({
-      variant: "hero",
-      projects,
-      chatFocusValue: "",
-      onSelectChatFocus: vi.fn(),
-    });
-    const leftGroup = container.querySelector(".composer-bar-left");
-    expect(container.querySelector(".hero-project-pill")).toBeNull();
-    expect(container.querySelector(".hero-project-pill-anchor")).toBeNull();
-    expect(leftGroup?.querySelector(".composer-project-control")).toBeNull();
-    expect(
-      leftGroup?.firstElementChild?.classList.contains("chat-focus-menu-anchor"),
-    ).toBe(true);
-    expect(leftGroup?.querySelector(".chat-focus-chip")).not.toBeNull();
-  });
-
-  it("keeps the hero project pill for non-chat hero composers", () => {
-    renderComposer({ variant: "hero", projects });
-    expect(container.querySelector(".hero-project-pill")).not.toBeNull();
-    expect(container.querySelector(".chat-focus-chip")).toBeNull();
-  });
-
-  it("renders the default (全部工作区) state as a bare icon with no visible label", () => {
-    renderComposer({ projects, chatFocusValue: "", onSelectChatFocus: vi.fn() });
-    const chip = container.querySelector<HTMLButtonElement>(".chat-focus-chip");
-    expect(chip).not.toBeNull();
-    expect(chip?.classList.contains("is-default")).toBe(true);
-    expect(chip?.querySelector("span")).toBeNull();
-    expect(chip?.getAttribute("aria-label")).toBe("工作焦点：全部工作区");
-    expect(chip?.getAttribute("title")).toBe("全部工作区");
-  });
-
-  it("shows the workspace name (with full name in title) when a project is focused", () => {
-    renderComposer({
-      projects,
-      chatFocusValue: "wuu",
-      onSelectChatFocus: vi.fn(),
-    });
-    const chip = container.querySelector<HTMLButtonElement>(".chat-focus-chip");
-    expect(chip).not.toBeNull();
-    expect(chip?.classList.contains("is-default")).toBe(false);
-    expect(chip?.querySelector("span")?.textContent).toBe("wuu");
-    expect(chip?.getAttribute("title")).toBe("wuu");
-  });
-
-  it("shows ⌂ 个人 for the personal-space focus", () => {
-    renderComposer({
-      projects,
-      chatFocusValue: "~",
-      onSelectChatFocus: vi.fn(),
-    });
-    const chip = container.querySelector<HTMLButtonElement>(".chat-focus-chip");
-    expect(chip?.querySelector("span")?.textContent).toBe("⌂ 个人");
-    expect(chip?.getAttribute("aria-label")).toBe("工作焦点：仅个人空间");
-  });
-
-  it("opens a three-section menu and reports selections through onSelectChatFocus", () => {
-    const onSelectChatFocus = vi.fn();
-    renderComposer({ projects, chatFocusValue: "", onSelectChatFocus });
-
-    click(container.querySelector(".chat-focus-chip"));
-    const menu = document.body.querySelector(
-      "[data-floating-menu-owner=\"composer-focus\"] .chat-focus-menu",
-    );
-    expect(menu).not.toBeNull();
-
-    // Section 1: 全部工作区 (checked, since value is ""); section 2: the
-    // searchable project list; section 3: 仅个人空间.
-    const options = Array.from(
-      menu!.querySelectorAll<HTMLButtonElement>("button[role=\"menuitemradio\"]"),
-    );
-    expect(options.map((option) => option.textContent)).toEqual([
-      "全部工作区",
-      "wuu",
-      "blog",
-      "仅个人空间",
-    ]);
-    expect(
-      options.find((option) => option.textContent === "全部工作区")
-        ?.getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(menu!.querySelector(".project-search input")).not.toBeNull();
-
-    click(options.find((option) => option.textContent === "仅个人空间"));
-    expect(onSelectChatFocus).toHaveBeenCalledWith("~");
-    // Selecting closes the menu.
-    expect(
-      document.body.querySelector("[data-floating-menu-owner=\"composer-focus\"]"),
-    ).toBeNull();
-  });
-
-  it("selects a project by name and can reset back to 全部工作区", () => {
-    const onSelectChatFocus = vi.fn();
-    renderComposer({ projects, chatFocusValue: "~", onSelectChatFocus });
-
-    click(container.querySelector(".chat-focus-chip"));
-    let options = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>(
-        "[data-floating-menu-owner=\"composer-focus\"] button[role=\"menuitemradio\"]",
-      ),
-    );
-    expect(
-      options.find((option) => option.textContent === "仅个人空间")
-        ?.getAttribute("aria-checked"),
-    ).toBe("true");
-    click(options.find((option) => option.textContent === "wuu"));
-    expect(onSelectChatFocus).toHaveBeenCalledWith("wuu");
-
-    click(container.querySelector(".chat-focus-chip"));
-    options = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>(
-        "[data-floating-menu-owner=\"composer-focus\"] button[role=\"menuitemradio\"]",
-      ),
-    );
-    click(options.find((option) => option.textContent === "全部工作区"));
-    expect(onSelectChatFocus).toHaveBeenCalledWith("");
-  });
-
-  it("filters the project list by the search query without hiding the fixed sections", () => {
-    renderComposer({ projects, chatFocusValue: "", onSelectChatFocus: vi.fn() });
-
-    click(container.querySelector(".chat-focus-chip"));
-    const input = document.body.querySelector<HTMLInputElement>(
-      "[data-floating-menu-owner=\"composer-focus\"] .project-search input",
-    );
-    expect(input).not.toBeNull();
-    act(() => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(input, "blo");
-      input!.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    const options = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>(
-        "[data-floating-menu-owner=\"composer-focus\"] button[role=\"menuitemradio\"]",
-      ),
-    );
-    expect(options.map((option) => option.textContent)).toEqual([
-      "全部工作区",
-      "blog",
-      "仅个人空间",
-    ]);
   });
 });
 

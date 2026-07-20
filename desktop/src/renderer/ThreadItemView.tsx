@@ -7,17 +7,15 @@ import {
   useRef,
   useState
 } from "react";
-import { ChevronDown, ChevronUp, PanelRightOpen, Plus, Send } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplayItem } from "./AgentHandoff";
-import { replyCountBadge } from "./AppState";
 import {
   clipboardAttachmentFiles,
   composerFileFromFile,
   composerImageFromFile,
   isSupportedComposerAttachment
 } from "./ComposerMessages";
-import { EnvelopeNotice } from "./EnvelopeNotice";
 import {
   isInternalUserNotificationItem,
   isProcessNotificationItem,
@@ -37,7 +35,6 @@ import {
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
 import { streamFieldValue } from "./ThreadItemText";
-import { ParticipantChip } from "./ParticipantChip";
 import { ToolActivityRow } from "./ToolActivity";
 import {
   ContextCompactionNotice,
@@ -48,7 +45,7 @@ import { userMessageAnchorID } from "./TurnViewHelpers";
 import {
   userFacingErrorForMessage,
 } from "./UserFacingErrors";
-import { translateCurrent as translate, useI18n } from "./i18n";
+import { useI18n } from "./i18n";
 
 export function ThreadItemView({
   turnID,
@@ -69,7 +66,7 @@ export function ThreadItemView({
   onCancelEditMessage,
   onSubmitEditMessage,
   onOpenAgent,
-  onOpenSubthread,
+  editSummaryCard,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -95,7 +92,7 @@ export function ThreadItemView({
     files: InputFile[],
   ) => void;
   onOpenAgent?: (agentID: string) => void;
-  onOpenSubthread?: (item: ThreadItem) => void;
+  editSummaryCard?: JSX.Element;
 }): JSX.Element | null {
   const { t } = useI18n();
   switch (item.type) {
@@ -103,12 +100,6 @@ export function ThreadItemView({
       const text = item.text ?? "";
       if (isProcessNotificationItem(item)) {
         return null;
-      }
-      // Envelope-routed messages (group chat → resident DM) render as a
-      // collapsed meta row, never as a user bubble — a bubble would read
-      // as if the user typed the forwarded content themselves.
-      if (item.envelope_meta && item.envelope_meta.length > 0) {
-        return <EnvelopeNotice meta={item.envelope_meta} text={text} />;
       }
       // Item-aware gate: the name field is the reliable wire signal. Even
       // when the payload text is malformed (combined envelopes with \n\n
@@ -219,6 +210,7 @@ export function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
+          {editSummaryCard}
           {actionsVisible ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
@@ -246,77 +238,7 @@ export function ThreadItemView({
     case "tool_call":
       return <ToolActivityRow items={[item]} />;
     case "collab_agent_tool_call":
-      // Collab tool calls carry the acting participant. Prefix the
-      // activity line with the identity chip so the reader can tell
-      // which subagent the call belongs to. Legacy items without a
-      // participant keep the plain row — the summary text already
-      // names the task, so a fallback chip would only repeat it.
-      if (item.participant) {
-        return (
-          <div className="collab-agent-activity">
-            <ParticipantChip participant={item.participant} size="sm" />
-            <ToolActivityRow items={[item]} />
-          </div>
-        );
-      }
       return <ToolActivityRow items={[item]} />;
-    case "participant_message": {
-      const text = item.text ?? "";
-      const postKind = item.post_kind ?? "result";
-      if (postKind === "decline") {
-        const participantName = item.participant?.name || t("chat.participant");
-        return (
-          <div className="participant-decline-line">
-            {text.trim()
-              ? t("chat.declinedWithReason", { name: participantName, reason: text.trim() })
-              : t("chat.declined", { name: participantName })}
-          </div>
-        );
-      }
-      const agentID = item.agent_id?.trim() ?? "";
-      const canOpenAgent = agentID !== "" && Boolean(onOpenAgent);
-      const hasText = text.trim() !== "";
-      return (
-        <article className={`participant-message-card participant-message-card--${postKind}`}>
-          <header className="participant-message-card-header">
-            {item.participant ? (
-              <ParticipantChip participant={item.participant} size="sm" />
-            ) : (
-              <span className="participant-message-card-fallback">{t("chat.participant")}</span>
-            )}
-          </header>
-          {hasText ? (
-            <div className="participant-message-card-body">
-              <RichContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
-            </div>
-          ) : null}
-          {canOpenAgent ? (
-            <div className="participant-message-actions">
-              <a
-                href={`#${agentID}`}
-                className="participant-message-link"
-                aria-label={t("message.viewFullProcess")}
-                onClick={(event) => {
-                  event.preventDefault();
-                  onOpenAgent?.(agentID);
-                }}
-              >
-                {t("message.viewFullProcess")}
-              </a>
-            </div>
-          ) : null}
-        </article>
-      );
-    }
-    case "task_card":
-      return (
-        <TaskCardItem
-          item={item}
-          onOpenSubthread={
-            item.task?.subthread_id ? () => onOpenSubthread?.(item) : undefined
-          }
-        />
-      );
     case "context_compaction":
       return (
         <ContextCompactionNotice
@@ -331,84 +253,6 @@ export function ThreadItemView({
       );
     default:
       return null;
-  }
-}
-
-export function TaskCardItem({
-  item,
-  onOpenSubthread,
-}: {
-  item: ThreadItem;
-  onOpenSubthread?: () => void;
-}): JSX.Element | null {
-  const { t } = useI18n();
-  const task = item.task;
-  if (!task) {
-    return null;
-  }
-  const title = task.name?.trim() || task.id;
-  const status = taskStatusLabel(task.status);
-  const replyCount = task.reply_count ?? 0;
-  return (
-    <article className="task-card">
-      <header className="task-card-header">
-        <div className="task-card-title-group">
-          <span className="task-card-title">{title}</span>
-          <span className={`task-card-status task-card-status--${task.status || "unknown"}`}>
-            {status}
-          </span>
-        </div>
-        {task.participant ? (
-          <ParticipantChip participant={task.participant} size="sm" />
-        ) : item.participant ? (
-          <ParticipantChip participant={item.participant} size="sm" />
-        ) : null}
-      </header>
-      {task.description ? (
-        <p className="task-card-description">{task.description}</p>
-      ) : null}
-      <footer className="task-card-footer">
-        {task.role ? <span className="task-card-meta">{task.role}</span> : null}
-        {replyCount > 0 ? (
-          <span className="task-card-meta">
-            {t(replyCount === 1 ? "chat.replyCountOne" : "chat.replyCount", { count: replyCountBadge(replyCount) })}
-          </span>
-        ) : null}
-        {onOpenSubthread ? (
-          <button
-            type="button"
-            className="task-card-open-button"
-            aria-label={t("message.viewProcess")}
-            onClick={onOpenSubthread}
-          >
-            <PanelRightOpen aria-hidden="true" />
-            <span>{t("message.viewProcess")}</span>
-          </button>
-        ) : null}
-      </footer>
-    </article>
-  );
-}
-
-function taskStatusLabel(status: string): string {
-  switch (status) {
-    case "pending":
-      return translate("task.status.pending");
-    case "queued":
-      return translate("task.status.queued");
-    case "running":
-      return translate("task.status.running");
-    case "awaiting_report":
-      return translate("task.status.awaitingReport");
-    case "completed":
-      return translate("task.status.completed");
-    case "failed":
-      return translate("task.status.failed");
-    case "cancelled":
-    case "canceled":
-      return translate("task.status.cancelled");
-    default:
-      return status || translate("common.unknown");
   }
 }
 

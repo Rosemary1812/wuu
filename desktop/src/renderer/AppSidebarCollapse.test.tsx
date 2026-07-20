@@ -3,14 +3,9 @@
  *
  * User report: collapsing 置顶, then interacting with a project, made
  * 置顶 passively expand. Root cause: the App effect that prunes
- * collapsedSidebarSectionIDs against state.projects stripped every
- * pseudo-section key (置顶 / Agents / 群聊 / 对话) whenever the project
- * list got a fresh array identity (any runtime reload), silently
- * re-expanding those sections. A second bug in the same model:
- * toggleSidebarSectionCollapsed had no pseudo-section branch for 群聊, so its
- * header click ran the project expand/collapse state machine whose
- * semantics don't match the group section's collapsed-set-only render
- * (the first click was a visual no-op).
+ * collapsedSidebarSectionIDs against state.projects stripped pseudo-section
+ * keys whenever the project list got a fresh array identity (any runtime
+ * reload), silently re-expanding those sections.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -159,25 +154,10 @@ async function flushAsync(): Promise<void> {
   });
 }
 
-function sectionHeader(label: string): HTMLButtonElement | null {
-  return container.querySelector<HTMLButtonElement>(
-    `section[aria-label="${label}"] .sidebar-section-row`,
-  );
-}
-
 function conversationSectionHeader(): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>(
     'button[aria-label="收起 对话 的会话"], button[aria-label="展开 对话 的会话"]',
   );
-}
-
-async function clickHeader(label: string): Promise<void> {
-  const header = sectionHeader(label);
-  expect(header).not.toBeNull();
-  await act(async () => {
-    header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
-  await flushAsync();
 }
 
 async function clickConversationHeader(): Promise<void> {
@@ -206,45 +186,6 @@ describe("sidebar collapse-state independence", () => {
     container.remove();
     Reflect.deleteProperty(globalThis, "ResizeObserver");
     delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
-  });
-
-  it("keeps 置顶 and 群聊 collapsed across a project-state reload", async () => {
-    installWuuApi();
-    await act(async () => {
-      root = createRoot(container);
-      root.render(<App />);
-    });
-    await flushAsync();
-
-    expect(sectionHeader("置顶")?.getAttribute("aria-expanded")).toBe("true");
-    expect(sectionHeader("群聊")?.getAttribute("aria-expanded")).toBe("true");
-
-    // Collapse both pseudo sections.
-    await clickHeader("置顶");
-    expect(sectionHeader("置顶")?.getAttribute("aria-expanded")).toBe("false");
-    await clickHeader("群聊");
-    expect(sectionHeader("群聊")?.getAttribute("aria-expanded")).toBe("false");
-
-    // Trigger a project-state reload (fresh state.projects identity):
-    // the 对话 header's new-session button routes through
-    // selectNoProject, exactly like the reported repro path.
-    const newSession = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="在 对话 中新建会话"]',
-    );
-    expect(newSession).not.toBeNull();
-    await act(async () => {
-      newSession?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushAsync();
-
-    // Collapse state of unrelated sections must be untouched.
-    expect(sectionHeader("置顶")?.getAttribute("aria-expanded")).toBe("false");
-    expect(sectionHeader("群聊")?.getAttribute("aria-expanded")).toBe("false");
-
-    // And both toggle back open independently.
-    await clickHeader("群聊");
-    expect(sectionHeader("群聊")?.getAttribute("aria-expanded")).toBe("true");
-    expect(sectionHeader("置顶")?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("collapses the active 对话 section on the first header click", async () => {
