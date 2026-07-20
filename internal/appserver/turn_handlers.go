@@ -2037,9 +2037,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			AwaitingAutoContinuation: awaitingAutoContinuation,
 		})
 	}
-	if len(turnRuntime.ProcessCompletionIDs) > 0 && !processCompletionClaimFailed {
-		s.notifyProcessBackgroundWaitingChanged(th.ID)
-	}
 	if completionClaimFailed {
 		s.scheduleThreadExecutionLeaseRetry(func() {
 			s.replayPendingAgentCompletions(th.ID, threadRuntime)

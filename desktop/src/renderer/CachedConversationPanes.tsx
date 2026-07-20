@@ -8,10 +8,6 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { TurnStreamStatus } from "./AppState";
-import {
-  backgroundContinuationState,
-  hasFollowingBackgroundContinuation,
-} from "./BackgroundContinuation";
 import { ConversationTurnList } from "./ConversationTurnList";
 import {
   ContextCompositionCard,
@@ -278,15 +274,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
       <ForkWorktreeNotice thread={thread} />
     ) : null;
   const latestTurn = threadTurns[threadTurns.length - 1];
-  const backgroundContinuation = backgroundContinuationState(thread);
-  const backgroundWaitingTurnID = backgroundContinuation.waiting
-    ? latestTurn?.id
-    : undefined;
-  const turnsFollowedByBackgroundContinuation = new Set(
-    threadTurns.flatMap((turn, index) =>
-      hasFollowingBackgroundContinuation(threadTurns, index) ? [turn.id] : [],
-    ),
-  );
   const latestTurnStreamStatus = latestTurn
     ? turnStreamStatus[latestTurn.id]
     : undefined;
@@ -448,11 +435,6 @@ const CachedConversationPane = memo(function CachedConversationPane({
                   : undefined
               }
               isLatestTurn={latestTurn?.id === turn.id}
-              backgroundWaiting={backgroundWaitingTurnID === turn.id}
-              suppressAnswerActions={
-                backgroundWaitingTurnID === turn.id ||
-                turnsFollowedByBackgroundContinuation.has(turn.id)
-              }
               onStreamFrame={onStreamFrame}
               onCollapseComplete={onCollapseComplete}
               onForkMessage={handleForkMessage}
@@ -481,8 +463,6 @@ type PaneTurnViewProps = {
   cwd?: string;
   latestAgentMessageID?: string;
   isLatestTurn: boolean;
-  backgroundWaiting: boolean;
-  suppressAnswerActions: boolean;
   canEdit: boolean;
   editingMessage?: HistoryMessageEditState;
   streamStatus?: TurnStreamStatus;
@@ -516,8 +496,6 @@ const PaneTurnView = memo(function PaneTurnView({
   cwd,
   latestAgentMessageID,
   isLatestTurn,
-  backgroundWaiting,
-  suppressAnswerActions,
   canEdit,
   editingMessage,
   streamStatus,
@@ -547,8 +525,6 @@ const PaneTurnView = memo(function PaneTurnView({
       onOpenAgent={onOpenAgent}
       latestAgentMessageID={latestAgentMessageID}
       isLatestTurn={isLatestTurn}
-      backgroundWaiting={backgroundWaiting}
-      suppressAnswerActions={suppressAnswerActions}
       onStreamFrame={onStreamFrame}
       onCollapseComplete={onCollapseComplete}
       onForkMessage={onForkMessage}

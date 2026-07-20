@@ -949,28 +949,7 @@ func (s *Server) threadWithChildAgents(thread Thread) (Thread, error) {
 		return thread, err
 	}
 	thread.ChildAgents = agents
-	thread = s.threadWithBackgroundWaiting(thread)
 	return s.threadWithWorktreeStatus(thread), nil
-}
-
-func (s *Server) threadWithBackgroundWaiting(thread Thread) Thread {
-	th := s.thread(thread.ID)
-	if th == nil {
-		return thread
-	}
-	th.mu.Lock()
-	threadRuntime := th.execRuntime
-	th.mu.Unlock()
-	manager := s.processManagerForThread(thread.ID)
-	var control *agentcontrol.AgentControl
-	if threadRuntime != nil {
-		control = threadRuntime.AgentControl
-		if threadRuntime.ProcessManager != nil {
-			manager = threadRuntime.ProcessManager
-		}
-	}
-	thread.BackgroundWait = threadHasOutstandingProcessCompletion(thread.ID, control, manager)
-	return thread
 }
 
 func (s *Server) threadWithWorktreeStatus(thread Thread) Thread {

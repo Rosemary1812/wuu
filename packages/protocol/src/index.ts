@@ -1248,7 +1248,6 @@ export type Thread = {
   updated_at: string;
   turns: Turn[];
   child_agents?: Agent[];
-  background_waiting?: boolean;
   browser_state?: ThreadBrowserState;
 };
 

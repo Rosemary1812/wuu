@@ -111,7 +111,6 @@ export function Composer({
   queuedMessages,
   guideMessages,
   running,
-  backgroundWaiting = false,
   ultraEnabled = false,
   runtimeControlsDisabled = running,
   status,
@@ -193,7 +192,6 @@ export function Composer({
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
   running: boolean;
-  backgroundWaiting?: boolean;
   ultraEnabled?: boolean;
   runtimeControlsDisabled?: boolean;
   status: string;
@@ -298,7 +296,7 @@ export function Composer({
   // match that (queuing "排队发送" rather than interrupting). This keeps the
   // stop affordance for the common "watching a turn, empty input" case while
   // never blocking a queued follow-up the user has clearly typed.
-  const showComposerStop = (running || backgroundWaiting) && !hasDraft;
+  const showComposerStop = running && !hasDraft;
   const composerSendLabel = running ? t("composer.queueSend") : t("composer.send");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);

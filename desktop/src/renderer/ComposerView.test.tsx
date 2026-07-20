@@ -84,7 +84,6 @@ function renderComposer(props: {
   mainConversation?: boolean;
   prompt?: string;
   running?: boolean;
-  backgroundWaiting?: boolean;
   ultraEnabled?: boolean;
   onToggleUltra?: (enabled: boolean) => void;
   queuedMessages?: QueuedComposerMessage[];
@@ -142,7 +141,6 @@ function renderComposer(props: {
           queuedMessages={props.queuedMessages ?? []}
           guideMessages={props.guideMessages ?? []}
           running={props.running ?? false}
-          backgroundWaiting={props.backgroundWaiting}
           ultraEnabled={props.ultraEnabled}
           onToggleUltra={props.onToggleUltra}
           runtimeControlsDisabled={props.runtimeControlsDisabled}
@@ -507,54 +505,6 @@ describe("Composer send control", () => {
 
     expect(onInterrupt).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it("shows stop while background work waits with an empty input", () => {
-    const onInterrupt = vi.fn();
-    renderComposer({
-      prompt: "",
-      running: false,
-      backgroundWaiting: true,
-      onInterrupt,
-    });
-
-    const stopButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"停止\"]",
-    );
-    expect(stopButton).not.toBeNull();
-    act(() => {
-      stopButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-    expect(onInterrupt).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends a draft normally while background work keeps waiting", () => {
-    const onInterrupt = vi.fn();
-    const onSend = vi.fn();
-    renderComposer({
-      prompt: "新的问题",
-      running: false,
-      backgroundWaiting: true,
-      onInterrupt,
-      onSend,
-    });
-
-    expect(container.querySelector("button[aria-label=\"停止\"]")).toBeNull();
-    expect(container.querySelector("button[aria-label=\"排队发送\"]")).toBeNull();
-    const sendButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"发送\"]",
-    );
-    expect(sendButton).not.toBeNull();
-    act(() => {
-      sendButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-
-    expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onInterrupt).not.toHaveBeenCalled();
   });
 
   it("keeps active goal controls enabled while a request is running", async () => {

@@ -177,7 +177,6 @@ import {
   statusMessageForError,
 } from "./UserFacingErrors";
 import { scrollToUserMessage, TurnView } from "./TurnView";
-import { backgroundContinuationState } from "./BackgroundContinuation";
 import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceRightPanel,
@@ -2075,10 +2074,6 @@ export function App(): JSX.Element {
   );
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
-  const activeThreadBackgroundWaiting =
-    backgroundContinuationState(activeThread).waiting;
-  const activeThreadTurnRunning =
-    activeThreadIsRunning && !activeThreadBackgroundWaiting;
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const runningThreadKey = useMemo(() => {
     const running = new Set<string>();
@@ -2348,11 +2343,8 @@ export function App(): JSX.Element {
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
         running={
-          (!activeThreadReadOnly && activeThreadTurnRunning) ||
+          (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
-        }
-        backgroundWaiting={
-          !activeThreadReadOnly && activeThreadBackgroundWaiting
         }
         ultraEnabled={Boolean(state.initialized?.ultra)}
         onToggleUltra={(enabled) => {

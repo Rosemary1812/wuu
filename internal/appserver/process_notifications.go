@@ -38,7 +38,6 @@ func (s *Server) forwardProcessNotifications(threadID string, control *agentcont
 			if !ok {
 				return
 			}
-			s.notifyProcessBackgroundWaitingChanged(threadID)
 			if manager != nil {
 				// The channel is only a low-latency hint. Pull every persisted
 				// obligation so a terminal event dropped behind a full channel is
@@ -52,20 +51,6 @@ func (s *Server) forwardProcessNotifications(threadID string, control *agentcont
 			s.enqueueProcessCompletionTurn(threadID, event.Process.ID, processCompletionChatMessage(manager, event))
 		}
 	}
-}
-
-func (s *Server) notifyProcessBackgroundWaitingChanged(threadID string) {
-	if s == nil || s.out == nil {
-		return
-	}
-	th := s.thread(strings.TrimSpace(threadID))
-	if th == nil {
-		return
-	}
-	th.mu.Lock()
-	thread := th.snapshotLocked()
-	th.mu.Unlock()
-	_ = s.notifyThreadUpdated(thread)
 }
 
 func processEventBelongsToThread(threadID string, control *agentcontrol.AgentControl, event process.Event) bool {
