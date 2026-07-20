@@ -935,7 +935,6 @@ func migrateSchema(db *sql.DB) error {
 			created_at       INTEGER NOT NULL,
 			updated_at       INTEGER NOT NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_space ON kanban_tasks(space_id, status, sort_index)`,
 		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_session ON kanban_tasks(session_id, status, sort_index)`,
 		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_parent ON kanban_tasks(parent_id, sort_index)`,
 		// kanban_runs binds a task to one concrete named-agent execution.
@@ -1207,6 +1206,9 @@ func migrateSchema(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`UPDATE kanban_artifacts SET space_id = 'global' WHERE space_id = ''`); err != nil {
 		return fmt.Errorf("migrate kanban artifacts to global space: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_space ON kanban_tasks(space_id, status, sort_index)`); err != nil {
+		return fmt.Errorf("create kanban tasks space index: %w", err)
 	}
 	if err := addColumnIfMissing(db, "inference_operations", "workflow_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
