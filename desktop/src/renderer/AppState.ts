@@ -560,6 +560,23 @@ function reduceNotification(
       if (!threadMatchesActiveContext(thread, state.activeContext)) {
         return state;
       }
+      const currentThread =
+        state.thread?.id === thread.id
+          ? state.thread
+          : state.secondaryThread?.id === thread.id
+            ? state.secondaryThread
+            : state.threads.find((item) => item.id === thread.id);
+      // thread/start emits its notification before the matching RPC response.
+      // If the renderer has already inserted an optimistic first turn, the
+      // notification's empty snapshot must not erase it and briefly restore
+      // the empty-conversation hero.
+      const mergedThread = currentThread
+        ? {
+            ...thread,
+            turns: thread.turns.length > 0 ? thread.turns : currentThread.turns,
+            child_agents: thread.child_agents ?? currentThread.child_agents,
+          }
+        : thread;
       const knownThread = state.threads.some((item) => item.id === thread.id);
       const updatesVisibleThread =
         state.thread?.id === thread.id ||
@@ -571,15 +588,15 @@ function reduceNotification(
           !knownThread);
       return {
         ...state,
-        thread: activateThread ? thread : state.thread,
+        thread: activateThread ? mergedThread : state.thread,
         secondaryThread:
           state.secondaryThread?.id === thread.id
-            ? thread
+            ? mergedThread
             : state.secondaryThread,
         allowThreadAutoActivation: activateThread
           ? true
           : state.allowThreadAutoActivation,
-        threads: upsertThread(state.threads, thread),
+        threads: upsertThread(state.threads, mergedThread),
         status: activateThread || updatesVisibleThread ? "ready" : state.status,
       };
     }

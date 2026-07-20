@@ -292,6 +292,36 @@ describe("AppState protocol normalization", () => {
       expect.objectContaining({ id: "turn-auto-continue", items: [] }),
     ]);
   });
+
+  it("keeps an optimistic first turn when thread/started carries an empty snapshot", () => {
+    const current = threadWithUserTexts(["first query"]);
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread: current,
+        threads: [current],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "thread/started",
+          params: {
+            thread: {
+              ...current,
+              turns: [],
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.thread?.turns).toEqual(current.turns);
+    expect(next.threads.find((thread) => thread.id === current.id)?.turns).toEqual(
+      current.turns,
+    );
+  });
 });
 
 function sessionTabPrompt(
