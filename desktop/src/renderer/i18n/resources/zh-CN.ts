@@ -1014,6 +1014,7 @@ export const zhCN = {
   "shell.openRightSidebar": "打开右侧栏",
   "shell.resizeThreadPanel": "调整 Thread 面板宽度",
   "kanban.title": "看板",
+  "kanban.globalTitle": "全局",
   "kanban.loading": "加载任务中…",
   "kanban.error": "加载失败：{message}",
   "kanban.column.draft": "待确认",

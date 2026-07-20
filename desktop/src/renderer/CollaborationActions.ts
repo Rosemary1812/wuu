@@ -37,7 +37,6 @@ export type CollaborationActionsDeps = {
     SetStateAction<InstructionFilesEntry[]>
   >;
   scheduleStreamScroll: () => void;
-  setKanbanViewMode: (mode: "message" | "board") => void;
   closeProjectMenus: () => void;
   setSettingsMemoryFocusID: (participantID: string | undefined) => void;
   setSettingsInitialPage: (page: SettingsPage) => void;
@@ -204,7 +203,6 @@ export function createCollaborationActions(
 
   function openCollaborationIntake(): void {
     deps.closeProjectMenus();
-    deps.setKanbanViewMode("board");
   }
 
   function openMemorySettings(participantID?: string): void {

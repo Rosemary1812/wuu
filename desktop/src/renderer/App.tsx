@@ -90,8 +90,11 @@ import {
   cloneSessionTabDraft,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
+  createBoardSessionTab,
   createDraftSessionTab,
+  createGlobalCollaborationBoardTab,
   emptyComposerDraft,
+  ensureSessionTab,
   handleStreamingNotification,
   initialSplitComposerDrafts,
   initialState,
@@ -610,8 +613,6 @@ export function App(): JSX.Element {
     InstructionFilesEntry[]
   >([]);
   const [boardRefreshTick, setBoardRefreshTick] = useState(0);
-  // In-page kanban board view toggle (message | board). Session-local only.
-  const [kanbanViewMode, setKanbanViewMode] = useState<"message" | "board">("message");
   // Crystallize flow state.
   const [crystallizeOpen, setCrystallizeOpen] = useState(false);
   const [crystallizePending, setCrystallizePending] = useState(false);
@@ -858,7 +859,8 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
-  const kanbanBoardVisible = kanbanViewMode === "board";
+  const activeTabKind = activeSessionTab(state)?.kind;
+  const boardTabActive = activeTabKind === "board";
   const environmentContext = workspacePanelContext(state.activeContext, activeThread);
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
@@ -1690,7 +1692,7 @@ export function App(): JSX.Element {
     : [];
   const emptyConversation =
     !showingSkillsCatalog &&
-    !kanbanBoardVisible &&
+    !boardTabActive &&
     !activePendingNewThreadTurn &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
@@ -2444,7 +2446,9 @@ export function App(): JSX.Element {
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
         onConvertToTask={
-          turns.length > 0 && activeThreadID
+          turns.length > 0 &&
+          activeThreadID &&
+          state.activeContext?.kind !== "project"
             ? handleConvertToTask
             : undefined
         }
@@ -2461,7 +2465,6 @@ export function App(): JSX.Element {
     setCrystallizeOpen(true);
     setCrystallizePending(true);
     setCrystallizeResult(undefined);
-    setKanbanViewMode("board");
     try {
       const result = await window.wuu.kanbanCrystallize({
         thread_id: threadId,
@@ -2813,7 +2816,6 @@ export function App(): JSX.Element {
     setContextCompositionEntries,
     setInstructionFilesEntries,
     scheduleStreamScroll,
-    setKanbanViewMode,
     closeProjectMenus,
     setSettingsMemoryFocusID,
     setSettingsInitialPage,
@@ -3810,16 +3812,28 @@ export function App(): JSX.Element {
               debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
             }
             sectionOrder={sidebarSectionOrder}
-            kanbanBoardVisible={kanbanBoardVisible}
+            kanbanBoardVisible={boardTabActive}
             onStartNewThread={() => {
               revealConversationFromFocusedWorkspace();
               startNewThreadWithComposerFocus();
             }}
             onOpenSkillsTab={openSkillsTab}
             onOpenCollaboration={() => {
-              revealConversationFromFocusedWorkspace();
-              setKanbanViewMode("message");
-              void openCollaborationIntake();
+              closeProjectMenus();
+              const currentState = appStateRef.current;
+              const context = currentState.activeContext;
+              if (!context) {
+                return;
+              }
+              const boardTab = createGlobalCollaborationBoardTab(context);
+              setState((current) => ({
+                ...current,
+                sessionTabs: ensureSessionTab(current.sessionTabs, boardTab),
+                activeSessionTabID: boardTab.id,
+                activePane: "primary",
+                secondaryThread: undefined,
+                allowThreadAutoActivation: false,
+              }));
             }}
             onToggleConversationSearch={toggleConversationSearch}
             onSeedConversationFixture={seedConversationFixture}
@@ -4103,7 +4117,7 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
               splitConversation ? " split-scroll-region" : ""
-            }${showingSkillsCatalog ? " skills-scroll-region" : ""}${kanbanBoardVisible ? " kanban-board-scroll-region" : ""}`}
+            }${showingSkillsCatalog ? " skills-scroll-region" : ""}${boardTabActive ? " kanban-board-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -4113,7 +4127,7 @@ export function App(): JSX.Element {
                 activeContext={state.activeContext}
                 extensionInventory={state.initialized?.extension_inventory}
               />
-            ) : kanbanBoardVisible ? (
+            ) : boardTabActive ? (
               <KanbanBoardView
                 spaceId="global"
                 refreshToken={boardRefreshTick}
@@ -4409,7 +4423,20 @@ export function App(): JSX.Element {
           onSwitchToBoard={() => {
             setCrystallizeOpen(false);
             setCrystallizeResult(undefined);
-            setKanbanViewMode("board");
+            const currentState = appStateRef.current;
+            const context = currentState.activeContext;
+            if (!context) {
+              return;
+            }
+            const boardTab = createBoardSessionTab(currentState.thread, context);
+            setState((current) => ({
+              ...current,
+              sessionTabs: ensureSessionTab(current.sessionTabs, boardTab),
+              activeSessionTabID: boardTab.id,
+              activePane: "primary",
+              secondaryThread: undefined,
+              allowThreadAutoActivation: false,
+            }));
           }}
         />
       ) : null}

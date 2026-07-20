@@ -103,11 +103,11 @@ type SessionTab =
       title: string;
     }
   | {
-      // Kanban board tab for the owning conversation.
+      // Kanban board tab for the owning conversation or global collaboration space.
       id: string;
       kind: "board";
       context: RuntimeContext;
-      threadID: string;
+      threadID?: string;
       title: string;
     };
 
@@ -1798,16 +1798,28 @@ function createSkillsSessionTab(context: RuntimeContext): SessionTab {
 }
 
 function createBoardSessionTab(
-  thread: Thread,
+  thread: Thread | undefined,
   context: RuntimeContext,
 ): SessionTab {
+  if (thread) {
+    return {
+      id: boardSessionTabID(thread.id),
+      kind: "board",
+      context,
+      threadID: thread.id,
+      title: threadDisplayTitle(thread),
+    };
+  }
   return {
-    id: boardSessionTabID(thread.id),
+    id: "board:global",
     kind: "board",
     context,
-    threadID: thread.id,
-    title: threadDisplayTitle(thread),
+    title: "",
   };
+}
+
+function createGlobalCollaborationBoardTab(context: RuntimeContext): SessionTab {
+  return createBoardSessionTab(undefined, context);
 }
 
 function threadSessionTabID(threadID: string): string {
@@ -2136,11 +2148,13 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
     return t("skills.title");
   }
   if (tab.kind === "board") {
-    const threadTitle = threadDisplayTitle(
-      threadForTab(state, tab.threadID),
-      state.threads,
-      tab.title || t("search.untitledConversation"),
-    );
+    const threadTitle = tab.threadID
+      ? threadDisplayTitle(
+          threadForTab(state, tab.threadID),
+          state.threads,
+          tab.title || t("search.untitledConversation"),
+        )
+      : tab.title || t("kanban.globalTitle");
     return `${t("kanban.title")} · ${threadTitle}`;
   }
   return threadDisplayTitle(
@@ -3121,6 +3135,7 @@ export {
   conversationSearchThreadMeta,
   createDraftSessionTab,
   createBoardSessionTab,
+  createGlobalCollaborationBoardTab,
   createSkillsSessionTab,
   createThreadSessionTab,
   draftSessionTabForContext,

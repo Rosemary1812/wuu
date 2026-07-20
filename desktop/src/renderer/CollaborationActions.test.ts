@@ -148,7 +148,6 @@ function buildActions({
   const cancelViewSwitch = vi.fn();
   const scheduleStreamScroll = vi.fn();
   const closeProjectMenus = vi.fn();
-  let kanbanViewMode: "message" | "board" = "message";
   const actions = createCollaborationActions({
     getAppState: () => appState,
     setAppState: (update) => {
@@ -183,9 +182,6 @@ function buildActions({
         typeof update === "function" ? update(instructionFilesEntries) : update;
     },
     scheduleStreamScroll,
-    setKanbanViewMode: (mode) => {
-      kanbanViewMode = mode;
-    },
     closeProjectMenus,
     setSettingsMemoryFocusID: (participantID) => {
       settingsMemoryFocusID = participantID;
@@ -215,7 +211,6 @@ function buildActions({
     }),
     cancelViewSwitch,
     scheduleStreamScroll,
-    getKanbanViewMode: () => kanbanViewMode,
     closeProjectMenus,
   };
 }
@@ -296,14 +291,13 @@ describe("createCollaborationActions", () => {
     });
   });
 
-  it("opens the global kanban board", () => {
+  it("closes project menus when opening collaboration intake", () => {
     installWuuApi();
     const harness = buildActions();
 
     harness.actions.openCollaborationIntake();
 
     expect(harness.closeProjectMenus).toHaveBeenCalled();
-    expect(harness.getKanbanViewMode()).toBe("board");
   });
 
 });

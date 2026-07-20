@@ -1016,6 +1016,7 @@ export const enUS = {
   "shell.openRightSidebar": "Open right sidebar",
   "shell.resizeThreadPanel": "Resize Thread panel",
   "kanban.title": "Board",
+  "kanban.globalTitle": "Global",
   "kanban.loading": "Loading tasks…",
   "kanban.error": "Failed to load: {message}",
   "kanban.column.draft": "Draft",
