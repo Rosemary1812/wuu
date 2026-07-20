@@ -49,7 +49,7 @@ async function run() {
   await waitFor(win, () => Boolean(document.querySelector(".settings-shell")), 3000);
 
   await evaluate(win, () => {
-    const button = document.querySelector(".settings-shell > .settings-sidebar-toggle");
+    const button = document.querySelector(".settings-titlebar .settings-sidebar-toggle");
     if (!(button instanceof HTMLButtonElement)) {
       throw new Error("Settings sidebar toggle not found.");
     }
@@ -106,7 +106,7 @@ async function run() {
 
 async function toggleHitState(win) {
   return evaluate(win, () => {
-    const toggle = document.querySelector(".settings-shell > .settings-sidebar-toggle");
+    const toggle = document.querySelector(".settings-titlebar .settings-sidebar-toggle");
     if (!(toggle instanceof HTMLButtonElement)) {
       throw new Error("Settings sidebar toggle not found.");
     }

@@ -212,7 +212,7 @@ describe("SettingsView shell", () => {
     renderSettings({ initialized: baseInitialized(), onToggleSidebar });
 
     const toggle = container.querySelector<HTMLButtonElement>(
-      ".settings-shell > .settings-sidebar-toggle",
+      ".settings-titlebar .settings-sidebar-toggle",
     );
     expect(toggle).not.toBeNull();
     expect(toggle?.classList.contains("icon-button")).toBe(true);
@@ -236,7 +236,7 @@ describe("SettingsView shell", () => {
     const shell = container.querySelector<HTMLElement>(".settings-shell");
     const sidebar = container.querySelector<HTMLElement>(".settings-sidebar");
     const toggle = container.querySelector<HTMLElement>(
-      ".settings-shell > .settings-sidebar-toggle",
+      ".settings-titlebar .settings-sidebar-toggle",
     );
     expect(sidebar).not.toBeNull();
     expect(toggle).not.toBeNull();

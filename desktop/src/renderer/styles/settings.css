@@ -205,6 +205,13 @@
  * a group label, hairlines between rows, and whitespace between groups —
  * never by a tonal step behind boxed cards. */
 .settings-main {
+  /* Pin to column 2 like the main shell's .conversation-pane: when the
+   * collapsed rail turns into the absolutely positioned hover drawer it
+   * leaves the grid, and an auto-placed main would reflow into the 0-width
+   * first column, where its own overflow:hidden clips the titlebar, the
+   * sidebar toggle and the page out of both paint and hit-testing. */
+  grid-column: 2;
+  grid-row: 1;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -233,32 +240,17 @@
   padding-left: max(24px, var(--window-controls-inset-left));
 }
 
-/* Keep the toggle in the shell stacking context so the hover drawer cannot
- * cover either its pixels or its hit target. Its left edge follows the live
- * sidebar column while docked and clears the native window controls when the
- * column is collapsed. */
+/* The toggle lives inside the titlebar drag strip as its first flex item;
+ * the strip's 24px left padding (window-controls inset when collapsed) keeps
+ * it clear of the macOS traffic lights, and its own no-drag carves the click
+ * target out of the drag region. The hover-drawer lift (z-index 150 over the
+ * drawer's 140) and the drawer-open background come from the shared
+ * `.sidebar-collapsed :is(.titlebar, .settings-titlebar) .sidebar-toggle-button`
+ * rules in sidebar.css — do not re-add a shell-level absolutely positioned
+ * variant: as a sibling over the drag strip its no-drag is not honored and
+ * real clicks turn into window drags. */
 .settings-sidebar-toggle {
-  position: absolute;
-  top: 9px;
-  left: calc(var(--sidebar-width, 326px) + 24px);
-  z-index: 150;
-  transition:
-    left var(--sidebar-motion-duration) var(--sidebar-motion-ease),
-    background-color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
-    box-shadow var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
-    color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing);
   -webkit-app-region: no-drag;
-}
-
-.settings-shell.sidebar-collapsed .settings-sidebar-toggle {
-  left: max(24px, var(--window-controls-inset-left));
-}
-
-.settings-shell.sidebar-collapsed:is(.sidebar-drawer-open, .sidebar-drawer-closing)
-  > .settings-sidebar-toggle {
-  background-color: var(--surface-3);
-  box-shadow: 0 4px 12px var(--ink-overlay-8);
-  color: var(--ink);
 }
 
 /* Column direction is load-bearing, not cosmetic: .settings-page carries

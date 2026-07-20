@@ -811,19 +811,27 @@ export function SettingsView({
           onKeyDown={onSidebarSeparatorKey}
         />
       )}
-      <button
-        type="button"
-        className="icon-button side-panel-toggle-button sidebar-toggle-button settings-sidebar-toggle"
-        aria-label={sidebarCollapsed ? t("settings.expandSidebar") : t("settings.collapseSidebar")}
-        aria-pressed={!sidebarCollapsed}
-        onClick={onToggleSidebar}
-        onPointerEnter={scheduleSidebarDrawerOpen}
-        onPointerLeave={cancelSidebarDrawerOpen}
-      >
-        <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
-      </button>
       <main className="settings-main">
-        <div className="settings-titlebar" />
+        <div className="settings-titlebar">
+          {/* The toggle must stay a descendant of the titlebar drag strip:
+           * a no-drag element only gets carved out of a drag region when it
+           * belongs to it — as a shell-level sibling positioned over the
+           * strip it kept its DOM hit target but real clicks were swallowed
+           * as window drags. The hover-drawer lift is shared with the
+           * conversation titlebar via sidebar.css (z-index 150 over the
+           * drawer's 140). */}
+          <button
+            type="button"
+            className="icon-button side-panel-toggle-button sidebar-toggle-button settings-sidebar-toggle"
+            aria-label={sidebarCollapsed ? t("settings.expandSidebar") : t("settings.collapseSidebar")}
+            aria-pressed={!sidebarCollapsed}
+            onClick={onToggleSidebar}
+            onPointerEnter={scheduleSidebarDrawerOpen}
+            onPointerLeave={cancelSidebarDrawerOpen}
+          >
+            <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+          </button>
+        </div>
         <div ref={settingsScrollRef} className="settings-scroll">
           <div
             className={`settings-page${activePage === "archive" ? " settings-page-archive" : ""}`}
