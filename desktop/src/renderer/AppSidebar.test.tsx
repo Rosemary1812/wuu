@@ -208,6 +208,14 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toMatch(
       /\.sidebar-collapsed\.sidebar-drawer-open :is\(\.sidebar, \.settings-sidebar\)[\s\S]*?transition:\s*transform\s+var\(--sidebar-drawer-enter-duration\)\s+var\(--sidebar-drawer-enter-easing\);/,
     );
+    // The titlebar toggle stays above the drawer (140) as a stationary click
+    // target while the panel slides underneath it.
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed :is\(\.titlebar, \.settings-titlebar\) \.sidebar-toggle-button\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*150;/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed\.sidebar-drawer-open :is\(\.sidebar, \.settings-sidebar\),[\s\S]*?z-index:\s*140;/,
+    );
     // Closing slides the panel back off-screen with the exit tokens; the old
     // whole-panel opacity fade must not come back.
     expect(sidebarCSS).toMatch(

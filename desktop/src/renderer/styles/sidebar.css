@@ -331,6 +331,28 @@
   display: block;
 }
 
+/* Keep the control that summoned the hover drawer above the drawer itself.
+   The drawer slides underneath this stationary control island instead of
+   replacing its hit target, so the pointer can remain on the toggle and click
+   it to pin the sidebar open after the preview has appeared. This applies to
+   both the conversation and settings titlebars. */
+.sidebar-collapsed :is(.titlebar, .settings-titlebar) .sidebar-toggle-button {
+  position: relative;
+  z-index: 150;
+  transition:
+    background-color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    box-shadow var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    color var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing);
+}
+
+.sidebar-collapsed:is(.sidebar-drawer-open, .sidebar-drawer-closing)
+  :is(.titlebar, .settings-titlebar)
+  .sidebar-toggle-button {
+  background-color: var(--surface-3);
+  box-shadow: 0 4px 12px var(--ink-overlay-8);
+  color: var(--ink);
+}
+
 /* While a sidebar drag is in flight the pointer can sit exactly where the
    collapsed-hover zone appears; hide the zone so it cannot steal the pointer
    or trigger the drawer mid-drag. */

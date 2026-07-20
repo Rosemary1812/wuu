@@ -309,6 +309,21 @@ describe("collapsed sidebar hover drawer", () => {
     await openDrawerViaSidebarToggle();
   });
 
+  it("pins the collapsed sidebar open when its toggle is clicked after hover preview", async () => {
+    await renderCollapsedApp();
+    await openDrawerViaSidebarToggle();
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".sidebar-toggle-button",
+    );
+    await act(async () => {
+      toggle?.click();
+    });
+
+    expect(appShell()?.classList.contains("sidebar-collapsed")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+  });
+
   it("closes the drawer when the pointer leaves the window", async () => {
     await renderCollapsedApp();
     await openDrawerViaHoverZone();
