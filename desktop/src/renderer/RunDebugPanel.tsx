@@ -784,7 +784,6 @@ function streamEventDebugDetail(payload: JsonRecord | undefined): string {
 		const attempts = numberValue(workflow, "attempts") ?? 0;
 		const submissions = numberValue(workflow, "submissions") ?? 0;
 		const recoveries =
-			(numberValue(workflow, "same_payload_replays") ?? 0) +
 			(numberValue(workflow, "transport_switches") ?? 0) +
 			(numberValue(workflow, "credential_refreshes") ?? 0) +
 			(numberValue(workflow, "payload_transforms") ?? 0);

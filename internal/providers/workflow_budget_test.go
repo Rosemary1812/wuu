@@ -12,9 +12,12 @@ func testInferenceWorkflow(spec WorkflowBudgetSpec) *InferenceWorkflow {
 	return newInferenceWorkflowWithIdentity("iwf-test", InferenceProfileInteractive, spec, time.Unix(1, 0))
 }
 
-func TestWorkflowBudgetSharesReplayAllowanceAcrossOperations(t *testing.T) {
+func TestWorkflowBudgetAdmitsAttemptsWithoutReplayAccounting(t *testing.T) {
+	// Same-payload replay accounting is owned by the durable journal, not the
+	// in-memory budget: even with a zero replay allowance, admitting attempts
+	// here must not fail, and the snapshot must stay replay-free.
 	workflow := testInferenceWorkflow(WorkflowBudgetSpec{
-		MaxSamePayloadReplays: LimitedBudget(1),
+		MaxSamePayloadReplays: LimitedBudget(0),
 	})
 	ctx := WithInferenceWorkflow(context.Background(), workflow)
 
@@ -40,14 +43,12 @@ func TestWorkflowBudgetSharesReplayAllowanceAcrossOperations(t *testing.T) {
 	if _, err := second.Execution.BeginAttemptChecked(); err != nil {
 		t.Fatal(err)
 	}
-	_, err = second.Execution.BeginAttemptChecked()
-	var exceeded *WorkflowBudgetExceededError
-	if !errors.As(err, &exceeded) || exceeded.Dimension != WorkflowBudgetSamePayloadReplays {
-		t.Fatalf("second operation replay error = %v", err)
+	if _, err := second.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatalf("in-memory budget must not enforce replay allowance: %v", err)
 	}
 
 	snapshot := workflow.SpendSnapshot()
-	if snapshot.Operations != 2 || snapshot.Attempts != 3 || snapshot.SamePayloadReplays != 1 {
+	if snapshot.Operations != 2 || snapshot.Attempts != 4 {
 		t.Fatalf("workflow snapshot = %+v", snapshot)
 	}
 }

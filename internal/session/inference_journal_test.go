@@ -458,6 +458,105 @@ FROM inference_workflows WHERE id = ?`, workflowID).
 	}
 }
 
+func TestInferenceJournalReplayBudgetExemptsUnansweredNetworkFailure(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-replay-exemption")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-replay-exemption")
+	now := time.Now().UTC()
+
+	// Each case gets its own workflow with a zero replay allowance, so any
+	// charged replay must fail admission.
+	setup := func(t *testing.T, name string, markFirstEvent bool, failure providers.InferenceJournalFailure) (providers.InferenceOperation, string, string) {
+		workflowID := "iwf-" + name
+		spec := providers.WorkflowBudgetSpec{MaxSamePayloadReplays: providers.LimitedBudget(0)}
+		op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+		hash := testInferenceHash(name)
+		if err := journal.PrepareOperation(budgetedInferenceOperationRecord(op, workflowID, spec, hash, now)); err != nil {
+			t.Fatal(err)
+		}
+		attemptID := op.AttemptID(1)
+		if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+			OperationID: op.ID, WorkflowID: workflowID, AttemptID: attemptID, Ordinal: 1, RequestHash: hash, At: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if markFirstEvent {
+			submissionID := op.ID + "-s1"
+			if err := journal.UpsertSubmission(providers.InferenceSubmissionJournalRecord{
+				OperationID: op.ID, AttemptID: attemptID, ID: submissionID, Ordinal: 1, AttemptOrdinal: 1,
+				Provider: "anthropic", Protocol: "messages", Transport: "http", Mode: "stream",
+				StartedAt: now, Outcome: providers.InferenceSubmissionInFlight,
+				CostState: providers.InferenceCostUnknownBillable,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.MarkAttemptFirstEvent(op.ID, attemptID, submissionID, now.Add(time.Millisecond)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := journal.CompleteAttempt(providers.InferenceAttemptTerminalRecord{
+			OperationID: op.ID, AttemptID: attemptID, Outcome: providers.InferenceOutcomeFailed,
+			Failure: failure, At: now.Add(2 * time.Millisecond),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return op, workflowID, hash
+	}
+
+	replay := func(op providers.InferenceOperation, workflowID, hash string) error {
+		return journal.PrepareRecoveryAttempt(context.Background(), providers.InferenceRecoveryAttemptJournalRecord{
+			Recovery: providers.InferenceRecoveryJournalRecord{
+				OperationID: op.ID, AttemptID: op.AttemptID(1), Action: providers.RecoveryReplaySame, At: now.Add(3*time.Millisecond),
+			},
+			NextAttempt: providers.InferenceAttemptJournalRecord{
+				OperationID: op.ID, WorkflowID: workflowID, AttemptID: op.AttemptID(2), Ordinal: 2,
+				RequestHash: hash, At: now.Add(3 * time.Millisecond),
+			},
+		})
+	}
+
+	t.Run("unanswered network failure replays for free", func(t *testing.T) {
+		op, workflowID, hash := setup(t, "unanswered", false, providers.InferenceJournalFailure{
+			Origin: providers.FailureOriginNetwork, Category: providers.FailureNetwork,
+		})
+		if err := replay(op, workflowID, hash); err != nil {
+			t.Fatalf("unanswered network replay must be admitted: %v", err)
+		}
+		db, err := openStore(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		var replays int
+		if err := db.QueryRow(`SELECT used_replays FROM inference_workflows WHERE id = ?`, workflowID).Scan(&replays); err != nil {
+			t.Fatal(err)
+		}
+		if replays != 0 {
+			t.Fatalf("unanswered network replay consumed replay budget: used_replays=%d", replays)
+		}
+	})
+
+	t.Run("answered network failure consumes replay budget", func(t *testing.T) {
+		op, workflowID, hash := setup(t, "answered", true, providers.InferenceJournalFailure{
+			Origin: providers.FailureOriginNetwork, Category: providers.FailureNetwork,
+		})
+		err := replay(op, workflowID, hash)
+		requireWorkflowBudgetDimension(t, err, providers.WorkflowBudgetSamePayloadReplays)
+	})
+
+	t.Run("provider-signaled failure consumes replay budget", func(t *testing.T) {
+		op, workflowID, hash := setup(t, "provider-signaled", false, providers.InferenceJournalFailure{
+			Origin: providers.FailureOriginProvider, Category: providers.FailureServer, HTTPStatus: 500,
+		})
+		err := replay(op, workflowID, hash)
+		requireWorkflowBudgetDimension(t, err, providers.WorkflowBudgetSamePayloadReplays)
+	})
+}
+
 func TestInferenceJournalRecoveryAttemptAdmissionRollsBackAtomically(t *testing.T) {
 	dir := t.TempDir()
 	runtime, err := NewInferenceJournalRuntime(dir, "workspace-recovery-atomic")

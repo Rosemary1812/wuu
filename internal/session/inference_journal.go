@@ -452,8 +452,14 @@ FROM inference_operations WHERE id = ?`, record.OperationID).
 		return err
 	}
 	if record.Ordinal > 1 {
-		if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetSamePayloadReplays, "used_replays", "max_replays", 1, at); err != nil {
+		answered, err := priorAttemptAnsweredTx(tx, record.OperationID, record.Ordinal-1)
+		if err != nil {
 			return err
+		}
+		if answered {
+			if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetSamePayloadReplays, "used_replays", "max_replays", 1, at); err != nil {
+				return err
+			}
 		}
 	}
 	_, err = tx.Exec(`
@@ -1170,6 +1176,31 @@ func journalUsageTokens(usage inferenceJournalUsage) int64 {
 		return 0
 	}
 	return int64(usage.input + usage.output + usage.cacheCreation + usage.cacheRead)
+}
+
+// priorAttemptAnsweredTx reports whether the attempt immediately before
+// ordinal produced any provider signal — an HTTP status or at least one
+// response event. Replaying an unanswered attempt cannot be billed because
+// the request died in transit, so those replays are admitted without
+// consuming the same-payload replay budget; only answered-attempt replays
+// (partial output, provider error responses) carry billing or semantic risk
+// and consume it. Missing evidence stays conservative: the replay is charged.
+func priorAttemptAnsweredTx(tx *sql.Tx, operationID string, priorOrdinal int) (bool, error) {
+	var origin string
+	var firstEventAt int64
+	err := tx.QueryRow(`
+SELECT failure_origin, first_event_at FROM inference_attempts
+WHERE operation_id = ? AND ordinal = ?`, operationID, priorOrdinal).Scan(&origin, &firstEventAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if origin == string(providers.FailureOriginNetwork) && firstEventAt == 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 func recoveryWorkflowColumns(action providers.RecoveryActionKind) (providers.WorkflowBudgetDimension, string, string) {

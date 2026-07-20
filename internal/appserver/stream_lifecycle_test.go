@@ -35,7 +35,7 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 			ResetPartial:    true,
 			Workflow: providers.WorkflowBudgetSnapshot{
 				WorkflowID: "iwf-test", Operations: 3, Attempts: 5, Submissions: 5,
-				SamePayloadReplays: 2, TransportSwitches: 1, RecoveryWaitMillis: 1500,
+				TransportSwitches: 1, RecoveryWaitMillis: 1500,
 				KnownSubmissions: 3, EstimatedSubmissions: 1, UnknownBillableSubmissions: 1,
 				KnownUsage: providers.TokenUsage{InputTokens: 120, OutputTokens: 30},
 			},

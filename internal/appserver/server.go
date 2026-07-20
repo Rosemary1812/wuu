@@ -946,7 +946,6 @@ func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecy
 		payload.Workflow = &WorkflowSnapshotPayload{
 			ID: workflow.WorkflowID, Operations: workflow.Operations,
 			Attempts: workflow.Attempts, Submissions: workflow.Submissions,
-			SamePayloadReplays:         workflow.SamePayloadReplays,
 			TransportSwitches:          workflow.TransportSwitches,
 			CredentialRefreshes:        workflow.CredentialRefreshes,
 			PayloadTransforms:          workflow.PayloadTransforms,

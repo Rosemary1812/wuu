@@ -24,6 +24,14 @@ func LimitedBudget(value uint64) BudgetLimit {
 // operation in one user-visible workflow. Exact operation/attempt/submission
 // totals are always counted even when a profile intentionally leaves their
 // hard limit unset.
+//
+// Same-payload replay accounting is owned by the durable journal alone (see
+// prepareAttemptTx in internal/session/inference_journal.go): charging a
+// replay requires the failed attempt's terminal evidence, and replays of
+// attempts that failed without any provider signal (network origin, no
+// response event) are unbillable, so they are admitted without consuming
+// MaxSamePayloadReplays. The in-memory budget deliberately does not mirror
+// that dimension.
 type WorkflowBudgetSpec struct {
 	MaxOperations                 BudgetLimit
 	MaxAttempts                   BudgetLimit
@@ -277,7 +285,6 @@ type WorkflowBudgetSnapshot struct {
 	Operations                 uint64
 	Attempts                   uint64
 	Submissions                uint64
-	SamePayloadReplays         uint64
 	TransportSwitches          uint64
 	CredentialRefreshes        uint64
 	PayloadTransforms          uint64
@@ -303,7 +310,10 @@ type workflowSubmissionSpend struct {
 
 // WorkflowBudget is the in-process admission mirror of the durable journal.
 // Every mutation is ID-keyed and idempotent so provider callbacks can safely
-// report late usage without double charging.
+// report late usage without double charging. It tracks the dimensions whose
+// evidence is available in process; same-payload replay accounting is not
+// mirrored here because its charge decision needs the failed attempt's
+// terminal evidence, which only the durable journal has.
 type WorkflowBudget struct {
 	mu sync.Mutex
 
@@ -386,16 +396,8 @@ func (b *WorkflowBudget) AdmitAttempt(operation InferenceOperation, attemptID st
 	if err := b.checkLocked(WorkflowBudgetAttempts, b.spec.MaxAttempts, b.snapshot.Attempts, 1); err != nil {
 		return err
 	}
-	replayDelta := uint64(0)
-	if ordinal > 1 {
-		if err := b.checkLocked(WorkflowBudgetSamePayloadReplays, b.spec.MaxSamePayloadReplays, b.snapshot.SamePayloadReplays, 1); err != nil {
-			return err
-		}
-		replayDelta = 1
-	}
 	spend.attempts[attemptID] = struct{}{}
 	b.snapshot.Attempts++
-	b.snapshot.SamePayloadReplays += replayDelta
 	return nil
 }
 
@@ -490,9 +492,6 @@ func (b *WorkflowBudget) AdmitRecoveryAttempt(
 	if err := b.checkLocked(WorkflowBudgetAttempts, b.spec.MaxAttempts, b.snapshot.Attempts, 1); err != nil {
 		return err
 	}
-	if err := b.checkLocked(WorkflowBudgetSamePayloadReplays, b.spec.MaxSamePayloadReplays, b.snapshot.SamePayloadReplays, 1); err != nil {
-		return err
-	}
 	dimension, limit, used := b.recoveryDimensionLocked(plan.Action)
 	if dimension != "" {
 		if err := b.checkLocked(dimension, limit, used, 1); err != nil {
@@ -516,7 +515,6 @@ func (b *WorkflowBudget) AdmitRecoveryAttempt(
 	}
 	spend.attempts[nextAttemptID] = struct{}{}
 	b.snapshot.Attempts++
-	b.snapshot.SamePayloadReplays++
 	b.recoveries[attemptID] = plan
 	switch plan.Action {
 	case RecoverySwitchTransport:

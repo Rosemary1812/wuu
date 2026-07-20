@@ -1942,7 +1942,6 @@ type WorkflowSnapshotPayload struct {
 	Operations                 uint64 `json:"operations"`
 	Attempts                   uint64 `json:"attempts"`
 	Submissions                uint64 `json:"submissions"`
-	SamePayloadReplays         uint64 `json:"same_payload_replays"`
 	TransportSwitches          uint64 `json:"transport_switches"`
 	CredentialRefreshes        uint64 `json:"credential_refreshes"`
 	PayloadTransforms          uint64 `json:"payload_transforms"`

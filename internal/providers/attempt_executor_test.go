@@ -15,6 +15,7 @@ type recordingInferenceJournal struct {
 	operation      InferenceOperationJournalRecord
 	failPrepare    error
 	failSubmission error
+	failRecovery   error
 	onRecovery     func()
 }
 
@@ -56,6 +57,9 @@ func (j *recordingInferenceJournal) PrepareRecoveryAttempt(ctx context.Context, 
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if j.failRecovery != nil {
+		return j.failRecovery
 	}
 	j.record("recovery:" + string(record.Recovery.Action))
 	j.record("attempt:prepared")
@@ -226,10 +230,14 @@ func TestExecuteChatCancellationDuringRecoveryDoesNotCreateAttempt(t *testing.T)
 }
 
 func TestExecuteChatCompletesOperationWhenWorkflowRecoveryBudgetIsExhausted(t *testing.T) {
-	journal := &recordingInferenceJournal{}
-	workflow := newInferenceWorkflowWithIdentity("iwf-no-replay", InferenceProfileInteractive, WorkflowBudgetSpec{
-		MaxSamePayloadReplays: LimitedBudget(0),
-	}, time.Now())
+	// Replay budget enforcement lives in the durable journal; when it rejects
+	// the recovery, the executor must terminalize the operation instead of
+	// retrying forever.
+	budgetErr := &WorkflowBudgetExceededError{
+		WorkflowID: "iwf-no-replay", Dimension: WorkflowBudgetSamePayloadReplays, Limit: 0, Used: 0, Requested: 1,
+	}
+	journal := &recordingInferenceJournal{failRecovery: budgetErr}
+	workflow := newInferenceWorkflowWithIdentity("iwf-no-replay", InferenceProfileInteractive, WorkflowBudgetSpec{}, time.Now())
 	ctx := WithInferenceWorkflow(WithInferenceJournal(context.Background(), journal), workflow)
 	client := &alwaysRetryableClient{}
 
