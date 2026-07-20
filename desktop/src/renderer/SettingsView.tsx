@@ -817,6 +817,8 @@ export function SettingsView({
             aria-label={sidebarCollapsed ? t("settings.expandSidebar") : t("settings.collapseSidebar")}
             aria-pressed={!sidebarCollapsed}
             onClick={onToggleSidebar}
+            onPointerEnter={scheduleSidebarDrawerOpen}
+            onPointerLeave={cancelSidebarDrawerOpen}
           >
             <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
           </button>

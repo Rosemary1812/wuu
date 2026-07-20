@@ -251,6 +251,22 @@ async function openDrawerViaHoverZone(): Promise<void> {
   expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
 }
 
+async function openDrawerViaSidebarToggle(): Promise<void> {
+  const toggle = container.querySelector<HTMLElement>(".sidebar-toggle-button");
+  expect(toggle).not.toBeNull();
+  elementFromPointTarget = toggle;
+  await act(async () => {
+    toggle?.dispatchEvent(
+      new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
+    );
+  });
+  expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+  await act(async () => {
+    vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+  });
+  expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
+}
+
 function sidebarContainsFocus(): boolean {
   const sidebar = container.querySelector<HTMLElement>(".sidebar");
   const active = document.activeElement;
@@ -286,6 +302,11 @@ describe("collapsed sidebar hover drawer", () => {
 
   it("uses a 240ms edge hover intent delay", () => {
     expect(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS).toBe(240);
+  });
+
+  it("opens the collapsed sidebar when the titlebar toggle is hovered", async () => {
+    await renderCollapsedApp();
+    await openDrawerViaSidebarToggle();
   });
 
   it("closes the drawer when the pointer leaves the window", async () => {
