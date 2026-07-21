@@ -149,14 +149,14 @@ func TestRunExecRejectsRemovedParticipantFlags(t *testing.T) {
 	}
 }
 
-func TestRunExecInputJSONRejectsRemovedActionsWithoutPrompt(t *testing.T) {
+func TestRunExecInputJSONRejectsUnknownActionsField(t *testing.T) {
 	err := withStdin(t, `{"actions":[{"action":"create_group"}]}`, func() error {
 		return run([]string{"exec", "--input-json"})
 	})
 	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
 		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "prompt is required") {
+	if err == nil || !strings.Contains(err.Error(), `unknown field "actions"`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -322,6 +322,13 @@ func TestRunExecInputJSONRejectsPositionalPrompt(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "positional prompt") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestReadExecInputPayloadRejectsUnknownFields(t *testing.T) {
+	input, err := readExecInputPayload(strings.NewReader(`{"promtp":"typo"}`), true)
+	if err == nil || input != nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected unknown field error, got input=%+v err=%v", input, err)
 	}
 }
 

@@ -1887,7 +1887,16 @@ func readExecInputPayload(r io.Reader, stdinIsPipe bool) (*execInputPayload, err
 		return nil, errors.New("--input-json input is empty")
 	}
 	var input execInputPayload
-	if err := json.Unmarshal(data, &input); err != nil {
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&input); err != nil {
+		return nil, fmt.Errorf("decode input JSON: %w", err)
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("decode input JSON: multiple JSON values are not allowed")
+		}
 		return nil, fmt.Errorf("decode input JSON: %w", err)
 	}
 	return &input, nil
