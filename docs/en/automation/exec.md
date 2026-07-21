@@ -83,8 +83,8 @@ JSON
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
-`strict_config`, `env`, `allow_tools`, `deny_tools`, `max_turns`,
-`output_schema`, `no_tools`, `timeout`, and `output_last_message`.
+`strict_config`, `env`, `max_turns`, `output_schema`, `no_tools`, `timeout`,
+and `output_last_message`.
 
 ## Resume
 
@@ -182,8 +182,6 @@ Current implemented flags:
 --ignore-user-config
 --strict-config
 --env KEY=VALUE
---allow-tool <name>
---deny-tool <name>
 --file <path>
 --image <path>
 --no-tools
@@ -240,10 +238,6 @@ On a native `mcp_servers` name clash the native entry wins; `disabled` wins over
 `enabled`/`enable_all`. Unapproved servers print one aggregated stderr hint
 (de-duplicated across reloads); a missing `.mcp.json` changes nothing.
 
-`--allow-tool` and `--deny-tool` are repeatable one-run tool policy overrides.
-They affect only the current exec run and do not write back to configuration.
-A tool cannot be both allowed and denied in the same run.
-
 ## Permission modes
 
 `wuu exec` makes allow-or-deny decisions without an interactive approval step:
@@ -255,8 +249,7 @@ A tool cannot be both allowed and denied in the same run.
 
 The mode is an in-process tool boundary, not an operating-system sandbox.
 Permitted child processes keep Wuu's OS identity, inherited environment, and
-network stack. `--allow-tool` and `--deny-tool` change the one-run tool surface;
-they do not expand the path boundary or disable hard tool guards. See the
+network stack. Permission modes do not disable hard tool guards. See the
 [security model](../reference/security-model.md) before unattended or untrusted-repository
 use.
 

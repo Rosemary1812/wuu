@@ -53,8 +53,6 @@ The target event family list is:
 - `subagent_started`
 - `subagent_updated`
 - `subagent_completed`
-- `approval_requested`
-- `approval_resolved`
 - `usage_updated`
 - `turn_completed`
 - `turn_failed`
@@ -78,8 +76,7 @@ Emitted after `initialize` succeeds.
   "provider": "openai",
   "model": "gpt-5",
   "workspace_root": "/repo",
-  "permissions": {},
-  "tool_policy": {}
+  "permissions": {}
 }
 ```
 
@@ -367,45 +364,6 @@ does not duplicate full diffs or file contents.
 }
 ```
 
-### `approval_requested`
-
-Emitted when app-server asks the non-interactive client for approval.
-
-```json
-{
-  "type": "approval_requested",
-  "thread_id": "thread-id",
-  "turn_id": "turn-id",
-  "request_id": "server-1",
-  "method": "tool/approval/request",
-  "request": {
-    "id": "approval-id",
-    "tool_name": "write_file",
-    "risk": "high",
-    "arguments_sha256": "...",
-    "arguments_preview": "..."
-  }
-}
-```
-
-### `approval_resolved`
-
-```json
-{
-  "type": "approval_resolved",
-  "thread_id": "thread-id",
-  "turn_id": "turn-id",
-  "request_id": "server-1",
-  "method": "tool/approval/request",
-  "decision": "approved",
-  "reason": "approved by handler",
-  "error": ""
-}
-```
-
-If approval cannot be obtained in a non-interactive run, Wuu fails closed and
-the final `result` uses `status: "permission_denied"` with exit code `3`.
-
 ### `turn_completed`
 
 ```json
@@ -456,26 +414,12 @@ The final event in a run.
   "turn_id": "turn-id",
   "final_message": "final answer",
   "structured_result": {"summary": "valid JSON when --output-schema is used"},
-  "blocked_approvals": [
-    {
-      "approval_key": "bash:2fd4e1c6...",
-      "request_id": "server-1",
-      "tool_name": "bash",
-      "arguments_preview": "{\"command\": \"go vet ./...\"}",
-      "reason": "approval prompts are unavailable in this unattended run; ..."
-    }
-  ],
   "trace_path": "/path/to/session-trace.jsonl"
 }
 ```
 
 `structured_result` is present only when `wuu exec --output-schema` is used and
 the final answer validates against the requested JSON Schema.
-
-`blocked_approvals` is present when one or more tool calls needed approval and
-nothing in the run could grant it. Each entry's `approval_key` is the exact
-token a rerun can pass as `wuu exec resume --last --approve <key>` to
-pre-grant that call.
 
 Allowed `status` values include:
 

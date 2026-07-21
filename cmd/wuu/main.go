@@ -1518,11 +1518,9 @@ func runExecResume(args []string) error {
 	fs.SetOutput(io.Discard)
 	cfg := addExecFlags(fs)
 	last := fs.Bool("last", false, "resume the most recent session for this workspace")
-	all := fs.Bool("all", false, "resume with full available session context")
 	if err := fs.Parse(args); err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	_ = *all
 	if err := validateExecFlags(cfg); err != nil {
 		return err
 	}

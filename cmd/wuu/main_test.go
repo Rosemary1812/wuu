@@ -186,28 +186,6 @@ func TestRunExecResumeLastUsesResumePath(t *testing.T) {
 	}
 }
 
-func TestRunExecResumeAllUsesResumePath(t *testing.T) {
-	controller := newCLIExecFakeController(
-		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "continued"}),
-	)
-	restore := installExecControllerOverride(t, controller)
-	defer restore()
-
-	output := captureStdout(t, func() {
-		if err := run([]string{"exec", "resume", "--all", "--json", "thread-1", "continue"}); err != nil {
-			t.Fatalf("run exec resume --all: %v", err)
-		}
-	})
-
-	if controller.startedThread || controller.resumedThread != "thread-1" {
-		t.Fatalf("resume --all should resume thread-1, got started=%v resumed=%q", controller.startedThread, controller.resumedThread)
-	}
-	events := parseCLIJSONLines(t, output)
-	if got := events[1]["type"]; got != "thread_resumed" {
-		t.Fatalf("second event = %v, want thread_resumed\n%s", got, output)
-	}
-}
-
 func TestRunExecForkUsesForkPath(t *testing.T) {
 	controller := newCLIExecFakeController(
 		cliExecNotification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "fork-thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "forked"}),

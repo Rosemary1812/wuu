@@ -246,25 +246,10 @@ stdout:
 
 ## Non-Interactive Client Requests
 
-The app-server can send requests back to the client, for example approval
-requests. `wuu exec` is non-interactive by default, so it must fail closed when
-it cannot handle a request. Automation can opt in to handling approval requests
-with `wuu exec --approval-handler <command>` or
-`wuu exec --approval-socket <path>`.
-
-Approval request handlers receive:
-
-```json
-{"id":"server-1","method":"tool/approval/request","params":{}}
-```
-
-They respond with:
-
-```json
-{"decision":"approved","reason":"approved by policy"}
-```
-
-or a JSON-RPC-like object whose `result` field contains that response shape.
+`wuu exec` does not support server-initiated requests. Its app-server client
+accepts responses and notifications only, and treats a server request as a
+protocol error. Exec runs make permission decisions without an interactive
+approval exchange.
 
 ## Debug Commands
 

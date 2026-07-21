@@ -84,8 +84,6 @@ Every payload also has a `type` string. Fields listed are exactly the map keys p
 | `turn_completed` | `runner.go:364` | `thread_id`, `turn_id`, `input_tokens`, `output_tokens`, `trace_path` |
 | `turn_failed` | `runner.go:381` | `thread_id`, `turn_id`, `error` |
 | `turn_interrupted` | `runner.go:594-601` | `thread_id`, `turn_id`, `reason` (`"timeout"` \| `"interrupted"`) |
-| `approval_requested` | `runner.go:558-568` | `thread_id`, `turn_id`, `request_id`, `method`, `request` |
-| `approval_resolved` | `runner.go:570-592` | `thread_id`, `turn_id`, `request_id`, `method`, `decision`, `reason`, `error` |
 | `error` | `runner.go:939-955` (`emitStructuredOutputValidation`) | `thread_id`, `turn_id`, `error`, `retrying` — **emitted only for `--output-schema` validation failures**, not as a general error channel |
 | `result` | `runner.go:957-976` (`emitResult`) | `status`, `thread_id`, `turn_id`, `final_message`, `trace_path`, `error` (if any), `structured_result` (if `--output-schema` validated) |
 
@@ -159,16 +157,11 @@ There is **no** `--session-id`, `--resume`, or `--output-format` flag on `wuu ex
 Provider/model are chosen with `--provider` / `--model` / `--effort` / `--variant`
 (`cmd/wuu/main.go:1411-1414`).
 
-### 1.10 Approval (permission) flow
+### 1.10 Permission flow
 
-- Non-interactive approvals need `--approval-handler <cmd>` or `--approval-socket <path>`
-  (`internal/exec/approval_handler.go:17-35`). Both speak the same JSON request/response.
-- With neither, wuu **fails closed**: `denyApprovalsRequestHandler` returns a `denied`
-  decision (`approval_handler.go:43-56`), the run ends `status:"permission_denied"`, exit
-  `3` (`runner.go:151-159`). (Note: `internal/exec/approval_handler.go` has uncommitted
-  local changes; cited behavior is from the working tree, read-only.)
-- Approval decision values seen on the wire: `approved` / `denied`
-  (`approval_handler.go:45-48`; `runner.go:582`).
+`wuu exec` makes allow-or-deny decisions without an interactive approval
+exchange. It has no approval handler or socket, and its app-server client treats
+server-initiated requests as protocol errors.
 
 ---
 
@@ -259,7 +252,7 @@ User messages are emitted both for the prompt and for tool results (yields at
 `control_cancel_request` carry `can_use_tool` permission prompts, `hook_callback`,
 `mcp_message`, and `elicitation` (`cli/structuredIO.ts:333-531`). Permission prompts are
 **requests to the client**, answered on stdin — a fundamentally different model from
-wuu's `--approval-handler` subprocess.
+wuu's non-interactive allow-or-deny decisions.
 
 ### 2.4 Exit codes (binary)
 
@@ -358,7 +351,7 @@ Legend: **=** direct map · **~** needs transform/synthesis · **wuu∅** wuu ha
 | `usage` (aggregate) | sum of `usage_updated` / `turn_completed` tokens | ~ |
 | `modelUsage` (per-model map w/ cost) | no per-model cost tracking | wuu∅ |
 | **`total_cost_usd`** | **not computed anywhere in wuu** | **wuu∅ — hard blocker, see §5.3** |
-| `permission_denials[]` | derive from `approval_resolved` w/ `decision:"denied"` | ~ |
+| `permission_denials[]` | no direct event field | wuu∅ |
 | `session_id`, `uuid` | `thread_id` / none | ~ / wuu∅ |
 | `fast_mode_state`, `apiKeySource` | none | wuu∅ (cc-specific) |
 
@@ -370,7 +363,7 @@ Legend: **=** direct map · **~** needs transform/synthesis · **wuu∅** wuu ha
 | Timeout | `turn_interrupted(reason:"timeout")` + `result(status:"timeout")`, exit 4 | no dedicated subtype/exit | cc∅ |
 | Interrupt/cancel | `turn_interrupted(reason:"interrupted")` + `result(status:"interrupted")`, exit 5 | SIGINT → graceful shutdown, exit 0 (`runHeadlessStreaming` `sigintHandler`, `cli/print.ts:1027-1034`) | ~ |
 | Max turns | no distinct result subtype (loop just caps) | `result(subtype:"error_max_turns")` | ~ |
-| Permission request | `approval_requested` event; answered by subprocess/socket | `control_request(can_use_tool)`; answered by client on stdin | ~ (different mechanism) |
+| Permission request | none; exec makes allow-or-deny decisions without an interactive approval step | `control_request(can_use_tool)`; answered by client on stdin | wuu∅ |
 | Permission denied | `result(status:"permission_denied")`, exit 3 | recorded in `result.permission_denials[]`; **not** a terminal error subtype | ~ |
 | Schema retry failure | `error` events + `result(status:"failed")` | `result(subtype:"error_max_structured_output_retries")` | ~ |
 
@@ -390,9 +383,9 @@ Legend: **=** direct map · **~** needs transform/synthesis · **wuu∅** wuu ha
 | `--max-budget-usd` | none (no cost tracking) | wuu∅ |
 | `--json-schema <schema>` | `--output-schema <schema.json>` (`cmd/wuu/main.go:1436`) | ~ (file vs inline; wuu also injects schema into the prompt) |
 | `--permission-mode <mode>` | `--permission-mode <mode>` (`cmd/wuu/main.go:1415`) | ~ (mode vocab may differ — **unconfirmed**) |
-| `--allowedTools` | `--allow-tool` (repeatable) (`cmd/wuu/main.go:1408`) | ~ |
-| `--disallowedTools` | `--deny-tool` (repeatable) (`cmd/wuu/main.go:1409`) | ~ |
-| `--permission-prompt-tool` | `--approval-handler` / `--approval-socket` (`cmd/wuu/main.go:1427-1428`) | ~ (subprocess/socket vs MCP tool) |
+| `--allowedTools` | none | wuu∅ |
+| `--disallowedTools` | none | wuu∅ |
+| `--permission-prompt-tool` | none | wuu∅ |
 | `--dangerously-skip-permissions` | closest: `--permission-mode` value (**unconfirmed** which) | ~ |
 | `-r, --resume [id]` | `wuu exec resume <id>` / `resume --last` subcommand | ~ |
 | `-c, --continue` | `wuu exec resume --last` | ~ |
@@ -431,7 +424,7 @@ alongside `emitJSON` (`runner.go:978`), keyed off a new `--output-format` value;
 | `result.structured_output` | `result.structured_result` (`runner.go:973`) | direct. |
 | `result.num_turns` | count emitted `turn_started` | derivable. |
 | `result.usage` | accumulate `usage_updated`/`turn_completed` tokens (`runner.go:352,364`) | derivable (map `input_tokens`/`output_tokens`/cache fields to cc `usage` shape). |
-| `result.permission_denials[]` | collect `approval_resolved` with `decision:"denied"` (`runner.go:577`) | derivable (need `tool_name`/`tool_use_id`/`tool_input` — available from the approval `request` and the tool item). |
+| `result.permission_denials[]` | no equivalent exec event | not derivable without adding a new event contract. |
 | `result.errors[]` | `result.error` string (`runner.go:970`) | wrap as single-element array. |
 
 ### 5.2 Status → subtype mapping (proposed)
@@ -480,12 +473,9 @@ alongside `emitJSON` (`runner.go:978`), keyed off a new `--output-format` value;
   emit it. Filling these requires either threading more of `InitializeResult` into the
   compat writer or accepting empty arrays (some harnesses render pickers from these).
 - **Permission model translation.** cc expects the client to answer `can_use_tool`
-  `control_request` on **stdin** (`structuredIO.ts:533-659`). wuu answers via a
-  **subprocess or unix socket** (`approval_handler.go:17-35`). A true cc-compat mode would
-  also need to accept cc-style `control_request`/`control_response` on stdin and bridge them
-  to wuu's approval handler — a second, larger workstream beyond output translation. If out
-  of scope, the compat mode must run with an explicit `--approval-handler`/policy or in a
-  skip-permissions mode, and just report denials in `permission_denials[]`.
+  `control_request` on **stdin** (`structuredIO.ts:533-659`). Wuu exec has no
+  interactive approval exchange. Supporting this would be a separate input and
+  permission-protocol project, not an output translation detail.
 
 ### 5.5 The assistant-message reassembly problem
 
@@ -531,9 +521,8 @@ and usage). The unavoidable lossy points to advertise up front:
    folded into `error_during_execution` (+ `errors[]`).
 4. `assistant.message` block fidelity — best-effort, and weakest for non-Anthropic
    providers.
-5. Incoming permission prompts over stdin (`can_use_tool` control protocol) — a separate,
-   larger piece of work; output-only compat still needs `--approval-handler` or a
-   skip-permissions posture.
+5. Incoming permission prompts over stdin (`can_use_tool` control protocol) — unsupported;
+   adding them would be a separate permission-protocol project.
 
 ---
 
@@ -542,7 +531,6 @@ and usage). The unavoidable lossy points to advertise up front:
 - wuu emitters: `internal/exec/runner.go` (esp. `289-419`, `434-601`, `863-984`).
 - wuu options / exit codes: `internal/exec/types.go:13-129`.
 - wuu structured output: `internal/exec/structured_output.go`.
-- wuu approvals: `internal/exec/approval_handler.go` (working tree has uncommitted changes).
 - wuu app-server types: `internal/appserver/protocol.go` (`154-208`, `1100-1210`,
   `1253-1460`).
 - wuu CLI flags/usage: `cmd/wuu/main.go:1400-1456`, `1907-1930`.

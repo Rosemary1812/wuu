@@ -10,7 +10,7 @@ import (
 func TestProtocolClientRejectsUnexpectedServerRequest(t *testing.T) {
 	var out bytes.Buffer
 	client := NewProtocolClient(
-		strings.NewReader("{\"id\":\"server-1\",\"method\":\"tool/approval/request\",\"params\":{}}\n"),
+		strings.NewReader("{\"id\":\"server-1\",\"method\":\"client/action\",\"params\":{}}\n"),
 		&out,
 	)
 
@@ -19,7 +19,7 @@ func TestProtocolClientRejectsUnexpectedServerRequest(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected protocol error")
 		}
-		if !strings.Contains(err.Error(), `unexpected app-server request "tool/approval/request"`) {
+		if !strings.Contains(err.Error(), `unexpected app-server request "client/action"`) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	case <-time.After(time.Second):
