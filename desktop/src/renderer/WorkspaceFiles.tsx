@@ -532,6 +532,7 @@ export function WorkspaceFilePreview({
   selectedFilePath,
   selection,
   anchor,
+  refreshKey,
   onOpenRightPanel,
   onOpenFile,
   onDirtyChange
@@ -542,6 +543,7 @@ export function WorkspaceFilePreview({
   selectedFilePath?: string;
   selection?: WorkspaceFileSelection;
   anchor?: string;
+  refreshKey?: string;
   onOpenRightPanel: () => void;
   onOpenFile?: (path: string) => void;
   onDirtyChange?: (state: WorkspaceFileDirtyState) => void;
@@ -552,6 +554,7 @@ export function WorkspaceFilePreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
+  const loadedFileKeyRef = useRef<string | undefined>(undefined);
   const markdownHostRef = useRef<HTMLDivElement>(null);
   const selectedWorkspaceFilePath = useMemo(
     () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
@@ -568,15 +571,20 @@ export function WorkspaceFilePreview({
     }
 
     let cancelled = false;
-    editorViewStateRef.current = null;
-    setFile(undefined);
-    setDraftText("");
-    setLoading(true);
+    const fileKey = `${activeContext?.cwd ?? ""}\n${selectedWorkspaceFilePath}`;
+    const refreshing = loadedFileKeyRef.current === fileKey;
+    if (!refreshing) {
+      editorViewStateRef.current = null;
+      setFile(undefined);
+      setDraftText("");
+      setLoading(true);
+    }
     setError(undefined);
     void window.wuu
       .readWorkspaceFile(selectedWorkspaceFilePath, activeContext?.cwd)
       .then((result) => {
         if (!cancelled) {
+          loadedFileKeyRef.current = fileKey;
           setFile(result);
           setDraftText(result.text ?? "");
         }
@@ -595,7 +603,7 @@ export function WorkspaceFilePreview({
     return () => {
       cancelled = true;
     };
-  }, [activeContext?.cwd, selectedWorkspaceFilePath, locale]);
+  }, [activeContext?.cwd, selectedWorkspaceFilePath, locale, refreshKey]);
 
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
   const isMarkdownReadingMode = isMarkdown && !selection;

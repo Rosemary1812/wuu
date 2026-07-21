@@ -322,6 +322,7 @@ describe("useComposerPendingState", () => {
       [{ media_type: "image/png", data: "aW1hZ2U=" }],
       "queue-1",
       [],
+      undefined,
     );
     expect(
       hook
@@ -351,6 +352,40 @@ describe("useComposerPendingState", () => {
         .get()
         .pendingComposerMessagesByThread["thread-a"]?.queued.map((item) => item.id),
     ).toEqual(["queue-2"]);
+  });
+
+  it("keeps a queued document snapshot when converting it to a steer", async () => {
+    const steerTurn = vi.fn().mockResolvedValue({ turn_id: "turn-running" });
+    installWuuStub({ steerTurn });
+    const runningThread = thread("thread-a", true);
+    const hook = await renderComposerPendingState({
+      appState: {
+        ...initialState,
+        thread: runningThread,
+        threads: [runningThread],
+      },
+    });
+    const queued = {
+      ...message("queue-1", "Revise it"),
+      activeDocument: { path: "docs/plan.md" },
+    };
+
+    act(() => {
+      hook.get().enqueueComposerMessage("thread-a", queued);
+    });
+    await act(async () => {
+      await hook.get().guideQueuedMessage("queue-1");
+    });
+
+    expect(steerTurn).toHaveBeenCalledWith(
+      "thread-a",
+      "turn-running",
+      "Revise it",
+      [],
+      "queue-1",
+      [],
+      { path: "docs/plan.md" },
+    );
   });
 
   it("restores a queued message into the primary composer for editing", async () => {

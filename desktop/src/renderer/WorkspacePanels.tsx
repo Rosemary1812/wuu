@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useRef,
@@ -137,6 +138,8 @@ export function WorkspaceRightPanel({
   onBrowserActivityTakeover,
   onBrowserActivityRelease,
   onBrowserActivityStop,
+  focusedComposer,
+  fileRefreshKey,
 }: {
   open: boolean;
   present: boolean;
@@ -174,6 +177,8 @@ export function WorkspaceRightPanel({
   onBrowserActivityTakeover?: () => void;
   onBrowserActivityRelease?: () => void;
   onBrowserActivityStop?: () => void;
+  focusedComposer?: ReactNode;
+  fileRefreshKey?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
@@ -382,7 +387,7 @@ export function WorkspaceRightPanel({
 
   return (
     <aside
-      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "files" || activeTab?.kind === "file" ? " files" : ""}${activeTab?.kind === "terminal" ? " terminal" : ""}`}
+      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "files" || activeTab?.kind === "file" ? " files" : ""}${activeTab?.kind === "terminal" ? " terminal" : ""}${focusedComposer && activeTab?.kind === "file" ? " document-focus" : ""}`}
       data-sheet={
         sheetPhase === "exiting"
           ? "parked"
@@ -548,6 +553,11 @@ export function WorkspaceRightPanel({
                       onDirtyChange={updateFileDirtyState}
                       onOpenFile={onOpenFile}
                       tab={tab}
+                      refreshKey={
+                        open && activeTab?.kind === "file" && tab.id === activeFileTabID
+                          ? fileRefreshKey
+                          : undefined
+                      }
                     />
                   ))}
                   {activeTab?.kind === "files" ? (
@@ -619,6 +629,11 @@ export function WorkspaceRightPanel({
           </div>
         </>
       ) : null}
+      {focusedComposer && activeTab?.kind === "file" ? (
+        <div className="workspace-document-composer" data-testid="workspace-document-composer">
+          {focusedComposer}
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -628,11 +643,13 @@ function WorkspaceFileResource({
   onDirtyChange,
   onOpenFile,
   tab,
+  refreshKey,
 }: {
   active: boolean;
   onDirtyChange: (tabID: string, dirty: boolean) => void;
   onOpenFile: (path: string) => void;
   tab: WorkspaceFileViewTab;
+  refreshKey?: string;
 }): JSX.Element {
   const handleDirtyChange = useCallback(
     (state: WorkspaceFileDirtyState) => onDirtyChange(tab.id, state.dirty),
@@ -659,6 +676,7 @@ function WorkspaceFileResource({
         anchor={tab.anchor}
         editorResourceID={tab.id}
         selection={tab.selection}
+        refreshKey={refreshKey}
         selectedFilePath={tab.path}
         onOpenRightPanel={() => {}}
         onOpenFile={handleOpenFile}

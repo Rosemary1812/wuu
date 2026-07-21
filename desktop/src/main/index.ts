@@ -30,6 +30,7 @@ import type {
   ActivityListResult,
   ActivityReleaseResult,
   ActivitySession,
+  ActiveDocumentContext,
   CoreBuildInfo,
   DesktopBuildInfo,
   InputFile,
@@ -1675,6 +1676,7 @@ app.whenReady().then(async () => {
       images?: InputImage[],
       files?: InputFile[],
       permissionMode?: string,
+      activeDocument?: ActiveDocumentContext,
     ) =>
       appServerRequest<{ turn: Turn }>(event, "turn/start", {
         thread_id: threadId,
@@ -1682,6 +1684,7 @@ app.whenReady().then(async () => {
         images: images ?? [],
         files: files ?? [],
         ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
+        ...(activeDocument === undefined ? {} : { active_document: activeDocument }),
       }),
   );
   ipcMain.handle(
@@ -1694,6 +1697,7 @@ app.whenReady().then(async () => {
       clientId?: string,
       files?: InputFile[],
       permissionMode?: string,
+      activeDocument?: ActiveDocumentContext,
     ) =>
       appServerRequest(event, "turn/queue", {
         thread_id: threadId,
@@ -1702,6 +1706,7 @@ app.whenReady().then(async () => {
         files: files ?? [],
         client_id: clientId,
         ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
+        ...(activeDocument === undefined ? {} : { active_document: activeDocument }),
       }),
   );
   ipcMain.handle(
@@ -1740,6 +1745,7 @@ app.whenReady().then(async () => {
       images?: InputImage[],
       clientId?: string,
       files?: InputFile[],
+      activeDocument?: ActiveDocumentContext,
     ) =>
       appServerRequest(event, "turn/steer", {
         thread_id: threadId,
@@ -1748,6 +1754,7 @@ app.whenReady().then(async () => {
         images: images ?? [],
         files: files ?? [],
         client_id: clientId,
+        ...(activeDocument === undefined ? {} : { active_document: activeDocument }),
       }),
   );
   ipcMain.handle("wuu:turn-unsteer", (event, threadId: string, steerId: string) =>

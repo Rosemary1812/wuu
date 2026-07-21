@@ -1,5 +1,5 @@
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
-import type { InputFile, InputImage, Turn } from "../shared/protocol";
+import type { ActiveDocumentContext, InputFile, InputImage, Turn } from "../shared/protocol";
 import { formatCurrentNumber, translateCurrent } from "./i18n";
 
 // Renderer-side image compression runs on the Electron canvas before the
@@ -71,6 +71,7 @@ export type QueuedComposerMessage = {
   text: string;
   images: ComposerImage[];
   files: ComposerFile[];
+  activeDocument?: ActiveDocumentContext;
   held?: boolean;
   heldPosition?: number;
   origin?: "queue" | "steer";
@@ -393,6 +394,7 @@ export function inputFilesFromComposer(files: ComposerFile[]): InputFile[] {
 }
 
 export function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedComposerMessage {
+  const latestActiveDocument = messages[messages.length - 1]?.activeDocument;
   return {
     id: nextComposerMessageID(),
     text: messages
@@ -400,7 +402,8 @@ export function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedCom
       .filter(Boolean)
       .join("\n"),
     images: messages.flatMap((message) => message.images.map((image) => ({ ...image }))),
-    files: messages.flatMap((message) => message.files.map((file) => ({ ...file })))
+    files: messages.flatMap((message) => message.files.map((file) => ({ ...file }))),
+    activeDocument: latestActiveDocument ? { ...latestActiveDocument } : undefined,
   };
 }
 

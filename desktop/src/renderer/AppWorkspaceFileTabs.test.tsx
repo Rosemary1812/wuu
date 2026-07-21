@@ -41,6 +41,7 @@ import { RIGHT_PANEL_MOTION_MS } from "./AppLayoutState";
 let container: HTMLDivElement;
 let root: Root | null = null;
 let serverEventHandlers: Array<(event: ServerEvent) => void> = [];
+let startTurnMock: ReturnType<typeof vi.fn>;
 const originalInnerWidth = window.innerWidth;
 
 const workspace = "/tmp/wuu-artifact-tab-test";
@@ -126,6 +127,7 @@ function installWindowStubs(): void {
 
 function installWuuApi(): void {
   const thread = completedThread();
+  startTurnMock = vi.fn().mockResolvedValue({ turn: thread.turns[0] });
   const api = {
     listProjects: vi.fn().mockResolvedValue({
       projects: [],
@@ -139,6 +141,7 @@ function installWuuApi(): void {
     listThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
     listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread: vi.fn().mockResolvedValue({ thread }),
+    startTurn: startTurnMock,
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     gitStatus: vi.fn().mockResolvedValue({
       is_repo: false,
@@ -272,11 +275,39 @@ describe("workspace file tabs", () => {
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
+    expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
+    expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
     expect(
       container.querySelector('[data-testid="jump-to-latest-probe"]'),
     ).toBeNull();
     expect(document.activeElement).toBe(
       container.querySelector(".workspace-tool-tab.active .workspace-tool-tab-main"),
+    );
+
+    const focusedTextarea = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="workspace-document-composer"] textarea',
+    );
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    await act(async () => {
+      valueSetter?.call(focusedTextarea, "Rewrite the weak section.");
+      focusedTextarea?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      focusedTextarea?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    await flushAsync();
+    expect(startTurnMock).toHaveBeenCalledWith(
+      "thread-artifact-tabs",
+      "Rewrite the weak section.",
+      [],
+      [],
+      "standard",
+      { path: "README.md" },
     );
 
     act(() => {
@@ -290,7 +321,48 @@ describe("workspace file tabs", () => {
     expect(shell?.classList.contains("right-panel-animating")).toBe(true);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+    expect(container.querySelector('[data-testid="workspace-document-composer"]')).toBeNull();
     expect(document.activeElement).toBe(fileLink);
+  });
+
+  it("mounts only the focused composer for an empty conversation", async () => {
+    installWuuApi();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    vi.useFakeTimers();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".rich-file-link")?.click();
+    });
+    await flushAsync();
+    act(() => {
+      vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="展开为全面板"]')?.click();
+    });
+    await flushAsync();
+
+    const emptyThread = { ...completedThread(), turns: [] };
+    await act(async () => {
+      for (const handler of serverEventHandlers) {
+        handler({
+          kind: "notification",
+          workdir: workspace,
+          message: {
+            method: "thread/updated",
+            params: { thread: emptyThread },
+          },
+        } as ServerEvent);
+      }
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
+    expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
   });
 
   it("focuses the workspace automatically when a compact window cannot keep conversation usable", async () => {

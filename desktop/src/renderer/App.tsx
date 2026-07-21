@@ -2890,7 +2890,11 @@ export function App(): JSX.Element {
     if (viewSwitchPending) {
       return;
     }
-    const message = createComposerMessage(prompt, composerImages, composerFiles);
+    const draftMessage = createComposerMessage(prompt, composerImages, composerFiles);
+    const message =
+      draftMessage && activeWorkspaceFile
+        ? { ...draftMessage, activeDocument: { path: activeWorkspaceFile } }
+        : draftMessage;
     const currentState = appStateRef.current;
     const targetThread = activeThreadForState(currentState);
     if (targetThread?.read_only) {
@@ -3118,6 +3122,7 @@ export function App(): JSX.Element {
         message.id,
         files,
         targetThread.permission_mode || currentState.initialized.permissions?.mode,
+        message.activeDocument,
       );
       enqueueComposerMessage(targetThread.id, {
         ...message,
@@ -3163,6 +3168,7 @@ export function App(): JSX.Element {
         inputImagesFromComposer(encodedImages),
         message.id,
         files,
+        message.activeDocument,
       );
       updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
         ...previous,
@@ -3310,6 +3316,7 @@ export function App(): JSX.Element {
         images,
         files,
         thread.permission_mode || currentState.initialized.permissions?.mode,
+        message.activeDocument,
       );
       setState((current) =>
         updateThreadByID(
@@ -3504,6 +3511,7 @@ export function App(): JSX.Element {
         images,
         files,
         targetThread.permission_mode || currentState.initialized.permissions?.mode,
+        message.activeDocument,
       );
       setState((current) =>
         updateThreadByID(
@@ -3634,6 +3642,7 @@ export function App(): JSX.Element {
         images,
         files,
         targetThread.permission_mode || currentState.initialized.permissions?.mode,
+        message.activeDocument,
       );
       setState((current) =>
         updateThreadByID(
@@ -4227,7 +4236,9 @@ export function App(): JSX.Element {
                   />
                 }
               >
-                {renderComposer("hero")}
+                {rightPanelGlobalized && activeWorkspaceFileTabID
+                  ? <div />
+                  : renderComposer("hero")}
               </EmptyConversationHome>
             ) : (
               <CachedConversationPanes
@@ -4365,6 +4376,14 @@ export function App(): JSX.Element {
           onBrowserActivityTakeover={() => void takeoverBrowserActivity()}
           onBrowserActivityRelease={() => void releaseBrowserActivity()}
           onBrowserActivityStop={() => void stopBrowserActivity()}
+          focusedComposer={
+            rightPanelGlobalized && activeWorkspaceFileTabID
+              ? renderComposer("dock")
+              : undefined
+          }
+          fileRefreshKey={
+            activeThreadIsRunning ? "running" : activeThread?.updated_at
+          }
         />
       )}
       {environmentDialog === "commit" ? (
