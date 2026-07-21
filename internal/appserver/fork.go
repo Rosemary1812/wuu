@@ -1,12 +1,19 @@
 package appserver
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
+)
+
+var (
+	errForkTargetNotFound      = errors.New("fork target not found")
+	errForkToolResultsNotFound = errors.New("fork target tool results not found")
 )
 
 func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string, turns []Turn, targetTurnID, targetItemID string) ([]providers.ChatMessage, error) {
@@ -16,130 +23,68 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 		return cloneForkHistory(history), nil
 	}
 
-	var currentTurnID string
-	turnIndex := 0
-	currentTurnIndex := -1
-	itemIndex := 0
-	toolItems := make(map[string]string)
-	targetTurnSeen := false
-	targetTurnLastIndex := -1
-	var matchedToolBatch forkToolBatch
-
-	nextItemID := func() string {
-		itemIndex++
-		if currentTurnIndex >= 0 && currentTurnIndex < len(turns) && itemIndex-1 < len(turns[currentTurnIndex].Items) {
-			return turns[currentTurnIndex].Items[itemIndex-1].ID
+	projection := projectHistory(sourceThreadID, history, time.Time{})
+	var origin historyItemOrigin
+	var ok bool
+	if targetItemID != "" {
+		origin, ok = projectionOriginForTarget(projection, turns, targetTurnID, targetItemID)
+		if ok && !origin.Complete {
+			return nil, errForkToolResultsNotFound
 		}
-		return fmt.Sprintf("%s-item-%d", currentTurnID, itemIndex)
-	}
-	turnMatches := func() bool {
-		return currentTurnID != "" && (targetTurnID == "" || currentTurnID == targetTurnID)
-	}
-	itemMatches := func(itemID string) bool {
-		return targetItemID != "" && turnMatches() && itemID == targetItemID
-	}
-	markTargetTurnMessage := func(index int) {
-		if turnMatches() {
-			targetTurnSeen = true
-			targetTurnLastIndex = index
-		}
-	}
-	returnPrefix := func(index int) []providers.ChatMessage {
-		if index < 0 {
-			return nil
-		}
-		if index >= len(history) {
-			index = len(history) - 1
-		}
-		return cloneForkHistory(history[:index+1])
-	}
-
-	for i, msg := range history {
-		if msg.Hidden {
-			continue
-		}
-		if matchedToolBatch.active() && msg.Role != "tool" {
-			return nil, fmt.Errorf("fork target tool results not found")
-		}
-		if msg.Role == "system" {
-			continue
-		}
-		if msg.Role == "user" && !isToolResultMessage(msg) {
-			if targetTurnSeen && targetItemID == "" {
-				return returnPrefix(targetTurnLastIndex), nil
-			}
-			currentTurnIndex = turnIndex
-			turnIndex++
-			if currentTurnIndex < len(turns) && strings.TrimSpace(turns[currentTurnIndex].ID) != "" {
-				currentTurnID = turns[currentTurnIndex].ID
-			} else {
-				currentTurnID = fmt.Sprintf("%s-turn-%04d", sourceThreadID, turnIndex)
-			}
-			itemIndex = 0
-			toolItems = make(map[string]string)
-			markTargetTurnMessage(i)
-			if itemMatches(nextItemID()) {
-				return returnPrefix(i), nil
-			}
-			continue
-		}
-		if currentTurnID == "" {
-			continue
-		}
-
-		markTargetTurnMessage(i)
-		switch msg.Role {
-		case "assistant":
-			if strings.TrimSpace(msg.ReasoningContent) != "" && itemMatches(nextItemID()) {
-				return returnPrefix(i), nil
-			}
-			if strings.TrimSpace(msg.Content) != "" && itemMatches(nextItemID()) {
-				return returnPrefix(i), nil
-			}
-			for _, call := range msg.ToolCalls {
-				itemID := nextItemID()
-				if strings.TrimSpace(call.ID) != "" {
-					toolItems[call.ID] = itemID
-				}
-				if itemMatches(itemID) {
-					if strings.TrimSpace(call.ID) == "" {
-						return returnPrefix(i), nil
-					}
-					matchedToolBatch = newForkToolBatch(msg.ToolCalls, i)
+	} else {
+		origin, ok = projection.TurnSpans[targetTurnID]
+		if !ok {
+			if turn, found := turnByID(turns, targetTurnID); found {
+				for i := len(turn.Items) - 1; i >= 0 && !ok; i-- {
+					origin, ok = projectionOriginForItem(projection, targetTurnID, turn.Items[i])
 				}
 			}
-		case "tool":
-			itemID := toolItems[msg.ToolCallID]
-			if itemID == "" {
-				itemID = nextItemID()
-				if strings.TrimSpace(msg.ToolCallID) != "" {
-					toolItems[msg.ToolCallID] = itemID
-				}
-			}
-			if matchedToolBatch.active() {
-				matchedToolBatch.markSeen(msg.ToolCallID, i)
-				if matchedToolBatch.complete() {
-					return returnPrefix(matchedToolBatch.cutoffIndex), nil
-				}
-				continue
-			}
-			if itemMatches(itemID) {
-				return returnPrefix(i), nil
-			}
-		default:
-			if itemMatches(nextItemID()) {
-				return returnPrefix(i), nil
-			}
 		}
 	}
+	if !ok || origin.EndIndex < 0 || origin.EndIndex >= len(history) {
+		return nil, errForkTargetNotFound
+	}
+	return cloneForkHistory(history[:origin.EndIndex+1]), nil
+}
 
-	if matchedToolBatch.active() {
-		return nil, fmt.Errorf("fork target tool results not found")
+func projectionOriginForTarget(projection historyProjection, turns []Turn, turnID, itemID string) (historyItemOrigin, bool) {
+	if origin, ok := projection.ItemOrigins[historyItemAddress{TurnID: turnID, ItemID: itemID}]; ok {
+		return origin, true
 	}
-	if targetTurnSeen && targetItemID == "" {
-		return returnPrefix(targetTurnLastIndex), nil
+	turn, ok := turnByID(turns, turnID)
+	if !ok {
+		return historyItemOrigin{}, false
 	}
-	return nil, fmt.Errorf("fork target not found")
+	for _, item := range turn.Items {
+		if item.ID == itemID {
+			return projectionOriginForItem(projection, turnID, item)
+		}
+	}
+	return historyItemOrigin{}, false
+}
+
+func projectionOriginForItem(projection historyProjection, turnID string, target ThreadItem) (historyItemOrigin, bool) {
+	if origin, ok := projection.ItemOrigins[historyItemAddress{TurnID: turnID, ItemID: target.ID}]; ok {
+		return origin, true
+	}
+	if target.Seq <= 0 {
+		return historyItemOrigin{}, false
+	}
+	for _, origin := range projection.ItemOrigins {
+		if origin.Item.Seq == target.Seq && origin.Item.Type == target.Type && origin.Item.SourceID == target.SourceID {
+			return origin, true
+		}
+	}
+	return historyItemOrigin{}, false
+}
+
+func turnByID(turns []Turn, turnID string) (Turn, bool) {
+	for _, turn := range turns {
+		if turn.ID == turnID {
+			return turn, true
+		}
+	}
+	return Turn{}, false
 }
 
 func cloneForkHistory(history []providers.ChatMessage) []providers.ChatMessage {
@@ -153,47 +98,6 @@ func cloneForkHistory(history []providers.ChatMessage) []providers.ChatMessage {
 	return cloned
 }
 
-type forkToolBatch struct {
-	required    map[string]struct{}
-	seen        map[string]struct{}
-	cutoffIndex int
-}
-
-func newForkToolBatch(calls []providers.ToolCall, cutoffIndex int) forkToolBatch {
-	batch := forkToolBatch{
-		required:    make(map[string]struct{}),
-		seen:        make(map[string]struct{}),
-		cutoffIndex: cutoffIndex,
-	}
-	for _, call := range calls {
-		id := strings.TrimSpace(call.ID)
-		if id == "" {
-			continue
-		}
-		batch.required[id] = struct{}{}
-	}
-	return batch
-}
-
-func (batch forkToolBatch) active() bool {
-	return len(batch.required) > 0
-}
-
-func (batch *forkToolBatch) markSeen(toolCallID string, index int) {
-	if !batch.active() {
-		return
-	}
-	batch.cutoffIndex = index
-	id := strings.TrimSpace(toolCallID)
-	if _, ok := batch.required[id]; ok {
-		batch.seen[id] = struct{}{}
-	}
-}
-
-func (batch forkToolBatch) complete() bool {
-	return batch.active() && len(batch.seen) >= len(batch.required)
-}
-
 func editHistoryBeforeUserMessage(history []providers.ChatMessage, sourceThreadID string, turns []Turn, targetTurnID, targetItemID string) ([]providers.ChatMessage, ThreadEditDraft, error) {
 	targetTurnID = strings.TrimSpace(targetTurnID)
 	targetItemID = strings.TrimSpace(targetItemID)
@@ -203,91 +107,22 @@ func editHistoryBeforeUserMessage(history []providers.ChatMessage, sourceThreadI
 	if targetItemID == "" {
 		return nil, ThreadEditDraft{}, fmt.Errorf("item_id is required")
 	}
-	targetSeq := 0
-	targetFound := false
-	for _, turn := range turns {
-		if turn.ID != targetTurnID {
-			continue
-		}
-		for _, item := range turn.Items {
-			if item.ID != targetItemID {
-				continue
-			}
-			if item.Type != ThreadItemUserMessage {
-				return nil, ThreadEditDraft{}, fmt.Errorf("only regular user messages can be edited")
-			}
-			targetSeq = item.Seq
-			targetFound = true
-			break
-		}
-		break
-	}
-	if !targetFound {
+	projection := projectHistory(sourceThreadID, history, time.Time{})
+	origin, ok := projectionOriginForTarget(projection, turns, targetTurnID, targetItemID)
+	if !ok || origin.StartIndex < 0 || origin.StartIndex >= len(history) {
 		return nil, ThreadEditDraft{}, fmt.Errorf("editable user message not found")
 	}
-
-	var currentTurnID string
-	turnIndex := 0
-	currentTurnIndex := -1
-	itemIndex := 0
-
-	nextItemID := func() string {
-		itemIndex++
-		if currentTurnIndex >= 0 && currentTurnIndex < len(turns) && itemIndex-1 < len(turns[currentTurnIndex].Items) {
-			return turns[currentTurnIndex].Items[itemIndex-1].ID
-		}
-		return fmt.Sprintf("%s-item-%d", currentTurnID, itemIndex)
+	if origin.Item.Type != ThreadItemUserMessage {
+		return nil, ThreadEditDraft{}, fmt.Errorf("only regular user messages can be edited")
 	}
-	turnMatches := func() bool {
-		return currentTurnID != "" && currentTurnID == targetTurnID
+	msg := history[origin.StartIndex]
+	if msg.Steered {
+		return nil, ThreadEditDraft{}, fmt.Errorf("only regular user messages can be edited")
 	}
-	itemMatches := func(itemID string) bool {
-		return turnMatches() && itemID == targetItemID
+	if compactedAttachmentOmission(msg) {
+		return nil, ThreadEditDraft{}, fmt.Errorf("this message contains compacted attachment placeholders and cannot be restored for editing")
 	}
-
-	for i, msg := range history {
-		if msg.Hidden {
-			continue
-		}
-		if msg.Role == "system" {
-			continue
-		}
-		if msg.Role != "user" || isToolResultMessage(msg) {
-			continue
-		}
-		if msg.Steered {
-			if (targetSeq > 0 && msg.Seq == targetSeq) || (targetSeq == 0 && currentTurnID != "" && itemMatches(nextItemID())) {
-				return nil, ThreadEditDraft{}, fmt.Errorf("only regular user messages can be edited")
-			}
-			continue
-		}
-		if targetSeq > 0 {
-			if msg.Seq != targetSeq {
-				continue
-			}
-			if compactedAttachmentOmission(msg) {
-				return nil, ThreadEditDraft{}, fmt.Errorf("this message contains compacted attachment placeholders and cannot be restored for editing")
-			}
-			return cloneHistory(history[:i]), editDraftFromChatMessage(msg), nil
-		}
-
-		currentTurnIndex = turnIndex
-		turnIndex++
-		if currentTurnIndex < len(turns) && strings.TrimSpace(turns[currentTurnIndex].ID) != "" {
-			currentTurnID = turns[currentTurnIndex].ID
-		} else {
-			currentTurnID = fmt.Sprintf("%s-turn-%04d", sourceThreadID, turnIndex)
-		}
-		itemIndex = 0
-		if itemMatches(nextItemID()) {
-			if compactedAttachmentOmission(msg) {
-				return nil, ThreadEditDraft{}, fmt.Errorf("this message contains compacted attachment placeholders and cannot be restored for editing")
-			}
-			return cloneHistory(history[:i]), editDraftFromChatMessage(msg), nil
-		}
-	}
-
-	return nil, ThreadEditDraft{}, fmt.Errorf("editable user message not found")
+	return cloneHistory(history[:origin.StartIndex]), editDraftFromChatMessage(msg), nil
 }
 
 func editDraftFromChatMessage(msg providers.ChatMessage) ThreadEditDraft {
