@@ -111,6 +111,8 @@ export function Composer({
   queuedMessages,
   guideMessages,
   running,
+  sendDisabled = false,
+  forceStopWhileRunning = false,
   ultraEnabled = false,
   runtimeControlsDisabled = running,
   status,
@@ -192,6 +194,8 @@ export function Composer({
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
   running: boolean;
+  sendDisabled?: boolean;
+  forceStopWhileRunning?: boolean;
   ultraEnabled?: boolean;
   runtimeControlsDisabled?: boolean;
   status: string;
@@ -296,7 +300,7 @@ export function Composer({
   // match that (queuing "排队发送" rather than interrupting). This keeps the
   // stop affordance for the common "watching a turn, empty input" case while
   // never blocking a queued follow-up the user has clearly typed.
-  const showComposerStop = running && !hasDraft;
+  const showComposerStop = running && (forceStopWhileRunning || !hasDraft);
   const composerSendLabel = running ? t("composer.queueSend") : t("composer.send");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);
@@ -1102,7 +1106,7 @@ export function Composer({
                   onClick={showComposerStop ? onInterrupt : submitComposer}
                   aria-label={showComposerStop ? t("composer.stop") : composerSendLabel}
                   title={showComposerStop ? t("composer.stop") : composerSendLabel}
-                  disabled={!showComposerStop && (readOnly || !hasDraft)}
+                  disabled={!showComposerStop && (sendDisabled || readOnly || !hasDraft)}
                 >
                   {showComposerStop ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
                 </button>

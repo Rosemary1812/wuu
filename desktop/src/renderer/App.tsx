@@ -2157,6 +2157,15 @@ export function App(): JSX.Element {
     return Array.from(names);
   }, [state.thread, state.secondaryThread, state.threads]);
   const sideThreadPanelVisible = Boolean(activeThreadID && sideThread.entry?.open);
+  useEffect(() => {
+    if (!sideThreadPanelVisible) {
+      return undefined;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      sideThreadPanelRef.current?.focusComposer();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [sideThreadPanelVisible]);
   // The environment panel floats inside the conversation pane, so it can
   // coexist with the docked workspace right panel. Only the globalized
   // (full-window sheet) right panel blocks it, because that mode makes the
@@ -2292,9 +2301,6 @@ export function App(): JSX.Element {
       setParticipantPanel(undefined);
       sideThread.open();
     }
-    window.requestAnimationFrame(() => {
-      sideThreadPanelRef.current?.focusComposer();
-    });
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {

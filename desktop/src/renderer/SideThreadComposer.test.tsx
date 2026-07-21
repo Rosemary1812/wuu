@@ -91,13 +91,13 @@ describe("SideThreadComposer", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("switches the shared composer to stop-only mode while running", () => {
+  it("keeps the side composer focusable during a running turn", () => {
     const onInterrupt = vi.fn();
     renderComposer({ draft: "keep this", running: true, onInterrupt });
 
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-    expect(textarea.disabled).toBe(true);
-    expect(textarea.value).toBe("");
+    expect(textarea.disabled).toBe(false);
+    expect(textarea.value).toBe("keep this");
     const stop = container.querySelector(
       '.composer-action-button[aria-label="停止"]',
     ) as HTMLButtonElement;

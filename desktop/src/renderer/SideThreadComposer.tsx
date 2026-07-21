@@ -42,12 +42,10 @@ export function SideThreadComposer({
   const menuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
   const slashCommands = useMemo(() => buildSideThreadSlashCommands(), [locale]);
-  const readOnly = running || Boolean(disabledReason);
-  // A side turn may be started by another window while this one has a local
-  // draft. Hide that draft while the shared composer is in stop mode, then
-  // restore it when the peer turn settles instead of offering a send action
-  // that the side-thread transport cannot accept.
-  const visibleDraft = running ? "" : draft;
+  const readOnly = Boolean(disabledReason);
+  // Keep the draft editable while a side turn runs so the composer remains
+  // focusable. Sending stays disabled until the current side turn settles.
+  const visibleDraft = draft;
 
   return (
     <Composer
@@ -62,6 +60,8 @@ export function SideThreadComposer({
       queuedMessages={[]}
       guideMessages={[]}
       running={running}
+      sendDisabled={running}
+      forceStopWhileRunning
       runtimeControlsDisabled
       tokensPerSecond={0}
       status={disabledReason ?? ""}
@@ -106,7 +106,7 @@ export function SideThreadComposer({
       onEditGuideMessage={noop}
       onSend={() => {
         const prompt = draft.trim();
-        if (!readOnly && prompt) {
+        if (!readOnly && !running && prompt) {
           onSend(prompt);
         }
       }}
