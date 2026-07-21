@@ -49,11 +49,9 @@ func loadTurnImage(rootDir, inputPath string, original bool) (appserver.TurnStar
 	if !strings.HasPrefix(mediaType, "image/") {
 		return appserver.TurnStartImage{}, fmt.Errorf("--image %s has media type %s, expected image/*", inputPath, mediaType)
 	}
-	mode := imageproc.ModeDefault
-	if original {
-		mode = imageproc.ModeOriginal
-	}
-	result, err := imageproc.Encode(absPath, data, imageproc.Options{Mode: mode})
+	// Validate the local file before creating a thread, but leave image
+	// normalization to app-server so every shell follows one code path.
+	result, err := imageproc.Encode(absPath, data, imageproc.Options{Mode: imageproc.ModeOriginal})
 	if err != nil {
 		var ipErr *imageproc.Error
 		if errors.As(err, &ipErr) {
@@ -64,6 +62,7 @@ func loadTurnImage(rootDir, inputPath string, original bool) (appserver.TurnStar
 	return appserver.TurnStartImage{
 		MediaType: result.MediaType,
 		Data:      base64.StdEncoding.EncodeToString(result.Bytes),
+		Original:  original,
 	}, nil
 }
 

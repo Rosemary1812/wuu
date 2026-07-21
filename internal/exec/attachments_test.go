@@ -58,10 +58,7 @@ func TestResolveRunAttachmentsRejectsNonImageForImageFlag(t *testing.T) {
 	}
 }
 
-// TestResolveRunAttachmentsCompressesLargeImage verifies that a JPEG well above
-// the imageproc MaxDimension limit is downscaled before being forwarded to the
-// model. This is the core path that `wuu exec --image` exercises.
-func TestResolveRunAttachmentsCompressesLargeImage(t *testing.T) {
+func TestResolveRunAttachmentsDefersImageNormalizationToAppServer(t *testing.T) {
 	root := t.TempDir()
 	large := encodeJPEG(t, 3000, 3000, 95)
 	if err := os.WriteFile(filepath.Join(root, "big.jpg"), large, 0o644); err != nil {
@@ -85,15 +82,11 @@ func TestResolveRunAttachmentsCompressesLargeImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode base64: %v", err)
 	}
-	if len(decoded) >= len(large) {
-		t.Fatalf("expected compressed output (%d bytes) smaller than input (%d bytes)", len(decoded), len(large))
+	if !bytes.Equal(decoded, large) {
+		t.Fatalf("exec must forward original bytes for app-server normalization (got %d bytes, want %d)", len(decoded), len(large))
 	}
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(decoded))
-	if err != nil {
-		t.Fatalf("decode output: %v", err)
-	}
-	if cfg.Width != 2048 || cfg.Height != 2048 {
-		t.Fatalf("output dims = %dx%d, want 2048x2048", cfg.Width, cfg.Height)
+	if attachments.Images[0].Original {
+		t.Fatal("default image attachment must allow app-server normalization")
 	}
 }
 
@@ -121,6 +114,9 @@ func TestResolveRunAttachmentsOriginalBypassesResize(t *testing.T) {
 	}
 	if !bytes.Equal(decoded, large) {
 		t.Fatalf("ImageOriginal=true must return the original bytes unchanged (got %d bytes, want %d)", len(decoded), len(large))
+	}
+	if !attachments.Images[0].Original {
+		t.Fatal("ImageOriginal=true must be preserved across the app-server protocol")
 	}
 }
 
