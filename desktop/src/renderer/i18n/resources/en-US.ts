@@ -1495,6 +1495,7 @@ export const enUS = {
   "composer.preview.empty": "Empty message",
   "composer.compactingContext": "Compacting context",
   "composer.attachment.imagesAndPdfOnly": "Only images and PDFs are supported",
+  "composer.attachment.pdfTooLarge": "\"{name}\" exceeds the {limit}MB PDF size limit",
   "composer.attachment.addFailed": "Failed to add attachment",
   "turn.interrupted.title": "Response interrupted",
   "turn.stopped.title": "Stopped",

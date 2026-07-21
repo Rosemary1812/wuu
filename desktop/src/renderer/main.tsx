@@ -34,6 +34,19 @@ applyMessageFlowFontSize(
   window.wuu?.initialMessageFlowFontSize ?? MESSAGE_FLOW_FONT_SIZE_RANGE.default,
 );
 
+// Chromium's default for a file dropped anywhere without a drop handler is
+// to navigate the window to it, replacing the whole UI. Composers handle
+// (and prevent) their own file drops; this keeps stray file drops
+// everywhere else inert. Text drags pass through so native textarea
+// drag-and-drop keeps working.
+const ignoreStrayFileDrop = (event: DragEvent): void => {
+  if (event.dataTransfer?.types.includes("Files")) {
+    event.preventDefault();
+  }
+};
+window.addEventListener("dragover", ignoreStrayFileDrop);
+window.addEventListener("drop", ignoreStrayFileDrop);
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <I18nProvider><App /></I18nProvider>,
 );

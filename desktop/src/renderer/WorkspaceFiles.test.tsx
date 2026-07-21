@@ -6,6 +6,7 @@ import type {
   WorkspaceDirectoryListResult,
   WorkspaceFileReadResult,
 } from "../shared/protocol";
+import { WORKSPACE_FILE_DRAG_MIME } from "./ComposerMessages";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 
 vi.mock("./WorkspaceMonacoEditor", () => ({
@@ -241,6 +242,48 @@ describe("WorkspaceFileTree", () => {
     expect(listWorkspaceDirectory).toHaveBeenCalledWith("src/components", "/repo");
     const selected = treeShadowRoot().querySelector("[aria-selected='true']");
     expect(selected?.getAttribute("data-item-path")).toBe("src/components/Button.tsx");
+  });
+
+  it("marks tree rows as drag sources carrying the workspace-relative path", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("README.md");
+    expect(row.draggable).toBe(true);
+
+    const setData = vi.fn();
+    const dataTransfer = { effectAllowed: "uninitialized", setData };
+    const event = new Event("dragstart", { bubbles: true, composed: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { configurable: true, value: dataTransfer });
+    await act(async () => {
+      row.dispatchEvent(event);
+      await Promise.resolve();
+    });
+
+    expect(dataTransfer.effectAllowed).toBe("copy");
+    expect(setData).toHaveBeenCalledWith(WORKSPACE_FILE_DRAG_MIME, "README.md");
+    expect(setData).toHaveBeenCalledWith("text/plain", "README.md");
+  });
+
+  it("keeps the trailing slash when a directory row is dragged", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("src/");
+    const setData = vi.fn();
+    const dataTransfer = { effectAllowed: "uninitialized", setData };
+    const event = new Event("dragstart", { bubbles: true, composed: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { configurable: true, value: dataTransfer });
+    await act(async () => {
+      row.dispatchEvent(event);
+      await Promise.resolve();
+    });
+
+    expect(setData).toHaveBeenCalledWith(WORKSPACE_FILE_DRAG_MIME, "src/");
   });
 
   it("does not reopen the previous file when an external tab changes the tree selection", async () => {

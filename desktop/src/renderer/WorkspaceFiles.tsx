@@ -9,6 +9,7 @@ import type {
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
 import type { WorkspaceFileSelection } from "./LinkTargets";
+import { WORKSPACE_FILE_DRAG_MIME } from "./ComposerMessages";
 import { RichContent } from "./RichContent";
 import type { WorkspaceMonacoViewState } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
@@ -229,17 +230,40 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
   useEffect(() => {
     const host = treeFrameRef.current?.querySelector<HTMLElement>("file-tree-container");
     if (!host?.shadowRoot) return undefined;
-    const localizeTreeControls = (): void => {
+    const enhanceShadowTree = (): void => {
       const search = host.shadowRoot?.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
       if (search) search.placeholder = t("workspace.files.searchPlaceholder");
       const options = host.shadowRoot?.querySelector<HTMLButtonElement>("[data-type='context-menu-trigger']");
       if (options) options.setAttribute("aria-label", t("workspace.files.options"));
+      // Rows render without draggable (the library's own drag-and-drop stays
+      // off — it would reselect rows and mutate the tree model). Mark them
+      // as drag sources here so a row can carry its workspace-relative path
+      // into the composer. React does not rewrite props whose value never
+      // changes, so this survives re-renders and only needs re-applying when
+      // virtualization remounts a row — which this observer covers.
+      for (const row of host.shadowRoot?.querySelectorAll<HTMLElement>("[data-item-path]") ?? []) {
+        row.draggable = true;
+      }
     };
-    localizeTreeControls();
-    const observer = new MutationObserver(localizeTreeControls);
+    enhanceShadowTree();
+    const observer = new MutationObserver(enhanceShadowTree);
     observer.observe(host.shadowRoot, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [locale]);
+
+  useEffect(() => {
+    const frame = treeFrameRef.current;
+    if (!frame) return undefined;
+    const handleDragStart = (event: DragEvent): void => {
+      const path = workspaceTreeDragPath(event.composedPath());
+      if (!path || !event.dataTransfer) return;
+      event.dataTransfer.effectAllowed = "copy";
+      event.dataTransfer.setData(WORKSPACE_FILE_DRAG_MIME, path);
+      event.dataTransfer.setData("text/plain", path);
+    };
+    frame.addEventListener("dragstart", handleDragStart);
+    return () => frame.removeEventListener("dragstart", handleDragStart);
+  }, []);
 
   return (
     <div className="workspace-file-tree-frame" ref={treeFrameRef}>
@@ -419,6 +443,21 @@ function WorkspaceTreeContextMenu({
 
 function absoluteWorkspacePath(root: string, path: string): string {
   return `${root.replace(/[\\/]+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
+/**
+ * Resolve the workspace-relative path carried by a tree row drag. Rows live
+ * in the tree's shadow root, so walk the composed path instead of reading
+ * event.target, which is retargeted to the shadow host. Tree paths are
+ * already workspace-relative; directories keep their trailing slash.
+ */
+export function workspaceTreeDragPath(eventPath: readonly EventTarget[]): string | undefined {
+  for (const target of eventPath) {
+    if (target instanceof HTMLElement && target.dataset.itemPath) {
+      return target.dataset.itemPath;
+    }
+  }
+  return undefined;
 }
 
 function normalizeSelectedWorkspaceFilePath(path: string | undefined, workspaceRoot: string | undefined): string | undefined {

@@ -120,6 +120,11 @@
   pointer-events: none;
 }
 
+.composer-frame.composer-frame-drop-active::after {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink-overlay-18);
+}
+
 .composer-ultra-button {
   position: absolute;
   top: -11px;
