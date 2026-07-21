@@ -76,7 +76,6 @@ type Options struct {
 	ConfigPath        string
 	AgentProfile      string
 	IgnoreUserConfig  bool
-	StrictConfig      bool
 	Env               []string
 	MaxTurns          int
 	Provider          string

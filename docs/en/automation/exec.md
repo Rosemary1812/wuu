@@ -83,8 +83,8 @@ JSON
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
-`strict_config`, `env`, `max_turns`, `output_schema`, `no_tools`, `timeout`,
-and `output_last_message`.
+`env`, `max_turns`, `output_schema`, `no_tools`, `timeout`, and
+`output_last_message`.
 
 ## Resume
 
@@ -181,7 +181,6 @@ Current implemented flags:
 --config <path>
 --profile <name>
 --ignore-user-config
---strict-config
 --env KEY=VALUE
 --file <path>
 --image <path>
@@ -201,9 +200,8 @@ resolved from `--workdir` when it is set, otherwise from the current directory.
 project config (`.wuu.json`, then `wuu.json`) plus its project settings layers.
 Both options are intended for controlled automation: a trusted file may choose
 provider endpoints, credential environment variables, memory paths, hooks, and
-MCP servers. `--strict-config` is accepted for automation compatibility; `wuu
-exec` already fails when no usable config can be loaded. `--env KEY=VALUE` is
-repeatable and applies only to the current run. `--max-turns` caps the
+MCP servers. `--env KEY=VALUE` is repeatable and applies only to the current
+run. `--max-turns` caps the
 model/tool loop for the current user turn.
 `--output-schema` reads a JSON Schema file, instructs the agent to return only
 JSON, validates the final answer locally, and gives the agent a limited number

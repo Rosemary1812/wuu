@@ -1424,7 +1424,6 @@ type execCLIConfig struct {
 	configPath        *string
 	agentProfile      *string
 	ignoreUserConfig  *bool
-	strictConfig      *bool
 	env               *stringListFlag
 	files             *stringListFlag
 	images            *stringListFlag
@@ -1685,7 +1684,6 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		configPath:        fs.String("config", "", "trust one explicit config file path"),
 		agentProfile:      fs.String("profile", "", "agent profile name"),
 		ignoreUserConfig:  fs.Bool("ignore-user-config", false, "trust project config and ignore user config"),
-		strictConfig:      fs.Bool("strict-config", false, "fail if config cannot be loaded"),
 		env:               &env,
 		files:             &files,
 		images:            &images,
@@ -1730,7 +1728,6 @@ type execInputPayload struct {
 	ConfigPath        string                     `json:"config"`
 	AgentProfile      string                     `json:"profile"`
 	IgnoreUserConfig  *bool                      `json:"ignore_user_config"`
-	StrictConfig      *bool                      `json:"strict_config"`
 	Env               []string                   `json:"env"`
 	MaxTurns          *int                       `json:"max_turns"`
 	NoTools           *bool                      `json:"no_tools"`
@@ -1756,7 +1753,6 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		ConfigPath:        valueOfStringFlag(cfg.configPath),
 		AgentProfile:      valueOfStringFlag(cfg.agentProfile),
 		IgnoreUserConfig:  valueOfBoolFlag(cfg.ignoreUserConfig),
-		StrictConfig:      valueOfBoolFlag(cfg.strictConfig),
 		Env:               stringListValues(cfg.env),
 		MaxTurns:          valueOfIntFlag(cfg.maxTurns),
 		Ultra:             valueOfBoolFlag(cfg.ultra),
@@ -1812,9 +1808,6 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 	}
 	if input.IgnoreUserConfig != nil && !opts.IgnoreUserConfig {
 		opts.IgnoreUserConfig = *input.IgnoreUserConfig
-	}
-	if input.StrictConfig != nil && !opts.StrictConfig {
-		opts.StrictConfig = *input.StrictConfig
 	}
 	opts.Env = append(opts.Env, input.Env...)
 	if input.MaxTurns != nil && opts.MaxTurns == 0 {
@@ -2149,7 +2142,6 @@ Exec flags:
   --profile         agent profile name
   --ignore-user-config
                    trust project config and ignore user config
-  --strict-config   fail if config cannot be loaded
   --env KEY=VALUE   set environment variable for the run (repeatable)
   --file            attach a local file (repeatable)
   --image           attach a local image (repeatable)
