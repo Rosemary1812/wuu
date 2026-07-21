@@ -613,7 +613,10 @@ func readLogWindow(path string, maxBytes int, offsetBytes *int64) (string, bool,
 		return "", false, 0, 0, 0, err
 	}
 	defer f.Close()
-	info, _ := f.Stat()
+	info, err := f.Stat()
+	if err != nil {
+		return "", false, 0, 0, 0, err
+	}
 	size := info.Size()
 	end := size
 	start := int64(0)
@@ -626,8 +629,8 @@ func readLogWindow(path string, maxBytes int, offsetBytes *int64) (string, bool,
 		if start > end {
 			start = end
 		}
-		if end-start > int64(maxBytes) {
-			start = end - int64(maxBytes)
+		end = min(size, start+int64(maxBytes))
+		if end < size {
 			truncated = true
 		}
 	} else if size > int64(maxBytes) {

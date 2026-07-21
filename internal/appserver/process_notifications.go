@@ -14,13 +14,14 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
-const processCompletionOutputBytes = 8 * 1024
+const processCompletionOutputBytes = 2 * 1024
 
 type processCompletionPayload struct {
 	ProcessID         string         `json:"process_id"`
 	Status            process.Status `json:"status"`
 	ExitCode          int            `json:"exit_code"`
 	Command           string         `json:"command,omitempty"`
+	OutputLogPath     string         `json:"output_log_path,omitempty"`
 	OutputTail        string         `json:"output_tail,omitempty"`
 	OutputTruncated   bool           `json:"output_truncated,omitempty"`
 	OutputStartOffset int64          `json:"output_start_offset,omitempty"`
@@ -73,11 +74,12 @@ func processEventBelongsToThread(threadID string, control *agentcontrol.AgentCon
 
 func processCompletionChatMessage(manager *process.Manager, event process.Event) providers.ChatMessage {
 	payload := processCompletionPayload{
-		ProcessID:   event.Process.ID,
-		Status:      event.Process.Status,
-		ExitCode:    event.Process.ExitCode,
-		Command:     tools.RedactToolOutput(event.Process.Command),
-		Instruction: "This background command has finished. Continue from this result; do not poll it again. Use bash action=read_background only if the omitted output matters.",
+		ProcessID:     event.Process.ID,
+		Status:        event.Process.Status,
+		ExitCode:      event.Process.ExitCode,
+		Command:       tools.RedactToolOutput(event.Process.Command),
+		OutputLogPath: tools.RedactToolOutput(event.Process.LogPath),
+		Instruction:   "This background command has finished. Continue from this result; do not poll it again. The full log is stored at output_log_path; use bash action=read_background with process_id, offset_bytes, and max_bytes to page omitted output when needed.",
 	}
 	if manager != nil {
 		snapshot, err := manager.ReadOutputSnapshot(context.Background(), event.Process.ID, process.OutputReadOptions{MaxBytes: processCompletionOutputBytes})

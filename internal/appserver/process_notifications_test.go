@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,6 +47,10 @@ func TestProcessCompletionChatMessageIncludesOutputTail(t *testing.T) {
 			t.Fatal("timed out waiting for natural process exit")
 		}
 	}
+	logOutput := strings.Repeat("x", processCompletionOutputBytes+512) + "hello-tail\n"
+	if err := os.WriteFile(started.LogPath, []byte(logOutput), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	msg := processCompletionChatMessage(manager, terminal)
 	if msg.Role != "user" || msg.Name != wuucontext.ProcessNotificationMessageName {
@@ -59,8 +64,15 @@ func TestProcessCompletionChatMessageIncludesOutputTail(t *testing.T) {
 	if payload.ProcessID != started.ID || payload.Status != process.StatusStopped || payload.ExitCode != 0 {
 		t.Fatalf("unexpected terminal payload: %+v", payload)
 	}
-	if !strings.Contains(payload.OutputTail, "hello-tail") || !strings.Contains(payload.Instruction, "do not poll") {
+	if payload.OutputLogPath != started.LogPath || !strings.Contains(payload.Instruction, "output_log_path") {
+		t.Fatalf("completion payload omitted full log address: %+v", payload)
+	}
+	if len(payload.OutputTail) != processCompletionOutputBytes || !strings.HasSuffix(payload.OutputTail, "hello-tail\n") || !payload.OutputTruncated {
 		t.Fatalf("completion payload omitted output or guidance: %+v", payload)
+	}
+	if payload.OutputStartOffset != int64(len(logOutput)-processCompletionOutputBytes) ||
+		payload.OutputEndOffset != int64(len(logOutput)) || payload.OutputTotalBytes != int64(len(logOutput)) {
+		t.Fatalf("unexpected completion output offsets: %+v", payload)
 	}
 }
 

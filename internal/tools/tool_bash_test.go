@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -541,6 +542,73 @@ func TestBashReadBackgroundConsumesCompletionWhenTerminalResultIsReturned(t *tes
 	}
 	if stored.CompletionConsumedBy != "bash_result" {
 		t.Fatalf("completion consumer = %q, want bash_result", stored.CompletionConsumedBy)
+	}
+}
+
+func TestBashReadBackgroundPagesForwardFromExplicitOffset(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	defer func() { _ = manager.CleanupSession() }()
+	kit.SetProcessManager(manager)
+
+	started, err := manager.Start(context.Background(), proc.StartOptions{
+		Command:   "printf '0123456789abcdef'; sleep 1",
+		OwnerKind: proc.OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: proc.LifecycleSession,
+	})
+	if err != nil {
+		t.Fatalf("start background: %v", err)
+	}
+	zero := int64(0)
+	if _, err := manager.ReadOutputSnapshot(context.Background(), started.ID, proc.OutputReadOptions{
+		OffsetBytes: &zero,
+		Wait:        2 * time.Second,
+	}); err != nil {
+		t.Fatalf("wait for output: %v", err)
+	}
+
+	type pageResponse struct {
+		Output      string `json:"output"`
+		Truncated   bool   `json:"truncated"`
+		StartOffset int64  `json:"start_offset"`
+		EndOffset   int64  `json:"end_offset"`
+		TotalBytes  int64  `json:"total_bytes"`
+	}
+	readPage := func(offset int64) pageResponse {
+		t.Helper()
+		resp, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "bash",
+			Arguments: fmt.Sprintf(`{"action":"read_background","process_id":%q,"offset_bytes":%d,"max_bytes":5}`, started.ID, offset),
+		})
+		if err != nil {
+			t.Fatalf("read background page at %d: %v", offset, err)
+		}
+		var page pageResponse
+		if err := json.Unmarshal([]byte(resp), &page); err != nil {
+			t.Fatalf("parse page at %d: %v\n%s", offset, err, resp)
+		}
+		return page
+	}
+
+	first := readPage(4)
+	if first.Output != "45678" || !first.Truncated || first.StartOffset != 4 || first.EndOffset != 9 || first.TotalBytes != 16 {
+		t.Fatalf("unexpected first page: %+v", first)
+	}
+	second := readPage(first.EndOffset)
+	if second.Output != "9abcd" || !second.Truncated || second.StartOffset != 9 || second.EndOffset != 14 || second.TotalBytes != 16 {
+		t.Fatalf("unexpected second page: %+v", second)
+	}
+	last := readPage(second.EndOffset)
+	if last.Output != "ef" || last.Truncated || last.StartOffset != 14 || last.EndOffset != 16 || last.TotalBytes != 16 {
+		t.Fatalf("unexpected final page: %+v", last)
 	}
 }
 

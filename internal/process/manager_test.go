@@ -518,6 +518,40 @@ func TestReadOutput(t *testing.T) {
 	_, _ = m.Stop(p.ID)
 }
 
+func TestReadLogWindowPagesForwardFromExplicitOffset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "output.log")
+	if err := os.WriteFile(path, []byte("0123456789abcdef"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	offset := int64(4)
+	output, truncated, start, end, total, err := readLogWindow(path, 5, &offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output != "45678" || !truncated || start != 4 || end != 9 || total != 16 {
+		t.Fatalf("unexpected first page: output=%q truncated=%t start=%d end=%d total=%d", output, truncated, start, end, total)
+	}
+
+	offset = end
+	output, truncated, start, end, total, err = readLogWindow(path, 5, &offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output != "9abcd" || !truncated || start != 9 || end != 14 || total != 16 {
+		t.Fatalf("unexpected second page: output=%q truncated=%t start=%d end=%d total=%d", output, truncated, start, end, total)
+	}
+
+	offset = end
+	output, truncated, start, end, total, err = readLogWindow(path, 5, &offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output != "ef" || truncated || start != 14 || end != 16 || total != 16 {
+		t.Fatalf("unexpected final page: output=%q truncated=%t start=%d end=%d total=%d", output, truncated, start, end, total)
+	}
+}
+
 func TestUpdatePreviewPersistsLocalPreviewURLs(t *testing.T) {
 	root := t.TempDir()
 	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
