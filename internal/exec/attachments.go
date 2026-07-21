@@ -71,8 +71,12 @@ func loadTurnFile(rootDir, inputPath string) (appserver.TurnStartFile, error) {
 	if err != nil {
 		return appserver.TurnStartFile{}, err
 	}
+	mediaType := detectMediaType(absPath, data)
+	if mediaType != "application/pdf" {
+		return appserver.TurnStartFile{}, fmt.Errorf("--file %s has media type %s; only PDF files are supported", inputPath, mediaType)
+	}
 	return appserver.TurnStartFile{
-		MediaType: detectMediaType(absPath, data),
+		MediaType: mediaType,
 		Data:      base64.StdEncoding.EncodeToString(data),
 		Filename:  filepath.Base(absPath),
 	}, nil

@@ -1671,7 +1671,7 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 	files := stringListFlag{}
 	images := stringListFlag{}
 	env := stringListFlag{}
-	fs.Var(&files, "file", "attach a local file (repeatable)")
+	fs.Var(&files, "file", "attach a local PDF file (repeatable)")
 	fs.Var(&images, "image", "attach a local image (repeatable)")
 	imageOriginal := fs.Bool("image-original", false, "send --image attachments at original resolution without resizing (Codex ImageDetail::Original equivalent)")
 	fs.Var(&env, "env", "set an environment variable for the run (KEY=VALUE, repeatable)")

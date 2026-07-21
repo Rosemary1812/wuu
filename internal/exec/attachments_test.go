@@ -58,6 +58,18 @@ func TestResolveRunAttachmentsRejectsNonImageForImageFlag(t *testing.T) {
 	}
 }
 
+func TestResolveRunAttachmentsRejectsNonPDFFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write text: %v", err)
+	}
+
+	_, err := resolveRunAttachments(Options{Workdir: root, FilePaths: []string{"notes.txt"}})
+	if err == nil || !strings.Contains(err.Error(), "only PDF files are supported") {
+		t.Fatalf("expected PDF media type error, got %v", err)
+	}
+}
+
 func TestResolveRunAttachmentsDefersImageNormalizationToAppServer(t *testing.T) {
 	root := t.TempDir()
 	large := encodeJPEG(t, 3000, 3000, 95)

@@ -108,7 +108,7 @@ The agent inspects the requested diff or commit with normal repository tools.
 
 ## Attachments
 
-Local files are attached with `--file`:
+Local PDF files are attached with `--file`:
 
 ```bash
 wuu exec --file report.pdf "summarize this PDF and update the code"
@@ -120,8 +120,9 @@ Local images are attached with `--image`:
 wuu exec --image screenshot.png "find the UI issue"
 ```
 
-Both flags are repeatable. Relative attachment paths are resolved from
-`--workdir` when it is set, otherwise from the current directory. Attachments
+Both flags are repeatable. `--file` currently accepts PDF files only. Relative
+attachment paths are resolved from `--workdir` when it is set, otherwise from
+the current directory. Attachments
 are sent as structured app-server `turn/start` fields, not pasted into the
 prompt.
 
