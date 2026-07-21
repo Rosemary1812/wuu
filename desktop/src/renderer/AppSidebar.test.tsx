@@ -149,6 +149,12 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toMatch(
       /\.sidebar-collapsed\.sidebar-drawer-open \.sidebar,[\s\S]*background:\s*var\(--sidebar-drawer-bg\);/,
     );
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-drawer-docking :is\(\.sidebar, \.settings-sidebar\)\s*\{[\s\S]*background:\s*var\(--sidebar-material-fill\);[\s\S]*background-color var\(--sidebar-motion-duration\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-drawer-docking :is\(\.sidebar, \.settings-sidebar\)::before\s*\{[\s\S]*opacity:\s*0\.5;[\s\S]*transition:\s*opacity var\(--sidebar-motion-duration\)/,
+    );
     // The ease itself now lives in base.css as a shared motion token;
     // sidebar.css only consumes it.
     expect(sidebarCSS).toContain("var(--sidebar-motion-ease)");

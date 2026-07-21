@@ -412,6 +412,33 @@
   transform: translate3d(0, 0, 0) scale(1);
 }
 
+/* Pinning keeps the floating rail in place while its white preview material
+ * dissolves into the docked sidebar's native liquid-glass material. Every
+ * target value matches the base rail above, so removing the docking class at
+ * the end of the grid motion cannot produce a final color or shadow snap. */
+.sidebar-drawer-docking :is(.sidebar, .settings-sidebar) {
+  border-right-color: var(--sidebar-material-edge);
+  background: var(--sidebar-material-fill);
+  box-shadow:
+    inset -1px 0 0 var(--sidebar-material-inner-edge),
+    1px 0 16px rgba(20, 24, 28, 0.025);
+  transition:
+    transform var(--sidebar-drawer-enter-duration) var(--sidebar-drawer-enter-easing),
+    border-color var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration) var(--sidebar-motion-ease);
+}
+
+.sidebar-collapsed:is(.sidebar-drawer-open, .sidebar-drawer-closing)
+  :is(.sidebar, .settings-sidebar)::before {
+  opacity: 0;
+}
+
+.sidebar-drawer-docking :is(.sidebar, .settings-sidebar)::before {
+  opacity: 0.5;
+  transition: opacity var(--sidebar-motion-duration) var(--sidebar-motion-ease);
+}
+
 /* Shared rule aliases — `.sidebar-collapsed.sidebar-drawer-*` rules below
  * are intentionally mirrored on `.sidebar` only so the legacy sidebar-side
  * declarations remain in one place even though the workhorse rule now lives
