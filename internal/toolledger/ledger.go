@@ -106,6 +106,8 @@ type Ledger struct {
 	ownerID string
 }
 
+// New opens an owner's durable tool ledger without changing invocation state.
+// Callers must hold the owner's execution lease before calling Reconcile.
 func New(sessDir, ownerID string) (*Ledger, error) {
 	sessDir = strings.TrimSpace(sessDir)
 	ownerID = strings.TrimSpace(ownerID)
@@ -119,11 +121,7 @@ func New(sessDir, ownerID string) (*Ledger, error) {
 	if err := db.Close(); err != nil {
 		return nil, fmt.Errorf("close tool ledger: %w", err)
 	}
-	ledger := &Ledger{sessDir: sessDir, ownerID: ownerID}
-	if err := ledger.Reconcile(context.Background()); err != nil {
-		return nil, err
-	}
-	return ledger, nil
+	return &Ledger{sessDir: sessDir, ownerID: ownerID}, nil
 }
 
 func (l *Ledger) BeginBatch(ctx context.Context, operationID string, stepIndex int) (string, error) {
@@ -270,6 +268,13 @@ func (l *Ledger) Settle(ctx context.Context, invocationID string, result toolres
 			return err
 		}
 		if InvocationState(existingState) == state && existingResult == string(payload) {
+			return nil
+		}
+		if InvocationState(existingState) == InvocationInterruptedUnknown {
+			// Recovery has fenced this executor after its ownership lease was
+			// released. Its finalizer may still arrive while the old goroutine is
+			// draining, but it must neither overwrite the ambiguous durable state
+			// nor fail the already-abandoned turn.
 			return nil
 		}
 		if InvocationState(existingState) != InvocationRunning {
@@ -445,6 +450,8 @@ WHERE id = ? AND owner_id = ? AND status = ?`, BatchAbandoned, now, now, batchID
 	})
 }
 
+// Reconcile marks work left by a previous executor as interrupted. The caller
+// must hold exclusive execution ownership for this ledger owner.
 func (l *Ledger) Reconcile(ctx context.Context) error {
 	if l == nil {
 		return nil

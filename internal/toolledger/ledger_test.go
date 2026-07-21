@@ -100,6 +100,9 @@ func TestLedgerReconcileBlocksUnknownRunningInvocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := recovered.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
 	decision, err := recovered.DecideReplay(ctx, batchID)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +128,97 @@ func TestLedgerReconcileBlocksUnknownRunningInvocation(t *testing.T) {
 	}
 	if runningState != string(InvocationInterruptedUnknown) || preparedState != string(InvocationAbandoned) || batchState != string(BatchInterrupted) {
 		t.Fatalf("reconciled states = %q/%q/%q", runningState, preparedState, batchState)
+	}
+}
+
+func TestLedgerLateSettlementAfterReconcileDoesNotOverrideUnknownInvocation(t *testing.T) {
+	dir := t.TempDir()
+	owner, err := New(dir, "thread-late-settlement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	batchID, err := owner.BeginBatch(ctx, "operation-late-settlement", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := owner.Prepare(ctx, batchID, providers.ToolCall{
+		ID: "call-late", Name: "write_file", Arguments: `{"path":"important.go"}`,
+	}, ReplayAtMostOnce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.FinalizeBatch(ctx, batchID); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Start(ctx, invocation.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := New(dir, "thread-late-settlement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovered.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Settle(ctx, invocation.ID, toolresult.FromText("written")); err != nil {
+		t.Fatalf("late settlement after ownership recovery: %v", err)
+	}
+	decision, err := recovered.DecideReplay(ctx, batchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Action != ReplayBlock || decision.Reason != ReplayReasonInvocationUnknown {
+		t.Fatalf("late settlement weakened replay fence: %+v", decision)
+	}
+
+	db, err := session.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var invocationState, batchState string
+	if err := db.QueryRow(`SELECT state FROM tool_invocations WHERE id = ?`, invocation.ID).Scan(&invocationState); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT status FROM tool_batches WHERE id = ?`, batchID).Scan(&batchState); err != nil {
+		t.Fatal(err)
+	}
+	if invocationState != string(InvocationInterruptedUnknown) || batchState != string(BatchInterrupted) {
+		t.Fatalf("late settlement changed recovered states = %q/%q", invocationState, batchState)
+	}
+}
+
+func TestLedgerOpenDoesNotReconcileLiveInvocation(t *testing.T) {
+	dir := t.TempDir()
+	owner, err := New(dir, "thread-live-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	batchID, err := owner.BeginBatch(ctx, "operation-live-owner", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := owner.Prepare(ctx, batchID, providers.ToolCall{
+		ID: "call-live", Name: "write_file", Arguments: `{"path":"important.go"}`,
+	}, ReplayAtMostOnce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.FinalizeBatch(ctx, batchID); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Start(ctx, invocation.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := New(dir, "thread-live-owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Settle(ctx, invocation.ID, toolresult.FromText("written")); err != nil {
+		t.Fatalf("opening a second ledger disturbed the live owner: %v", err)
 	}
 }
 

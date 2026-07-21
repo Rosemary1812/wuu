@@ -207,6 +207,11 @@ func (s *Server) ensureThreadRuntimeAfterAdmission(th *threadState) (*runtime.Th
 	if err != nil || threadRuntime == nil {
 		return threadRuntime, err
 	}
+	if threadRuntime.StreamRunner != nil && threadRuntime.StreamRunner.ToolLedger != nil {
+		if err := threadRuntime.StreamRunner.ToolLedger.Reconcile(context.Background()); err != nil {
+			return nil, fmt.Errorf("recover tool ledger for thread %q: %w", th.ID, err)
+		}
+	}
 	th.mu.Lock()
 	if threadRuntime.StreamRunner != nil {
 		if prompt := strings.TrimSpace(threadRuntime.StreamRunner.SystemPrompt); prompt != "" {
@@ -1847,6 +1852,13 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		return segments
 	}
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
+		th.mu.Lock()
+		if th.currentTurn != turnID {
+			th.mu.Unlock()
+			return
+		}
+		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
+		th.mu.Unlock()
 		if ev.Type == providers.EventUsage && ev.Usage != nil {
 			usagePushMu.Lock()
 			liveUsage = *ev.Usage
@@ -1857,9 +1869,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		if ev.Type == providers.EventProviderState && ev.ProviderState != nil {
 			providerStates = append(providerStates, providerStateRecord(ev.ProviderState))
 		}
-		th.mu.Lock()
-		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
-		th.mu.Unlock()
 		notifyBatch(batch)
 		notify(NotificationTurnEvent, TurnEventNotification{
 			ThreadID: th.ID,
@@ -1882,6 +1891,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		processCompletionAnswerReady = markProcessCompletionAnswer(&res, turnRuntime.ProcessCompletionIDs)
 	}
 	th.mu.Lock()
+	if th.currentTurn != turnID {
+		th.mu.Unlock()
+		return
+	}
 	var historyErr error
 	var persistErr error
 	turnKind := th.currentTurnKind

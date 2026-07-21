@@ -100,6 +100,13 @@ func (c *AgentControl) prepareWorkerFollowup(ctx context.Context, workerID strin
 			}
 			sa = rehydrated
 		}
+		if newLease {
+			if err := c.manager.ReconcileToolLedger(ctx, workerID); err != nil {
+				c.releaseWorkerExecution(workerID)
+				unlockTransition()
+				return subagent.SubAgentSnapshot{}, false, nil, fmt.Errorf("recover tool ledger for worker %q: %w", workerID, err)
+			}
+		}
 		current := sa.Snapshot()
 		if isFinalSubAgentStatus(current.Status) && !newLease {
 			// The manager has published its terminal snapshot, but the lease is

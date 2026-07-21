@@ -885,6 +885,22 @@ func (m *Manager) FollowupForcingTool(ctx context.Context, id, message, forceToo
 	return m.followup(ctx, id, message, forceTool)
 }
 
+// ReconcileToolLedger recovers durable tool calls for a worker after its
+// caller has acquired that worker's cross-process execution lease.
+func (m *Manager) ReconcileToolLedger(ctx context.Context, id string) error {
+	sa := m.Get(id)
+	if sa == nil {
+		return fmt.Errorf("subagent %q not found", id)
+	}
+	sa.mu.Lock()
+	ledger := sa.toolLedger
+	sa.mu.Unlock()
+	if ledger == nil {
+		return nil
+	}
+	return ledger.Reconcile(ctx)
+}
+
 func (m *Manager) followup(ctx context.Context, id, message, forceTool string) (SubAgentSnapshot, error) {
 	sa := m.Get(id)
 	if sa == nil {
