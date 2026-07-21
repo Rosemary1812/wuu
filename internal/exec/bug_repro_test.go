@@ -54,10 +54,10 @@ func (b *bugReproProvider) StreamChat(ctx context.Context, req providers.ChatReq
 	return ch, nil
 }
 
-// TestBugReproCancelEmitsTurnInterrupted verifies that when the parent
+// TestCancellationEmitsTurnInterrupted verifies that when the parent
 // context is canceled mid-turn, the JSONL event stream ends with
 // turn_interrupted (not turn_failed).
-func TestBugReproCancelEmitsTurnInterrupted(t *testing.T) {
+func TestCancellationEmitsTurnInterrupted(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, ".wuu.json")
 	if err := writeMinimalConfig(configPath); err != nil {
@@ -119,12 +119,7 @@ func TestBugReproCancelEmitsTurnInterrupted(t *testing.T) {
 
 	// Drain events.
 	events := parseJSONLines(t, stdout.String())
-	t.Logf("events count = %d", len(events))
-	for i, ev := range events {
-		t.Logf("  [%d] type=%v", i, ev["type"])
-	}
-
-	// Find the LAST turn-related event.
+	// Find the last turn-related event.
 	var lastTurnEvent string
 	for _, ev := range events {
 		switch ev["type"] {
@@ -135,11 +130,8 @@ func TestBugReproCancelEmitsTurnInterrupted(t *testing.T) {
 		}
 	}
 
-	t.Logf("last turn-related event: %s", lastTurnEvent)
-
-	// The bug: final event is turn_failed instead of turn_interrupted.
 	if lastTurnEvent == "turn_failed" {
-		t.Fatalf("BUG REPRODUCED: final turn event is turn_failed, expected turn_interrupted")
+		t.Fatalf("final event is turn_failed, expected turn_interrupted")
 	}
 	if lastTurnEvent != "result:interrupted" && lastTurnEvent != "turn_interrupted" {
 		t.Fatalf("unexpected final turn event: %q", lastTurnEvent)
