@@ -352,6 +352,50 @@ function applySideThreadEvent(
         };
       });
     }
+    case "items": {
+      const ensured = ensureSideThreadEntry(store, mainThreadId);
+      return updateEntry(ensured.store, mainThreadId, (entry) => {
+        if (
+          entry.summary &&
+          (event.revision < entry.summary.revision ||
+            (event.revision === entry.summary.revision &&
+              entry.summary.status !== "running"))
+        ) {
+          return entry;
+        }
+        const existingIndex = entry.messages.findIndex(
+          (message) => message.id === event.message_id
+        );
+        if (existingIndex >= 0 && isTerminalMessage(entry.messages[existingIndex])) {
+          return entry;
+        }
+        if (existingIndex < 0) {
+          const fresh: SideThreadMessage = {
+            id: event.message_id,
+            side_thread_id: event.side_thread_id,
+            role: "assistant",
+            text: "",
+            items: event.items,
+            status: "streaming",
+            created_at: new Date().toISOString()
+          };
+          return {
+            ...entry,
+            streaming: true,
+            messages: [...entry.messages, fresh]
+          };
+        }
+        return {
+          ...entry,
+          streaming: true,
+          messages: entry.messages.map((message, index) =>
+            index === existingIndex
+              ? { ...message, items: event.items, status: "streaming" }
+              : message
+          )
+        };
+      });
+    }
     case "message": {
       const ensured = ensureSideThreadEntry(store, mainThreadId);
       return updateEntry(ensured.store, mainThreadId, (entry) => {

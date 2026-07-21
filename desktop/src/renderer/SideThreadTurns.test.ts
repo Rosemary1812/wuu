@@ -101,6 +101,40 @@ describe("sideThreadMessagesToTurns", () => {
     expect(turns[4]?.error).toBeUndefined();
   });
 
+  it("passes canonical agent items through to the shared TurnView model", () => {
+    const turns = sideThreadMessagesToTurns([
+      message("u-tools", "user", { text: "inspect it" }),
+      message("a-tools", "assistant", {
+        text: "done",
+        status: "completed",
+        items: [
+          {
+            id: "tool-1",
+            source_id: "call-1",
+            type: "tool_call",
+            status: "completed",
+            name: "read_file",
+            arguments: `{"path":"README.md"}`,
+            result: "contents",
+          },
+          {
+            id: "answer-1",
+            type: "agent_message",
+            status: "completed",
+            phase: "final_answer",
+            role: "assistant",
+            text: "done",
+          },
+        ],
+      }),
+    ]);
+
+    expect(turns[0]?.items.slice(1)).toEqual([
+      expect.objectContaining({ id: "tool-1", type: "tool_call", result: "contents" }),
+      expect.objectContaining({ id: "answer-1", type: "agent_message", text: "done" }),
+    ]);
+  });
+
   it("keeps orphan messages visible without reordering or dropping them", () => {
     const turns = sideThreadMessagesToTurns([
       message("a-before", "assistant", { status: "completed" }),

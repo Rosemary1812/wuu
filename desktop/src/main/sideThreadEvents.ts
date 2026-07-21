@@ -3,13 +3,15 @@ import type {
   SideThreadEvent,
   SideThreadEventEnvelope,
   SideThreadMessage,
-  SideThreadSummary
+  SideThreadSummary,
+  ThreadItem
 } from "../shared/protocol";
 
 const SIDE_THREAD_EVENT_METHOD = "sideThread/event";
 const SIDE_THREAD_EVENT_TYPES = new Set<SideThreadEvent["type"]>([
   "status",
   "delta",
+  "items",
   "message",
   "error",
   "reset"
@@ -39,6 +41,13 @@ export function sideThreadEventFromServerEvent(
       return isRevision(params.revision) &&
         typeof params.message_id === "string" &&
         typeof params.text_delta === "string"
+        ? { workdir: event.workdir, event: params as SideThreadEvent }
+        : undefined;
+    case "items":
+      return isRevision(params.revision) &&
+        typeof params.message_id === "string" &&
+        Array.isArray(params.items) &&
+        params.items.every(isThreadItem)
         ? { workdir: event.workdir, event: params as SideThreadEvent }
         : undefined;
     case "message":
@@ -98,6 +107,8 @@ function isSideThreadMessage(value: unknown): value is SideThreadMessage {
     typeof value.side_thread_id === "string" &&
     (value.role === "user" || value.role === "assistant") &&
     typeof value.text === "string" &&
+    (value.items === undefined ||
+      (Array.isArray(value.items) && value.items.every(isThreadItem))) &&
     typeof value.created_at === "string" &&
     (value.status === undefined ||
       value.status === "streaming" ||
@@ -105,6 +116,28 @@ function isSideThreadMessage(value: unknown): value is SideThreadMessage {
       value.status === "failed" ||
       value.status === "interrupted") &&
     (value.error_message === undefined || typeof value.error_message === "string")
+  );
+}
+
+function isThreadItem(value: unknown): value is ThreadItem {
+  if (!isRecord(value) || typeof value.id !== "string") {
+    return false;
+  }
+  const types = new Set<ThreadItem["type"]>([
+    "user_message",
+    "agent_message",
+    "reasoning",
+    "tool_call",
+    "collab_agent_tool_call",
+    "context_compaction",
+    "error"
+  ]);
+  return (
+    types.has(value.type as ThreadItem["type"]) &&
+    (value.status === undefined ||
+      value.status === "in_progress" ||
+      value.status === "completed" ||
+      value.status === "failed")
   );
 }
 

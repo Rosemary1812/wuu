@@ -350,6 +350,12 @@ func (s *Store) RollbackTurn(mainThreadID, userMessageID, assistantMessageID str
 // FinishTurn commits the terminal assistant message. An interrupt already
 // persisted by another app-server wins over a late successful provider reply.
 func (s *Store) FinishTurn(mainThreadID, assistantMessageID, text string, status Status, errorText string) (*SideThread, Message, error) {
+	return s.FinishTurnWithItems(mainThreadID, assistantMessageID, text, nil, status, errorText)
+}
+
+// FinishTurnWithItems commits the terminal assistant message and the agent
+// process items collected while it ran.
+func (s *Store) FinishTurnWithItems(mainThreadID, assistantMessageID, text string, items []Item, status Status, errorText string) (*SideThread, Message, error) {
 	var finished Message
 	st, err := s.mutateRecord(mainThreadID, func(st *SideThread) error {
 		persistedInterrupt := st.Status == StatusInterrupted
@@ -377,6 +383,7 @@ func (s *Store) FinishTurn(mainThreadID, assistantMessageID, text string, status
 				continue
 			}
 			st.Messages[i].Text = finalText
+			st.Messages[i].Items = append([]Item(nil), items...)
 			st.Messages[i].Status = assistantStatus
 			st.Messages[i].ErrorText = finalErrorText
 			finished = st.Messages[i]

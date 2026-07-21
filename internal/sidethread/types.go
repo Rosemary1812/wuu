@@ -1,6 +1,11 @@
 package sidethread
 
-import "time"
+import (
+	"time"
+
+	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
+)
 
 // Status is the lifecycle state of a side thread. The set matches
 // SideThreadStatus in packages/protocol/src/index.ts.
@@ -38,9 +43,29 @@ type Message struct {
 	SideThreadID string                 `json:"side_thread_id"`
 	Role         MessageRole            `json:"role"`
 	Text         string                 `json:"text"`
+	Items        []Item                 `json:"items,omitempty"`
 	Status       AssistantMessageStatus `json:"status,omitempty"`
 	ErrorText    string                 `json:"error_message,omitempty"`
 	CreatedAt    time.Time              `json:"created_at"`
+}
+
+// Item is a canonical agent-process item attached to an assistant message.
+// Side threads persist these so history reloads render the same investigation
+// trail as the live event stream.
+type Item struct {
+	ID           string                     `json:"id"`
+	SourceID     string                     `json:"source_id,omitempty"`
+	Type         string                     `json:"type"`
+	Status       string                     `json:"status,omitempty"`
+	Phase        string                     `json:"phase,omitempty"`
+	Role         string                     `json:"role,omitempty"`
+	Text         string                     `json:"text,omitempty"`
+	Name         string                     `json:"name,omitempty"`
+	Arguments    string                     `json:"arguments,omitempty"`
+	Display      *providers.ToolCallDisplay `json:"display,omitempty"`
+	Result       string                     `json:"result,omitempty"`
+	ResultDetail *toolresult.Result         `json:"result_detail,omitempty"`
+	Error        string                     `json:"error,omitempty"`
 }
 
 // SideThread is the on-disk representation of one side thread. Files

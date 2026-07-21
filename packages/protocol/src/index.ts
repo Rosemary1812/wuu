@@ -1335,6 +1335,9 @@ export type SideThreadMessage = {
   side_thread_id: string;
   role: "user" | "assistant";
   text: string;
+  // Canonical assistant/process items rendered by the shared TurnView.
+  // Absent on legacy text-only side-thread records.
+  items?: ThreadItem[];
   // Assistant messages expose only the fields required by the side panel.
   status?: "streaming" | "completed" | "failed" | "interrupted";
   error_message?: string;
@@ -1384,6 +1387,14 @@ export type SideThreadEvent =
       // SideThreadMessage.id once the message is finalized.
       message_id: string;
       text_delta: string;
+    }
+  | {
+      type: "items";
+      side_thread_id: string;
+      main_thread_id: string;
+      revision: number;
+      message_id: string;
+      items: ThreadItem[];
     }
   | {
       type: "message";

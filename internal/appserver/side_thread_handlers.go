@@ -146,15 +146,102 @@ func sideThreadWireMessages(in []sidethread.Message) []SideThreadWireMessage {
 }
 
 func sideThreadWireMessage(message sidethread.Message) SideThreadWireMessage {
+	items := make([]ThreadItem, 0, len(message.Items))
+	for _, item := range message.Items {
+		items = append(items, sideThreadWireItem(item))
+	}
 	return SideThreadWireMessage{
 		ID:           message.ID,
 		SideThreadID: message.SideThreadID,
 		Role:         string(message.Role),
 		Text:         message.Text,
+		Items:        items,
 		Status:       string(message.Status),
 		ErrorMessage: message.ErrorText,
 		CreatedAt:    message.CreatedAt,
 	}
+}
+
+func sideThreadWireItem(item sidethread.Item) ThreadItem {
+	return ThreadItem{
+		ID:           item.ID,
+		SourceID:     item.SourceID,
+		Type:         ThreadItemType(item.Type),
+		Status:       ThreadItemStatus(item.Status),
+		Phase:        ThreadItemPhase(item.Phase),
+		Role:         item.Role,
+		Text:         item.Text,
+		Name:         item.Name,
+		Arguments:    item.Arguments,
+		Display:      cloneToolCallDisplay(item.Display),
+		Result:       item.Result,
+		ResultDetail: cloneToolResult(item.ResultDetail),
+		Error:        item.Error,
+	}
+}
+
+func sideThreadStoredItems(items []ThreadItem) []sidethread.Item {
+	out := make([]sidethread.Item, 0, len(items))
+	for _, item := range items {
+		out = append(out, sidethread.Item{
+			ID:           item.ID,
+			SourceID:     item.SourceID,
+			Type:         string(item.Type),
+			Status:       string(item.Status),
+			Phase:        string(item.Phase),
+			Role:         item.Role,
+			Text:         item.Text,
+			Name:         item.Name,
+			Arguments:    item.Arguments,
+			Display:      cloneToolCallDisplay(item.Display),
+			Result:       item.Result,
+			ResultDetail: cloneToolResult(item.ResultDetail),
+			Error:        item.Error,
+		})
+	}
+	return out
+}
+
+type sideThreadItemProjector struct {
+	thread *threadState
+	turnID string
+}
+
+func newSideThreadItemProjector(sideThreadID, turnID, provider, model, cwd string, now time.Time) *sideThreadItemProjector {
+	th := newThreadState(sideThreadID, nil, provider, model, cwd, false, now)
+	th.startTurnLocked(turnID, providers.ChatMessage{Role: "user", Content: "side thread prompt"}, now)
+	return &sideThreadItemProjector{thread: th, turnID: turnID}
+}
+
+func (p *sideThreadItemProjector) apply(event providers.StreamEvent, now time.Time) ([]ThreadItem, bool) {
+	if p == nil || p.thread == nil {
+		return nil, false
+	}
+	changed := len(p.thread.applyStreamEventLocked(p.turnID, event, now)) > 0
+	return p.items(), changed
+}
+
+func (p *sideThreadItemProjector) finish(status TurnStatus, runErr error, now time.Time) []ThreadItem {
+	if p == nil || p.thread == nil {
+		return nil
+	}
+	p.thread.finishTurnLocked(p.turnID, status, runErr, now, "", "", false)
+	return p.items()
+}
+
+func (p *sideThreadItemProjector) items() []ThreadItem {
+	if p == nil || p.thread == nil || len(p.thread.Turns) == 0 {
+		return nil
+	}
+	turn := p.thread.Turns[len(p.thread.Turns)-1]
+	if len(turn.Items) <= 1 {
+		return nil
+	}
+	out := make([]ThreadItem, 0, len(turn.Items)-1)
+	for _, item := range turn.Items[1:] {
+		out = append(out, cloneThreadItem(item))
+	}
+	return out
 }
 
 type MainTaskSnapshot struct {
@@ -462,23 +549,43 @@ func (s *Server) runSideThreadTurn(
 		runErr   error
 		streamed strings.Builder
 	)
+	projector := newSideThreadItemProjector(
+		initial.SideThreadID,
+		assistantMessageID,
+		runner.ProviderName,
+		runner.Model,
+		s.mainThreadRoot(mainID),
+		time.Now().UTC(),
+	)
 	if ctx.Err() == nil {
 		s.notifySideThreadStatus(initial, s.mainTaskSnapshot(mainID))
 		watchDone := make(chan struct{})
 		go s.watchSideThreadInterrupt(ctx, mainID, turn, watchDone)
 		result, runErr = runner.RunWithCallback(ctx, history, func(event providers.StreamEvent) {
-			if event.Type != providers.EventContentDelta || event.Content == "" || turn.interrupted.Load() || ctx.Err() != nil {
+			if turn.interrupted.Load() || ctx.Err() != nil {
 				return
 			}
-			streamed.WriteString(event.Content)
-			s.notifySideThreadEvent(SideThreadEventNotification{
-				Type:         "delta",
-				SideThreadID: initial.SideThreadID,
-				MainThreadID: mainID,
-				Revision:     initial.Revision,
-				MessageID:    assistantMessageID,
-				TextDelta:    event.Content,
-			})
+			if items, changed := projector.apply(event, time.Now().UTC()); changed {
+				s.notifySideThreadEvent(SideThreadEventNotification{
+					Type:         "items",
+					SideThreadID: initial.SideThreadID,
+					MainThreadID: mainID,
+					Revision:     initial.Revision,
+					MessageID:    assistantMessageID,
+					Items:        items,
+				})
+			}
+			if event.Type == providers.EventContentDelta && event.Content != "" {
+				streamed.WriteString(event.Content)
+				s.notifySideThreadEvent(SideThreadEventNotification{
+					Type:         "delta",
+					SideThreadID: initial.SideThreadID,
+					MainThreadID: mainID,
+					Revision:     initial.Revision,
+					MessageID:    assistantMessageID,
+					TextDelta:    event.Content,
+				})
+			}
 		})
 		turn.cancel()
 		<-watchDone
@@ -498,7 +605,14 @@ func (s *Server) runSideThreadTurn(
 	if status == sidethread.StatusInterrupted || text == "" {
 		text = strings.TrimSpace(streamed.String())
 	}
-	st, message, finishErr := s.persistSideThreadFinish(mainID, assistantMessageID, text, status, errorText)
+	turnStatus := TurnStatusCompleted
+	if status == sidethread.StatusInterrupted {
+		turnStatus = TurnStatusInterrupted
+	} else if status == sidethread.StatusFailed {
+		turnStatus = TurnStatusFailed
+	}
+	items := projector.finish(turnStatus, runErr, time.Now().UTC())
+	st, message, finishErr := s.persistSideThreadFinish(mainID, assistantMessageID, text, items, status, errorText)
 	if finishErr != nil && !errors.Is(finishErr, sidethread.ErrNotFound) {
 		persistFailure := fmt.Sprintf("persist side thread reply: %v", finishErr)
 		if errorText != "" {
@@ -510,7 +624,7 @@ func (s *Server) runSideThreadTurn(
 			// as a normal empty interruption even though this turn completed
 			// in memory. An explicit failure is the terminal state recovery
 			// leaves alone.
-			st, message, finishErr = s.persistSideThreadFinish(mainID, assistantMessageID, text, sidethread.StatusFailed, errorText)
+			st, message, finishErr = s.persistSideThreadFinish(mainID, assistantMessageID, text, items, sidethread.StatusFailed, errorText)
 		}
 	}
 	if errors.Is(finishErr, sidethread.ErrNotFound) {
@@ -547,9 +661,9 @@ func (s *Server) runSideThreadTurn(
 // transient store failures within sideThreadFinishTurnAttempts. Retries stop
 // early on server close so shutdown is not delayed, and on ErrNotFound
 // because a deleted record never comes back.
-func (s *Server) persistSideThreadFinish(mainID, assistantMessageID, text string, status sidethread.Status, errorText string) (*sidethread.SideThread, sidethread.Message, error) {
+func (s *Server) persistSideThreadFinish(mainID, assistantMessageID, text string, items []ThreadItem, status sidethread.Status, errorText string) (*sidethread.SideThread, sidethread.Message, error) {
 	for attempt := 1; ; attempt++ {
-		st, message, err := s.sideThreadStore.FinishTurn(mainID, assistantMessageID, text, status, errorText)
+		st, message, err := s.sideThreadStore.FinishTurnWithItems(mainID, assistantMessageID, text, sideThreadStoredItems(items), status, errorText)
 		if err == nil || errors.Is(err, sidethread.ErrNotFound) || attempt >= sideThreadFinishTurnAttempts || s.closed.Load() {
 			return st, message, err
 		}

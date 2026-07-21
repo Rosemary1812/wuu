@@ -1004,13 +1004,14 @@ type SideThreadWireSummary struct {
 }
 
 type SideThreadWireMessage struct {
-	ID           string    `json:"id"`
-	SideThreadID string    `json:"side_thread_id"`
-	Role         string    `json:"role"`
-	Text         string    `json:"text"`
-	Status       string    `json:"status,omitempty"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string       `json:"id"`
+	SideThreadID string       `json:"side_thread_id"`
+	Role         string       `json:"role"`
+	Text         string       `json:"text"`
+	Items        []ThreadItem `json:"items,omitempty"`
+	Status       string       `json:"status,omitempty"`
+	ErrorMessage string       `json:"error_message,omitempty"`
+	CreatedAt    time.Time    `json:"created_at"`
 }
 
 type SideThreadMainTaskSummary struct {
@@ -1055,6 +1056,7 @@ type SideThreadEventNotification struct {
 	MessageID    string                 `json:"message_id,omitempty"`
 	TextDelta    string                 `json:"text_delta,omitempty"`
 	Message      *SideThreadWireMessage `json:"message,omitempty"`
+	Items        []ThreadItem           `json:"items,omitempty"`
 	ErrorMessage string                 `json:"error_message,omitempty"`
 }
 

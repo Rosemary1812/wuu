@@ -86,6 +86,36 @@ func TestStoreExists(t *testing.T) {
 	}
 }
 
+func TestStoreFinishTurnPersistsAgentItems(t *testing.T) {
+	store := newTempStore(t)
+	if _, err := store.BeginTurnWithSideThreadID("main_items", "side-items", "inspect", "user-items", "assistant-items"); err != nil {
+		t.Fatalf("BeginTurnWithSideThreadID: %v", err)
+	}
+	items := []Item{{
+		ID:        "tool-1",
+		SourceID:  "call-1",
+		Type:      "tool_call",
+		Status:    "completed",
+		Name:      "read_file",
+		Arguments: `{"path":"README.md"}`,
+		Result:    "contents",
+	}}
+	_, message, err := store.FinishTurnWithItems("main_items", "assistant-items", "done", items, StatusCompleted, "")
+	if err != nil {
+		t.Fatalf("FinishTurnWithItems: %v", err)
+	}
+	if len(message.Items) != 1 || message.Items[0].Name != "read_file" || message.Items[0].Result != "contents" {
+		t.Fatalf("finished items = %+v", message.Items)
+	}
+	loaded, err := store.Load("main_items")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.Messages) != 2 || len(loaded.Messages[1].Items) != 1 || loaded.Messages[1].Items[0].ID != "tool-1" {
+		t.Fatalf("persisted messages = %+v", loaded.Messages)
+	}
+}
+
 func TestStoreDelete(t *testing.T) {
 	s := newTempStore(t)
 	if err := s.Save(sampleSideThread("main_1")); err != nil {

@@ -79,4 +79,35 @@ describe("sideThreadEventFromServerEvent", () => {
     };
     expect(sideThreadEventFromServerEvent(event)).toBeUndefined();
   });
+
+  it("accepts canonical side-thread item snapshots and rejects malformed items", () => {
+    const valid: ServerEvent = {
+      workdir: "/repo",
+      kind: "notification",
+      message: {
+        method: "sideThread/event",
+        params: {
+          type: "items",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          revision: 1,
+          message_id: "message-1",
+          items: [{ id: "tool-1", type: "tool_call", status: "completed", name: "read_file" }]
+        }
+      }
+    };
+    expect(sideThreadEventFromServerEvent(valid)?.event.type).toBe("items");
+
+    const malformed: ServerEvent = {
+      ...valid,
+      message: {
+        ...valid.message,
+        params: {
+          ...(valid.message.params as Record<string, unknown>),
+          items: [{ id: "tool-1", type: "not-a-thread-item" }]
+        }
+      }
+    };
+    expect(sideThreadEventFromServerEvent(malformed)).toBeUndefined();
+  });
 });

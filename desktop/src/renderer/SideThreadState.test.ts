@@ -418,6 +418,39 @@ describe("SideThreadState", () => {
       expect(next.byThread["main-1"]?.streaming).toBe(false);
     });
 
+    it("items event creates and updates the streaming canonical item snapshot", () => {
+      const store = createInitialSideThreadStore();
+      const started = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "items",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          revision: 1,
+          message_id: "m-tools",
+          items: [{ id: "tool-1", type: "tool_call", status: "in_progress", name: "read_file" }]
+        }
+      });
+      const completed = reduceSideThreadStore(started, {
+        type: "applyEvent",
+        event: {
+          type: "items",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          revision: 1,
+          message_id: "m-tools",
+          items: [{ id: "tool-1", type: "tool_call", status: "completed", name: "read_file", result: "ok" }]
+        }
+      });
+
+      expect(completed.byThread["main-1"]?.messages[0]).toMatchObject({
+        id: "m-tools",
+        text: "",
+        status: "streaming",
+        items: [{ id: "tool-1", type: "tool_call", status: "completed", result: "ok" }]
+      });
+    });
+
     it("delta event appends to an unknown message id and streams", () => {
       const store = createInitialSideThreadStore();
       const next = reduceSideThreadStore(store, {

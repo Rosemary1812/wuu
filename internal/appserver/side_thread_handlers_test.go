@@ -241,6 +241,9 @@ func TestSendSideThreadMessageRunsReadOnlyModelAndPersistsReply(t *testing.T) {
 	if got := st.Messages[1]; got.Role != sidethread.RoleAssistant || got.Status != sidethread.AssistantCompleted || got.Text != client.response {
 		t.Fatalf("assistant message mismatch: %+v", got)
 	}
+	if got := st.Messages[1].Items; len(got) != 1 || got[0].Type != string(ThreadItemAgentMessage) || got[0].Text != client.response {
+		t.Fatalf("assistant canonical items mismatch: %+v", got)
+	}
 	req := client.lastRequest(t)
 	if len(req.Tools) != 0 {
 		t.Fatalf("side runner exposed write-capable tools: %+v", req.Tools)
@@ -252,10 +255,46 @@ func TestSendSideThreadMessageRunsReadOnlyModelAndPersistsReply(t *testing.T) {
 		t.Fatalf("side system prompt missing isolation contract: %q", req.Messages[0].Content)
 	}
 	output := out.String()
-	for _, want := range []string{`"method":"sideThread/event"`, `"type":"delta"`, `"type":"message"`, `"status":"completed"`} {
+	for _, want := range []string{`"method":"sideThread/event"`, `"type":"items"`, `"type":"delta"`, `"type":"message"`, `"status":"completed"`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("notification output missing %s:\n%s", want, output)
 		}
+	}
+}
+
+func TestSideThreadItemProjectorPreservesCanonicalToolFlow(t *testing.T) {
+	now := time.Now().UTC()
+	projector := newSideThreadItemProjector("side-items", "turn-items", "test-provider", "test-model", t.TempDir(), now)
+	call := providers.ToolCall{ID: "call-read", Name: "read_file", Arguments: `{"path":"README.md"}`}
+
+	items, changed := projector.apply(providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &call}, now)
+	if !changed || len(items) != 1 || items[0].Type != ThreadItemToolCall || items[0].Status != ThreadItemStatusInProgress {
+		t.Fatalf("tool start items = %+v, changed=%v", items, changed)
+	}
+	items, changed = projector.apply(providers.StreamEvent{
+		Type:       providers.EventToolUseEnd,
+		ToolCall:   &call,
+		ToolResult: "read result",
+	}, now.Add(time.Millisecond))
+	if !changed || len(items) != 1 || items[0].Result != "read result" || items[0].Status != ThreadItemStatusCompleted {
+		t.Fatalf("tool result items = %+v, changed=%v", items, changed)
+	}
+	items, changed = projector.apply(providers.StreamEvent{
+		Type:    providers.EventContentDelta,
+		Content: "final answer",
+		Phase:   providers.MessagePhaseFinalAnswer,
+	}, now.Add(2*time.Millisecond))
+	if !changed || len(items) != 2 || items[1].Type != ThreadItemAgentMessage || items[1].Text != "final answer" {
+		t.Fatalf("answer items = %+v, changed=%v", items, changed)
+	}
+
+	items = projector.finish(TurnStatusCompleted, nil, now.Add(3*time.Millisecond))
+	if items[1].Status != ThreadItemStatusCompleted || items[1].Phase != ThreadItemPhaseFinalAnswer {
+		t.Fatalf("finished answer item = %+v", items[1])
+	}
+	stored := sideThreadStoredItems(items)
+	if got := sideThreadWireItem(stored[0]); !reflect.DeepEqual(got, items[0]) {
+		t.Fatalf("wire round trip = %+v, want %+v", got, items[0])
 	}
 }
 

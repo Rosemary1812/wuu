@@ -60,7 +60,7 @@ function assistantOnlyTurn(message: SideThreadMessage): Turn {
     status: assistantTurnStatus(message.status),
     started_at: message.created_at,
     items_view: "full",
-    items: [assistantItem(message)],
+    items: assistantItems(message),
   };
   applyAssistantError(turn, message);
   return turn;
@@ -71,8 +71,15 @@ function applyAssistantMessage(
   message: SideThreadMessage,
 ): void {
   turn.status = assistantTurnStatus(message.status);
-  turn.items.push(assistantItem(message));
+  turn.items.push(...assistantItems(message));
   applyAssistantError(turn, message);
+}
+
+function assistantItems(message: SideThreadMessage): ThreadItem[] {
+  if (message.items && message.items.length > 0) {
+    return message.items.map((item) => ({ ...item }));
+  }
+  return [assistantItem(message)];
 }
 
 function userItem(message: SideThreadMessage): ThreadItem {
