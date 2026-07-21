@@ -160,7 +160,7 @@ export type ThreadTurnSummary = Pick<
 
 export type ThreadSummary = Omit<
   Thread,
-  "turns" | "browser_state"
+  "turns"
 > & {
   turns: ThreadTurnSummary[];
   turn_count: number;

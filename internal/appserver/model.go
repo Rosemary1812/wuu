@@ -1,14 +1,12 @@
 package appserver
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/participant"
-	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
@@ -72,7 +70,6 @@ func (th *threadState) snapshotLocked() Thread {
 		CreatedAt:        th.CreatedAt,
 		UpdatedAt:        th.UpdatedAt,
 		Turns:            cloneTurns(th.Turns),
-		BrowserState:     cloneThreadBrowserState(th.BrowserState),
 	}
 }
 
@@ -634,12 +631,6 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 				},
 			})
 			out = append(out, itemCompleted(th.ID, turnID, item, now))
-		}
-		if th.applyBrowserPreviewFromToolResultLocked(ev.ToolResult, now) {
-			out = append(out, outboundNotification{
-				method: NotificationThreadUpdated,
-				params: ThreadUpdatedNotification{Thread: th.snapshotLocked()},
-			})
 		}
 	case providers.EventMessage:
 		if ev.Message == nil {
@@ -1520,103 +1511,4 @@ func cloneToolCallDisplay(display *providers.ToolCallDisplay) *providers.ToolCal
 	}
 	clone := *display
 	return &clone
-}
-
-func cloneThreadBrowserState(state ThreadBrowserState) *ThreadBrowserState {
-	if state.CurrentURL == "" && state.PrimaryPreviewURL == "" && state.LinkedProcessID == "" {
-		return nil
-	}
-	clone := state
-	return &clone
-}
-
-type browserPreviewUpdate struct {
-	PreviewURLs       []string
-	PrimaryPreviewURL string
-	ProcessID         string
-}
-
-func (th *threadState) applyBrowserPreviewFromToolResultLocked(raw string, now time.Time) bool {
-	update, ok := decodeBrowserPreviewResult(raw)
-	if !ok {
-		return false
-	}
-	changed := false
-	if update.PrimaryPreviewURL != "" {
-		if th.BrowserState.PrimaryPreviewURL != update.PrimaryPreviewURL {
-			th.BrowserState.PrimaryPreviewURL = update.PrimaryPreviewURL
-			th.BrowserState.CurrentURL = update.PrimaryPreviewURL
-			changed = true
-		}
-		if update.ProcessID != "" && th.BrowserState.LinkedProcessID != update.ProcessID {
-			th.BrowserState.LinkedProcessID = update.ProcessID
-			changed = true
-		}
-	}
-	if changed {
-		th.UpdatedAt = now
-	}
-	return changed
-}
-
-func decodeBrowserPreviewResult(raw string) (browserPreviewUpdate, bool) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return browserPreviewUpdate{}, false
-	}
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return browserPreviewUpdate{}, false
-	}
-	update := browserPreviewUpdate{}
-	if rawURLs, ok := payload["preview_urls"]; ok {
-		var urls []string
-		if err := json.Unmarshal(rawURLs, &urls); err == nil {
-			update.PreviewURLs = proc.NormalizePreviewURLs(urls)
-		}
-	}
-	if rawPrimary, ok := payload["primary_preview_url"]; ok {
-		var primary string
-		if err := json.Unmarshal(rawPrimary, &primary); err == nil {
-			update.PrimaryPreviewURL = proc.NormalizePreviewURL(primary)
-		}
-	}
-	if rawProcessID, ok := payload["process_id"]; ok {
-		var processID string
-		if err := json.Unmarshal(rawProcessID, &processID); err == nil {
-			update.ProcessID = strings.TrimSpace(processID)
-		}
-	}
-	if rawProcess, ok := payload["process"]; ok {
-		applyProcessPreviewPayload(rawProcess, &update)
-	} else {
-		applyProcessPreviewPayload([]byte(trimmed), &update)
-	}
-	if update.PrimaryPreviewURL == "" && len(update.PreviewURLs) > 0 {
-		update.PrimaryPreviewURL = update.PreviewURLs[0]
-	}
-	if update.PrimaryPreviewURL != "" {
-		return update, true
-	}
-	return browserPreviewUpdate{}, false
-}
-
-func applyProcessPreviewPayload(raw json.RawMessage, update *browserPreviewUpdate) {
-	var process struct {
-		ID                string   `json:"id"`
-		PreviewURLs       []string `json:"preview_urls"`
-		PrimaryPreviewURL string   `json:"primary_preview_url"`
-	}
-	if err := json.Unmarshal(raw, &process); err != nil {
-		return
-	}
-	if update.ProcessID == "" {
-		update.ProcessID = strings.TrimSpace(process.ID)
-	}
-	if len(update.PreviewURLs) == 0 {
-		update.PreviewURLs = proc.NormalizePreviewURLs(process.PreviewURLs)
-	}
-	if update.PrimaryPreviewURL == "" {
-		update.PrimaryPreviewURL = proc.NormalizePreviewURL(process.PrimaryPreviewURL)
-	}
 }

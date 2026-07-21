@@ -419,13 +419,6 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 				response.LastError = t.env.RedactToolOutput(readErr.Error())
 			} else {
 				process := markProcessCompletionObserved(m, snapshot.Process)
-				detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
-				if len(detectedPreviewURLs) > 0 {
-					if updated, updateErr := m.UpdatePreview(p.ID, detectedPreviewURLs, detectedPreviewURLs[0]); updateErr == nil {
-						process = *updated
-						response.DetectedPreviewURLs = append([]string(nil), updated.PreviewURLs...)
-					}
-				}
 				response.Process = redactProcess(t.env, process)
 				response.Action = bashActionStartBackground
 				response.InitialOutput = t.env.RedactToolOutput(snapshot.Output)
@@ -488,26 +481,19 @@ func (t *BashTool) executeReadBackground(ctx context.Context, args bashArgs) (st
 		return "", err
 	}
 	process := markProcessCompletionObserved(m, snapshot.Process)
-	detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
-	if len(detectedPreviewURLs) > 0 {
-		if updated, updateErr := m.UpdatePreview(args.ProcessID, detectedPreviewURLs, detectedPreviewURLs[0]); updateErr == nil {
-			process = *updated
-		}
-	}
 	return mustJSON(map[string]any{
-		"action":                bashActionReadBackground,
-		"process_id":            args.ProcessID,
-		"output":                t.env.RedactToolOutput(snapshot.Output),
-		"detected_preview_urls": detectedPreviewURLs,
-		"truncated":             snapshot.Truncated,
-		"start_offset":          snapshot.StartOffset,
-		"end_offset":            snapshot.EndOffset,
-		"total_bytes":           snapshot.TotalBytes,
-		"timed_out":             snapshot.TimedOut,
-		"duration_ms":           snapshot.Duration.Milliseconds(),
-		"status":                process.Status,
-		"exit_code":             process.ExitCode,
-		"process":               redactProcess(t.env, process),
+		"action":       bashActionReadBackground,
+		"process_id":   args.ProcessID,
+		"output":       t.env.RedactToolOutput(snapshot.Output),
+		"truncated":    snapshot.Truncated,
+		"start_offset": snapshot.StartOffset,
+		"end_offset":   snapshot.EndOffset,
+		"total_bytes":  snapshot.TotalBytes,
+		"timed_out":    snapshot.TimedOut,
+		"duration_ms":  snapshot.Duration.Milliseconds(),
+		"status":       process.Status,
+		"exit_code":    process.ExitCode,
+		"process":      redactProcess(t.env, process),
 	})
 }
 

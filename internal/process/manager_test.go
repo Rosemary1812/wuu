@@ -552,52 +552,6 @@ func TestReadLogWindowPagesForwardFromExplicitOffset(t *testing.T) {
 	}
 }
 
-func TestUpdatePreviewPersistsLocalPreviewURLs(t *testing.T) {
-	root := t.TempDir()
-	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
-	p, err := m.Start(context.Background(), StartOptions{Command: "sleep 1", OwnerKind: OwnerMainAgent, OwnerID: "thread-1", Lifecycle: LifecycleSession})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer m.Stop(p.ID)
-
-	updated, err := m.UpdatePreview(p.ID, []string{
-		"http://127.0.0.1:5173/",
-		"https://example.com/not-local",
-		"http://localhost:3000/app",
-	}, "http://localhost:3000/app")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.PrimaryPreviewURL != "http://localhost:3000/app" {
-		t.Fatalf("PrimaryPreviewURL = %q", updated.PrimaryPreviewURL)
-	}
-	if len(updated.PreviewURLs) != 2 || updated.PreviewURLs[0] != "http://localhost:5173/" || updated.PreviewURLs[1] != "http://localhost:3000/app" {
-		t.Fatalf("unexpected preview urls: %+v", updated.PreviewURLs)
-	}
-
-	list, err := m.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list) != 1 || list[0].PrimaryPreviewURL != "http://localhost:3000/app" {
-		t.Fatalf("preview metadata not persisted: %+v", list)
-	}
-}
-
-func TestPreviewURLsFromTextOnlyAcceptsLocalhost(t *testing.T) {
-	got := PreviewURLsFromText(`ready at http://localhost:5173/ and http://127.0.0.1:3000/docs but not https://example.com`)
-	want := []string{"http://localhost:5173/", "http://localhost:3000/docs"}
-	if len(got) != len(want) {
-		t.Fatalf("PreviewURLsFromText = %+v, want %+v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("PreviewURLsFromText = %+v, want %+v", got, want)
-		}
-	}
-}
-
 func TestStartTTYProvidesTerminalSemantics(t *testing.T) {
 	root := t.TempDir()
 	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))

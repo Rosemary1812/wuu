@@ -133,9 +133,6 @@ export function WorkspaceRightPanel({
   onToggleGlobalize,
   onOpenSidebar,
   canExitGlobalized = true,
-  pendingBrowserURL,
-  onBrowserURLConsumed,
-  onBrowserURLChange,
   browserActivity,
   onBrowserActivityTakeover,
   onBrowserActivityRelease,
@@ -173,9 +170,6 @@ export function WorkspaceRightPanel({
   onToggleGlobalize: () => void;
   onOpenSidebar?: () => void;
   canExitGlobalized?: boolean;
-  pendingBrowserURL?: string;
-  onBrowserURLConsumed?: () => void;
-  onBrowserURLChange?: (url: string) => void;
   browserActivity?: ActivitySession;
   onBrowserActivityTakeover?: () => void;
   onBrowserActivityRelease?: () => void;
@@ -614,9 +608,6 @@ export function WorkspaceRightPanel({
                   <WorkspaceBrowserPanel
                     open={open}
                     activeContext={activeContext}
-                    pendingBrowserURL={pendingBrowserURL}
-                    onBrowserURLConsumed={onBrowserURLConsumed}
-                    onCurrentURLChange={onBrowserURLChange}
                     activity={browserActivity}
                     onActivityTakeover={onBrowserActivityTakeover}
                     onActivityRelease={onBrowserActivityRelease}

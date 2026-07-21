@@ -75,9 +75,6 @@ afterEach(() => {
 
 function render(props: {
   open?: boolean;
-  pendingBrowserURL?: string;
-  onBrowserURLConsumed?: () => void;
-  onCurrentURLChange?: (url: string) => void;
   activity?: ActivitySession;
   onActivityTakeover?: () => void;
   onActivityRelease?: () => void;
@@ -89,9 +86,6 @@ function render(props: {
       <WorkspaceBrowserPanel
         open={props.open}
         activeContext={{ kind: "no_project", cwd: "/repo" }}
-        pendingBrowserURL={props.pendingBrowserURL}
-        onBrowserURLConsumed={props.onBrowserURLConsumed}
-        onCurrentURLChange={props.onCurrentURLChange}
         activity={props.activity}
         onActivityTakeover={props.onActivityTakeover}
         onActivityRelease={props.onActivityRelease}
@@ -106,9 +100,6 @@ function render(props: {
 
 function rerender(props: {
   open?: boolean;
-  pendingBrowserURL?: string;
-  onBrowserURLConsumed?: () => void;
-  onCurrentURLChange?: (url: string) => void;
   activity?: ActivitySession;
   onActivityTakeover?: () => void;
   onActivityRelease?: () => void;
@@ -119,9 +110,6 @@ function rerender(props: {
       <WorkspaceBrowserPanel
         open={props.open}
         activeContext={{ kind: "no_project", cwd: "/repo" }}
-        pendingBrowserURL={props.pendingBrowserURL}
-        onBrowserURLConsumed={props.onBrowserURLConsumed}
-        onCurrentURLChange={props.onCurrentURLChange}
         activity={props.activity}
         onActivityTakeover={props.onActivityTakeover}
         onActivityRelease={props.onActivityRelease}
@@ -131,61 +119,36 @@ function rerender(props: {
   });
 }
 
-describe("WorkspaceBrowserPanel pendingBrowserURL", () => {
-  it("navigates to the URL the parent requested", () => {
-    const consumed = vi.fn();
-    render({ pendingBrowserURL: "http://localhost:3000", onBrowserURLConsumed: consumed });
-    expect(fakeWebview.loadURL).toHaveBeenCalledWith("http://localhost:3000");
-    expect(consumed).toHaveBeenCalledTimes(1);
-  });
-
-  it("surfaces the navigated URL in the address bar", () => {
+describe("WorkspaceBrowserPanel", () => {
+  it("navigates only after the user submits an address", () => {
     const { input } = render({});
-    rerender({ pendingBrowserURL: "http://localhost:5173" });
-    expect(input?.value).toBe("http://localhost:5173");
-  });
+    const form = container.querySelector<HTMLFormElement>(".workspace-browser-url-form");
+    expect(input).not.toBeNull();
+    expect(form).not.toBeNull();
 
-  it("reports webview navigation URLs to the parent", () => {
-    const changed = vi.fn();
-    render({ onCurrentURLChange: changed });
     act(() => {
-      fakeWebview.dispatchEvent(Object.assign(new Event("did-navigate"), { url: "http://localhost:5173" }));
+      if (input) {
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        valueSetter?.call(input, "http://localhost:3000");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     });
-    expect(changed).toHaveBeenCalledWith("http://localhost:5173");
-  });
+    act(() => {
+      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
 
-  it("does not navigate again when the same URL is re-asserted", () => {
-    const consumed = vi.fn();
-    const { input } = render({
-      pendingBrowserURL: "http://localhost:3000",
-      onBrowserURLConsumed: consumed
-    });
-    expect(consumed).toHaveBeenCalledTimes(1);
-    // The first mount navigates and immediately consumes the prop. A
-    // re-render with the same prop value should not re-issue
-    // loadURL, otherwise the agent's repeat reports would churn the
-    // webview.
-    fakeWebview.loadURL.mockClear();
-    rerender({
-      pendingBrowserURL: "http://localhost:3000",
-      onBrowserURLConsumed: consumed
-    });
-    expect(fakeWebview.loadURL).not.toHaveBeenCalled();
-    void input;
+    expect(fakeWebview.loadURL).toHaveBeenCalledWith("http://localhost:3000");
   });
 
   it("clears the webview when the browser panel closes", () => {
-    const changed = vi.fn();
-    render({
-      open: true,
-      pendingBrowserURL: "http://localhost:3000",
-      onCurrentURLChange: changed
-    });
+    render({ open: true });
     fakeWebview.loadURL.mockClear();
-    rerender({ open: false, onCurrentURLChange: changed });
+    rerender({ open: false });
     expect(fakeWebview.stop).toHaveBeenCalledTimes(1);
     expect(fakeWebview.loadURL).toHaveBeenCalledWith("about:blank");
-    expect(changed).toHaveBeenLastCalledWith("wuu://new-tab");
   });
 
   it("renders Activity control and takeover, release, and stop commands", () => {

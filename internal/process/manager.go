@@ -72,8 +72,6 @@ type Process struct {
 	LogPath               string         `json:"log_path"`
 	Command               string         `json:"command"`
 	CWD                   string         `json:"cwd"`
-	PreviewURLs           []string       `json:"preview_urls,omitempty"`
-	PrimaryPreviewURL     string         `json:"primary_preview_url,omitempty"`
 	StartedAt             time.Time      `json:"started_at"`
 	UpdatedAt             time.Time      `json:"updated_at"`
 	StoppedAt             time.Time      `json:"stopped_at,omitempty"`
@@ -505,31 +503,6 @@ func (m *Manager) Get(id string) (*Process, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.load(id)
-}
-
-func (m *Manager) UpdatePreview(id string, urls []string, primaryURL string) (*Process, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	p, err := m.load(id)
-	if err != nil {
-		return nil, err
-	}
-	normalized := NormalizePreviewURLs(urls)
-	primary := NormalizePreviewURL(primaryURL)
-	if primary != "" && !stringSliceContains(normalized, primary) {
-		normalized = append([]string{primary}, normalized...)
-	}
-	if primary == "" && len(normalized) > 0 {
-		primary = normalized[0]
-	}
-	p.PreviewURLs = normalized
-	p.PrimaryPreviewURL = primary
-	p.UpdatedAt = time.Now()
-	if err := m.save(p); err != nil {
-		return nil, err
-	}
-	m.publish(Event{Type: EventUpdated, Process: *p})
-	return p, nil
 }
 
 func (m *Manager) ReadOutput(id string, maxBytes int) (string, bool, error) {

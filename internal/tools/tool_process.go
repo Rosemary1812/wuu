@@ -18,15 +18,14 @@ const maxStartProcessInitialWait = 60 * time.Second
 
 type startProcessResponse struct {
 	proc.Process
-	InitialOutput       string   `json:"initial_output,omitempty"`
-	InitialTruncated    bool     `json:"initial_truncated,omitempty"`
-	InitialStartOffset  int64    `json:"initial_start_offset,omitempty"`
-	InitialEndOffset    int64    `json:"initial_end_offset,omitempty"`
-	InitialTotalBytes   int64    `json:"initial_total_bytes,omitempty"`
-	InitialTimedOut     bool     `json:"initial_timed_out,omitempty"`
-	InitialDurationMS   int64    `json:"initial_duration_ms,omitempty"`
-	DetectedPreviewURLs []string `json:"detected_preview_urls,omitempty"`
-	NextSuggestions     []string `json:"next_suggestions,omitempty"`
+	InitialOutput      string   `json:"initial_output,omitempty"`
+	InitialTruncated   bool     `json:"initial_truncated,omitempty"`
+	InitialStartOffset int64    `json:"initial_start_offset,omitempty"`
+	InitialEndOffset   int64    `json:"initial_end_offset,omitempty"`
+	InitialTotalBytes  int64    `json:"initial_total_bytes,omitempty"`
+	InitialTimedOut    bool     `json:"initial_timed_out,omitempty"`
+	InitialDurationMS  int64    `json:"initial_duration_ms,omitempty"`
+	NextSuggestions    []string `json:"next_suggestions,omitempty"`
 }
 
 func defaultProcessOwnerKind(env *Env, ownerKind string) string {

@@ -784,31 +784,3 @@ func TestApplyTokenUsageMetasToTurnsAlignsFromNewestTurn(t *testing.T) {
 		t.Fatalf("usage should attach to newest turn: %+v", turns[1])
 	}
 }
-
-func TestThreadStateCapturesBrowserPreviewFromProcessResult(t *testing.T) {
-	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
-	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start vite"}, now)
-
-	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
-		Type: providers.EventToolUseEnd,
-		ToolCall: &providers.ToolCall{
-			ID:   "call_1",
-			Name: "start_process",
-		},
-		ToolResult: `{"action":"start_process","id":"proc-dev","preview_urls":["http://localhost:5173/"],"primary_preview_url":"http://localhost:5173/","status":"running"}`,
-	}, now)
-
-	if th.BrowserState.PrimaryPreviewURL != "http://localhost:5173/" || th.BrowserState.CurrentURL != "http://localhost:5173/" || th.BrowserState.LinkedProcessID != "proc-dev" {
-		t.Fatalf("unexpected browser state: %+v", th.BrowserState)
-	}
-	var sawUpdate bool
-	for _, n := range out {
-		if n.method == NotificationThreadUpdated {
-			sawUpdate = true
-		}
-	}
-	if !sawUpdate {
-		t.Fatalf("expected thread update when process result contains preview, got %+v", out)
-	}
-}

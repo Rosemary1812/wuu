@@ -45,33 +45,31 @@ type threadState struct {
 	// historyHeadSeq is the physical append-only session_messages head that
 	// History was reconstructed through. It must not be derived from the
 	// logical messages: a checkpoint may retain no records or only old seqs.
-	historyHeadSeq   int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	LastAccessedAt   time.Time
-	Title            string
-	ModelProvider    string
-	Model            string
-	ModelVariant     string
-	ModelEffort      string
-	PermissionMode   string
-	CWD              string
-	WorkspaceKind    WorkspaceKind
-	ForkedFromID     string
-	ForkedFromTurnID string
-	ForkedFromItemID string
-	WorktreePath     string
-	WorktreeBaseHEAD string
-	WorktreeBaseRepo string
-	WorkspaceID      string
-	PinnedAt         *time.Time
-	ArchivedAt       *time.Time
-	Turns            []Turn
-	PersistHistory   bool
-	ReadOnly         bool
-	Ephemeral        bool
-	BrowserState     ThreadBrowserState
-
+	historyHeadSeq           int
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+	LastAccessedAt           time.Time
+	Title                    string
+	ModelProvider            string
+	Model                    string
+	ModelVariant             string
+	ModelEffort              string
+	PermissionMode           string
+	CWD                      string
+	WorkspaceKind            WorkspaceKind
+	ForkedFromID             string
+	ForkedFromTurnID         string
+	ForkedFromItemID         string
+	WorktreePath             string
+	WorktreeBaseHEAD         string
+	WorktreeBaseRepo         string
+	WorkspaceID              string
+	PinnedAt                 *time.Time
+	ArchivedAt               *time.Time
+	Turns                    []Turn
+	PersistHistory           bool
+	ReadOnly                 bool
+	Ephemeral                bool
 	execRuntime              *runtime.ThreadRuntime
 	pendingRuntimeReset      bool
 	runtimeSelectionMutation bool

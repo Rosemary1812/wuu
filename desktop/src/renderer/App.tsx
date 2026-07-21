@@ -174,7 +174,6 @@ import { SkillsCatalog } from "./SkillsCatalog";
 import { KanbanBoardView } from "./KanbanBoardView";
 import { KanbanCrystallizeDialog } from "./KanbanCrystallizeDialog";
 import { runDebugPhaseForState } from "./RunDebugPanel";
-import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { useBrowserVisibility } from "./BrowserVisibility";
 import { useSideThreadController } from "./SideThreadController";
 import {
@@ -1174,15 +1173,6 @@ export function App(): JSX.Element {
     setPendingFork(undefined);
     setEnvironmentDialog(dialog);
   }
-  const {
-    pendingBrowserURL,
-    consumePendingBrowserURL,
-    rememberBrowserURLForActiveThread,
-  } = useThreadBrowserPreview({
-    activeThread,
-    activeThreadID,
-    onOpenBrowser: () => openWorkspaceTool("browser"),
-  });
   // A visible agent browser view is a main-owned WebContentsView that floats
   // above the DOM; any full-window overlay would occlude it, so we tell main to
   // hide the view while one is open. This covers the common full-window
@@ -4371,9 +4361,6 @@ export function App(): JSX.Element {
             !rightPanelAutoGlobalized ||
             workspaceRightPanelDockableWithoutSidebar
           }
-          pendingBrowserURL={pendingBrowserURL}
-          onBrowserURLConsumed={consumePendingBrowserURL}
-          onBrowserURLChange={rememberBrowserURLForActiveThread}
           browserActivity={activeBrowserActivity}
           onBrowserActivityTakeover={() => void takeoverBrowserActivity()}
           onBrowserActivityRelease={() => void releaseBrowserActivity()}

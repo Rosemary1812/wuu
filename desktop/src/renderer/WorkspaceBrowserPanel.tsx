@@ -91,9 +91,6 @@ function safeWebview<T>(fn: () => T): T | undefined {
 export function WorkspaceBrowserPanel({
   open = true,
   activeContext,
-  pendingBrowserURL,
-  onBrowserURLConsumed,
-  onCurrentURLChange,
   activity,
   onActivityTakeover,
   onActivityRelease,
@@ -101,9 +98,6 @@ export function WorkspaceBrowserPanel({
 }: {
   open?: boolean;
   activeContext?: RuntimeContext;
-  pendingBrowserURL?: string;
-  onBrowserURLConsumed?: () => void;
-  onCurrentURLChange?: (url: string) => void;
   activity?: ActivitySession;
   onActivityTakeover?: () => void;
   onActivityRelease?: () => void;
@@ -114,7 +108,6 @@ export function WorkspaceBrowserPanel({
   const webviewRef = useRef<WebviewElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isWebviewReadyRef = useRef(false);
-  const onCurrentURLChangeRef = useRef(onCurrentURLChange);
 
   const [currentURL, setCurrentURL] = useState<string>(HOME_PAGE_URL);
   const [pageTitle, setPageTitle] = useState<string>(() => t("workspace.browser.newTab"));
@@ -126,15 +119,10 @@ export function WorkspaceBrowserPanel({
   const [hostHint, setHostHint] = useState<string | undefined>(undefined);
   const [isWebviewReady, setIsWebviewReady] = useState(false);
 
-  useEffect(() => {
-    onCurrentURLChangeRef.current = onCurrentURLChange;
-  }, [onCurrentURLChange]);
-
   const updateCurrentURL = useCallback((url: string) => {
     setCurrentURL(url);
     setDraftURL(url === HOME_PAGE_URL ? "" : url);
     setHostHint(extractHostname(url));
-    onCurrentURLChangeRef.current?.(url);
   }, []);
 
   // Mount the <webview> element once. The element is a custom Electron tag and
@@ -275,7 +263,6 @@ export function WorkspaceBrowserPanel({
       setDraftURL("");
       setPageTitle(translateCurrent("workspace.browser.newTab"));
       setHostHint(undefined);
-      onCurrentURLChangeRef.current?.(HOME_PAGE_URL);
       setStatus("idle");
       setErrorMessage(undefined);
       setCanGoBack(false);
@@ -337,7 +324,6 @@ export function WorkspaceBrowserPanel({
     setErrorMessage(undefined);
     setCanGoBack(false);
     setCanGoForward(false);
-    onCurrentURLChangeRef.current?.(HOME_PAGE_URL);
   }, [open]);
 
   useEffect(() => {
@@ -351,22 +337,6 @@ export function WorkspaceBrowserPanel({
     navigate(draftURL);
     inputRef.current?.blur();
   };
-
-  // Bridge for parent-level commands (currently used to auto-open the
-  // browser preview when a thread's preview URL changes). When the
-  // parent hands us a fresh URL we navigate and then notify it so the
-  // command is cleared.
-  useEffect(() => {
-    if (!pendingBrowserURL) {
-      return;
-    }
-    if (pendingBrowserURL === currentURL) {
-      onBrowserURLConsumed?.();
-      return;
-    }
-    navigate(pendingBrowserURL);
-    onBrowserURLConsumed?.();
-  }, [pendingBrowserURL]);
 
   const showWebview = !isInternalUrl(currentURL);
   const isLoading = status === "loading";

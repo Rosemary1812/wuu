@@ -762,23 +762,21 @@ type GoalUpdateTextResult struct {
 }
 
 type ManagedProcessSummary struct {
-	ID                string    `json:"id"`
-	OwnerKind         string    `json:"owner_kind"`
-	OwnerID           string    `json:"owner_id"`
-	Lifecycle         string    `json:"lifecycle"`
-	Status            string    `json:"status"`
-	PID               int       `json:"pid"`
-	TTY               bool      `json:"tty,omitempty"`
-	Command           string    `json:"command"`
-	CWD               string    `json:"cwd"`
-	PreviewURLs       []string  `json:"preview_urls,omitempty"`
-	PrimaryPreviewURL string    `json:"primary_preview_url,omitempty"`
-	StartedAt         time.Time `json:"started_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	StoppedAt         time.Time `json:"stopped_at,omitempty"`
-	ExitCode          int       `json:"exit_code,omitempty"`
-	LastError         string    `json:"last_error,omitempty"`
-	InputAvailable    bool      `json:"input_available,omitempty"`
+	ID             string    `json:"id"`
+	OwnerKind      string    `json:"owner_kind"`
+	OwnerID        string    `json:"owner_id"`
+	Lifecycle      string    `json:"lifecycle"`
+	Status         string    `json:"status"`
+	PID            int       `json:"pid"`
+	TTY            bool      `json:"tty,omitempty"`
+	Command        string    `json:"command"`
+	CWD            string    `json:"cwd"`
+	StartedAt      time.Time `json:"started_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	StoppedAt      time.Time `json:"stopped_at,omitempty"`
+	ExitCode       int       `json:"exit_code,omitempty"`
+	LastError      string    `json:"last_error,omitempty"`
+	InputAvailable bool      `json:"input_available,omitempty"`
 }
 
 type ProcessListParams struct {
@@ -1745,33 +1743,32 @@ type AutomationRemoveParams struct {
 }
 
 type Thread struct {
-	ID               string              `json:"id"`
-	Source           string              `json:"source,omitempty"`
-	ParentID         string              `json:"parent_id,omitempty"`
-	AgentPath        string              `json:"agent_path,omitempty"`
-	Preview          string              `json:"preview"`
-	Title            string              `json:"title,omitempty"`
-	ModelProvider    string              `json:"model_provider"`
-	Model            string              `json:"model"`
-	ModelVariant     string              `json:"model_variant"`
-	ModelEffort      string              `json:"model_effort"`
-	PermissionMode   string              `json:"permission_mode"`
-	CWD              string              `json:"cwd"`
-	WorkspaceKind    WorkspaceKind       `json:"workspace_kind,omitempty"`
-	Status           ThreadStatus        `json:"status"`
-	ReadOnly         bool                `json:"read_only,omitempty"`
-	Ephemeral        bool                `json:"ephemeral,omitempty"`
-	Pinned           bool                `json:"pinned,omitempty"`
-	Archived         bool                `json:"archived,omitempty"`
-	ForkedFromID     string              `json:"forked_from_id,omitempty"`
-	ForkedFromTurnID string              `json:"forked_from_turn_id,omitempty"`
-	ForkedFromItemID string              `json:"forked_from_item_id,omitempty"`
-	Worktree         *WorktreeInfo       `json:"worktree,omitempty"`
-	CreatedAt        time.Time           `json:"created_at"`
-	UpdatedAt        time.Time           `json:"updated_at"`
-	Turns            []Turn              `json:"turns"`
-	ChildAgents      []Agent             `json:"child_agents,omitempty"`
-	BrowserState     *ThreadBrowserState `json:"browser_state,omitempty"`
+	ID               string        `json:"id"`
+	Source           string        `json:"source,omitempty"`
+	ParentID         string        `json:"parent_id,omitempty"`
+	AgentPath        string        `json:"agent_path,omitempty"`
+	Preview          string        `json:"preview"`
+	Title            string        `json:"title,omitempty"`
+	ModelProvider    string        `json:"model_provider"`
+	Model            string        `json:"model"`
+	ModelVariant     string        `json:"model_variant"`
+	ModelEffort      string        `json:"model_effort"`
+	PermissionMode   string        `json:"permission_mode"`
+	CWD              string        `json:"cwd"`
+	WorkspaceKind    WorkspaceKind `json:"workspace_kind,omitempty"`
+	Status           ThreadStatus  `json:"status"`
+	ReadOnly         bool          `json:"read_only,omitempty"`
+	Ephemeral        bool          `json:"ephemeral,omitempty"`
+	Pinned           bool          `json:"pinned,omitempty"`
+	Archived         bool          `json:"archived,omitempty"`
+	ForkedFromID     string        `json:"forked_from_id,omitempty"`
+	ForkedFromTurnID string        `json:"forked_from_turn_id,omitempty"`
+	ForkedFromItemID string        `json:"forked_from_item_id,omitempty"`
+	Worktree         *WorktreeInfo `json:"worktree,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
+	Turns            []Turn        `json:"turns"`
+	ChildAgents      []Agent       `json:"child_agents,omitempty"`
 }
 
 type WorktreeInfo struct {
@@ -1780,12 +1777,6 @@ type WorktreeInfo struct {
 	BaseRepo     string   `json:"base_repo,omitempty"`
 	Dirty        bool     `json:"dirty,omitempty"`
 	ChangedFiles []string `json:"changed_files,omitempty"`
-}
-
-type ThreadBrowserState struct {
-	CurrentURL        string `json:"current_url,omitempty"`
-	PrimaryPreviewURL string `json:"primary_preview_url,omitempty"`
-	LinkedProcessID   string `json:"linked_process_id,omitempty"`
 }
 
 type Turn struct {

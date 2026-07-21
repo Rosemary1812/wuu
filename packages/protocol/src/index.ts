@@ -791,8 +791,6 @@ export type ManagedProcessSummary = {
   tty?: boolean;
   command: string;
   cwd: string;
-  preview_urls?: string[];
-  primary_preview_url?: string;
   started_at: string;
   updated_at: string;
   stopped_at?: string;
@@ -1248,18 +1246,11 @@ export type Thread = {
   updated_at: string;
   turns: Turn[];
   child_agents?: Agent[];
-  browser_state?: ThreadBrowserState;
 };
 
 export type ThreadStartParams = {
   ephemeral?: boolean;
   collaboration?: boolean;
-};
-
-export type ThreadBrowserState = {
-  current_url?: string;
-  primary_preview_url?: string;
-  linked_process_id?: string;
 };
 
 export type ThreadSearchResultItem = {
