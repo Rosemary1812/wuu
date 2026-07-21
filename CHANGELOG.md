@@ -8,6 +8,22 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-21
+
+### Added
+
+- Added scheduled progress rechecks for managed background processes
+  (`recheck_minutes` on `bash` start/update) so long silent tasks such as
+  downloads wake the agent with periodic status snapshots until completion.
+
+### Changed
+
+- Made `bash` background observation bounded and event-driven:
+  `read_background` waits return early on new output or process exit with
+  pacing for continuously producing processes, and foreground commands that
+  hit their timeout now keep running as managed background processes with
+  their output attached instead of being killed.
+
 ## [0.9.0] - 2026-07-21
 
 ### Added
@@ -15,9 +31,6 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 - Added durable app-server Run control for `wuu exec`, including persisted run
   state, structured-output validation, cancellation, and resume support.
 - Added read-only agent tools and live agent process items to side threads.
-- Added scheduled progress rechecks for managed background processes
-  (`recheck_minutes` on `bash` start/update) so long silent tasks such as
-  downloads wake the agent with periodic status snapshots until completion.
 
 ### Changed
 
@@ -25,11 +38,6 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   terminal states and structured error categories reliable for automation.
 - Refined desktop conversation alignment, composer focus behavior, and floating
   status controls.
-- Made `bash` background observation bounded and event-driven:
-  `read_background` waits return early on new output or process exit with
-  pacing for continuously producing processes, and foreground commands that
-  hit their timeout now keep running as managed background processes with
-  their output attached instead of being killed.
 
 ### Fixed
 
