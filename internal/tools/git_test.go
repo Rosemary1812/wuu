@@ -22,6 +22,7 @@ func setupGitRepo(t *testing.T) (*Toolkit, string) {
 	root := t.TempDir()
 	for _, c := range []string{
 		"git init -q",
+		"git config core.hooksPath .git/hooks",
 		"git config user.email test@test.com",
 		"git config user.name tester",
 		"printf 'hello\n' > hello.txt",
