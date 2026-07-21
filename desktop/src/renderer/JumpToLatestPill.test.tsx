@@ -357,7 +357,7 @@ describe("JumpToLatestPill", () => {
     expect(pill?.style.left).toBe("400px");
     // Expanded composers move their frame above the outer footer. Position
     // from that visual top, not from the unchanged footer box.
-    expect(pill?.style.bottom).toBe("292px");
+    expect(pill?.style.bottom).toBe("288px");
     expect(
       resizeObservers.some((observer) => observer.observed.has(frame)),
     ).toBe(true);
@@ -367,7 +367,7 @@ describe("JumpToLatestPill", () => {
       flushResizeObservers(resizeObservers, frame);
       vi.runAllTimers();
     });
-    expect(pill?.style.bottom).toBe("352px");
+    expect(pill?.style.bottom).toBe("348px");
 
     act(() => {
       root.render(

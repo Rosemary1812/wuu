@@ -1018,7 +1018,7 @@
                                                                        
 .jump-to-latest-cluster {
   position: absolute;
-  bottom: calc(var(--dock-composer-height, 0px) + 12px);
+  bottom: calc(var(--dock-composer-height, 0px) + 8px);
   left: var(--conversation-visible-inset-left);
   right: var(--conversation-visible-inset-right);
   --jump-to-latest-max-width: min(
@@ -1050,7 +1050,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 38px;
+  height: 34px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--shell-jump-pill-border);
   background: var(--shell-jump-pill-bg);
@@ -1069,7 +1069,7 @@
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
 
   color: var(--ink);
-  font-size: var(--font-ui);
+  font-size: 12px;
   font-weight: var(--weight-semibold);
   line-height: 1;
 
@@ -1106,7 +1106,7 @@
 
 .jump-to-latest-pill {
   flex: 0 0 auto;
-  padding: 0 14px;
+  padding: 0 12px;
   cursor: pointer;
 }
 
@@ -1132,7 +1132,7 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  padding: 0 14px;
+  padding: 0 12px;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;

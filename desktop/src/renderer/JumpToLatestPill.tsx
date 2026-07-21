@@ -49,7 +49,7 @@ type JumpToLatestPillProps = {
 };
 
 const DEFAULT_THRESHOLD_PX = 80;
-const PILL_BOTTOM_GAP_PX = 12;
+const PILL_BOTTOM_GAP_PX = 8;
 const COMPOSER_FRAME_SELECTOR = ".composer-frame";
 
 type PillPosition = { left: number; bottom: number };
