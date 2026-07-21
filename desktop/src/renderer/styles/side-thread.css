@@ -125,15 +125,16 @@
   position: relative;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 12px 8px;
+  padding: 12px 0 8px;
 }
 
 .side-thread-panel__body .side-thread-panel__conversation {
   /* Turns own their boundary spacing. Keep this selector more specific than
      the generic .conversation-width rule loaded later so the compact panel
-     starts near its own header instead of inheriting the main 48px inset. */
+     starts near its own header while retaining the shared session-flow
+     horizontal inset used by the main conversation. */
   max-width: none;
-  padding: 4px 0 0;
+  padding-block: 4px 0;
 }
 
 .side-thread-panel__error {
