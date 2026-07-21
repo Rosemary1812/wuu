@@ -8,6 +8,15 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-21
+
+### Fixed
+
+- Preserved the selected final assistant response when deriving a conversation,
+  including histories with compaction, provider checkpoints, or retired context
+  artifacts, and unified history item projection so derivation and message
+  editing use the same canonical source mapping as the visible transcript.
+
 ## [0.10.0] - 2026-07-21
 
 ### Added
