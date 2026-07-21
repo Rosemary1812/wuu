@@ -19,6 +19,28 @@ import { formatCurrentNumber, translateCurrent } from "./i18n";
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 
+// PDFs are inlined whole: read fully into renderer memory and base64'd
+// (+33%), so an unbounded pick can OOM the renderer or blow past provider
+// limits. Cap at 20MB raw (~27MB encoded), inside Anthropic's 32MB
+// single-file ceiling with headroom; stricter providers should lower this.
+export const COMPOSER_PDF_MAX_BYTES = 20 * 1024 * 1024;
+export const COMPOSER_PDF_MAX_MB = 20;
+
+// Custom drag MIME carrying a workspace-relative path from the file tree.
+// Path drops insert plain text into the composer — a reference the model
+// resolves with its own tools, never file content.
+export const WORKSPACE_FILE_DRAG_MIME = "application/x-wuu-workspace-path";
+
+/**
+ * Append a workspace path reference to a composer prompt as plain text,
+ * keeping exactly one separating space and one trailing space so the user
+ * can keep typing without editing around the inserted reference.
+ */
+export function appendWorkspacePathToPrompt(prompt: string, path: string): string {
+  const separator = prompt.length > 0 && !/\s$/.test(prompt) ? " " : "";
+  return `${prompt}${separator}${path} `;
+}
+
 export type ComposerImage = InputImage & {
   id: string;
   /**
@@ -121,6 +143,14 @@ export async function composerImageFromFile(file: File): Promise<ComposerImage> 
 export async function composerFileFromFile(file: File): Promise<ComposerFile> {
   if (!isPDFFile(file)) {
     throw new Error(translateCurrent("composer.attachment.pdfOnly"));
+  }
+  if (file.size > COMPOSER_PDF_MAX_BYTES) {
+    throw new Error(
+      translateCurrent("composer.attachment.pdfTooLarge", {
+        name: file.name.trim() || "attachment.pdf",
+        limit: COMPOSER_PDF_MAX_MB
+      })
+    );
   }
   const data = await bufferToBase64(await file.arrayBuffer());
   return {

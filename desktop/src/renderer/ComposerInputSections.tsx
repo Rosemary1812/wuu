@@ -8,10 +8,12 @@ import {
   Square,
   X
 } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, useRef } from "react";
+import { type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, useRef, useState } from "react";
 import { useImagePreview } from "./ImagePreview";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
+  WORKSPACE_FILE_DRAG_MIME,
+  appendWorkspacePathToPrompt,
   clipboardAttachmentFiles,
   imageSource,
   queuedMessagePreview,
@@ -126,6 +128,7 @@ export function SplitPaneComposer({
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const [dropActive, setDropActive] = useState(false);
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   // Match the dock composer: the button is a stop control only while running
@@ -146,6 +149,62 @@ export function SplitPaneComposer({
 
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function focusComposerAtEndSoon(): void {
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+    });
+  }
+
+  // Mirrors the dock composer: a drop carries either a workspace path
+  // reference (inserted as plain text) or external files (forwarded to the
+  // attachment pipeline). Anything else keeps its native behavior.
+  function handleDragOver(event: ReactDragEvent<HTMLDivElement>): void {
+    if (readOnly) {
+      return;
+    }
+    const types = Array.from(event.dataTransfer.types ?? []);
+    if (!types.includes(WORKSPACE_FILE_DRAG_MIME) && !types.includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  }
+
+  function handleDragLeave(event: ReactDragEvent<HTMLDivElement>): void {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setDropActive(false);
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLDivElement>): void {
+    setDropActive(false);
+    if (readOnly) {
+      return;
+    }
+    const workspacePath = event.dataTransfer.getData(WORKSPACE_FILE_DRAG_MIME);
+    if (workspacePath) {
+      event.preventDefault();
+      resetQueryHistoryNavigation();
+      setPrompt(appendWorkspacePathToPrompt(prompt, workspacePath));
+      focusComposerAtEndSoon();
+      return;
+    }
+    const dropped = Array.from(event.dataTransfer.files ?? []);
+    if (dropped.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    onPasteAttachmentFiles(dropped);
   }
 
   function submitComposer(): void {
@@ -169,7 +228,12 @@ export function SplitPaneComposer({
 
   return (
     <footer className="split-composer">
-      <div className="split-composer-shell">
+      <div
+        className={`split-composer-shell${dropActive ? " split-composer-shell-drop-active" : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
         <input
           ref={attachmentInputRef}

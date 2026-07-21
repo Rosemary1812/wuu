@@ -1493,6 +1493,7 @@ export const zhCN = {
   "composer.preview.empty": "空消息",
   "composer.compactingContext": "正在压缩上下文",
   "composer.attachment.imagesAndPdfOnly": "仅支持图片和 PDF",
+  "composer.attachment.pdfTooLarge": "「{name}」超过 PDF {limit}MB 大小上限",
   "composer.attachment.addFailed": "附件添加失败",
   "turn.interrupted.title": "回复已中断",
   "turn.stopped.title": "已停止",

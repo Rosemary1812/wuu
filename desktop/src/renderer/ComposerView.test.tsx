@@ -12,7 +12,7 @@ import {
   type PermissionMode,
 } from "./ComposerView";
 import { ImagePreviewProvider } from "./ImagePreview";
-import type { QueuedComposerMessage } from "./ComposerMessages";
+import { WORKSPACE_FILE_DRAG_MIME, type QueuedComposerMessage } from "./ComposerMessages";
 import type {
   DesktopProject,
   ComposerGoalSummary,
@@ -244,11 +244,82 @@ function renderSplitPaneComposer(props: {
   });
 }
 
+function renderStatefulSplitPaneComposer(props: {
+  initialPrompt?: string;
+  readOnly?: boolean;
+  onPasteAttachmentFiles?: (files: File[]) => void;
+}): void {
+  function Harness(): JSX.Element {
+    const [prompt, setPrompt] = useState(props.initialPrompt ?? "");
+    return (
+      <ImagePreviewProvider>
+        <SplitPaneComposer
+          prompt={prompt}
+          setPrompt={setPrompt}
+          files={[]}
+          images={[]}
+          running={false}
+          readOnly={props.readOnly ?? false}
+          status="ready"
+          onPasteAttachmentFiles={props.onPasteAttachmentFiles ?? (() => {})}
+          onRemoveFile={() => {}}
+          onRemoveImage={() => {}}
+          onSend={() => {}}
+          onInterrupt={() => {}}
+        />
+      </ImagePreviewProvider>
+    );
+  }
+
+  act(() => {
+    root = createRoot(container);
+    root.render(<Harness />);
+  });
+}
+
+function mockDataTransfer(init: {
+  types: string[];
+  files?: File[];
+  pathData?: string;
+}): DataTransfer {
+  const data = new Map<string, string>();
+  if (init.pathData !== undefined) {
+    data.set(WORKSPACE_FILE_DRAG_MIME, init.pathData);
+  }
+  return {
+    types: init.types,
+    files: init.files ?? [],
+    getData: (type: string) => data.get(type) ?? "",
+    setData: (type: string, value: string) => {
+      data.set(type, value);
+    },
+    dropEffect: "none",
+    effectAllowed: "all",
+  } as unknown as DataTransfer;
+}
+
+function dispatchDrag(
+  target: Element,
+  type: "dragover" | "dragleave" | "drop",
+  dataTransfer: DataTransfer,
+  relatedTarget?: EventTarget | null,
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  if (relatedTarget !== undefined) {
+    Object.defineProperty(event, "relatedTarget", { value: relatedTarget });
+  }
+  target.dispatchEvent(event);
+}
+
 function renderStatefulComposer(props: {
   initialPrompt?: string;
   onSend?: (prompt: string) => void;
   showUltraToggle?: boolean;
   activeContext?: RuntimeContext;
+  readOnly?: boolean;
+  textOnly?: boolean;
+  onPasteAttachmentFiles?: (files: File[]) => void;
 }): void {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -272,7 +343,8 @@ function renderStatefulComposer(props: {
           ultraEnabled={ultraEnabled}
           onToggleUltra={props.showUltraToggle ? setUltraEnabled : undefined}
           status="ready"
-          readOnly={false}
+          readOnly={props.readOnly ?? false}
+          textOnly={props.textOnly}
           initialized={initialized()}
           projects={[]}
           activeContext={props.activeContext}
@@ -302,7 +374,7 @@ function renderStatefulComposer(props: {
           onOpenProject={() => {}}
           onStartNewThread={() => {}}
           onOpenWorkspaceTool={() => {}}
-          onPasteAttachmentFiles={() => {}}
+          onPasteAttachmentFiles={props.onPasteAttachmentFiles ?? (() => {})}
           onRemoveFile={() => {}}
           onRemoveImage={() => {}}
           onRemoveQueuedMessage={() => {}}
@@ -2159,5 +2231,188 @@ describe("Composer expand button", () => {
     expect(composerCSS).not.toMatch(
       /--composer-input-header-inline-padding:\s*14px;/,
     );
+  });
+});
+
+describe("composer drag and drop", () => {
+  function composerFrame(): HTMLElement {
+    const frame = container.querySelector<HTMLElement>(".composer-frame");
+    if (!frame) throw new Error("missing composer frame");
+    return frame;
+  }
+
+  it("appends a dragged workspace path to the prompt as plain text", () => {
+    renderStatefulComposer({ initialPrompt: "看看这个文件" });
+
+    act(() => {
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: [WORKSPACE_FILE_DRAG_MIME, "text/plain"],
+        pathData: "src/index.ts",
+      }));
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "看看这个文件 src/index.ts ",
+    );
+  });
+
+  it("inserts a path into an empty prompt without a leading space", () => {
+    renderStatefulComposer({});
+
+    act(() => {
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: [WORKSPACE_FILE_DRAG_MIME],
+        pathData: "src/components/",
+      }));
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "src/components/ ",
+    );
+  });
+
+  it("forwards dropped external files to the attachment pipeline", () => {
+    const onPasteAttachmentFiles = vi.fn();
+    renderStatefulComposer({ onPasteAttachmentFiles });
+    const image = new File(["png"], "shot.png", { type: "image/png" });
+    const pdf = new File(["%PDF"], "brief.pdf", { type: "application/pdf" });
+
+    act(() => {
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: ["Files"],
+        files: [image, pdf],
+      }));
+    });
+
+    expect(onPasteAttachmentFiles).toHaveBeenCalledTimes(1);
+    expect(onPasteAttachmentFiles.mock.calls[0][0]).toEqual([image, pdf]);
+  });
+
+  it("ignores drops while read-only", () => {
+    const onPasteAttachmentFiles = vi.fn();
+    renderStatefulComposer({ initialPrompt: "draft", readOnly: true, onPasteAttachmentFiles });
+
+    act(() => {
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: [WORKSPACE_FILE_DRAG_MIME],
+        pathData: "src/index.ts",
+      }));
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: ["Files"],
+        files: [new File(["png"], "shot.png", { type: "image/png" })],
+      }));
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("draft");
+    expect(onPasteAttachmentFiles).not.toHaveBeenCalled();
+  });
+
+  it("accepts path drops on a text-only composer but ignores external files", () => {
+    const onPasteAttachmentFiles = vi.fn();
+    renderStatefulComposer({ textOnly: true, onPasteAttachmentFiles });
+
+    act(() => {
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: [WORKSPACE_FILE_DRAG_MIME],
+        pathData: "src/index.ts",
+      }));
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("src/index.ts ");
+
+    act(() => {
+      dispatchDrag(composerFrame(), "drop", mockDataTransfer({
+        types: ["Files"],
+        files: [new File(["png"], "shot.png", { type: "image/png" })],
+      }));
+    });
+
+    expect(onPasteAttachmentFiles).not.toHaveBeenCalled();
+  });
+
+  it("highlights the frame during an accepted dragover and clears on dragleave and drop", () => {
+    renderStatefulComposer({});
+    const frame = composerFrame();
+
+    act(() => {
+      dispatchDrag(frame, "dragover", mockDataTransfer({ types: ["Files"] }));
+    });
+    expect(container.querySelector(".composer-frame-drop-active")).not.toBeNull();
+
+    // Moving between children keeps the highlight: the related target is
+    // still inside the frame.
+    const child = frame.querySelector("textarea");
+    act(() => {
+      dispatchDrag(frame, "dragleave", mockDataTransfer({ types: ["Files"] }), child);
+    });
+    expect(container.querySelector(".composer-frame-drop-active")).not.toBeNull();
+
+    act(() => {
+      dispatchDrag(frame, "dragleave", mockDataTransfer({ types: ["Files"] }), document.body);
+    });
+    expect(container.querySelector(".composer-frame-drop-active")).toBeNull();
+
+    act(() => {
+      dispatchDrag(frame, "dragover", mockDataTransfer({ types: ["Files"] }));
+    });
+    expect(container.querySelector(".composer-frame-drop-active")).not.toBeNull();
+    act(() => {
+      dispatchDrag(frame, "drop", mockDataTransfer({ types: [WORKSPACE_FILE_DRAG_MIME], pathData: "a.ts" }));
+    });
+    expect(container.querySelector(".composer-frame-drop-active")).toBeNull();
+  });
+
+  it("does not highlight for payloads the composer does not accept", () => {
+    renderStatefulComposer({});
+    const frame = composerFrame();
+
+    act(() => {
+      dispatchDrag(frame, "dragover", mockDataTransfer({ types: ["text/plain"] }));
+    });
+
+    expect(container.querySelector(".composer-frame-drop-active")).toBeNull();
+  });
+
+  it("keeps the frame border highlight style in the stylesheet", () => {
+    expect(composerCSS).toContain(".composer-frame.composer-frame-drop-active");
+    expect(workspaceCSS).toContain(".split-composer-shell.split-composer-shell-drop-active");
+  });
+
+  it("appends a dragged workspace path in the split pane composer", () => {
+    renderStatefulSplitPaneComposer({ initialPrompt: "review" });
+    const shell = container.querySelector<HTMLElement>(".split-composer-shell");
+    if (!shell) throw new Error("missing split composer shell");
+
+    act(() => {
+      dispatchDrag(shell, "drop", mockDataTransfer({
+        types: [WORKSPACE_FILE_DRAG_MIME],
+        pathData: "src/Button.tsx",
+      }));
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "review src/Button.tsx ",
+    );
+  });
+
+  it("forwards dropped files in the split pane composer and highlights its shell", () => {
+    const onPasteAttachmentFiles = vi.fn();
+    renderStatefulSplitPaneComposer({ onPasteAttachmentFiles });
+    const shell = container.querySelector<HTMLElement>(".split-composer-shell");
+    if (!shell) throw new Error("missing split composer shell");
+
+    act(() => {
+      dispatchDrag(shell, "dragover", mockDataTransfer({ types: ["Files"] }));
+    });
+    expect(container.querySelector(".split-composer-shell-drop-active")).not.toBeNull();
+
+    const image = new File(["png"], "shot.png", { type: "image/png" });
+    act(() => {
+      dispatchDrag(shell, "drop", mockDataTransfer({ types: ["Files"], files: [image] }));
+    });
+
+    expect(onPasteAttachmentFiles).toHaveBeenCalledTimes(1);
+    expect(onPasteAttachmentFiles.mock.calls[0][0]).toEqual([image]);
+    expect(container.querySelector(".split-composer-shell-drop-active")).toBeNull();
   });
 });

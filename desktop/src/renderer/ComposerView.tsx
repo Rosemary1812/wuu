@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type Ref,
@@ -45,6 +46,8 @@ import {
 } from "./ComposerSlashCommands";
 import { translateCurrent as translate, useI18n } from "./i18n";
 import {
+  WORKSPACE_FILE_DRAG_MIME,
+  appendWorkspacePathToPrompt,
   clipboardAttachmentFiles,
   type ComposerFile,
   type ComposerImage,
@@ -310,6 +313,7 @@ export function Composer({
   const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
   const previousUltraEnabledRef = useRef(ultraEnabled);
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
@@ -596,6 +600,61 @@ export function Composer({
     focusComposerSoon();
   }
 
+  // A drop carries either a workspace path reference (file tree drag) or
+  // external files (Finder/Desktop). Path drops insert plain text and stay
+  // available on text-only composers; file drops reuse the paste pipeline.
+  // During dragover only dataTransfer.types is readable, so acceptance is
+  // decided by MIME alone — anything else keeps its native behavior (e.g.
+  // dragging selected text into the textarea).
+  function composerDropAcceptsPayload(dataTransfer: DataTransfer): boolean {
+    const types = Array.from(dataTransfer.types ?? []);
+    if (types.includes(WORKSPACE_FILE_DRAG_MIME)) {
+      return true;
+    }
+    return !textOnly && types.includes("Files");
+  }
+
+  function handleComposerDragOver(event: ReactDragEvent<HTMLDivElement>): void {
+    if (readOnly || !composerDropAcceptsPayload(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  }
+
+  function handleComposerDragLeave(event: ReactDragEvent<HTMLDivElement>): void {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setDropActive(false);
+  }
+
+  function handleComposerDrop(event: ReactDragEvent<HTMLDivElement>): void {
+    setDropActive(false);
+    if (readOnly) {
+      return;
+    }
+    const workspacePath = event.dataTransfer.getData(WORKSPACE_FILE_DRAG_MIME);
+    if (workspacePath) {
+      event.preventDefault();
+      resetQueryHistoryNavigation();
+      setSlashDismissedValue("");
+      setPrompt(appendWorkspacePathToPrompt(prompt, workspacePath));
+      focusComposerAtEndSoon();
+      return;
+    }
+    if (textOnly) {
+      return;
+    }
+    const dropped = Array.from(event.dataTransfer.files ?? []);
+    if (dropped.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    onPasteAttachmentFiles(dropped);
+  }
+
   function revealCollapsedPromptBlock(index: number): void {
     if (!hasCollapsedPromptBlocks) {
       return;
@@ -843,8 +902,11 @@ export function Composer({
           </>
         ) : null}
         <div
-          className={`composer-frame${ultraEnabled ? " is-ultra" : ""}`}
+          className={`composer-frame${ultraEnabled ? " is-ultra" : ""}${dropActive ? " composer-frame-drop-active" : ""}`}
           ref={composerFrameRef}
+          onDragOver={handleComposerDragOver}
+          onDragLeave={handleComposerDragLeave}
+          onDrop={handleComposerDrop}
         >
           {goalSummary || guideMessages.length > 0 || queuedMessages.length > 0 ? (
             <div className="composer-input-header">

@@ -159,6 +159,26 @@ describe("useComposerDraftState", () => {
     expect(hook.get().composerImages).toEqual([]);
   });
 
+  it("rejects PDFs over the 20MB limit with a reason and skips reading them", async () => {
+    const hook = await renderComposerDraftState();
+    const pdf = new File(["%PDF-1.7"], "huge.pdf", { type: "application/pdf" });
+    Object.defineProperty(pdf, "size", { configurable: true, value: 21 * 1024 * 1024 });
+    const arrayBuffer = vi.fn();
+    Object.defineProperty(pdf, "arrayBuffer", { configurable: true, value: arrayBuffer });
+
+    await act(async () => {
+      await hook.get().attachComposerAttachmentFiles([pdf]);
+      await flushEffects();
+    });
+
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
+      "「huge.pdf」超过 PDF 20MB 大小上限",
+    );
+    expect(hook.get().composerFiles).toEqual([]);
+    expect(hook.get().composerImages).toEqual([]);
+  });
+
   it("keeps split composer drafts isolated and can move one draft back to the primary composer", async () => {
     const hook = await renderComposerDraftState();
     const file = pdfFile();
