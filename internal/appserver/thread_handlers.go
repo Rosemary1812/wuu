@@ -299,6 +299,7 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 
 type forkSourceThread struct {
 	history        []providers.ChatMessage
+	displayHistory []providers.ChatMessage
 	modelProvider  string
 	model          string
 	modelVariant   string
@@ -331,6 +332,9 @@ func (s *Server) handleThreadFork(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	history, err := forkHistoryAtTarget(source.history, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID)
+	if errors.Is(err, errForkTargetNotFound) && len(source.displayHistory) > 0 {
+		history, err = forkHistoryAtTarget(source.displayHistory, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID)
+	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -528,9 +532,9 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThread, error) {
 	if th := s.thread(id); th != nil {
 		th.mu.Lock()
-		defer th.mu.Unlock()
-		return forkSourceThread{
+		source := forkSourceThread{
 			history:        cloneHistory(th.History),
+			displayHistory: cloneHistory(th.History),
 			modelProvider:  th.ModelProvider,
 			model:          th.Model,
 			modelVariant:   th.ModelVariant,
@@ -538,7 +542,17 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 			permissionMode: th.PermissionMode,
 			cwd:            th.CWD,
 			thread:         th.snapshotLocked(),
-		}, nil
+		}
+		persisted := th.PersistHistory
+		th.mu.Unlock()
+		if persisted {
+			loaded, err := s.loadPersistedThreadSnapshot(id)
+			if err != nil {
+				return forkSourceThread{}, err
+			}
+			source.displayHistory = chatMessagesFromPersistedMessages(loaded.displayHistory)
+		}
+		return source, nil
 	}
 
 	if _, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
@@ -558,6 +572,13 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	// persisted only by an execution/mutation admission that owns the source.
 	history = replaceBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
+	displayHistory := cloneHistory(history)
+	if loaded, loadErr := s.loadPersistedThreadSnapshot(id); loadErr != nil {
+		return forkSourceThread{}, loadErr
+	} else {
+		displayHistory = chatMessagesFromPersistedMessages(loaded.displayHistory)
+		th.Turns = turnsFromPersistedHistory(id, loaded.displayHistory, now, s.resolveParticipantSummary)
+	}
 	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
 		return forkSourceThread{}, err
 	} else {
@@ -573,6 +594,7 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	th.mu.Unlock()
 	return forkSourceThread{
 		history:        cloneHistory(th.History),
+		displayHistory: displayHistory,
 		modelProvider:  th.ModelProvider,
 		model:          th.Model,
 		modelVariant:   th.ModelVariant,

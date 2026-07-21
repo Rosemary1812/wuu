@@ -1023,36 +1023,115 @@ func itemCompleted(threadID, turnID string, item ThreadItem, at time.Time) outbo
 }
 
 func turnsFromHistory(threadID string, history []providers.ChatMessage, now time.Time) []Turn {
+	return projectHistory(threadID, history, now).Turns
+}
+
+type historyItemAddress struct {
+	TurnID string
+	ItemID string
+}
+
+type historyItemOrigin struct {
+	Item       ThreadItem
+	StartIndex int
+	EndIndex   int
+	Complete   bool
+}
+
+type historyProjection struct {
+	Turns       []Turn
+	ItemOrigins map[historyItemAddress]historyItemOrigin
+	TurnSpans   map[string]historyItemOrigin
+}
+
+type projectedToolBatch struct {
+	items    []historyItemAddress
+	required map[string]struct{}
+	seen     map[string]struct{}
+}
+
+func (b *projectedToolBatch) markSeen(callID string) bool {
+	if b == nil {
+		return true
+	}
+	if _, ok := b.required[callID]; ok {
+		b.seen[callID] = struct{}{}
+	}
+	return len(b.seen) == len(b.required)
+}
+
+func projectHistory(threadID string, history []providers.ChatMessage, now time.Time) historyProjection {
 	persisted := make([]persistedMessage, 0, len(history))
 	for _, msg := range history {
 		persisted = append(persisted, persistedMessageFromChatMessage(msg))
 	}
-	return turnsFromPersistedHistory(threadID, persisted, now, nil)
+	return projectPersistedHistory(threadID, persisted, now, nil)
 }
 
 type participantSummaryResolver func(string) (participant.Summary, bool)
 
 func turnsFromPersistedHistory(threadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
+	return projectPersistedHistory(threadID, history, now, resolve).Turns
+}
+
+func projectPersistedHistory(threadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) historyProjection {
 	_ = resolve
 	var turns []Turn
 	var current *Turn
 	itemIndex := 0
 	toolItems := make(map[string]int)
+	toolBatches := make(map[string]*projectedToolBatch)
 	var pendingCompactions []ThreadItem
+	itemOrigins := make(map[historyItemAddress]historyItemOrigin)
+	turnSpans := make(map[string]historyItemOrigin)
 	nextItemID := func(turnID string) string {
 		itemIndex++
 		return fmt.Sprintf("%s-item-%d", turnID, itemIndex)
 	}
-	appendItem := func(item ThreadItem) {
+	recordOrigin := func(turnID string, item ThreadItem, historyIndex int, complete bool) {
+		if turnID == "" || item.ID == "" || historyIndex < 0 {
+			return
+		}
+		origin := historyItemOrigin{Item: item, StartIndex: historyIndex, EndIndex: historyIndex, Complete: complete}
+		itemOrigins[historyItemAddress{TurnID: turnID, ItemID: item.ID}] = origin
+		span, ok := turnSpans[turnID]
+		if !ok || historyIndex < span.StartIndex {
+			span.StartIndex = historyIndex
+		}
+		if !ok || historyIndex > span.EndIndex {
+			span.EndIndex = historyIndex
+		}
+		span.Complete = true
+		turnSpans[turnID] = span
+	}
+	updateOriginEnd := func(address historyItemAddress, historyIndex int, complete bool) {
+		origin, ok := itemOrigins[address]
+		if !ok {
+			return
+		}
+		if historyIndex > origin.EndIndex {
+			origin.EndIndex = historyIndex
+		}
+		origin.Complete = complete
+		itemOrigins[address] = origin
+		span := turnSpans[address.TurnID]
+		if historyIndex > span.EndIndex {
+			span.EndIndex = historyIndex
+		}
+		turnSpans[address.TurnID] = span
+	}
+	appendItem := func(item ThreadItem, historyIndex int, complete bool) {
 		if current == nil || item.ID == "" {
 			return
 		}
 		current.Items = append(current.Items, item)
+		recordOrigin(current.ID, item, historyIndex, complete)
 	}
 	startSyntheticTurn := func() {
 		turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
 		itemIndex = 0
 		toolItems = make(map[string]int)
+		toolBatches = make(map[string]*projectedToolBatch)
 		turn := Turn{
 			ID:        turnID,
 			Items:     []ThreadItem{},
@@ -1067,7 +1146,7 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 		turns = append(turns, turn)
 		current = &turns[len(turns)-1]
 	}
-	for _, rec := range history {
+	for historyIndex, rec := range history {
 		if rec.Hidden {
 			continue
 		}
@@ -1106,7 +1185,7 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 					Type:     ThreadItemError,
 					Status:   ThreadItemStatusFailed,
 					Error:    message,
-				})
+				}, -1, true)
 			}
 			continue
 		}
@@ -1117,6 +1196,7 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 		if msg.Role == "system" {
 			if compact.IsConversationSummaryContent(msg.Content) {
 				pendingCompactions = append(pendingCompactions, ThreadItem{
+					Seq:    msg.Seq,
 					Type:   ThreadItemContextCompaction,
 					Status: ThreadItemStatusCompleted,
 					Text:   "Compacted history",
@@ -1126,19 +1206,21 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 		}
 		if msg.Role == "user" && !isToolResultMessage(msg) {
 			if msg.Steered && current != nil {
-				appendItem(chatMessageItem(nextItemID(current.ID), msg))
+				appendItem(chatMessageItem(nextItemID(current.ID), msg), historyIndex, true)
 				continue
 			}
 			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
 			itemIndex = 0
 			toolItems = make(map[string]int)
+			toolBatches = make(map[string]*projectedToolBatch)
 			turn := Turn{
 				ID:        turnID,
 				Items:     []ThreadItem{},
 				ItemsView: TurnItemsViewFull,
 				Status:    TurnStatusCompleted,
 			}
-			turn.Items = append(turn.Items, chatMessageItem(nextItemID(turnID), msg))
+			userItem := chatMessageItem(nextItemID(turnID), msg)
+			turn.Items = append(turn.Items, userItem)
 			for _, item := range pendingCompactions {
 				item.ID = nextItemID(turnID)
 				turn.Items = append(turn.Items, item)
@@ -1146,6 +1228,7 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 			pendingCompactions = nil
 			turns = append(turns, turn)
 			current = &turns[len(turns)-1]
+			recordOrigin(turnID, userItem, historyIndex, true)
 			continue
 		}
 		if current == nil && msg.Role == "assistant" && pendingCompactionsContainReason(pendingCompactions, compact.HelpMeToolName) {
@@ -1159,14 +1242,16 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 			if strings.TrimSpace(msg.ReasoningContent) != "" {
 				appendItem(ThreadItem{
 					ID:     nextItemID(current.ID),
+					Seq:    msg.Seq,
 					Type:   ThreadItemReasoning,
 					Status: ThreadItemStatusCompleted,
 					Text:   msg.ReasoningContent,
-				})
+				}, historyIndex, true)
 			}
 			if strings.TrimSpace(msg.Content) != "" {
 				appendItem(ThreadItem{
 					ID:           nextItemID(current.ID),
+					Seq:          msg.Seq,
 					Type:         ThreadItemAgentMessage,
 					Status:       ThreadItemStatusCompleted,
 					Phase:        assistantMessagePhase(msg),
@@ -1175,16 +1260,18 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 					FinishReason: string(msg.FinishReason),
 					StopReason:   msg.StopReason,
 					Truncated:    msg.Truncated,
-				})
+				}, historyIndex, true)
 			}
 			if msg.FinishReason != "" || msg.StopReason != "" || msg.Truncated {
 				current.FinishReason = string(msg.FinishReason)
 				current.StopReason = msg.StopReason
 				current.Truncated = msg.Truncated
 			}
+			batch := &projectedToolBatch{required: make(map[string]struct{}), seen: make(map[string]struct{})}
 			for _, call := range msg.ToolCalls {
 				item := ThreadItem{
 					ID:        nextItemID(current.ID),
+					Seq:       msg.Seq,
 					SourceID:  call.ID,
 					Type:      threadItemTypeForTool(call.Name),
 					Status:    ThreadItemStatusCompleted,
@@ -1192,29 +1279,43 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 					Arguments: call.Arguments,
 					Display:   cloneToolCallDisplay(call.Display),
 				}
-				if strings.TrimSpace(call.ID) != "" {
+				callID := strings.TrimSpace(call.ID)
+				if callID != "" {
 					toolItems[call.ID] = len(current.Items)
+					batch.required[callID] = struct{}{}
 				}
-				appendItem(item)
+				appendItem(item, historyIndex, callID == "")
+				if callID != "" {
+					batch.items = append(batch.items, historyItemAddress{TurnID: current.ID, ItemID: item.ID})
+				}
+			}
+			for callID := range batch.required {
+				toolBatches[callID] = batch
 			}
 		case "tool":
 			if idx, ok := toolItems[msg.ToolCallID]; ok && idx >= 0 && idx < len(current.Items) {
 				current.Items[idx].Result += msg.Content
 				current.Items[idx].Status = ThreadItemStatusCompleted
+				batch := toolBatches[msg.ToolCallID]
+				complete := batch.markSeen(msg.ToolCallID)
+				for _, address := range batch.items {
+					updateOriginEnd(address, historyIndex, complete)
+				}
 				continue
 			}
 			appendItem(ThreadItem{
 				ID:     nextItemID(current.ID),
+				Seq:    msg.Seq,
 				Type:   ThreadItemToolCall,
 				Status: ThreadItemStatusCompleted,
 				Result: msg.Content,
-			})
+			}, historyIndex, true)
 		default:
 			item := chatMessageItem(nextItemID(current.ID), msg)
-			appendItem(item)
+			appendItem(item, historyIndex, true)
 		}
 	}
-	return turns
+	return historyProjection{Turns: turns, ItemOrigins: itemOrigins, TurnSpans: turnSpans}
 }
 
 func parseTurnTerminalStatus(raw string) (TurnStatus, bool) {
@@ -1262,6 +1363,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 		if strings.TrimSpace(msg.Content) != "" {
 			return ThreadItem{
 				ID:           id,
+				Seq:          msg.Seq,
 				Type:         ThreadItemAgentMessage,
 				Status:       ThreadItemStatusCompleted,
 				Phase:        assistantMessagePhase(msg),
@@ -1275,6 +1377,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 		if strings.TrimSpace(msg.ReasoningContent) != "" {
 			return ThreadItem{
 				ID:     id,
+				Seq:    msg.Seq,
 				Type:   ThreadItemReasoning,
 				Status: ThreadItemStatusCompleted,
 				Text:   msg.ReasoningContent,
@@ -1283,6 +1386,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	case "tool":
 		return ThreadItem{
 			ID:           id,
+			Seq:          msg.Seq,
 			SourceID:     msg.ToolCallID,
 			Type:         ThreadItemToolCall,
 			Status:       ThreadItemStatusCompleted,
