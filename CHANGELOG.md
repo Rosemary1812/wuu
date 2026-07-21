@@ -16,6 +16,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   including histories with compaction, provider checkpoints, or retired context
   artifacts, and unified history item projection so derivation and message
   editing use the same canonical source mapping as the visible transcript.
+- Redrew the system-theme preview as one aligned split-color window, removing
+  overlapping and clipped light/dark layers in Settings.
 
 ## [0.10.0] - 2026-07-21
 
