@@ -83,14 +83,10 @@
   /* Conversation-only tokens. Shared session-level tokens
      (outer width, horizontal padding, composer width/radius) live in
      session.css at :root — change them there and nothing else. */
-  --conversation-content-width: calc(
-    var(--session-outer-width) - var(--session-outer-padding-inline) -
-      var(--session-outer-padding-inline)
-  );
-  /* Kept equal to the composer's content width (--session-composer-width in
-     session.css, currently 680px) so the answer prose lines up flush with the
-     input box that produced it. Change both together. */
-  --conversation-message-max-width: 680px;
+  --conversation-content-width: var(--session-composer-width);
+  /* Use the composer's width directly so message cards and answer prose stay
+     flush with the input box without a second value to keep in sync. */
+  --conversation-message-max-width: var(--session-composer-width);
   --conversation-message-max-inline: 90%;
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;

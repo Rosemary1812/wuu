@@ -3389,18 +3389,6 @@ html.resizing-workspace-terminal-split * {
   row-gap: 0;
 }
 
-/* Regular (non-chat-style) conversations only: pull the message stream in
- * 2px on each side (4px total) so it visually lines up flush with the dock
- * composer's right edge. The dock composer's scrollbar-gutter compensation
- * (`translateX(-6px)` on `.dock-composer-wrap .composer-stack`) leaves
- * .conversation-width.session-flow content 4-6px wider than the dialog at
- * common window widths; this narrowing closes that gap. Chat-style threads
- * are intentionally excluded — they use `.chat-thread` as their container
- * and the dock composer's right edge already meets theirs differently. */
-.conversation-width:has(.turn) {
-  padding-inline: calc(var(--session-outer-padding-inline) + 2px);
-}
-
 .conversation-width > * {
   grid-column: 1 / -1;
 }

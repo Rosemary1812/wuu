@@ -18,11 +18,10 @@
    * Outer width is tuned so the content column (outer - 2 * padding) lands on
    * the shared readable measure the composer and the answer prose both use:
    *   776 - 48 - 48 = 680px.
-   * The input box (--session-composer-width) and the answer prose
-   * (--conversation-message-max-width, conversation-shell.css) are kept equal
-   * on purpose — change this width and the max-width token together so the
-   * composer never reads wider than the reply it produces. Tool rows, diff
-   * cards, and code blocks span this same column.
+   * The answer prose reads this same --session-composer-width token through
+   * --conversation-message-max-width, so changing it here keeps messages and
+   * the input box aligned. Tool rows, diff cards, and code blocks span this
+   * same column.
    */
   --session-outer-width: 776px;
   --session-outer-padding-inline: 48px;

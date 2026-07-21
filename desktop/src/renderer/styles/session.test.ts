@@ -14,6 +14,18 @@ const sessionCss = readFileSync(
   resolve(__dirname, "session.css"),
   "utf-8",
 );
+const composerCss = readFileSync(
+  resolve(__dirname, "composer.css"),
+  "utf-8",
+);
+const conversationShellCss = readFileSync(
+  resolve(__dirname, "conversation-shell.css"),
+  "utf-8",
+);
+const workspaceCss = readFileSync(
+  resolve(__dirname, "workspace.css"),
+  "utf-8",
+);
 
 describe("session.css design tokens (single source of truth)", () => {
   it("defines --session-outer-width at :root", () => {
@@ -63,6 +75,23 @@ describe("session.css .session-flow shared layout class", () => {
   it("uses --wuu-grid-cols for grid-template-columns", () => {
     expect(sessionCss).toMatch(
       /\.session-flow[\s\S]*?grid-template-columns:\s*repeat\(var\(--wuu-grid-cols\)/,
+    );
+  });
+});
+
+describe("conversation flow and dock composer alignment", () => {
+  it("uses the composer width as the message-flow width", () => {
+    expect(conversationShellCss).toMatch(
+      /--conversation-message-max-width:\s*var\(--session-composer-width\);/,
+    );
+  });
+
+  it("does not offset or narrow either side with manual pixel corrections", () => {
+    expect(composerCss).not.toMatch(
+      /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:/,
+    );
+    expect(workspaceCss).not.toMatch(
+      /\.conversation-width:has\(\.turn\)\s*\{/,
     );
   });
 });
