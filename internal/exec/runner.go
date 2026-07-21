@@ -30,33 +30,53 @@ type runState struct {
 	awaitingAutoContinuation bool
 }
 
-func Run(ctx context.Context, opts Options) error {
-	if err := validateRunOptions(opts); err != nil {
-		return WithExitCode(ExitInvalidInput, err)
-	}
-	restoreEnv, err := applyRunEnv(opts.Env)
-	if err != nil {
-		return WithExitCode(ExitInvalidInput, err)
-	}
-	defer restoreEnv()
+type trackingWriter struct {
+	w   io.Writer
+	err error
+}
 
-	attachments, err := resolveRunAttachments(opts)
+func (w *trackingWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	n, err := w.w.Write(p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
 	if err != nil {
-		return WithExitCode(ExitInvalidInput, err)
+		w.err = err
 	}
-	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() {
-		return WithExitCode(ExitInvalidInput, errors.New("prompt is required"))
-	}
+	return n, err
+}
+
+func Run(ctx context.Context, opts Options) (runErr error) {
 	if opts.Stdout == nil {
 		opts.Stdout = io.Discard
 	}
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
-	if opts.PermissionMode != "" {
-		// The concrete validation happens during config application. Keep this
-		// branch so CLI parse tests can distinguish an explicit invalid value
-		// before a model/runtime is initialized.
+	stdout := &trackingWriter{w: opts.Stdout}
+	opts.Stdout = stdout
+	defer func() {
+		if runErr == nil && stdout.err != nil {
+			runErr = WithExitCode(ExitProtocol, fmt.Errorf("write exec output: %w", stdout.err))
+		}
+	}()
+
+	state := runState{status: "running"}
+	restoreEnv, err := applyRunEnv(opts.Env)
+	if err != nil {
+		return finishRunError(opts, &state, WithExitCode(ExitInvalidInput, err))
+	}
+	defer restoreEnv()
+
+	attachments, err := resolveRunAttachments(opts)
+	if err != nil {
+		return finishRunError(opts, &state, WithExitCode(ExitInvalidInput, err))
+	}
+	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() {
+		return finishRunError(opts, &state, WithExitCode(ExitInvalidInput, errors.New("prompt is required")))
 	}
 
 	if opts.Timeout > 0 {
@@ -66,18 +86,18 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	rootDir, err := resolveWorkdir(opts.Workdir)
 	if err != nil {
-		return WithExitCode(ExitInvalidInput, err)
+		return finishRunError(opts, &state, WithExitCode(ExitInvalidInput, err))
 	}
 	outputSchema, err := loadOutputSchema(rootDir, opts.OutputSchemaPath)
 	if err != nil {
-		return WithExitCode(ExitInvalidInput, err)
+		return finishRunError(opts, &state, WithExitCode(ExitInvalidInput, err))
 	}
 
 	controller := opts.Controller
 	if controller == nil {
 		controller, err = NewLocalAppServerController(ctx, opts)
 		if err != nil {
-			return classifySetupError(err)
+			return finishRunError(opts, &state, classifySetupError(err))
 		}
 	}
 	defer func() {
@@ -86,16 +106,15 @@ func Run(ctx context.Context, opts Options) error {
 		_ = controller.Shutdown(shutdownCtx)
 	}()
 
-	state := runState{status: "running"}
 	initResult, err := controller.Initialize(ctx)
 	if err != nil {
-		return classifyProtocolOrContextError(ctx, err)
+		return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, err))
 	}
 	emitSessionConfigured(opts, initResult)
 
 	thread, err := startOrResumeThread(ctx, controller, opts)
 	if err != nil {
-		return classifyProtocolOrContextError(ctx, err)
+		return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, err))
 	}
 	state.threadID = thread.ID
 	switch {
@@ -128,7 +147,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		turn, err := controller.StartTurn(ctx, thread.ID, input)
 		if err != nil {
-			return classifyProtocolOrContextError(ctx, err)
+			return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, err))
 		}
 		state.turnID = turn.ID
 		emitTurnStarted(opts, thread.ID, turn)
@@ -147,7 +166,7 @@ func Run(ctx context.Context, opts Options) error {
 				emitResult(opts, state, "interrupted", "interrupted")
 				return WithExitCode(ExitInterrupted, err)
 			}
-			return err
+			return finishRunError(opts, &state, err)
 		}
 		if state.permissionDenied {
 			errorText := state.permissionError
@@ -178,12 +197,13 @@ func Run(ctx context.Context, opts Options) error {
 		prompt = outputSchema.retryPrompt(state.finalMessage, err)
 	}
 
-	emitResult(opts, state, "completed", "")
 	if opts.OutputLastMessage != "" {
 		if err := writeLastMessage(opts.OutputLastMessage, state.finalMessage); err != nil {
-			return WithExitCode(ExitTurnFailed, err)
+			return finishRunError(opts, &state, WithExitCode(ExitTurnFailed, err))
 		}
 	}
+	state.status = "completed"
+	emitResult(opts, state, "completed", "")
 	if !opts.JSON {
 		if state.tracePath != "" {
 			fmt.Fprintf(opts.Stderr, "trace_path: %s\n", state.tracePath)
@@ -192,10 +212,6 @@ func Run(ctx context.Context, opts Options) error {
 			fmt.Fprintln(opts.Stdout, state.finalMessage)
 		}
 	}
-	return nil
-}
-
-func validateRunOptions(opts Options) error {
 	return nil
 }
 
@@ -941,6 +957,31 @@ func emitResult(opts Options, state runState, status, errorText string) {
 		payload["structured_result"] = state.structuredResult
 	}
 	emitJSON(opts, payload)
+}
+
+func finishRunError(opts Options, state *runState, err error) error {
+	if err == nil {
+		return nil
+	}
+	if state == nil {
+		state = &runState{}
+	}
+	switch state.status {
+	case "failed", "permission_denied", "timeout", "interrupted":
+		return err
+	}
+	status := "failed"
+	switch ExitCode(err) {
+	case ExitPermissionDenied:
+		status = "permission_denied"
+	case ExitTimeout:
+		status = "timeout"
+	case ExitInterrupted:
+		status = "interrupted"
+	}
+	state.status = status
+	emitResult(opts, *state, status, err.Error())
+	return err
 }
 
 func emitJSON(opts Options, payload map[string]any) {

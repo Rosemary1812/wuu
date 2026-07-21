@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,23 @@ type fakeController struct {
 	interrupted       string
 	shutdown          bool
 	startCount        int
+}
+
+type initializeErrorController struct {
+	*fakeController
+	err error
+}
+
+func (c *initializeErrorController) Initialize(context.Context) (appserver.InitializeResult, error) {
+	return appserver.InitializeResult{}, c.err
+}
+
+type failingWriter struct {
+	err error
+}
+
+func (w failingWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
 
 func newFakeController(events ...Notification) *fakeController {
@@ -144,6 +162,72 @@ func TestRunDefaultStdoutOnlyFinalMessage(t *testing.T) {
 	}
 	if !controller.startedThread || controller.startedPrompt != "do work" || !controller.shutdown {
 		t.Fatalf("controller did not run expected app-server path: %+v", controller)
+	}
+}
+
+func TestRunJSONLEmitsResultWhenInitializeFails(t *testing.T) {
+	controller := &initializeErrorController{
+		fakeController: newFakeController(),
+		err:            errors.New("initialize failed"),
+	}
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitProtocol {
+		t.Fatalf("exit code = %d, want %d: %v", ExitCode(err), ExitProtocol, err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	if len(events) != 1 || events[0]["type"] != "result" || events[0]["status"] != "failed" {
+		t.Fatalf("events = %+v, want one failed result", events)
+	}
+}
+
+func TestRunReturnsProtocolErrorWhenJSONLWriteFails(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
+	)
+
+	err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Stdout:     failingWriter{err: errors.New("broken output")},
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitProtocol || !strings.Contains(err.Error(), "broken output") {
+		t.Fatalf("error = %v (exit %d), want output protocol error", err, ExitCode(err))
+	}
+}
+
+func TestRunJSONLDoesNotReportCompletedBeforeLastMessageWrite(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
+	)
+	root := t.TempDir()
+	blocker := filepath.Join(root, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:            "do work",
+		JSON:              true,
+		Stdout:            &stdout,
+		OutputLastMessage: filepath.Join(blocker, "result.md"),
+		Controller:        controller,
+	})
+	if ExitCode(err) != ExitTurnFailed {
+		t.Fatalf("exit code = %d, want %d: %v", ExitCode(err), ExitTurnFailed, err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	last := events[len(events)-1]
+	if last["type"] != "result" || last["status"] != "failed" {
+		t.Fatalf("last event = %+v, want failed result", last)
 	}
 }
 
