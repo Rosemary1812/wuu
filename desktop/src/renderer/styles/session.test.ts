@@ -91,7 +91,7 @@ describe("conversation flow and dock composer alignment", () => {
       /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:/,
     );
     expect(conversationShellCss).toMatch(
-      /--conversation-flow-optical-inset:\s*2px;/,
+      /--conversation-flow-optical-inset:\s*4px;/,
     );
     expect(workspaceCss).toMatch(
       /\.conversation-width:has\(\.turn\)\s*\{[^}]*padding-inline:\s*calc\(\s*var\(--session-outer-padding-inline\)\s*\+\s*var\(--conversation-flow-optical-inset\)\s*\);/,
