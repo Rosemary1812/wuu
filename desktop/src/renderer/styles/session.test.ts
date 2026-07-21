@@ -86,12 +86,15 @@ describe("conversation flow and dock composer alignment", () => {
     );
   });
 
-  it("does not offset or narrow either side with manual pixel corrections", () => {
+  it("does not offset the composer and applies only the centered optical inset", () => {
     expect(composerCss).not.toMatch(
       /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:/,
     );
-    expect(workspaceCss).not.toMatch(
-      /\.conversation-width:has\(\.turn\)\s*\{/,
+    expect(conversationShellCss).toMatch(
+      /--conversation-flow-optical-inset:\s*2px;/,
+    );
+    expect(workspaceCss).toMatch(
+      /\.conversation-width:has\(\.turn\)\s*\{[^}]*padding-inline:\s*calc\(\s*var\(--session-outer-padding-inline\)\s*\+\s*var\(--conversation-flow-optical-inset\)\s*\);/,
     );
   });
 });
