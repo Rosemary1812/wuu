@@ -3,9 +3,7 @@ import type { ThemePreference } from "../shared/protocol";
 import { applyThemePreference } from "./Theme";
 import { useI18n } from "./i18n";
 
-type PreviewTheme = Exclude<ThemePreference, "system">;
-
-function ThemePreviewWindow({ theme }: { theme: PreviewTheme }): JSX.Element {
+function ThemePreviewWindow({ theme }: { theme: ThemePreference }): JSX.Element {
   return (
     <span className={`settings-theme-preview-window settings-theme-preview-window-${theme}`}>
       <span className="settings-theme-preview-sidebar" />
@@ -84,14 +82,7 @@ export function ThemePreferenceControl(): JSX.Element {
           onClick={() => choose(option.value)}
         >
           <span className={`settings-theme-preview settings-theme-preview-${option.value}`} aria-hidden="true">
-            {option.value === "system" ? (
-              <>
-                <ThemePreviewWindow theme="light" />
-                <ThemePreviewWindow theme="dark" />
-              </>
-            ) : (
-              <ThemePreviewWindow theme={option.value} />
-            )}
+            <ThemePreviewWindow theme={option.value} />
           </span>
           <span className="settings-theme-card-label">{option.label}</span>
         </button>

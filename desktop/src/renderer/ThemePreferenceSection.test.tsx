@@ -25,7 +25,7 @@ describe("ThemePreferenceControl", () => {
     container.remove();
   });
 
-  it("uses aligned light and dark layers for the system preview", async () => {
+  it("uses one aligned split-color window for the system preview", async () => {
     await act(async () => {
       root.render(
         <I18nProvider>
@@ -37,9 +37,8 @@ describe("ThemePreferenceControl", () => {
     const systemPreview = container.querySelector('[data-testid="settings-theme-system"] .settings-theme-preview');
     const lightPreview = container.querySelector('[data-testid="settings-theme-light"] .settings-theme-preview');
 
-    expect(systemPreview?.querySelectorAll(".settings-theme-preview-window")).toHaveLength(2);
-    expect(systemPreview?.querySelector(".settings-theme-preview-window-light")).not.toBeNull();
-    expect(systemPreview?.querySelector(".settings-theme-preview-window-dark")).not.toBeNull();
+    expect(systemPreview?.querySelectorAll(".settings-theme-preview-window")).toHaveLength(1);
+    expect(systemPreview?.querySelector(".settings-theme-preview-window-system")).not.toBeNull();
     expect(lightPreview?.querySelectorAll(".settings-theme-preview-window")).toHaveLength(1);
   });
 });
