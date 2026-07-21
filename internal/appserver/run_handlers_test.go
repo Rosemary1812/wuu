@@ -19,7 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/structuredoutput"
 )
 
-func TestRunStartSettlesManifestBeforeRunRead(t *testing.T) {
+func TestRunStartSettlesManifest(t *testing.T) {
 	client := &fakeClient{response: providersResponse("run-protocol-ok")}
 	rt := newTestRuntime(t, client)
 	runtimeJournal, err := session.NewInferenceJournalRuntime(rt.SessionDir, "run-test")
@@ -87,26 +87,11 @@ func TestRunStartSettlesManifestBeforeRunRead(t *testing.T) {
 	if run.Result == nil || run.Result.FinalTurnID != run.Turns[0].TurnID {
 		t.Fatalf("Run result = %+v", run.Result)
 	}
-
-	readRaw := mustJSON(Request{ID: json.RawMessage(`"read"`), Method: MethodRunRead, Params: mustJSON(RunReadParams{RunID: run.ID})})
-	if err := srv.handleLine(context.Background(), readRaw); err != nil {
-		t.Fatalf("run/read: %v", err)
+	if run.Result.ExitCode != execution.ExitOK {
+		t.Fatalf("Run exit code = %d, want %d", run.Result.ExitCode, execution.ExitOK)
 	}
-	readResult := remarshal[RunReadResult](t, responseByID(t, parseOutput(t, out.String()), "read")["result"])
-	if readResult.Run.Status != execution.StatusCompleted || readResult.Thread == nil {
-		t.Fatalf("run/read result = %+v", readResult)
-	}
-	if readResult.Attached {
-		t.Fatalf("terminal Run should not remain attached")
-	}
-
-	listRaw := mustJSON(Request{ID: json.RawMessage(`"list"`), Method: MethodRunList, Params: mustJSON(RunListParams{ThreadID: thread.ID})})
-	if err := srv.handleLine(context.Background(), listRaw); err != nil {
-		t.Fatalf("run/list: %v", err)
-	}
-	listResult := remarshal[RunListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
-	if len(listResult.Runs) != 1 || listResult.Runs[0].ID != run.ID {
-		t.Fatalf("run/list result = %+v", listResult)
+	if srv.executionRunAttached(run.ID) {
+		t.Fatal("terminal Run should not remain attached")
 	}
 }
 

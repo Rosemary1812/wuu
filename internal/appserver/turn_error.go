@@ -188,6 +188,10 @@ func categoryFromMessage(message string) string {
 		return "cancelled"
 	case strings.Contains(lower, "invalid_request_error"), strings.Contains(lower, "invalid request error"), strings.Contains(lower, "http 400"):
 		return "invalid_request"
+	// Workspace boundary denials (tools emit error_kind=boundary_denied)
+	// are a permission-mode rejection, not a local or provider fault.
+	case strings.Contains(lower, "boundary_denied"):
+		return "permission_denied"
 	// Local comes BEFORE auth: a "permission denied: file /etc/hosts"
 	// string has both "permission denied" and "file" tokens, and the
 	// local check is the more specific match (auth + file → local).

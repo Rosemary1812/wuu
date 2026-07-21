@@ -165,6 +165,7 @@ See [JSONL events](jsonl-events.md) for the event contract.
 - `6`: app-server protocol error.
 - `7`: provider or model error.
 - `8`: tool execution failed and the agent did not recover.
+- `9`: the target thread already has a running turn (try again later, or use another thread).
 
 Scripts should use exit codes instead of parsing natural-language error text.
 

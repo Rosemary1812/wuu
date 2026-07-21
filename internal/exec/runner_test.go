@@ -21,58 +21,23 @@ import (
 type fakeController struct {
 	initResult appserver.InitializeResult
 	thread     appserver.Thread
-	turn       appserver.Turn
+	run        appserver.Run
 	events     []Notification
-	batches    [][]Notification
+	block      bool
+	startErr   error
 
-	startedThread     bool
-	startEphemeral    bool
-	resumedThread     string
-	forkedThread      string
-	startedPrompt     string
-	startedTurnThread string
-	startedPrompts    []string
-	startedImages     []appserver.TurnStartImage
-	startedFiles      []appserver.TurnStartFile
-	interrupted       string
-	shutdown          bool
-	startCount        int
+	startedThread   bool
+	startEphemeral  bool
+	resumedThread   string
+	forkedThread    string
+	startedParams   appserver.RunStartParams
+	interruptReason string
+	shutdown        bool
 }
 
 type initializeErrorController struct {
 	*fakeController
 	err error
-}
-
-type fakeRunController struct {
-	*fakeController
-	startedParams   appserver.RunStartParams
-	run             appserver.Run
-	block           bool
-	interruptReason string
-}
-
-func (c *fakeRunController) StartRun(_ context.Context, params appserver.RunStartParams) (appserver.Run, error) {
-	c.startedParams = params
-	if c.block {
-		return c.run, nil
-	}
-	c.fakeController.events = []Notification{
-		notification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{ThreadID: "thread-1", TurnID: "turn-1", Delta: "run answer"}),
-		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "run answer", TracePath: "/run-trace"}),
-		notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{ID: "run-1", Status: execution.StatusCompleted, ThreadID: "thread-1", Result: &execution.Result{FinalTurnID: "turn-1", TracePath: "/run-trace"}}}),
-	}
-	return c.run, nil
-}
-
-func (c *fakeRunController) ReadRun(context.Context, string) (appserver.RunView, error) {
-	return appserver.RunView{Run: c.run, Attached: true}, nil
-}
-
-func (c *fakeRunController) InterruptRun(_ context.Context, _ string, reason string) (appserver.Run, error) {
-	c.interruptReason = reason
-	c.run.Status = execution.StatusInterrupted
-	return c.run, nil
 }
 
 func (c *initializeErrorController) Initialize(context.Context) (appserver.InitializeResult, error) {
@@ -88,10 +53,6 @@ func (w failingWriter) Write([]byte) (int, error) {
 }
 
 func newFakeController(events ...Notification) *fakeController {
-	return newFakeControllerBatches(events)
-}
-
-func newFakeControllerBatches(batches ...[]Notification) *fakeController {
 	return &fakeController{
 		initResult: appserver.InitializeResult{
 			ProtocolVersion: appserver.ProtocolVersion,
@@ -102,9 +63,12 @@ func newFakeControllerBatches(batches ...[]Notification) *fakeController {
 				Mode: "standard",
 			},
 		},
-		thread:  appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
-		turn:    appserver.Turn{ID: "turn-1"},
-		batches: batches,
+		thread: appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
+		run: appserver.Run{
+			ID: "run-1", Status: execution.StatusRunning, ThreadID: "thread-1",
+			Turns: []execution.TurnRef{{TurnID: "turn-1", ThreadID: "thread-1"}},
+		},
+		events: events,
 	}
 }
 
@@ -131,21 +95,17 @@ func (f *fakeController) ForkThread(_ context.Context, id string) (appserver.Thr
 	return f.thread, nil
 }
 
-func (f *fakeController) StartTurn(_ context.Context, threadID string, input TurnInput) (appserver.Turn, error) {
-	f.startCount++
-	f.startedTurnThread = threadID
-	f.startedPrompt = input.Prompt
-	f.startedPrompts = append(f.startedPrompts, input.Prompt)
-	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)
-	f.startedFiles = append([]appserver.TurnStartFile(nil), input.Files...)
-	turn := f.turn
-	turn.ID = fmt.Sprintf("turn-%d", f.startCount)
-	return turn, nil
+func (f *fakeController) StartRun(_ context.Context, params appserver.RunStartParams) (appserver.Run, error) {
+	f.startedParams = params
+	if f.startErr != nil {
+		return appserver.Run{}, f.startErr
+	}
+	return f.run, nil
 }
 
-func (f *fakeController) Interrupt(_ context.Context, threadID string) error {
-	f.interrupted = threadID
-	return nil
+func (f *fakeController) InterruptRun(_ context.Context, _ string, reason string) (appserver.Run, error) {
+	f.interruptReason = reason
+	return f.run, nil
 }
 
 func (f *fakeController) Shutdown(context.Context) error {
@@ -153,13 +113,42 @@ func (f *fakeController) Shutdown(context.Context) error {
 	return nil
 }
 
+// Notifications mirrors the in-process app-server: a turn/started for the
+// Run's first turn, then the scripted events, then — unless the script
+// already settles the Run — a synthesized completed run/updated carrying
+// the last scripted turn's id and trace path.
 func (f *fakeController) Notifications() <-chan Notification {
-	idx := f.startCount - 1
-	var events []Notification
-	if idx >= 0 && idx < len(f.batches) {
-		events = f.batches[idx]
-	} else {
-		events = f.events
+	if f.block {
+		return make(chan Notification)
+	}
+	hasTurnStarted := false
+	hasRunUpdated := false
+	lastTurnID := "turn-1"
+	lastTrace := ""
+	for _, ev := range f.events {
+		switch ev.Method {
+		case appserver.NotificationTurnStarted:
+			hasTurnStarted = true
+		case appserver.NotificationRunUpdated:
+			hasRunUpdated = true
+		case appserver.NotificationTurnCompleted:
+			var params appserver.TurnCompletedNotification
+			if err := json.Unmarshal(ev.Params, &params); err == nil {
+				lastTurnID = params.Turn.ID
+				lastTrace = params.TracePath
+			}
+		}
+	}
+	events := make([]Notification, 0, len(f.events)+2)
+	if !hasTurnStarted {
+		events = append(events, notification(appserver.NotificationTurnStarted, appserver.TurnStartedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}}))
+	}
+	events = append(events, f.events...)
+	if !hasRunUpdated {
+		events = append(events, notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+			ID: "run-1", ThreadID: "thread-1", Status: execution.StatusCompleted,
+			Result: &execution.Result{FinalTurnID: lastTurnID, TracePath: lastTrace},
+		}}))
 	}
 	ch := make(chan Notification, len(events))
 	for _, ev := range events {
@@ -168,19 +157,15 @@ func (f *fakeController) Notifications() <-chan Notification {
 	return ch
 }
 
-func TestRunUsesRunControllerForPlainExec(t *testing.T) {
-	base := newFakeController()
-	controller := &fakeRunController{
-		fakeController: base,
-		run:            appserver.Run{ID: "run-1", Status: execution.StatusRunning, ThreadID: "thread-1", Turns: []execution.TurnRef{{TurnID: "turn-1", ThreadID: "thread-1"}}},
-	}
+func TestRunUsesRunControlForPlainExec(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{ThreadID: "thread-1", TurnID: "turn-1", Delta: "run answer"}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "run answer", TracePath: "/run-trace"}),
+	)
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), Options{Prompt: "reply", JSON: true, Stdout: &stdout, Stderr: &stderr, Controller: controller})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
-	}
-	if base.startCount != 0 {
-		t.Fatalf("legacy StartTurn count = %d", base.startCount)
 	}
 	if controller.startedParams.Request.Mode != execution.ModeStart || controller.startedParams.Prompt != "reply" {
 		t.Fatalf("Run start params = %+v", controller.startedParams)
@@ -214,7 +199,7 @@ func TestRunDefaultStdoutOnlyFinalMessage(t *testing.T) {
 	if !strings.Contains(stderr.String(), "provider: test-provider") || !strings.Contains(stderr.String(), "trace_path: /trace.jsonl") {
 		t.Fatalf("stderr missing run metadata: %q", stderr.String())
 	}
-	if !controller.startedThread || controller.startedPrompt != "do work" || !controller.shutdown {
+	if !controller.startedThread || controller.startedParams.Prompt != "do work" || !controller.shutdown {
 		t.Fatalf("controller did not run expected app-server path: %+v", controller)
 	}
 }
@@ -560,7 +545,7 @@ func TestRunForkUsesForkPath(t *testing.T) {
 	}
 }
 
-func TestRunPassesAttachmentsToTurnStart(t *testing.T) {
+func TestRunPassesAttachmentsToRunStart(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "done"}),
 	)
@@ -577,17 +562,23 @@ func TestRunPassesAttachmentsToTurnStart(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(controller.startedImages) != 1 || controller.startedImages[0].MediaType != "image/png" || controller.startedImages[0].Data != "image-data" {
-		t.Fatalf("images not passed to StartTurn: %+v", controller.startedImages)
+	images := controller.startedParams.Images
+	if len(images) != 1 || images[0].MediaType != "image/png" || images[0].Data != "image-data" {
+		t.Fatalf("images not passed to run/start: %+v", images)
 	}
-	if len(controller.startedFiles) != 1 || controller.startedFiles[0].MediaType != "application/pdf" || controller.startedFiles[0].Filename != "report.pdf" {
-		t.Fatalf("files not passed to StartTurn: %+v", controller.startedFiles)
+	files := controller.startedParams.Files
+	if len(files) != 1 || files[0].MediaType != "application/pdf" || files[0].Filename != "report.pdf" {
+		t.Fatalf("files not passed to run/start: %+v", files)
 	}
 }
 
 func TestRunTurnErrorReturnsExitCodeOne(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{ThreadID: "thread-1", TurnID: "turn-1", Error: "model failed"}),
+		notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+			ID: "run-1", ThreadID: "thread-1", Status: execution.StatusFailed,
+			Error: &execution.Error{Code: "turn_failed", Category: "unknown", Message: "model failed"},
+		}}),
 	)
 	var stdout bytes.Buffer
 
@@ -615,6 +606,10 @@ func TestRunTurnErrorWithInterruptedStatusEmitsTurnInterrupted(t *testing.T) {
 			Error:    "interrupted",
 			Turn:     appserver.Turn{ID: "turn-1", Status: appserver.TurnStatusInterrupted},
 		}),
+		notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+			ID: "run-1", ThreadID: "thread-1", Status: execution.StatusInterrupted,
+			Error: &execution.Error{Code: "interrupted", Category: "cancelled", Message: "interrupted"},
+		}}),
 	)
 	var stdout bytes.Buffer
 
@@ -646,9 +641,13 @@ func TestRunTurnErrorWithInterruptedStatusEmitsTurnInterrupted(t *testing.T) {
 	}
 }
 
-func TestRunTurnErrorClassifiesProviderModelError(t *testing.T) {
+func TestRunFailedErrorClassifiesProviderModelError(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{ThreadID: "thread-1", TurnID: "turn-1", Error: "provider returned an error"}),
+		notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+			ID: "run-1", ThreadID: "thread-1", Status: execution.StatusFailed,
+			Error: &execution.Error{Code: "stream_error", Category: "provider", Message: "provider returned an error"},
+		}}),
 	)
 	var stdout bytes.Buffer
 
@@ -663,9 +662,13 @@ func TestRunTurnErrorClassifiesProviderModelError(t *testing.T) {
 	}
 }
 
-func TestRunTurnErrorClassifiesToolFailure(t *testing.T) {
+func TestRunFailedErrorClassifiesToolFailure(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{ThreadID: "thread-1", TurnID: "turn-1", Error: "tool execution failed: run_shell failed"}),
+		notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+			ID: "run-1", ThreadID: "thread-1", Status: execution.StatusFailed,
+			Error: &execution.Error{Code: "tool_failed", Category: "local", Message: "tool execution failed: run_shell failed"},
+		}}),
 	)
 	var stdout bytes.Buffer
 
@@ -680,7 +683,7 @@ func TestRunTurnErrorClassifiesToolFailure(t *testing.T) {
 	}
 }
 
-func TestRunTurnErrorPrefersStructuredCategoryOverMessage(t *testing.T) {
+func TestRunFailedErrorPrefersStructuredCategory(t *testing.T) {
 	tests := []struct {
 		name     string
 		category string
@@ -696,6 +699,10 @@ func TestRunTurnErrorPrefersStructuredCategoryOverMessage(t *testing.T) {
 				notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{
 					ThreadID: "thread-1", TurnID: "turn-1", Error: tc.message, Category: tc.category,
 				}),
+				notification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+					ID: "run-1", ThreadID: "thread-1", Status: execution.StatusFailed,
+					Error: &execution.Error{Code: "turn_failed", Category: tc.category, Message: tc.message},
+				}}),
 			)
 			var stdout bytes.Buffer
 			err := Run(context.Background(), Options{Prompt: "do work", JSON: true, Stdout: &stdout, Controller: controller})
@@ -706,7 +713,13 @@ func TestRunTurnErrorPrefersStructuredCategoryOverMessage(t *testing.T) {
 	}
 }
 
-func TestRunErrorPreservesStableExitClassification(t *testing.T) {
+func TestRunExitCodePreservesStableExitClassification(t *testing.T) {
+	t.Run("trusts persisted exit code", func(t *testing.T) {
+		run := appserver.Run{Status: execution.StatusFailed, Result: &execution.Result{ExitCode: ExitPermissionDenied}}
+		if got := runExitCode(run); got != ExitPermissionDenied {
+			t.Fatalf("runExitCode = %d, want %d", got, ExitPermissionDenied)
+		}
+	})
 	tests := []struct {
 		category string
 		want     int
@@ -716,18 +729,16 @@ func TestRunErrorPreservesStableExitClassification(t *testing.T) {
 		{category: "permission_denied", want: ExitPermissionDenied},
 	}
 	for _, tc := range tests {
-		if got := exitCodeForRunError(&execution.Error{Category: tc.category, Message: "failed"}, false); got != tc.want {
+		run := appserver.Run{Status: execution.StatusFailed, Error: &execution.Error{Category: tc.category, Message: "failed"}}
+		if got := runExitCode(run); got != tc.want {
 			t.Fatalf("category %q exit code = %d, want %d", tc.category, got, tc.want)
 		}
 	}
 }
 
 func TestRunControllerTimeoutSendsTimeoutReason(t *testing.T) {
-	controller := &fakeRunController{
-		fakeController: newFakeController(),
-		run:            appserver.Run{ID: "run-timeout", Status: execution.StatusRunning, ThreadID: "thread-1"},
-		block:          true,
-	}
+	controller := newFakeController()
+	controller.block = true
 	err := Run(context.Background(), Options{
 		Prompt: "do work", JSON: true, Timeout: 20 * time.Millisecond,
 		Stdout: &bytes.Buffer{}, Controller: controller,
@@ -742,6 +753,7 @@ func TestRunControllerTimeoutSendsTimeoutReason(t *testing.T) {
 
 func TestRunTimeoutInterruptsAndReturnsExitCodeFour(t *testing.T) {
 	controller := newFakeController()
+	controller.block = true
 	var stdout bytes.Buffer
 
 	err := Run(context.Background(), Options{
@@ -754,8 +766,8 @@ func TestRunTimeoutInterruptsAndReturnsExitCodeFour(t *testing.T) {
 	if ExitCode(err) != ExitTimeout {
 		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
 	}
-	if controller.interrupted != "thread-1" {
-		t.Fatalf("interrupted thread = %q", controller.interrupted)
+	if controller.interruptReason != "timeout" {
+		t.Fatalf("interrupt reason = %q", controller.interruptReason)
 	}
 	if !controller.shutdown {
 		t.Fatal("controller was not shutdown")
@@ -953,62 +965,19 @@ func TestRunOutputSchemaEmitsStructuredResult(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(controller.startedPrompt, "Return only JSON") || !strings.Contains(controller.startedPrompt, `"summary"`) {
-		t.Fatalf("prompt missing schema instructions: %q", controller.startedPrompt)
+	// The schema travels to the app-server untouched; prompt injection and
+	// retries happen inside the Run, not in the exec client.
+	if controller.startedParams.Prompt != "summarize" {
+		t.Fatalf("exec should forward the prompt untouched, got %q", controller.startedParams.Prompt)
+	}
+	if !strings.Contains(string(controller.startedParams.OutputSchema), `"summary"`) {
+		t.Fatalf("run/start missing output schema: %q", controller.startedParams.OutputSchema)
 	}
 	events := parseJSONLines(t, stdout.String())
 	result := events[len(events)-1]
 	structured, ok := result["structured_result"].(map[string]any)
 	if !ok || structured["summary"] != "done" {
 		t.Fatalf("structured_result = %+v", result["structured_result"])
-	}
-}
-
-func TestRunOutputSchemaRetriesInvalidFinalMessage(t *testing.T) {
-	schemaPath := writeExecSchema(t, `{
-		"type": "object",
-		"required": ["summary"],
-		"properties": {
-			"summary": {"type": "string"}
-		}
-	}`)
-	controller := newFakeControllerBatches(
-		[]Notification{
-			notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "not json"}),
-		},
-		[]Notification{
-			notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-2"}, Content: `{"summary":"fixed"}`}),
-		},
-	)
-	var stdout bytes.Buffer
-
-	if err := Run(context.Background(), Options{
-		Prompt:           "summarize",
-		OutputSchemaPath: schemaPath,
-		JSON:             true,
-		Stdout:           &stdout,
-		Controller:       controller,
-	}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if controller.startCount != 2 {
-		t.Fatalf("startCount = %d, want 2", controller.startCount)
-	}
-	if len(controller.startedPrompts) != 2 || !strings.Contains(controller.startedPrompts[1], "previous final answer did not validate") {
-		t.Fatalf("retry prompt missing validation context: %+v", controller.startedPrompts)
-	}
-	events := parseJSONLines(t, stdout.String())
-	gotTypes := make([]string, 0, len(events))
-	for _, event := range events {
-		gotTypes = append(gotTypes, event["type"].(string))
-	}
-	wantTypes := []string{"session_configured", "thread_started", "turn_started", "turn_completed", "error", "turn_started", "turn_completed", "result"}
-	if !reflect.DeepEqual(gotTypes, wantTypes) {
-		t.Fatalf("event types:\n got: %#v\nwant: %#v\njsonl:\n%s", gotTypes, wantTypes, stdout.String())
-	}
-	result := events[len(events)-1]
-	if result["status"] != "completed" {
-		t.Fatalf("unexpected result: %+v", result)
 	}
 }
 

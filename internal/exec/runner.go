@@ -16,21 +16,17 @@ import (
 )
 
 type runState struct {
-	threadID                 string
-	turnID                   string
-	runID                    string
-	useRunControl            bool
-	finalMessage             string
-	tracePath                string
-	status                   string
-	commandItems             map[string]appserver.ThreadItem
-	toolOutputs              map[string]string
-	seenSubagents            map[string]bool
-	permissionDenied         bool
-	permissionError          string
-	structuredResult         any
-	structuredResultSet      bool
-	awaitingAutoContinuation bool
+	threadID            string
+	turnID              string
+	runID               string
+	finalMessage        string
+	tracePath           string
+	status              string
+	commandItems        map[string]appserver.ThreadItem
+	toolOutputs         map[string]string
+	seenSubagents       map[string]bool
+	structuredResult    any
+	structuredResultSet bool
 }
 
 type trackingWriter struct {
@@ -129,105 +125,44 @@ func Run(ctx context.Context, opts Options) (runErr error) {
 		emitThreadEvent(opts, "thread_started", thread)
 	}
 
-	_, hasRunController := controller.(RunController)
-	prompt := opts.Prompt
-	if outputSchema != nil && !hasRunController {
-		prompt = outputSchema.initialPrompt(prompt)
+	input := TurnInput{Prompt: opts.Prompt, Images: attachments.Images, Files: attachments.Files}
+	run, err := controller.StartRun(ctx, runStartParams(opts, thread.ID, input, outputSchema))
+	if err != nil {
+		return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, err))
 	}
-	maxRetries := 0
-	if outputSchema != nil {
-		maxRetries = outputSchemaMaxRetries
+	state.runID = run.ID
+	if len(run.Turns) > 0 {
+		state.turnID = run.Turns[len(run.Turns)-1].TurnID
 	}
-	runController, hasRunController := controller.(RunController)
-	useRunControl := hasRunController
-	for attempt := 0; ; attempt++ {
-		state.finalMessage = ""
-		state.turnID = ""
-		state.status = "running"
-		state.commandItems = nil
-		state.toolOutputs = nil
-		input := TurnInput{Prompt: prompt}
-		if attempt == 0 {
-			input.Images = attachments.Images
-			input.Files = attachments.Files
+	if err := waitForRun(ctx, controller, opts, &state); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			_ = interruptRunBestEffort(controller, state.runID, "timeout")
+			emitTurnInterrupted(opts, state, "timeout")
+			emitResult(opts, state, "timeout", "timeout")
+			return WithExitCode(ExitTimeout, err)
 		}
-		var err error
-		if useRunControl {
-			run, startErr := runController.StartRun(ctx, runStartParams(opts, thread.ID, input, outputSchema))
-			if startErr != nil {
-				return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, startErr))
-			}
-			state.runID = run.ID
-			state.useRunControl = true
-			if len(run.Turns) > 0 {
-				state.turnID = run.Turns[len(run.Turns)-1].TurnID
-			}
-			err = waitForRun(ctx, controller, opts, &state)
-		} else {
-			turn, startErr := controller.StartTurn(ctx, thread.ID, input)
-			if startErr != nil {
-				return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, startErr))
-			}
-			state.turnID = turn.ID
-			emitTurnStarted(opts, thread.ID, turn)
-			err = waitForTurn(ctx, controller, opts, &state)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			_ = interruptRunBestEffort(controller, state.runID, "interrupted")
+			emitTurnInterrupted(opts, state, "interrupted")
+			emitResult(opts, state, "interrupted", "interrupted")
+			return WithExitCode(ExitInterrupted, err)
 		}
-		if err != nil {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				if state.runID != "" {
-					_ = interruptRunBestEffort(runController, state.runID, "timeout")
-				} else {
-					_ = interruptBestEffort(controller, state.threadID)
-				}
-				emitTurnInterrupted(opts, state, "timeout")
-				emitResult(opts, state, "timeout", "timeout")
-				return WithExitCode(ExitTimeout, err)
-			}
-			if errors.Is(ctx.Err(), context.Canceled) {
-				if state.runID != "" {
-					_ = interruptRunBestEffort(runController, state.runID, "interrupted")
-				} else {
-					_ = interruptBestEffort(controller, state.threadID)
-				}
-				emitTurnInterrupted(opts, state, "interrupted")
-				emitResult(opts, state, "interrupted", "interrupted")
-				return WithExitCode(ExitInterrupted, err)
-			}
-			return finishRunError(opts, &state, err)
-		}
-		if state.permissionDenied {
-			errorText := state.permissionError
-			if errorText == "" {
-				errorText = "permission denied"
-			}
-			state.status = "permission_denied"
-			emitResult(opts, state, "permission_denied", errorText)
-			return WithExitCode(ExitPermissionDenied, errors.New(errorText))
-		}
+		return finishRunError(opts, &state, err)
+	}
 
-		if outputSchema == nil {
-			break
-		}
-		structuredResult, err := outputSchema.validate(state.finalMessage)
-		if err == nil {
-			state.structuredResult = structuredResult
-			state.structuredResultSet = true
-			break
-		}
-		if useRunControl {
+	if outputSchema != nil {
+		// The app-server already validated and retried the final message
+		// inside the Run; this parse only fills the structured_result
+		// payload. A mismatch means settlement and streamed content disagree.
+		structuredResult, validateErr := outputSchema.validate(state.finalMessage)
+		if validateErr != nil {
 			state.status = "failed"
-			emitStructuredOutputValidation(opts, state, err, false)
-			emitResult(opts, state, "failed", err.Error())
-			return WithExitCode(ExitTurnFailed, err)
+			emitStructuredOutputValidation(opts, state, validateErr, false)
+			emitResult(opts, state, "failed", validateErr.Error())
+			return WithExitCode(ExitTurnFailed, validateErr)
 		}
-		retrying := attempt < maxRetries
-		emitStructuredOutputValidation(opts, state, err, retrying)
-		if !retrying {
-			state.status = "failed"
-			emitResult(opts, state, "failed", err.Error())
-			return WithExitCode(ExitTurnFailed, err)
-		}
-		prompt = outputSchema.retryPrompt(state.finalMessage, err)
+		state.structuredResult = structuredResult
+		state.structuredResultSet = true
 	}
 
 	if opts.OutputLastMessage != "" {
@@ -336,27 +271,6 @@ func outputSchemaRaw(schema *outputSchemaValidator) json.RawMessage {
 	return append(json.RawMessage(nil), schema.raw...)
 }
 
-func waitForTurn(ctx context.Context, controller Controller, opts Options, state *runState) error {
-	notifications := controller.Notifications()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case notification, ok := <-notifications:
-			if !ok {
-				return WithExitCode(ExitProtocol, errors.New("app-server notification stream closed before turn completed"))
-			}
-			done, err := handleNotification(opts, notification, state)
-			if err != nil {
-				return err
-			}
-			if done {
-				return nil
-			}
-		}
-	}
-}
-
 func waitForRun(ctx context.Context, controller Controller, opts Options, state *runState) error {
 	notifications := controller.Notifications()
 	for {
@@ -385,7 +299,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		if state == nil || (!state.useRunControl && !state.awaitingAutoContinuation) || (state.threadID != "" && params.ThreadID != state.threadID) {
+		if state == nil || (state.threadID != "" && params.ThreadID != state.threadID) {
 			return false, nil
 		}
 		state.turnID = params.Turn.ID
@@ -393,7 +307,6 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.status = "running"
 		state.commandItems = nil
 		state.toolOutputs = nil
-		state.awaitingAutoContinuation = false
 		emitTurnStarted(opts, params.ThreadID, params.Turn)
 	case appserver.NotificationAgentMessageDelta:
 		var params appserver.AgentMessageDeltaNotification
@@ -478,18 +391,10 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.threadID = params.ThreadID
 		state.turnID = params.Turn.ID
 		state.tracePath = params.TracePath
-		if state.useRunControl {
-			state.status = "running"
-			return false, nil
-		}
-		if params.AwaitingAutoContinuation {
-			state.status = "waiting_background"
-			state.awaitingAutoContinuation = true
-			state.turnID = ""
-			return false, nil
-		}
-		state.status = "completed"
-		return true, nil
+		// A Run fans out multiple turns (structured-output retries, automatic
+		// continuations); only the Run's terminal run/updated ends the wait.
+		state.status = "running"
+		return false, nil
 	case appserver.NotificationRunUpdated:
 		var params appserver.RunUpdatedNotification
 		if err := decodeNotification(notification, &params); err != nil {
@@ -526,10 +431,9 @@ func handleNotification(opts Options, notification Notification, state *runState
 			return false, WithExitCode(ExitInterrupted, errors.New(errText))
 		case "failed":
 			status := "failed"
-			exitCode := exitCodeForRunError(params.Run.Error, state.permissionDenied)
+			exitCode := runExitCode(params.Run)
 			if exitCode == ExitPermissionDenied {
 				status = "permission_denied"
-				exitCode = ExitPermissionDenied
 			}
 			state.status = status
 			errText := "execution run failed"
@@ -547,7 +451,8 @@ func handleNotification(opts Options, notification Notification, state *runState
 		// The core reports interrupts through turn/error with an embedded
 		// Turn.Status; surface them as turn_interrupted rather than
 		// turn_failed so `wuu exec --json` distinguishes a cancel from a
-		// genuine failure.
+		// genuine failure. The process exit classification arrives with the
+		// Run's terminal run/updated, so a turn error never ends the wait.
 		if params.Turn.Status == appserver.TurnStatusInterrupted {
 			emitJSON(opts, map[string]any{"type": "turn_interrupted", "thread_id": params.ThreadID, "turn_id": params.TurnID, "reason": "interrupted"})
 			if !isCurrentTurn(state, params.ThreadID, params.TurnID) {
@@ -556,11 +461,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 			state.threadID = params.ThreadID
 			state.turnID = params.TurnID
 			state.status = "interrupted"
-			if state.useRunControl {
-				return false, nil
-			}
-			emitResult(opts, *state, "interrupted", params.Error)
-			return false, WithExitCode(ExitInterrupted, errors.New(params.Error))
+			return false, nil
 		}
 		emitJSON(opts, map[string]any{"type": "turn_failed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "error": params.Error})
 		if !isCurrentTurn(state, params.ThreadID, params.TurnID) {
@@ -569,27 +470,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.threadID = params.ThreadID
 		state.turnID = params.TurnID
 		state.status = "failed"
-		if state.useRunControl {
-			if params.Code == "permission_denied" || params.Category == "permission_denied" {
-				state.permissionDenied = true
-				state.permissionError = params.Error
-			}
-			return false, nil
-		}
-		status := "failed"
-		code := exitCodeForTurnError(params, state.permissionDenied)
-		switch code {
-		case ExitPermissionDenied:
-			status = "permission_denied"
-			state.permissionDenied = true
-			if state.permissionError == "" {
-				state.permissionError = params.Error
-			}
-		case ExitInterrupted:
-			status = "interrupted"
-		}
-		emitResult(opts, *state, status, params.Error)
-		return false, WithExitCode(code, errors.New(params.Error))
+		return false, nil
 	}
 	return false, nil
 }
@@ -949,56 +830,14 @@ func copyStringField(dst map[string]any, src map[string]any, key string) {
 	}
 }
 
-func isPermissionFailure(text string) bool {
-	text = strings.ToLower(text)
-	for _, marker := range []string{
-		"error_kind=boundary_denied",
-	} {
-		if strings.Contains(text, marker) {
-			return true
-		}
+// runExitCode trusts the exit code the app-server settled into the Run
+// manifest, falling back to the shared settlement mapping only when the
+// record predates server-side classification.
+func runExitCode(run appserver.Run) int {
+	if run.Result != nil && run.Result.ExitCode != 0 {
+		return run.Result.ExitCode
 	}
-	return false
-}
-
-func exitCodeForTurnError(params appserver.TurnErrorNotification, permissionDenied bool) int {
-	if permissionDenied || isPermissionFailure(params.Error) {
-		return ExitPermissionDenied
-	}
-	switch strings.ToLower(strings.TrimSpace(params.Category)) {
-	case "provider", "auth", "network", "invalid_request":
-		return ExitProviderModelError
-	case "local":
-		return ExitToolFailed
-	case "cancelled", "canceled":
-		return ExitInterrupted
-	case "":
-		// Older app-server versions did not send structured categories.
-	default:
-		return ExitTurnFailed
-	}
-	if isProviderModelFailure(params.Error) {
-		return ExitProviderModelError
-	}
-	if isToolFailure(params.Error) {
-		return ExitToolFailed
-	}
-	return ExitTurnFailed
-}
-
-func exitCodeForRunError(runErr *execution.Error, permissionDenied bool) int {
-	if runErr == nil {
-		if permissionDenied {
-			return ExitPermissionDenied
-		}
-		return ExitTurnFailed
-	}
-	if strings.EqualFold(strings.TrimSpace(runErr.Code), "permission_denied") || strings.EqualFold(strings.TrimSpace(runErr.Category), "permission_denied") {
-		permissionDenied = true
-	}
-	return exitCodeForTurnError(appserver.TurnErrorNotification{
-		Error: runErr.Message, Code: runErr.Code, Category: runErr.Category,
-	}, permissionDenied)
+	return execution.ExitCodeForSettlement(execution.Status(run.Status), run.Error)
 }
 
 func isProviderModelFailure(text string) bool {
@@ -1013,21 +852,6 @@ func isProviderModelFailure(text string) bool {
 		"auth token",
 		"unsupported wire",
 		"unsupported api",
-	} {
-		if strings.Contains(text, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func isToolFailure(text string) bool {
-	text = strings.ToLower(text)
-	for _, marker := range []string{
-		"tool execution failed",
-		"tool call failed",
-		"tool failed",
-		"error_kind=tool",
 	} {
 		if strings.Contains(text, marker) {
 			return true
@@ -1219,19 +1043,16 @@ func classifyProtocolOrContextError(ctx context.Context, err error) error {
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return WithExitCode(ExitInterrupted, err)
 	}
+	// A thread that already has a running turn is a conflict the caller can
+	// act on (wait, or target another thread), not a protocol fault.
+	var protocolErr *ProtocolError
+	if errors.As(err, &protocolErr) && strings.EqualFold(strings.TrimSpace(protocolErr.Code), "thread_busy") {
+		return WithExitCode(ExitConflict, err)
+	}
 	return WithExitCode(ExitProtocol, err)
 }
 
-func interruptBestEffort(controller Controller, threadID string) error {
-	if controller == nil || strings.TrimSpace(threadID) == "" {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return controller.Interrupt(ctx, threadID)
-}
-
-func interruptRunBestEffort(controller RunController, runID, reason string) error {
+func interruptRunBestEffort(controller Controller, runID, reason string) error {
 	if controller == nil || strings.TrimSpace(runID) == "" {
 		return nil
 	}

@@ -8,18 +8,22 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/execution"
 )
 
+// The exit-code contract lives in the execution package so the code persisted
+// in a Run's manifest and the code this process exits with share one source.
 const (
-	ExitOK                 = 0
-	ExitTurnFailed         = 1
-	ExitInvalidInput       = 2
-	ExitPermissionDenied   = 3
-	ExitTimeout            = 4
-	ExitInterrupted        = 5
-	ExitProtocol           = 6
-	ExitProviderModelError = 7
-	ExitToolFailed         = 8
+	ExitOK                 = execution.ExitOK
+	ExitTurnFailed         = execution.ExitTurnFailed
+	ExitInvalidInput       = execution.ExitInvalidInput
+	ExitPermissionDenied   = execution.ExitPermissionDenied
+	ExitTimeout            = execution.ExitTimeout
+	ExitInterrupted        = execution.ExitInterrupted
+	ExitProtocol           = execution.ExitProtocol
+	ExitProviderModelError = execution.ExitProviderModelError
+	ExitToolFailed         = execution.ExitToolFailed
+	ExitConflict           = execution.ExitConflict
 )
 
 type ExitError struct {
@@ -98,24 +102,18 @@ type Options struct {
 	Controller        Controller
 }
 
+// Controller is the app-server control surface for one exec invocation. An
+// invocation is driven as a single Run; the app-server owns turn fan-out
+// (structured-output retries, automatic continuations) inside that Run.
 type Controller interface {
 	Initialize(context.Context) (appserver.InitializeResult, error)
 	StartThread(context.Context, bool) (appserver.Thread, error)
 	ResumeThread(context.Context, string) (appserver.Thread, error)
 	ForkThread(context.Context, string) (appserver.Thread, error)
-	StartTurn(context.Context, string, TurnInput) (appserver.Turn, error)
-	Interrupt(context.Context, string) error
+	StartRun(context.Context, appserver.RunStartParams) (appserver.Run, error)
+	InterruptRun(context.Context, string, string) (appserver.Run, error)
 	Shutdown(context.Context) error
 	Notifications() <-chan Notification
-}
-
-// RunController is the app-server control surface used by the normal exec
-// path. Controller remains compatible with the legacy Turn methods so focused
-// tests and older embedders can migrate independently.
-type RunController interface {
-	StartRun(context.Context, appserver.RunStartParams) (appserver.Run, error)
-	ReadRun(context.Context, string) (appserver.RunView, error)
-	InterruptRun(context.Context, string, string) (appserver.Run, error)
 }
 
 type Attachments struct {

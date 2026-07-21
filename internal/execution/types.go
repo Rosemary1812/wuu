@@ -95,6 +95,9 @@ type TurnRef struct {
 	AttachedAt time.Time `json:"attached_at"`
 }
 
+// Run is the execution record of one invocation. Higher-level orchestration
+// (kanban dispatch, automation schedules) keeps its own dispatch record and
+// references the execution Run; it does not redefine execution state here.
 type Run struct {
 	ID          string          `json:"id"`
 	RuntimeID   string          `json:"runtime_id,omitempty"`

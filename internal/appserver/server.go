@@ -830,10 +830,6 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleTurnInterrupt(req)
 	case MethodRunStart:
 		return s.handleRunStart(ctx, req)
-	case MethodRunRead:
-		return s.handleRunRead(ctx, req)
-	case MethodRunList:
-		return s.handleRunList(ctx, req)
 	case MethodRunInterrupt:
 		return s.handleRunInterrupt(ctx, req)
 	case MethodProcessList:

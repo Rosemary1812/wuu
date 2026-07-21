@@ -21,6 +21,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
+	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -1524,7 +1525,7 @@ func withStdin[T any](t *testing.T, text string, fn func() T) T {
 type cliExecFakeController struct {
 	initResult appserver.InitializeResult
 	thread     appserver.Thread
-	turn       appserver.Turn
+	run        appserver.Run
 	events     []wuuexec.Notification
 
 	startedThread  bool
@@ -1548,7 +1549,10 @@ func newCLIExecFakeController(events ...wuuexec.Notification) *cliExecFakeContro
 			},
 		},
 		thread: appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
-		turn:   appserver.Turn{ID: "turn-1"},
+		run: appserver.Run{
+			ID: "run-1", Status: execution.StatusRunning, ThreadID: "thread-1",
+			Turns: []execution.TurnRef{{TurnID: "turn-1", ThreadID: "thread-1"}},
+		},
 		events: events,
 	}
 }
@@ -1576,24 +1580,56 @@ func (f *cliExecFakeController) ForkThread(_ context.Context, id string) (appser
 	return f.thread, nil
 }
 
-func (f *cliExecFakeController) StartTurn(_ context.Context, _ string, input wuuexec.TurnInput) (appserver.Turn, error) {
-	f.startedPrompt = input.Prompt
-	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)
-	f.startedFiles = append([]appserver.TurnStartFile(nil), input.Files...)
-	return f.turn, nil
+func (f *cliExecFakeController) StartRun(_ context.Context, params appserver.RunStartParams) (appserver.Run, error) {
+	f.startedPrompt = params.Prompt
+	f.startedImages = append([]appserver.TurnStartImage(nil), params.Images...)
+	f.startedFiles = append([]appserver.TurnStartFile(nil), params.Files...)
+	return f.run, nil
 }
 
-func (f *cliExecFakeController) Interrupt(context.Context, string) error {
-	return nil
+func (f *cliExecFakeController) InterruptRun(_ context.Context, _ string, _ string) (appserver.Run, error) {
+	return f.run, nil
 }
 
 func (f *cliExecFakeController) Shutdown(context.Context) error {
 	return nil
 }
 
+// Notifications mirrors the in-process app-server: turn/started, the
+// scripted events, then a synthesized completed run/updated unless the
+// script already settles the Run.
 func (f *cliExecFakeController) Notifications() <-chan wuuexec.Notification {
-	ch := make(chan wuuexec.Notification, len(f.events))
-	for _, event := range f.events {
+	hasTurnStarted := false
+	hasRunUpdated := false
+	lastTurnID := "turn-1"
+	lastTrace := ""
+	for _, ev := range f.events {
+		switch ev.Method {
+		case appserver.NotificationTurnStarted:
+			hasTurnStarted = true
+		case appserver.NotificationRunUpdated:
+			hasRunUpdated = true
+		case appserver.NotificationTurnCompleted:
+			var params appserver.TurnCompletedNotification
+			if err := json.Unmarshal(ev.Params, &params); err == nil {
+				lastTurnID = params.Turn.ID
+				lastTrace = params.TracePath
+			}
+		}
+	}
+	events := make([]wuuexec.Notification, 0, len(f.events)+2)
+	if !hasTurnStarted {
+		events = append(events, cliExecNotification(appserver.NotificationTurnStarted, appserver.TurnStartedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}}))
+	}
+	events = append(events, f.events...)
+	if !hasRunUpdated {
+		events = append(events, cliExecNotification(appserver.NotificationRunUpdated, appserver.RunUpdatedNotification{Run: appserver.Run{
+			ID: "run-1", ThreadID: "thread-1", Status: execution.StatusCompleted,
+			Result: &execution.Result{FinalTurnID: lastTurnID, TracePath: lastTrace},
+		}}))
+	}
+	ch := make(chan wuuexec.Notification, len(events))
+	for _, event := range events {
 		ch <- event
 	}
 	return ch

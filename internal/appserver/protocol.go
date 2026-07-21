@@ -94,8 +94,6 @@ const (
 	MethodTurnUnsteer      = "turn/unsteer"
 	MethodTurnInterrupt    = "turn/interrupt"
 	MethodRunStart         = "run/start"
-	MethodRunRead          = "run/read"
-	MethodRunList          = "run/list"
 	MethodRunInterrupt     = "run/interrupt"
 	MethodProcessList      = "process/list"
 	MethodProcessRead      = "process/read"
@@ -1403,28 +1401,10 @@ type RunStartResult struct {
 	Run Run `json:"run"`
 }
 
-type RunReadParams struct {
-	RunID string `json:"run_id"`
-}
-
 type RunView struct {
 	Run      Run     `json:"run"`
 	Thread   *Thread `json:"thread,omitempty"`
 	Attached bool    `json:"attached"`
-}
-
-type RunReadResult = RunView
-
-type RunListParams struct {
-	WorkspaceID   string           `json:"workspace_id,omitempty"`
-	WorkspaceRoot string           `json:"workspace_root,omitempty"`
-	ThreadID      string           `json:"thread_id,omitempty"`
-	Status        execution.Status `json:"status,omitempty"`
-	Limit         int              `json:"limit,omitempty"`
-}
-
-type RunListResult struct {
-	Runs []Run `json:"runs"`
 }
 
 type RunInterruptParams struct {

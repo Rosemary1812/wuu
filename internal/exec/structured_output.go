@@ -12,8 +12,6 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-const outputSchemaMaxRetries = 2
-
 type outputSchemaValidator struct {
 	path string
 	raw  json.RawMessage
@@ -60,40 +58,8 @@ func loadOutputSchema(rootDir, inputPath string) (*outputSchemaValidator, error)
 	return &outputSchemaValidator{path: absPath, raw: compact, sch: sch}, nil
 }
 
-func (v *outputSchemaValidator) initialPrompt(prompt string) string {
-	if v == nil {
-		return prompt
-	}
-	var b strings.Builder
-	b.WriteString("You must complete the task and make your final answer a single JSON value that validates against this JSON Schema.\n")
-	b.WriteString("Return only JSON. Do not wrap it in Markdown. Do not include explanatory text outside the JSON value.\n\n")
-	b.WriteString("JSON Schema:\n")
-	b.Write(v.raw)
-	if strings.TrimSpace(prompt) != "" {
-		b.WriteString("\n\nTask:\n")
-		b.WriteString(prompt)
-	}
-	return b.String()
-}
-
-func (v *outputSchemaValidator) retryPrompt(previous string, validationErr error) string {
-	if v == nil {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("Your previous final answer did not validate against the required JSON Schema.\n")
-	b.WriteString("Return only a corrected JSON value. Do not wrap it in Markdown. Do not include explanatory text outside the JSON value.\n\n")
-	b.WriteString("Validation error:\n")
-	b.WriteString(validationErr.Error())
-	b.WriteString("\n\nJSON Schema:\n")
-	b.Write(v.raw)
-	if strings.TrimSpace(previous) != "" {
-		b.WriteString("\n\nPrevious final answer:\n")
-		b.WriteString(previous)
-	}
-	return b.String()
-}
-
+// validate parses the final message for the structured_result payload. The
+// schema-driven prompt and any retries happen inside the app-server Run.
 func (v *outputSchemaValidator) validate(text string) (any, error) {
 	if v == nil {
 		return nil, nil

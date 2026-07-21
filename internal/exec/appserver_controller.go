@@ -123,39 +123,16 @@ func (c *localAppServerController) ForkThread(ctx context.Context, threadID stri
 	return result.Thread, err
 }
 
-func (c *localAppServerController) StartTurn(ctx context.Context, threadID string, input TurnInput) (appserver.Turn, error) {
-	var result appserver.TurnStartResult
-	params := appserver.TurnStartParams{
-		ThreadID: threadID,
-		Prompt:   input.Prompt,
-		Images:   append([]appserver.TurnStartImage(nil), input.Images...),
-		Files:    append([]appserver.TurnStartFile(nil), input.Files...),
-	}
-	err := c.client.Call(ctx, appserver.MethodTurnStart, params, &result)
-	return result.Turn, err
-}
-
 func (c *localAppServerController) StartRun(ctx context.Context, params appserver.RunStartParams) (appserver.Run, error) {
 	var result appserver.RunStartResult
 	err := c.client.Call(ctx, appserver.MethodRunStart, params, &result)
 	return result.Run, err
 }
 
-func (c *localAppServerController) ReadRun(ctx context.Context, runID string) (appserver.RunView, error) {
-	var result appserver.RunReadResult
-	err := c.client.Call(ctx, appserver.MethodRunRead, appserver.RunReadParams{RunID: strings.TrimSpace(runID)}, &result)
-	return result, err
-}
-
 func (c *localAppServerController) InterruptRun(ctx context.Context, runID, reason string) (appserver.Run, error) {
 	var result appserver.RunInterruptResult
 	err := c.client.Call(ctx, appserver.MethodRunInterrupt, appserver.RunInterruptParams{RunID: strings.TrimSpace(runID), Reason: strings.TrimSpace(reason)}, &result)
 	return result.Run, err
-}
-
-func (c *localAppServerController) Interrupt(ctx context.Context, threadID string) error {
-	var result appserver.OKResult
-	return c.client.Call(ctx, appserver.MethodTurnInterrupt, appserver.TurnInterruptParams{ThreadID: threadID}, &result)
 }
 
 // shutdownFallbackTimeout bounds Shutdown when the caller's context carries
@@ -171,6 +148,15 @@ func (c *localAppServerController) Shutdown(ctx context.Context) error {
 		ctx, cancel = context.WithTimeout(ctx, shutdownFallbackTimeout)
 		defer cancel()
 	}
+	// The notification channel is drained until the protocol closes. Without
+	// this a full buffer blocks the read loop, which would then never read
+	// the shutdown response.
+	drainDone := make(chan struct{})
+	go func() {
+		for range c.client.Notifications() {
+		}
+		close(drainDone)
+	}()
 	var result appserver.OKResult
 	err := c.client.Call(ctx, appserver.MethodShutdown, nil, &result)
 	for _, pipe := range c.pipes {
@@ -189,6 +175,9 @@ func (c *localAppServerController) Shutdown(ctx context.Context) error {
 			return errors.Join(err, fmt.Errorf("app server run loop did not exit before shutdown deadline: %w", ctx.Err()))
 		}
 	}
+	// The pipes are closed, so the protocol read loop has closed the
+	// notification channel and the drain goroutine is done or about to be.
+	<-drainDone
 	// RunStdio synchronously drains app-server-owned turns and worker
 	// finalizers. Only then is it safe to close the shared runtime resources
 	// those terminal paths still use.

@@ -115,7 +115,8 @@ func (s *Server) handleRunStart(ctx context.Context, req Request) error {
 		if admissionErr == nil {
 			admissionErr = fmt.Errorf("thread %q already has a running turn", params.ThreadID)
 		}
-		_, _ = s.runStore.Fail(ctx, run.ID, execution.StatusCancelled, execution.Result{}, execution.Error{Code: "admission_failed", Category: "cancelled", Message: admissionErr.Error()}, time.Now().UTC())
+		runErr := execution.Error{Code: "admission_failed", Category: "cancelled", Message: admissionErr.Error()}
+		_, _ = s.runStore.Fail(ctx, run.ID, execution.StatusCancelled, execution.Result{ExitCode: execution.ExitCodeForSettlement(execution.StatusCancelled, &runErr)}, runErr, time.Now().UTC())
 		return s.writeRunError(req.ID, "thread_busy", admissionErr)
 	}
 
@@ -158,40 +159,6 @@ func (s *Server) handleRunStart(ctx context.Context, req Request) error {
 	}
 	launch.Commit()
 	return nil
-}
-
-func (s *Server) handleRunRead(ctx context.Context, req Request) error {
-	var params RunReadParams
-	if err := decodeParams(req.Params, &params); err != nil {
-		return s.writeRunError(req.ID, "invalid_params", err)
-	}
-	view, err := s.readExecutionRun(ctx, strings.TrimSpace(params.RunID))
-	if err != nil {
-		code := "internal_error"
-		if errors.Is(err, execution.ErrNotFound) {
-			code = "run_not_found"
-		}
-		return s.writeRunError(req.ID, code, err)
-	}
-	return s.writeResponse(req.ID, RunReadResult(view), nil)
-}
-
-func (s *Server) handleRunList(ctx context.Context, req Request) error {
-	var params RunListParams
-	if err := decodeParams(req.Params, &params); err != nil {
-		return s.writeRunError(req.ID, "invalid_params", err)
-	}
-	if s.runStore == nil {
-		return s.writeRunError(req.ID, "internal_error", errors.New("execution run store is unavailable"))
-	}
-	runs, err := s.runStore.List(ctx, execution.ListOptions{
-		WorkspaceID: strings.TrimSpace(params.WorkspaceID), WorkspaceRoot: strings.TrimSpace(params.WorkspaceRoot),
-		ThreadID: strings.TrimSpace(params.ThreadID), Status: params.Status, Limit: params.Limit,
-	})
-	if err != nil {
-		return s.writeRunError(req.ID, "internal_error", err)
-	}
-	return s.writeResponse(req.ID, RunListResult{Runs: runs}, nil)
 }
 
 func (s *Server) handleRunInterrupt(ctx context.Context, req Request) error {
@@ -390,7 +357,6 @@ func (s *Server) settleExecutionRunTurn(runID, turnID, tracePath string, turn Tu
 		if turn.Status == TurnStatusInterrupted || errors.Is(turnErr, context.Canceled) {
 			status = s.executionRunInterruptStatus(runID)
 		}
-		result.ExitCode = executionExitCode(status)
 		runError := execution.Error{Code: "turn_failed", Category: "unknown", Message: turnErr.Error()}
 		if structured != nil {
 			runError = execution.Error{
@@ -398,6 +364,7 @@ func (s *Server) settleExecutionRunTurn(runID, turnID, tracePath string, turn Tu
 				Provider: structured.Provider, StatusCode: structured.StatusCode,
 			}
 		}
+		result.ExitCode = execution.ExitCodeForSettlement(status, &runError)
 		run, err = s.runStore.Fail(context.Background(), runID, status, result, runError, at)
 	} else if !awaitingContinuation {
 		run, err = s.runStore.Complete(context.Background(), runID, result, at)
@@ -491,7 +458,8 @@ func (s *Server) failAndDetachExecutionRun(runID string, status execution.Status
 	if cause != nil {
 		message = cause.Error()
 	}
-	run, err := s.runStore.Fail(context.Background(), runID, status, execution.Result{ExitCode: executionExitCode(status)}, execution.Error{Code: code, Category: category, Message: message}, time.Now().UTC())
+	runError := execution.Error{Code: code, Category: category, Message: message}
+	run, err := s.runStore.Fail(context.Background(), runID, status, execution.Result{ExitCode: execution.ExitCodeForSettlement(status, &runError)}, runError, time.Now().UTC())
 	if err != nil {
 		current, readErr := s.runStore.Get(context.Background(), runID)
 		if readErr != nil || !current.Status.Terminal() {
@@ -502,19 +470,6 @@ func (s *Server) failAndDetachExecutionRun(runID string, status execution.Status
 	s.detachExecutionRun(runID)
 	s.kickQueuedTurnDrain(run.ThreadID)
 	return run, nil
-}
-
-func executionExitCode(status execution.Status) int {
-	switch status {
-	case execution.StatusCompleted:
-		return 0
-	case execution.StatusInterrupted, execution.StatusCancelled:
-		return 5
-	case execution.StatusTimedOut:
-		return 4
-	default:
-		return 1
-	}
 }
 
 func (s *Server) interruptAttachedRunsOnClose() {
