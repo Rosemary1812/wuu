@@ -10,6 +10,12 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [0.10.1] - 2026-07-21
 
+### Added
+
+- Added drag-and-drop from the workspace file tree into composers as path
+  references, plus external file drops through the existing attachment checks
+  and a 20 MB limit for PDF attachments.
+
 ### Fixed
 
 - Preserved the selected final assistant response when deriving a conversation,
