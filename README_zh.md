@@ -36,6 +36,7 @@
 | 在脚本、CI 或其他 agent 中调用 wuu | [CLI 和自动化](#cli-和自动化) 和 [`wuu exec`](docs/en/automation/exec.md) |
 | 接入模型提供商（Anthropic、OpenAI 兼容、本地） | [模型提供商](#模型提供商) |
 | 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) |
+| 了解项目接下来做什么 | [路线图](ROADMAP_zh.md) |
 | 参与贡献 | [贡献指南](CONTRIBUTING.md) |
 | 了解安全和信任边界 | [安全模型](docs/en/reference/security-model.md) |
 | 查看可复现的公开评测 | [公开评测记录](evals/) |
@@ -243,6 +244,7 @@ export ANTHROPIC_API_KEY="..."
 ## 文档
 
 - 浏览所有持续维护的文档：[文档索引](docs/README.md)
+- 了解当前优先级和通往 1.0 的路径：[路线图](ROADMAP_zh.md)
 - 安装、配置和使用 wuu：[用户指南](docs/zh-cn/getting-started/index.md)
 - 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/en/automation/exec.md)
 - 解析流式输出：[JSONL 事件](docs/en/automation/jsonl-events.md)

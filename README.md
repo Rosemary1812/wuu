@@ -36,6 +36,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 | Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`wuu exec`](docs/en/automation/exec.md) |
 | Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
 | Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) |
+| See where the project is going | [Roadmap](ROADMAP.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
 | Review the security and trust boundaries | [Security model](docs/en/reference/security-model.md) |
 | Inspect reproducible public evaluations | [Public evaluations](evals/) |
@@ -261,6 +262,7 @@ For another provider, the same config shape applies:
 ## Docs
 
 - Browse all maintained documentation: [Documentation index](docs/README.md)
+- See current priorities and the path to 1.0: [Roadmap](ROADMAP.md)
 - Install, configure, and use wuu: [User guide](docs/en/getting-started/index.md)
 - Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/en/automation/exec.md)
 - Parse the streaming output: [JSONL events](docs/en/automation/jsonl-events.md)
