@@ -887,8 +887,10 @@
 /* --- Theme picker ------------------------------------------------------------
  * Visual radio cards, same selection language as the provider tiles: a
  * resting hairline, a strong border on the active card instead of a fill.
- * Each preview is a tiny window mockup of the theme — "system" splits
- * light/dark — so previews use fixed local colors, never theme tokens.
+ * Each preview is a tiny window mockup of the theme. "System" uses the same
+ * geometry as the other options and splits its surfaces into light/dark, so
+ * there are no overlapping sidebars or clipped layers. Preview colors are
+ * fixed local colors, never theme tokens.
  * ----------------------------------------------------------------------------- */
 
 .settings-theme-options {
@@ -944,19 +946,6 @@
   height: 100%;
 }
 
-.settings-theme-preview-system .settings-theme-preview-window {
-  position: absolute;
-  inset: 0;
-}
-
-.settings-theme-preview-system .settings-theme-preview-window-light {
-  clip-path: polygon(0 0, 56% 0, 44% 100%, 0 100%);
-}
-
-.settings-theme-preview-system .settings-theme-preview-window-dark {
-  clip-path: polygon(56% 0, 100% 0, 100% 100%, 44% 100%);
-}
-
 .settings-theme-preview-sidebar {
   flex: 0 0 26%;
 }
@@ -1007,6 +996,19 @@
 
 .settings-theme-preview-window-dark .settings-theme-preview-line {
   background: #3a4046;
+}
+
+.settings-theme-preview-window-system {
+  background: linear-gradient(90deg, #ffffff 0 50%, #1d2024 50% 100%);
+}
+
+.settings-theme-preview-window-system .settings-theme-preview-sidebar {
+  background: #f7f7f5;
+}
+
+.settings-theme-preview-window-system .settings-theme-preview-line {
+  /* The body starts after the 26% sidebar, so 32.5% is the window midpoint. */
+  background: linear-gradient(90deg, #e5e5e1 0 32.5%, #3a4046 32.5% 100%);
 }
 
 /* --- MCP list + extensions + pets ------------------------------------------------ */
