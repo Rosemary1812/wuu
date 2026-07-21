@@ -55,6 +55,7 @@
 .dock-composer-wrap .composer-stack {
   position: relative;
   z-index: 1;
+  transform: translateX(calc(var(--conversation-scrollbar-gutter) / -2));
   pointer-events: auto;
 }
 

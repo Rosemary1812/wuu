@@ -86,9 +86,9 @@ describe("conversation flow and dock composer alignment", () => {
     );
   });
 
-  it("does not offset the composer and applies only the centered optical inset", () => {
-    expect(composerCss).not.toMatch(
-      /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:/,
+  it("shares the scroll-gutter center and applies the optical inset symmetrically", () => {
+    expect(composerCss).toMatch(
+      /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:\s*translateX\(calc\(var\(--conversation-scrollbar-gutter\)\s*\/\s*-2\)\);/,
     );
     expect(conversationShellCss).toMatch(
       /--conversation-flow-optical-inset:\s*4px;/,
