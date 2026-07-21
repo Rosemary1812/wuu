@@ -907,6 +907,7 @@
 }
 
 .settings-theme-preview {
+  position: relative;
   display: block;
   overflow: hidden;
   width: 120px;
@@ -943,6 +944,19 @@
   height: 100%;
 }
 
+.settings-theme-preview-system .settings-theme-preview-window {
+  position: absolute;
+  inset: 0;
+}
+
+.settings-theme-preview-system .settings-theme-preview-window-light {
+  clip-path: polygon(0 0, 56% 0, 44% 100%, 0 100%);
+}
+
+.settings-theme-preview-system .settings-theme-preview-window-dark {
+  clip-path: polygon(56% 0, 100% 0, 100% 100%, 44% 100%);
+}
+
 .settings-theme-preview-sidebar {
   flex: 0 0 26%;
 }
@@ -971,40 +985,28 @@
   width: 45%;
 }
 
-.settings-theme-preview-light .settings-theme-preview-window {
+.settings-theme-preview-window-light {
   background: #ffffff;
 }
 
-.settings-theme-preview-light .settings-theme-preview-sidebar {
+.settings-theme-preview-window-light .settings-theme-preview-sidebar {
   background: #f7f7f5;
 }
 
-.settings-theme-preview-light .settings-theme-preview-line {
+.settings-theme-preview-window-light .settings-theme-preview-line {
   background: #e5e5e1;
 }
 
-.settings-theme-preview-dark .settings-theme-preview-window {
+.settings-theme-preview-window-dark {
   background: #1d2024;
 }
 
-.settings-theme-preview-dark .settings-theme-preview-sidebar {
+.settings-theme-preview-window-dark .settings-theme-preview-sidebar {
   background: #141618;
 }
 
-.settings-theme-preview-dark .settings-theme-preview-line {
+.settings-theme-preview-window-dark .settings-theme-preview-line {
   background: #3a4046;
-}
-
-.settings-theme-preview-system .settings-theme-preview-window {
-  background: linear-gradient(to right, #ffffff 50%, #1d2024 50%);
-}
-
-.settings-theme-preview-system .settings-theme-preview-sidebar {
-  background: linear-gradient(to right, #f7f7f5 50%, #141618 50%);
-}
-
-.settings-theme-preview-system .settings-theme-preview-line {
-  background: linear-gradient(to right, #e5e5e1 50%, #3a4046 50%);
 }
 
 /* --- MCP list + extensions + pets ------------------------------------------------ */

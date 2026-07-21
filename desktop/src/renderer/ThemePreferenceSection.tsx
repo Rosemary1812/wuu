@@ -3,6 +3,21 @@ import type { ThemePreference } from "../shared/protocol";
 import { applyThemePreference } from "./Theme";
 import { useI18n } from "./i18n";
 
+type PreviewTheme = Exclude<ThemePreference, "system">;
+
+function ThemePreviewWindow({ theme }: { theme: PreviewTheme }): JSX.Element {
+  return (
+    <span className={`settings-theme-preview-window settings-theme-preview-window-${theme}`}>
+      <span className="settings-theme-preview-sidebar" />
+      <span className="settings-theme-preview-body">
+        <span className="settings-theme-preview-line settings-theme-preview-line-title" />
+        <span className="settings-theme-preview-line" />
+        <span className="settings-theme-preview-line settings-theme-preview-line-short" />
+      </span>
+    </span>
+  );
+}
+
 /**
  * 外观 row body: visual radio cards with a tiny window preview per option
  * (system splits light/dark). Reads and persists through window.wuu
@@ -69,14 +84,14 @@ export function ThemePreferenceControl(): JSX.Element {
           onClick={() => choose(option.value)}
         >
           <span className={`settings-theme-preview settings-theme-preview-${option.value}`} aria-hidden="true">
-            <span className="settings-theme-preview-window">
-              <span className="settings-theme-preview-sidebar" />
-              <span className="settings-theme-preview-body">
-                <span className="settings-theme-preview-line settings-theme-preview-line-title" />
-                <span className="settings-theme-preview-line" />
-                <span className="settings-theme-preview-line settings-theme-preview-line-short" />
-              </span>
-            </span>
+            {option.value === "system" ? (
+              <>
+                <ThemePreviewWindow theme="light" />
+                <ThemePreviewWindow theme="dark" />
+              </>
+            ) : (
+              <ThemePreviewWindow theme={option.value} />
+            )}
           </span>
           <span className="settings-theme-card-label">{option.label}</span>
         </button>
