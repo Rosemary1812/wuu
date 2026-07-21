@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/credentialstore"
+	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/process"
@@ -30,8 +31,9 @@ import (
 )
 
 var (
-	errServerClosed = errors.New("app-server is closed")
-	errShutdown     = errors.New("app-server shutdown requested")
+	errServerClosed        = errors.New("app-server is closed")
+	errShutdown            = errors.New("app-server shutdown requested")
+	errExecutionRunChanged = errors.New("thread execution belongs to a different Run")
 )
 
 type threadState struct {
@@ -75,18 +77,19 @@ type threadState struct {
 	runtimeSelectionMutation bool
 	runtimeSubscription      *threadRuntimeSubscription
 
-	mu                  sync.Mutex
-	running             bool
-	currentTurn         string
-	currentTurnKind     TurnKind
-	currentTurnResumed  bool
-	runningProviderName string
-	runningModel        string
-	cancel              context.CancelFunc
-	executionLease      *session.ThreadExecutionLease
-	admissionReserved   bool
-	pendingSteers       []providers.ChatMessage
-	interrupting        bool
+	mu                    sync.Mutex
+	running               bool
+	currentTurn           string
+	currentTurnKind       TurnKind
+	currentExecutionRunID string
+	currentTurnResumed    bool
+	runningProviderName   string
+	runningModel          string
+	cancel                context.CancelFunc
+	executionLease        *session.ThreadExecutionLease
+	admissionReserved     bool
+	pendingSteers         []providers.ChatMessage
+	interrupting          bool
 	// Worker-tree freeze (turn/interrupt): while set, agent-completion drains
 	// hold their pending synthetic turns. The next user-initiated turn folds
 	// the whole-tree snapshot into its request (frozenTreeContext) and marks
@@ -165,6 +168,11 @@ type Server struct {
 
 	mu      sync.Mutex
 	threads map[string]*threadState
+
+	runMu             sync.Mutex
+	runStore          *execution.Store
+	runs              map[string]*runTracker
+	activeRunByThread map[string]string
 
 	agentTerminalFinalizationMu sync.Mutex
 	agentTerminalFinalizations  map[agentTerminalFinalizationKey]struct{}
@@ -256,6 +264,8 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		inferenceMaintenanceStop:     make(chan struct{}),
 		sideTurns:                    make(map[string]*sideThreadTurn),
 		clientCalls:                  make(map[string]chan clientResponse),
+		runs:                         make(map[string]*runTracker),
+		activeRunByThread:            make(map[string]string),
 	}
 	bootOwner := false
 	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
@@ -269,6 +279,12 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 	}
 	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
 		s.sideThreadStore = sidethread.NewStore(filepath.Join(rt.SessionDir, "sidethreads"))
+		runStore, err := execution.NewStore(rt.SessionDir)
+		if err != nil {
+			s.startupErr = fmt.Errorf("open execution run store: %w", err)
+			return s
+		}
+		s.runStore = runStore
 	}
 	if bootOwner {
 		s.recoverSideThreadsOnBoot()
@@ -340,6 +356,14 @@ func (s *Server) settleOnBoot() {
 			providers.DebugLogf("settleOnBoot pass5 (inference journal retention): %v", pruneErr)
 		} else if pruned > 0 {
 			providers.DebugLogf("settleOnBoot pass5: pruned %d old inference operation(s)", pruned)
+		}
+		if s.runStore != nil {
+			recovered, err := s.runStore.ReconcileOrphans(context.Background(), s.rt.InferenceJournalRuntime.RuntimeID(), now)
+			if err != nil {
+				providers.DebugLogf("settleOnBoot pass6 (execution runs): %v", err)
+			} else if len(recovered) > 0 {
+				providers.DebugLogf("settleOnBoot pass6: interrupted %d orphan execution run(s)", len(recovered))
+			}
 		}
 	}
 }
@@ -506,6 +530,7 @@ func (s *Server) Close() {
 		clear(s.drainingGoalContinuation)
 		s.goalContinuationMu.Unlock()
 		s.waitForOwnedShutdown(threads, controls)
+		s.interruptAttachedRunsOnClose()
 		for _, th := range threads {
 			releaseThreadRuntime(th)
 		}
@@ -805,6 +830,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleTurnUnsteer(req)
 	case MethodTurnInterrupt:
 		return s.handleTurnInterrupt(req)
+	case MethodRunStart:
+		return s.handleRunStart(ctx, req)
+	case MethodRunRead:
+		return s.handleRunRead(ctx, req)
+	case MethodRunList:
+		return s.handleRunList(ctx, req)
+	case MethodRunInterrupt:
+		return s.handleRunInterrupt(ctx, req)
 	case MethodProcessList:
 		return s.handleProcessList(req)
 	case MethodProcessRead:

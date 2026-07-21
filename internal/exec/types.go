@@ -109,6 +109,15 @@ type Controller interface {
 	Notifications() <-chan Notification
 }
 
+// RunController is the app-server control surface used by the normal exec
+// path. Controller remains compatible with the legacy Turn methods so focused
+// tests and older embedders can migrate independently.
+type RunController interface {
+	StartRun(context.Context, appserver.RunStartParams) (appserver.Run, error)
+	ReadRun(context.Context, string) (appserver.RunView, error)
+	InterruptRun(context.Context, string, string) (appserver.Run, error)
+}
+
 type Attachments struct {
 	Images []appserver.TurnStartImage
 	Files  []appserver.TurnStartFile

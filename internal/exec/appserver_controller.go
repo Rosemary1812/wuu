@@ -135,6 +135,24 @@ func (c *localAppServerController) StartTurn(ctx context.Context, threadID strin
 	return result.Turn, err
 }
 
+func (c *localAppServerController) StartRun(ctx context.Context, params appserver.RunStartParams) (appserver.Run, error) {
+	var result appserver.RunStartResult
+	err := c.client.Call(ctx, appserver.MethodRunStart, params, &result)
+	return result.Run, err
+}
+
+func (c *localAppServerController) ReadRun(ctx context.Context, runID string) (appserver.RunView, error) {
+	var result appserver.RunReadResult
+	err := c.client.Call(ctx, appserver.MethodRunRead, appserver.RunReadParams{RunID: strings.TrimSpace(runID)}, &result)
+	return result, err
+}
+
+func (c *localAppServerController) InterruptRun(ctx context.Context, runID, reason string) (appserver.Run, error) {
+	var result appserver.RunInterruptResult
+	err := c.client.Call(ctx, appserver.MethodRunInterrupt, appserver.RunInterruptParams{RunID: strings.TrimSpace(runID), Reason: strings.TrimSpace(reason)}, &result)
+	return result.Run, err
+}
+
 func (c *localAppServerController) Interrupt(ctx context.Context, threadID string) error {
 	var result appserver.OKResult
 	return c.client.Call(ctx, appserver.MethodTurnInterrupt, appserver.TurnInterruptParams{ThreadID: threadID}, &result)

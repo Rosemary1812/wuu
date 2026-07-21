@@ -79,6 +79,7 @@ func (s *Server) refreshDurableThreadHistoryLocked(th *threadState) error {
 	th.Turns = applyTokenUsageMetasToTurns(th.Turns, loaded.tokenMetas)
 	th.currentTurn = ""
 	th.currentTurnKind = ""
+	th.currentExecutionRunID = ""
 	th.currentTurnResumed = false
 	th.nextItemIndex = 0
 	th.activeAgentItemID = ""

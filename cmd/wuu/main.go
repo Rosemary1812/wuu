@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
+	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/gitattribution"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -71,6 +72,8 @@ func run(args []string) error {
 		return runModels(args[1:])
 	case "run":
 		return runLegacyRun(args[1:])
+	case "runs":
+		return runExecutionRuns(args[1:])
 	case "exec":
 		return runExec(args[1:])
 	case "probe-title":
@@ -130,6 +133,80 @@ func runVersion(args []string) error {
 	}
 
 	fmt.Println(info.String())
+	return nil
+}
+
+func runExecutionRuns(args []string) error {
+	fs := flag.NewFlagSet("runs", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output runs as JSON")
+	allWorkspaces := fs.Bool("all-workspaces", false, "include runs from every workspace")
+	workdir := fs.String("workdir", "", "workspace directory")
+	status := fs.String("status", "", "filter by status")
+	limit := fs.Int("limit", 50, "maximum number of runs")
+	readID := ""
+	parseArgs := args
+	if len(args) > 0 && args[0] == "read" {
+		if len(args) < 2 {
+			return errors.New("usage: wuu runs read RUN_ID [flags]")
+		}
+		readID = args[1]
+		parseArgs = args[2:]
+	}
+	if err := fs.Parse(parseArgs); err != nil {
+		return err
+	}
+	if readID == "" && fs.NArg() == 2 && fs.Arg(0) == "read" {
+		readID = fs.Arg(1)
+	} else if fs.NArg() != 0 {
+		return errors.New("usage: wuu runs [read RUN_ID] [flags]")
+	}
+	home, err := statepath.Home("")
+	if err != nil {
+		return err
+	}
+	store, err := execution.NewStore(statepath.SessionsDir(home))
+	if err != nil {
+		return err
+	}
+	if readID != "" {
+		return runExecutionRead(store, readID, *jsonOutput)
+	}
+	var workspaceRoot string
+	if !*allWorkspaces {
+		workspaceRoot, err = resolveWorkdir(*workdir)
+		if err != nil {
+			return err
+		}
+	}
+	runs, err := store.List(context.Background(), execution.ListOptions{
+		WorkspaceRoot: workspaceRoot, Status: execution.Status(strings.TrimSpace(*status)), Limit: *limit,
+	})
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return printJSON(map[string]any{"runs": runs})
+	}
+	for _, run := range runs {
+		fmt.Printf("%s\t%s\t%s\t%s\n", run.ID, run.Status, run.ThreadID, run.UpdatedAt.Format(time.RFC3339))
+	}
+	return nil
+}
+
+func runExecutionRead(store *execution.Store, id string, jsonOutput bool) error {
+	run, err := store.Get(context.Background(), strings.TrimSpace(id))
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return printJSON(run)
+	}
+	data, err := json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -2178,6 +2255,11 @@ Session commands:
                    replay a session trace artifact
   search [--json] QUERY [--workdir DIR]
                    search session metadata and history
+
+Execution runs:
+  runs [--json] [--workdir DIR] [--status STATUS]
+                   list persisted execution Run manifests
+  runs read RUN_ID  inspect one execution Run manifest
   archive [--json] THREAD_ID
                    hide a session from default lists
   delete [--json] THREAD_ID

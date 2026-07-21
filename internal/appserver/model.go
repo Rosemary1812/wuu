@@ -354,6 +354,7 @@ func (th *threadState) releaseTurnExecutionLocked(turnID string) {
 	th.running = false
 	th.currentTurn = ""
 	th.currentTurnKind = ""
+	th.currentExecutionRunID = ""
 	th.currentTurnResumed = false
 	th.runningProviderName = ""
 	th.runningModel = ""

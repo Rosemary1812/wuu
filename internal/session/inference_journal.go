@@ -31,6 +31,12 @@ func InferenceJournalRecoveryInterval() time.Duration {
 	return inferenceJournalStaleAfter
 }
 
+// InferenceRuntimeProcessAlive exposes the process-liveness half of the
+// inference runtime lease to sibling metadata stores that share its owner ID.
+func InferenceRuntimeProcessAlive(pid int) bool {
+	return inferenceRuntimeProcessAlive(pid)
+}
+
 // InferenceJournalRuntime binds all journals created by one runtime process to
 // a workspace scope. A fresh runtime id lets startup recovery distinguish
 // records left by the previous process from work created during this boot.

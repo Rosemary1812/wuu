@@ -132,7 +132,8 @@ Default mode is automation-safe:
 
 - stdout contains only the final agent message.
 - stderr contains run metadata such as provider, model, workspace, thread id,
-  turn id, tool progress, and trace path.
+  turn id, tool progress, and trace path. JSONL events also carry the execution
+  `run_id` when they are associated with a Run.
 - stdout does not contain banners, progress lines, terminal control codes, or
   debug logs.
 
@@ -204,8 +205,9 @@ MCP servers. `--env KEY=VALUE` is repeatable and applies only to the current
 run. `--max-turns` caps the
 model/tool loop for the current user turn.
 `--output-schema` reads a JSON Schema file, instructs the agent to return only
-JSON, validates the final answer locally, and gives the agent a limited number
-of correction turns when the result does not match the schema. JSONL `result`
+JSON, and validates the final answer as part of the app-server execution Run.
+Correction turns are created by the app-server inside that same Run, so a
+structured-output invocation never starts a second lifecycle. JSONL `result`
 events include `structured_result` after successful validation.
 
 With neither option, `wuu exec` uses the user config at

@@ -1174,6 +1174,47 @@ func migrateSchema(db *sql.DB) error {
 		 ON tool_invocations(batch_id, prepared_at, id)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_invocations_projection
 		 ON tool_invocations(state, projected_at, settled_at)`,
+		`CREATE TABLE IF NOT EXISTS execution_runs (
+				id              TEXT PRIMARY KEY,
+				runtime_id      TEXT NOT NULL DEFAULT '',
+				status          TEXT NOT NULL,
+				request_json    TEXT NOT NULL,
+				runtime_json    TEXT NOT NULL,
+				thread_id       TEXT NOT NULL DEFAULT '',
+				workspace_id    TEXT NOT NULL DEFAULT '',
+				workspace_root  TEXT NOT NULL DEFAULT '',
+				result_json     TEXT NOT NULL DEFAULT '',
+				error_json      TEXT NOT NULL DEFAULT '',
+				created_at      INTEGER NOT NULL,
+				started_at      INTEGER NOT NULL DEFAULT 0,
+				updated_at      INTEGER NOT NULL,
+				completed_at    INTEGER NOT NULL DEFAULT 0,
+				FOREIGN KEY(runtime_id) REFERENCES inference_journal_runtimes(id)
+			)`,
+		`CREATE INDEX IF NOT EXISTS idx_execution_runs_updated
+		 ON execution_runs(updated_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_execution_runs_workspace
+		 ON execution_runs(workspace_id, workspace_root, updated_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_execution_runs_thread
+		 ON execution_runs(thread_id, updated_at DESC)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_runs_active_thread
+		 ON execution_runs(thread_id) WHERE status IN ('accepted', 'running')`,
+		`CREATE INDEX IF NOT EXISTS idx_execution_runs_runtime
+		 ON execution_runs(runtime_id, status, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS execution_run_turns (
+				run_id          TEXT NOT NULL,
+				thread_id       TEXT NOT NULL,
+				turn_id         TEXT NOT NULL,
+				ordinal         INTEGER NOT NULL,
+				trace_path      TEXT NOT NULL DEFAULT '',
+				attached_at     INTEGER NOT NULL,
+				PRIMARY KEY(run_id, turn_id),
+				UNIQUE(run_id, ordinal),
+				UNIQUE(thread_id, turn_id),
+				FOREIGN KEY(run_id) REFERENCES execution_runs(id) ON DELETE CASCADE
+			)`,
+		`CREATE INDEX IF NOT EXISTS idx_execution_run_turns_turn
+		 ON execution_run_turns(turn_id, run_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

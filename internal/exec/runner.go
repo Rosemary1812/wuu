@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/execution"
 )
 
 type runState struct {
 	threadID                 string
 	turnID                   string
+	runID                    string
+	useRunControl            bool
 	finalMessage             string
 	tracePath                string
 	status                   string
@@ -126,14 +129,17 @@ func Run(ctx context.Context, opts Options) (runErr error) {
 		emitThreadEvent(opts, "thread_started", thread)
 	}
 
+	_, hasRunController := controller.(RunController)
 	prompt := opts.Prompt
-	if outputSchema != nil {
+	if outputSchema != nil && !hasRunController {
 		prompt = outputSchema.initialPrompt(prompt)
 	}
 	maxRetries := 0
 	if outputSchema != nil {
 		maxRetries = outputSchemaMaxRetries
 	}
+	runController, hasRunController := controller.(RunController)
+	useRunControl := hasRunController
 	for attempt := 0; ; attempt++ {
 		state.finalMessage = ""
 		state.turnID = ""
@@ -145,23 +151,44 @@ func Run(ctx context.Context, opts Options) (runErr error) {
 			input.Images = attachments.Images
 			input.Files = attachments.Files
 		}
-		turn, err := controller.StartTurn(ctx, thread.ID, input)
-		if err != nil {
-			return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, err))
+		var err error
+		if useRunControl {
+			run, startErr := runController.StartRun(ctx, runStartParams(opts, thread.ID, input, outputSchema))
+			if startErr != nil {
+				return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, startErr))
+			}
+			state.runID = run.ID
+			state.useRunControl = true
+			if len(run.Turns) > 0 {
+				state.turnID = run.Turns[len(run.Turns)-1].TurnID
+			}
+			err = waitForRun(ctx, controller, opts, &state)
+		} else {
+			turn, startErr := controller.StartTurn(ctx, thread.ID, input)
+			if startErr != nil {
+				return finishRunError(opts, &state, classifyProtocolOrContextError(ctx, startErr))
+			}
+			state.turnID = turn.ID
+			emitTurnStarted(opts, thread.ID, turn)
+			err = waitForTurn(ctx, controller, opts, &state)
 		}
-		state.turnID = turn.ID
-		emitTurnStarted(opts, thread.ID, turn)
-
-		err = waitForTurn(ctx, controller, opts, &state)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				_ = interruptBestEffort(controller, state.threadID)
+				if state.runID != "" {
+					_ = interruptRunBestEffort(runController, state.runID, "timeout")
+				} else {
+					_ = interruptBestEffort(controller, state.threadID)
+				}
 				emitTurnInterrupted(opts, state, "timeout")
 				emitResult(opts, state, "timeout", "timeout")
 				return WithExitCode(ExitTimeout, err)
 			}
 			if errors.Is(ctx.Err(), context.Canceled) {
-				_ = interruptBestEffort(controller, state.threadID)
+				if state.runID != "" {
+					_ = interruptRunBestEffort(runController, state.runID, "interrupted")
+				} else {
+					_ = interruptBestEffort(controller, state.threadID)
+				}
 				emitTurnInterrupted(opts, state, "interrupted")
 				emitResult(opts, state, "interrupted", "interrupted")
 				return WithExitCode(ExitInterrupted, err)
@@ -186,6 +213,12 @@ func Run(ctx context.Context, opts Options) (runErr error) {
 			state.structuredResult = structuredResult
 			state.structuredResultSet = true
 			break
+		}
+		if useRunControl {
+			state.status = "failed"
+			emitStructuredOutputValidation(opts, state, err, false)
+			emitResult(opts, state, "failed", err.Error())
+			return WithExitCode(ExitTurnFailed, err)
 		}
 		retrying := attempt < maxRetries
 		emitStructuredOutputValidation(opts, state, err, retrying)
@@ -262,6 +295,47 @@ func startOrResumeThread(ctx context.Context, controller Controller, opts Option
 	return controller.StartThread(ctx, opts.Ephemeral)
 }
 
+func runStartParams(opts Options, threadID string, input TurnInput, outputSchema *outputSchemaValidator) appserver.RunStartParams {
+	request := execution.Request{
+		Mode: execution.ModeStart,
+		Requested: execution.Selection{
+			Provider: strings.TrimSpace(opts.Provider), Model: strings.TrimSpace(opts.Model),
+			Variant: strings.TrimSpace(opts.Variant), Effort: strings.TrimSpace(opts.Effort),
+			PermissionMode: strings.TrimSpace(opts.PermissionMode),
+		},
+		AgentProfile: strings.TrimSpace(opts.AgentProfile), MaxTurns: opts.MaxTurns,
+		TimeoutMS: opts.Timeout.Milliseconds(), Ultra: opts.Ultra, NoTools: opts.NoTools,
+		HasPrompt: input.Prompt != "", ImageCount: len(input.Images), FileCount: len(input.Files),
+		StructuredOutput: outputSchema != nil,
+	}
+	if strings.TrimSpace(opts.ForkID) != "" {
+		request.Mode = execution.ModeFork
+		request.SourceThreadID = strings.TrimSpace(opts.ForkID)
+	} else if opts.ResumeLast || strings.TrimSpace(opts.ResumeID) != "" {
+		request.Mode = execution.ModeResume
+		request.SourceThreadID = threadID
+	}
+	permissionMode := strings.TrimSpace(opts.PermissionMode)
+	var permission *string
+	if permissionMode != "" {
+		permission = &permissionMode
+	}
+	return appserver.RunStartParams{
+		ThreadID: threadID, Prompt: input.Prompt,
+		Images:         append([]appserver.TurnStartImage(nil), input.Images...),
+		Files:          append([]appserver.TurnStartFile(nil), input.Files...),
+		PermissionMode: permission, Request: request,
+		OutputSchema: outputSchemaRaw(outputSchema),
+	}
+}
+
+func outputSchemaRaw(schema *outputSchemaValidator) json.RawMessage {
+	if schema == nil {
+		return nil
+	}
+	return append(json.RawMessage(nil), schema.raw...)
+}
+
 func waitForTurn(ctx context.Context, controller Controller, opts Options, state *runState) error {
 	notifications := controller.Notifications()
 	for {
@@ -283,6 +357,27 @@ func waitForTurn(ctx context.Context, controller Controller, opts Options, state
 	}
 }
 
+func waitForRun(ctx context.Context, controller Controller, opts Options, state *runState) error {
+	notifications := controller.Notifications()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case notification, ok := <-notifications:
+			if !ok {
+				return WithExitCode(ExitProtocol, errors.New("app-server notification stream closed before Run completed"))
+			}
+			done, err := handleNotification(opts, notification, state)
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+		}
+	}
+}
+
 func handleNotification(opts Options, notification Notification, state *runState) (bool, error) {
 	switch notification.Method {
 	case appserver.NotificationTurnStarted:
@@ -290,7 +385,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		if state == nil || !state.awaitingAutoContinuation || (state.threadID != "" && params.ThreadID != state.threadID) {
+		if state == nil || (!state.useRunControl && !state.awaitingAutoContinuation) || (state.threadID != "" && params.ThreadID != state.threadID) {
 			return false, nil
 		}
 		state.turnID = params.Turn.ID
@@ -383,6 +478,10 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.threadID = params.ThreadID
 		state.turnID = params.Turn.ID
 		state.tracePath = params.TracePath
+		if state.useRunControl {
+			state.status = "running"
+			return false, nil
+		}
 		if params.AwaitingAutoContinuation {
 			state.status = "waiting_background"
 			state.awaitingAutoContinuation = true
@@ -391,6 +490,55 @@ func handleNotification(opts Options, notification Notification, state *runState
 		}
 		state.status = "completed"
 		return true, nil
+	case appserver.NotificationRunUpdated:
+		var params appserver.RunUpdatedNotification
+		if err := decodeNotification(notification, &params); err != nil {
+			return false, err
+		}
+		if state == nil || state.runID == "" || params.Run.ID != state.runID {
+			return false, nil
+		}
+		if params.Run.Result != nil {
+			state.tracePath = params.Run.Result.TracePath
+			if state.turnID == "" {
+				state.turnID = params.Run.Result.FinalTurnID
+			}
+		}
+		switch params.Run.Status {
+		case "completed":
+			state.status = "completed"
+			return true, nil
+		case "timed_out":
+			state.status = "timeout"
+			errText := "execution run timed out"
+			if params.Run.Error != nil && params.Run.Error.Message != "" {
+				errText = params.Run.Error.Message
+			}
+			emitResult(opts, *state, "timeout", errText)
+			return false, WithExitCode(ExitTimeout, errors.New(errText))
+		case "interrupted", "cancelled":
+			state.status = "interrupted"
+			errText := "execution run interrupted"
+			if params.Run.Error != nil && params.Run.Error.Message != "" {
+				errText = params.Run.Error.Message
+			}
+			emitResult(opts, *state, "interrupted", errText)
+			return false, WithExitCode(ExitInterrupted, errors.New(errText))
+		case "failed":
+			status := "failed"
+			exitCode := exitCodeForRunError(params.Run.Error, state.permissionDenied)
+			if exitCode == ExitPermissionDenied {
+				status = "permission_denied"
+				exitCode = ExitPermissionDenied
+			}
+			state.status = status
+			errText := "execution run failed"
+			if params.Run.Error != nil && params.Run.Error.Message != "" {
+				errText = params.Run.Error.Message
+			}
+			emitResult(opts, *state, status, errText)
+			return false, WithExitCode(exitCode, errors.New(errText))
+		}
 	case appserver.NotificationTurnError:
 		var params appserver.TurnErrorNotification
 		if err := decodeNotification(notification, &params); err != nil {
@@ -408,6 +556,9 @@ func handleNotification(opts Options, notification Notification, state *runState
 			state.threadID = params.ThreadID
 			state.turnID = params.TurnID
 			state.status = "interrupted"
+			if state.useRunControl {
+				return false, nil
+			}
 			emitResult(opts, *state, "interrupted", params.Error)
 			return false, WithExitCode(ExitInterrupted, errors.New(params.Error))
 		}
@@ -418,6 +569,13 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.threadID = params.ThreadID
 		state.turnID = params.TurnID
 		state.status = "failed"
+		if state.useRunControl {
+			if params.Code == "permission_denied" || params.Category == "permission_denied" {
+				state.permissionDenied = true
+				state.permissionError = params.Error
+			}
+			return false, nil
+		}
 		status := "failed"
 		code := exitCodeForTurnError(params, state.permissionDenied)
 		switch code {
@@ -828,6 +986,21 @@ func exitCodeForTurnError(params appserver.TurnErrorNotification, permissionDeni
 	return ExitTurnFailed
 }
 
+func exitCodeForRunError(runErr *execution.Error, permissionDenied bool) int {
+	if runErr == nil {
+		if permissionDenied {
+			return ExitPermissionDenied
+		}
+		return ExitTurnFailed
+	}
+	if strings.EqualFold(strings.TrimSpace(runErr.Code), "permission_denied") || strings.EqualFold(strings.TrimSpace(runErr.Category), "permission_denied") {
+		permissionDenied = true
+	}
+	return exitCodeForTurnError(appserver.TurnErrorNotification{
+		Error: runErr.Message, Code: runErr.Code, Category: runErr.Category,
+	}, permissionDenied)
+}
+
 func isProviderModelFailure(text string) bool {
 	text = strings.ToLower(text)
 	for _, marker := range []string{
@@ -948,6 +1121,7 @@ func emitStructuredOutputValidation(opts Options, state runState, err error, ret
 			"type":      "error",
 			"thread_id": state.threadID,
 			"turn_id":   state.turnID,
+			"run_id":    state.runID,
 			"error":     err.Error(),
 			"retrying":  retrying,
 		})
@@ -969,6 +1143,7 @@ func emitResult(opts Options, state runState, status, errorText string) {
 		"status":        status,
 		"thread_id":     state.threadID,
 		"turn_id":       state.turnID,
+		"run_id":        state.runID,
 		"final_message": state.finalMessage,
 		"trace_path":    state.tracePath,
 	}
@@ -1054,6 +1229,16 @@ func interruptBestEffort(controller Controller, threadID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	return controller.Interrupt(ctx, threadID)
+}
+
+func interruptRunBestEffort(controller RunController, runID, reason string) error {
+	if controller == nil || strings.TrimSpace(runID) == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := controller.InterruptRun(ctx, runID, reason)
+	return err
 }
 
 func writeLastMessage(path string, message string) error {

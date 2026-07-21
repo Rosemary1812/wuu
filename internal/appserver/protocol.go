@@ -8,6 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
@@ -92,6 +93,10 @@ const (
 	MethodTurnSteer        = "turn/steer"
 	MethodTurnUnsteer      = "turn/unsteer"
 	MethodTurnInterrupt    = "turn/interrupt"
+	MethodRunStart         = "run/start"
+	MethodRunRead          = "run/read"
+	MethodRunList          = "run/list"
+	MethodRunInterrupt     = "run/interrupt"
 	MethodProcessList      = "process/list"
 	MethodProcessRead      = "process/read"
 	MethodProcessWrite     = "process/write"
@@ -143,6 +148,8 @@ const (
 	NotificationTurnEvent              = "turn/event"
 	NotificationTurnError              = "turn/error"
 	NotificationTurnCompleted          = "turn/completed"
+	NotificationRunStarted             = "run/started"
+	NotificationRunUpdated             = "run/updated"
 	NotificationSideThreadEvent        = "sideThread/event"
 	NotificationActivityStarted        = "activity/started"
 	NotificationActivityUpdated        = "activity/updated"
@@ -1378,6 +1385,65 @@ type TurnStartFile struct {
 
 type TurnStartResult struct {
 	Turn Turn `json:"turn"`
+}
+
+// Run is the public control and observation boundary for one agent invocation.
+// Its Turns refer to canonical Thread/Turn records rather than copying them.
+type Run = execution.Run
+
+type RunStartParams struct {
+	ThreadID       string            `json:"thread_id"`
+	Prompt         string            `json:"prompt"`
+	Images         []TurnStartImage  `json:"images,omitempty"`
+	Files          []TurnStartFile   `json:"files,omitempty"`
+	PermissionMode *string           `json:"permission_mode,omitempty"`
+	Request        execution.Request `json:"request"`
+	OutputSchema   json.RawMessage   `json:"output_schema,omitempty"`
+}
+
+type RunStartResult struct {
+	Run Run `json:"run"`
+}
+
+type RunReadParams struct {
+	RunID string `json:"run_id"`
+}
+
+type RunView struct {
+	Run      Run     `json:"run"`
+	Thread   *Thread `json:"thread,omitempty"`
+	Attached bool    `json:"attached"`
+}
+
+type RunReadResult = RunView
+
+type RunListParams struct {
+	WorkspaceID   string           `json:"workspace_id,omitempty"`
+	WorkspaceRoot string           `json:"workspace_root,omitempty"`
+	ThreadID      string           `json:"thread_id,omitempty"`
+	Status        execution.Status `json:"status,omitempty"`
+	Limit         int              `json:"limit,omitempty"`
+}
+
+type RunListResult struct {
+	Runs []Run `json:"runs"`
+}
+
+type RunInterruptParams struct {
+	RunID  string `json:"run_id"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type RunInterruptResult struct {
+	Run Run `json:"run"`
+}
+
+type RunStartedNotification struct {
+	Run Run `json:"run"`
+}
+
+type RunUpdatedNotification struct {
+	Run Run `json:"run"`
 }
 
 type ThreadCompactStartParams struct {
