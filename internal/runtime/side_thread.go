@@ -5,25 +5,32 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
-const sideThreadSystemPrompt = `You are a read-only side conversation attached to a coding task. Answer the user's questions from the supplied snapshot of the main task and the side-conversation history.
+const sideThreadSystemPrompt = `You are a read-only side agent attached to a coding task. Answer the user's questions from the supplied snapshot of the main task and the side-conversation history.
 
 The snapshot may have been captured while the main task was still running. Describe only what the snapshot proves, distinguish completed work from in-progress work, and say when the current outcome is not yet known. Do not claim to have inspected state newer than the snapshot.
 
-You have no tools and must not modify files, run commands, start agents, or steer the main task. Keep the answer direct and useful.`
+Use your read-only tools when current workspace evidence is needed. You may inspect files, search code, and perform other non-mutating investigation. You must not modify files, run mutating commands, start agents, or steer the main task. Keep the answer direct and useful.`
 
 // NewSideThreadRunner clones the attached conversation's model configuration
-// into an isolated, tool-free runner. selected is the main conversation's
+// into an isolated runner with the same tool surface as a main agent in
+// read-only mode. selected is the main conversation's
 // pinned model selection, so a side chat answers with the same model the
 // conversation is locked to rather than the workspace default (which drifts
-// whenever another session switches model). It shares no mutable callbacks,
-// tool ledger, request hooks, or usage tracker with the main thread.
-func (s *Session) NewSideThreadRunner(sideThreadID string, selected ThreadModelSelection) (*agent.StreamRunner, error) {
+// whenever another session switches model). Its toolkit is separately cloned,
+// rooted at the main thread's workspace, and protected by ReadOnlyBoundary.
+// It shares no mutable callbacks, tool ledger, or usage tracker with the main
+// thread.
+func (s *Session) NewSideThreadRunner(sideThreadID, rootDir string, selected ThreadModelSelection) (*agent.StreamRunner, error) {
 	if s == nil || s.StreamRunner == nil {
 		return nil, errors.New("stream runner is required")
 	}
@@ -33,11 +40,46 @@ func (s *Session) NewSideThreadRunner(sideThreadID string, selected ThreadModelS
 	}
 
 	runner := s.newSideThreadBaseRunner(selected)
-	runner.Tools = nil
+	root := strings.TrimSpace(rootDir)
+	if root == "" {
+		root = s.RootDir
+	}
+	if s.Toolkit != nil {
+		kit, err := s.Toolkit.CloneForRoot(root)
+		if err != nil {
+			return nil, err
+		}
+		model := strings.TrimSpace(runner.APIModel)
+		if model == "" {
+			model = strings.TrimSpace(runner.Model)
+		}
+		kit.ConfigureSurfaceForProviderModel(runner.ProviderName, model, true)
+		ConfigureToolkitPermissions(kit, config.ResolvedPermissions{Mode: config.PermissionModeReadOnly})
+		kit.SetSessionID(id)
+		kit.SetAgentIdentity(id, agentthread.RootPath)
+		kit.SetFileScopeRoots(workspaces.BoundaryRoots(kit.RootDir(), s.WuuHome))
+
+		var toolExecutor agent.ToolExecutor = kit
+		if s.HookDispatcher != nil {
+			toolExecutor = hooks.NewHookedExecutor(toolExecutor, s.HookDispatcher, "", root)
+		}
+		toolExecutor = newPluginToolExecutor(toolExecutor, s.PluginHost, id, root)
+		runner.Tools = toolExecutor
+
+		surface := kit.ActiveSurface()
+		promptParts := []string{sideThreadSystemPrompt, strings.TrimSpace(surface.SystemFragment)}
+		if catalog, err := deferredToolCatalogPromptForToolkit(kit); err != nil {
+			return nil, err
+		} else {
+			promptParts = append(promptParts, strings.TrimSpace(catalog))
+		}
+		runner.SystemPrompt = joinNonEmptyPromptParts(promptParts...)
+	} else {
+		runner.Tools = nil
+		runner.SystemPrompt = sideThreadSystemPrompt
+	}
 	runner.ToolLedger = nil
-	runner.SystemPrompt = sideThreadSystemPrompt
 	runner.SystemPromptSections = nil
-	runner.MaxSteps = 1
 	runner.OnEvent = nil
 	runner.OnUsage = nil
 	runner.OnTokenUsage = nil
@@ -55,6 +97,16 @@ func (s *Session) NewSideThreadRunner(sideThreadID string, selected ThreadModelS
 	runner.PromptCacheKey = "side-thread:" + id
 	runner.InferenceJournal = s.InferenceJournalForOwner("side-thread:" + id)
 	return runner, nil
+}
+
+func joinNonEmptyPromptParts(parts ...string) string {
+	nonEmpty := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			nonEmpty = append(nonEmpty, trimmed)
+		}
+	}
+	return strings.Join(nonEmpty, "\n\n")
 }
 
 // newSideThreadBaseRunner clones the workspace stream runner and repins it to

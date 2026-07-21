@@ -248,7 +248,7 @@ func TestSendSideThreadMessageRunsReadOnlyModelAndPersistsReply(t *testing.T) {
 	if req.Messages[len(req.Messages)-1].Content != "What is the status?" {
 		t.Fatalf("side prompt missing from request: %+v", req.Messages)
 	}
-	if !strings.Contains(req.Messages[0].Content, "read-only side conversation") {
+	if !strings.Contains(req.Messages[0].Content, "read-only side agent") {
 		t.Fatalf("side system prompt missing isolation contract: %q", req.Messages[0].Content)
 	}
 	output := out.String()
@@ -729,7 +729,7 @@ func TestNewSideThreadRunnerInheritsThreadModel(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	writeSelectionTestConfig(t, rt.ConfigPath)
 
-	base, err := rt.NewSideThreadRunner("side-default", runtime.ThreadModelSelection{})
+	base, err := rt.NewSideThreadRunner("side-default", rt.RootDir, runtime.ThreadModelSelection{})
 	if err != nil {
 		t.Fatalf("NewSideThreadRunner default: %v", err)
 	}
@@ -737,7 +737,7 @@ func TestNewSideThreadRunnerInheritsThreadModel(t *testing.T) {
 		t.Fatalf("default side runner model = %q, want fake-model", base.Model)
 	}
 
-	pinned, err := rt.NewSideThreadRunner("side-pinned", runtime.ThreadModelSelection{
+	pinned, err := rt.NewSideThreadRunner("side-pinned", rt.RootDir, runtime.ThreadModelSelection{
 		Provider: "fake-provider",
 		Model:    "pinned-model",
 	})
@@ -747,9 +747,9 @@ func TestNewSideThreadRunnerInheritsThreadModel(t *testing.T) {
 	if pinned.Model != "pinned-model" {
 		t.Fatalf("pinned side runner model = %q, want pinned-model", pinned.Model)
 	}
-	// The model pin must not cost the side chat its read-only isolation.
-	if pinned.Tools != nil || pinned.MaxSteps != 1 {
-		t.Fatalf("pinned side runner not stripped: tools=%v steps=%d", pinned.Tools, pinned.MaxSteps)
+	// The model pin must not cost the side chat its read-only isolation contract.
+	if !strings.Contains(pinned.SystemPrompt, "read-only side agent") {
+		t.Fatalf("pinned side runner prompt lost read-only contract: %q", pinned.SystemPrompt)
 	}
 }
 
@@ -759,6 +759,7 @@ func TestNewSideThreadRunnerInheritsThreadModel(t *testing.T) {
 func TestMainThreadModelSelectionPrefersCacheThenSession(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	srv := New(rt, &lockedBuffer{})
+	cachedRoot := t.TempDir()
 
 	if _, err := session.CreateWithMetadata(rt.SessionDir, "sel-thread", rt.RootDir); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -774,14 +775,20 @@ func TestMainThreadModelSelectionPrefersCacheThenSession(t *testing.T) {
 	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "persisted-model" {
 		t.Fatalf("uncached selection model = %q, want persisted-model", got.Model)
 	}
+	if got := srv.mainThreadRoot("sel-thread"); got != rt.RootDir {
+		t.Fatalf("uncached root = %q, want persisted %q", got, rt.RootDir)
+	}
 
 	// Cached thread state wins over the persisted row.
-	th := newThreadState("sel-thread", nil, "fake-provider", "cached-model", rt.RootDir, true, time.Now().UTC())
+	th := newThreadState("sel-thread", nil, "fake-provider", "cached-model", cachedRoot, true, time.Now().UTC())
 	srv.mu.Lock()
 	srv.threads[th.ID] = th
 	srv.mu.Unlock()
 	if got := srv.mainThreadModelSelection("sel-thread"); got.Model != "cached-model" {
 		t.Fatalf("cached selection model = %q, want cached-model", got.Model)
+	}
+	if got := srv.mainThreadRoot("sel-thread"); got != cachedRoot {
+		t.Fatalf("cached root = %q, want %q", got, cachedRoot)
 	}
 
 	// Unknown thread yields an empty (workspace-default) selection.

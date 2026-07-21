@@ -231,6 +231,29 @@ func (s *Server) mainThreadModelSelection(mainID string) runtime.ThreadModelSele
 	}
 }
 
+func (s *Server) mainThreadRoot(mainID string) string {
+	if s == nil || s.rt == nil {
+		return ""
+	}
+	s.mu.Lock()
+	th := s.threads[mainID]
+	s.mu.Unlock()
+	if th != nil {
+		th.mu.Lock()
+		root := strings.TrimSpace(th.CWD)
+		th.mu.Unlock()
+		if root != "" {
+			return root
+		}
+	}
+	if sess, ok, err := session.Find(s.rt.SessionDir, mainID); err == nil && ok {
+		if root := strings.TrimSpace(sess.CWD); root != "" {
+			return root
+		}
+	}
+	return s.rt.RootDir
+}
+
 func lastUserMessage(history []providers.ChatMessage) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		if strings.EqualFold(strings.TrimSpace(history[i].Role), "user") {
@@ -340,7 +363,7 @@ func (s *Server) sendSideThreadMessageWhenReady(mainID, prompt string, start <-c
 			return nil, err
 		}
 	}
-	runner, err := s.rt.NewSideThreadRunner(sideThreadID, s.mainThreadModelSelection(mainID))
+	runner, err := s.rt.NewSideThreadRunner(sideThreadID, s.mainThreadRoot(mainID), s.mainThreadModelSelection(mainID))
 	if err != nil {
 		return nil, err
 	}
