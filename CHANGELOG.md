@@ -8,6 +8,26 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-21
+
+### Added
+
+- Added durable app-server Run control for `wuu exec`, including persisted run
+  state, structured-output validation, cancellation, and resume support.
+- Added read-only agent tools and live agent process items to side threads.
+
+### Changed
+
+- Routed `wuu exec` through the app-server execution model and made JSONL
+  terminal states and structured error categories reliable for automation.
+- Refined desktop conversation alignment, composer focus behavior, and floating
+  status controls.
+
+### Fixed
+
+- Rejected unsupported attachments and unknown machine-input fields before a
+  run starts, while preserving the original intent of valid image inputs.
+
 ## [0.8.0] - 2026-07-20
 
 ### Changed
