@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,12 +14,21 @@ import (
 )
 
 const (
-	bashActionRun             = "run"
-	bashActionStartBackground = "start_background"
-	bashActionListBackground  = "list_background"
-	bashActionReadBackground  = "read_background"
-	bashActionWriteBackground = "write_background"
-	bashActionStopBackground  = "stop_background"
+	bashActionRun              = "run"
+	bashActionStartBackground  = "start_background"
+	bashActionListBackground   = "list_background"
+	bashActionReadBackground   = "read_background"
+	bashActionWriteBackground  = "write_background"
+	bashActionStopBackground   = "stop_background"
+	bashActionUpdateBackground = "update_background"
+)
+
+const (
+	// readBackgroundMaxWaitMS caps one bounded event-driven wait at 5 minutes.
+	readBackgroundMaxWaitMS = 300_000
+	// backgroundWaitMinDwell paces output-driven early returns so a
+	// continuously producing process releases a wait at most this often.
+	backgroundWaitMinDwell = 5 * time.Second
 )
 
 // BashTool is the bash-first command tool exposed to the model on
@@ -70,7 +80,7 @@ func (t *BashTool) Classify(argsJSON string) ToolClassification {
 			Risk:            ToolRiskMedium,
 			Reason:          "managed background process observation",
 		}
-	case bashActionWriteBackground, bashActionStopBackground:
+	case bashActionWriteBackground, bashActionStopBackground, bashActionUpdateBackground:
 		return ToolClassification{
 			ReadOnly:        false,
 			ConcurrencySafe: true,
@@ -94,12 +104,12 @@ func (t *BashTool) ValidateInput(argsJSON string) error {
 		}
 	case bashActionListBackground:
 		return nil
-	case bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground:
+	case bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground, bashActionUpdateBackground:
 		if strings.TrimSpace(args.ProcessID) == "" {
 			return errors.New("bash background action requires process_id")
 		}
 	default:
-		return errors.New("bash action must be one of run, start_background, list_background, read_background, write_background, stop_background")
+		return errors.New("bash action must be one of run, start_background, list_background, read_background, write_background, stop_background, update_background")
 	}
 	return nil
 }
@@ -108,13 +118,14 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
 		Description: "Run bash operations in the workspace. Use for terminal work: tests, lint, builds, git, package managers, scripts, docker, and managed background processes.\n\n" +
-			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. For terminal prompts, confirmations, or REPLs, use action=start_background with tty=true, then action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. A naturally exiting background command automatically starts a new turn with its status and output tail. If completion is your only remaining dependency, end the current turn; do not keep it open with list_background, read_background, or a wait. Use read_background only for readiness output while the process is still running, or after a completion notification when its output tail was insufficient. cwd defaults to the workspace root. Shell state does not persist between run calls.",
+			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. If a run command hits its timeout it keeps running as a managed background process instead of being killed, with its output so far attached. For terminal prompts, confirmations, or REPLs, use action=start_background with tty=true, then action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. cwd defaults to the workspace root. Shell state does not persist between run calls.\n\n" +
+			"Wake-ups always come to you — polling is never the only way to learn an outcome: a naturally exiting background process starts a new turn with its status and output tail, and a process started with recheck_minutes additionally wakes you with a progress snapshot on that schedule (the schedule is cancelled automatically on completion). Observation on demand: read_background without wait_ms is a non-blocking snapshot and is always fine; with wait_ms it becomes a bounded event-driven wait that returns early when new output arrives or the process exits (at most one return per call). Rules for waits: do not wait on a process you just launched this turn when its result gates your next step — run that work with action=run instead; if a wait times out with the process still running, do not immediately wait again on the same process — continue other work or end the turn; never chain waits just to keep a turn open. For long silent tasks (downloads, backups), set recheck_minutes on start_background or later via action=update_background so progress finds you on a schedule.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{bashActionRun, bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground},
+					"enum":        []string{bashActionRun, bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground, bashActionUpdateBackground},
 					"description": "Operation. Defaults to run; background actions manage long-lived processes.",
 				},
 				"command": map[string]any{
@@ -154,7 +165,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"wait_ms": map[string]any{
 					"type":        "integer",
-					"description": "For background start/read: wait this many milliseconds for readiness output. Maximum 60000 for start. Do not use it to wait for natural completion; end the current turn and let the completion notification start the next turn.",
+					"description": "For background start/read: wait this many milliseconds for new output before returning. The wait returns early when output arrives (paced to at most one return per ~5s for continuously producing processes) or immediately when the process exits; it never exceeds the deadline. Max 60000 for start, 300000 for read. Do not chain waits to sit on a process — completion notifications and recheck_minutes cover wake-ups.",
 				},
 				"max_bytes": map[string]any{
 					"type":        "integer",
@@ -166,7 +177,11 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"process_id": map[string]any{
 					"type":        "string",
-					"description": "Managed background process id for read_background/write_background/stop_background.",
+					"description": "Managed background process id for read_background/write_background/stop_background/update_background.",
+				},
+				"recheck_minutes": map[string]any{
+					"description": "Optional. For start_background/update_background: minutes between scheduled progress wake-ups for this process (1-1440); 0 cancels the schedule. Each wake-up delivers a status/output snapshot in a new turn, and completing the process cancels the schedule automatically. Pick an interval proportional to the expected duration — around 5 minutes for short tasks, much longer for big downloads.",
+					"type":        "integer",
 				},
 				"input": map[string]any{
 					"type":        "string",
@@ -196,8 +211,10 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return t.executeWriteStdin(args)
 	case bashActionStopBackground:
 		return t.executeStopBackground(args)
+	case bashActionUpdateBackground:
+		return t.executeUpdateBackground(args)
 	default:
-		return "", errors.New("bash action must be one of run, start_background, list_background, read_background, write_background, stop_background")
+		return "", errors.New("bash action must be one of run, start_background, list_background, read_background, write_background, stop_background, update_background")
 	}
 }
 
@@ -219,6 +236,7 @@ type bashArgs struct {
 	ProcessID      string `json:"process_id"`
 	Input          string `json:"input"`
 	Background     bool   `json:"background"`
+	RecheckMinutes int    `json:"recheck_minutes"`
 }
 
 func normalizeBashAction(args bashArgs) string {
@@ -398,7 +416,7 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if err != nil {
 		return "", err
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CommandPrefix: commandPrefix, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections()})
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CommandPrefix: commandPrefix, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections(), RecheckMinutes: args.RecheckMinutes})
 	response := startProcessResponse{}
 	if p != nil {
 		response.Process = redactProcess(t.env, *p)
@@ -440,12 +458,12 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 
 func bashBackgroundNextSuggestions(waitMS int, completionMode string) []string {
 	if strings.TrimSpace(completionMode) == string(proc.CompletionModeDetached) {
-		return []string{"this process is detached and will not start another model turn when it exits", "use bash action=read_background only when you explicitly need readiness or later output"}
+		return []string{"this process is detached and will not start another model turn when it exits", "use bash action=read_background snapshots only when you explicitly need its output"}
 	}
 	if waitMS <= 0 {
-		return []string{"continue independent work; if completion is the only remaining dependency, end this turn now and the natural exit will start a new turn automatically", "do not call list_background, read_background, or wait only to keep this turn open; use read_background only for readiness output while the process is still running"}
+		return []string{"continue independent work; if completion is the only remaining dependency, end this turn now and the natural exit will start a new turn automatically", "read_background without wait_ms gives a non-blocking snapshot whenever you need progress; for a long silent task, schedule wake-ups with bash action=update_background and recheck_minutes"}
 	}
-	return []string{"continue independent work; if completion is the only remaining dependency, end this turn now and the natural exit will start a new turn automatically", "when the still-running process needs more readiness output, pass initial_end_offset as offset_bytes to bash action=read_background"}
+	return []string{"continue independent work; if completion is the only remaining dependency, end this turn now and the natural exit will start a new turn automatically", "when the still-running process needs more output, pass initial_end_offset as offset_bytes to bash action=read_background — a bounded wait_ms is fine, but do not chain waits to keep this turn open"}
 }
 
 func (t *BashTool) executeListBackground() (string, error) {
@@ -472,29 +490,69 @@ func (t *BashTool) executeReadBackground(ctx context.Context, args bashArgs) (st
 	if err != nil {
 		return "", err
 	}
+	waitMS := args.WaitMS
+	if waitMS > readBackgroundMaxWaitMS {
+		waitMS = readBackgroundMaxWaitMS
+	}
+	wait := time.Duration(waitMS) * time.Millisecond
+	minDwell := time.Duration(0)
+	if wait > 0 {
+		minDwell = backgroundWaitMinDwell
+		if minDwell > wait {
+			minDwell = wait
+		}
+	}
 	snapshot, err := m.ReadOutputSnapshot(ctx, args.ProcessID, proc.OutputReadOptions{
 		MaxBytes:    args.MaxBytes,
 		OffsetBytes: args.OffsetBytes,
-		Wait:        time.Duration(args.WaitMS) * time.Millisecond,
+		Wait:        wait,
+		MinDwell:    minDwell,
 	})
 	if err != nil {
 		return "", err
 	}
 	process := markProcessCompletionObserved(m, snapshot.Process)
 	return mustJSON(map[string]any{
-		"action":       bashActionReadBackground,
-		"process_id":   args.ProcessID,
-		"output":       t.env.RedactToolOutput(snapshot.Output),
-		"truncated":    snapshot.Truncated,
-		"start_offset": snapshot.StartOffset,
-		"end_offset":   snapshot.EndOffset,
-		"total_bytes":  snapshot.TotalBytes,
-		"timed_out":    snapshot.TimedOut,
-		"duration_ms":  snapshot.Duration.Milliseconds(),
-		"status":       process.Status,
-		"exit_code":    process.ExitCode,
-		"process":      redactProcess(t.env, process),
+		"action":           bashActionReadBackground,
+		"process_id":       args.ProcessID,
+		"output":           t.env.RedactToolOutput(snapshot.Output),
+		"truncated":        snapshot.Truncated,
+		"start_offset":     snapshot.StartOffset,
+		"end_offset":       snapshot.EndOffset,
+		"total_bytes":      snapshot.TotalBytes,
+		"timed_out":        snapshot.TimedOut,
+		"duration_ms":      snapshot.Duration.Milliseconds(),
+		"status":           process.Status,
+		"exit_code":        process.ExitCode,
+		"process":          redactProcess(t.env, process),
+		"next_suggestions": bashReadBackgroundNextSuggestions(waitMS, minDwell, snapshot, process),
 	})
+}
+
+// bashReadBackgroundNextSuggestions turns the wait outcome into in-context
+// guidance. The chatty hint fires exactly when it matters: a wait released
+// right at the pacing floor with new output, meaning the process produces
+// output continuously and repeated waits would spin.
+func bashReadBackgroundNextSuggestions(waitMS int, minDwell time.Duration, snapshot proc.OutputSnapshot, process proc.Process) []string {
+	live := process.Status == proc.StatusStarting || process.Status == proc.StatusRunning || process.Status == proc.StatusStopping
+	if !live {
+		return []string{"process is terminal; page remaining output with offset_bytes when the tail is insufficient — no further waits are useful"}
+	}
+	if waitMS <= 0 {
+		return nil
+	}
+	if snapshot.TimedOut {
+		return []string{
+			"the wait expired with the process still running; do not immediately wait again on the same process — continue other work or end this turn and let the completion notification start the next turn",
+			"for a long silent task, schedule a wake-up instead: bash action=update_background with process_id and recheck_minutes",
+		}
+	}
+	if snapshot.Duration <= minDwell+time.Second {
+		return []string{
+			"this process is producing output continuously (the wait returned after ~" + snapshot.Duration.Round(time.Second).String() + "); do not chain waits on it — use non-blocking snapshots when you need progress and rely on the completion notification or recheck_minutes for wake-ups",
+		}
+	}
+	return []string{"process is still running; pass end_offset as offset_bytes if you wait for more output again"}
 }
 
 func (t *BashTool) executeWriteStdin(args bashArgs) (string, error) {
@@ -528,4 +586,29 @@ func (t *BashTool) executeStopBackground(args bashArgs) (string, error) {
 		redacted.Action = bashActionStopBackground
 	}
 	return mustJSON(redacted)
+}
+
+func (t *BashTool) executeUpdateBackground(args bashArgs) (string, error) {
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	p, err := m.SetRecheck(args.ProcessID, args.RecheckMinutes)
+	if err != nil {
+		return "", err
+	}
+	next := []string{}
+	if p.RecheckMinutes > 0 {
+		next = append(next, "progress wake-ups are scheduled every "+strconv.Itoa(p.RecheckMinutes)+" minute(s) until the process completes; each wake-up starts a new turn with a status/output snapshot")
+	} else {
+		next = append(next, "recheck schedule cancelled; the completion notification still starts a new turn when the process exits")
+	}
+	return mustJSON(map[string]any{
+		"action":           bashActionUpdateBackground,
+		"process_id":       args.ProcessID,
+		"recheck_minutes":  p.RecheckMinutes,
+		"next_recheck_at":  p.NextRecheckAt,
+		"process":          redactProcessPtr(t.env, p),
+		"next_suggestions": next,
+	})
 }

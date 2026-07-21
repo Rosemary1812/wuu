@@ -44,6 +44,7 @@ func (s *Server) forwardProcessNotifications(threadID string, control *agentcont
 				// obligation so a terminal event dropped behind a full channel is
 				// recovered when any retained event is consumed.
 				s.replayPendingProcessCompletions(threadID, control, manager)
+				s.replayPendingProcessRechecks(threadID, control, manager)
 				continue
 			}
 			if event.Cause != process.EventCauseNaturalExit || !processEventBelongsToThread(threadID, control, event) {
@@ -100,6 +101,72 @@ func processCompletionChatMessage(manager *process.Manager, event process.Event)
 	}
 }
 
+type processRecheckPayload struct {
+	ProcessID         string         `json:"process_id"`
+	Status            process.Status `json:"status"`
+	Command           string         `json:"command,omitempty"`
+	RecheckMinutes    int            `json:"recheck_minutes,omitempty"`
+	OutputLogPath     string         `json:"output_log_path,omitempty"`
+	OutputTail        string         `json:"output_tail,omitempty"`
+	OutputTruncated   bool           `json:"output_truncated,omitempty"`
+	OutputStartOffset int64          `json:"output_start_offset,omitempty"`
+	OutputEndOffset   int64          `json:"output_end_offset,omitempty"`
+	OutputTotalBytes  int64          `json:"output_total_bytes,omitempty"`
+	Instruction       string         `json:"instruction"`
+}
+
+func processRecheckChatMessage(manager *process.Manager, p process.Process) providers.ChatMessage {
+	payload := processRecheckPayload{
+		ProcessID:      p.ID,
+		Status:         p.Status,
+		Command:        tools.RedactToolOutput(p.Command),
+		RecheckMinutes: p.RecheckMinutes,
+		OutputLogPath:  tools.RedactToolOutput(p.LogPath),
+		Instruction:    "This is a scheduled progress recheck for a still-running background process. Review the output tail and decide: intervene with bash action=write_background/stop_background, adjust the schedule with bash action=update_background (recheck_minutes=0 cancels), or do nothing — the next recheck or the completion notification will start another turn. Do not chain read_background waits to keep this turn open.",
+	}
+	if manager != nil {
+		snapshot, err := manager.ReadOutputSnapshot(context.Background(), p.ID, process.OutputReadOptions{MaxBytes: processCompletionOutputBytes})
+		if err == nil {
+			payload.OutputTail = tools.RedactToolOutput(snapshot.Output)
+			payload.OutputTruncated = snapshot.Truncated
+			payload.OutputStartOffset = snapshot.StartOffset
+			payload.OutputEndOffset = snapshot.EndOffset
+			payload.OutputTotalBytes = snapshot.TotalBytes
+		}
+	}
+	encoded, _ := json.Marshal(payload)
+	return providers.ChatMessage{
+		Role:     "user",
+		Name:     wuucontext.ProcessNotificationMessageName,
+		ClientID: processRecheckClientID(p.ID),
+		Content:  "<process_recheck>" + string(encoded) + "</process_recheck>",
+	}
+}
+
+func (s *Server) replayPendingProcessRechecks(threadID string, control *agentcontrol.AgentControl, manager *process.Manager) {
+	if s == nil || manager == nil {
+		return
+	}
+	pending, err := manager.PendingRechecks()
+	if err != nil {
+		providers.DebugLogf("restore pending process rechecks for thread %q: %v", threadID, err)
+		return
+	}
+	for _, p := range pending {
+		event := process.Event{Process: p}
+		if !processEventBelongsToThread(threadID, control, event) {
+			continue
+		}
+		// Rechecks are periodic hints, not one-shot obligations: mark the
+		// delivery once queued; a lost turn is covered by the next interval.
+		if _, markErr := manager.MarkRecheckDelivered(p.ID); markErr != nil {
+			providers.DebugLogf("mark process recheck %q delivered for thread %q: %v", p.ID, threadID, markErr)
+			continue
+		}
+		s.enqueueProcessRecheckTurn(threadID, p.ID, processRecheckChatMessage(manager, p))
+	}
+}
+
 func (s *Server) replayPendingProcessCompletions(threadID string, control *agentcontrol.AgentControl, manager *process.Manager) {
 	if s == nil || manager == nil {
 		return
@@ -130,11 +197,14 @@ func threadHasOutstandingProcessCompletion(threadID string, control *agentcontro
 		return false
 	}
 	for _, p := range processes {
-		if p.CompletionMode == process.CompletionModeDetached {
-			continue
-		}
 		event := process.Event{Process: p}
 		if !processEventBelongsToThread(threadID, control, event) {
+			continue
+		}
+		if !p.PendingRecheckAt.IsZero() {
+			return true
+		}
+		if p.CompletionMode == process.CompletionModeDetached {
 			continue
 		}
 		switch p.Status {
@@ -170,6 +240,19 @@ func (s *Server) restorePendingProcessCompletionsOnThreadResume(threadID string)
 		}
 	}
 	if !needsRuntime {
+		pendingRechecks, recheckErr := s.rt.ProcessManager.PendingRechecks()
+		if recheckErr != nil {
+			providers.DebugLogf("inspect pending process rechecks while resuming thread %q: %v", threadID, recheckErr)
+			return
+		}
+		for _, p := range pendingRechecks {
+			if (p.OwnerKind == process.OwnerMainAgent && strings.TrimSpace(p.OwnerID) == threadID) || p.OwnerKind == process.OwnerSubagent {
+				needsRuntime = true
+				break
+			}
+		}
+	}
+	if !needsRuntime {
 		return
 	}
 	th := s.thread(threadID)
@@ -184,7 +267,16 @@ func (s *Server) restorePendingProcessCompletionsOnThreadResume(threadID string)
 const (
 	processCompletionClientIDPrefix       = "wuu-process-completion:"
 	processCompletionAnswerClientIDPrefix = "wuu-process-completion-answer:"
+	processRecheckClientIDPrefix          = "wuu-process-recheck:"
 )
+
+func processRecheckClientID(processID string) string {
+	processID = strings.TrimSpace(processID)
+	if processID == "" {
+		return ""
+	}
+	return processRecheckClientIDPrefix + processID
+}
 
 func processCompletionClientID(processIDs []string) string {
 	ids := uniqueSortedCompletionIDs(processIDs)
@@ -303,7 +395,51 @@ func (s *Server) enqueueProcessCompletionTurn(threadID, processID string, msg pr
 		s.agentCompletionMu.Unlock()
 		return
 	}
+	pending := s.pendingAgentCompletionTurns[threadID]
+	kept := pending[:0]
+	for _, existing := range pending {
+		// A completion supersedes a queued recheck for the same process: the
+		// completion message carries the final state and the output tail.
+		if existing.kind == agentCompletionTurnKindRecheck && existing.processID == processID {
+			continue
+		}
+		if existing.processID == processID {
+			s.agentCompletionMu.Unlock()
+			return
+		}
+		kept = append(kept, existing)
+	}
+	s.pendingAgentCompletionTurns[threadID] = append(kept, agentCompletionTurn{
+		processID: processID,
+		msg:       msg,
+	})
+	s.agentCompletionMu.Unlock()
+
+	s.kickAgentCompletionDrain(threadID)
+}
+
+func (s *Server) enqueueProcessRecheckTurn(threadID, processID string, msg providers.ChatMessage) {
+	if s == nil || s.closed.Load() {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	processID = strings.TrimSpace(processID)
+	if threadID == "" || processID == "" || !chatMessageHasUserPayload(msg) {
+		return
+	}
+	th := s.thread(threadID)
+	if th == nil || !canResumeAgentCompletionThread(th) {
+		return
+	}
+
+	s.agentCompletionMu.Lock()
+	if s.closed.Load() {
+		s.agentCompletionMu.Unlock()
+		return
+	}
 	for _, pending := range s.pendingAgentCompletionTurns[threadID] {
+		// Any queued turn for the same process — completion or recheck —
+		// already carries fresher state than this recheck.
 		if pending.processID == processID {
 			s.agentCompletionMu.Unlock()
 			return
@@ -311,6 +447,7 @@ func (s *Server) enqueueProcessCompletionTurn(threadID, processID string, msg pr
 	}
 	s.pendingAgentCompletionTurns[threadID] = append(s.pendingAgentCompletionTurns[threadID], agentCompletionTurn{
 		processID: processID,
+		kind:      agentCompletionTurnKindRecheck,
 		msg:       msg,
 	})
 	s.agentCompletionMu.Unlock()

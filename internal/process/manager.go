@@ -37,6 +37,10 @@ const (
 	EventFailed    EventType = "failed"
 	EventStopped   EventType = "stopped"
 	EventCleanedUp EventType = "cleaned_up"
+	// EventRecheckDue marks a scheduled progress recheck firing for a live
+	// process. It is a low-latency hint only; consumers pull the persisted
+	// obligation through PendingRechecks.
+	EventRecheckDue EventType = "recheck_due"
 
 	EventCauseNaturalExit   EventCause = "natural_exit"
 	EventCauseRequestedStop EventCause = "requested_stop"
@@ -80,6 +84,15 @@ type Process struct {
 	TerminalCause         EventCause     `json:"terminal_cause,omitempty"`
 	CompletionDeliveredAt time.Time      `json:"completion_delivered_at,omitempty"`
 	CompletionConsumedBy  string         `json:"completion_consumed_by,omitempty"`
+	// RecheckMinutes is the model-declared progress recheck interval. Zero
+	// disables scheduled rechecks. NextRecheckAt is the persisted deadline of
+	// the next scheduled wake; PendingRecheckAt marks a fired recheck that has
+	// not been delivered to the owning thread yet. Unlike the one-shot
+	// completion obligation, a lost recheck is self-healing: the next interval
+	// fires again while the process stays live.
+	RecheckMinutes   int       `json:"recheck_minutes,omitempty"`
+	NextRecheckAt    time.Time `json:"next_recheck_at,omitempty"`
+	PendingRecheckAt time.Time `json:"pending_recheck_at,omitempty"`
 }
 
 type StartOptions struct {
@@ -92,6 +105,7 @@ type StartOptions struct {
 	CompletionMode        CompletionMode
 	TTY                   bool
 	AllowOutsideWorkspace bool
+	RecheckMinutes        int
 }
 
 type Event struct {
@@ -108,6 +122,12 @@ type OutputReadOptions struct {
 	MaxBytes    int
 	OffsetBytes *int64
 	Wait        time.Duration
+	// MinDwell paces output-driven early returns: new output releases the
+	// wait only once the call has dwelt at least this long, so a
+	// continuously producing process cannot bounce the caller into a tight
+	// return loop. Process exit and the Wait deadline still return
+	// immediately. Zero preserves the original first-output behavior.
+	MinDwell time.Duration
 }
 
 type OutputSnapshot struct {
@@ -129,6 +149,7 @@ type Manager struct {
 	subMu       sync.Mutex
 	handles     map[string]*processHandle
 	subscribers []chan<- Event
+	recheckWake chan struct{}
 }
 
 type processHandle struct {
@@ -170,6 +191,7 @@ func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 		registryDir: filepath.Join(runtimeDir, "processes"),
 		logDir:      filepath.Join(runtimeDir, "logs"),
 		handles:     make(map[string]*processHandle),
+		recheckWake: make(chan struct{}, 1),
 	}
 	if err := os.MkdirAll(m.registryDir, 0o755); err != nil {
 		return nil, err
@@ -180,6 +202,7 @@ func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 	if err := m.resumePersistedManagedProcesses(); err != nil {
 		return nil, err
 	}
+	go m.recheckScheduler()
 	return m, nil
 }
 
@@ -220,6 +243,9 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	if opt.CompletionMode != CompletionModeResume && opt.CompletionMode != CompletionModeDetached {
 		return nil, errors.New("completion_mode must be resume or detached")
 	}
+	if opt.RecheckMinutes < 0 || opt.RecheckMinutes > MaxRecheckMinutes {
+		return nil, fmt.Errorf("recheck_minutes must be between 0 and %d", MaxRecheckMinutes)
+	}
 	m.mu.Lock()
 	rootDir := m.rootDir
 	m.mu.Unlock()
@@ -235,7 +261,10 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		opt.TTY = false
 	}
 	id := "proc-" + randomHex(4)
-	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, CompletionMode: opt.CompletionMode, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
+	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, CompletionMode: opt.CompletionMode, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1, RecheckMinutes: opt.RecheckMinutes}
+	if opt.RecheckMinutes > 0 {
+		p.NextRecheckAt = p.StartedAt.Add(time.Duration(opt.RecheckMinutes) * time.Minute)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.save(p); err != nil {
@@ -342,6 +371,9 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 			defer close(handle.done)
 			m.wait(id, cmd, logf)
 		}()
+	}
+	if p.RecheckMinutes > 0 {
+		m.signalRecheckScheduler()
 	}
 	return p, nil
 }
@@ -531,6 +563,10 @@ func (m *Manager) ReadOutputSnapshot(ctx context.Context, id string, opt OutputR
 	timedOut := false
 	if opt.Wait > 0 && opt.OffsetBytes != nil {
 		deadline := time.Now().Add(opt.Wait)
+		if opt.MinDwell < 0 {
+			opt.MinDwell = 0
+		}
+		minDwellAt := started.Add(opt.MinDwell)
 		for {
 			size, sizeErr := fileSize(p.LogPath)
 			if sizeErr != nil {
@@ -540,7 +576,13 @@ func (m *Manager) ReadOutputSnapshot(ctx context.Context, id string, opt OutputR
 			if offset < 0 {
 				offset = 0
 			}
-			if size > offset || !isLiveStatus(p.Status) {
+			// Process exit always releases immediately; new output releases
+			// only after the minimum dwell so a continuously producing
+			// process cannot bounce the caller faster than that pace.
+			if !isLiveStatus(p.Status) {
+				break
+			}
+			if size > offset && !time.Now().Before(minDwellAt) {
 				break
 			}
 			if !time.Now().Before(deadline) {
@@ -1052,6 +1094,309 @@ func (m *Manager) MarkCompletionDelivered(id, consumer string) (*Process, error)
 		if err := m.save(p); err != nil {
 			return p, err
 		}
+	}
+	return p, nil
+}
+
+// MaxRecheckMinutes bounds the model-declared recheck interval (24h).
+const MaxRecheckMinutes = 24 * 60
+
+const recheckSchedulerIdleInterval = time.Hour
+
+// recheckScheduler is the single timer loop for persisted recheck deadlines.
+// It sleeps until the earliest NextRecheckAt (or an idle interval when
+// nothing is armed) and recomputes whenever signalRecheckScheduler fires.
+// Deadlines live on the process record, so a manager restart rebuilds the
+// schedule simply by scanning the registry on its first pass.
+func (m *Manager) recheckScheduler() {
+	for {
+		next, due := m.scanRechecks()
+		for _, id := range due {
+			m.fireRecheck(id)
+		}
+		delay := recheckSchedulerIdleInterval
+		if !next.IsZero() {
+			delay = time.Until(next)
+			if delay < time.Second {
+				delay = time.Second
+			}
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-m.recheckWake:
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
+}
+
+// scanRechecks returns the earliest future recheck deadline and the ids whose
+// deadline has passed. Terminal records carrying stale recheck state are
+// cleaned up lazily here, which is what auto-cancels schedules on completion
+// without touching every terminal transition.
+func (m *Manager) scanRechecks() (time.Time, []string) {
+	processes, err := m.List()
+	if err != nil {
+		return time.Time{}, nil
+	}
+	now := time.Now()
+	var next time.Time
+	var due []string
+	for _, p := range processes {
+		armed := p.RecheckMinutes > 0 || !p.NextRecheckAt.IsZero() || !p.PendingRecheckAt.IsZero()
+		if !armed {
+			continue
+		}
+		if !isLiveStatus(p.Status) {
+			_ = m.clearRecheckState(p.ID)
+			continue
+		}
+		if p.RecheckMinutes <= 0 || p.NextRecheckAt.IsZero() {
+			continue
+		}
+		if !p.NextRecheckAt.After(now) {
+			due = append(due, p.ID)
+			continue
+		}
+		if next.IsZero() || p.NextRecheckAt.Before(next) {
+			next = p.NextRecheckAt
+		}
+	}
+	return next, due
+}
+
+// fireRecheck stamps a due recheck as pending delivery and arms the next
+// interval. The persisted PendingRecheckAt is the delivery obligation; the
+// published event is only a low-latency hint for subscribers.
+func (m *Manager) fireRecheck(id string) {
+	m.mu.Lock()
+	p, err := m.load(id)
+	if err != nil {
+		m.mu.Unlock()
+		return
+	}
+	if !isLiveStatus(p.Status) || p.RecheckMinutes <= 0 {
+		m.mu.Unlock()
+		return
+	}
+	now := time.Now()
+	p.PendingRecheckAt = now
+	p.NextRecheckAt = now.Add(time.Duration(p.RecheckMinutes) * time.Minute)
+	p.UpdatedAt = now
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return
+	}
+	proc := *p
+	m.mu.Unlock()
+	m.publish(Event{Type: EventRecheckDue, Process: proc})
+	m.signalRecheckScheduler()
+}
+
+func (m *Manager) clearRecheckState(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.load(id)
+	if err != nil {
+		return err
+	}
+	if p.RecheckMinutes == 0 && p.NextRecheckAt.IsZero() && p.PendingRecheckAt.IsZero() {
+		return nil
+	}
+	p.RecheckMinutes = 0
+	p.NextRecheckAt = time.Time{}
+	p.PendingRecheckAt = time.Time{}
+	p.UpdatedAt = time.Now()
+	return m.save(p)
+}
+
+func (m *Manager) signalRecheckScheduler() {
+	select {
+	case m.recheckWake <- struct{}{}:
+	default:
+	}
+}
+
+// SetRecheck updates a live process's recheck schedule. Zero minutes cancels
+// the schedule and drops any fired-but-undelivered recheck.
+func (m *Manager) SetRecheck(id string, minutes int) (*Process, error) {
+	if minutes < 0 || minutes > MaxRecheckMinutes {
+		return nil, fmt.Errorf("recheck_minutes must be between 0 and %d", MaxRecheckMinutes)
+	}
+	m.mu.Lock()
+	p, err := m.load(id)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	if !isLiveStatus(p.Status) {
+		m.mu.Unlock()
+		return p, fmt.Errorf("process %q is not running", id)
+	}
+	p.RecheckMinutes = minutes
+	if minutes <= 0 {
+		p.NextRecheckAt = time.Time{}
+		p.PendingRecheckAt = time.Time{}
+	} else {
+		p.NextRecheckAt = time.Now().Add(time.Duration(minutes) * time.Minute)
+	}
+	p.UpdatedAt = time.Now()
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return p, err
+	}
+	m.mu.Unlock()
+	m.signalRecheckScheduler()
+	return p, nil
+}
+
+// PendingRechecks returns live processes with a fired-but-undelivered
+// recheck. Terminal processes never appear here: their completion obligation
+// supersedes any stale recheck.
+func (m *Manager) PendingRechecks() ([]Process, error) {
+	processes, err := m.List()
+	if err != nil {
+		return nil, err
+	}
+	pending := make([]Process, 0)
+	for _, p := range processes {
+		if isLiveStatus(p.Status) && !p.PendingRecheckAt.IsZero() {
+			pending = append(pending, p)
+		}
+	}
+	return pending, nil
+}
+
+// MarkRecheckDelivered clears the pending obligation once the recheck has
+// been queued for the owning thread. Rechecks are periodic, so a delivery
+// lost after this point self-heals at the next interval.
+func (m *Manager) MarkRecheckDelivered(id string) (*Process, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.load(id)
+	if err != nil {
+		return nil, err
+	}
+	if !p.PendingRecheckAt.IsZero() {
+		p.PendingRecheckAt = time.Time{}
+		p.UpdatedAt = time.Now()
+		if err := m.save(p); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
+}
+
+// ReserveProcessLog allocates a fresh process id and matching log path under
+// the manager's log dir without registering a record. Callers that may later
+// hand a running command to Adopt tee the command's output into this file
+// from the start, so a promotion keeps both past and future output.
+func (m *Manager) ReserveProcessLog() (id, logPath string) {
+	id = "proc-" + randomHex(4)
+	return id, filepath.Join(m.logDir, id+".log")
+}
+
+// AdoptOptions describes an already-running command being promoted to a
+// managed background process.
+type AdoptOptions struct {
+	Command        string
+	CWD            string
+	OwnerKind      OwnerKind
+	OwnerID        string
+	Lifecycle      Lifecycle
+	CompletionMode CompletionMode
+	StartedAt      time.Time
+	// RecheckMinutes arms a progress recheck schedule on the adopted
+	// process. Promoted commands are by definition underestimates — the
+	// caller asked for a bounded run and the bound was wrong — so a default
+	// reminder schedule replaces the kill safety net the timeout used to be.
+	RecheckMinutes int
+}
+
+// Adopt registers a command started through StartCommand — whose output is
+// already teeing into the reserved logf — as a managed background process.
+// The caller keeps no ownership after a successful Adopt: terminal handling,
+// completion delivery, and Stop all go through the manager from here. On
+// error the caller retains the command and should stop it itself.
+func (m *Manager) Adopt(id string, cmd *exec.Cmd, handle *CommandHandle, logf *os.File, opt AdoptOptions) (*Process, error) {
+	if cmd == nil || cmd.Process == nil {
+		return nil, errors.New("running command is required")
+	}
+	if handle == nil {
+		return nil, errors.New("command handle is required")
+	}
+	if logf == nil {
+		return nil, errors.New("log file is required")
+	}
+	if _, err := processRecordPath(m.registryDir, id); err != nil {
+		return nil, err
+	}
+	if opt.OwnerKind != OwnerMainAgent && opt.OwnerKind != OwnerSubagent {
+		return nil, errors.New("owner_kind must be main_agent or subagent")
+	}
+	if opt.Lifecycle == "" {
+		opt.Lifecycle = LifecycleSession
+	}
+	if opt.Lifecycle != LifecycleSession && opt.Lifecycle != LifecycleManaged {
+		return nil, errors.New("lifecycle must be session or managed")
+	}
+	if opt.CompletionMode == "" {
+		opt.CompletionMode = CompletionModeResume
+	}
+	if opt.CompletionMode != CompletionModeResume && opt.CompletionMode != CompletionModeDetached {
+		return nil, errors.New("completion_mode must be resume or detached")
+	}
+	if opt.RecheckMinutes < 0 || opt.RecheckMinutes > MaxRecheckMinutes {
+		return nil, fmt.Errorf("recheck_minutes must be between 0 and %d", MaxRecheckMinutes)
+	}
+	now := time.Now()
+	startedAt := opt.StartedAt
+	if startedAt.IsZero() {
+		startedAt = now
+	}
+	p := &Process{
+		ID:             id,
+		OwnerKind:      opt.OwnerKind,
+		OwnerID:        opt.OwnerID,
+		Lifecycle:      opt.Lifecycle,
+		CompletionMode: opt.CompletionMode,
+		Status:         StatusRunning,
+		Command:        opt.Command,
+		CWD:            opt.CWD,
+		LogPath:        filepath.Join(m.logDir, id+".log"),
+		StartedAt:      startedAt,
+		UpdatedAt:      now,
+		ExitCode:       -1,
+	}
+	if opt.RecheckMinutes > 0 {
+		p.RecheckMinutes = opt.RecheckMinutes
+		p.NextRecheckAt = now.Add(time.Duration(opt.RecheckMinutes) * time.Minute)
+	}
+	p.PID = cmd.Process.Pid
+	p.PGID = ProcessTreeForPID(p.PID).ID()
+	var err error
+	p.ProcessStartTime, _, _, err = readProcessIdentity(p.PID)
+	if err != nil {
+		return nil, fmt.Errorf("record process identity: %w", err)
+	}
+	m.mu.Lock()
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	adopted := &processHandle{done: make(chan struct{})}
+	m.handles[id] = adopted
+	m.mu.Unlock()
+	m.publish(Event{Type: EventStarted, Process: *p})
+	go func() {
+		defer close(adopted.done)
+		<-handle.Done()
+		waitErr := handle.Wait()
+		_ = logf.Close()
+		m.finishWait(id, cmd, waitErr)
+	}()
+	if p.RecheckMinutes > 0 {
+		m.signalRecheckScheduler()
 	}
 	return p, nil
 }

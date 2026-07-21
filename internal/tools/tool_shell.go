@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -19,6 +21,13 @@ import (
 )
 
 const maxShellTailBytes = 8 * 1024
+
+// defaultPromotedRecheckMinutes is the safety-net recheck schedule armed on
+// a run command whose timeout promoted it to a background process. A
+// promoted command is an underestimate by definition, so the schedule
+// replaces the kill safety net the timeout used to be; the model can change
+// or clear it with bash action=update_background.
+const defaultPromotedRecheckMinutes = 30
 
 // The shell classification and execution engine below is shared
 // infrastructure for the unified bash tool (see tool_bash.go). The former
@@ -44,6 +53,7 @@ type shellExecutionResult struct {
 	WorkspaceRevision   string                  `json:"workspace_revision"`
 	StdoutTailTruncated bool                    `json:"stdout_tail_truncated"`
 	StderrTailTruncated bool                    `json:"stderr_tail_truncated"`
+	PromotedProcessID   string                  `json:"promoted_process_id,omitempty"`
 	FullLogRef          string                  `json:"full_log_ref,omitempty"`
 	FullLogBytes        int                     `json:"full_log_bytes,omitempty"`
 	FullLogError        string                  `json:"full_log_error,omitempty"`
@@ -145,24 +155,79 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Tee output into a reserved managed log from the start so a timeout can
+	// promote the run to a background process with both past and future
+	// output available through the background read path.
+	var logf *os.File
+	reservedID := ""
+	mgr, mgrErr := env.ProcessManager()
+	if mgrErr == nil && mgr != nil {
+		if id, logPath := mgr.ReserveProcessLog(); id != "" {
+			if f, openErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); openErr == nil {
+				reservedID, logf = id, f
+			}
+		}
+	}
+	if logf != nil {
+		cmd.Stdout = io.MultiWriter(&stdout, logf)
+		cmd.Stderr = io.MultiWriter(&stderr, logf)
+	} else {
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+	}
+	discardReservedLog := func() {
+		if logf == nil {
+			return
+		}
+		_ = logf.Close()
+		_ = os.Remove(logf.Name())
+	}
 
 	startedAt := time.Now()
 	handle, err := proc.StartCommand(cmd)
 	if err != nil {
+		discardReservedLog()
 		return shellExecutionResult{}, fmt.Errorf("run command: %w", err)
 	}
 	interrupted := false
+	promotedID := ""
 	select {
 	case <-handle.Done():
 		err = handle.Wait()
 	case <-runCtx.Done():
 		interrupted = true
-		if stopErr := handle.Stop(proc.DefaultStopGracePeriod); stopErr != nil {
-			return shellExecutionResult{}, fmt.Errorf("stop command: %w", stopErr)
+		// A genuine timeout (not a caller cancellation) promotes the command
+		// to a managed background process instead of killing it: the result
+		// gates nothing further this turn, and completion arrives as a
+		// notification later. The default recheck replaces the kill safety
+		// net the timeout used to be — a promoted command is an underestimate
+		// by definition, so something should look at it periodically.
+		if logf != nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			adopted, adoptErr := mgr.Adopt(reservedID, cmd, handle, logf, proc.AdoptOptions{
+				Command:        command,
+				CWD:            workDir,
+				OwnerKind:      proc.OwnerKind(defaultProcessOwnerKind(env, "")),
+				OwnerID:        defaultProcessOwnerID(env),
+				StartedAt:      startedAt,
+				RecheckMinutes: defaultPromotedRecheckMinutes,
+			})
+			if adoptErr == nil {
+				promotedID = adopted.ID
+			}
 		}
-		err = handle.Wait()
+		if promotedID == "" {
+			if stopErr := handle.Stop(proc.DefaultStopGracePeriod); stopErr != nil {
+				discardReservedLog()
+				return shellExecutionResult{}, fmt.Errorf("stop command: %w", stopErr)
+			}
+			err = handle.Wait()
+		}
+	}
+	if promotedID != "" {
+		// The manager owns the log and the wait from here.
+		logf = nil
+	} else {
+		discardReservedLog()
 	}
 	durationMS := time.Since(startedAt).Milliseconds()
 	exitCode := 0
@@ -189,6 +254,14 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	classification := classifyShellCommand(command)
 	timedOut := interrupted && errors.Is(runCtx.Err(), context.DeadlineExceeded)
 
+	nextSuggestions := shellNextSuggestions(exitCode, timedOut, classification)
+	if promotedID != "" {
+		nextSuggestions = []string{
+			"the command exceeded its timeout and keeps running as background process " + promotedID + " with its output so far attached; do NOT rerun the same command — its completion will start a new turn automatically",
+			"progress wake-ups are scheduled every " + strconv.Itoa(defaultPromotedRecheckMinutes) + " minutes as a safety net; use bash action=read_background with process_id for a snapshot, stop_background to cancel it, or update_background with recheck_minutes to change or clear the schedule",
+		}
+	}
+
 	return shellExecutionResult{
 		Action:              "run",
 		Command:             redactedCommand,
@@ -205,7 +278,8 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 		WorkspaceRevision:   workspaceRevision(ctx, env.RevisionRoot(ctx)),
 		StdoutTailTruncated: stdoutTailTruncated,
 		StderrTailTruncated: stderrTailTruncated,
-		NextSuggestions:     shellNextSuggestions(exitCode, timedOut, classification),
+		PromotedProcessID:   promotedID,
+		NextSuggestions:     nextSuggestions,
 		redactedStdout:      redactedStdout,
 		redactedStderr:      redactedStderr,
 	}, nil

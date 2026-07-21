@@ -40,10 +40,18 @@ type queuedTurn struct {
 	origin   string
 }
 
+type agentCompletionTurnKind string
+
+const (
+	agentCompletionTurnKindCompletion agentCompletionTurnKind = "completion"
+	agentCompletionTurnKindRecheck    agentCompletionTurnKind = "recheck"
+)
+
 type agentCompletionTurn struct {
 	agentID   string
 	resultID  string
 	processID string
+	kind      agentCompletionTurnKind
 	msg       providers.ChatMessage
 	snapshot  *subagent.SubAgentSnapshot
 }

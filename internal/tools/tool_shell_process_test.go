@@ -93,6 +93,19 @@ while :; do sleep 1; done
 	if got.result.ExitCode == 0 {
 		t.Fatal("timed-out command was reported as successful")
 	}
+	// A timeout no longer kills the tree outright: the run is promoted to a
+	// managed background process with its output so far. Stopping that
+	// process must still take the whole tree down.
+	if got.result.PromotedProcessID == "" {
+		t.Fatal("timed-out command should be promoted to a background process")
+	}
+	mgr, err := (&Env{RootDir: root}).ProcessManager()
+	if err != nil {
+		t.Fatalf("process manager: %v", err)
+	}
+	if _, err := mgr.Stop(got.result.PromotedProcessID); err != nil {
+		t.Fatalf("stop promoted process: %v", err)
+	}
 	waitForShellTestProcessExit(t, descendantPID)
 }
 

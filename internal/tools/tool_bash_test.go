@@ -16,7 +16,7 @@ import (
 
 func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 	def := NewBashTool(&Env{}).Definition()
-	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background", "automatically starts a new turn", "end the current turn", "do not keep it open"} {
+	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background", "starts a new turn", "end the turn", "recheck_minutes", "update_background", "timeout it keeps running"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("bash description must teach %q interactive flow: %q", want, def.Description)
 		}
@@ -34,8 +34,12 @@ func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 		t.Fatalf("bash command description does not distinguish run from interactive background use: %q", commandDescription)
 	}
 	wait, ok := properties["wait_ms"].(map[string]any)
-	if !ok || !strings.Contains(wait["description"].(string), "Do not use it to wait for natural completion") {
-		t.Fatalf("bash wait_ms description does not explain turn handoff: %+v", wait)
+	if !ok || !strings.Contains(wait["description"].(string), "Do not chain waits") {
+		t.Fatalf("bash wait_ms description does not explain bounded waits: %+v", wait)
+	}
+	recheck, ok := properties["recheck_minutes"].(map[string]any)
+	if !ok || !strings.Contains(recheck["description"].(string), "wake-ups") {
+		t.Fatalf("bash recheck_minutes does not explain scheduled wake-ups: %+v", recheck)
 	}
 	completionMode, ok := properties["completion_mode"].(map[string]any)
 	if !ok || !strings.Contains(completionMode["description"].(string), "long-lived services") {
