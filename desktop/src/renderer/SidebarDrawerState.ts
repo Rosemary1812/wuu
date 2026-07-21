@@ -10,7 +10,7 @@ import {
 
 export const SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS = 240;
 
-export type SidebarDrawerPhase = "closed" | "open" | "closing";
+export type SidebarDrawerPhase = "closed" | "open" | "closing" | "docking";
 
 export type SidebarDrawerStateController = {
   sidebarDrawerPhase: SidebarDrawerPhase;
@@ -38,6 +38,7 @@ export function useSidebarDrawerState({
   resizingSidebar,
   activeSessionTabID,
   motionMs,
+  dockingMotionMs = motionMs,
   hoverOpenDelayMs = SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS,
   closeOnWindowResize = false,
 }: {
@@ -46,6 +47,7 @@ export function useSidebarDrawerState({
   resizingSidebar: boolean;
   activeSessionTabID: string;
   motionMs: number;
+  dockingMotionMs?: number;
   hoverOpenDelayMs?: number;
   closeOnWindowResize?: boolean;
 }): SidebarDrawerStateController {
@@ -61,6 +63,7 @@ export function useSidebarDrawerState({
   const sidebarDrawerSyncedSessionRef = useRef<string | undefined>(undefined);
   const sidebarDrawerSuppressedRef = useRef(false);
   const sidebarDrawerPointerLeaveTimerRef = useRef<number | undefined>(undefined);
+  const sidebarWasCollapsedRef = useRef(sidebarCollapsed);
 
   const clearSidebarDrawerCloseTimer = useCallback((): void => {
     if (sidebarDrawerCloseTimerRef.current !== undefined) {
@@ -316,14 +319,39 @@ export function useSidebarDrawerState({
   }, [rememberSidebarPointerPosition, syncSidebarDrawerHover]);
 
   useLayoutEffect(() => {
-    if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
-      cancelSidebarDrawerOpen();
-      clearSidebarDrawerCloseTimer();
-      setSidebarDrawerPhase("closed");
+    const sidebarWasCollapsed = sidebarWasCollapsedRef.current;
+    sidebarWasCollapsedRef.current = sidebarCollapsed;
+
+    if (sidebarCollapsed) {
+      if (sidebarDrawerPhase === "docking") {
+        clearSidebarDrawerCloseTimer();
+        setSidebarDrawerPhase("closed");
+      }
+      return;
     }
+    if (sidebarDrawerPhase === "closed" || sidebarDrawerPhase === "docking") {
+      return;
+    }
+
+    cancelSidebarDrawerOpen();
+    clearSidebarDrawerCloseTimer();
+    if (!sidebarWasCollapsed) {
+      setSidebarDrawerPhase("closed");
+      return;
+    }
+
+    // Keep a pinned hover drawer on its current visual layer while the grid
+    // opens underneath it. Once both occupy the same rectangle, the overlay
+    // positioning can disappear without a second visible motion.
+    setSidebarDrawerPhase("docking");
+    sidebarDrawerCloseTimerRef.current = window.setTimeout(() => {
+      sidebarDrawerCloseTimerRef.current = undefined;
+      setSidebarDrawerPhase("closed");
+    }, dockingMotionMs);
   }, [
     cancelSidebarDrawerOpen,
     clearSidebarDrawerCloseTimer,
+    dockingMotionMs,
     sidebarCollapsed,
     sidebarDrawerPhase,
   ]);

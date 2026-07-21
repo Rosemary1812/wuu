@@ -322,6 +322,12 @@ describe("collapsed sidebar hover drawer", () => {
 
     expect(appShell()?.classList.contains("sidebar-collapsed")).toBe(false);
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-docking")).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(SIDEBAR_MOTION_MS);
+    });
+    expect(appShell()?.classList.contains("sidebar-drawer-docking")).toBe(false);
   });
 
   it("closes the drawer when the pointer leaves the window", async () => {

@@ -36,7 +36,7 @@ import {
 } from "react";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { useSidebarDrawerState } from "./SidebarDrawerState";
-import { SIDEBAR_DRAWER_EXIT_MS } from "./AppLayoutState";
+import { SIDEBAR_DRAWER_EXIT_MS, SIDEBAR_MOTION_MS } from "./AppLayoutState";
 import { SelectMenu } from "./SelectMenu";
 import type {
   CodexPetsSnapshot,
@@ -716,6 +716,7 @@ export function SettingsView({
     resizingSidebar,
     activeSessionTabID: activeSessionTabID || activePage,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
+    dockingMotionMs: SIDEBAR_MOTION_MS,
     closeOnWindowResize: true
   });
   const shellClassName = `settings-shell${resizingSidebar ? " resizing-sidebar" : ""}${
@@ -725,6 +726,10 @@ export function SettingsView({
   }${
     sidebarCollapsed && sidebarDrawerPhase === "closing"
       ? " sidebar-drawer-closing"
+      : ""
+  }${
+    !sidebarCollapsed && sidebarDrawerPhase === "docking"
+      ? " sidebar-drawer-docking"
       : ""
   }${sidebarAnimating ? " sidebar-animating" : ""}`;
 

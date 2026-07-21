@@ -459,6 +459,7 @@ export function App(): JSX.Element {
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
+    dockingMotionMs: SIDEBAR_MOTION_MS,
   });
   const {
     collapsedSidebarSectionIDs,
@@ -2212,6 +2213,10 @@ export function App(): JSX.Element {
   }${
     sidebarDrawerMode && sidebarDrawerPhase === "closing"
       ? " sidebar-drawer-closing"
+      : ""
+  }${
+    !sidebarDrawerMode && sidebarDrawerPhase === "docking"
+      ? " sidebar-drawer-docking"
       : ""
   }${
     sidebarAnimating ? " sidebar-animating" : ""
