@@ -4334,6 +4334,7 @@ export function App(): JSX.Element {
         <WorkspaceRightPanel
           open={rightPanelOpen}
           present={rightPanelOpen || rightPanelAnimating}
+          prewarm={Boolean(state.initialized)}
           tabs={workspaceViewTabs}
           activeTabID={workspaceActiveViewTabID}
           activeFileTabID={activeWorkspaceFileTabID}

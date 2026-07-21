@@ -129,6 +129,7 @@ function fileResource(tabID: string): HTMLElement | undefined {
 afterEach(() => {
   unmount();
   document.documentElement.classList.remove("resizing-workspace-file-split");
+  vi.unstubAllGlobals();
 });
 
 function makeSelection(path: string): TurnFileDiffSelection {
@@ -172,6 +173,72 @@ function baseProps(): Parameters<typeof WorkspaceRightPanel>[0] {
 }
 
 describe("WorkspaceRightPanel", () => {
+  it("prewarms the hidden lightweight body during idle time", () => {
+    let idleCallback: IdleRequestCallback | undefined;
+    const cancelIdleCallback = vi.fn();
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback) => {
+        idleCallback = callback;
+        return 17;
+      }),
+    );
+    vi.stubGlobal("cancelIdleCallback", cancelIdleCallback);
+
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        open={false}
+        present={false}
+        prewarm
+      />,
+    );
+    expect(container?.querySelector(".workspace-panel-body")).toBeNull();
+
+    act(() => {
+      idleCallback?.({
+        didTimeout: false,
+        timeRemaining: () => 20,
+      });
+    });
+
+    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel");
+    expect(panel?.hasAttribute("inert")).toBe(true);
+    expect(container?.querySelector(".workspace-panel-body")).not.toBeNull();
+
+    unmount();
+    expect(cancelIdleCallback).toHaveBeenCalledWith(17);
+  });
+
+  it("cancels hidden prewarming when the user opens the panel first", () => {
+    let idleCallback: IdleRequestCallback | undefined;
+    const cancelIdleCallback = vi.fn();
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback) => {
+        idleCallback = callback;
+        return 23;
+      }),
+    );
+    vi.stubGlobal("cancelIdleCallback", cancelIdleCallback);
+
+    const props = {
+      ...baseProps(),
+      open: false,
+      present: false,
+      prewarm: true,
+    } satisfies Parameters<typeof WorkspaceRightPanel>[0];
+    mount(<WorkspaceRightPanel {...props} />);
+
+    act(() => {
+      root?.render(<WorkspaceRightPanel {...props} open present />);
+    });
+
+    expect(cancelIdleCallback).toHaveBeenCalledWith(23);
+    expect(container?.querySelector(".workspace-panel-body")).not.toBeNull();
+    expect(idleCallback).toBeDefined();
+  });
+
   it("opens navigation over a focused workspace and explains forced compact focus", () => {
     const onOpenSidebar = vi.fn();
     const props = {

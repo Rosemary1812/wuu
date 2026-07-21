@@ -67,6 +67,16 @@ export const WORKSPACE_FILE_TREE_MAX_WIDTH = 480;
 export const WORKSPACE_FILE_CONTENT_MIN_WIDTH = 240;
 const WORKSPACE_FILE_TREE_WIDTH_STEP = 24;
 const WORKSPACE_FILE_TREE_WIDTH_KEY = "wuu.desktop.fileTreeWidth";
+const WORKSPACE_PANEL_PREWARM_TIMEOUT_MS = 2_000;
+
+function scheduleIdleTask(callback: () => void, timeoutMs: number): () => void {
+  if (typeof window.requestIdleCallback === "function") {
+    const idleCallbackID = window.requestIdleCallback(callback, { timeout: timeoutMs });
+    return () => window.cancelIdleCallback(idleCallbackID);
+  }
+  const timeoutID = window.setTimeout(callback, Math.min(timeoutMs, 500));
+  return () => window.clearTimeout(timeoutID);
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -100,6 +110,7 @@ function initialWorkspaceFileTreeWidth(): number {
 export function WorkspaceRightPanel({
   open,
   present,
+  prewarm = false,
   tabs,
   activeTabID,
   activeFileTabID,
@@ -132,6 +143,7 @@ export function WorkspaceRightPanel({
 }: {
   open: boolean;
   present: boolean;
+  prewarm?: boolean;
   tabs: WorkspaceViewTab[];
   activeTabID: string | undefined;
   activeFileTabID?: string;
@@ -180,6 +192,7 @@ export function WorkspaceRightPanel({
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const [fileTreeWidth, setFileTreeWidth] = useState(initialWorkspaceFileTreeWidth);
+  const [bodyPrewarmed, setBodyPrewarmed] = useState(false);
   const fileTreePreferredWidthRef = useRef(fileTreeWidth);
   const [resizingFileSplit, setResizingFileSplit] = useState(false);
   const fileSplitRef = useRef<HTMLDivElement>(null);
@@ -192,6 +205,13 @@ export function WorkspaceRightPanel({
     visibleTabs.map((tab) => tab.id),
     addButtonRef,
   );
+
+  useEffect(() => {
+    if (!prewarm || bodyPrewarmed || open) {
+      return undefined;
+    }
+    return scheduleIdleTask(() => setBodyPrewarmed(true), WORKSPACE_PANEL_PREWARM_TIMEOUT_MS);
+  }, [bodyPrewarmed, open, prewarm]);
 
   useEffect(() => {
     onDirtyFileTabsChange?.(dirtyFileTabIDs.size > 0);
@@ -516,7 +536,7 @@ export function WorkspaceRightPanel({
           <X className="icon" />
         </button>
       </div>
-      {present || fileTabs.length > 0 ? (
+      {present || bodyPrewarmed || fileTabs.length > 0 ? (
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
             <div
