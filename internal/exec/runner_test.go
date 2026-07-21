@@ -626,6 +626,32 @@ func TestRunTurnErrorClassifiesToolFailure(t *testing.T) {
 	}
 }
 
+func TestRunTurnErrorPrefersStructuredCategoryOverMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		category string
+		message  string
+		want     int
+	}{
+		{name: "local tool error mentioning provider", category: "local", message: "tool failed contacting provider", want: ExitToolFailed},
+		{name: "provider error mentioning tool", category: "provider", message: "tool execution failed upstream", want: ExitProviderModelError},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			controller := newFakeController(
+				notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{
+					ThreadID: "thread-1", TurnID: "turn-1", Error: tc.message, Category: tc.category,
+				}),
+			)
+			var stdout bytes.Buffer
+			err := Run(context.Background(), Options{Prompt: "do work", JSON: true, Stdout: &stdout, Controller: controller})
+			if ExitCode(err) != tc.want {
+				t.Fatalf("ExitCode = %d, want %d: %v", ExitCode(err), tc.want, err)
+			}
+		})
+	}
+}
+
 func TestRunTimeoutInterruptsAndReturnsExitCodeFour(t *testing.T) {
 	controller := newFakeController()
 	var stdout bytes.Buffer

@@ -23,6 +23,21 @@ type protocolResponse struct {
 	err    *appserver.ResponseError
 }
 
+type ProtocolError struct {
+	Code    string
+	Message string
+}
+
+func (e *ProtocolError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Code) == "" {
+		return e.Message
+	}
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
 type protocolEnvelope struct {
 	ID     json.RawMessage          `json:"id,omitempty"`
 	Method string                   `json:"method,omitempty"`
@@ -87,7 +102,7 @@ func (c *ProtocolClient) Call(ctx context.Context, method string, params any, re
 	select {
 	case resp := <-respCh:
 		if resp.err != nil {
-			return errors.New(resp.err.Message)
+			return &ProtocolError{Code: resp.err.Code, Message: resp.err.Message}
 		}
 		if result != nil && len(resp.result) > 0 {
 			if err := json.Unmarshal(resp.result, result); err != nil {

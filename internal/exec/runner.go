@@ -419,19 +419,16 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.turnID = params.TurnID
 		state.status = "failed"
 		status := "failed"
-		code := ExitTurnFailed
-		switch {
-		case state.permissionDenied || isPermissionFailure(params.Error):
+		code := exitCodeForTurnError(params, state.permissionDenied)
+		switch code {
+		case ExitPermissionDenied:
 			status = "permission_denied"
-			code = ExitPermissionDenied
 			state.permissionDenied = true
 			if state.permissionError == "" {
 				state.permissionError = params.Error
 			}
-		case isProviderModelFailure(params.Error):
-			code = ExitProviderModelError
-		case isToolFailure(params.Error):
-			code = ExitToolFailed
+		case ExitInterrupted:
+			status = "interrupted"
 		}
 		emitResult(opts, *state, status, params.Error)
 		return false, WithExitCode(code, errors.New(params.Error))
@@ -804,6 +801,31 @@ func isPermissionFailure(text string) bool {
 		}
 	}
 	return false
+}
+
+func exitCodeForTurnError(params appserver.TurnErrorNotification, permissionDenied bool) int {
+	if permissionDenied || isPermissionFailure(params.Error) {
+		return ExitPermissionDenied
+	}
+	switch strings.ToLower(strings.TrimSpace(params.Category)) {
+	case "provider", "auth", "network", "invalid_request":
+		return ExitProviderModelError
+	case "local":
+		return ExitToolFailed
+	case "cancelled", "canceled":
+		return ExitInterrupted
+	case "":
+		// Older app-server versions did not send structured categories.
+	default:
+		return ExitTurnFailed
+	}
+	if isProviderModelFailure(params.Error) {
+		return ExitProviderModelError
+	}
+	if isToolFailure(params.Error) {
+		return ExitToolFailed
+	}
+	return ExitTurnFailed
 }
 
 func isProviderModelFailure(text string) bool {
