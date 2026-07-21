@@ -38,7 +38,7 @@ beforeEach(() => {
     value: { writeText: writeTextMock }
   });
   resolveWorkspaceFileReferenceMock = vi.fn(async (reference: string): Promise<WorkspaceFileReferenceResolveResult> => ({
-    root: "/Users/zzzz/wuu",
+    root: "/repo/wuu",
     reference,
     status: "missing",
   }));
@@ -94,11 +94,11 @@ function resolvedFileReference(
   path: string,
 ): WorkspaceFileReferenceResolveResult {
   return {
-    root: "/Users/zzzz/wuu",
+    root: "/repo/wuu",
     reference,
     status: "resolved",
     path,
-    absolute_path: `/Users/zzzz/wuu/${path}`,
+    absolute_path: `/repo/wuu/${path}`,
   };
 }
 
@@ -160,7 +160,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={"See [README_zh.md (line 19)](README_zh.md) before editing."}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={openFile}
       />,
     );
@@ -182,7 +182,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={"See [README_zh.md (line 19)](README_zh.md) before editing."}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
       />,
     );
 
@@ -196,7 +196,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={"See [the parser](src/parser.ts:12:4-18:9)."}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={openFile}
       />,
     );
@@ -217,7 +217,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={"[Jump](#install-notes)\n\n## Install Notes"}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={openFile}
       />,
     );
@@ -240,7 +240,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={"The likely tool file is tool_search.go."}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={openFile}
       />,
     );
@@ -254,13 +254,13 @@ describe("RichContent code block", () => {
     resolveWorkspaceFileReferenceMock.mockImplementation(async (candidate: string) =>
       candidate === reference
         ? resolvedFileReference(reference, reference)
-        : { root: "/Users/zzzz/wuu", reference: candidate, status: "missing" },
+        : { root: "/repo/wuu", reference: candidate, status: "missing" },
     );
 
     renderWithImagePreview(
       <RichContent
         text={`已生成 ${reference}，可以先看这张。`}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={vi.fn()}
       />,
     );
@@ -272,12 +272,12 @@ describe("RichContent code block", () => {
     expect(container.querySelector(".rich-file-link")).toBeNull();
     expect(container.querySelector(".rich-image-caption")?.textContent).toBe(reference);
     expect(container.textContent).toContain(reference);
-    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith(reference, "/Users/zzzz/wuu");
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith(reference, "/repo/wuu");
   });
 
   it("keeps missing bare image paths as text only", async () => {
     renderWithImagePreview(
-      <RichContent text="还没生成 missing-icon.png。" cwd="/Users/zzzz/wuu" />,
+      <RichContent text="还没生成 missing-icon.png。" cwd="/repo/wuu" />,
     );
     await settleFileReferenceResolution();
 
@@ -287,7 +287,7 @@ describe("RichContent code block", () => {
 
   it("does not preview image paths inside inline code", async () => {
     renderWithImagePreview(
-      <RichContent text="Keep `icon.png` literal here." cwd="/Users/zzzz/wuu" />,
+      <RichContent text="Keep `icon.png` literal here." cwd="/repo/wuu" />,
     );
     await settleFileReferenceResolution();
 
@@ -301,7 +301,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={`Open [${reference}](${reference}) instead.`}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={openFile}
       />,
     );
@@ -323,7 +323,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={`See [model.go:789\u2013926](${target}) before editing.`}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
         onOpenFile={openFile}
       />,
     );
@@ -353,7 +353,7 @@ describe("RichContent code block", () => {
   });
 
   it("does not turn inline code file names into file links", () => {
-    render(<RichContent text={"Keep `README_zh.md` literal here."} cwd="/Users/zzzz/wuu" />);
+    render(<RichContent text={"Keep `README_zh.md` literal here."} cwd="/repo/wuu" />);
 
     expect(container.querySelector(".rich-file-link")).toBeNull();
     expect(container.querySelector("code")?.textContent).toBe("README_zh.md");
@@ -367,7 +367,7 @@ describe("RichContent code block", () => {
     render(
       <RichContent
         text={"bash: scripts/desktop-dev.sh: No such file or directory"}
-        cwd="/Users/zzzz/wuu"
+        cwd="/repo/wuu"
       />
     );
 

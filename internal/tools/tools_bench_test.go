@@ -12,7 +12,7 @@ import (
 
 // BenchmarkReadFile measures read_file tool execution.
 func BenchmarkReadFile(b *testing.B) {
-	env := &Env{RootDir: "/Users/blueberrycongee/wuu"}
+	env := &Env{RootDir: benchmarkRootDir(b)}
 	tool := NewReadFileTool(env)
 	ctx := context.Background()
 	b.ResetTimer()
@@ -23,7 +23,7 @@ func BenchmarkReadFile(b *testing.B) {
 
 // BenchmarkGrep measures grep tool execution (spawns ripgrep subprocess).
 func BenchmarkGrep(b *testing.B) {
-	env := &Env{RootDir: "/Users/blueberrycongee/wuu"}
+	env := &Env{RootDir: benchmarkRootDir(b)}
 	tool := NewGrepTool(env)
 	ctx := context.Background()
 	b.ResetTimer()
@@ -34,7 +34,7 @@ func BenchmarkGrep(b *testing.B) {
 
 // BenchmarkGlob measures glob tool execution (spawns ripgrep subprocess).
 func BenchmarkGlob(b *testing.B) {
-	env := &Env{RootDir: "/Users/blueberrycongee/wuu"}
+	env := &Env{RootDir: benchmarkRootDir(b)}
 	tool := NewGlobTool(env)
 	ctx := context.Background()
 	b.ResetTimer()
@@ -96,4 +96,13 @@ func BenchmarkWriteFile(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = tool.Execute(ctx, `{"file_path": "test.go", "content": "package main\n\nfunc main() {}\n"}`)
 	}
+}
+
+func benchmarkRootDir(b *testing.B) string {
+	b.Helper()
+	workingDir, err := os.Getwd()
+	if err != nil {
+		b.Fatal(err)
+	}
+	return filepath.Clean(filepath.Join(workingDir, "..", ".."))
 }

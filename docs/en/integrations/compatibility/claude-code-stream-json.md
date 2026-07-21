@@ -13,7 +13,7 @@ whether to add a cc-compatible output mode to wuu, we need a precise, code-sourc
 how far apart the two event streams are.
 
 All claims below cite code. Paths are relative to the repo root
-(`/Users/blueberrycongee/blueberrycongee/wuu`). The cc side is read from the vendored
+(`<repo-root>`). The cc side is read from the vendored
 source map under `thirdparty/claude-code-sourcemap/src` (a decompiled dump; treat it as
 "best available", not upstream-authoritative). Anything not verifiable in code is marked
 **(unconfirmed)**.

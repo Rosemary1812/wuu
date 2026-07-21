@@ -107,6 +107,17 @@ coverage.out
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+
+# Local credential stores and key material.
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key
+*.p12
+*.pfx
 
 # ============================================================
 # Personal scratch
