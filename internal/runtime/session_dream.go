@@ -29,11 +29,16 @@ type sessionDreamScheduler struct {
 	interval           time.Duration
 	reportError        func(error)
 
+	// Optional dedicated client/model. When client is nil the scheduler falls
+	// back to the runner's client and model (the current selected provider).
+	client providers.Client
+	model  string
+
 	mu      sync.Mutex
 	running bool
 }
 
-func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifactDir func() string, intervalDays int) *sessionDreamScheduler {
+func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifactDir func() string, intervalDays int, dedicatedClient providers.Client, dedicatedModel string) *sessionDreamScheduler {
 	rootDir = strings.TrimSpace(rootDir)
 	if rootDir == "" || strings.TrimSpace(workspaceStateDir) == "" || sessionArtifactDir == nil || intervalDays <= 0 {
 		return nil
@@ -43,10 +48,23 @@ func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifact
 		workspaceStateDir:  workspaceStateDir,
 		sessionArtifactDir: sessionArtifactDir,
 		interval:           time.Duration(intervalDays) * 24 * time.Hour,
+		client:             dedicatedClient,
+		model:              strings.TrimSpace(dedicatedModel),
 		reportError: func(err error) {
 			providers.DebugLogf("session dream: %v", err)
 		},
 	}
+}
+
+// sessionDreamAfterTurn builds a fresh dream scheduler AfterTurn hook. It is
+// used to rebuild the hook after live settings changes without recreating the
+// whole StreamRunner.
+func sessionDreamAfterTurn(rootDir, workspaceStateDir string, sessionArtifactDir func() string, intervalDays int, dedicatedClient providers.Client, dedicatedModel string) func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) {
+	scheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, sessionArtifactDir, intervalDays, dedicatedClient, dedicatedModel)
+	if scheduler == nil {
+		return nil
+	}
+	return scheduler.AfterTurn
 }
 
 func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.StreamRunner, history []providers.ChatMessage, result agent.LoopResult) {
@@ -77,10 +95,16 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		releaseStart()
 		return
 	}
-	client := runner.Client
+	var client providers.Client = runner.Client
 	model := strings.TrimSpace(runner.APIModel)
 	if model == "" {
 		model = strings.TrimSpace(runner.Model)
+	}
+	if s.client != nil {
+		client = s.client
+	}
+	if s.model != "" {
+		model = s.model
 	}
 	if client == nil || model == "" {
 		releaseStart()

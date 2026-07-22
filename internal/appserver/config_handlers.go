@@ -188,6 +188,13 @@ func (s *Server) currentGeneralSettingsSummary() GeneralSettingsSummary {
 		summary.AppendSystemPrompt = cfg.Agent.AppendSystemPrompt
 		summary.GitAttributionEnabled = cfg.Agent.GitAttributionEnabledValue()
 		summary.MemoryDisabled = cfg.Memory.Disable
+		summary.DreamEnabled = cfg.Memory.DreamEnabled()
+		summary.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+		if summary.DreamIntervalDays <= 0 {
+			summary.DreamIntervalDays = config.DefaultDreamIntervalDays
+		}
+		summary.DreamProvider = cfg.Memory.DreamProvider()
+		summary.DreamModel = cfg.Memory.DreamModel()
 		activePluginServers := make(map[string]bool)
 		for _, item := range s.rt.Plugins {
 			for name := range item.MCPServers {
@@ -691,6 +698,10 @@ func (s *Server) handleConfigGeneralUpdate(req Request) error {
 		GitAttributionEnabled: params.GitAttributionEnabled,
 		MemoryDisable:         params.MemoryDisable,
 		MCPEnabledToggles:     params.MCPEnabledToggles,
+		DreamEnabled:          params.DreamEnabled,
+		DreamIntervalDays:     params.DreamIntervalDays,
+		DreamProvider:         params.DreamProvider,
+		DreamModel:            params.DreamModel,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}

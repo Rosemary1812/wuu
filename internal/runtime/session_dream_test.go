@@ -114,7 +114,7 @@ func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) 
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	journal := &dreamRecordingJournal{
 		operations: make(chan providers.InferenceOperation, 1),
 		workflows:  make(chan providers.InferenceWorkflowTerminalRecord, 1),
@@ -165,7 +165,7 @@ func TestSessionDreamScheduler_BackgroundReportsRunFailure(t *testing.T) {
 	workspaceState := t.TempDir()
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string {
 		return filepath.Join(workspaceState, "sessions", "session-1")
-	}, 7)
+	}, 7, nil, "")
 	reported := make(chan error, 1)
 	scheduler.reportError = func(err error) { reported <- err }
 	runner := &agent.StreamRunner{
@@ -187,6 +187,107 @@ func TestSessionDreamScheduler_BackgroundReportsRunFailure(t *testing.T) {
 	}
 }
 
+func TestSessionDreamScheduler_UsesDedicatedClientAndModel(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	dedicatedClient := &sessionDreamFakeClient{
+		responses: []providers.ChatResponse{{Content: "Nothing to dream."}},
+	}
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string {
+		return filepath.Join(workspaceState, "sessions", "session-1")
+	}, 7, dedicatedClient, "dedicated-model")
+	journal := &dreamRecordingJournal{
+		operations: make(chan providers.InferenceOperation, 1),
+		workflows:  make(chan providers.InferenceWorkflowTerminalRecord, 1),
+	}
+	runner := &agent.StreamRunner{
+		Client: providers.AdaptStreamClient(&sessionDreamFakeClient{
+			responses: []providers.ChatResponse{{Content: "Nothing to dream."}},
+		}),
+		Model:            "runner-model",
+		InferenceJournal: journal,
+	}
+
+	scheduler.AfterTurn(context.Background(), runner, makeSessionDreamHistory(1), agent.LoopResult{Content: "done"})
+
+	select {
+	case <-journal.operations:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background dream did not prepare an inference operation")
+	}
+	select {
+	case <-journal.workflows:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background dream did not complete its inference workflow")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		scheduler.mu.Lock()
+		running := scheduler.running
+		scheduler.mu.Unlock()
+		if !running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background dream did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(dedicatedClient.requests) == 0 {
+		t.Fatal("dedicated client was not used")
+	}
+	if dedicatedClient.requests[0].Model != "dedicated-model" {
+		t.Fatalf("dedicated request model = %q, want dedicated-model", dedicatedClient.requests[0].Model)
+	}
+}
+
+func TestSessionDreamScheduler_OverridesModelOnRunnerClient(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	runnerClient := &sessionDreamFakeClient{
+		responses: []providers.ChatResponse{{Content: "Nothing to dream."}},
+	}
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string {
+		return filepath.Join(workspaceState, "sessions", "session-1")
+	}, 7, nil, "lower-cost-model")
+	journal := &dreamRecordingJournal{
+		operations: make(chan providers.InferenceOperation, 1),
+		workflows:  make(chan providers.InferenceWorkflowTerminalRecord, 1),
+	}
+	runner := &agent.StreamRunner{
+		Client:           providers.AdaptStreamClient(runnerClient),
+		Model:            "runner-model",
+		InferenceJournal: journal,
+	}
+
+	scheduler.AfterTurn(context.Background(), runner, makeSessionDreamHistory(1), agent.LoopResult{Content: "done"})
+
+	select {
+	case <-journal.workflows:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background dream did not complete its inference workflow")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		scheduler.mu.Lock()
+		running := scheduler.running
+		scheduler.mu.Unlock()
+		if !running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background dream did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(runnerClient.requests) == 0 {
+		t.Fatal("runner client was not used")
+	}
+	if runnerClient.requests[0].Model != "lower-cost-model" {
+		t.Fatalf("dream request model = %q, want lower-cost-model", runnerClient.requests[0].Model)
+	}
+}
+
 func TestIsPureSessionDreamCancellation(t *testing.T) {
 	if !isPureSessionDreamCancellation(fmt.Errorf("stop dream: %w", context.Canceled)) {
 		t.Fatal("wrapped context cancellation should be treated as a normal cancellation")
@@ -203,7 +304,7 @@ func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
@@ -232,7 +333,7 @@ func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
@@ -267,7 +368,7 @@ func TestSessionDreamScheduler_ShouldStartReconcilesStaleRunningState(t *testing
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
@@ -308,7 +409,7 @@ func TestSessionDreamScheduler_ShouldStartLeavesFreshRunningState(t *testing.T) 
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
@@ -335,7 +436,7 @@ func TestSessionDreamScheduler_LiveOwnerPreventsStaleStateRepair(t *testing.T) {
 	workspaceState := t.TempDir()
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string {
 		return filepath.Join(workspaceState, "sessions", "session-1")
-	}, 7)
+	}, 7, nil, "")
 	now := time.Now().UTC()
 	want := sessionmemory.DreamState{
 		LastRunAt:     now.Add(-24 * time.Hour),
@@ -386,7 +487,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 			{Content: "Saved."},
 		},
 	}
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	err := scheduler.run(context.Background(), sessionDreamJob{
 		client:             client,
@@ -511,7 +612,7 @@ func TestSessionDream_RunRecordsFailureState(t *testing.T) {
 	client := &sessionDreamFakeClient{
 		errors: []error{errors.New("provider unavailable")},
 	}
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 	started := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
 	err := scheduler.run(context.Background(), sessionDreamJob{
@@ -562,7 +663,7 @@ func TestSessionDream_RunReturnsFailureStatePersistenceError(t *testing.T) {
 			}
 		},
 	}
-	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7, nil, "")
 
 	err := scheduler.run(context.Background(), sessionDreamJob{
 		client:             client,

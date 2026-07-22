@@ -743,6 +743,8 @@ describe("SettingsView general settings", () => {
           git_attribution_enabled: true,
           memory_disabled: false,
           mcp_server_enabled: {},
+          dream_enabled: false,
+          dream_interval_days: 7,
         },
       }),
       initialPage: "general",
@@ -786,6 +788,8 @@ describe("SettingsView general settings", () => {
             docs: true,
             search: false,
           },
+          dream_enabled: false,
+          dream_interval_days: 7,
         },
       }),
       onGeneralSave,
@@ -930,6 +934,50 @@ describe("SettingsView general settings", () => {
       await Promise.resolve();
     });
     expect(onCodexPetsUpdate).toHaveBeenCalledWith({ selected_id: "beta" });
+  });
+});
+
+describe("SettingsView Dream settings", () => {
+  it("keeps the Memory page available and enables Dream with explicit defaults", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onGeneralSave = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      locale: "en-US",
+      initialPage: "memory",
+      initialized: baseInitialized({
+        providers: [],
+        general_settings: {
+          append_system_prompt: "",
+          memory_disabled: false,
+          mcp_server_enabled: {},
+          dream_enabled: false,
+          dream_interval_days: 7,
+        },
+      }),
+      onGeneralSave,
+    });
+
+    const dreamSwitch = container.querySelector<HTMLButtonElement>(
+      '[data-testid="settings-dream-toggle"]',
+    );
+    expect(dreamSwitch).not.toBeNull();
+    expect(dreamSwitch?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      dreamSwitch?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onGeneralSave).toHaveBeenCalledWith({
+      dream_enabled: true,
+      dream_interval_days: 7,
+      dream_provider: "",
+      dream_model: "",
+    });
   });
 });
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -415,6 +416,154 @@ func TestValidateRejectsNegativeDreamInterval(t *testing.T) {
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "dream_interval_days") {
 		t.Fatalf("expected negative dream interval error, got %v", err)
 	}
+}
+
+func TestMemoryConfig_DreamEnabledDefault(t *testing.T) {
+	var cfg MemoryConfig
+	if cfg.DreamEnabled() {
+		t.Fatal("Dream should be disabled by default")
+	}
+	cfg.Dream = &DreamConfig{Enabled: true}
+	if !cfg.DreamEnabled() {
+		t.Fatal("Dream should be enabled when Dream.Enabled is true")
+	}
+	cfg.Dream = &DreamConfig{Enabled: false}
+	if cfg.DreamEnabled() {
+		t.Fatal("Dream should be disabled when Dream.Enabled is false")
+	}
+}
+
+func TestMemoryConfig_DreamEnabledLegacyCompatibility(t *testing.T) {
+	var cfg MemoryConfig
+	days := 7
+	cfg.DreamIntervalDays = &days
+	if !cfg.DreamEnabled() {
+		t.Fatal("legacy positive dream_interval_days should enable Dream")
+	}
+	zero := 0
+	cfg.DreamIntervalDays = &zero
+	if cfg.DreamEnabled() {
+		t.Fatal("legacy zero dream_interval_days should disable Dream")
+	}
+}
+
+func TestMemoryConfig_DreamConfigOverridesLegacyInterval(t *testing.T) {
+	cfg := MemoryConfig{
+		DreamIntervalDays: intPtr(14),
+		Dream:             &DreamConfig{Enabled: true, IntervalDays: 3},
+	}
+	if got := cfg.DreamIntervalDaysValue(); got != 3 {
+		t.Fatalf("Dream.IntervalDays should win over legacy DreamIntervalDays, got %d", got)
+	}
+}
+
+func TestMemoryConfig_DreamProviderModel(t *testing.T) {
+	cfg := MemoryConfig{Dream: &DreamConfig{Provider: "openai", Model: "gpt-4.1"}}
+	if cfg.DreamProvider() != "openai" {
+		t.Fatalf("DreamProvider = %q, want openai", cfg.DreamProvider())
+	}
+	if cfg.DreamModel() != "gpt-4.1" {
+		t.Fatalf("DreamModel = %q, want gpt-4.1", cfg.DreamModel())
+	}
+}
+
+func TestValidateRejectsUnknownDreamProvider(t *testing.T) {
+	cfg := Default()
+	cfg.Memory.Dream = &DreamConfig{Enabled: true, Provider: "missing"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "memory.dream.provider") {
+		t.Fatalf("expected unknown dream provider error, got %v", err)
+	}
+}
+
+func TestUpdateGeneralSettings_DreamFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := Default()
+	if err := writeConfigJSON(path, cfg); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	enabled := true
+	interval := 5
+	provider := "openai"
+	model := "gpt-4.1"
+	if err := UpdateGeneralSettings(path, GeneralSettingsUpdate{
+		DreamEnabled:      &enabled,
+		DreamIntervalDays: &interval,
+		DreamProvider:     &provider,
+		DreamModel:        &model,
+	}); err != nil {
+		t.Fatalf("update dream settings: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	memory, _ := raw["memory"].(map[string]any)
+	if memory == nil {
+		t.Fatal("memory section missing")
+	}
+	dream, _ := memory["dream"].(map[string]any)
+	if dream == nil {
+		t.Fatal("dream section missing")
+	}
+	if dream["enabled"] != true {
+		t.Fatalf("dream.enabled = %v, want true", dream["enabled"])
+	}
+	if dream["interval_days"] != float64(5) {
+		t.Fatalf("dream.interval_days = %v, want 5", dream["interval_days"])
+	}
+	if dream["provider"] != "openai" {
+		t.Fatalf("dream.provider = %v, want openai", dream["provider"])
+	}
+	if dream["model"] != "gpt-4.1" {
+		t.Fatalf("dream.model = %v, want gpt-4.1", dream["model"])
+	}
+	if _, ok := memory["dream_interval_days"]; ok {
+		t.Fatal("legacy dream_interval_days should be removed after dream update")
+	}
+}
+
+func TestUpdateGeneralSettings_DreamDisabledCleansSection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := Default()
+	cfg.Memory.Dream = &DreamConfig{Enabled: true, IntervalDays: 7}
+	if err := writeConfigJSON(path, cfg); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	enabled := false
+	if err := UpdateGeneralSettings(path, GeneralSettingsUpdate{DreamEnabled: &enabled}); err != nil {
+		t.Fatalf("update dream settings: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	memory, _ := raw["memory"].(map[string]any)
+	if memory == nil {
+		t.Fatal("memory section missing")
+	}
+	if dream, ok := memory["dream"]; !ok || dream.(map[string]any)["enabled"] != false {
+		t.Fatalf("dream.enabled should be false, got %v", dream)
+	}
+}
+
+func writeConfigJSON(path string, cfg Config) error {
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func TestLoadFrom_AgentName(t *testing.T) {

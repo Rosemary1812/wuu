@@ -206,6 +206,10 @@ export type GeneralSettingsSummary = {
   git_attribution_enabled?: boolean;
   memory_disabled: boolean;
   mcp_server_enabled: Record<string, boolean>;
+  dream_enabled: boolean;
+  dream_interval_days: number;
+  dream_provider?: string;
+  dream_model?: string;
 };
 
 export type PermissionSummary = {
@@ -569,6 +573,10 @@ export type RuntimeGeneralSettingsUpdate = {
   git_attribution_enabled?: boolean;
   memory_disable?: boolean;
   mcp_enabled_toggles?: Record<string, boolean>;
+  dream_enabled?: boolean;
+  dream_interval_days?: number;
+  dream_provider?: string;
+  dream_model?: string;
 };
 
 export type ConfigGeneralUpdateResult = {

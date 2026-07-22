@@ -139,14 +139,59 @@ type MemoryConfig struct {
 	// DreamIntervalDays controls how often the background dream pass
 	// consolidates recent session history into workspace memory. nil means
 	// the default interval; 0 disables the dream pass.
+	//
+	// Deprecated: use Dream.IntervalDays instead. This field is retained so
+	// existing configs keep working.
 	DreamIntervalDays *int `json:"dream_interval_days,omitempty"`
+	// Dream configures the background session-dream memory consolidation pass.
+	Dream *DreamConfig `json:"dream,omitempty"`
+}
+
+// DreamConfig configures the background session-dream memory consolidation
+// pass. It is intentionally scoped: an enable switch, interval, and optional
+// dedicated provider/model. Empty provider/model means the dream uses the
+// currently selected main provider/model.
+type DreamConfig struct {
+	Enabled      bool   `json:"enabled,omitempty"`
+	IntervalDays int    `json:"interval_days,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	Model        string `json:"model,omitempty"`
+}
+
+func (m MemoryConfig) DreamEnabled() bool {
+	if m.Dream != nil {
+		return m.Dream.Enabled
+	}
+	// Backward compatibility: the legacy dream_interval_days field toggled the
+	// pass by value. A positive interval meant enabled; zero meant disabled.
+	if m.DreamIntervalDays != nil {
+		return *m.DreamIntervalDays > 0
+	}
+	return false
 }
 
 func (m MemoryConfig) DreamIntervalDaysValue() int {
-	if m.DreamIntervalDays == nil {
-		return DefaultDreamIntervalDays
+	if m.Dream != nil && m.Dream.IntervalDays > 0 {
+		return m.Dream.IntervalDays
 	}
-	return *m.DreamIntervalDays
+	if m.DreamIntervalDays != nil {
+		return *m.DreamIntervalDays
+	}
+	return DefaultDreamIntervalDays
+}
+
+func (m MemoryConfig) DreamProvider() string {
+	if m.Dream != nil {
+		return strings.TrimSpace(m.Dream.Provider)
+	}
+	return ""
+}
+
+func (m MemoryConfig) DreamModel() string {
+	if m.Dream != nil {
+		return strings.TrimSpace(m.Dream.Model)
+	}
+	return ""
 }
 
 // ProviderConfig configures one model gateway.
@@ -388,6 +433,10 @@ type GeneralSettingsUpdate struct {
 	GitAttributionEnabled *bool
 	MemoryDisable         *bool
 	MCPEnabledToggles     map[string]*bool // server name → enabled; nil = skip
+	DreamEnabled          *bool
+	DreamIntervalDays     *int
+	DreamProvider         *string
+	DreamModel            *string
 }
 
 func (a AgentConfig) GitAttributionEnabledValue() bool {
@@ -722,6 +771,14 @@ func (c Config) Validate() error {
 	}
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
+	}
+	if c.Memory.Dream != nil && c.Memory.Dream.IntervalDays < 0 {
+		return errors.New("memory.dream.interval_days cannot be negative")
+	}
+	if c.Memory.Dream != nil && strings.TrimSpace(c.Memory.Dream.Provider) != "" {
+		if _, ok := c.Providers[c.Memory.Dream.Provider]; !ok {
+			return fmt.Errorf("memory.dream.provider %q not found in providers", c.Memory.Dream.Provider)
+		}
 	}
 	if err := validatePermissionConfig(c.Agent); err != nil {
 		return err
@@ -1202,6 +1259,44 @@ func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) erro
 			memory["disable"] = true
 		} else {
 			delete(memory, "disable")
+		}
+		if len(memory) == 0 {
+			delete(raw, "memory")
+		}
+	}
+
+	if update.DreamEnabled != nil || update.DreamIntervalDays != nil || update.DreamProvider != nil || update.DreamModel != nil {
+		memory, _ := raw["memory"].(map[string]any)
+		if memory == nil {
+			memory = make(map[string]any)
+			raw["memory"] = memory
+		}
+		dream, _ := memory["dream"].(map[string]any)
+		if dream == nil {
+			dream = make(map[string]any)
+			memory["dream"] = dream
+		}
+		if update.DreamEnabled != nil {
+			dream["enabled"] = *update.DreamEnabled
+		}
+		if update.DreamIntervalDays != nil {
+			if *update.DreamIntervalDays <= 0 {
+				delete(dream, "interval_days")
+			} else {
+				dream["interval_days"] = *update.DreamIntervalDays
+			}
+		}
+		if update.DreamProvider != nil {
+			setOptionalString(dream, "provider", update.DreamProvider)
+		}
+		if update.DreamModel != nil {
+			setOptionalString(dream, "model", update.DreamModel)
+		}
+		// Migrate away from the legacy flat field so the new section is the
+		// single source of truth.
+		delete(memory, "dream_interval_days")
+		if len(dream) == 0 {
+			delete(memory, "dream")
 		}
 		if len(memory) == 0 {
 			delete(raw, "memory")

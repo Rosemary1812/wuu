@@ -121,6 +121,8 @@ type Session struct {
 	// active for this session. False when Memory.Disable is set.
 	MemdirEnabled            bool
 	DreamIntervalDays        int
+	DreamClient              providers.Client
+	DreamModel               string
 	AgentControl             *agentcontrol.AgentControl
 	ProcessManager           *process.Manager
 	Toolkit                  *tools.Toolkit
@@ -212,6 +214,8 @@ func (s *Session) cloneForThreadModel() *Session {
 		Memory:                      s.Memory,
 		MemdirEnabled:               s.MemdirEnabled,
 		DreamIntervalDays:           s.DreamIntervalDays,
+		DreamClient:                 s.DreamClient,
+		DreamModel:                  s.DreamModel,
 		AgentControl:                s.AgentControl,
 		ProcessManager:              s.ProcessManager,
 		Toolkit:                     s.Toolkit,
@@ -606,13 +610,36 @@ func NewSession(opts Options) (*Session, error) {
 		ruleProviderCfg,
 		cfg.Agent.MaxContextTokens,
 	)
-	dreamIntervalDays := cfg.Memory.DreamIntervalDaysValue()
-	if cfg.Memory.Disable {
-		dreamIntervalDays = 0
+	dreamIntervalDays := 0
+	var dreamClient providers.Client
+	var dreamModel string
+	if !cfg.Memory.Disable && cfg.Memory.DreamEnabled() {
+		dreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+		if dreamIntervalDays <= 0 {
+			dreamIntervalDays = config.DefaultDreamIntervalDays
+		}
+		dreamModel = cfg.Memory.DreamModel()
+		dreamProvider := cfg.Memory.DreamProvider()
+		if dreamProvider != "" {
+			if providerCfg, _, err := cfg.ResolveProvider(dreamProvider); err == nil {
+				if client, err := providerfactory.BuildClient(providerCfg, dreamProvider); err == nil {
+					dreamClient = client
+					if dreamModel == "" {
+						dreamModel = providerCfg.Model
+					}
+				} else {
+					providers.DebugLogf("dream dedicated client for provider %q: %v", dreamProvider, err)
+					dreamIntervalDays = 0
+				}
+			} else {
+				providers.DebugLogf("dream dedicated provider %q: %v", dreamProvider, err)
+				dreamIntervalDays = 0
+			}
+		}
 	}
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if toolkit != nil {
-		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays, dreamClient, dreamModel); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -677,6 +704,8 @@ func NewSession(opts Options) (*Session, error) {
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
 		DreamIntervalDays:           dreamIntervalDays,
+		DreamClient:                 dreamClient,
+		DreamModel:                  dreamModel,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
@@ -1210,7 +1239,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	runner.BeforeRequest = pluginRequestInterceptor(s.PluginHost, s.ProviderName, id, threadRoot)
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
-		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays, s.DreamClient, s.DreamModel); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -2066,9 +2095,32 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 	s.UserSystemPrompt = cfg.Agent.UserSystemPrompt()
 	s.Memory = discoverMemory(s.RootDir, homeDir, cfg.Memory)
 	s.MemdirEnabled = !cfg.Memory.Disable
-	s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
-	if cfg.Memory.Disable {
-		s.DreamIntervalDays = 0
+	s.DreamIntervalDays = 0
+	s.DreamClient = nil
+	s.DreamModel = ""
+	if !cfg.Memory.Disable && cfg.Memory.DreamEnabled() {
+		s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+		if s.DreamIntervalDays <= 0 {
+			s.DreamIntervalDays = config.DefaultDreamIntervalDays
+		}
+		s.DreamModel = cfg.Memory.DreamModel()
+		dreamProvider := cfg.Memory.DreamProvider()
+		if dreamProvider != "" {
+			if providerCfg, _, err := cfg.ResolveProvider(dreamProvider); err == nil {
+				if client, err := providerfactory.BuildClient(providerCfg, dreamProvider); err == nil {
+					s.DreamClient = client
+					if s.DreamModel == "" {
+						s.DreamModel = providerCfg.Model
+					}
+				} else {
+					providers.DebugLogf("dream dedicated client for provider %q: %v", dreamProvider, err)
+					s.DreamIntervalDays = 0
+				}
+			} else {
+				providers.DebugLogf("dream dedicated provider %q: %v", dreamProvider, err)
+				s.DreamIntervalDays = 0
+			}
+		}
 	}
 	if s.Toolkit != nil {
 		s.Toolkit.SetGitAttributionEnabled(cfg.Agent.GitAttributionEnabledValue())
@@ -2081,6 +2133,9 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 			fileScopeExtras = append(fileScopeExtras, userNotebook)
 		}
 		s.Toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(s.Toolkit.RootDir(), s.WuuHome, fileScopeExtras...))
+	}
+	if s.StreamRunner != nil && s.Toolkit != nil {
+		s.StreamRunner.AfterTurn = sessionDreamAfterTurn(s.RootDir, s.StateDir, func() string { return s.Toolkit.SessionDir() }, s.DreamIntervalDays, s.DreamClient, s.DreamModel)
 	}
 	apiModel := s.Model
 	if s.StreamRunner != nil && strings.TrimSpace(s.StreamRunner.APIModel) != "" {
