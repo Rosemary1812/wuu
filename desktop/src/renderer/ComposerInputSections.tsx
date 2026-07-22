@@ -128,9 +128,7 @@ export function SplitPaneComposer({
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const submitAfterCompositionRef = useRef(false);
   const [dropActive, setDropActive] = useState(false);
-  const [compositionSubmitRequest, setCompositionSubmitRequest] = useState(0);
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   // Match the dock composer: the button is a stop control only while running
@@ -148,13 +146,6 @@ export function SplitPaneComposer({
     setPrompt,
     textareaRef
   });
-
-  useEffect(() => {
-    if (compositionSubmitRequest === 0) {
-      return;
-    }
-    submitComposer();
-  }, [compositionSubmitRequest]);
 
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
@@ -227,9 +218,6 @@ export function SplitPaneComposer({
       return;
     }
     if (isComposerTextComposing(event)) {
-      if (event.key === "Enter" && !event.shiftKey) {
-        submitAfterCompositionRef.current = true;
-      }
       return;
     }
     if (handleQueryHistoryKeyDown(event)) {
@@ -287,12 +275,6 @@ export function SplitPaneComposer({
             onPasteAttachmentFiles(pasted);
           }}
           onKeyDown={handleKeyDown}
-          onCompositionEnd={() => {
-            if (submitAfterCompositionRef.current) {
-              submitAfterCompositionRef.current = false;
-              setCompositionSubmitRequest((request) => request + 1);
-            }
-          }}
         />
         <div className="split-composer-bar">
           <button

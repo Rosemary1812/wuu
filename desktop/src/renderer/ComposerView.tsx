@@ -318,7 +318,6 @@ export function Composer({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
-  const submitAfterCompositionRef = useRef(false);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
@@ -326,7 +325,6 @@ export function Composer({
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
-  const [compositionSubmitRequest, setCompositionSubmitRequest] = useState(0);
   useEffect(() => {
     if (previousUltraEnabledRef.current === ultraEnabled) {
       return;
@@ -401,16 +399,6 @@ export function Composer({
   useEffect(() => {
     setSelectedSlashIndex(firstEnabledSlashCommandIndex(visibleSlashCommands));
   }, [visibleSlashCommands]);
-
-  useEffect(() => {
-    if (compositionSubmitRequest === 0) {
-      return;
-    }
-    // The composing Enter confirms the IME candidate. Submit only after React
-    // has applied the compositionend value to the controlled prompt.
-    submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
-  }, [compositionSubmitRequest]);
-
 
   useEffect(() => {
     if (!slashRuntimeReady || readOnly || textOnly) {
@@ -773,9 +761,6 @@ export function Composer({
       return;
     }
     if (isComposerTextComposing(event)) {
-      if (event.key === "Enter" && !event.shiftKey) {
-        submitAfterCompositionRef.current = true;
-      }
       return;
     }
     if (slashMenuOpen) {
@@ -1025,12 +1010,6 @@ export function Composer({
                 }
               }}
               onKeyDown={handleComposerKeyDown}
-              onCompositionEnd={() => {
-                if (submitAfterCompositionRef.current) {
-                  submitAfterCompositionRef.current = false;
-                  setCompositionSubmitRequest((request) => request + 1);
-                }
-              }}
               onContextMenu={handleComposerContextMenu}
             />
             <button

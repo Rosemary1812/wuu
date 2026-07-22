@@ -469,7 +469,7 @@ describe("Composer send control", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it("sends after Enter finishes an active IME composition", async () => {
+  it("does not send when Enter confirms an active IME composition", async () => {
     const onSend = vi.fn();
     renderStatefulComposer({ initialPrompt: "正在", onSend });
     const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
@@ -492,11 +492,22 @@ describe("Composer send control", () => {
       textarea?.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
     });
 
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea?.value).toBe("正在输入");
+
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
     expect(onSend).toHaveBeenCalledOnce();
     expect(onSend).toHaveBeenCalledWith("正在输入");
   });
 
-  it("sends from the split composer after Enter finishes IME composition", async () => {
+  it("does not send from the split composer when Enter confirms IME composition", async () => {
     const onSend = vi.fn();
     renderSplitPaneComposer({ prompt: "继续修改", onSend });
     const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
@@ -513,6 +524,16 @@ describe("Composer send control", () => {
 
     await act(async () => {
       textarea?.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    });
+
+    expect(onSend).not.toHaveBeenCalled();
+
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }));
     });
 
     expect(onSend).toHaveBeenCalledOnce();
