@@ -108,6 +108,13 @@ describe("workspace right panel chrome", () => {
 });
 
 describe("workspace document turn glass", () => {
+  it("keeps the document composer dock aligned with the main conversation composer", () => {
+    const dock = cssRuleBody(".workspace-document-turn-dock");
+
+    expect(dock).toMatch(/width:\s*min\(100%,\s*var\(--session-composer-width\)\);/);
+    expect(dock).toMatch(/margin:\s*0 auto;/);
+  });
+
   it("makes only the turn drawer glass while leaving the Composer surface alone", () => {
     const drawer = cssRuleBody(".workspace-document-turn-drawer");
     const summary = cssRuleBody(".workspace-document-turn-summary");

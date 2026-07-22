@@ -973,7 +973,8 @@ html.resizing-workspace-file-split * {
 
 .workspace-document-turn-dock {
   display: grid;
-  width: 100%;
+  width: min(100%, var(--session-composer-width));
+  margin: 0 auto;
   pointer-events: none;
 }
 
