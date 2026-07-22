@@ -117,6 +117,8 @@ describe("workspace document turn glass", () => {
     expect(drawer).toMatch(/width:\s*calc\(100% - 24px\);/);
     expect(drawer).toMatch(/background:\s*radial-gradient\(/);
     expect(drawer).toMatch(/linear-gradient\(/);
+    expect(drawer).toMatch(/var\(--paper\) 42%, transparent/);
+    expect(drawer).toMatch(/var\(--surface-2\) 16%, transparent/);
     expect(drawer).toMatch(/backdrop-filter:\s*blur\(24px\)\s+saturate\(1\.18\);/);
     expect(summary).toMatch(/background:\s*transparent;/);
     expect(details).toMatch(/background:\s*transparent;/);
