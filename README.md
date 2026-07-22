@@ -35,7 +35,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 | Use the desktop app | [Desktop App](#desktop-app) |
 | Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`wuu exec`](docs/en/automation/exec.md) |
 | Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
-| Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) |
+| Understand how wuu is built | [Architecture](#architecture) |
 | See where the project is going | [Roadmap](ROADMAP.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
 | Review the security and trust boundaries | [Security model](docs/en/reference/security-model.md) |
@@ -153,14 +153,11 @@ wuu session list --json
 
 ## Architecture
 
-Wuu is split into a reusable **Go core** and a thin **shell**:
+Wuu consists of a **Go core** and an **Electron desktop app**. The CLI is built from the same Go code:
 
-- The **Go core** (`internal/`, `cmd/wuu/`) provides the agent runtime, providers, tool loop, sessions, and config. It runs as a subprocess via `wuu app-server`.
-- The **current shell** is the Electron desktop in `desktop/`, which spawns the core and owns the UI and native integrations.
-- **Future shells** (VS Code extension, JetBrains plugin, etc.) can consume the same core by spawning `wuu app-server` — no need to import or fork the Go code.
-
-> [!TIP]
-> Building a new shell or integration? Start with the [`app-server` protocol](docs/en/integrations/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
+- The **Go core** (`internal/`, `cmd/wuu/`) contains the agent runtime, provider integrations, tools, sessions, config, and CLI commands.
+- The **desktop app** (`desktop/`) starts the core locally through `wuu app-server` and handles the interface and native desktop features.
+- The [`app-server` protocol](docs/en/integrations/app-server-protocol.md) is the local JSON-RPC interface between the desktop app and the core.
 
 ## Desktop App
 
@@ -258,7 +255,7 @@ For another provider, the same config shape applies:
 - Install, configure, and use wuu: [User guide](docs/en/getting-started/index.md)
 - Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/en/automation/exec.md)
 - Parse the streaming output: [JSONL events](docs/en/automation/jsonl-events.md)
-- Embed the core in a new shell: [`app-server` protocol](docs/en/integrations/app-server-protocol.md)
+- Understand how the desktop app talks to the core: [`app-server` protocol](docs/en/integrations/app-server-protocol.md)
 - Consume Claude Code–compatible stream output: [Claude Code stream compatibility](docs/en/integrations/compatibility/claude-code-stream-json.md)
 - Set up a development environment: [Contributing](CONTRIBUTING.md)
 

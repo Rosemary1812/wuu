@@ -35,7 +35,7 @@
 | 使用桌面应用 | [桌面应用](#桌面应用) |
 | 在脚本、CI 或其他 agent 中调用 wuu | [CLI 和自动化](#cli-和自动化) 和 [`wuu exec`](docs/en/automation/exec.md) |
 | 接入模型提供商（Anthropic、OpenAI 兼容、本地） | [模型提供商](#模型提供商) |
-| 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) |
+| 了解 wuu 的实现架构 | [架构](#架构) |
 | 了解项目接下来做什么 | [路线图](ROADMAP_zh.md) |
 | 参与贡献 | [贡献指南](CONTRIBUTING.md) |
 | 了解安全和信任边界 | [安全模型](docs/en/reference/security-model.md) |
@@ -149,14 +149,11 @@ wuu session list --json
 
 ## 架构
 
-Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
+Wuu 由 **Go 核心** 和 **Electron 桌面应用**组成，CLI 也基于同一套 Go 代码：
 
-- **Go 核心**（`internal/`、`cmd/wuu/`）提供智能体运行时、提供商、工具循环、会话和配置。它通过 `wuu app-server` 作为子进程运行。
-- **当前 Shell** 是 `desktop/` 中的 Electron 桌面应用，负责派生核心并管理 UI 和原生集成。
-- **未来的 Shell**（VS Code 插件、JetBrains 插件等）可以通过派生 `wuu app-server` 来复用同一个核心——无需导入或 fork Go 代码。
-
-> [!TIP]
-> 想构建新的 Shell 或集成？从 [`app-server` 协议](docs/en/integrations/app-server-protocol.md) 开始——它完整记录了桌面应用所使用的 JSON-RPC 接口。
+- **Go 核心**（`internal/`、`cmd/wuu/`）包含智能体运行时、模型提供商、工具、会话、配置和 CLI 命令。
+- **桌面应用**（`desktop/`）通过 `wuu app-server` 在本地启动核心，并负责界面和桌面原生功能。
+- [`app-server` 协议](docs/en/integrations/app-server-protocol.md) 是桌面应用与核心之间的本地 JSON-RPC 接口。
 
 ## 桌面应用
 
@@ -240,7 +237,7 @@ export ANTHROPIC_API_KEY="..."
 - 安装、配置和使用 wuu：[用户指南](docs/zh-cn/getting-started/index.md)
 - 在脚本、CI 或其他 agent 中调用 wuu：[`wuu exec`](docs/en/automation/exec.md)
 - 解析流式输出：[JSONL 事件](docs/en/automation/jsonl-events.md)
-- 将核心嵌入新的 Shell：[`app-server` 协议](docs/en/integrations/app-server-protocol.md)
+- 了解桌面应用如何与核心通信：[`app-server` 协议](docs/en/integrations/app-server-protocol.md)
 - 消费 Claude Code 兼容的流式输出：[Claude Code 流兼容说明](docs/en/integrations/compatibility/claude-code-stream-json.md)
 - 了解配置加载和自动化入口：[`wuu exec`](docs/en/automation/exec.md)
 - 搭建开发环境：[贡献指南](CONTRIBUTING.md)
