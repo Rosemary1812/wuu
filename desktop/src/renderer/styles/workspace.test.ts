@@ -255,9 +255,10 @@ describe("workspace file preview layout", () => {
     expect(resizerRule).toMatch(/inset:\s*0 auto 0 0;/);
     expect(resizerRule).toMatch(/width:\s*1px;/);
     expect(cssRuleBody(".workspace-file-tree-drag-handle")).toMatch(/cursor:\s*grab;/);
-    expect(cssRuleBody(".workspace-files-split.tree-dragging::after")).toMatch(
-      /width:\s*4px;/,
-    );
+    const dockGuide = cssRuleBody(".workspace-files-split.tree-dragging::after");
+    expect(dockGuide).toMatch(/width:\s*2px;/);
+    expect(dockGuide).toMatch(/height:\s*72px;/);
+    expect(dockGuide).toMatch(/top:\s*50%;/);
     const dragPreview = cssRuleBody(".workspace-file-tree-drag-preview");
     expect(dragPreview).toMatch(/width:\s*168px;/);
     expect(dragPreview).toMatch(/height:\s*44px;/);

@@ -727,24 +727,23 @@
 .workspace-files-split.tree-dragging::after {
   position: absolute;
   z-index: 9;
-  top: 18px;
-  bottom: 18px;
-  width: 4px;
+  top: 50%;
+  width: 2px;
+  height: 72px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--wuu-accent) 72%, transparent);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--wuu-accent) 10%, transparent),
-    0 8px 24px rgba(20, 24, 28, 0.12);
+  background: color-mix(in srgb, var(--wuu-accent) 52%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wuu-accent) 5%, transparent);
   content: "";
   pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .workspace-files-split.tree-dragging[data-tree-drop-side="left"]::after {
-  left: 12px;
+  left: 14px;
 }
 
 .workspace-files-split.tree-dragging[data-tree-drop-side="right"]::after {
-  right: 12px;
+  right: 14px;
 }
 
 .workspace-files-split[hidden] {
