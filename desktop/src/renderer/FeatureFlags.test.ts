@@ -1,18 +1,26 @@
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Feature flags are evaluated at module import, so the opt-in must be hoisted.
-vi.hoisted(() => {
-  vi.stubEnv("VITE_ENABLE_REMOTE_CONTROL", "true");
-});
-
-import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
-
-afterAll(() => {
+afterEach(() => {
   vi.unstubAllEnvs();
+  vi.resetModules();
 });
 
-describe("remote control feature flag", () => {
-  it("supports explicit opt-in builds", () => {
+describe("frontend feature flags", () => {
+  it("supports explicit remote control opt-in builds", async () => {
+    vi.stubEnv("VITE_ENABLE_REMOTE_CONTROL", "true");
+    const { ENABLE_REMOTE_CONTROL } = await import("./FeatureFlags");
+
     expect(ENABLE_REMOTE_CONTROL).toBe(true);
+  });
+
+  it("keeps Ultra mode disabled unless explicitly enabled", async () => {
+    vi.stubEnv("VITE_ENABLE_ULTRA_MODE", "false");
+    let featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_ULTRA_MODE).toBe(false);
+
+    vi.resetModules();
+    vi.stubEnv("VITE_ENABLE_ULTRA_MODE", "true");
+    featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_ULTRA_MODE).toBe(true);
   });
 });

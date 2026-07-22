@@ -162,7 +162,7 @@ import {
 import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
+import { ENABLE_COLLABORATION, ENABLE_ULTRA_MODE } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
 import { CircleAlert } from "lucide-react";
@@ -2330,10 +2330,14 @@ export function App(): JSX.Element {
           (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
         }
-        ultraEnabled={Boolean(state.initialized?.ultra)}
-        onToggleUltra={(enabled) => {
-          void updateUltraMode(enabled).catch(() => undefined);
-        }}
+        ultraEnabled={ENABLE_ULTRA_MODE && Boolean(state.initialized?.ultra)}
+        onToggleUltra={
+          ENABLE_ULTRA_MODE
+            ? (enabled) => {
+                void updateUltraMode(enabled).catch(() => undefined);
+              }
+            : undefined
+        }
         runtimeControlsDisabled={
           (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
