@@ -43,7 +43,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 
 ## Release Status
 
-- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide Apple silicon macOS builds. The CLI remains available from source for automation.
+- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide Apple silicon macOS builds.
 - **Latest changes** — see the [latest release](https://github.com/blueberrycongee/wuu/releases/latest) and [CHANGELOG](CHANGELOG.md).
 
 ## Install
@@ -61,15 +61,11 @@ and you trust the package downloaded from the official release, run:
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
 
-**Install the CLI from source with Go**
+**Install the CLI with Go**
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
-
-Standalone CLI archives are not published. A source-installed CLI is separate
-from the private core bundled with the desktop app, so both can coexist and use
-different versions.
 
 Verify the install:
 

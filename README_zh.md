@@ -43,7 +43,7 @@
 
 ## 发布状态
 
-- **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供 Apple 芯片 macOS 安装包；CLI 仍可从源码安装，用于自动化。
+- **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供 Apple 芯片 macOS 安装包。
 - **最新变化** —— 查看[最新版本](https://github.com/blueberrycongee/wuu/releases/latest)和 [CHANGELOG](CHANGELOG.md)。
 
 ## 安装
@@ -60,14 +60,11 @@
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
 
-**用 Go 从源码安装 CLI**
+**使用 Go 安装 CLI**
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
-
-GitHub Releases 不再发布独立 CLI 压缩包。从源码安装的 CLI 与桌面应用
-内置的私有 core 相互独立，可以同时存在并使用不同版本。
 
 验证安装：
 
