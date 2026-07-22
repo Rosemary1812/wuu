@@ -4383,6 +4383,8 @@ export function App(): JSX.Element {
               ? (
                   <WorkspaceDocumentTurnDock
                     key={activeThreadID ?? state.activeSessionTabID}
+                    cwd={activeThread?.cwd ?? state.activeContext?.cwd}
+                    onOpenFile={openWorkspaceFile}
                     statusText={activeThreadStreamStatus?.text}
                     turns={
                       activePendingNewThreadTurn

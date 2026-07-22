@@ -1,10 +1,14 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
+import { StreamingMarkdown } from "./StreamingMarkdown";
+import { streamTextKey, streamTextStore } from "./StreamText";
 import { useI18n } from "./i18n";
 
 interface WorkspaceDocumentTurnDockProps {
   children: ReactNode;
+  cwd?: string;
+  onOpenFile?: (path: string) => void;
   statusText?: string;
   turns: Turn[];
 }
@@ -19,14 +23,10 @@ function latestUserItem(turn: Turn): ThreadItem | undefined {
   return undefined;
 }
 
-function latestAgentText(turn: Turn): string | undefined {
-  for (let index = turn.items.length - 1; index >= 0; index -= 1) {
-    const item = turn.items[index];
-    if (item.type === "agent_message" && item.text?.trim()) {
-      return item.text.trim();
-    }
-  }
-  return undefined;
+function finalAnswerItems(turn: Turn): ThreadItem[] {
+  return turn.items.filter(
+    (item) => item.type === "agent_message" && item.phase === "final_answer",
+  );
 }
 
 function latestUserTurn(turns: Turn[]): Turn | undefined {
@@ -41,6 +41,8 @@ function latestUserTurn(turns: Turn[]): Turn | undefined {
 
 export function WorkspaceDocumentTurnDock({
   children,
+  cwd,
+  onOpenFile,
   statusText,
   turns,
 }: WorkspaceDocumentTurnDockProps): JSX.Element {
@@ -58,7 +60,7 @@ export function WorkspaceDocumentTurnDock({
     (userItem?.images?.length || userItem?.files?.length
       ? t("workspace.documentTurn.attachments")
       : undefined);
-  const agentText = turn ? latestAgentText(turn) : undefined;
+  const finalAnswers = turn ? finalAnswerItems(turn) : [];
 
   if (!turn || !userText) {
     return <div className="workspace-document-turn-dock">{children}</div>;
@@ -101,12 +103,31 @@ export function WorkspaceDocumentTurnDock({
         </button>
         {expanded ? (
           <div className="workspace-document-turn-details" id={detailsID}>
-            <div className="workspace-document-turn-message user">{userText}</div>
-            {agentText ? (
-              <div className="workspace-document-turn-message agent">{agentText}</div>
-            ) : turn.status === "in_progress" ? (
+            {finalAnswers.length > 0 ? (
+              <div className="workspace-document-turn-result">
+                {finalAnswers.map((item) => {
+                  const streamKey = streamTextKey(turn.id, item.id, "text");
+                  const isLive = item.status === "in_progress";
+                  return (
+                    <StreamingMarkdown
+                      key={item.id}
+                      streamKey={streamKey}
+                      initialText={
+                        isLive && streamTextStore.has(streamKey)
+                          ? streamTextStore.seedValue(streamKey)
+                          : item.text
+                      }
+                      cwd={cwd}
+                      onOpenFile={onOpenFile}
+                      isLive={isLive}
+                      phase="final_answer"
+                    />
+                  );
+                })}
+              </div>
+            ) : (
               <div className="workspace-document-turn-waiting">{status}</div>
-            ) : null}
+            )}
           </div>
         ) : null}
       </section>

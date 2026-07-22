@@ -19,7 +19,9 @@ function turn(
       {
         id: `${id}-agent`,
         type: "agent_message",
-        text: "I am tightening that section now.",
+        phase: "final_answer",
+        status: "completed",
+        text: "I am **tightening** that section now.",
       },
     ],
   };
@@ -53,7 +55,7 @@ describe("WorkspaceDocumentTurnDock", () => {
     });
   }
 
-  it("shows a compact turn peek and expands current turn content", () => {
+  it("shows a compact turn peek and expands only the rich final answer", () => {
     render([turn("turn-1")], "thread-a", "Editing README.md");
 
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -67,12 +69,35 @@ describe("WorkspaceDocumentTurnDock", () => {
     act(() => toggle?.click());
 
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector(".workspace-document-turn-message.user")?.textContent).toBe(
-      "Rewrite the weak section.",
-    );
-    expect(container.querySelector(".workspace-document-turn-message.agent")?.textContent).toBe(
-      "I am tightening that section now.",
-    );
+    const details = container.querySelector(".workspace-document-turn-details");
+    expect(details?.textContent).not.toContain("Rewrite the weak section.");
+    expect(details?.textContent).toContain("I am tightening that section now.");
+    expect(details?.querySelector("strong")?.textContent).toBe("tightening");
+    expect(details?.querySelector(".workspace-document-turn-message")).toBeNull();
+  });
+
+  it("ignores commentary and shows a simple status before final text arrives", () => {
+    const runningTurn = turn("turn-running");
+    runningTurn.items = [
+      runningTurn.items[0],
+      {
+        id: "turn-running-commentary",
+        type: "agent_message",
+        phase: "commentary",
+        status: "in_progress",
+        text: "Internal progress that does not belong in the result.",
+      },
+    ];
+    render([runningTurn], "thread-a", "Editing README.md");
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".workspace-document-turn-summary")?.click();
+    });
+
+    const details = container.querySelector(".workspace-document-turn-details");
+    expect(details?.textContent).toBe("Editing README.md");
+    expect(details?.textContent).not.toContain("Internal progress");
+    expect(details?.querySelector(".rich-content")).toBeNull();
   });
 
   it("resets the drawer when the active session changes", () => {

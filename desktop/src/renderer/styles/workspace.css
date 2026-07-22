@@ -1067,24 +1067,14 @@ html.resizing-workspace-file-split * {
   overscroll-behavior: contain;
 }
 
-.workspace-document-turn-message {
-  max-width: min(82%, 720px);
-  padding: 9px 12px;
-  border-radius: 14px;
-  font-size: 13px;
-  line-height: 1.55;
-  white-space: pre-wrap;
+.workspace-document-turn-result {
+  min-width: 0;
+  padding: 2px 2px 0;
+  color: var(--text-primary);
 }
 
-.workspace-document-turn-message.user {
-  justify-self: end;
-  background: var(--surface-3);
-}
-
-.workspace-document-turn-message.agent {
-  justify-self: start;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+.workspace-document-turn-result > .rich-content + .rich-content {
+  margin-top: 14px;
 }
 
 .workspace-document-turn-waiting {
