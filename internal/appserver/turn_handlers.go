@@ -117,6 +117,12 @@ type turnRuntimeSnapshot struct {
 	AutomationRunID string
 	ExecutionRunID  string
 	RequestContext  []agent.ContextSegment
+	ActiveDocument  *ActiveDocument
+}
+
+type activeDocumentOverride struct {
+	steerID  string
+	document *ActiveDocument
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
@@ -164,6 +170,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	// The user turn snapshots the session-level Ultra setting once, at
 	// admission. Mid-turn changes affect only the next user turn.
 	snapshot.Ultra = s.rt.UltraMode()
+	snapshot.RequestContext = activeDocumentRequestContext(params.ActiveDocument)
 	var threadRuntime *runtime.ThreadRuntime
 	started, ok, err := s.startThreadUserTurnWithAdmission(
 		ctx,
@@ -439,6 +446,7 @@ func (s *Server) handleTurnQueue(req Request) error {
 	entry := queuedTurn{id: queueID, msg: msg, snapshot: turnRuntimeSnapshot{}.withPermissions(permissions), origin: session.HeldUserWorkOriginQueue}
 	entry.snapshot.PermissionExplicit = params.PermissionMode != nil
 	entry.snapshot.ForceCompact = isManualCompactPrompt(params.Prompt)
+	entry.snapshot.ActiveDocument = cloneActiveDocument(params.ActiveDocument)
 	queued := queuedTurnSummary(params.ThreadID, entry)
 	th.mu.Lock()
 	if th.interrupting {
@@ -642,9 +650,9 @@ func (s *Server) handleTurnSteer(req Request) error {
 	turnID := th.currentTurn
 	var steerMsg providers.ChatMessage
 	var remaining []queuedTurn
+	var removedTurn queuedTurn
 	if isHeld {
 		var removed bool
-		var removedTurn queuedTurn
 		removedTurn, remaining, removed, err = s.removeHeldUserTurn(params.ThreadID, clientID)
 		if err != nil {
 			th.mu.Unlock()
@@ -666,6 +674,15 @@ func (s *Server) handleTurnSteer(req Request) error {
 	steerMsg.Steered = true
 	removedQueued := s.removeQueuedUserTurn(params.ThreadID, clientID)
 	th.pendingSteers = append(th.pendingSteers, steerMsg)
+	steerDocument := params.ActiveDocument
+	if isHeld {
+		steerDocument = removedTurn.snapshot.ActiveDocument
+	}
+	th.steerDocumentOverrides = append(th.steerDocumentOverrides, activeDocumentOverride{
+		steerID:  clientID,
+		document: cloneActiveDocument(steerDocument),
+	})
+	th.applyLatestSteerDocumentOverrideLocked()
 	th.mu.Unlock()
 	if removedQueued {
 		_ = s.writeNotification(NotificationTurnDequeued, TurnDequeuedNotification{
@@ -732,6 +749,9 @@ func (s *Server) handleTurnUnsteer(req Request) error {
 	}
 	th.mu.Lock()
 	removed := th.removePendingSteerLocked(steerID)
+	if removed {
+		th.removeSteerDocumentOverrideLocked(steerID)
+	}
 	th.mu.Unlock()
 	var held []queuedTurn
 	if !removed {
@@ -1520,7 +1540,79 @@ func frozenWorkerTreeBlock(pending []agentCompletionTurn, frozen []agentcontrol.
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
-	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, turnRuntime.RequestContext)
+	requestContext := cloneContextSegments(turnRuntime.RequestContext)
+	requestContext = append(requestContext, activeDocumentRequestContext(turnRuntime.ActiveDocument)...)
+	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, requestContext)
+}
+
+func activeDocumentRequestContext(document *ActiveDocument) []agent.ContextSegment {
+	if document == nil {
+		return nil
+	}
+	path := strings.TrimSpace(document.Path)
+	if path == "" {
+		return nil
+	}
+	return agent.RequestOnlyContextBlocks([]wuucontext.Block{{
+		Kind:   wuucontext.BlockActiveFiles,
+		Title:  "Active document",
+		Source: "desktop.document_focus",
+		Content: fmt.Sprintf(
+			"The user sent this query while viewing workspace file %q. Treat it as the current document and likely edit target. Read its latest contents before making changes; do not assume the copy from earlier conversation history is current.",
+			path,
+		),
+		TokenBudget: 160,
+	}})
+}
+
+func cloneActiveDocument(document *ActiveDocument) *ActiveDocument {
+	if document == nil {
+		return nil
+	}
+	cloned := *document
+	return &cloned
+}
+
+func (th *threadState) applyLatestSteerDocumentOverrideLocked() {
+	if len(th.steerDocumentOverrides) == 0 {
+		th.activeSteerContextSet = false
+		th.activeSteerDocument = nil
+		return
+	}
+	latest := th.steerDocumentOverrides[len(th.steerDocumentOverrides)-1]
+	th.activeSteerContextSet = true
+	th.activeSteerDocument = cloneActiveDocument(latest.document)
+}
+
+func (th *threadState) removeSteerDocumentOverrideLocked(steerID string) {
+	for index := len(th.steerDocumentOverrides) - 1; index >= 0; index-- {
+		if th.steerDocumentOverrides[index].steerID != steerID {
+			continue
+		}
+		th.steerDocumentOverrides = append(
+			th.steerDocumentOverrides[:index],
+			th.steerDocumentOverrides[index+1:]...,
+		)
+		break
+	}
+	th.applyLatestSteerDocumentOverrideLocked()
+}
+
+func activeDocumentContextForTurn(base []agent.ContextSegment, overrideSet bool, document *ActiveDocument) []agent.ContextSegment {
+	context := cloneContextSegments(base)
+	if !overrideSet {
+		return context
+	}
+	filtered := context[:0]
+	for _, segment := range context {
+		if len(segment.Blocks) == 1 &&
+			segment.Blocks[0].Kind == wuucontext.BlockActiveFiles &&
+			segment.Blocks[0].Source == "desktop.document_focus" {
+			continue
+		}
+		filtered = append(filtered, segment)
+	}
+	return append(filtered, activeDocumentRequestContext(document)...)
 }
 
 func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
@@ -1854,9 +1946,14 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		if baseBeforeRequestContext != nil {
 			segments = append(segments, baseBeforeRequestContext()...)
 		}
-		if len(turnRequestContext) > 0 {
-			segments = append(segments, cloneContextSegments(turnRequestContext)...)
-		}
+		th.mu.Lock()
+		activeSteerContextSet := th.activeSteerContextSet
+		activeSteerDocument := th.activeSteerDocument
+		th.mu.Unlock()
+		segments = append(
+			segments,
+			activeDocumentContextForTurn(turnRequestContext, activeSteerContextSet, activeSteerDocument)...,
+		)
 		return segments
 	}
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {

@@ -481,6 +481,7 @@ export function useComposerPendingState({
         inputImagesFromComposer(target.message.images),
         target.message.id,
         files,
+        target.message.activeDocument,
       );
       updateThreadPendingComposerMessages(target.threadID, (previous) => ({
         queued: previous.queued.filter((message) => message.id !== id),

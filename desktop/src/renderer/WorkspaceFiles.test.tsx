@@ -403,6 +403,45 @@ describe("WorkspaceFileTree", () => {
     expect(container.textContent).toContain("button code");
   });
 
+  it("refreshes an open file without clearing the current preview", async () => {
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/components/Button.tsx"
+        refreshKey="running"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+    await settleDirectoryLoads();
+
+    let finishRefresh: ((result: WorkspaceFileReadResult) => void) | undefined;
+    readWorkspaceFile.mockImplementationOnce(
+      () => new Promise<WorkspaceFileReadResult>((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/components/Button.tsx"
+        refreshKey="completed"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    expect(container.textContent).toContain("button code");
+
+    await act(async () => {
+      finishRefresh?.(workspaceFile({
+        path: "src/components/Button.tsx",
+        absolute_path: "/repo/src/components/Button.tsx",
+        text: "updated button code",
+      }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("updated button code");
+  });
+
   it("opens selected non-Markdown text files in the center Monaco editor surface", async () => {
     readWorkspaceFile.mockResolvedValueOnce({
       root: "/repo",

@@ -75,19 +75,22 @@ type threadState struct {
 	runtimeSelectionMutation bool
 	runtimeSubscription      *threadRuntimeSubscription
 
-	mu                    sync.Mutex
-	running               bool
-	currentTurn           string
-	currentTurnKind       TurnKind
-	currentExecutionRunID string
-	currentTurnResumed    bool
-	runningProviderName   string
-	runningModel          string
-	cancel                context.CancelFunc
-	executionLease        *session.ThreadExecutionLease
-	admissionReserved     bool
-	pendingSteers         []providers.ChatMessage
-	interrupting          bool
+	mu                     sync.Mutex
+	running                bool
+	currentTurn            string
+	currentTurnKind        TurnKind
+	currentExecutionRunID  string
+	currentTurnResumed     bool
+	runningProviderName    string
+	runningModel           string
+	cancel                 context.CancelFunc
+	executionLease         *session.ThreadExecutionLease
+	admissionReserved      bool
+	pendingSteers          []providers.ChatMessage
+	activeSteerDocument    *ActiveDocument
+	activeSteerContextSet  bool
+	steerDocumentOverrides []activeDocumentOverride
+	interrupting           bool
 	// Worker-tree freeze (turn/interrupt): while set, agent-completion drains
 	// hold their pending synthetic turns. The next user-initiated turn folds
 	// the whole-tree snapshot into its request (frozenTreeContext) and marks

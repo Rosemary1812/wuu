@@ -1996,6 +1996,10 @@ export type RemoteControlEvent =
   | { kind: "host-log"; message: string }
   | { kind: "host-exit"; code: number | null };
 
+export type ActiveDocumentContext = {
+  path: string;
+};
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -2227,6 +2231,7 @@ export type WuuDesktopApi = {
     images?: InputImage[],
     files?: InputFile[],
     permissionMode?: string,
+    activeDocument?: ActiveDocumentContext,
   ) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,
@@ -2235,6 +2240,7 @@ export type WuuDesktopApi = {
     clientId?: string,
     files?: InputFile[],
     permissionMode?: string,
+    activeDocument?: ActiveDocumentContext,
   ) => Promise<{ queued: QueuedTurn }>;
   updateQueuedTurn: (
     threadId: string,
@@ -2251,6 +2257,7 @@ export type WuuDesktopApi = {
     images?: InputImage[],
     clientId?: string,
     files?: InputFile[],
+    activeDocument?: ActiveDocumentContext,
   ) => Promise<{ turn_id: string }>;
   unsteerTurn: (threadId: string, steerId: string) => Promise<{ ok: boolean }>;
   interruptTurn: (threadId: string) => Promise<{ ok: boolean }>;

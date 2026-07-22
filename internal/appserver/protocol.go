@@ -1362,6 +1362,11 @@ type TurnStartParams struct {
 	Images         []TurnStartImage `json:"images,omitempty"`
 	Files          []TurnStartFile  `json:"files,omitempty"`
 	PermissionMode *string          `json:"permission_mode,omitempty"`
+	ActiveDocument *ActiveDocument  `json:"active_document,omitempty"`
+}
+
+type ActiveDocument struct {
+	Path string `json:"path"`
 }
 
 type TurnStartImage struct {
@@ -1439,6 +1444,7 @@ type TurnQueueParams struct {
 	Files          []TurnStartFile  `json:"files,omitempty"`
 	ClientID       string           `json:"client_id,omitempty"`
 	PermissionMode *string          `json:"permission_mode,omitempty"`
+	ActiveDocument *ActiveDocument  `json:"active_document,omitempty"`
 }
 
 type QueuedTurn struct {
@@ -1478,6 +1484,7 @@ type TurnSteerParams struct {
 	Files          []TurnStartFile  `json:"files,omitempty"`
 	ExpectedTurnID string           `json:"expected_turn_id"`
 	ClientID       string           `json:"client_id,omitempty"`
+	ActiveDocument *ActiveDocument  `json:"active_document,omitempty"`
 }
 
 type TurnSteerResult struct {
