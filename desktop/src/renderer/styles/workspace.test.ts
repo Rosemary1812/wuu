@@ -110,12 +110,16 @@ describe("workspace right panel chrome", () => {
 describe("workspace document turn glass", () => {
   it("makes only the turn drawer glass while leaving the Composer surface alone", () => {
     const drawer = cssRuleBody(".workspace-document-turn-drawer");
+    const summary = cssRuleBody(".workspace-document-turn-summary");
+    const details = cssRuleBody(".workspace-document-turn-details");
     const composerFrame = cssRuleBody(".workspace-document-composer .composer-frame");
 
     expect(drawer).toMatch(/width:\s*calc\(100% - 24px\);/);
     expect(drawer).toMatch(/background:\s*radial-gradient\(/);
     expect(drawer).toMatch(/linear-gradient\(/);
     expect(drawer).toMatch(/backdrop-filter:\s*blur\(24px\)\s+saturate\(1\.18\);/);
+    expect(summary).toMatch(/background:\s*transparent;/);
+    expect(details).toMatch(/background:\s*transparent;/);
     expect(composerFrame).toMatch(/0 18px 54px rgba\(20, 24, 28, 0\.14\)/);
     expect(workspaceCss).not.toContain(
       ".workspace-document-composer .document-composer-wrap .composer-frame",
