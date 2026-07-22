@@ -251,6 +251,10 @@ describe("workspace file preview layout", () => {
     const resizerRule = cssRuleBody(".workspace-files-resizer::before");
     expect(resizerRule).toMatch(/inset:\s*0 auto 0 0;/);
     expect(resizerRule).toMatch(/width:\s*1px;/);
+    expect(cssRuleBody(".workspace-file-tree-drag-handle")).toMatch(/cursor:\s*grab;/);
+    expect(cssRuleBody(".workspace-file-tree-reveal")).toMatch(/position:\s*absolute;/);
+    expect(cssRuleBody(".workspace-file-tree-reveal.left")).toMatch(/left:\s*8px;/);
+    expect(cssRuleBody(".workspace-file-tree-reveal.right")).toMatch(/right:\s*8px;/);
     expect(workspaceCss).not.toContain(".workspace-files-content-header");
     expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });

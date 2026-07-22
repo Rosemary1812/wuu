@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -28,13 +29,10 @@ import {
   FileText,
   FolderOpen,
   Globe,
+  GripHorizontal,
   Maximize2,
   Minimize2,
-  PanelLeft,
-  PanelLeftClose,
   PanelLeftOpen,
-  PanelRight,
-  PanelRightClose,
   PanelRightOpen,
   Plus,
   ShieldCheck,
@@ -83,6 +81,7 @@ export const WORKSPACE_FILE_TREE_DEFAULT_WIDTH = 320;
 export const WORKSPACE_FILE_TREE_MIN_WIDTH = 180;
 export const WORKSPACE_FILE_TREE_MAX_WIDTH = 480;
 export const WORKSPACE_FILE_CONTENT_MIN_WIDTH = 240;
+const WORKSPACE_FILE_TREE_COLLAPSE_THRESHOLD = 140;
 const WORKSPACE_FILE_TREE_WIDTH_STEP = 24;
 const WORKSPACE_FILE_TREE_WIDTH_KEY = "wuu.desktop.fileTreeWidth";
 const WORKSPACE_FILE_TREE_SIDE_KEY = "wuu.desktop.fileTreeSide";
@@ -228,10 +227,15 @@ export function WorkspaceRightPanel({
   const [fileTreeWidth, setFileTreeWidth] = useState(initialWorkspaceFileTreeWidth);
   const [fileTreeSide, setFileTreeSide] = useState<WorkspaceFileTreeSide>(initialWorkspaceFileTreeSide);
   const [fileTreeVisible, setFileTreeVisible] = useState(initialWorkspaceFileTreeVisible);
+  const [draggingFileTree, setDraggingFileTree] = useState(false);
+  const [fileTreeDropSide, setFileTreeDropSide] = useState<WorkspaceFileTreeSide | undefined>(undefined);
   const [bodyPrewarmed, setBodyPrewarmed] = useState(false);
   const fileTreePreferredWidthRef = useRef(fileTreeWidth);
+  const fileTreeVisibleRef = useRef(fileTreeVisible);
+  const fileTreeDockDragRef = useRef(false);
   const [resizingFileSplit, setResizingFileSplit] = useState(false);
   const fileSplitRef = useRef<HTMLDivElement>(null);
+  const fileTreeRef = useRef<HTMLElement>(null);
   const fileSplitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
@@ -300,11 +304,15 @@ export function WorkspaceRightPanel({
         return;
       }
       const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
-      setPreferredFileTreeWidth(
+      const nextWidth =
         session.startTreeWidth +
-          (event.clientX - session.startX) * (fileTreeSide === "left" ? 1 : -1),
-        panelWidth,
-      );
+        (event.clientX - session.startX) * (fileTreeSide === "left" ? 1 : -1);
+      if (nextWidth < WORKSPACE_FILE_TREE_COLLAPSE_THRESHOLD) {
+        setFileTreeVisibility(false);
+        return;
+      }
+      setFileTreeVisibility(true);
+      setPreferredFileTreeWidth(nextWidth, panelWidth);
     }
 
     function finishResize(): void {
@@ -360,7 +368,7 @@ export function WorkspaceRightPanel({
       resizeFileTreeBy(WORKSPACE_FILE_TREE_MAX_WIDTH);
     } else if (event.key === "End") {
       event.preventDefault();
-      resizeFileTreeBy(-WORKSPACE_FILE_TREE_MAX_WIDTH);
+      setFileTreeVisibility(false);
     }
   }
 
@@ -374,12 +382,66 @@ export function WorkspaceRightPanel({
     setFileTreeSide(side);
   }
 
-  function toggleFileTreeVisible(): void {
-    setFileTreeVisible((current) => {
-      const next = !current;
-      window.localStorage.setItem(WORKSPACE_FILE_TREE_VISIBLE_KEY, String(next));
-      return next;
-    });
+  function setFileTreeVisibility(visible: boolean): void {
+    if (fileTreeVisibleRef.current === visible) {
+      return;
+    }
+    fileTreeVisibleRef.current = visible;
+    window.localStorage.setItem(WORKSPACE_FILE_TREE_VISIBLE_KEY, String(visible));
+    setFileTreeVisible(visible);
+  }
+
+  function startFileTreeDockDrag(event: ReactDragEvent<HTMLDivElement>): void {
+    const tree = fileTreeRef.current;
+    if (!tree) {
+      return;
+    }
+    const rect = tree.getBoundingClientRect();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-wuu-file-tree", fileTreeSide);
+    event.dataTransfer.setDragImage(tree, rect.width / 2, 16);
+    fileTreeDockDragRef.current = true;
+    setDraggingFileTree(true);
+    setFileTreeDropSide(fileTreeSide);
+  }
+
+  function fileTreeSideAt(clientX: number): WorkspaceFileTreeSide {
+    const rect = fileSplitRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return fileTreeSide;
+    }
+    return clientX < rect.left + rect.width / 2 ? "left" : "right";
+  }
+
+  function handleFileTreeDockDragOver(event: ReactDragEvent<HTMLDivElement>): void {
+    if (!fileTreeDockDragRef.current) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setFileTreeDropSide(fileTreeSideAt(event.clientX));
+  }
+
+  function finishFileTreeDockDrag(): void {
+    fileTreeDockDragRef.current = false;
+    setDraggingFileTree(false);
+    setFileTreeDropSide(undefined);
+  }
+
+  function dropFileTree(event: ReactDragEvent<HTMLDivElement>): void {
+    if (!fileTreeDockDragRef.current) {
+      return;
+    }
+    event.preventDefault();
+    moveFileTree(fileTreeSideAt(event.clientX));
+    finishFileTreeDockDrag();
+  }
+
+  function handleFileTreeDockKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      moveFileTree(event.key === "ArrowLeft" ? "left" : "right");
+    }
   }
 
   function startTabDrag(event: DragStartEvent): void {
@@ -546,47 +608,6 @@ export function WorkspaceRightPanel({
           )}
         </DndContext>
         <span className="workspace-panel-tabbar-spacer" />
-        {activeTab?.kind === "files" || activeTab?.kind === "file" ? (
-          <>
-            <button
-              className="icon-button workspace-panel-file-tree-action workspace-panel-file-tree-side"
-              type="button"
-              aria-label={
-                fileTreeSide === "right"
-                  ? t("workspace.moveFileTreeLeft")
-                  : t("workspace.moveFileTreeRight")
-              }
-              title={
-                fileTreeSide === "right"
-                  ? t("workspace.moveFileTreeLeft")
-                  : t("workspace.moveFileTreeRight")
-              }
-              disabled={!open}
-              onClick={() => moveFileTree(fileTreeSide === "right" ? "left" : "right")}
-            >
-              {fileTreeSide === "right" ? <PanelLeft className="icon" /> : <PanelRight className="icon" />}
-            </button>
-            <button
-              className="icon-button workspace-panel-file-tree-action workspace-panel-file-tree-visibility"
-              type="button"
-              aria-label={
-                fileTreeVisible ? t("workspace.hideFileTree") : t("workspace.showFileTree")
-              }
-              title={fileTreeVisible ? t("workspace.hideFileTree") : t("workspace.showFileTree")}
-              aria-expanded={fileTreeVisible}
-              disabled={!open}
-              onClick={toggleFileTreeVisible}
-            >
-              {fileTreeSide === "left" ? (
-                fileTreeVisible ? <PanelLeftClose className="icon" /> : <PanelLeftOpen className="icon" />
-              ) : fileTreeVisible ? (
-                <PanelRightClose className="icon" />
-              ) : (
-                <PanelRightOpen className="icon" />
-              )}
-            </button>
-          </>
-        ) : null}
         <button
           ref={addButtonRef}
           className={`icon-button workspace-panel-add${showingPicker ? " active" : ""}`}
@@ -635,11 +656,14 @@ export function WorkspaceRightPanel({
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
             <div
-              className={`workspace-files-split${resizingFileSplit ? " resizing" : ""}${fileTreeVisible ? "" : " tree-hidden"}`}
+              className={`workspace-files-split${resizingFileSplit ? " resizing" : ""}${fileTreeVisible ? "" : " tree-hidden"}${draggingFileTree ? " tree-dragging" : ""}`}
+              data-tree-drop-side={fileTreeDropSide}
               data-tree-side={fileTreeSide}
               hidden={activeTab?.kind !== "files" && activeTab?.kind !== "file"}
               ref={fileSplitRef}
               style={{ "--workspace-file-tree-width": `${fileTreeWidth}px` } as CSSProperties}
+              onDragOver={handleFileTreeDockDragOver}
+              onDrop={dropFileTree}
             >
               <section className="workspace-files-content" aria-label={t("workspace.fileContent")}>
                 <div className="workspace-files-content-body">
@@ -689,7 +713,21 @@ export function WorkspaceRightPanel({
                 className="workspace-files-tree"
                 aria-label={t("workspace.fileTree")}
                 hidden={!fileTreeVisible}
+                ref={fileTreeRef}
               >
+                <div
+                  className="workspace-file-tree-drag-handle"
+                  role="button"
+                  tabIndex={0}
+                  draggable
+                  aria-label={t("workspace.dragFileTree")}
+                  title={t("workspace.dragFileTree")}
+                  onDragStart={startFileTreeDockDrag}
+                  onDragEnd={finishFileTreeDockDrag}
+                  onKeyDown={handleFileTreeDockKeyDown}
+                >
+                  <GripHorizontal size={15} strokeWidth={1.8} />
+                </div>
                 <WorkspaceFileTree
                   activeContext={workspaceContext}
                   open={
@@ -701,6 +739,21 @@ export function WorkspaceRightPanel({
                   onOpenFile={onOpenFile}
                 />
               </section>
+              {!fileTreeVisible ? (
+                <button
+                  className={`icon-button workspace-file-tree-reveal ${fileTreeSide}`}
+                  type="button"
+                  aria-label={t("workspace.showFileTree")}
+                  title={t("workspace.showFileTree")}
+                  onClick={() => setFileTreeVisibility(true)}
+                >
+                  {fileTreeSide === "left" ? (
+                    <PanelLeftOpen className="icon" />
+                  ) : (
+                    <PanelRightOpen className="icon" />
+                  )}
+                </button>
+              ) : null}
             </div>
             {activeTab?.kind === "files" || activeTab?.kind === "file" ? null : (
               <div
