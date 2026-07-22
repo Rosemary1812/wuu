@@ -236,6 +236,7 @@ export function WorkspaceRightPanel({
   const [resizingFileSplit, setResizingFileSplit] = useState(false);
   const fileSplitRef = useRef<HTMLDivElement>(null);
   const fileTreeRef = useRef<HTMLElement>(null);
+  const fileTreeDragPreviewRef = useRef<HTMLDivElement>(null);
   const fileSplitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
@@ -392,14 +393,14 @@ export function WorkspaceRightPanel({
   }
 
   function startFileTreeDockDrag(event: ReactDragEvent<HTMLDivElement>): void {
-    const tree = fileTreeRef.current;
-    if (!tree) {
+    const dragPreview = fileTreeDragPreviewRef.current;
+    if (!dragPreview) {
       return;
     }
-    const rect = tree.getBoundingClientRect();
+    const rect = dragPreview.getBoundingClientRect();
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("application/x-wuu-file-tree", fileTreeSide);
-    event.dataTransfer.setDragImage(tree, rect.width / 2, 16);
+    event.dataTransfer.setDragImage(dragPreview, rect.width / 2, rect.height / 2);
     fileTreeDockDragRef.current = true;
     setDraggingFileTree(true);
     setFileTreeDropSide(fileTreeSide);
@@ -755,6 +756,20 @@ export function WorkspaceRightPanel({
                 </button>
               ) : null}
             </div>
+            {createPortal(
+              <div
+                ref={fileTreeDragPreviewRef}
+                className="workspace-file-tree-drag-preview"
+                aria-hidden="true"
+              >
+                <span className="workspace-file-tree-drag-preview-icon">
+                  <FolderOpen size={17} strokeWidth={1.8} />
+                </span>
+                <span>{t("workspace.fileTree")}</span>
+                <GripHorizontal size={14} strokeWidth={1.7} />
+              </div>,
+              document.body,
+            )}
             {activeTab?.kind === "files" || activeTab?.kind === "file" ? null : (
               <div
                 className="workspace-panel-content-swap"

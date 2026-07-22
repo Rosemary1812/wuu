@@ -476,6 +476,7 @@ describe("WorkspaceRightPanel", () => {
     const tree = split.querySelector<HTMLElement>(".workspace-files-tree")!;
     const separator = split.querySelector<HTMLElement>(".workspace-files-resizer")!;
     const dragHandle = tree.querySelector<HTMLElement>(".workspace-file-tree-drag-handle")!;
+    const dragPreview = document.body.querySelector<HTMLElement>(".workspace-file-tree-drag-preview")!;
 
     expect(split.dataset.treeSide).toBe("right");
     expect(tree.hidden).toBe(false);
@@ -488,6 +489,10 @@ describe("WorkspaceRightPanel", () => {
     Object.defineProperty(split, "getBoundingClientRect", {
       configurable: true,
       value: () => ({ left: 0, width: 1000 }),
+    });
+    Object.defineProperty(dragPreview, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 168, height: 44 }),
     });
     const dataTransfer = {
       dropEffect: "none",
@@ -505,6 +510,7 @@ describe("WorkspaceRightPanel", () => {
     }
 
     act(() => dragHandle.dispatchEvent(dragEvent("dragstart", 850)));
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(dragPreview, 84, 22);
     act(() => split.dispatchEvent(dragEvent("dragover", 100)));
     expect(split.dataset.treeDropSide).toBe("left");
     act(() => split.dispatchEvent(dragEvent("drop", 100)));
