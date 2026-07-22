@@ -24,4 +24,11 @@ describe("main process i18n", () => {
       "Open conversation · Review",
     );
   });
+
+  it("localizes native workspace item menu labels", () => {
+    expect(mainTranslate("openInApplication", { application: "Cursor" }, "zh-CN"))
+      .toBe("在 Cursor 中打开");
+    expect(mainTranslate("openWith", {}, "en-US")).toBe("Open With");
+    expect(mainTranslate("addToTask", {}, "zh-CN")).toBe("添加到任务");
+  });
 });

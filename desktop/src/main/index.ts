@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   type BrowserWindowConstructorOptions,
+  clipboard,
   dialog,
   ipcMain,
   type IpcMainInvokeEvent,
@@ -134,6 +135,11 @@ import {
 } from "./renderableFileProtocol";
 import { TerminalSessionManager } from "./terminalSessions";
 import { WorkspaceFileService } from "./workspaceFiles";
+import {
+  macWorkspaceItemMenuTemplate,
+  macWorkspaceApplications,
+  openMacWorkspaceItemWithApplication,
+} from "./macWorkspaceApplications";
 
 import {
   appShellWebPreferences,
@@ -1667,6 +1673,56 @@ app.whenReady().then(async () => {
       shell.showItemInFolder(path);
     },
   );
+  ipcMain.handle("wuu:file-show-menu", async (event, path: string) => {
+    if (process.platform !== "darwin") {
+      return { action: "none" } as const;
+    }
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner || owner.isDestroyed()) {
+      return { action: "none" } as const;
+    }
+
+    const associations = await macWorkspaceApplications(path).catch(() => ({
+      defaultApplication: undefined,
+      applications: [],
+    }));
+    const iconApplications = associations.defaultApplication
+      ? [associations.defaultApplication, ...associations.applications]
+      : associations.applications;
+    const iconEntries = await Promise.all(
+      iconApplications.map(async (application) => [
+        application.path,
+        await app.getFileIcon(application.path, { size: "small" }).catch(() => undefined),
+      ] as const),
+    );
+    const icons = new Map(iconEntries);
+    return new Promise<{ action: "none" | "add_to_task" }>((resolve) => {
+      let action: "none" | "add_to_task" = "none";
+      const template = macWorkspaceItemMenuTemplate({
+        associations,
+        icons,
+        labels: {
+          open: mainTranslate("open"),
+          openInApplication: (application) => mainTranslate("openInApplication", { application }),
+          openWith: mainTranslate("openWith"),
+          copyPath: mainTranslate("copyPath"),
+          addToTask: mainTranslate("addToTask"),
+        },
+        onOpenDefault: () => { void shell.openPath(path); },
+        onOpenWith: (application) => {
+          void openMacWorkspaceItemWithApplication(path, application.path).catch((error) => {
+            console.error("[desktop] failed to open workspace item with application", error);
+          });
+        },
+        onCopyPath: () => clipboard.writeText(path),
+        onAddToTask: () => { action = "add_to_task"; },
+      });
+      Menu.buildFromTemplate(template).popup({
+        window: owner,
+        callback: () => resolve({ action }),
+      });
+    });
+  });
   ipcMain.handle(
     "wuu:turn-start",
     (

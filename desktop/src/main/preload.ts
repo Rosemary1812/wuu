@@ -357,6 +357,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:reveal-session", threadId),
   revealWorkspaceItem: (path: string) =>
     ipcRenderer.invoke("wuu:file-show-in-folder", path),
+  showWorkspaceItemMenu: (path: string) =>
+    ipcRenderer.invoke("wuu:file-show-menu", path),
   openExternal: (url: string) =>
     ipcRenderer.invoke("wuu:open-external", url),
   startTurn: (threadId: string, prompt: string, images, files, permissionMode, activeDocument) =>

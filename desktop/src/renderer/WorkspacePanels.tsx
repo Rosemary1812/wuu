@@ -162,6 +162,7 @@ export function WorkspaceRightPanel({
   onDirtyFileTabsChange,
   onReorderTabs,
   onOpenFile,
+  onAddFileToTask,
   onClose,
   globalized,
   sheetPhase = "docked",
@@ -199,6 +200,7 @@ export function WorkspaceRightPanel({
   onDirtyFileTabsChange?: (dirty: boolean) => void;
   onReorderTabs: (activeID: string, overID: string) => void;
   onOpenFile: (path: string) => void;
+  onAddFileToTask?: (path: string) => void;
   onClose: () => void;
   globalized: boolean;
   // Globalize-sheet phase from App's phase machine; drives the data-sheet
@@ -738,6 +740,7 @@ export function WorkspaceRightPanel({
                   }
                   selectedFilePath={selectedFilePath}
                   onOpenFile={onOpenFile}
+                  onAddToTask={onAddFileToTask}
                 />
               </section>
               {!fileTreeVisible ? (

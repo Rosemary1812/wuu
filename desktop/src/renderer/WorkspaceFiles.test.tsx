@@ -108,6 +108,7 @@ beforeEach(() => {
       readWorkspaceFile,
       writeWorkspaceFile,
       revealWorkspaceItem,
+      showWorkspaceItemMenu: vi.fn().mockResolvedValue({ action: "none" }),
     },
   });
   Object.defineProperty(globalThis.navigator, "clipboard", {
@@ -668,6 +669,29 @@ describe("WorkspaceFileTree", () => {
     expect(menu?.textContent).toContain("复制相对路径");
     expect(menu?.textContent).toContain("复制文件名");
     expect(menu?.textContent).toContain("在文件管理器中显示");
+  });
+
+  it("uses the macOS native menu and adds its relative path to the task", async () => {
+    const onAddToTask = vi.fn();
+    const showWorkspaceItemMenu = vi.fn().mockResolvedValue({ action: "add_to_task" });
+    Object.assign(window.wuu, { platform: "darwin", showWorkspaceItemMenu });
+
+    await render(
+      <WorkspaceFileTree
+        activeContext={activeContext}
+        open
+        onOpenFile={() => {}}
+        onAddToTask={onAddToTask}
+      />,
+    );
+    await settleDirectoryLoads();
+
+    await dispatchContextMenu(rowButtonByTitle("README.md"), 120, 240);
+    await flushMacrotask();
+
+    expect(showWorkspaceItemMenu).toHaveBeenCalledWith("/repo/README.md");
+    expect(onAddToTask).toHaveBeenCalledWith("README.md");
+    expect(contextMenu()).toBeNull();
   });
 
   it("复制路径 writes the absolute path to clipboard and closes the menu", async () => {

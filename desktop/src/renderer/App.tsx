@@ -25,6 +25,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import {
+  appendWorkspacePathToPrompt,
   awaitComposerImages,
   createComposerMessage,
   createOptimisticCompactTurn,
@@ -4369,6 +4370,12 @@ export function App(): JSX.Element {
           onDirtyFileTabsChange={rememberWorkspaceDirtyFiles}
           onReorderTabs={reorderWorkspaceViewTabs}
           onOpenFile={openWorkspaceFile}
+          onAddFileToTask={(path) => {
+            setPrompt((current) => appendWorkspacePathToPrompt(current, path));
+            requestMainComposerFocus(
+              rightPanelGlobalized && activeWorkspaceFileTabID ? "document" : "dock",
+            );
+          }}
           onClose={() => setRightPanelOpenWithMotion(false)}
           globalized={rightPanelGlobalized}
           sheetPhase={workspaceSheetPhase}

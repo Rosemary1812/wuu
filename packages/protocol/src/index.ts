@@ -40,6 +40,10 @@ export type DesktopBuildInfo = {
   date: string;
 };
 
+export type WorkspaceItemMenuResult = {
+  action: "none" | "add_to_task";
+};
+
 export type BuildInfoResult = {
   core: CoreBuildInfo | undefined;
   desktop: DesktopBuildInfo;
@@ -2275,6 +2279,10 @@ export type WuuDesktopApi = {
   // renderer via the same channel and we trust it without an extra
   // project-root check (the dir listing itself is what gates that).
   revealWorkspaceItem: (path: string) => Promise<void>;
+  // macOS uses Launch Services to build a native file menu with the current
+  // default app and the installed apps that can open this specific item.
+  // Other shells keep their existing renderer-owned context menu.
+  showWorkspaceItemMenu: (path: string) => Promise<WorkspaceItemMenuResult>;
   // Open an external URL via the OS default browser. Used by the
   // assistant turn's 来源 pill to send the user to the page the agent
   // actually consulted (web_search hit / web_fetch target) instead of
