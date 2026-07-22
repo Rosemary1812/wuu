@@ -206,6 +206,36 @@ type CoreBuildInfo struct {
 	Dirty   bool   `json:"dirty,omitempty"`
 }
 
+// RuntimeHostSummary identifies the process behind this app-server connection.
+// Product identities such as organization, seat, and agent definition remain
+// control-plane concerns and are intentionally not part of this core contract.
+type RuntimeHostSummary struct {
+	Kind       string `json:"kind"`
+	InstanceID string `json:"instance_id,omitempty"`
+}
+
+// InitializeParams describes the client attached to the UI-neutral core.
+// Capabilities are opt-in: an omitted capability must never cause the core to
+// send a request that the client cannot handle.
+type InitializeParams struct {
+	ProtocolVersion string             `json:"protocol_version,omitempty"`
+	Client          ClientInfo         `json:"client,omitempty"`
+	Capabilities    ClientCapabilities `json:"capabilities,omitempty"`
+}
+
+type ClientInfo struct {
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+type ClientCapabilities struct {
+	ReverseRPC ReverseRPCCapabilities `json:"reverse_rpc,omitempty"`
+}
+
+type ReverseRPCCapabilities struct {
+	Methods []string `json:"methods,omitempty"`
+}
+
 type InitializeResult struct {
 	Status             string                     `json:"status"`
 	Issues             []RuntimeIssue             `json:"issues,omitempty"`
@@ -218,6 +248,7 @@ type InitializeResult struct {
 	Variant            string                     `json:"variant,omitempty"`
 	Ultra              bool                       `json:"ultra"`
 	MaxParallel        int                        `json:"max_parallel"`
+	RuntimeHost        RuntimeHostSummary         `json:"runtime_host"`
 	WorkspaceRoot      string                     `json:"workspace_root"`
 	Permissions        PermissionSummary          `json:"permissions"`
 	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`

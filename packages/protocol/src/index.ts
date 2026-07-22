@@ -28,6 +28,17 @@ export type AppServerNotification<T = unknown> = {
   params?: T;
 };
 
+export const APP_SERVER_PROTOCOL_VERSION = "wuu-app-server/v0.1";
+
+export const BROWSER_REVERSE_RPC_METHODS = [
+  "browser/cdp",
+  "browser/screenshot",
+  "browser/open_tab",
+  "browser/close_tab",
+  "browser/set_visibility",
+  "browser/list_tabs",
+] as const;
+
 export type CoreBuildInfo = {
   version?: string;
   commit?: string;
@@ -49,6 +60,24 @@ export type BuildInfoResult = {
   desktop: DesktopBuildInfo;
 };
 
+export type RuntimeHostSummary = {
+  kind: "local" | "cloud";
+  instance_id?: string;
+};
+
+export type InitializeParams = {
+  protocol_version?: string;
+  client?: {
+    name?: string;
+    version?: string;
+  };
+  capabilities?: {
+    reverse_rpc?: {
+      methods?: string[];
+    };
+  };
+};
+
 export type InitializeResult = {
   status?: "ready" | "needs_setup";
   issues?: RuntimeIssue[];
@@ -63,6 +92,7 @@ export type InitializeResult = {
   // Effective anonymous-worker execution capacity after applying the
   // default (docs/app-server-protocol.md, Ultra Mode Configuration).
   max_parallel?: number;
+  runtime_host?: RuntimeHostSummary;
   workspace_root: string;
   permissions?: PermissionSummary;
   // model_profile + tool_surface summarise the workspace-default runtime.

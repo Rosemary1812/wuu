@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -16,10 +17,10 @@ import (
 // false timeout; bridge callers word timeout errors to reflect that ambiguity.
 const browserClientCallTimeout = 30 * time.Second
 
-// callClient issues a server-initiated request to the desktop client and blocks
-// until the reply arrives, the context is cancelled, or the per-call timeout
-// fires. It runs on turn/tool background goroutines, never on the stdin scanner
-// goroutine, so blocking here does not freeze the RPC read loop.
+// callClient issues a negotiated server-initiated request to the connected
+// client and blocks until the reply arrives, the context is cancelled, or the
+// per-call timeout fires. It runs on turn/tool background goroutines, never on
+// the stdin scanner goroutine, so blocking here does not freeze the RPC read loop.
 //
 // Deadlock discipline (reviewed as the critical correctness surface):
 //   - The reply channel is buffered with capacity 1 so deliverClientResponse's
@@ -32,12 +33,19 @@ func (s *Server) callClient(ctx context.Context, method string, params any) (jso
 	if s == nil {
 		return nil, fmt.Errorf("app-server is required")
 	}
+	if !s.supportsClientMethod(method) {
+		return nil, fmt.Errorf("%s unavailable: connected client did not advertise this reverse-RPC method", method)
+	}
 	payload, err := json.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s params: %w", method, err)
 	}
 
 	s.clientCallMu.Lock()
+	if s.closed.Load() {
+		s.clientCallMu.Unlock()
+		return nil, fmt.Errorf("%s unavailable: %w", method, errServerClosed)
+	}
 	s.clientCallSeq++
 	id := "srv-" + strconv.FormatUint(s.clientCallSeq, 10)
 	ch := make(chan clientResponse, 1)
@@ -68,7 +76,7 @@ func (s *Server) callClient(ctx context.Context, method string, params any) (jso
 		return nil, ctx.Err()
 	case <-time.After(browserClientCallTimeout):
 		delete()
-		return nil, fmt.Errorf("%s request timed out after %s (desktop unresponsive or protocol congestion)", method, browserClientCallTimeout)
+		return nil, fmt.Errorf("%s request timed out after %s (client unresponsive or protocol congestion)", method, browserClientCallTimeout)
 	case r := <-ch:
 		delete()
 		if r.Error != nil {
@@ -78,7 +86,44 @@ func (s *Server) callClient(ctx context.Context, method string, params any) (jso
 	}
 }
 
-// deliverClientResponse routes a desktop Response back to its waiting callClient.
+func (s *Server) setClientMethods(methods []string) {
+	s.clientCallMu.Lock()
+	defer s.clientCallMu.Unlock()
+	s.clientMethods = make(map[string]struct{}, len(methods))
+	for _, method := range methods {
+		if method = strings.TrimSpace(method); method != "" {
+			s.clientMethods[method] = struct{}{}
+		}
+	}
+}
+
+func (s *Server) supportsClientMethod(method string) bool {
+	if s == nil {
+		return false
+	}
+	s.clientCallMu.Lock()
+	defer s.clientCallMu.Unlock()
+	_, ok := s.clientMethods[method]
+	return ok
+}
+
+func (s *Server) supportsBrowserClient() bool {
+	for _, method := range []string{
+		MethodBrowserCDP,
+		MethodBrowserScreenshot,
+		MethodBrowserOpenTab,
+		MethodBrowserCloseTab,
+		MethodBrowserSetVisibility,
+		MethodBrowserListTabs,
+	} {
+		if !s.supportsClientMethod(method) {
+			return false
+		}
+	}
+	return true
+}
+
+// deliverClientResponse routes a client Response back to its waiting callClient.
 // It runs on the single stdin scanner goroutine, so it must never block:
 // lookup+delete happen under the lock, then the send is non-blocking. Unknown or
 // late ids (the caller already left) are silently dropped.

@@ -151,8 +151,8 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
-	// clientCalls is the pending table for server-initiated requests (the
-	// core→desktop reverse-RPC channel used by browser/*). Keyed by the
+	// clientCalls is the pending table for server-initiated requests over the
+	// negotiated reverse-RPC channel. Keyed by the
 	// "srv-<seq>" id the core mints; each value is a buffered(1) chan that the
 	// scanner goroutine delivers exactly one clientResponse into. clientCallMu
 	// guards both the map and clientCallSeq; see callClient for the strict
@@ -160,6 +160,7 @@ type Server struct {
 	clientCallMu  sync.Mutex
 	clientCalls   map[string]chan clientResponse
 	clientCallSeq uint64
+	clientMethods map[string]struct{}
 
 	// pushRegistrar is the host-side hook invoked by the device/push_*
 	// methods. The desktop main pipeline leaves it nil so the methods
@@ -265,6 +266,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		inferenceMaintenanceStop:     make(chan struct{}),
 		sideTurns:                    make(map[string]*sideThreadTurn),
 		clientCalls:                  make(map[string]chan clientResponse),
+		clientMethods:                make(map[string]struct{}),
 		runs:                         make(map[string]*runTracker),
 		activeRunByThread:            make(map[string]string),
 	}

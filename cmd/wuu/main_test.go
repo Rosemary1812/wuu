@@ -633,6 +633,69 @@ func TestLoadOrCreateAppServerConfigUsesWUUHomeWhenHomeIsEmpty(t *testing.T) {
 	}
 }
 
+func TestResolveAppServerHostValidatesCloudLaunch(t *testing.T) {
+	tests := []struct {
+		name        string
+		kind        string
+		instanceID  string
+		workspaceID string
+		configFile  string
+		wantErr     string
+	}{
+		{name: "local defaults", kind: "local"},
+		{name: "local instance rejected", kind: "local", instanceID: "run-123", wantErr: "instance id"},
+		{name: "cloud ready", kind: "cloud", instanceID: "run-123", workspaceID: "workspace-123", configFile: "/run/wuu/config.json"},
+		{name: "cloud instance required", kind: "cloud", workspaceID: "workspace-123", configFile: "/run/wuu/config.json", wantErr: "instance id"},
+		{name: "cloud workspace required", kind: "cloud", instanceID: "run-123", configFile: "/run/wuu/config.json", wantErr: "--workspace-id"},
+		{name: "cloud config required", kind: "cloud", instanceID: "run-123", workspaceID: "workspace-123", wantErr: "--config"},
+		{name: "unknown host", kind: "serverless", wantErr: "unsupported runtime host"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host, err := resolveAppServerHost(tt.kind, tt.instanceID, tt.workspaceID, tt.configFile)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveAppServerHost: %v", err)
+			}
+			if host.Kind != runtime.HostKind(tt.kind) {
+				t.Fatalf("host = %+v", host)
+			}
+		})
+	}
+}
+
+func TestLoadAppServerRuntimeConfigUsesExplicitFile(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	data, err := json.Marshal(appServerStarterConfig())
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cloud.json"), data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, configPath, mode, err := loadAppServerRuntimeConfig(root, home, "cloud.json")
+	if err != nil {
+		t.Fatalf("loadAppServerRuntimeConfig: %v", err)
+	}
+	if configPath != filepath.Join(root, "cloud.json") || mode != runtime.ConfigLoadFile {
+		t.Fatalf("path=%q mode=%v", configPath, mode)
+	}
+	defaultPath, err := statepath.ConfigPath(home)
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Fatalf("explicit cloud config created local starter config: %v", err)
+	}
+}
+
 func TestRunModelsRejectsUnsupportedProvider(t *testing.T) {
 	workdir := t.TempDir()
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")

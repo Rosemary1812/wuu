@@ -31,8 +31,17 @@ import (
 )
 
 func (s *Server) handleInitialize(req Request) error {
+	var params InitializeParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.ProtocolVersion != "" && params.ProtocolVersion != ProtocolVersion {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("unsupported protocol version %q (server uses %q)", params.ProtocolVersion, ProtocolVersion))
+	}
+	s.setClientMethods(params.Capabilities.ReverseRPC.Methods)
 	s.pinLegacyRuntimeSelections()
 	core := version.Info()
+	runtimeHost := s.rt.HostInfo()
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	status := "ready"
 	issues := make([]RuntimeIssue, 0, len(s.rt.ReadinessIssues))
@@ -51,12 +60,16 @@ func (s *Server) handleInitialize(req Request) error {
 			Date:    core.Date,
 			Dirty:   core.Dirty,
 		},
-		Provider:           s.rt.ProviderName,
-		Model:              s.rt.Model,
-		Effort:             s.currentDisplayEffort(),
-		Variant:            s.currentVariant(),
-		Ultra:              s.rt.UltraMode(),
-		MaxParallel:        s.rt.MaxParallel(),
+		Provider:    s.rt.ProviderName,
+		Model:       s.rt.Model,
+		Effort:      s.currentDisplayEffort(),
+		Variant:     s.currentVariant(),
+		Ultra:       s.rt.UltraMode(),
+		MaxParallel: s.rt.MaxParallel(),
+		RuntimeHost: RuntimeHostSummary{
+			Kind:       string(runtimeHost.Kind),
+			InstanceID: runtimeHost.InstanceID,
+		},
 		WorkspaceRoot:      s.rt.RootDir,
 		Permissions:        s.currentPermissionSummary(),
 		ExtensionTrust:     s.currentExtensionTrustSummary(),
@@ -67,9 +80,7 @@ func (s *Server) handleInitialize(req Request) error {
 		Providers:          s.providerSummaries(),
 		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
 		GeneralSettings:    s.currentGeneralSettingsSummary(),
-		// Browser stays false in this skeleton; a later layer wires the real
-		// "this client hosts the embedded browser backend" state through here.
-		Features: FeatureFlags{HelpMe: s.rt.ExperimentalHelpMe, Browser: false},
+		Features:           FeatureFlags{HelpMe: s.rt.ExperimentalHelpMe, Browser: s.supportsBrowserClient()},
 	}, nil)
 }
 

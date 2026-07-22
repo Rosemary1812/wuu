@@ -17,7 +17,11 @@ import {
 import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
+import {
+  APP_SERVER_PROTOCOL_VERSION,
+  BROWSER_REVERSE_RPC_METHODS,
+  MESSAGE_FLOW_FONT_SIZE_RANGE,
+} from "../shared/protocol";
 import type {
   ComposerGoalSummary,
   ConfigAdvancedUpdateResult,
@@ -1169,7 +1173,13 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("wuu:initialize", async (event) => {
-    const result = await appServerRequest<InitializeResult>(event, "initialize");
+    const result = await appServerRequest<InitializeResult>(event, "initialize", {
+      protocol_version: APP_SERVER_PROTOCOL_VERSION,
+      client: { name: "wuu-desktop", version: DESKTOP_BUILD_INFO.version },
+      capabilities: {
+        reverse_rpc: { methods: [...BROWSER_REVERSE_RPC_METHODS] },
+      },
+    });
     if (result.core) {
       cachedCoreBuildInfo = result.core;
     }

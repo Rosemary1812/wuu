@@ -54,6 +54,9 @@ import (
 // attach without rebuilding the agent.
 type Options struct {
 	RootDir string
+	// Host is immutable process metadata supplied by the shell or cloud
+	// control plane. Its zero value resolves to a local host.
+	Host Host
 	// WorkspaceID is the stable, location-independent identity of the
 	// workspace (the desktop's registered-project id). When set, the workspace
 	// state directory is keyed by this id so it survives the project being
@@ -97,6 +100,7 @@ type Session struct {
 	ProviderName             string
 	Model                    string
 	RootDir                  string
+	Host                     Host
 	WorkspaceID              string
 	StateDir                 string
 	ConfigPath               string
@@ -190,6 +194,7 @@ func (s *Session) cloneForThreadModel() *Session {
 		ProviderName:                s.ProviderName,
 		Model:                       s.Model,
 		RootDir:                     s.RootDir,
+		Host:                        s.Host,
 		WorkspaceID:                 s.WorkspaceID,
 		StateDir:                    s.StateDir,
 		ConfigPath:                  s.ConfigPath,
@@ -302,6 +307,10 @@ func NewSession(opts Options) (*Session, error) {
 	rootDir := strings.TrimSpace(opts.RootDir)
 	if rootDir == "" {
 		return nil, fmt.Errorf("root dir is required")
+	}
+	host, err := ResolveHost(opts.Host)
+	if err != nil {
+		return nil, err
 	}
 	cfg := opts.Config
 
@@ -650,6 +659,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProviderName:                resolvedName,
 		Model:                       providerCfg.Model,
 		RootDir:                     rootDir,
+		Host:                        host,
 		WorkspaceID:                 workspaceID,
 		StateDir:                    workspaceStateDir,
 		ConfigPath:                  opts.ConfigPath,

@@ -396,6 +396,9 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if !initResult.Ultra || initResult.MaxParallel != config.DefaultAgentMaxParallel {
 		t.Fatalf("initialize missing Ultra runtime state: %+v", initResult)
 	}
+	if initResult.RuntimeHost.Kind != string(runtime.HostLocal) || initResult.RuntimeHost.InstanceID != "" {
+		t.Fatalf("initialize missing default local host: %+v", initResult.RuntimeHost)
+	}
 	configMsg := responseByID(t, msgs, "2")
 	configResult := remarshal[ConfigReadResult](t, configMsg["result"])
 	if configResult.ConfigPath == "" || configResult.SessionDir == "" {
@@ -403,6 +406,51 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 	if !configResult.Ultra || configResult.MaxParallel != config.DefaultAgentMaxParallel {
 		t.Fatalf("config/read missing Ultra runtime state: %+v", configResult)
+	}
+}
+
+func TestServerInitializeReportsCloudRuntimeHost(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Host = runtime.Host{Kind: runtime.HostCloud, InstanceID: "run-123"}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.RuntimeHost.Kind != "cloud" || result.RuntimeHost.InstanceID != "run-123" {
+		t.Fatalf("unexpected runtime host: %+v", result.RuntimeHost)
+	}
+}
+
+func TestServerInitializeNegotiatesBrowserClient(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	request := `{"id":"1","method":"initialize","params":{"protocol_version":"wuu-app-server/v0.1","capabilities":{"reverse_rpc":{"methods":["browser/cdp","browser/screenshot","browser/open_tab","browser/close_tab","browser/set_visibility","browser/list_tabs"]}}}}`
+
+	if err := srv.handleLine(context.Background(), []byte(request)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if !result.Features.Browser {
+		t.Fatalf("browser feature not negotiated: %+v", result.Features)
+	}
+}
+
+func TestServerInitializeRejectsIncompatibleProtocol(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize","params":{"protocol_version":"wuu-app-server/v9"}}`)); err != nil {
+		t.Fatalf("initialize write: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	errorPayload := remarshal[ResponseError](t, response["error"])
+	if !strings.Contains(errorPayload.Message, "unsupported protocol version") {
+		t.Fatalf("unexpected initialize error: %+v", errorPayload)
 	}
 }
 
