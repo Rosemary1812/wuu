@@ -1,6 +1,6 @@
 <h1 align="center">wuu</h1>
 
-<p align="center">Open-source, BYOK AI coding agent — a Go core with a desktop app, a scriptable CLI, and built-in multi-agent orchestration.</p>
+<p align="center">The open-source AI coding agent for local development.</p>
 
 <div align="center">
   <p>
@@ -10,8 +10,6 @@
   <p>
     <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
     <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
-    <a href="https://github.com/blueberrycongee/wuu/blob/main/go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/blueberrycongee/wuu?style=flat-square"></a>
-    <a href="https://github.com/blueberrycongee/wuu/graphs/commit-activity"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/blueberrycongee/wuu?style=flat-square"></a>
     <a href="https://github.com/blueberrycongee/wuu/releases"><img alt="GitHub release downloads" src="https://img.shields.io/github/downloads/blueberrycongee/wuu/total?style=flat-square&label=downloads"></a>
   </p>
 </div>
@@ -20,158 +18,52 @@
 
 <img width="2272" height="2494" alt="wuu desktop app" src="https://github.com/user-attachments/assets/2d9030aa-ca03-42b1-9333-f79cc5aff95b" />
 
-**wuu** is an open-source AI coding agent that works in your local repository. It reads and edits files, runs commands, reviews changes, and resumes sessions — all through a BYOK model that works with Anthropic and any OpenAI-compatible provider.
+**wuu** works directly in your local repository. It can read and edit files, run commands, review changes, and carry a task through to completion using a model provider you configure.
 
-Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
+Use the desktop app for interactive work. For larger tasks, wuu can make a plan, delegate work to subagents, use task-specific skills, and continue from persistent sessions. `wuu exec` provides a non-interactive entrypoint for scripts, CI, and other agents.
 
 > [!WARNING]
-> **Project status:** Packaged desktop builds currently support Apple silicon Macs. wuu is still pre-1.0 and evolving quickly, so features, interfaces, and behavior may change between versions. If you need a stable, production-ready tool, please evaluate carefully before adopting it.
+> wuu is an early preview and changes quickly. Packaged desktop builds currently support Apple silicon Macs.
 
-## Start Here
+## Download
 
-| You want to... | Go to |
-|---|---|
-| Install and run your first task | [Install](#install) and [Quick Start](#quick-start) |
-| Use the desktop app | [Desktop App](#desktop-app) |
-| Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`wuu exec`](docs/en/automation/exec.md) |
-| Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
-| Understand how wuu is built | [Architecture](#architecture) |
-| See where the project is going | [Roadmap](ROADMAP.md) |
-| Contribute | [Contributing](CONTRIBUTING.md) |
-| Review the security and trust boundaries | [Security model](docs/en/reference/security-model.md) |
-| Inspect reproducible public evaluations | [Public evaluations](evals/) |
+Download the latest macOS desktop build from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases/latest), move `wuu.app` to `/Applications`, and open it.
 
-## Release Status
-
-- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide Apple silicon macOS builds.
-- **Latest changes** — see the [latest release](https://github.com/blueberrycongee/wuu/releases/latest) and [CHANGELOG](CHANGELOG.md).
-
-## Install
-
-Pick **one** install method:
-
-**macOS desktop package**
-
-Download `wuu-<version>-mac-arm64.dmg` or `wuu-<version>-mac-arm64.zip`
-from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
-The current desktop preview is unsigned and not notarized. If macOS blocks it
-and you trust the package downloaded from the official release, run:
+The current preview is unsigned and not notarized. If macOS blocks an official release that you trust, run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
 
-**Install the CLI with Go**
+## Get started
 
-```bash
-go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+1. Open `wuu.app` and choose a local project folder.
+2. Open **Settings → Model providers** and connect Anthropic or an OpenAI-compatible provider.
+3. Start a conversation and describe the outcome you want.
+
+For example:
+
+```text
+Explain how this repository is organized.
+Fix the failing tests and verify the result.
+Review the current changes for regressions.
 ```
 
-Verify the install:
+See the [user guide](docs/en/getting-started/index.md) for provider setup, attachments, sessions, permissions, and common problems.
 
-```bash
-wuu --version
-```
+## Capabilities
 
-**Run from a checkout**
+- **Work in your repository** — read and edit files, search code, run commands, and inspect the resulting diff.
+- **Handle longer tasks** — plan multi-step work, track durable goals, and continue across context limits.
+- **Delegate work** — use subagents for focused research, parallel work, or isolated implementation.
+- **Keep useful context** — resume sessions, fork from a checkpoint, and use persistent memory and skills.
+- **Bring your own model** — connect Anthropic or any OpenAI-compatible endpoint, including local gateways.
+- **Use files and images** — attach documents and screenshots when they are part of the task.
+- **Automate workflows** — stream structured output to scripts, CI jobs, review tools, and other agents.
 
-```bash
-git clone https://github.com/blueberrycongee/wuu.git
-cd wuu
-go run ./cmd/wuu --version
-```
+## Automation
 
-## Quick Start
-
-For installation, provider setup, sessions, attachments, trust boundaries, and
-common problems, read the [user guide](docs/en/getting-started/index.md).
-
-**Desktop**
-
-Open `wuu.app`, choose a local project folder, and start a thread from the composer.
-
-**CLI and automation**
-
-Initialize once:
-
-```bash
-wuu init
-```
-
-This creates the user-owned config at `~/.wuu/config.json` (or
-`WUU_HOME/config.json`). Provider connections and credentials are never written
-to the project by this command.
-
-Run your first tasks:
-
-```bash
-wuu exec "describe this repo"
-wuu exec "fix the failing test"
-```
-
-Attach local files when they are part of the task:
-
-```bash
-wuu exec --file report.pdf "summarize this PDF"
-wuu exec --image screenshot.png "find the UI issue"
-```
-
-Resume or inspect sessions:
-
-```bash
-wuu exec resume --last "continue"
-wuu session list --json
-```
-
-## Features
-
-**Repository work**
-- **File operations** — read, edit, and inspect files inside the working repository
-- **Shell execution** — run commands, capture output, and iterate on failures
-- **Attachments** — pass local files (`--file`) and screenshots (`--image`) directly to a turn
-- **Sessions** — resume previous turns, list history, and fork from a checkpoint
-
-**Agent orchestration**
-- **Subagents** — delegate to child agents (fresh general-purpose context, worktree-isolated workers, or context-inheriting forks) for parallel or isolated work
-- **Durable goals** — long-running objectives that survive context loss and resume across sessions
-- **Skills** — task-specific instruction sets for focused work like planning, reviewing, or frontend design
-- **Persistent memory** — agent profiles that remember preferences and context across sessions
-- **Scheduled tasks** — run prompts on cron schedules
-
-**Providers and integration**
-- **BYOK / multi-provider** — bring your own API key; works with Anthropic and OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
-- **JSONL output** — scriptable, streamable output for CI and other agents
-- **Desktop app** — packaged Apple silicon macOS Electron app, or source-built UI for interactive use alongside the CLI
-
-## Architecture
-
-Wuu consists of a **Go core** and an **Electron desktop app**. The CLI is built from the same Go code:
-
-- The **Go core** (`internal/`, `cmd/wuu/`) contains the agent runtime, provider integrations, tools, sessions, config, and CLI commands.
-- The **desktop app** (`desktop/`) starts the core locally through `wuu app-server` and handles the interface and native desktop features.
-- The [`app-server` protocol](docs/en/integrations/app-server-protocol.md) is the local JSON-RPC interface between the desktop app and the core.
-
-## Desktop App
-
-Packaged Apple silicon macOS builds are available on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
-
-The desktop app is developed in `desktop/`. Run it from a source checkout:
-
-```bash
-cd desktop
-npm install
-npm run dev
-```
-
-On macOS, the first `npm run dev` creates a local `Wuu Dev Signing` certificate
-in your login keychain and uses it only for the development host. This keeps
-Accessibility and Screen Recording permission stable across source rebuilds.
-Set `WUU_DEV_SIGN_ID` to use an existing local Code Signing identity instead.
-This development certificate is never used for packaged GitHub Release builds.
-
-## CLI and Automation
-
-`wuu exec` is the non-interactive entrypoint. It is useful for scripts, CI, review jobs, and other agents.
+`wuu exec` exposes the agent runtime as a non-interactive command:
 
 ```bash
 wuu exec --json "review the current diff"
@@ -179,92 +71,41 @@ wuu exec --file plan.md "implement this plan"
 wuu exec review --uncommitted
 ```
 
-See [`wuu exec`](docs/en/automation/exec.md) for JSONL output, attachments, resume, fork, review, and automation options.
+See [`wuu exec`](docs/en/automation/exec.md) for setup, JSONL events, attachments, session controls, and review options.
 
-## Providers
+## Models and data
 
-Wuu supports Anthropic and OpenAI-compatible providers such as OpenAI,
-OpenRouter, one-api, and local gateways. Bring your own API key — set the
-matching environment variable and point wuu at any compatible endpoint.
+- You choose the model provider and credentials. Prompts and relevant context are sent to that provider.
+- Provider settings and API keys stay under user control rather than coming from the repository.
+- Sessions, config, logs, and other local state live under `~/.wuu` by default.
+- File changes and commands run locally within the selected workspace and active permission mode.
 
-Provider selection, models, endpoints, credential sources, global memory
-settings, and permission mode live in the user config at
-`~/.wuu/config.json`. Set `WUU_HOME` to relocate the whole directory; the
-legacy `~/.config/wuu/config.json` is still migrated and read for backward
-compatibility.
+Read the [security model](docs/en/reference/security-model.md) before using wuu with untrusted repositories or sensitive data.
 
-Project files (`.wuu.json`, `wuu.json`, `.wuu/settings.json`, and
-`.wuu/settings.local.json`) may add project behavior such as prompt additions,
-but normal startup ignores provider selection and definitions, role-specific
-model selection, memory discovery, and permission mode from those files. This
-keeps a repository from redirecting user credentials, routing background work
-to another configured provider, or selecting arbitrary files outside the
-workspace. Wuu's own global memory remains outside the workspace under the
-user-controlled Wuu home and can still be read and updated normally.
+## Documentation
 
-```json
-{
-  "default_provider": "openrouter",
-  "providers": {
-    "openrouter": {
-      "type": "openai-compatible",
-      "base_url": "https://openrouter.ai/api/v1",
-      "api_key_env": "OPENROUTER_API_KEY",
-      "model": "openai/gpt-4.1-mini"
-    },
-    "anthropic": {
-      "type": "anthropic",
-      "api_key_env": "ANTHROPIC_API_KEY",
-      "model": "claude-sonnet-4-20250514"
-    }
-  }
-}
-```
-
-Then set the matching environment variable:
-
-```bash
-export OPENROUTER_API_KEY="..."
-export ANTHROPIC_API_KEY="..."
-```
-
-For another provider, the same config shape applies:
-
-| Replace | Where |
-|---|---|
-| Provider config key | `providers.<provider>` |
-| Provider type | `providers.<provider>.type` (`anthropic` or `openai-compatible`) |
-| Endpoint URL, when needed | `providers.<provider>.base_url` |
-| API key env var name | `providers.<provider>.api_key_env` |
-| Model ID | `providers.<provider>.model` |
-
-## Docs
-
-- Browse all maintained documentation: [Documentation index](docs/README.md)
-- See current priorities and the path to 1.0: [Roadmap](ROADMAP.md)
-- Install, configure, and use wuu: [User guide](docs/en/getting-started/index.md)
-- Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/en/automation/exec.md)
-- Parse the streaming output: [JSONL events](docs/en/automation/jsonl-events.md)
-- Understand how the desktop app talks to the core: [`app-server` protocol](docs/en/integrations/app-server-protocol.md)
-- Consume Claude Code–compatible stream output: [Claude Code stream compatibility](docs/en/integrations/compatibility/claude-code-stream-json.md)
-- Set up a development environment: [Contributing](CONTRIBUTING.md)
+- [User guide](docs/en/getting-started/index.md)
+- [`wuu exec` automation guide](docs/en/automation/exec.md)
+- [Security model](docs/en/reference/security-model.md)
+- [Roadmap](ROADMAP.md)
+- [Public evaluations](evals/)
+- [Changelog](CHANGELOG.md)
+- [Documentation index](docs/README.md)
 
 ## Contributing
 
-PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, review, and contribution guidelines, and [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and review guidelines, and [SECURITY.md](SECURITY.md) for vulnerability reports.
 
-Wuu is pre-1.0 and under active development — if you hit rough edges, [open an issue](https://github.com/blueberrycongee/wuu/issues).
+If you run into a problem, [open an issue](https://github.com/blueberrycongee/wuu/issues).
 
 ## Acknowledgments
 
-Wuu's design draws heavily from — and stands on the shoulders of — these projects. Their work on agent runtimes, tool loops, multi-agent orchestration, and developer experience shaped many of wuu's decisions and trade-offs.
+wuu draws inspiration from these projects and their work on coding agents, tool loops, orchestration, and developer experience:
 
-- [Codex](https://github.com/openai/codex) — OpenAI's coding agent
-- [OpenCode](https://github.com/sst/opencode) — the open-source terminal coding agent
-- [pi](https://github.com/badlogic/pi-mono) — Mario Zechner's minimal AI agent toolkit
-- [Kimi Code](https://github.com/MoonshotAI/kimi-cli) — Moonshot AI's coding agent
-
-Thank you to the teams and communities behind these projects for the inspiration and ideas that helped make wuu possible.
+- [Codex](https://github.com/openai/codex)
+- [OpenCode](https://github.com/anomalyco/opencode)
+- [pi](https://github.com/badlogic/pi-mono)
+- [Kimi Code](https://github.com/MoonshotAI/kimi-cli)
 
 ## License
 
