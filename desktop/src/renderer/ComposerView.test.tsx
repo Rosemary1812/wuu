@@ -1343,6 +1343,16 @@ describe("Composer send control", () => {
     ).not.toBeNull();
   });
 
+  it("gives the document composer its own compact styling hook", () => {
+    renderComposer({ variant: "document", mainConversation: true });
+
+    const composer = container.querySelector(
+      '[data-main-conversation-composer="document"]',
+    );
+    expect(composer?.classList.contains("dock-composer-wrap")).toBe(true);
+    expect(composer?.classList.contains("document-composer-wrap")).toBe(true);
+  });
+
   it("keeps /side disabled on a draft without a persisted thread", () => {
     const setPrompt = vi.fn();
     const onOpenSideThread = vi.fn();
@@ -2036,6 +2046,18 @@ describe("ComposerTokenGauge", () => {
 });
 
 describe("Composer expand button", () => {
+  it("keeps the document composer shorter without changing expanded input", () => {
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*80px/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-stack:not\(\.is-expanded\)\s+\.composer\s+textarea\s*\{[^}]*height:\s*44px[^}]*min-height:\s*44px/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-bar\s*\{[^}]*height:\s*36px[^}]*padding-bottom:\s*2px/,
+    );
+  });
+
   it("uses anchored flex layouts so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");

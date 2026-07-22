@@ -1014,6 +1014,22 @@
   min-height: clamp(120px, 24vh, 240px);
 }
 
+.document-composer-wrap .composer-stack {
+  --composer-collapsed-min-height: 80px;
+}
+
+.document-composer-wrap .composer-stack:not(.is-expanded) .composer textarea {
+  height: 44px;
+  min-height: 44px;
+  padding-top: 6px;
+  padding-bottom: 4px;
+}
+
+.document-composer-wrap .composer-bar {
+  height: 36px;
+  padding-bottom: 2px;
+}
+
 .composer-collapsed-prompt-list {
   display: grid;
   width: auto;

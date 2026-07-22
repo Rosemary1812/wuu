@@ -4390,7 +4390,7 @@ export function App(): JSX.Element {
                         : turns
                     }
                   >
-                    {renderComposer("dock")}
+                    {renderComposer("document")}
                   </WorkspaceDocumentTurnDock>
                 )
               : undefined

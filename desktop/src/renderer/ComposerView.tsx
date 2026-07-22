@@ -294,7 +294,13 @@ export function Composer({
   const { locale, t } = useI18n();
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
-  const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
+  const className = `composer-wrap ${
+    variant === "hero"
+      ? "hero-composer-wrap"
+      : variant === "document"
+        ? "dock-composer-wrap document-composer-wrap"
+        : "dock-composer-wrap"
+  }`;
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   // The action button is a stop control ONLY while a turn runs AND the input

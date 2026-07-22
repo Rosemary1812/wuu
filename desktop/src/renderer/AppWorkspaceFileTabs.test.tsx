@@ -278,6 +278,9 @@ describe("workspace file tabs", () => {
     expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
     expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
     expect(
+      container.querySelector('[data-main-conversation-composer="document"]'),
+    ).not.toBeNull();
+    expect(
       container.querySelector('[data-testid="workspace-document-turn-drawer"]')?.textContent,
     ).toContain("Show me the document.");
     expect(
