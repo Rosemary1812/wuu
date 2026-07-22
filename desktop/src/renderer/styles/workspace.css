@@ -411,6 +411,7 @@
 .workspace-panel-close,
 .workspace-panel-sidebar,
 .workspace-panel-add,
+.workspace-panel-file-tree-action,
 .workspace-panel-globalize {
   width: 30px;
   height: 30px;
@@ -708,8 +709,19 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, var(--workspace-file-tree-width, 320px));
   overflow: hidden;
+}
+
+.workspace-files-split[data-tree-side="right"] {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, var(--workspace-file-tree-width, 320px));
+}
+
+.workspace-files-split[data-tree-side="left"] {
+  grid-template-columns: minmax(180px, var(--workspace-file-tree-width, 320px)) minmax(0, 1fr);
+}
+
+.workspace-files-split.tree-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .workspace-files-split[hidden] {
@@ -725,8 +737,16 @@
 
 .workspace-files-content {
   position: relative;
-  grid-column: 1;
   grid-row: 1;
+}
+
+.workspace-files-split[data-tree-side="right"] .workspace-files-content,
+.workspace-files-split.tree-hidden .workspace-files-content {
+  grid-column: 1;
+}
+
+.workspace-files-split[data-tree-side="left"]:not(.tree-hidden) .workspace-files-content {
+  grid-column: 2;
 }
 
 .workspace-files-content-body {
@@ -745,14 +765,22 @@
 .workspace-files-resizer {
   position: relative;
   z-index: 2;
-  grid-column: 2;
   grid-row: 1;
-  justify-self: start;
   width: 8px;
   min-height: 0;
   cursor: col-resize;
   outline: 0;
   -webkit-app-region: no-drag;
+}
+
+.workspace-files-split[data-tree-side="right"] .workspace-files-resizer {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.workspace-files-split[data-tree-side="left"] .workspace-files-resizer {
+  grid-column: 1;
+  justify-self: end;
 }
 
 .workspace-files-resizer::before {
@@ -764,6 +792,10 @@
   transition:
     background var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.workspace-files-split[data-tree-side="left"] .workspace-files-resizer::before {
+  inset: 0 0 0 auto;
 }
 
 .workspace-files-resizer:hover::before,
@@ -780,9 +812,17 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-files-tree {
-  grid-column: 2;
   grid-row: 1;
+}
+
+.workspace-files-split[data-tree-side="right"] .workspace-files-tree {
+  grid-column: 2;
   padding: 10px 0 10px 10px;
+}
+
+.workspace-files-split[data-tree-side="left"] .workspace-files-tree {
+  grid-column: 1;
+  padding: 10px 10px 10px 0;
 }
 
 .workspace-files-tree .workspace-file-panel {

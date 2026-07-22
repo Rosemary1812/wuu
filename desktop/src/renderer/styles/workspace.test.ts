@@ -228,16 +228,26 @@ describe("workspace file preview layout", () => {
     expect(activeSlider).toMatch(/background:\s*var\(--scrollbar-thumb-active\);/);
   });
 
-  it("lays out file content first and the file tree as the right column", () => {
+  it("supports right, left, and collapsed file-tree layouts", () => {
     const split = cssRuleBody(".workspace-files-split");
     expect(split).toMatch(/display:\s*grid;/);
-    expect(split).toMatch(
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="right"]')).toMatch(
       /grid-template-columns:\s*minmax\(0, 1fr\) minmax\(180px, var\(--workspace-file-tree-width, 320px\)\);/,
     );
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="left"]')).toMatch(
+      /grid-template-columns:\s*minmax\(180px, var\(--workspace-file-tree-width, 320px\)\) minmax\(0, 1fr\);/,
+    );
+    expect(cssRuleBody(".workspace-files-split.tree-hidden")).toMatch(
+      /grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
     const resizer = cssRuleBody(".workspace-files-resizer");
-    expect(resizer).toMatch(/grid-column:\s*2;/);
-    expect(resizer).toMatch(/justify-self:\s*start;/);
     expect(resizer).toMatch(/cursor:\s*col-resize;/);
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="right"] .workspace-files-resizer')).toMatch(
+      /grid-column:\s*2;[\s\S]*justify-self:\s*start;/,
+    );
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="left"] .workspace-files-resizer')).toMatch(
+      /grid-column:\s*1;[\s\S]*justify-self:\s*end;/,
+    );
     const resizerRule = cssRuleBody(".workspace-files-resizer::before");
     expect(resizerRule).toMatch(/inset:\s*0 auto 0 0;/);
     expect(resizerRule).toMatch(/width:\s*1px;/);

@@ -451,6 +451,83 @@ describe("WorkspaceRightPanel", () => {
     );
   });
 
+  it("moves, collapses, restores, and persists the file tree layout", async () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/repo/project",
+    };
+    const fileTab = workspaceFileViewTab({ context, path: "src/App.tsx" });
+    const panel = (
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
+        activeFileTabID={fileTab.id}
+        workspaceContext={context}
+        focusedComposer={<div data-testid="focused-composer-content" />}
+      />
+    );
+    mount(panel);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+
+    let split = container!.querySelector<HTMLElement>(".workspace-files-split")!;
+    const tree = split.querySelector<HTMLElement>(".workspace-files-tree")!;
+    const separator = split.querySelector<HTMLElement>(".workspace-files-resizer")!;
+    const moveButton = container!.querySelector<HTMLButtonElement>(".workspace-panel-file-tree-side")!;
+    const visibilityButton = container!.querySelector<HTMLButtonElement>(
+      ".workspace-panel-file-tree-visibility",
+    )!;
+
+    expect(split.dataset.treeSide).toBe("right");
+    expect(tree.hidden).toBe(false);
+    expect(
+      split.querySelector(".workspace-files-content > [data-testid='workspace-document-composer']"),
+    ).not.toBeNull();
+
+    act(() => moveButton.click());
+    expect(split.dataset.treeSide).toBe("left");
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeSide")).toBe("left");
+
+    Object.defineProperty(split, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 1000 }),
+    });
+    act(() => {
+      separator.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 320 }),
+      );
+    });
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 400 }));
+      window.dispatchEvent(new MouseEvent("pointerup"));
+    });
+    expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe("400px");
+
+    act(() => visibilityButton.click());
+    await act(async () => Promise.resolve());
+    expect(split.classList.contains("tree-hidden")).toBe(true);
+    expect(tree.hidden).toBe(true);
+    expect(separator.hidden).toBe(true);
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeVisible")).toBe("false");
+
+    mount(panel);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+    split = container!.querySelector<HTMLElement>(".workspace-files-split")!;
+    expect(split.dataset.treeSide).toBe("left");
+    expect(split.classList.contains("tree-hidden")).toBe(true);
+
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>(".workspace-panel-file-tree-visibility")!.click();
+      await Promise.resolve();
+    });
+    await act(async () => Promise.resolve());
+    expect(split.classList.contains("tree-hidden")).toBe(false);
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeVisible")).toBe("true");
+  });
+
   it("clamps the tree width so the file content keeps usable space", () => {
     expect(clampWorkspaceFileTreeWidth(100)).toBe(WORKSPACE_FILE_TREE_MIN_WIDTH);
     expect(clampWorkspaceFileTreeWidth(900)).toBe(WORKSPACE_FILE_TREE_MAX_WIDTH);
