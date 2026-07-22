@@ -115,6 +115,7 @@ describe("workspace document turn glass", () => {
     const composerFrame = cssRuleBody(".workspace-document-composer .composer-frame");
 
     expect(drawer).toMatch(/width:\s*calc\(100% - 24px\);/);
+    expect(drawer).toMatch(/margin:\s*0 auto -6px;/);
     expect(drawer).toMatch(/background:\s*radial-gradient\(/);
     expect(drawer).toMatch(/linear-gradient\(/);
     expect(drawer).toMatch(/var\(--paper\) 42%, transparent/);

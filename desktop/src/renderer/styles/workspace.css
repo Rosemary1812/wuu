@@ -982,7 +982,7 @@ html.resizing-workspace-file-split * {
   z-index: 0;
   width: calc(100% - 24px);
   max-height: 32px;
-  margin: 0 auto -14px;
+  margin: 0 auto -6px;
   overflow: hidden;
   color: var(--text-primary);
   background:
