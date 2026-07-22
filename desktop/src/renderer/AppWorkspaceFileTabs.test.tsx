@@ -281,8 +281,10 @@ describe("workspace file tabs", () => {
       container.querySelector('[data-main-conversation-composer="document"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="workspace-document-turn-drawer"]')?.textContent,
-    ).toContain("Show me the document.");
+      container
+        .querySelector(".workspace-document-turn-summary")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
     expect(
       container.querySelector('[data-testid="jump-to-latest-probe"]'),
     ).toBeNull();
@@ -329,9 +331,7 @@ describe("workspace file tabs", () => {
       "standard",
       { path: "README.md" },
     );
-    expect(
-      container.querySelector('[data-testid="workspace-document-turn-drawer"]')?.textContent,
-    ).toContain("Rewrite the weak section.");
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);

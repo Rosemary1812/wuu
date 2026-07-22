@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
@@ -9,7 +9,6 @@ interface WorkspaceDocumentTurnDockProps {
   children: ReactNode;
   cwd?: string;
   onOpenFile?: (path: string) => void;
-  statusText?: string;
   turns: Turn[];
 }
 
@@ -43,37 +42,35 @@ export function WorkspaceDocumentTurnDock({
   children,
   cwd,
   onOpenFile,
-  statusText,
   turns,
 }: WorkspaceDocumentTurnDockProps): JSX.Element {
   const { t } = useI18n();
   const turn = useMemo(() => latestUserTurn(turns), [turns]);
   const [expanded, setExpanded] = useState(false);
+  const finalAnswers = turn ? finalAnswerItems(turn) : [];
+  const previousTurnIDRef = useRef(turn?.id);
+  const previousFinalAnswerCountRef = useRef(finalAnswers.length);
 
   useEffect(() => {
-    setExpanded(false);
-  }, [turn?.id]);
+    if (previousTurnIDRef.current !== turn?.id) {
+      previousTurnIDRef.current = turn?.id;
+      previousFinalAnswerCountRef.current = finalAnswers.length;
+      setExpanded(false);
+      return;
+    }
+    if (
+      previousFinalAnswerCountRef.current === 0 &&
+      finalAnswers.length > 0
+    ) {
+      setExpanded(true);
+    }
+    previousFinalAnswerCountRef.current = finalAnswers.length;
+  }, [finalAnswers.length, turn?.id]);
 
-  const userItem = turn ? latestUserItem(turn) : undefined;
-  const userText =
-    userItem?.text?.trim() ||
-    (userItem?.images?.length || userItem?.files?.length
-      ? t("workspace.documentTurn.attachments")
-      : undefined);
-  const finalAnswers = turn ? finalAnswerItems(turn) : [];
-
-  if (!turn || !userText) {
+  if (!turn || finalAnswers.length === 0) {
     return <div className="workspace-document-turn-dock">{children}</div>;
   }
 
-  const status =
-    turn.status === "in_progress"
-      ? statusText || t("workspace.documentTurn.running")
-      : turn.status === "failed"
-        ? t("workspace.documentTurn.failed")
-        : turn.status === "interrupted"
-          ? t("workspace.documentTurn.interrupted")
-          : t("workspace.documentTurn.completed");
   const toggleLabel = expanded
     ? t("workspace.documentTurn.collapse")
     : t("workspace.documentTurn.expand");
@@ -93,41 +90,31 @@ export function WorkspaceDocumentTurnDock({
           aria-label={toggleLabel}
           onClick={() => setExpanded((current) => !current)}
         >
-          <span
-            className={`workspace-document-turn-status ${turn.status}`}
-            aria-hidden="true"
-          />
-          <span className="workspace-document-turn-status-text">{status}</span>
-          <span className="workspace-document-turn-prompt">{userText}</span>
           {expanded ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
         </button>
         {expanded ? (
           <div className="workspace-document-turn-details" id={detailsID}>
-            {finalAnswers.length > 0 ? (
-              <div className="workspace-document-turn-result">
-                {finalAnswers.map((item) => {
-                  const streamKey = streamTextKey(turn.id, item.id, "text");
-                  const isLive = item.status === "in_progress";
-                  return (
-                    <StreamingMarkdown
-                      key={item.id}
-                      streamKey={streamKey}
-                      initialText={
-                        isLive && streamTextStore.has(streamKey)
-                          ? streamTextStore.seedValue(streamKey)
-                          : item.text
-                      }
-                      cwd={cwd}
-                      onOpenFile={onOpenFile}
-                      isLive={isLive}
-                      phase="final_answer"
-                    />
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="workspace-document-turn-waiting">{status}</div>
-            )}
+            <div className="workspace-document-turn-result">
+              {finalAnswers.map((item) => {
+                const streamKey = streamTextKey(turn.id, item.id, "text");
+                const isLive = item.status === "in_progress";
+                return (
+                  <StreamingMarkdown
+                    key={item.id}
+                    streamKey={streamKey}
+                    initialText={
+                      isLive && streamTextStore.has(streamKey)
+                        ? streamTextStore.seedValue(streamKey)
+                        : item.text
+                    }
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    isLive={isLive}
+                    phase="final_answer"
+                  />
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </section>

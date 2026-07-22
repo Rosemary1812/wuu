@@ -4385,7 +4385,6 @@ export function App(): JSX.Element {
                     key={activeThreadID ?? state.activeSessionTabID}
                     cwd={activeThread?.cwd ?? state.activeContext?.cwd}
                     onOpenFile={openWorkspaceFile}
-                    statusText={activeThreadStreamStatus?.text}
                     turns={
                       activePendingNewThreadTurn
                         ? [...turns, activePendingNewThreadTurn]
