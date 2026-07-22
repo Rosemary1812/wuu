@@ -137,11 +137,11 @@ describe("workspace document turn glass", () => {
   });
 });
 
-describe("workspace file preview modes", () => {
-  it("keeps readonly files full height while Markdown gets document controls", () => {
-    expect(workspaceCss).toContain(".workspace-file-editor-toolbar");
-    expect(workspaceCss).toContain(".workspace-file-save-button");
-    expect(workspaceCss).toContain(".workspace-file-mode-switch");
+describe("workspace readonly file preview", () => {
+  it("removes editing chrome and gives the content the full available height", () => {
+    expect(workspaceCss).not.toContain(".workspace-file-editor-toolbar");
+    expect(workspaceCss).not.toContain(".workspace-file-save-button");
+    expect(workspaceCss).not.toContain(".workspace-markdown-mode-switch");
     expect(cssRuleBody(".workspace-file-preview.readonly")).toMatch(
       /grid-template-rows:\s*minmax\(0, 1fr\);/,
     );

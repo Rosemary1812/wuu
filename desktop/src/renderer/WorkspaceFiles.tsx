@@ -1,6 +1,6 @@
 import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { AlertCircle, BookOpen, Code2, FileText, FolderOpen, FolderX, RotateCcw, Save } from "lucide-react";
+import { AlertCircle, FileText, FolderOpen, FolderX } from "lucide-react";
 import { type CSSProperties, Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   RuntimeContext,
@@ -60,8 +60,6 @@ export type WorkspaceFileDirtyState = {
   path?: string;
   dirty: boolean;
 };
-
-type MarkdownWorkspaceMode = "reading" | "source";
 
 export function WorkspaceFileTree({
   activeContext,
@@ -555,41 +553,19 @@ export function WorkspaceFilePreview({
   const [draftText, setDraftText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [markdownMode, setMarkdownMode] = useState<MarkdownWorkspaceMode>(selection ? "source" : "reading");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | undefined>(undefined);
-  const [externalFile, setExternalFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
   const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
   const loadedFileKeyRef = useRef<string | undefined>(undefined);
   const markdownHostRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<WorkspaceFileReadResult | undefined>(undefined);
-  const draftTextRef = useRef("");
   const selectedWorkspaceFilePath = useMemo(
     () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
     [activeContext?.cwd, selectedFilePath]
   );
 
   useEffect(() => {
-    fileRef.current = file;
-  }, [file]);
-
-  useEffect(() => {
-    draftTextRef.current = draftText;
-  }, [draftText]);
-
-  useEffect(() => {
-    if (selection) {
-      setMarkdownMode("source");
-    }
-  }, [selection]);
-
-  useEffect(() => {
     if (!selectedWorkspaceFilePath) {
       setFile(undefined);
       setDraftText("");
       setError(undefined);
-      setSaveError(undefined);
-      setExternalFile(undefined);
       setLoading(false);
       return;
     }
@@ -601,8 +577,6 @@ export function WorkspaceFilePreview({
       editorViewStateRef.current = null;
       setFile(undefined);
       setDraftText("");
-      setSaveError(undefined);
-      setExternalFile(undefined);
       setLoading(true);
     }
     setError(undefined);
@@ -611,26 +585,8 @@ export function WorkspaceFilePreview({
       .then((result) => {
         if (!cancelled) {
           loadedFileKeyRef.current = fileKey;
-          const currentFile = fileRef.current;
-          if (
-            refreshing &&
-            currentFile?.path === result.path &&
-            draftTextRef.current !== (currentFile.text ?? "")
-          ) {
-            if (result.sha256 !== currentFile.sha256) {
-              setExternalFile(result);
-            } else {
-              // A watcher refresh can observe a metadata-only update. Advance
-              // the save base without replacing the user's in-memory draft.
-              setFile(result);
-              setExternalFile(undefined);
-            }
-            return;
-          }
           setFile(result);
           setDraftText(result.text ?? "");
-          setExternalFile(undefined);
-          setSaveError(undefined);
         }
       })
       .catch((nextError) => {
@@ -650,49 +606,8 @@ export function WorkspaceFilePreview({
   }, [activeContext?.cwd, selectedWorkspaceFilePath, locale, refreshKey]);
 
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
-  const isMarkdownReadingMode = isMarkdown && markdownMode === "reading";
+  const isMarkdownReadingMode = isMarkdown && !selection;
   const dirtyStatePath = file?.path ?? selectedWorkspaceFilePath;
-  const dirty = Boolean(file && draftText !== (file.text ?? ""));
-
-  async function saveDraft(): Promise<void> {
-    if (!file || !activeContext || !dirty || saving || externalFile) {
-      return;
-    }
-    setSaving(true);
-    setSaveError(undefined);
-    const textBeingSaved = draftText;
-    try {
-      const result = await window.wuu.writeWorkspaceFile({
-        path: file.path,
-        text: textBeingSaved,
-        base_mtime_ms: file.mtime_ms,
-        base_sha256: file.sha256,
-      }, activeContext.cwd);
-      if (result.status === "conflict") {
-        setExternalFile(result.file);
-        return;
-      }
-      setFile(result.file);
-      setDraftText((currentDraft) => (
-        currentDraft === textBeingSaved ? (result.file.text ?? textBeingSaved) : currentDraft
-      ));
-      setExternalFile(undefined);
-    } catch (nextError) {
-      setSaveError(desktopApiErrorMessage(nextError, translateCurrent("workspace.files.saveFailed")));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function reloadExternalFile(): void {
-    if (!externalFile) {
-      return;
-    }
-    setFile(externalFile);
-    setDraftText(externalFile.text ?? "");
-    setExternalFile(undefined);
-    setSaveError(undefined);
-  }
 
   useEffect(() => {
     if (!isMarkdownReadingMode || !anchor) {
@@ -707,9 +622,9 @@ export function WorkspaceFilePreview({
     onDirtyChange?.({
       root: activeContext?.cwd,
       path: dirtyStatePath,
-      dirty,
+      dirty: false,
     });
-  }, [activeContext?.cwd, dirty, dirtyStatePath, onDirtyChange]);
+  }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
 
   useEffect(() => {
     return () => {
@@ -806,59 +721,7 @@ export function WorkspaceFilePreview({
   }
 
   return (
-    <article className={`workspace-file-preview${isMarkdown ? "" : " readonly"}`}>
-      {isMarkdown ? (
-        <header className="workspace-file-preview-header workspace-file-editor-toolbar">
-          <div className="workspace-file-mode-switch" role="tablist" aria-label={t("workspace.files.markdownView")}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={markdownMode === "reading"}
-              className={markdownMode === "reading" ? "active" : undefined}
-              onClick={() => setMarkdownMode("reading")}
-            >
-              <BookOpen size={14} />
-              {t("workspace.files.readingMode")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={markdownMode === "source"}
-              className={markdownMode === "source" ? "active" : undefined}
-              onClick={() => setMarkdownMode("source")}
-            >
-              <Code2 size={14} />
-              {t("workspace.files.sourceMode")}
-            </button>
-          </div>
-          <div className="workspace-file-save-actions">
-            {externalFile ? (
-              <span className="workspace-file-save-message conflict" role="alert">
-                {t("workspace.files.changedOnDisk")}
-              </span>
-            ) : saveError ? (
-              <span className="workspace-file-save-message error" role="alert">{saveError}</span>
-            ) : dirty ? (
-              <span className="workspace-file-save-message">{t("workspace.files.unsaved")}</span>
-            ) : null}
-            {externalFile ? (
-              <button type="button" className="workspace-file-reload-button" onClick={reloadExternalFile}>
-                <RotateCcw size={14} />
-                {t("workspace.files.reload")}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="workspace-file-save-button"
-              disabled={!dirty || saving || Boolean(externalFile)}
-              onClick={() => void saveDraft()}
-            >
-              <Save size={14} />
-              {saving ? t("workspace.files.saving") : t("workspace.files.save")}
-            </button>
-          </div>
-        </header>
-      ) : null}
+    <article className="workspace-file-preview readonly">
       <div className={`workspace-file-editor-scroll ${isMarkdownReadingMode ? "markdown-reading" : "code"}`}>
         {isMarkdownReadingMode ? (
           <div className="workspace-markdown-reading" ref={markdownHostRef}>
@@ -877,9 +740,7 @@ export function WorkspaceFilePreview({
               resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
               selection={selection}
               text={draftText}
-              readOnly={!isMarkdown}
-              onChange={isMarkdown ? setDraftText : undefined}
-              onSave={isMarkdown ? () => void saveDraft() : undefined}
+              readOnly
               onViewStateChange={(viewState) => {
                 editorViewStateRef.current = viewState;
               }}
