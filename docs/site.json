@@ -27,6 +27,12 @@
           ]
         },
         {
+          "title": "Agent 运行机制",
+          "pages": [
+            "zh-cn/reference/agent-command-system.md"
+          ]
+        },
+        {
           "title": "自动化与集成（英文）",
           "pages": [
             "en/automation/exec.md",
