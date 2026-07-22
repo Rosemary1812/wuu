@@ -36,9 +36,14 @@
           ]
         },
         {
-          "title": "安全与项目（英文）",
+          "title": "安全",
           "pages": [
-            "en/reference/security-model.md",
+            "zh-cn/reference/security-model.md"
+          ]
+        },
+        {
+          "title": "项目（英文）",
+          "pages": [
             "en/project/development.md",
             "en/project/release.md"
           ]

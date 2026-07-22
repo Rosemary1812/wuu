@@ -16,7 +16,7 @@ wuu 的桌面应用适合交互式工作；`wuu exec` 适合终端、脚本、CI
   [JSONL 事件](../en/automation/jsonl-events.md)（英文）。
 - **构建其他客户端：**阅读 [`app-server` 协议](../en/integrations/app-server-protocol.md)
   （英文）。
-- **处理敏感内容：**先阅读[安全模型](../en/reference/security-model.md)（英文）。
+- **处理敏感内容：**先阅读[安全模型](reference/security-model.md)。
 
 ## 工作区是成果的来源
 

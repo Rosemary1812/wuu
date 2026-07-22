@@ -20,7 +20,7 @@
 
 **wuu** 直接在本地代码仓库中工作。它可以读取和修改文件、运行命令、审查改动，并通过你配置的模型提供商把开发任务推进到完成。
 
-桌面应用适合日常交互。面对更大的任务，wuu 可以制定计划、把工作委派给子智能体、使用任务专属技能，并通过持久会话继续之前的工作。`wuu exec` 则为脚本、CI 和其他 agent 提供非交互入口。
+桌面应用适合日常交互。面对更大的任务，wuu 可以制定计划、把工作委派给子 Agent、使用任务专属技能，并通过持久会话继续之前的工作。`wuu exec` 则为脚本、CI 和其他 Agent 提供非交互入口。
 
 > [!WARNING]
 > wuu 仍处于早期预览阶段，正在快速迭代。打包好的桌面版目前支持 Apple 芯片 Mac。
@@ -55,15 +55,15 @@ xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.a
 
 - **直接处理代码仓库** —— 读取和修改文件、搜索代码、运行命令，并检查最终差异。
 - **完成更长的任务** —— 规划多步工作、跟踪持久目标，并跨越上下文限制继续执行。
-- **委派工作** —— 使用子智能体完成专项研究、并行任务或隔离实现。
+- **委派工作** —— 使用子 Agent 完成专项研究、并行任务或隔离实现。
 - **保留有用的上下文** —— 恢复会话、从检查点 fork，并使用持久记忆和技能。
 - **自选模型** —— 接入 Anthropic 或任何 OpenAI 兼容端点，包括本地网关。
 - **使用文件和图片** —— 在任务需要时添加文档和截图。
-- **自动化工作流** —— 将结构化输出流式传给脚本、CI、review 工具和其他 agent。
+- **自动化工作流** —— 将结构化输出流式传给脚本、CI、代码审查工具和其他 Agent。
 
 ## 自动化
 
-`wuu exec` 以非交互命令的形式提供智能体运行能力：
+`wuu exec` 以非交互命令的形式提供 Agent 运行能力：
 
 ```bash
 wuu exec --json "审查当前 diff"
@@ -71,7 +71,7 @@ wuu exec --file plan.md "实现这个计划"
 wuu exec review --uncommitted
 ```
 
-环境准备、JSONL 事件、附件、会话控制和 review 选项见 [`wuu exec`](docs/en/automation/exec.md)。
+环境准备、JSONL 事件、附件、会话控制和 `review` 选项见 [`wuu exec`](docs/en/automation/exec.md)（英文）。
 
 ## 模型与数据
 
@@ -80,13 +80,13 @@ wuu exec review --uncommitted
 - 会话、配置、日志和其他本地状态默认保存在 `~/.wuu`。
 - 文件改动和命令在选定的本地工作区内执行，并受当前权限模式控制。
 
-在处理不受信任的仓库或敏感数据前，请阅读[安全模型](docs/en/reference/security-model.md)。
+在处理不受信任的仓库或敏感数据前，请阅读[安全模型](docs/zh-cn/reference/security-model.md)。
 
 ## 文档
 
 - [用户指南](docs/zh-cn/getting-started/index.md)
 - [`wuu exec` 自动化指南](docs/en/automation/exec.md)
-- [安全模型](docs/en/reference/security-model.md)
+- [安全模型](docs/zh-cn/reference/security-model.md)
 - [路线图](ROADMAP_zh.md)
 - [公开评测](evals/)
 - [更新记录](CHANGELOG.md)
@@ -94,13 +94,13 @@ wuu exec review --uncommitted
 
 ## 参与贡献
 
-欢迎参与贡献。开发和 review 规范见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全漏洞报告方式见 [SECURITY.md](SECURITY.md)。
+欢迎参与贡献。开发和代码审查规范见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全漏洞报告方式见 [SECURITY.md](SECURITY.md)。
 
 遇到问题可以[提交 issue](https://github.com/blueberrycongee/wuu/issues)。
 
 ## 致谢
 
-wuu 的设计受益于以下项目在 coding agent、工具循环、任务编排和开发者体验方面的探索：
+wuu 的设计受益于以下项目在 Coding Agent、工具循环、任务编排和开发者体验方面的探索：
 
 - [Codex](https://github.com/openai/codex)
 - [OpenCode](https://github.com/anomalyco/opencode)
