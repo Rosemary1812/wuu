@@ -69,8 +69,7 @@ export function parseComposerSlashDraft(value: string): ComposerSlashDraft | und
 }
 
 export function isComposerTextComposing<T extends Element>(event: ReactKeyboardEvent<T>): boolean {
-  // Chromium reports keyCode 229 for some active IME key events even when isComposing is unreliable.
-  return event.nativeEvent.isComposing || event.keyCode === 229;
+  return event.nativeEvent.isComposing;
 }
 
 export function buildComposerSlashCommands({

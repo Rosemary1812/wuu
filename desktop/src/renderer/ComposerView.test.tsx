@@ -450,6 +450,44 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
 }
 
 describe("Composer send control", () => {
+  it("sends on Enter when Chromium leaves a stale IME keyCode", () => {
+    const onSend = vi.fn();
+    renderComposer({ prompt: "发送这条消息", onSend });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      keyCode: 229,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      textarea?.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send while an IME composition is active", () => {
+    const onSend = vi.fn();
+    renderComposer({ prompt: "正在输入", onSend });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      textarea?.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("steers with Enter and queues with Tab while a turn is running", () => {
     const onSend = vi.fn();
     const onSteer = vi.fn();
