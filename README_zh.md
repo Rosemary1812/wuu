@@ -43,22 +43,18 @@
 
 ## 发布状态
 
-- **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供未签名的 Apple 芯片 macOS 安装包；CLI 仍可从源码安装，用于自动化。
+- **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供 Apple 芯片 macOS 安装包；CLI 仍可从源码安装，用于自动化。
 - **最新变化** —— 查看[最新版本](https://github.com/blueberrycongee/wuu/releases/latest)和 [CHANGELOG](CHANGELOG.md)。
 
 ## 安装
 
-> [!IMPORTANT]
-> wuu 还未到 1.0。带标签的 GitHub Release 只包含未签名的 macOS Electron 桌面预览版。macOS 可能会拦截应用，确认信任下载来源后需要手动移除 quarantine 标记。
-
 选择**一种**安装方式：
 
-**macOS 桌面安装包**（未签名）
+**macOS 桌面安装包**
 
 从 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases)
 下载 `wuu-<version>-mac-arm64.dmg` 或 `wuu-<version>-mac-arm64.zip`。
-把 `wuu.app` 放到 `/Applications` 后，macOS 可能因为应用未签名、未公证而阻止打开。
-如果 macOS 提示应用无法打开，复制运行这条命令：
+当前桌面预览版尚未签名和公证。如果 macOS 阻止打开，并且你确认安装包来自官方 Release，可以运行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
@@ -158,7 +154,6 @@ Wuu 由 **Go 核心** 和 **Electron 桌面应用**组成，CLI 也基于同一�
 ## 桌面应用
 
 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供 Apple 芯片 macOS 桌面安装包。
-安装包目前未签名；Gatekeeper 的 quarantine 处理方式见安装章节。
 
 桌面端代码在 `desktop/`。从源码启动：
 

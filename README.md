@@ -43,23 +43,19 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 
 ## Release Status
 
-- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide unsigned Apple silicon macOS builds. The CLI remains available from source for automation.
+- **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide Apple silicon macOS builds. The CLI remains available from source for automation.
 - **Latest changes** — see the [latest release](https://github.com/blueberrycongee/wuu/releases/latest) and [CHANGELOG](CHANGELOG.md).
 
 ## Install
 
-> [!IMPORTANT]
-> wuu is pre-1.0. Tagged GitHub Releases contain only an unsigned macOS Electron desktop preview. macOS may block the app until you remove quarantine for a trusted download.
-
 Pick **one** install method:
 
-**macOS desktop package** (unsigned)
+**macOS desktop package**
 
 Download `wuu-<version>-mac-arm64.dmg` or `wuu-<version>-mac-arm64.zip`
 from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
-After moving `wuu.app` to `/Applications`, macOS may block it because the app
-is not signed or notarized. If macOS says the app cannot be opened, copy and
-run this command:
+The current desktop preview is unsigned and not notarized. If macOS blocks it
+and you trust the package downloaded from the official release, run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
@@ -162,8 +158,6 @@ Wuu consists of a **Go core** and an **Electron desktop app**. The CLI is built 
 ## Desktop App
 
 Packaged Apple silicon macOS builds are available on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
-The DMG/ZIP assets are currently unsigned; see the install section for the Gatekeeper
-quarantine workaround.
 
 The desktop app is developed in `desktop/`. Run it from a source checkout:
 
