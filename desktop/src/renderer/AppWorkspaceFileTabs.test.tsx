@@ -278,6 +278,9 @@ describe("workspace file tabs", () => {
     expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
     expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
     expect(
+      container.querySelector('[data-testid="workspace-document-turn-drawer"]')?.textContent,
+    ).toContain("Show me the document.");
+    expect(
       container.querySelector('[data-testid="jump-to-latest-probe"]'),
     ).toBeNull();
     expect(document.activeElement).toBe(
@@ -295,6 +298,20 @@ describe("workspace file tabs", () => {
       valueSetter?.call(focusedTextarea, "Rewrite the weak section.");
       focusedTextarea?.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    startTurnMock.mockResolvedValueOnce({
+      turn: {
+        id: "turn-document-edit",
+        items_view: "full",
+        status: "in_progress",
+        items: [
+          {
+            id: "item-document-edit-user",
+            type: "user_message",
+            text: "Rewrite the weak section.",
+          },
+        ],
+      },
+    });
     await act(async () => {
       focusedTextarea?.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
@@ -309,6 +326,9 @@ describe("workspace file tabs", () => {
       "standard",
       { path: "README.md" },
     );
+    expect(
+      container.querySelector('[data-testid="workspace-document-turn-drawer"]')?.textContent,
+    ).toContain("Rewrite the weak section.");
 
     act(() => {
       vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);

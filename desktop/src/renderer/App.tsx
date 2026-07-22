@@ -185,6 +185,7 @@ import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceRightPanel,
 } from "./WorkspacePanels";
+import { WorkspaceDocumentTurnDock } from "./WorkspaceDocumentTurnDock";
 import type { WorkspaceTerminalRunRequest } from "./WorkspaceTerminalPanel";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
@@ -2050,6 +2051,7 @@ export function App(): JSX.Element {
   );
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
+  const activeThreadStreamStatus = turnStreamStatusForThread(state, activeThread);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const runningThreadKey = useMemo(() => {
     const running = new Set<string>();
@@ -2311,7 +2313,7 @@ export function App(): JSX.Element {
       contextWindowTokens:
         state.initialized?.advanced_settings?.context_window_tokens,
     });
-    const streamStatus = turnStreamStatusForThread(state, activeThread);
+    const streamStatus = activeThreadStreamStatus;
     return (
       <Composer
         variant={variant}
@@ -4378,7 +4380,19 @@ export function App(): JSX.Element {
           onBrowserActivityStop={() => void stopBrowserActivity()}
           focusedComposer={
             rightPanelGlobalized && activeWorkspaceFileTabID
-              ? renderComposer("dock")
+              ? (
+                  <WorkspaceDocumentTurnDock
+                    key={activeThreadID ?? state.activeSessionTabID}
+                    statusText={activeThreadStreamStatus?.text}
+                    turns={
+                      activePendingNewThreadTurn
+                        ? [...turns, activePendingNewThreadTurn]
+                        : turns
+                    }
+                  >
+                    {renderComposer("dock")}
+                  </WorkspaceDocumentTurnDock>
+                )
               : undefined
           }
           fileRefreshKey={
