@@ -851,7 +851,7 @@ html.resizing-workspace-file-split * {
 
 .workspace-files-split[data-tree-side="left"] .workspace-files-tree {
   grid-column: 1;
-  padding: 10px 10px 10px 0;
+  padding: 10px 0;
 }
 
 .workspace-files-tree .workspace-file-panel {

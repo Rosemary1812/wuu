@@ -248,6 +248,9 @@ describe("workspace file preview layout", () => {
     expect(cssRuleBody('.workspace-files-split[data-tree-side="left"] .workspace-files-resizer')).toMatch(
       /grid-column:\s*1;[\s\S]*justify-self:\s*end;/,
     );
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="left"] .workspace-files-tree')).toMatch(
+      /padding:\s*10px 0;/,
+    );
     const resizerRule = cssRuleBody(".workspace-files-resizer::before");
     expect(resizerRule).toMatch(/inset:\s*0 auto 0 0;/);
     expect(resizerRule).toMatch(/width:\s*1px;/);
