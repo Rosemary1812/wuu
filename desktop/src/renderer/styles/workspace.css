@@ -750,6 +750,11 @@
   display: none;
 }
 
+.workspace-files-tree[hidden],
+.workspace-files-resizer[hidden] {
+  display: none;
+}
+
 .workspace-files-content,
 .workspace-files-tree {
   min-width: 0;

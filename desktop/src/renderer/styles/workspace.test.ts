@@ -255,6 +255,9 @@ describe("workspace file preview layout", () => {
     expect(cssRuleBody(".workspace-file-tree-reveal")).toMatch(/position:\s*absolute;/);
     expect(cssRuleBody(".workspace-file-tree-reveal.left")).toMatch(/left:\s*8px;/);
     expect(cssRuleBody(".workspace-file-tree-reveal.right")).toMatch(/right:\s*8px;/);
+    expect(
+      cssRuleBody(".workspace-files-tree[hidden],\n.workspace-files-resizer[hidden]"),
+    ).toMatch(/display:\s*none;/);
     expect(workspaceCss).not.toContain(".workspace-files-content-header");
     expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });
