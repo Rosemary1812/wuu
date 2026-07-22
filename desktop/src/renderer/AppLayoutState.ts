@@ -371,7 +371,7 @@ export function useAppLayoutState({
 } {
   const [sidebarPreferredWidth, setSidebarPreferredWidth] = useState(initialSidebarWidth);
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [sidebarAnimating, setSidebarAnimating] = useState(false);
   const [workspaceRightPanelWidth, setWorkspaceRightPanelWidth] = useState(initialWorkspaceRightPanelWidth);
@@ -385,6 +385,14 @@ export function useAppLayoutState({
   const splitResizeSessionRef = useRef<SplitResizeSession | null>(null);
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
+  const sidebarAutoCollapsedRef = useRef(
+    sidebarShouldAutoCollapseForWindow(window.innerWidth) &&
+      window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "true"
+  );
+  const setSidebarCollapsed = useCallback((collapsed: boolean): void => {
+    sidebarAutoCollapsedRef.current = false;
+    setSidebarCollapsedState(collapsed);
+  }, []);
   const sidebarWidth = clampSidebarWidthForWindow(sidebarPreferredWidth, windowWidth);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   // Auto-globalize the open right panel only when the window is too narrow to
@@ -557,7 +565,9 @@ export function useAppLayoutState({
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarPreferredWidth));
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    if (!sidebarAutoCollapsedRef.current) {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    }
   }, [sidebarPreferredWidth, sidebarCollapsed]);
 
   useEffect(() => {
@@ -719,20 +729,27 @@ export function useAppLayoutState({
       const autoCollapseSidebar =
         !resizingSidebar &&
         sidebarShouldAutoCollapseForWindow(nextWindowWidth);
+      const restoreAutoCollapsedSidebar =
+        !autoCollapseSidebar && sidebarAutoCollapsedRef.current;
       const nextEffectiveSidebarWidth = autoCollapseSidebar
         ? 0
-        : sidebarCollapsed
+        : sidebarCollapsed && !restoreAutoCollapsedSidebar
           ? 0
           : clampSidebarWidthForWindow(sidebarPreferredWidth, nextWindowWidth);
       if (autoCollapseSidebar) {
         if (!sidebarCollapsed) {
+          sidebarAutoCollapsedRef.current = true;
           startSidebarMotion();
           onCloseProjectMenu();
         }
-        setSidebarCollapsed(true);
+        setSidebarCollapsedState(true);
         setSidebarPreferredWidth((width) =>
           width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width
         );
+      } else if (restoreAutoCollapsedSidebar) {
+        sidebarAutoCollapsedRef.current = false;
+        startSidebarMotion();
+        setSidebarCollapsedState(false);
       }
       setWorkspaceRightPanelWidth((current) =>
         clampWorkspaceRightPanelWidth(current, nextEffectiveSidebarWidth)
@@ -867,7 +884,7 @@ export function useAppLayoutState({
   function toggleSidebar(): void {
     onCloseProjectMenu();
     startSidebarMotion();
-    setSidebarCollapsed((collapsed) => !collapsed);
+    setSidebarCollapsed(!sidebarCollapsed);
     setSidebarPreferredWidth((width) =>
       width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width
     );

@@ -239,7 +239,7 @@ describe("useAppLayoutState responsive workspace presentation", () => {
       setInnerWidth(1000);
       window.dispatchEvent(new Event("resize"));
     });
-    expect(latest!.sidebarCollapsed).toBe(true);
+    expect(latest!.sidebarCollapsed).toBe(false);
     expect(latest!.workspaceRightPanelAutoGlobalized).toBe(false);
     expect(latest!.workspaceRightPanelDockableWithoutSidebar).toBe(true);
   });
@@ -362,6 +362,13 @@ describe("useAppLayoutState initial widths", () => {
 
     expect(latest!.sidebarCollapsed).toBe(true);
     expect(latest!.sidebarWidth).toBe(228);
+
+    act(() => {
+      setInnerWidth(roomyWindowWidth);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(latest!.sidebarCollapsed).toBe(false);
   });
 
   it("auto-collapses an open sidebar when the window becomes too narrow", () => {
@@ -376,6 +383,36 @@ describe("useAppLayoutState initial widths", () => {
 
     expect(latest!.sidebarCollapsed).toBe(true);
     expect(latest!.sidebarWidth).toBe(228);
+
+    act(() => {
+      setInnerWidth(roomyWindowWidth);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(latest!.sidebarCollapsed).toBe(false);
+    expect(window.localStorage.getItem("wuu.desktop.sidebarCollapsed")).toBe("false");
+  });
+
+  it("keeps a manually collapsed sidebar closed when the window becomes roomy", () => {
+    setInnerWidth(roomyWindowWidth);
+    renderHookHarness();
+
+    act(() => {
+      latest!.toggleSidebar();
+    });
+    expect(latest!.sidebarCollapsed).toBe(true);
+
+    act(() => {
+      setInnerWidth(narrowWindowWidth);
+      window.dispatchEvent(new Event("resize"));
+    });
+    act(() => {
+      setInnerWidth(roomyWindowWidth);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(latest!.sidebarCollapsed).toBe(true);
+    expect(window.localStorage.getItem("wuu.desktop.sidebarCollapsed")).toBe("true");
   });
 
   it("holds at the minimum width before the collapse intent threshold", () => {
