@@ -2441,6 +2441,17 @@ function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
   return activeTurnForThread(thread)?.id;
 }
 
+type ComposerRunningAction = "queue" | "steer";
+
+function resolveComposerRunningAction(
+  requestedAction: ComposerRunningAction,
+  thread: Thread | undefined,
+): ComposerRunningAction {
+  return requestedAction === "steer" && activeTurnIDForThread(thread)
+    ? "steer"
+    : "queue";
+}
+
 function activeTurnForThread(thread: Thread | undefined): Turn | undefined {
   if (!thread) {
     return undefined;
@@ -3166,6 +3177,7 @@ export {
   queryTextsForThread,
   reduceNotification,
   reduceServerEvent,
+  resolveComposerRunningAction,
   removeSessionTab,
   replaceStreamText,
   requireThread,
@@ -3202,4 +3214,4 @@ export {
   withLoadedRuntimeSessionTab,
 };
 
-export type { AppState, ComposerDraftState, ConversationPaneID, SessionTab };
+export type { AppState, ComposerDraftState, ComposerRunningAction, ConversationPaneID, SessionTab };

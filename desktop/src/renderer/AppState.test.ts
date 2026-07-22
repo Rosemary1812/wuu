@@ -41,6 +41,7 @@ import {
   queryTextsForThread,
   reconcileResumedThreadTurns,
   reduceServerEvent,
+  resolveComposerRunningAction,
   resolveThreadRuntimeContext,
   scratchThreadSummaries,
   sortThreads,
@@ -171,6 +172,28 @@ describe("isStateActiveThreadRunning with a background agent", () => {
     } as unknown as Thread;
     expect(isThreadRunning(thread)).toBe(false);
     expect(isStateActiveThreadRunning(stateWithActiveThread(thread))).toBe(false);
+  });
+
+  it("queues Enter while only a background agent keeps the thread running", () => {
+    const thread = {
+      ...threadWithUserTexts(["worker is delivering"]),
+      status: "idle" as const,
+      child_agents: [{ id: "agent-running", status: "running" }],
+    } as unknown as Thread;
+
+    expect(isStateActiveThreadRunning(stateWithActiveThread(thread))).toBe(true);
+    expect(resolveComposerRunningAction("steer", thread)).toBe("queue");
+  });
+
+  it("keeps Enter as steer while the parent turn is still in progress", () => {
+    const idleThread = threadWithUserTexts(["parent is running"]);
+    const thread = {
+      ...idleThread,
+      status: "in_progress" as const,
+      turns: idleThread.turns.map((turn) => ({ ...turn, status: "in_progress" as const })),
+    };
+
+    expect(resolveComposerRunningAction("steer", thread)).toBe("steer");
   });
 });
 

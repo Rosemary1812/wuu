@@ -111,6 +111,7 @@ import {
   scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
+  resolveComposerRunningAction,
   requireThread,
   runtimeContextKey,
   sameRuntimeContext,
@@ -2052,6 +2053,7 @@ export function App(): JSX.Element {
   );
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
+  const activeThreadCanSteer = Boolean(activeTurnIDForThread(activeThread));
   const activeThreadStreamStatus = turnStreamStatusForThread(state, activeThread);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const runningThreadKey = useMemo(() => {
@@ -2437,7 +2439,7 @@ export function App(): JSX.Element {
         onEditGuideMessage={(id) => void editGuideMessage(id)}
         onSend={() => void sendPrompt()}
         onSteer={
-          activeThreadIsRunning && activeThread
+          activeThreadIsRunning && activeThread && activeThreadCanSteer
             ? () => void sendPrompt("steer")
             : undefined
         }
@@ -2928,7 +2930,8 @@ export function App(): JSX.Element {
     setComposerImages([]);
     setComposerFiles([]);
     if (isStateActiveThreadRunning(currentState)) {
-      const sent = runningAction === "steer"
+      const resolvedAction = resolveComposerRunningAction(runningAction, targetThread);
+      const sent = resolvedAction === "steer"
         ? await steerComposerMessage(message, targetThread)
         : await queueComposerMessage(message, targetThread);
       if (!sent) {
