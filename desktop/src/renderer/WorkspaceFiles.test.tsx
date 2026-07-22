@@ -167,6 +167,10 @@ function rowButtonByTitle(title: string): HTMLButtonElement {
   return row;
 }
 
+function contextMenu(): HTMLElement | null {
+  return document.body.querySelector(".workspace-tree-context-menu");
+}
+
 async function dispatchContextMenu(
   element: HTMLElement,
   clientX: number,
@@ -193,7 +197,7 @@ async function flushMacrotask(): Promise<void> {
 }
 
 async function clickMenuItem(text: string): Promise<void> {
-  const menu = container.querySelector(".workspace-tree-context-menu");
+  const menu = contextMenu();
   if (!menu) {
     throw new Error("menu not visible");
   }
@@ -651,14 +655,15 @@ describe("WorkspaceFileTree", () => {
     );
     await settleDirectoryLoads();
 
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
 
     const row = rowButtonByTitle("README.md");
     await dispatchContextMenu(row, 120, 240);
     await flushMacrotask();
 
-    const menu = container.querySelector(".workspace-tree-context-menu");
+    const menu = contextMenu();
     expect(menu).toBeTruthy();
+    expect(menu?.parentElement).toBe(document.body);
     expect(menu?.textContent).toContain("复制路径");
     expect(menu?.textContent).toContain("复制相对路径");
     expect(menu?.textContent).toContain("复制文件名");
@@ -683,7 +688,7 @@ describe("WorkspaceFileTree", () => {
     await clickMenuItem("复制路径");
 
     expect(writeClipboard).toHaveBeenCalledWith("/repo/page.tsx");
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
   });
 
   it("复制相对路径 strips the workspace-root prefix and closes the menu", async () => {
@@ -701,7 +706,7 @@ describe("WorkspaceFileTree", () => {
     await clickMenuItem("复制相对路径");
 
     expect(writeClipboard).toHaveBeenCalledWith("page.tsx");
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
   });
 
   it("复制文件名 writes the entry name and closes the menu", async () => {
@@ -717,7 +722,7 @@ describe("WorkspaceFileTree", () => {
     await clickMenuItem("复制文件名");
 
     expect(writeClipboard).toHaveBeenCalledWith("README.md");
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
   });
 
   it("在文件管理器中显示 invokes the reveal IPC with the entry path and closes the menu", async () => {
@@ -733,7 +738,7 @@ describe("WorkspaceFileTree", () => {
     await clickMenuItem("在文件管理器中显示");
 
     expect(revealWorkspaceItem).toHaveBeenCalledWith("/repo/README.md");
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
   });
 
   it("Escape dismisses the menu", async () => {
@@ -746,7 +751,7 @@ describe("WorkspaceFileTree", () => {
     await dispatchContextMenu(row, 120, 240);
     await flushMacrotask();
 
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeTruthy();
+    expect(contextMenu()).toBeTruthy();
 
     await act(async () => {
       document.dispatchEvent(
@@ -755,7 +760,7 @@ describe("WorkspaceFileTree", () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
   });
 
   it("an outside pointerdown dismisses the menu", async () => {
@@ -768,7 +773,7 @@ describe("WorkspaceFileTree", () => {
     await dispatchContextMenu(row, 120, 240);
     await flushMacrotask();
 
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeTruthy();
+    expect(contextMenu()).toBeTruthy();
 
     await act(async () => {
       // PointerEvent isn't exposed in every JSDOM version; MouseEvent with the
@@ -784,6 +789,6 @@ describe("WorkspaceFileTree", () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+    expect(contextMenu()).toBeNull();
   });
 });

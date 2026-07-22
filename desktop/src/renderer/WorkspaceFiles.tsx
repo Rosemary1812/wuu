@@ -2,6 +2,7 @@ import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { AlertCircle, FileText, FolderOpen, FolderX } from "lucide-react";
 import { type CSSProperties, Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
@@ -397,7 +398,11 @@ function WorkspaceTreeContextMenu({
     );
   };
 
-  return (
+  // Pierre Trees renders this component in a slot below its custom element.
+  // Portal to the document so the tree's strict containment, clipping, and
+  // compositor transform cannot change the fixed-position coordinate system
+  // or hide the menu outside the tree panel.
+  return createPortal(
     <div
       ref={ref}
       className="workspace-tree-context-menu"
@@ -437,7 +442,8 @@ function WorkspaceTreeContextMenu({
       >
         {t("workspace.files.revealInFileManager")}
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
