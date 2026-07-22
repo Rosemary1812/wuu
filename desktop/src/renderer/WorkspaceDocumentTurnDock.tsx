@@ -28,10 +28,10 @@ function finalAnswerItems(turn: Turn): ThreadItem[] {
   );
 }
 
-function latestUserTurn(turns: Turn[]): Turn | undefined {
+function latestResultTurn(turns: Turn[]): Turn | undefined {
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
-    if (latestUserItem(turn)) {
+    if (latestUserItem(turn) && finalAnswerItems(turn).length > 0) {
       return turn;
     }
   }
@@ -45,7 +45,7 @@ export function WorkspaceDocumentTurnDock({
   turns,
 }: WorkspaceDocumentTurnDockProps): JSX.Element {
   const { t } = useI18n();
-  const turn = useMemo(() => latestUserTurn(turns), [turns]);
+  const turn = useMemo(() => latestResultTurn(turns), [turns]);
   const [expanded, setExpanded] = useState(false);
   const finalAnswers = turn ? finalAnswerItems(turn) : [];
   const previousTurnIDRef = useRef(turn?.id);
@@ -55,7 +55,7 @@ export function WorkspaceDocumentTurnDock({
     if (previousTurnIDRef.current !== turn?.id) {
       previousTurnIDRef.current = turn?.id;
       previousFinalAnswerCountRef.current = finalAnswers.length;
-      setExpanded(false);
+      setExpanded(Boolean(turn));
       return;
     }
     if (

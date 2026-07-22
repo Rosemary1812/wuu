@@ -75,7 +75,8 @@ describe("WorkspaceDocumentTurnDock", () => {
     expect(details?.querySelector(".workspace-document-turn-message")).toBeNull();
   });
 
-  it("hides the result drawer while only commentary is available", () => {
+  it("keeps the previous result visible while a newer turn only has commentary", () => {
+    const previousTurn = turn("turn-previous", "completed");
     const runningTurn = turn("turn-running");
     runningTurn.items = [
       runningTurn.items[0],
@@ -87,10 +88,16 @@ describe("WorkspaceDocumentTurnDock", () => {
         text: "Internal progress that does not belong in the result.",
       },
     ];
-    render([runningTurn]);
+    render([previousTurn, runningTurn]);
 
-    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).toBeNull();
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Internal progress");
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".workspace-document-turn-summary")?.click();
+    });
+    expect(container.querySelector(".workspace-document-turn-details")?.textContent).toContain(
+      "I am tightening that section now.",
+    );
     expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
   });
 

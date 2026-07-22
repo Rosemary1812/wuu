@@ -331,7 +331,7 @@ describe("workspace file tabs", () => {
       "standard",
       { path: "README.md" },
     );
-    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).toBeNull();
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).not.toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
