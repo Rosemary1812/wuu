@@ -16,7 +16,7 @@ Wuu has three permission modes:
 |---|---|---|
 | `standard` | Registered workspace roots | Allowed inside those roots |
 | `read_only` | Registered workspace roots | Denied |
-| `unconfined` | Paths reachable by the Wuu process | Allowed |
+| `unconfined` | No Wuu workspace or sensitive-path restrictions | Allowed where OS permissions permit |
 
 The default `standard` mode enforces paths and tool rules inside the Wuu
 process. It is **not** a macOS sandbox, container, virtual machine, or separate
@@ -25,11 +25,22 @@ identity, inherited environment, and network stack. The path boundary and hard
 tool guards reduce mistakes, but they are not a security boundary against
 malicious native code or a compromised dependency.
 
-Commands that expose the whole environment, read common credential paths, use
-unsafe Git operations, or perform package/network mutations receive extra
-classification or hard checks. Tool output is redacted for common secret
-patterns. These checks are defense in depth, not a guarantee that every secret
-format or indirect access path will be recognized.
+`unconfined` means that Wuu no longer applies its own path boundary or
+sensitive-file protections. The agent can read, modify, or delete any file the
+Wuu process can access, including the user's home directory, other repositories,
+configuration and credential files, and local state under `~/.wuu`; common
+secret-pattern redaction in tool output is also disabled. It does not grant
+permissions beyond the current OS user, so file ownership and ACLs, macOS
+privacy controls, System Integrity Protection, read-only filesystems, and any
+container or OS sandbox still apply. Treat `unconfined` as full local authority
+at the current user's privilege level and enable it only for trusted tasks.
+
+In `standard` and `read_only` modes, commands that expose the whole environment,
+read common credential paths, use unsafe Git operations, or perform
+package/network mutations receive extra classification or hard checks. Tool
+output is redacted for common secret patterns. These checks are defense in
+depth, not a guarantee that every secret format or indirect access path will be
+recognized.
 
 Use a disposable VM, container, or separate OS account when working with a
 repository you do not trust. Do not rely on a permission label as a substitute
