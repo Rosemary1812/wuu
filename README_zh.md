@@ -46,14 +46,6 @@
 - **桌面版** —— [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 提供未签名的 Apple 芯片 macOS 安装包；CLI 仍可从源码安装，用于自动化。
 - **最新变化** —— 查看[最新版本](https://github.com/blueberrycongee/wuu/releases/latest)和 [CHANGELOG](CHANGELOG.md)。
 
-## 为什么选 wuu
-
-- **BYOK，不锁定** —— 自带 API Key，支持 Anthropic 和任何 OpenAI 兼容端点，包括本地网关。
-- **一个核心，多个 Shell** —— Go 核心通过 `wuu app-server` 提供 JSON-RPC 接口；桌面应用是第一个 Shell，编辑器插件可以直接复用同一个核心，无需 fork。
-- **编排能力内置** —— 子智能体、可持久化目标、技能、持久记忆和定时任务都是运行时的一部分，不是外挂。
-- **为脚本化而设计** —— `wuu exec` 输出流式 JSONL，CI 任务、review 机器人和其他 agent 都可以编程式驱动它。
-- **会话可持久** —— 恢复之前的对话、从检查点 fork、跨会话保留上下文。
-
 ## 安装
 
 > [!IMPORTANT]

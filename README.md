@@ -46,14 +46,6 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 - **Desktop builds** — [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) provide unsigned Apple silicon macOS builds. The CLI remains available from source for automation.
 - **Latest changes** — see the [latest release](https://github.com/blueberrycongee/wuu/releases/latest) and [CHANGELOG](CHANGELOG.md).
 
-## Why wuu
-
-- **BYOK, no lock-in** — bring your own API key; works with Anthropic and any OpenAI-compatible endpoint, including local gateways.
-- **One core, many shells** — the Go core speaks JSON-RPC via `wuu app-server`; the desktop app is the first shell, and editor plugins can reuse the same core without forking it.
-- **Orchestration built in** — subagents, durable goals, skills, persistent memory, and scheduled tasks are part of the runtime, not bolted on.
-- **Scriptable by design** — `wuu exec` streams JSONL, so CI jobs, review bots, and other agents can drive it programmatically.
-- **Sessions that persist** — resume previous turns, fork from a checkpoint, and keep context across sessions.
-
 ## Install
 
 > [!IMPORTANT]
