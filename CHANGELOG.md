@@ -8,6 +8,30 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-23
+
+### Added
+
+- Added a cloud agent core host contract, configurable Dream settings,
+  subagent model aliases, and named-agent group chat support in the core.
+- Added native macOS file actions and a dockable workspace file tree with
+  document-focused turn and final-answer views.
+
+### Changed
+
+- Consolidated pending and document-run messages into clearer composer drawers
+  with consistent progress, selection, and action behavior.
+- Made project and conversation switching immediate, and allowed projects to be
+  switched directly while browsing files without leaving the full-panel view.
+
+### Fixed
+
+- Fixed IME confirmation and composition timing so confirmed text sends once,
+  while queued input remains available during agent delivery.
+- Fixed workspace navigation details including real file-menu app icons,
+  file-tree context actions, sidebar restoration, scrolling intent, and stream
+  cursors around fenced code blocks.
+
 ## [0.10.1] - 2026-07-21
 
 ### Added
