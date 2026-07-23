@@ -8,6 +8,13 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-23
+
+### Fixed
+
+- Restored the standard left-sidebar toggle in full-panel workspaces, including
+  hover preview, pinned expansion, and native macOS titlebar hit testing.
+
 ## [0.11.0] - 2026-07-23
 
 ### Added
