@@ -659,8 +659,6 @@ export const enUS = {
   "composer.pendingMessages": "Pending messages",
   "composer.expandPending": "Expand pending messages",
   "composer.collapsePending": "Collapse pending messages",
-  "composer.pendingKindSteer": "Steer",
-  "composer.pendingKindQueue": "Queue",
   "composer.heldNotice": "The response was interrupted. These Steer and Queue messages will not run automatically.",
   "composer.editGuideContent": "Edit guide content {position}",
   "composer.editQueuedContent": "Edit queued message content {position}",

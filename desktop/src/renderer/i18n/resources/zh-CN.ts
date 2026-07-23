@@ -657,8 +657,6 @@ export const zhCN = {
   "composer.pendingMessages": "待发送消息",
   "composer.expandPending": "展开待处理消息",
   "composer.collapsePending": "收起待处理消息",
-  "composer.pendingKindSteer": "Steer",
-  "composer.pendingKindQueue": "Queue",
   "composer.heldNotice": "当前回复已中断；这些 Steer 和 Queue 不会自动执行。",
   "composer.editGuideContent": "编辑引导内容 {position}",
   "composer.editQueuedContent": "编辑排队消息内容 {position}",

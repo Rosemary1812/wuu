@@ -508,9 +508,6 @@ function ComposerQueueItem({
       <span className="composer-queue-index" aria-hidden="true">
         {position}
       </span>
-      <span className="composer-queue-kind">
-        {t(kind === "guide" ? "composer.pendingKindSteer" : "composer.pendingKindQueue")}
-      </span>
       <button
         type="button"
         className="composer-queue-preview"

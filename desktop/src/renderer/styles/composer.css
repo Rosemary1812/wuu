@@ -686,7 +686,7 @@
 
 .composer-queue-row {
   display: grid;
-  grid-template-columns: 18px 42px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: var(--composer-input-header-row-height, 36px);
@@ -718,21 +718,6 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
   user-select: none;
-}
-
-.composer-queue-kind {
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: 10px;
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.composer-queue-row.guide .composer-queue-kind {
-  color: var(--turn-warning-text, var(--warning));
 }
 
 .composer-queue-preview {
