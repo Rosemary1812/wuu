@@ -998,7 +998,7 @@ html.resizing-workspace-file-split * {
       color-mix(in srgb, var(--surface-2) 16%, transparent)
     );
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-  border-radius: 12px 12px 10px 10px;
+  border-radius: 12px 12px 0 0;
   box-shadow: 0 14px 38px color-mix(in srgb, var(--ink) 7%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(1.18);
   backdrop-filter: blur(24px) saturate(1.18);
@@ -1016,7 +1016,7 @@ html.resizing-workspace-file-split * {
   max-height: min(34vh, 280px);
   z-index: 4;
   translate: 0 -6px;
-  border-radius: 16px;
+  border-radius: 16px 16px 0 0;
   border-color: color-mix(in srgb, var(--ink) 16%, transparent);
   box-shadow: 0 20px 48px color-mix(in srgb, var(--ink) 11%, transparent);
 }

@@ -2247,10 +2247,10 @@ describe("Composer expand button", () => {
       /\.document-composer-wrap\s+\.composer-accessory-drawer\.expanded\s*\{[^}]*z-index:\s*4[^}]*translate:\s*0 -6px/,
     );
     expect(composerCSS).toMatch(
-      /\.composer-accessory-drawer\s*\{[^}]*border-radius:\s*12px 12px 10px 10px/,
+      /\.composer-accessory-drawer\s*\{[^}]*border-radius:\s*12px 12px 0 0/,
     );
     expect(workspaceCSS).toMatch(
-      /\.workspace-document-turn-drawer\.expanded\s*\{[^}]*translate:\s*0 -6px[^}]*border-radius:\s*16px/,
+      /\.workspace-document-turn-drawer\.expanded\s*\{[^}]*translate:\s*0 -6px[^}]*border-radius:\s*16px 16px 0 0/,
     );
     expect(workspaceCSS).not.toMatch(
       /\.workspace-document-turn-drawer\.expanded\s*\{[^}]*width:/,
