@@ -54,7 +54,6 @@ import {
   type WorkspaceFileDirtyState,
 } from "./WorkspaceFiles";
 import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
-import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import {
   WorkspaceTerminalPanel,
   type WorkspaceTerminalRunRequest,
@@ -167,7 +166,6 @@ export function WorkspaceRightPanel({
   globalized,
   sheetPhase = "docked",
   onToggleGlobalize,
-  onOpenSidebar,
   canExitGlobalized = true,
   browserActivity,
   onBrowserActivityTakeover,
@@ -206,7 +204,6 @@ export function WorkspaceRightPanel({
   // attribute that promotes the panel to a full-window sheet in CSS.
   sheetPhase?: "docked" | "arming" | "open" | "exiting" | "docking";
   onToggleGlobalize: () => void;
-  onOpenSidebar?: () => void;
   canExitGlobalized?: boolean;
   browserActivity?: ActivitySession;
   onBrowserActivityTakeover?: () => void;
@@ -518,17 +515,8 @@ export function WorkspaceRightPanel({
       inert={!open}
     >
       <div className="workspace-panel-tabbar">
-        {globalized && onOpenSidebar ? (
-          <button
-            className="icon-button workspace-panel-sidebar"
-            type="button"
-            aria-label={t("workspace.openNavigationSidebar")}
-            title={t("workspace.openNavigationSidebar")}
-            disabled={!open}
-            onClick={onOpenSidebar}
-          >
-            <SidePanelToggleIcon side="left" open={false} />
-          </button>
+        {globalized ? (
+          <span className="workspace-panel-sidebar-hit-hole" aria-hidden="true" />
         ) : null}
         <DndContext
           sensors={tabSensors}

@@ -453,12 +453,15 @@ export function App(): JSX.Element {
     scheduleSidebarDrawerCloseFromPointerLeave,
   } = useSidebarDrawerState({
     appShellRef,
-    sidebarCollapsed: sidebarDrawerMode,
+    sidebarCollapsed,
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
     dockingMotionMs: SIDEBAR_MOTION_MS,
   });
+  const sidebarDrawerVisible =
+    sidebarDrawerPhase === "open" ||
+    (rightPanelGlobalized && !sidebarCollapsed);
   const {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
@@ -838,7 +841,7 @@ export function App(): JSX.Element {
       ?.querySelector<HTMLElement>(".sidebar")
       ?.toggleAttribute(
         "inert",
-        fullPanel && sidebarDrawerPhase !== "open",
+        fullPanel && !sidebarDrawerVisible,
       );
 
     if (fullPanel && !previous.fullPanel) {
@@ -861,7 +864,7 @@ export function App(): JSX.Element {
         )
         ?.focus();
     }
-  }, [rightPanelGlobalized, rightPanelOpen, sidebarDrawerPhase]);
+  }, [rightPanelGlobalized, rightPanelOpen, sidebarDrawerVisible]);
 
   // Workspace panel (file tree / file preview / terminal / review) root: follows the
   // active thread's own cwd when it differs from state.activeContext — the
@@ -2185,9 +2188,11 @@ export function App(): JSX.Element {
   }, [environmentPanelOpen, sideThread.close, sideThread.entry?.open]);
 
   const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarDrawerMode ? " sidebar-collapsed" : ""}${
-    sidebarDrawerMode && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
+    sidebarDrawerMode && sidebarDrawerVisible ? " sidebar-drawer-open" : ""
   }${
-    sidebarDrawerMode && sidebarDrawerPhase === "closing"
+    sidebarDrawerMode &&
+    !(!sidebarCollapsed && rightPanelGlobalized) &&
+    sidebarDrawerPhase === "closing"
       ? " sidebar-drawer-closing"
       : ""
   }${
@@ -3762,6 +3767,27 @@ export function App(): JSX.Element {
             onPointerEnter={scheduleSidebarDrawerOpen}
             onPointerLeave={cancelSidebarDrawerOpen}
           />
+          {rightPanelGlobalized ? (
+            <div className="globalized-sidebar-toggle-region">
+              <button
+                className="icon-button side-panel-toggle-button sidebar-toggle-button globalized-sidebar-toggle"
+                type="button"
+                aria-label={t(
+                  sidebarCollapsed
+                    ? "app.expandLeftSidebar"
+                    : "app.collapseLeftSidebar",
+                )}
+                aria-pressed={!sidebarCollapsed}
+                onClick={toggleSidebar}
+                onPointerEnter={scheduleSidebarDrawerOpen}
+                onPointerLeave={(event) =>
+                  scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+                }
+              >
+                <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+              </button>
+            </div>
+          ) : null}
           <AppSidebar
             state={state}
             sidebarProjects={sidebarProjects}
@@ -4353,7 +4379,6 @@ export function App(): JSX.Element {
           globalized={rightPanelGlobalized}
           sheetPhase={workspaceSheetPhase}
           onToggleGlobalize={toggleWorkspacePanelGlobalized}
-          onOpenSidebar={openSidebarDrawerNow}
           canExitGlobalized={
             !rightPanelAutoGlobalized ||
             workspaceRightPanelDockableWithoutSidebar

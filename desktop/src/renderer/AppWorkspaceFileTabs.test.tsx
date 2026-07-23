@@ -35,7 +35,7 @@ vi.mock("./JumpToLatestPill", () => ({
   ),
 }));
 
-import { App } from "./App";
+import { App, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./App";
 import { RIGHT_PANEL_MOTION_MS } from "./AppLayoutState";
 
 let container: HTMLDivElement;
@@ -280,8 +280,9 @@ describe("workspace file tabs", () => {
     await flushAsync();
 
     expect(shell?.classList.contains("right-panel-animating")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
-    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
     expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
@@ -416,11 +417,36 @@ describe("workspace file tabs", () => {
 
     await act(async () => {
       container
-        .querySelector<HTMLButtonElement>('[aria-label="打开导航侧栏"]')
+        .querySelector<HTMLButtonElement>(
+          '.globalized-sidebar-toggle[aria-label="展开左侧栏"]',
+        )
         ?.click();
     });
     expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '.globalized-sidebar-toggle[aria-label="收起左侧栏"]',
+        )
+        ?.click();
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
+
+    const sidebarToggle = container.querySelector<HTMLButtonElement>(
+      '.globalized-sidebar-toggle[aria-label="展开左侧栏"]',
+    );
+    vi.useFakeTimers();
+    await act(async () => {
+      sidebarToggle?.dispatchEvent(
+        new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
+      );
+      vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(sidebarToggle?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => {
       container

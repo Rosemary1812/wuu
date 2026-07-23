@@ -160,6 +160,32 @@
   pointer-events: none;
 }
 
+.app-shell.right-panel-globalized .conversation-pane .titlebar {
+  visibility: hidden;
+}
+
+.globalized-sidebar-toggle-region {
+  position: fixed;
+  top: 9px;
+  left: max(8px, var(--window-controls-inset-left));
+  z-index: 150;
+  width: 34px;
+  height: 34px;
+  -webkit-app-region: drag;
+}
+
+.globalized-sidebar-toggle {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  background-clip: content-box;
+  -webkit-app-region: no-drag;
+}
+
+.globalized-sidebar-toggle * {
+  -webkit-app-region: no-drag;
+}
+
 /* In globalized mode the right panel fills column 1 starting at x=0; reserve
  * room on the left of its tabbar so the macOS traffic lights
  * (trafficLightPosition 18, 16) don't sit on top of the tabs. Mirrors the
@@ -173,6 +199,14 @@
 .app-shell.right-panel-globalized .workspace-panel-tabbar {
   padding-left: max(8px, var(--window-controls-inset-left));
   -webkit-app-region: drag;
+}
+
+.workspace-panel-sidebar-hit-hole {
+  width: 38px;
+  height: 100%;
+  flex: 0 0 38px;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
 }
 
 .app-shell.sidebar-collapsed.right-panel-open:not(.right-panel-globalized) .workspace-panel-tabbar {

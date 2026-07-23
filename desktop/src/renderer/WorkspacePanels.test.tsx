@@ -239,28 +239,16 @@ describe("WorkspaceRightPanel", () => {
     expect(idleCallback).toBeDefined();
   });
 
-  it("opens navigation over a focused workspace and explains forced compact focus", () => {
-    const onOpenSidebar = vi.fn();
+  it("does not duplicate the shell sidebar toggle in the panel tabbar", () => {
     const props = {
       ...baseProps(),
       globalized: true,
-      onOpenSidebar,
       canExitGlobalized: false,
     } as Parameters<typeof WorkspaceRightPanel>[0];
     mount(<WorkspaceRightPanel {...props} />);
 
-    const navigation = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="打开导航侧栏"]',
-    );
-    expect(navigation).not.toBeNull();
-    const navigationIcon = navigation?.querySelector("svg");
-    expect(navigationIcon?.classList.contains("side-panel-toggle-icon")).toBe(true);
-    expect(navigationIcon?.getAttribute("width")).toBe("18");
-    expect(navigationIcon?.getAttribute("height")).toBe("18");
-    expect(navigationIcon?.getAttribute("viewBox")).toBe("0 0 18 18");
-    expect(navigationIcon?.getAttribute("data-open")).toBe("false");
-    act(() => navigation?.click());
-    expect(onOpenSidebar).toHaveBeenCalledTimes(1);
+    expect(container?.querySelector(".workspace-panel-sidebar")).toBeNull();
+    expect(container?.querySelector(".workspace-panel-sidebar-hit-hole")).not.toBeNull();
 
     const restore = container?.querySelector<HTMLButtonElement>(
       '[aria-label="窗口过窄，无法停靠右侧栏"]',
