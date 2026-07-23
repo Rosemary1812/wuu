@@ -27,6 +27,25 @@ type sessionDreamFakeClient struct {
 	beforeChat func()
 }
 
+type dreamStreamFirstClient struct {
+	chatCalls   int
+	streamCalls int
+}
+
+func (c *dreamStreamFirstClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	c.chatCalls++
+	return providers.ChatResponse{}, errors.New("unary Chat must not be called")
+}
+
+func (c *dreamStreamFirstClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.streamCalls++
+	events := make(chan providers.StreamEvent, 2)
+	events <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "Nothing to dream."}
+	events <- providers.StreamEvent{Type: providers.EventDone, StopReason: "end_turn"}
+	close(events)
+	return events, nil
+}
+
 func (c *sessionDreamFakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	if c.beforeChat != nil {
 		c.beforeChat()
@@ -157,6 +176,27 @@ func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) 
 			t.Fatal("background dream did not finish after workflow completion")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestSessionDreamPrefersNativeStreaming(t *testing.T) {
+	client := &dreamStreamFirstClient{}
+	workspaceState := t.TempDir()
+	job := sessionDreamJob{
+		client:             client,
+		model:              "test-model",
+		rootDir:            t.TempDir(),
+		workspaceStateDir:  workspaceState,
+		sessionArtifactDir: filepath.Join(workspaceState, "sessions", "session-1"),
+		history:            makeSessionDreamHistory(1),
+		now:                time.Now().UTC(),
+	}
+
+	if err := (&sessionDreamScheduler{}).run(context.Background(), job); err != nil {
+		t.Fatalf("run dream: %v", err)
+	}
+	if client.streamCalls != 1 || client.chatCalls != 0 {
+		t.Fatalf("dream calls: stream=%d chat=%d, want stream=1 chat=0", client.streamCalls, client.chatCalls)
 	}
 }
 

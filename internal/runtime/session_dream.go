@@ -260,7 +260,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 		MaxSteps:                 sessionDreamMaxSteps,
 		Effort:                   job.effort,
 		ProviderOptions:          provideroptions.Clone(job.providerOptions),
-	}, backgroundMemoryStep{client: job.client})
+	}, agent.NewStreamStep(job.client))
 	if err != nil {
 		if recordErr := sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err); recordErr != nil {
 			return errors.Join(err, fmt.Errorf("record dream failure: %w", recordErr))
