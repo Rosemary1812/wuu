@@ -254,10 +254,11 @@ describe("WorkspaceRightPanel", () => {
     );
     expect(navigation).not.toBeNull();
     const navigationIcon = navigation?.querySelector("svg");
+    expect(navigationIcon?.classList.contains("side-panel-toggle-icon")).toBe(true);
     expect(navigationIcon?.getAttribute("width")).toBe("18");
     expect(navigationIcon?.getAttribute("height")).toBe("18");
-    expect(navigationIcon?.getAttribute("viewBox")).toBe("2 2 20 20");
-    expect(navigationIcon?.getAttribute("stroke-width")).toBe("1.67");
+    expect(navigationIcon?.getAttribute("viewBox")).toBe("0 0 18 18");
+    expect(navigationIcon?.getAttribute("data-open")).toBe("false");
     act(() => navigation?.click());
     expect(onOpenSidebar).toHaveBeenCalledTimes(1);
 

@@ -54,6 +54,7 @@ import {
   type WorkspaceFileDirtyState,
 } from "./WorkspaceFiles";
 import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
+import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import {
   WorkspaceTerminalPanel,
   type WorkspaceTerminalRunRequest,
@@ -526,12 +527,7 @@ export function WorkspaceRightPanel({
             disabled={!open}
             onClick={onOpenSidebar}
           >
-            <PanelLeftOpen
-              className="icon-lg"
-              size={18}
-              strokeWidth={1.67}
-              viewBox="2 2 20 20"
-            />
+            <SidePanelToggleIcon side="left" open={false} />
           </button>
         ) : null}
         <DndContext
