@@ -1712,7 +1712,7 @@ describe("Composer queue strip", () => {
     expect(goal?.nextElementSibling).toBe(pending);
     expect(pending?.nextElementSibling).toBe(frameShell);
     expect(pending?.querySelector(".composer-pending-title")).toBeNull();
-    expect(pending?.querySelector(".composer-pending-icon")).toBeNull();
+    expect(pending?.querySelector(".composer-pending-icon")).not.toBeNull();
     expect(pending?.querySelector(".composer-pending-preview")?.textContent).toBe("排队消息");
     expect(pending?.querySelector(".composer-queue-list")).toBeNull();
     expect(actions.length).toBeGreaterThan(0);

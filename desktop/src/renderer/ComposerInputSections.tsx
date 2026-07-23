@@ -4,6 +4,7 @@ import {
   CornerDownRight,
   CornerUpLeft,
   FileText,
+  ListTodo,
   Paperclip,
   PencilLine,
   Send,
@@ -416,6 +417,9 @@ export function ComposerQueueStrip({
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
+          <span className="composer-pending-icon" aria-hidden="true">
+            <ListTodo className="icon-sm" />
+          </span>
           <span
             className="composer-pending-preview"
             role="status"
