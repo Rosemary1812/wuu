@@ -293,6 +293,11 @@ export function createSessionTabActions(
       nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ??
       deps.nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
+    deps.setAppState((current) => ({
+      ...current,
+      sessionTabs: tabsWithFallback,
+      activeSessionTabID: fallbackTab.id,
+    }));
     
     if (fallbackTab.kind === "skills") {
       const sameContext = sameRuntimeContext(
@@ -319,7 +324,7 @@ export function createSessionTabActions(
           const next = loadedState ? { ...current, ...loadedState } : current;
           return {
             ...next,
-            sessionTabs: tabsWithFallback,
+            sessionTabs: current.sessionTabs,
             activeSessionTabID: fallbackTab.id,
             secondaryThread: undefined,
             activePane: "primary",
@@ -362,7 +367,7 @@ export function createSessionTabActions(
           const next = loadedState ? { ...current, ...loadedState } : current;
           return {
             ...next,
-            sessionTabs: tabsWithFallback,
+            sessionTabs: current.sessionTabs,
             activeSessionTabID: fallbackTab.id,
             thread: undefined,
             secondaryThread: undefined,
@@ -411,7 +416,7 @@ export function createSessionTabActions(
           activePane: "primary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
-            tabsWithFallback,
+            current.sessionTabs,
             createThreadSessionTab(thread, fallbackTab.context, restoredDraft),
           ),
           activeSessionTabID: threadSessionTabID(thread.id),

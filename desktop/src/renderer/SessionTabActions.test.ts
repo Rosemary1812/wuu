@@ -202,6 +202,57 @@ describe("createSessionTabActions", () => {
     ]);
   });
 
+  it("removes the active tab before the fallback thread finishes resuming", async () => {
+    const context = projectContext();
+    const source = {
+      id: "thread-source",
+      preview: "Source",
+      model_provider: "fake",
+      model: "fake-model",
+      cwd: context.cwd,
+      status: "idle" as const,
+      archived: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      turns: [],
+    };
+    const fallback = { ...source, id: "thread-fallback", preview: "Fallback" };
+    const sourceTab = createThreadSessionTab(source, context);
+    const fallbackTab = createThreadSessionTab(fallback, context);
+    let resolveResume: ((value: { thread: typeof fallback }) => void) | undefined;
+    const resumeThread = vi.fn(
+      () =>
+        new Promise<{ thread: typeof fallback }>((resolve) => {
+          resolveResume = resolve;
+        }),
+    );
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { resumeThread },
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: source,
+        threads: [source, fallback],
+        sessionTabs: [sourceTab, fallbackTab],
+        activeSessionTabID: sourceTab.id,
+      },
+    });
+
+    const closing = harness.actions.closeSessionTab(sourceTab.id);
+
+    expect(harness.getAppState().sessionTabs.map((tab) => tab.id)).toEqual([
+      fallbackTab.id,
+    ]);
+    expect(harness.getAppState().activeSessionTabID).toBe(fallbackTab.id);
+    expect(resumeThread).toHaveBeenCalledWith(fallback.id);
+
+    resolveResume?.({ thread: fallback });
+    await closing;
+  });
+
   it("pops out a draft tab and closes it after the detached window opens", async () => {
     const context = projectContext();
     const activeDraft = createDraftSessionTab("draft:active", context);

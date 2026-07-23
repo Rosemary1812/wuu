@@ -763,6 +763,7 @@ export function App(): JSX.Element {
     pendingComposerMessagesForThread: pendingComposerMessagesForActiveThread,
     updateThreadPendingComposerMessages,
     clearThreadPendingComposerMessages,
+    removePendingComposerMessageByID,
     syncPendingComposerMessagesFromServerEvent,
     reconcilePendingComposerMessagesForState,
     enqueueComposerMessage,
@@ -3073,6 +3074,7 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
+    enqueueComposerMessage(targetThread.id, message);
     try {
       const encodedImages = await awaitComposerImages(message.images);
       const images = inputImagesFromComposer(encodedImages);
@@ -3085,13 +3087,21 @@ export function App(): JSX.Element {
         targetThread.permission_mode || currentState.initialized.permissions?.mode,
         message.activeDocument,
       );
-      enqueueComposerMessage(targetThread.id, {
-        ...message,
-        id: result.queued.id || message.id,
-        images: encodedImages,
-      });
+      updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
+        ...previous,
+        queued: previous.queued.map((candidate) =>
+          candidate.id === message.id
+            ? {
+                ...candidate,
+                id: result.queued.id || message.id,
+                images: encodedImages,
+              }
+            : candidate,
+        ),
+      }));
       return true;
     } catch (error) {
+      removePendingComposerMessageByID(targetThread.id, message.id, "queue");
       setState((current) => ({
         ...current,
         status:
@@ -3120,6 +3130,10 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
+    updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
+      ...previous,
+      guides: [...previous.guides, { ...message, origin: "steer" }],
+    }));
     try {
       const encodedImages = await awaitComposerImages(message.images);
       await window.wuu.steerTurn(
@@ -3133,13 +3147,15 @@ export function App(): JSX.Element {
       );
       updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
         ...previous,
-        guides: [
-          ...previous.guides,
-          { ...message, images: encodedImages, origin: "steer" },
-        ],
+        guides: previous.guides.map((candidate) =>
+          candidate.id === message.id
+            ? { ...candidate, images: encodedImages }
+            : candidate,
+        ),
       }));
       return true;
     } catch (error) {
+      removePendingComposerMessageByID(targetThread.id, message.id, "guide");
       setState((current) => ({
         ...current,
         status:

@@ -40,6 +40,11 @@ vi.mock("./ComposerView", async (importOriginal) => {
         <button type="button" onClick={props.onSend}>
           send
         </button>
+        {props.onSteer ? (
+          <button type="button" aria-label="steer" onClick={props.onSteer}>
+            steer
+          </button>
+        ) : null}
         {props.queuedMessages[0] ? (
           <button
             type="button"
@@ -155,7 +160,10 @@ function installWindowStubs(): void {
   });
 }
 
-function installWuuApi(): {
+function installWuuApi(options: {
+  queueTurn?: WuuDesktopApi["queueTurn"];
+  steerTurn?: WuuDesktopApi["steerTurn"];
+} = {}): {
   queuedClientIDs: string[];
   dequeuedClientIDs: string[];
 } {
@@ -174,7 +182,7 @@ function installWuuApi(): {
     listThreads: vi.fn().mockResolvedValue({ threads: [runningThread()] }),
     listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread: vi.fn().mockResolvedValue({ thread: runningThread() }),
-    queueTurn: vi
+    queueTurn: options.queueTurn ?? vi
       .fn()
       .mockImplementation(
         (
@@ -189,6 +197,7 @@ function installWuuApi(): {
           });
         },
       ),
+    steerTurn: options.steerTurn ?? vi.fn().mockResolvedValue({ turn_id: "turn-current" }),
     dequeueTurn: vi
       .fn()
       .mockImplementation((_threadID: string, clientID: string) => {
@@ -342,6 +351,91 @@ describe("queued turn reconciliation", () => {
     await flushAsync();
 
     expect(composerProbe().dataset.queuedIds).toBe("");
+  });
+
+  it("shows a steer in pending state before the IPC response resolves", async () => {
+    let resolveSteer: ((value: { turn_id: string }) => void) | undefined;
+    const steerTurn = vi.fn(
+      () =>
+        new Promise<{ turn_id: string }>((resolve) => {
+          resolveSteer = resolve;
+        }),
+    );
+    installWuuApi({ steerTurn: steerTurn as WuuDesktopApi["steerTurn"] });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    const textarea = composerProbe().querySelector("textarea");
+    const steer = composerProbe().querySelector<HTMLButtonElement>(
+      'button[aria-label="steer"]',
+    );
+    await act(async () => {
+      if (!textarea || !steer) throw new Error("steer controls not rendered");
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(textarea, "guide the running turn");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      steer.click();
+      await Promise.resolve();
+    });
+
+    expect(steerTurn).toHaveBeenCalledTimes(1);
+    expect(composerProbe().querySelector("textarea")?.value).toBe("");
+    expect(composerProbe().dataset.guideIds).not.toBe("");
+
+    await act(async () => {
+      resolveSteer?.({ turn_id: "turn-current" });
+      await Promise.resolve();
+    });
+  });
+
+  it("rolls back an optimistic steer and restores the draft on IPC failure", async () => {
+    let rejectSteer: ((reason: Error) => void) | undefined;
+    const steerTurn = vi.fn(
+      () =>
+        new Promise<{ turn_id: string }>((_resolve, reject) => {
+          rejectSteer = reject;
+        }),
+    );
+    installWuuApi({ steerTurn: steerTurn as WuuDesktopApi["steerTurn"] });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    const textarea = composerProbe().querySelector("textarea");
+    const steer = composerProbe().querySelector<HTMLButtonElement>(
+      'button[aria-label="steer"]',
+    );
+    await act(async () => {
+      if (!textarea || !steer) throw new Error("steer controls not rendered");
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(textarea, "restore this guide");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      steer.click();
+      await Promise.resolve();
+    });
+    expect(composerProbe().dataset.guideIds).not.toBe("");
+
+    await act(async () => {
+      rejectSteer?.(new Error("IPC unavailable"));
+      await Promise.resolve();
+    });
+    await flushAsync();
+
+    expect(composerProbe().dataset.guideIds).toBe("");
+    expect(composerProbe().querySelector("textarea")?.value).toBe(
+      "restore this guide",
+    );
   });
 
   it("restores the authoritative held order from a resumed thread notification", async () => {
