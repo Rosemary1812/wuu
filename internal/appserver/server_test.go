@@ -20,7 +20,6 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
-	"github.com/blueberrycongee/wuu/internal/agenttemplate"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/compact"
@@ -3254,65 +3253,6 @@ func TestServerSkillList(t *testing.T) {
 	}
 	if len(got.AllowedTools) != 1 || got.AllowedTools[0] != "read_file" || len(got.Paths) != 1 || got.Paths[0] != "**/*.pptx" {
 		t.Fatalf("skill metadata missing: %+v", got)
-	}
-}
-
-func TestServerAgentTemplateList(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	rt.AgentTemplates = []agenttemplate.Template{{
-		Name:           "reviewer",
-		Description:    "Review a change",
-		Instructions:   "Inspect the diff and report findings.",
-		Source:         "project",
-		Path:           "/repo/.claude/agents/reviewer.md",
-		Model:          "claude-opus",
-		PermissionMode: "plan",
-		Effort:         "high",
-	}}
-	rt.AgentTemplateDiagnostics = []agenttemplate.Diagnostic{{
-		Path:    "/repo/.claude/agents/broken.md",
-		Message: "invalid frontmatter",
-	}}
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"agent-template/list"}`)); err != nil {
-		t.Fatalf("agent-template/list: %v", err)
-	}
-
-	result := remarshal[AgentTemplateListResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if len(result.Templates) != 1 || len(result.Diagnostics) != 1 {
-		t.Fatalf("unexpected result: %+v", result)
-	}
-	got := result.Templates[0]
-	if got.Name != "reviewer" || got.Source != "project" || got.PermissionMode != "plan" || got.Instructions == "" {
-		t.Fatalf("unexpected template: %+v", got)
-	}
-}
-
-func TestServerInitializeIncludesAgentTemplateCountOnly(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	rt.AgentTemplates = []agenttemplate.Template{
-		{Name: "reviewer", Description: "Review", Instructions: "private instructions", Source: "project"},
-		{Name: "researcher", Description: "Research", Instructions: "more private instructions", Source: "user"},
-	}
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
-		t.Fatalf("initialize: %v", err)
-	}
-
-	result := responseByID(t, parseOutput(t, out.String()), "1")["result"].(map[string]any)
-	if got := int(result["agent_template_count"].(float64)); got != 2 {
-		t.Fatalf("agent_template_count = %d", got)
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), "private instructions") {
-		t.Fatalf("initialize leaked template instructions: %s", encoded)
 	}
 }
 

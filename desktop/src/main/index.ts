@@ -1273,9 +1273,6 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
-  ipcMain.handle("wuu:agent-template-list", (event) =>
-    appServerRequest(event, "agent-template/list"),
-  );
   ipcMain.handle("wuu:codex-pets-list", () => {
     const snapshot = codexPetsSnapshot();
     // Sync the pet window from the renderer-side list call so a failed

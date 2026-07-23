@@ -8,6 +8,18 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the Agent Templates section from the desktop skills catalog and the
+  underlying runtime discovery in `internal/agenttemplate/`. The desktop
+  rendered Claude Code-style `.claude/agents/*.md` files when present, but
+  nothing in the desktop UI or in `spawn_agent` ever consumed the
+  discovery to trigger work, so the section was effectively dead UI.
+  Restoring it later is a small change once a real spawn/invoke path
+  exists. Drops the `agent-template/list` IPC method, the `agent_template`
+  extension kind, the `AgentTemplate*` protocol types, and the
+  `agent_template_count` field on initialize.
+
 ## [0.10.1] - 2026-07-21
 
 ### Added

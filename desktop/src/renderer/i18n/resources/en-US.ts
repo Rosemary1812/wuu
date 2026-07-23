@@ -1392,7 +1392,6 @@ export const enUS = {
   "skills.pluginTag": "Plugin · {id}",
   "skills.sectionPlugins": "Plugins",
   "skills.officialPluginTitle": "Official plugin bundled with Wuu",
-  "skills.sectionAgentTemplates": "Agent Templates",
   "skills.empty": "No Skills",
   "skills.noMatches": "No matches",
   "skills.noneInRuntime": "No Skills found in the current runtime",

@@ -44,7 +44,6 @@ func (s *Server) handleInitialize(req Request) error {
 		Status:             status,
 		Issues:             issues,
 		ProtocolVersion:    ProtocolVersion,
-		AgentTemplateCount: len(s.rt.AgentTemplates),
 		Core: CoreBuildInfo{
 			Version: core.Version,
 			Commit:  core.Commit,
@@ -77,7 +76,6 @@ func (s *Server) handleConfigRead(req Request) error {
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigReadResult{
 		Provider:           s.rt.ProviderName,
-		AgentTemplateCount: len(s.rt.AgentTemplates),
 		Model:              s.rt.Model,
 		Effort:             s.currentDisplayEffort(),
 		Variant:            s.currentVariant(),
@@ -287,7 +285,7 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 		}{scope: normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir), official: item.Official}
 	}
 
-	records := make([]ExtensionInventoryRecord, 0, len(s.rt.Skills)+len(s.rt.AgentTemplates)+len(s.rt.Plugins))
+	records := make([]ExtensionInventoryRecord, 0, len(s.rt.Skills)+len(s.rt.Plugins))
 	for _, skill := range s.rt.Skills {
 		source := strings.TrimSpace(skill.Source)
 		scope := normalizedExtensionScope(source, skill.Path, s.rt.RootDir)
@@ -312,22 +310,6 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 			State: ExtensionStateActive,
 		})
 	}
-	for _, template := range s.rt.AgentTemplates {
-		source := strings.TrimSpace(template.Source)
-		records = append(records, ExtensionInventoryRecord{
-			ID:   extensionSubjectID("agent_template", source, template.Name),
-			Name: template.Name,
-			Kind: extensions.KindAgentTemplate,
-			Provenance: extensions.Provenance{
-				Kind:   extensions.KindAgentTemplate,
-				Source: source,
-				Scope:  normalizedExtensionScope(source, template.Path, s.rt.RootDir),
-				Path:   template.Path,
-			},
-			State: ExtensionStateReadOnly,
-		})
-	}
-
 	for _, item := range s.rt.Plugins {
 		scope := normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir)
 		pluginSource := pluginManifestSource(item.ManifestPath)

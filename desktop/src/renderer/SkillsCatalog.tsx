@@ -1,9 +1,7 @@
-import { AlertTriangle, Bot, Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
+import { Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   AppLocale,
-  AgentTemplateDiagnostic,
-  AgentTemplateSummary,
   ExtensionInventoryRecord,
   RuntimeContext,
   SkillSummary
@@ -14,16 +12,12 @@ type LoadState = {
   loading: boolean;
   error: string;
   skills: SkillSummary[];
-  agentTemplates: AgentTemplateSummary[];
-  diagnostics: AgentTemplateDiagnostic[];
 };
 
 const initialLoadState: LoadState = {
   loading: true,
   error: "",
   skills: [],
-  agentTemplates: [],
-  diagnostics: []
 };
 
 export function SkillsCatalog({
@@ -51,9 +45,8 @@ export function SkillsCatalog({
       }
       setState((current) => ({ ...current, loading: true, error: "" }));
       try {
-        const [skillsResult, templatesResult] = await Promise.all([
+        const [skillsResult] = await Promise.all([
           window.wuu.listSkills(),
-          window.wuu.listAgentTemplates()
         ]);
         if (cancelled) {
           return;
@@ -62,8 +55,6 @@ export function SkillsCatalog({
           loading: false,
           error: "",
           skills: skillsResult.skills,
-          agentTemplates: templatesResult.templates,
-          diagnostics: templatesResult.diagnostics ?? []
         });
       } catch (error) {
         if (cancelled) {
@@ -73,8 +64,6 @@ export function SkillsCatalog({
           loading: false,
           error: error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
           skills: [],
-          agentTemplates: [],
-          diagnostics: []
         });
       }
     }
@@ -111,40 +100,22 @@ export function SkillsCatalog({
     );
   }, [filter, locale, plugins]);
 
-  const visibleAgentTemplates = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    const items = [...state.agentTemplates].sort((left, right) => compareAgentTemplates(left, right, locale));
-    if (!query) {
-      return items;
-    }
-    return items.filter((template) =>
-      [template.name, template.description, template.source, template.model, template.permission_mode]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query))
-    );
-  }, [filter, locale, state.agentTemplates]);
-
   async function refreshSkills(): Promise<void> {
     setState((current) => ({ ...current, loading: true, error: "" }));
     try {
-      const [skillsResult, templatesResult] = await Promise.all([
+        const [skillsResult] = await Promise.all([
         window.wuu.listSkills(),
-        window.wuu.listAgentTemplates()
       ]);
       setState({
         loading: false,
         error: "",
         skills: skillsResult.skills,
-        agentTemplates: templatesResult.templates,
-        diagnostics: templatesResult.diagnostics ?? []
       });
     } catch (error) {
       setState({
         loading: false,
         error: error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
         skills: [],
-        agentTemplates: [],
-        diagnostics: []
       });
     }
   }
@@ -173,16 +144,6 @@ export function SkillsCatalog({
 
       {state.error ? <div className="skills-catalog-error">{state.error}</div> : null}
 
-      {state.diagnostics.length > 0 ? (
-        <div className="skills-catalog-error">
-          <AlertTriangle className="icon-sm" aria-hidden="true" />
-          {state.diagnostics.map((diagnostic) => (
-            <span key={`${diagnostic.path}:${diagnostic.message}`}>
-              {diagnostic.path}: {diagnostic.message}
-            </span>
-          ))}
-        </div>
-      ) : null}
 
       <div className="skills-section-heading">
         <strong>{t("skills.sectionSkills")}</strong>
@@ -245,31 +206,10 @@ export function SkillsCatalog({
         </>
       ) : null}
 
-      <div className="skills-section-heading">
-        <strong>{t("skills.sectionAgentTemplates")}</strong>
-        <span>{catalogCount(state.loading, filter, visibleAgentTemplates.length, state.agentTemplates.length)}</span>
-      </div>
-
-      <div className="skills-list">
-        {visibleAgentTemplates.map((template) => (
-          <article key={`${template.source}:${template.name}`} className="skill-row">
-            <span className="skill-row-icon" aria-hidden="true">
-              <Bot className="icon" />
-            </span>
-            <span className="skill-row-copy">
-              <span className="skill-row-titlebar">
-                <h2>{template.name}</h2>
-              </span>
-              {template.description ? <p>{template.description}</p> : null}
-            </span>
-          </article>
-        ))}
-      </div>
 
       {!state.loading &&
       visibleSkills.length === 0 &&
-      visiblePlugins.length === 0 &&
-      visibleAgentTemplates.length === 0 ? (
+      visiblePlugins.length === 0 ? (
         <div className="skills-empty">
           <Wrench className="icon-xl" />
           <strong>{t("skills.empty")}</strong>
@@ -293,14 +233,6 @@ function pluginSkillID(source: string): string {
 }
 
 function compareSkills(left: SkillSummary, right: SkillSummary, locale: AppLocale): number {
-  const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
-  if (sourceDelta !== 0) {
-    return sourceDelta;
-  }
-  return left.name.localeCompare(right.name, locale);
-}
-
-function compareAgentTemplates(left: AgentTemplateSummary, right: AgentTemplateSummary, locale: AppLocale): number {
   const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
   if (sourceDelta !== 0) {
     return sourceDelta;

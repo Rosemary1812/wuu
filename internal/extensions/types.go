@@ -7,7 +7,6 @@ type Kind string
 const (
 	KindSkill         Kind = "skill"
 	KindCommand       Kind = "command"
-	KindAgentTemplate Kind = "agent_template"
 	KindMCP           Kind = "mcp"
 	KindHook          Kind = "hook"
 	KindPlugin        Kind = "plugin"
