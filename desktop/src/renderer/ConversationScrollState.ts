@@ -616,6 +616,11 @@ export function useConversationScrollState({
       }
       if (event.deltaY < 0) {
         markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
+        // Take user control before the browser's later `scroll` event. During
+        // streaming, an already queued auto-follow frame can otherwise run in
+        // the wheel-to-scroll gap and write the viewport back to the bottom,
+        // making trackpad and mouse-wheel movement feel sticky or resistant.
+        disableConversationAutoFollow();
       } else if (event.deltaY > 0) {
         selectionPausedAutoFollowRef.current = false;
       }

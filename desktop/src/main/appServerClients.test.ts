@@ -166,6 +166,17 @@ describe("AppServerClientPool Activity routing", () => {
 });
 
 describe("AppServerClient child lifecycle", () => {
+  it("can start a client before its first request and reuses that process", () => {
+    const child = new FakeAppServerChild();
+    const spawnAppServer = vi.fn(() => child.asChildProcess());
+    const { client } = makeClient(spawnAppServer);
+
+    client.start();
+    client.start();
+
+    expect(spawnAppServer).toHaveBeenCalledTimes(1);
+  });
+
   it("tracks the cwd of running threads and clears it on completion", async () => {
     const child = new FakeAppServerChild();
     const { client } = makeClient(() => child.asChildProcess());

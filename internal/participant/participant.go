@@ -1,4 +1,4 @@
-// Package participant defines named Kanban agents and ephemeral task workers.
+// Package participant defines persisted identities carried by subagent runs.
 package participant
 
 import (
@@ -41,7 +41,7 @@ type Summary struct {
 	// participant's workspace directory, not in the store, so
 	// Participant.Summary() leaves this empty — the appserver fills it
 	// (with a size cap, see appserver.participantSummaryAvatarMaxBytes)
-	// because summaries can be duplicated across Kanban workers and agent
+	// because summaries can be duplicated across participant workers and agent
 	// trees, where an unbounded payload would bloat thread snapshots.
 	AvatarImage string `json:"avatar_image,omitempty"`
 }

@@ -593,7 +593,9 @@ describe("collapsed sidebar hover drawer", () => {
 
     await act(async () => {
       container
-        .querySelector<HTMLButtonElement>('[aria-label="打开导航侧栏"]')
+        .querySelector<HTMLButtonElement>(
+          '.globalized-sidebar-toggle[aria-label="展开左侧栏"]',
+        )
         ?.click();
     });
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);

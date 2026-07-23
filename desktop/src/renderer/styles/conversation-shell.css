@@ -1020,7 +1020,9 @@
   position: absolute;
   bottom: calc(var(--dock-composer-height, 0px) + 8px);
   left: var(--conversation-visible-inset-left);
-  right: var(--conversation-visible-inset-right);
+  right: calc(
+    var(--conversation-visible-inset-right) + var(--conversation-scrollbar-gutter)
+  );
   --jump-to-latest-max-width: min(
     var(--session-composer-width),
     calc(

@@ -915,73 +915,6 @@ func migrateSchema(db *sql.DB) error {
 			updated_at     TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_participant_runs_participant ON participant_runs(participant_id, created_at, id)`,
-		// kanban_tasks is the kanban-OS unit of work: agent-neutral by
-		// construction (no assignee column). Assignment lives only on
-		// kanban_runs; the task merely denormalizes latest_run_id for board
-		// projection. parent_id nests decomposition subtasks.
-		`CREATE TABLE IF NOT EXISTS kanban_tasks (
-			id               TEXT PRIMARY KEY,
-			space_id         TEXT NOT NULL DEFAULT '',
-			workspace_id     TEXT NOT NULL DEFAULT '',
-			session_id       TEXT NOT NULL,
-			parent_id        TEXT NOT NULL DEFAULT '',
-			title            TEXT NOT NULL,
-			brief            TEXT NOT NULL DEFAULT '',
-			status           TEXT NOT NULL,
-			source_thread_id TEXT NOT NULL DEFAULT '',
-			created_by       TEXT NOT NULL DEFAULT '',
-			sort_index       INTEGER NOT NULL DEFAULT 0,
-			latest_run_id    TEXT NOT NULL DEFAULT '',
-			created_at       INTEGER NOT NULL,
-			updated_at       INTEGER NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_session ON kanban_tasks(session_id, status, sort_index)`,
-		`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_parent ON kanban_tasks(parent_id, sort_index)`,
-		// kanban_runs binds a task to one concrete named-agent execution.
-		// Creating a run with target_id IS the dispatch action and its entire
-		// record; kind distinguishes execution from second-eyes review. The
-		// partial unique index enforces one active run per target participant.
-		`CREATE TABLE IF NOT EXISTS kanban_runs (
-			id            TEXT PRIMARY KEY,
-			task_id       TEXT NOT NULL,
-			space_id      TEXT NOT NULL DEFAULT '',
-			workspace_id  TEXT NOT NULL DEFAULT '',
-			session_id    TEXT NOT NULL,
-			kind          TEXT NOT NULL,
-			target_id     TEXT NOT NULL,
-			thread_id     TEXT NOT NULL DEFAULT '',
-			host_thread_id TEXT NOT NULL DEFAULT '',
-			status        TEXT NOT NULL,
-			summary       TEXT NOT NULL DEFAULT '',
-			error_message TEXT NOT NULL DEFAULT '',
-			created_by    TEXT NOT NULL DEFAULT '',
-			created_at    INTEGER NOT NULL,
-			started_at    INTEGER NOT NULL DEFAULT 0,
-			finished_at   INTEGER NOT NULL DEFAULT 0,
-			FOREIGN KEY(task_id) REFERENCES kanban_tasks(id) ON DELETE CASCADE,
-			FOREIGN KEY(target_id) REFERENCES participants(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_kanban_runs_task ON kanban_runs(task_id, created_at)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_kanban_runs_active_target
-		 ON kanban_runs(target_id) WHERE status IN ('queued', 'running')`,
-		// kanban_artifacts attributes produced output files to a run and its
-		// task; references resolve lazily from these rows.
-		`CREATE TABLE IF NOT EXISTS kanban_artifacts (
-			id           TEXT PRIMARY KEY,
-			run_id       TEXT NOT NULL,
-			task_id      TEXT NOT NULL,
-			space_id     TEXT NOT NULL DEFAULT '',
-			workspace_id TEXT NOT NULL DEFAULT '',
-			session_id   TEXT NOT NULL,
-			path         TEXT NOT NULL,
-			display_name TEXT NOT NULL DEFAULT '',
-			media_type   TEXT NOT NULL DEFAULT '',
-			size_bytes   INTEGER NOT NULL DEFAULT 0,
-			created_at   INTEGER NOT NULL,
-			FOREIGN KEY(run_id) REFERENCES kanban_runs(id) ON DELETE CASCADE,
-			FOREIGN KEY(task_id) REFERENCES kanban_tasks(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_kanban_artifacts_task ON kanban_artifacts(task_id, created_at)`,
 		// inference_journal_runtimes is the cross-process liveness lease used to
 		// distinguish a crashed writer from another live app-server or CLI.
 		`CREATE TABLE IF NOT EXISTS inference_journal_runtimes (
@@ -1220,38 +1153,6 @@ func migrateSchema(db *sql.DB) error {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("migrate sessions database: %w", err)
 		}
-	}
-	// Kanban schema migration: add collaboration-space scoping and optional
-	// workspace binding, then backfill existing rows into the global space.
-	if err := addColumnIfMissing(db, "kanban_tasks", "space_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "kanban_tasks", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "kanban_runs", "space_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "kanban_runs", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "kanban_artifacts", "space_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, "kanban_artifacts", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`UPDATE kanban_tasks SET space_id = 'global' WHERE space_id = ''`); err != nil {
-		return fmt.Errorf("migrate kanban tasks to global space: %w", err)
-	}
-	if _, err := db.Exec(`UPDATE kanban_runs SET space_id = 'global' WHERE space_id = ''`); err != nil {
-		return fmt.Errorf("migrate kanban runs to global space: %w", err)
-	}
-	if _, err := db.Exec(`UPDATE kanban_artifacts SET space_id = 'global' WHERE space_id = ''`); err != nil {
-		return fmt.Errorf("migrate kanban artifacts to global space: %w", err)
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_kanban_tasks_space ON kanban_tasks(space_id, status, sort_index)`); err != nil {
-		return fmt.Errorf("create kanban tasks space index: %w", err)
 	}
 	if err := addColumnIfMissing(db, "inference_operations", "workflow_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err

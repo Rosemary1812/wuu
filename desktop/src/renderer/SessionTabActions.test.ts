@@ -61,6 +61,7 @@ function buildActions({
     nextDraftSessionTab,
     selectThread,
     beginViewSwitch: vi.fn(() => 1),
+    beginInstantThreadSwitch: vi.fn(() => 2),
     finishViewSwitch: vi.fn(() => true),
     cancelViewSwitch: vi.fn(),
     loadRuntime: vi.fn(),

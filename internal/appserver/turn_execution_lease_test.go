@@ -258,10 +258,7 @@ func TestServerQueuedTurnWaitsForExternalThreadExecutionLease(t *testing.T) {
 		msg: providers.ChatMessage{Role: "user", Content: "run after ownership is free"},
 	})
 	srv.kickQueuedTurnDrain(sess.ID)
-	time.Sleep(threadExecutionLeaseRetryDelay + 50*time.Millisecond)
-	if !srv.hasQueuedUserTurns(sess.ID) {
-		t.Fatal("queued turn was dropped while another app-server owned the thread")
-	}
+	waitForQueuedTurnRequeue(t, srv, sess.ID)
 	th.mu.Lock()
 	blockedRuntime := th.execRuntime
 	th.mu.Unlock()
@@ -750,4 +747,19 @@ func waitForThreadLeaseRelease(t *testing.T, sessDir, threadID string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("timed out waiting for thread execution lease release")
+}
+
+func waitForQueuedTurnRequeue(t *testing.T, srv *Server, threadID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		srv.queuedTurnMu.Lock()
+		requeued := len(srv.pendingQueuedTurns[threadID]) > 0 && !srv.drainingQueuedTurns[threadID]
+		srv.queuedTurnMu.Unlock()
+		if requeued {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for queued turn to remain pending behind external execution owner")
 }

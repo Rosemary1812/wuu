@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -28,6 +29,23 @@ const maxShellTailBytes = 8 * 1024
 // replaces the kill safety net the timeout used to be; the model can change
 // or clear it with bash action=update_background.
 const defaultPromotedRecheckMinutes = 30
+
+type synchronizedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // The shell classification and execution engine below is shared
 // infrastructure for the unified bash tool (see tool_bash.go). The former
@@ -153,8 +171,8 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	cmd.Dir = workDir
 	cmd.Env = shellpath.CommandEnv(shellCommandEnv(os.Environ()))
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	var stdout synchronizedBuffer
+	var stderr synchronizedBuffer
 	// Tee output into a reserved managed log from the start so a timeout can
 	// promote the run to a background process with both past and future
 	// output available through the background read path.

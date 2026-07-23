@@ -3,7 +3,7 @@ package agentcontrol
 import "strings"
 
 // SetAgentParticipantID binds a running agent to the named-agent identity it
-// represents. Kanban runs use this identity for attribution and lifecycle
+// represents. Restored runs use this identity for attribution and lifecycle
 // bookkeeping; it does not grant conversation or roster-management tools.
 func (c *AgentControl) SetAgentParticipantID(agentID, participantID string) {
 	agentID = strings.TrimSpace(agentID)

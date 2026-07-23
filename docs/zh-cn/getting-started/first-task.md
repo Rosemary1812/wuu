@@ -97,5 +97,5 @@ wuu exec resume --last "继续完成并验证"
 
 - 阅读[配置模型](../reference/configuration.md)，理解工作区规则和用户配置的边界。
 - 阅读 [`wuu exec`](../../en/automation/exec.md)（英文），把相同工作流用于脚本和 CI。
-- 阅读[安全模型](../../en/reference/security-model.md)（英文），再处理不可信仓库或敏感
+- 阅读[安全模型](../reference/security-model.md)，再处理不可信仓库或敏感
   数据。

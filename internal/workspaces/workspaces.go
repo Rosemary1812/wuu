@@ -72,7 +72,7 @@ func Roots(list []Workspace) []string {
 }
 
 // FileScopeRoots assembles the file-tool whitelist for ordinary turns and
-// Kanban task runs:
+// Scoped participant runs:
 // the agent home (the runtime root), every registered workspace root, and
 // the system temp directory. A missing or unreadable projects store simply
 // contributes no workspace roots.

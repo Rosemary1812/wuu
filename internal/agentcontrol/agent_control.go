@@ -48,7 +48,7 @@ type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.M
 // instructions.
 type WorkerSystemPromptFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error)
 
-// ParticipantStore persists Kanban agent and task-worker identities. It is
+// ParticipantStore persists participant identities used by restored runs. It is
 // defined here (instead of importing internal/session) so agentcontrol
 // stays decoupled from the session storage layer.
 type ParticipantStore interface {
@@ -183,6 +183,20 @@ type AgentControl struct {
 	// client (which would route the request to the wrong provider).
 	modelPinResolverMu sync.Mutex
 	modelPinResolver   ModelPinClientResolver
+
+	// modelAliasResolver resolves a configured spawn_agent.model alias into a
+	// complete worker runtime. It is installed by appserver because only the
+	// appserver layer holds the runtime config and provider factory. nil means
+	// every alias is treated as unknown and falls back to the current worker
+	// default (not an error).
+	modelAliasResolverMu sync.Mutex
+	modelAliasResolver   ModelAliasResolver
+
+	// providerClientResolver rebuilds a stream client for a persisted provider
+	// name. Used on cross-restart resume to recreate the client for a snapshot
+	// that was started with an aliased runtime, without re-resolving the alias.
+	providerClientResolverMu sync.Mutex
+	providerClientResolver   ProviderClientResolver
 }
 
 // ModelPinClientResolver rebuilds the (model, client) pair for a queued
@@ -194,6 +208,30 @@ type AgentControl struct {
 // it already holds the runtime config + provider factory used to build
 // the worker client.
 type ModelPinClientResolver func(rawPin string) (modelOverride string, clientOverride providers.StreamClient, err error)
+
+// AliasResolutionResult is returned by the model-alias resolver installed by
+// appserver. Unknown aliases are not errors; callers fall back to the current
+// worker default and record the fallback for diagnosis. Err is set only when a
+// configured alias cannot be turned into a runtime (e.g. provider client
+// build failed); that failure must fail the spawn rather than silently falling
+// back to the default runtime.
+type AliasResolutionResult struct {
+	Found        bool
+	Unknown      bool
+	Err          error
+	Runtime      subagent.WorkerRuntime
+	ValidAliases []string
+}
+
+// ModelAliasResolver resolves a requested spawn_agent.model alias into a
+// complete immutable worker runtime. Appserver installs this callback via
+// AgentControl.SetModelAliasResolver.
+type ModelAliasResolver func(alias string) AliasResolutionResult
+
+// ProviderClientResolver rebuilds a stream client for a persisted provider
+// name. Used on cross-restart resume to recreate the client for an aliased
+// runtime snapshot, without re-resolving the alias.
+type ProviderClientResolver func(providerName string) (providers.StreamClient, error)
 
 // Config holds the dependencies needed to build an AgentControl.
 type Config struct {
@@ -737,6 +775,53 @@ func (c *AgentControl) currentModelPinResolver() ModelPinClientResolver {
 	return c.modelPinResolver
 }
 
+// SetModelAliasResolver installs the callback that resolves a configured
+// spawn_agent.model alias into a complete immutable worker runtime.
+// Appserver is the typical owner because it holds the effective config and
+// provider factory. Passing nil means aliases are always treated as unknown
+// and fall back to the current worker default; that fallback is surfaced
+// in diagnostics, not an error.
+func (c *AgentControl) SetModelAliasResolver(resolver ModelAliasResolver) {
+	if c == nil {
+		return
+	}
+	c.modelAliasResolverMu.Lock()
+	defer c.modelAliasResolverMu.Unlock()
+	c.modelAliasResolver = resolver
+}
+
+func (c *AgentControl) currentModelAliasResolver() ModelAliasResolver {
+	if c == nil {
+		return nil
+	}
+	c.modelAliasResolverMu.Lock()
+	defer c.modelAliasResolverMu.Unlock()
+	return c.modelAliasResolver
+}
+
+// SetProviderClientResolver installs the callback that rebuilds a stream
+// client for a persisted provider name. It is used when resuming a worker
+// whose snapshot contains a resolved alias runtime, so the runtime can be
+// reused exactly without re-resolving the alias. Passing nil means resume
+// falls back to the manager's current default client.
+func (c *AgentControl) SetProviderClientResolver(resolver ProviderClientResolver) {
+	if c == nil {
+		return
+	}
+	c.providerClientResolverMu.Lock()
+	defer c.providerClientResolverMu.Unlock()
+	c.providerClientResolver = resolver
+}
+
+func (c *AgentControl) currentProviderClientResolver() ProviderClientResolver {
+	if c == nil {
+		return nil
+	}
+	c.providerClientResolverMu.Lock()
+	defer c.providerClientResolverMu.Unlock()
+	return c.providerClientResolver
+}
+
 // pinProviderName returns the provider part of a raw participant pin
 // ("p:model" → "p"). A bare model pin has no provider part and yields "".
 // Mirrors appserver.parseParticipantModelPin so agentcontrol does not
@@ -816,6 +901,14 @@ type SpawnRequest struct {
 	// and must not be exposed through the LLM-facing spawn_agent
 	// tool.
 	ModelPin string
+	// ModelAlias is the configured alias requested by the caller (e.g.
+	// "cheap" or "frontend"). It is resolved at admission into a
+	// complete WorkerRuntime via the registered ModelAliasResolver.
+	// An empty or unknown alias falls back to the current worker
+	// default and records the fallback for diagnostics. The raw alias
+	// string is persisted with queued spawns so it can be re-resolved
+	// when the queued item actually launches.
+	ModelAlias string
 	// FileScopeRoots is an internal-only per-spawn file-tool whitelist
 	// override. Nil means the worker inherits the factory default scope;
 	// a non-nil slice (including an empty one, which clears the whitelist)
@@ -850,6 +943,24 @@ type SpawnResult struct {
 	ResultConsumed  bool     `json:"result_consumed,omitempty"`
 	ConsumedBy      string   `json:"consumed_by,omitempty"`
 	NextSteps       []string `json:"next_steps,omitempty"`
+	// ModelAlias records the requested configured alias, if any, for
+	// provenance and diagnostics.
+	ModelAlias string `json:"model_alias,omitempty"`
+	// ModelAliasFallback is true when ModelAlias was non-empty but could
+	// not be resolved to a configured alias. The worker ran with the
+	// current worker default instead; this flag makes the fallback visible
+	// without failing the spawn.
+	ModelAliasFallback bool `json:"model_alias_fallback,omitempty"`
+	// ResolvedProvider and ResolvedModel expose the runtime the worker
+	// actually used. They are empty when the worker ran with the default
+	// runtime and the alias was not resolved.
+	ResolvedProvider string `json:"resolved_provider,omitempty"`
+	ResolvedModel    string `json:"resolved_model,omitempty"`
+	ResolvedAPIModel string `json:"resolved_api_model,omitempty"`
+	// ValidAliases is populated for fallback spawns to help the caller
+	// recover from a typo. It lists the currently configured alias names
+	// but never includes provider credentials, endpoints, or raw config.
+	ValidAliases []string `json:"valid_aliases,omitempty"`
 }
 
 type preparedSpawn struct {
@@ -880,6 +991,12 @@ type preparedSpawn struct {
 	// client or resolver error fails the spawn explicitly so a wrong
 	// provider is never used.
 	ModelPin string
+	// ModelAlias is the configured alias requested for this spawn. It
+	// is persisted so a queued spawn can re-resolve the alias at launch
+	// time, including after restart recovery. The actual resolved
+	// runtime is recomputed then; this field carries only the raw
+	// requested alias string.
+	ModelAlias string
 	// AdmissionRollback is process-local and intentionally omitted from the
 	// durable queue payload. Built-in durable admissions must provide their own
 	// restart cleanup when a restored queued launch fails.
@@ -915,6 +1032,10 @@ type queuedSpawnPayload struct {
 	// cross-provider pin would otherwise route to the wrong provider.
 	ModelOverride string `json:"model_override,omitempty"`
 	ModelPin      string `json:"model_pin,omitempty"`
+	// ModelAlias is the configured alias requested for this queued spawn.
+	// It is re-resolved at launch time using the current config, so only
+	// the raw alias string is persisted.
+	ModelAlias string `json:"model_alias,omitempty"`
 }
 
 func prepareSpawnAdmission(prepare SpawnAdmissionPrepare, workerID string) (SpawnAdmissionRollback, error) {
@@ -980,6 +1101,47 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	// the capability its spawner had, not whatever the session says at launch.
 	ultra := c.effectiveSpawnUltra(req.ParentID)
 
+	// Resolve the requested model alias at admission for diagnostics. Queued
+	// spawns re-resolve the alias at actual launch; direct spawns use this
+	// runtime immediately. Unknown and omitted aliases use the current
+	// manager defaults, but unknown aliases record ModelAliasFallback=true
+	// and list valid aliases for diagnosis. The resolved runtime is
+	// snapshotted at first run so the worker's runtime stays frozen across
+	// followups and restart.
+	aliasRuntime, aliasFallback, aliasValid, aliasErr := c.resolveModelAlias(req.ModelAlias)
+	if aliasErr != nil {
+		return nil, fmt.Errorf("model alias: %w", aliasErr)
+	}
+	var spawnRuntime *subagent.WorkerRuntime
+	modelAliasFallback := false
+	var modelAliasValid []string
+	if aliasRuntime != nil {
+		spawnRuntime = aliasRuntime
+	} else if aliasFallback {
+		// Unknown alias: fall back to current defaults and snapshot them so
+		// the worker's runtime is frozen from its first run.
+		defaults := c.manager.DefaultWorkerRuntime()
+		spawnRuntime = &defaults
+		modelAliasFallback = true
+		modelAliasValid = aliasValid
+	} else if strings.TrimSpace(req.ModelPin) == "" && strings.TrimSpace(req.ModelOverride) == "" && req.ClientOverride == nil {
+		// Omitted alias with no legacy pin: snapshot current defaults so the
+		// runtime is frozen from first run.
+		defaults := c.manager.DefaultWorkerRuntime()
+		spawnRuntime = &defaults
+	}
+	resolvedProvider := ""
+	resolvedModel := ""
+	resolvedAPIModel := ""
+	if spawnRuntime != nil {
+		resolvedProvider = strings.TrimSpace(spawnRuntime.Provider)
+		resolvedModel = strings.TrimSpace(spawnRuntime.Model)
+		resolvedAPIModel = strings.TrimSpace(spawnRuntime.APIModel)
+		if resolvedAPIModel == "" {
+			resolvedAPIModel = resolvedModel
+		}
+	}
+
 	spawnSlot, admitted := c.tryReserveSpawnSlot(workerID)
 	if !admitted && req.Synchronous {
 		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
@@ -1042,6 +1204,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 			ModelOverride:     strings.TrimSpace(req.ModelOverride),
 			ClientOverride:    req.ClientOverride,
 			ModelPin:          strings.TrimSpace(req.ModelPin),
+			ModelAlias:        strings.TrimSpace(req.ModelAlias),
 			AdmissionRollback: admissionRollback,
 		}
 		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, queuedBaseRepo)
@@ -1053,15 +1216,21 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 		}
 		retainAdmission = true
 		queuedResult := &SpawnResult{
-			Action:        "spawn_agent",
-			AgentID:       workerID,
-			ParticipantID: participantID,
-			TaskName:      threadMeta.TaskName,
-			AgentProfile:  threadMeta.AgentProfile,
-			AgentPath:     threadMeta.Path,
-			Status:        "queued",
-			Isolation:     string(isolation),
-			NextSteps:     spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
+			Action:             "spawn_agent",
+			AgentID:            workerID,
+			ParticipantID:      participantID,
+			TaskName:           threadMeta.TaskName,
+			AgentProfile:       threadMeta.AgentProfile,
+			AgentPath:          threadMeta.Path,
+			Status:             "queued",
+			Isolation:          string(isolation),
+			ModelAlias:         strings.TrimSpace(req.ModelAlias),
+			ModelAliasFallback: modelAliasFallback,
+			ResolvedProvider:   resolvedProvider,
+			ResolvedModel:      resolvedModel,
+			ResolvedAPIModel:   resolvedAPIModel,
+			ValidAliases:       modelAliasValid,
+			NextSteps:          spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
 		}
 		c.queueDrainMu.Unlock()
 		releaseQueueAdmission()
@@ -1177,24 +1346,27 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 		spawnProviderName = pinProviderName(req.ModelPin)
 	}
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
-		ID:            workerID,
-		ParticipantID: participantID,
-		Type:          wtype,
-		TaskName:      threadMeta.TaskName,
-		AgentProfile:  threadMeta.AgentProfile,
-		AgentPath:     threadMeta.Path,
-		ParentID:      threadMeta.ParentID,
-		Description:   req.Description,
-		Prompt:        req.Prompt,
-		SystemPrompt:  sys,
-		Toolkit:       workerKit,
-		HistoryPath:   historyPath,
-		WorkerRoot:    workerRoot,
-		Model:         strings.TrimSpace(req.ModelOverride),
-		ModelPin:      strings.TrimSpace(req.ModelPin),
-		Ultra:         threadMeta.Ultra,
-		Client:        req.ClientOverride,
-		ProviderName:  spawnProviderName,
+		ID:                 workerID,
+		ParticipantID:      participantID,
+		Type:               wtype,
+		TaskName:           threadMeta.TaskName,
+		AgentProfile:       threadMeta.AgentProfile,
+		AgentPath:          threadMeta.Path,
+		ParentID:           threadMeta.ParentID,
+		Description:        req.Description,
+		Prompt:             req.Prompt,
+		SystemPrompt:       sys,
+		Toolkit:            workerKit,
+		HistoryPath:        historyPath,
+		WorkerRoot:         workerRoot,
+		Model:              strings.TrimSpace(req.ModelOverride),
+		ModelPin:           strings.TrimSpace(req.ModelPin),
+		ModelAlias:         strings.TrimSpace(req.ModelAlias),
+		ModelAliasFallback: modelAliasFallback,
+		WorkerRuntime:      spawnRuntime,
+		Ultra:              threadMeta.Ultra,
+		Client:             req.ClientOverride,
+		ProviderName:       spawnProviderName,
 	})
 	if err != nil {
 		c.clearReportSettlement(workerID)
@@ -1212,14 +1384,20 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	spawned := sa.Snapshot()
 
 	result := &SpawnResult{
-		Action:        "spawn_agent",
-		AgentID:       spawned.ID,
-		ParticipantID: participantID,
-		TaskName:      threadMeta.TaskName,
-		AgentProfile:  threadMeta.AgentProfile,
-		AgentPath:     threadMeta.Path,
-		Status:        string(spawned.Status),
-		Isolation:     string(isolation),
+		Action:             "spawn_agent",
+		AgentID:            spawned.ID,
+		ParticipantID:      participantID,
+		TaskName:           threadMeta.TaskName,
+		AgentProfile:       threadMeta.AgentProfile,
+		AgentPath:          threadMeta.Path,
+		Status:             string(spawned.Status),
+		Isolation:          string(isolation),
+		ModelAlias:         strings.TrimSpace(req.ModelAlias),
+		ModelAliasFallback: modelAliasFallback,
+		ResolvedProvider:   resolvedProvider,
+		ResolvedModel:      resolvedModel,
+		ResolvedAPIModel:   resolvedAPIModel,
+		ValidAliases:       modelAliasValid,
 	}
 	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
 	if worktreeRef != nil {
@@ -1356,6 +1534,17 @@ type ForkRequest struct {
 	Prompt      string
 	Synchronous bool
 	Timeout     time.Duration
+	// ModelAlias is the configured alias requested by the caller (e.g.
+	// "cheap" or "frontend"). It is resolved at admission into a
+	// complete WorkerRuntime via the registered ModelAliasResolver.
+	// An empty or unknown alias falls back to the current worker
+	// default and records the fallback for diagnostics. The raw alias
+	// string is persisted with queued forks so it can be re-resolved
+	// when the queued item actually launches.
+	ModelAlias string
+	// ModelPin is separate internal participant plumbing. Public spawn_agent
+	// calls never populate it; it is used only when ModelAlias is omitted.
+	ModelPin string
 }
 
 // Fork launches a sub-agent that inherits a snapshot of the parent
@@ -1378,7 +1567,6 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if len(parentHistory) == 0 {
 		return nil, errors.New("spawn_agent fork: no parent history (only the main agent in an interactive session can fork)")
 	}
-
 	// Resolve the default agent type so the fork has the full tool set.
 	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
@@ -1398,6 +1586,45 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	// A fork inherits the forking agent's effective Ultra value, same as a
 	// fresh spawn (turn snapshot for the root, stored value for a worker).
 	ultra := c.effectiveSpawnUltra(req.ParentID)
+
+	// Resolve the requested model alias at admission for diagnostics. Queued
+	// forks re-resolve the alias at actual launch; direct forks use this
+	// runtime immediately. Unknown and omitted aliases use the current
+	// manager defaults, but unknown aliases record ModelAliasFallback=true
+	// and list valid aliases for diagnosis. The resolved runtime is
+	// snapshotted at first run so the fork's runtime stays frozen across
+	// followups and restart.
+	aliasRuntime, aliasFallback, aliasValid, aliasErr := c.resolveModelAlias(req.ModelAlias)
+	if aliasErr != nil {
+		return nil, fmt.Errorf("model alias: %w", aliasErr)
+	}
+	var spawnRuntime *subagent.WorkerRuntime
+	modelAliasFallback := false
+	var modelAliasValid []string
+	if aliasRuntime != nil {
+		spawnRuntime = aliasRuntime
+	} else if aliasFallback {
+		defaults := c.manager.DefaultWorkerRuntime()
+		spawnRuntime = &defaults
+		modelAliasFallback = true
+		modelAliasValid = aliasValid
+	} else {
+		// Omitted alias: snapshot current defaults so the runtime is frozen
+		// from first run.
+		defaults := c.manager.DefaultWorkerRuntime()
+		spawnRuntime = &defaults
+	}
+	resolvedProvider := ""
+	resolvedModel := ""
+	resolvedAPIModel := ""
+	if spawnRuntime != nil {
+		resolvedProvider = strings.TrimSpace(spawnRuntime.Provider)
+		resolvedModel = strings.TrimSpace(spawnRuntime.Model)
+		resolvedAPIModel = strings.TrimSpace(spawnRuntime.APIModel)
+		if resolvedAPIModel == "" {
+			resolvedAPIModel = resolvedModel
+		}
+	}
 
 	spawnSlot, admitted := c.tryReserveSpawnSlot(workerID)
 	if !admitted {
@@ -1441,6 +1668,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			IsFork:        true,
 			ForkMode:      req.ForkMode,
 			ParentHistory: providers.CloneChatMessages(parentHistory),
+			ModelAlias:    strings.TrimSpace(req.ModelAlias),
 		}
 		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, resolvedBaseRepo)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
@@ -1450,14 +1678,20 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			return nil, err
 		}
 		result := &SpawnResult{
-			Action:       "spawn_agent",
-			AgentID:      workerID,
-			TaskName:     threadMeta.TaskName,
-			AgentProfile: threadMeta.AgentProfile,
-			AgentPath:    threadMeta.Path,
-			Status:       "queued",
-			Isolation:    string(isolation),
-			NextSteps:    spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
+			Action:             "spawn_agent",
+			AgentID:            workerID,
+			TaskName:           threadMeta.TaskName,
+			AgentProfile:       threadMeta.AgentProfile,
+			AgentPath:          threadMeta.Path,
+			Status:             "queued",
+			Isolation:          string(isolation),
+			ModelAlias:         strings.TrimSpace(req.ModelAlias),
+			ModelAliasFallback: modelAliasFallback,
+			ResolvedProvider:   resolvedProvider,
+			ResolvedModel:      resolvedModel,
+			ResolvedAPIModel:   resolvedAPIModel,
+			ValidAliases:       modelAliasValid,
+			NextSteps:          spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
 		}
 		c.queueDrainMu.Unlock()
 		releaseQueueAdmission()
@@ -1553,20 +1787,23 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
-		ID:             workerID,
-		ParticipantID:  prt.ID,
-		Type:           wt.Name,
-		TaskName:       threadMeta.TaskName,
-		AgentProfile:   threadMeta.AgentProfile,
-		AgentPath:      threadMeta.Path,
-		ParentID:       threadMeta.ParentID,
-		Description:    req.Description,
-		Prompt:         forkPrompt,
-		Toolkit:        workerKit,
-		HistoryPath:    historyPath,
-		WorkerRoot:     workerRoot,
-		Ultra:          threadMeta.Ultra,
-		InitialHistory: initialHistory,
+		ID:                 workerID,
+		ParticipantID:      prt.ID,
+		Type:               wt.Name,
+		TaskName:           threadMeta.TaskName,
+		AgentProfile:       threadMeta.AgentProfile,
+		AgentPath:          threadMeta.Path,
+		ParentID:           threadMeta.ParentID,
+		Description:        req.Description,
+		Prompt:             forkPrompt,
+		Toolkit:            workerKit,
+		HistoryPath:        historyPath,
+		WorkerRoot:         workerRoot,
+		ModelAlias:         strings.TrimSpace(req.ModelAlias),
+		ModelAliasFallback: modelAliasFallback,
+		WorkerRuntime:      spawnRuntime,
+		Ultra:              threadMeta.Ultra,
+		InitialHistory:     initialHistory,
 	})
 	if err != nil {
 		if worktreeRef != nil {
@@ -1582,13 +1819,19 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	spawned := sa.Snapshot()
 
 	result := &SpawnResult{
-		Action:       "spawn_agent",
-		AgentID:      spawned.ID,
-		TaskName:     threadMeta.TaskName,
-		AgentProfile: threadMeta.AgentProfile,
-		AgentPath:    threadMeta.Path,
-		Status:       string(spawned.Status),
-		Isolation:    string(isolation),
+		Action:             "spawn_agent",
+		AgentID:            spawned.ID,
+		TaskName:           threadMeta.TaskName,
+		AgentProfile:       threadMeta.AgentProfile,
+		AgentPath:          threadMeta.Path,
+		Status:             string(spawned.Status),
+		Isolation:          string(isolation),
+		ModelAlias:         strings.TrimSpace(req.ModelAlias),
+		ModelAliasFallback: modelAliasFallback,
+		ResolvedProvider:   resolvedProvider,
+		ResolvedModel:      resolvedModel,
+		ResolvedAPIModel:   resolvedAPIModel,
+		ValidAliases:       modelAliasValid,
 	}
 	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
 	if worktreeRef != nil {
@@ -2726,6 +2969,7 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		ParentHistory: providers.CloneChatMessages(prepared.ParentHistory),
 		ModelOverride: prepared.ModelOverride,
 		ModelPin:      prepared.ModelPin,
+		ModelAlias:    prepared.ModelAlias,
 	}
 }
 
@@ -2763,6 +3007,7 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		ParentHistory: providers.CloneChatMessages(payload.ParentHistory),
 		ModelOverride: payload.ModelOverride,
 		ModelPin:      payload.ModelPin,
+		ModelAlias:    payload.ModelAlias,
 	}, nil
 }
 
@@ -2796,6 +3041,47 @@ func (c *AgentControl) restoreQueuedSpawns() error {
 		c.queueMu.Unlock()
 	}
 	return nil
+}
+
+// resolveModelAlias resolves a configured model alias into a complete worker
+// runtime. A blank alias returns nil and no fallback. A non-empty alias with
+// no resolver or an unknown alias returns nil with fallback=true and the list
+// of valid aliases for diagnostics. A resolver error for a configured alias
+// is returned as an error so the spawn fails visibly instead of silently
+// falling back to the worker default.
+func (c *AgentControl) resolveModelAlias(alias string) (*subagent.WorkerRuntime, bool, []string, error) {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return nil, false, nil, nil
+	}
+	resolver := c.currentModelAliasResolver()
+	if resolver == nil {
+		return nil, true, nil, nil
+	}
+	res := resolver(alias)
+	if res.Err != nil {
+		return nil, false, nil, fmt.Errorf("resolve model alias %q: %w", alias, res.Err)
+	}
+	if res.Unknown {
+		return nil, true, res.ValidAliases, nil
+	}
+	if !res.Found {
+		return nil, true, res.ValidAliases, nil
+	}
+	runtime := res.Runtime.Clone()
+	if strings.TrimSpace(runtime.Provider) == "" {
+		return nil, false, nil, fmt.Errorf("resolve model alias %q: resolver returned an empty provider", alias)
+	}
+	if strings.TrimSpace(runtime.Model) == "" {
+		return nil, false, nil, fmt.Errorf("resolve model alias %q: resolver returned an empty model", alias)
+	}
+	if strings.TrimSpace(runtime.APIModel) == "" {
+		runtime.APIModel = strings.TrimSpace(runtime.Model)
+	}
+	if runtime.Client == nil {
+		return nil, false, nil, fmt.Errorf("resolve model alias %q: resolver returned a nil client", alias)
+	}
+	return &runtime, false, nil, nil
 }
 
 // resolveSpawnModelPin turns a raw participant model pin into the concrete
@@ -3001,6 +3287,30 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		// existed) get a fresh participant at start time.
 		participantID = c.newEphemeralParticipant(prepared.ThreadMeta.TaskName, prepared.WorkerType).ID
 	}
+	// Re-resolve the requested model alias at launch so settings changes affect
+	// queued work before it starts. A found alias uses its runtime; an unknown
+	// alias falls back to the current default runtime and records the fallback;
+	// an omitted alias with no legacy pin snapshots the current default runtime.
+	aliasRuntime, aliasFallback, _, aliasErr := c.resolveModelAlias(prepared.ModelAlias)
+	if aliasErr != nil {
+		if worktreeRef != nil {
+			_ = worktrees.Cleanup(worktreeRef)
+		}
+		return queuedSpawnStartUnknown, fmt.Errorf("model alias: %w", aliasErr)
+	}
+	var spawnRuntime *subagent.WorkerRuntime
+	modelAliasFallback := false
+	if aliasRuntime != nil {
+		spawnRuntime = aliasRuntime
+	} else if aliasFallback {
+		defaults := c.manager.DefaultWorkerRuntime()
+		spawnRuntime = &defaults
+		modelAliasFallback = true
+	} else if strings.TrimSpace(prepared.ModelPin) == "" && strings.TrimSpace(prepared.ModelOverride) == "" && prepared.ClientOverride == nil {
+		defaults := c.manager.DefaultWorkerRuntime()
+		spawnRuntime = &defaults
+	}
+
 	// Per-participant model pin restore. Queued spawns persist the raw
 	// pin (e.g. "alt-provider:model") but not the stream client, so we must
 	// rebuild the client for any cross-provider pin before the runner picks
@@ -3040,25 +3350,28 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 			return
 		}
 		_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
-			ID:             prepared.WorkerID,
-			ParticipantID:  participantID,
-			Type:           prepared.WorkerType.Name,
-			TaskName:       prepared.ThreadMeta.TaskName,
-			AgentProfile:   prepared.ThreadMeta.AgentProfile,
-			AgentPath:      prepared.ThreadMeta.Path,
-			ParentID:       prepared.ThreadMeta.ParentID,
-			Description:    prepared.Description,
-			Prompt:         prompt,
-			SystemPrompt:   systemPrompt,
-			Toolkit:        workerKit,
-			HistoryPath:    historyPath,
-			WorkerRoot:     workerRoot,
-			InitialHistory: initialHistory,
-			Model:          modelOverride,
-			ModelPin:       prepared.ModelPin,
-			Ultra:          prepared.ThreadMeta.Ultra,
-			Client:         clientOverride,
-			ProviderName:   providerOverride,
+			ID:                 prepared.WorkerID,
+			ParticipantID:      participantID,
+			Type:               prepared.WorkerType.Name,
+			TaskName:           prepared.ThreadMeta.TaskName,
+			AgentProfile:       prepared.ThreadMeta.AgentProfile,
+			AgentPath:          prepared.ThreadMeta.Path,
+			ParentID:           prepared.ThreadMeta.ParentID,
+			Description:        prepared.Description,
+			Prompt:             prompt,
+			SystemPrompt:       systemPrompt,
+			Toolkit:            workerKit,
+			HistoryPath:        historyPath,
+			WorkerRoot:         workerRoot,
+			InitialHistory:     initialHistory,
+			Model:              modelOverride,
+			ModelPin:           prepared.ModelPin,
+			ModelAlias:         prepared.ModelAlias,
+			ModelAliasFallback: modelAliasFallback,
+			WorkerRuntime:      spawnRuntime,
+			Ultra:              prepared.ThreadMeta.Ultra,
+			Client:             clientOverride,
+			ProviderName:       providerOverride,
 		})
 		// Manager.Spawn publishes the worker synchronously. Close turn admission
 		// before storage acknowledgement so BeginShutdown can acquire its writer
@@ -4376,17 +4689,56 @@ func (c *AgentControl) rehydrateAgent(id string) (*subagent.SubAgent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot resume agent %q: worker toolkit: %w", id, err)
 	}
-	model, clientOverride, providerOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("resumed agent %s", id), run.Model, run.ModelPin, nil)
-	if err != nil {
-		return nil, err
+
+	var runtime *subagent.WorkerRuntime
+	var clientOverride providers.StreamClient
+	var providerOverride string
+	var modelOverride string
+	if run.Runtime != nil {
+		// The snapshot was started with an aliased/default runtime. Rebuild
+		// only the client for the persisted provider; the rest of the runtime
+		// must stay exactly as it was at first run. If the persisted provider
+		// is non-empty, a missing/failing resolver must fail explicitly rather
+		// than routing through the current default client, which would violate
+		// the frozen runtime provenance. An empty persisted provider safely
+		// falls back to the manager's current default client (no provider
+		// identity to preserve).
+		provider := strings.TrimSpace(run.Runtime.Provider)
+		if provider != "" {
+			resolver := c.currentProviderClientResolver()
+			if resolver == nil {
+				return nil, fmt.Errorf("cannot resume agent %q: snapshot has a frozen runtime for provider %q but no provider-client resolver is installed", id, provider)
+			}
+			rebuilt, resolveErr := resolver(provider)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("cannot resume agent %q: rebuild client for provider %q: %w", id, provider, resolveErr)
+			}
+			if rebuilt == nil {
+				return nil, fmt.Errorf("cannot resume agent %q: provider-client resolver returned nil client for provider %q", id, provider)
+			}
+			clientOverride = rebuilt
+			providerOverride = provider
+		}
+		cloned := run.Runtime.Clone()
+		runtime = &cloned
+		runtime.Client = clientOverride
+	} else {
+		// Legacy participant model-pin path: rebuild the (model, client, provider)
+		// triple the same way queued-spawn restore does.
+		modelOverride, clientOverride, providerOverride, err = c.resolveSpawnModelPin(fmt.Sprintf("resumed agent %s", id), run.Model, run.ModelPin, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	sa, err := c.manager.Restore(subagent.RestoreOptions{
-		Run:          run,
-		Toolkit:      workerKit,
-		Model:        model,
-		Client:       clientOverride,
-		ProviderName: providerOverride,
-		HistoryPath:  path,
+		Run:           run,
+		Toolkit:       workerKit,
+		Model:         modelOverride,
+		Client:        clientOverride,
+		ProviderName:  providerOverride,
+		WorkerRuntime: runtime,
+		HistoryPath:   path,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cannot resume agent %q: %w", id, err)
@@ -4537,23 +4889,55 @@ func (c *AgentControl) reconcileUnownedHarnessTask(task harness.Task, now time.T
 // shape the recording paths consume.
 func snapshotFromPersistedRun(run subagent.PersistedRun) subagent.SubAgentSnapshot {
 	snap := subagent.SubAgentSnapshot{
-		ID:            run.ID,
-		ParticipantID: run.ParticipantID,
-		Type:          run.Type,
-		TaskName:      run.TaskName,
-		AgentProfile:  run.AgentProfile,
-		AgentPath:     run.AgentPath,
-		ParentID:      run.ParentID,
-		Description:   run.Description,
-		Status:        run.Status,
-		StartedAt:     run.StartedAt,
-		CompletedAt:   run.CompletedAt,
-		Result:        run.Result,
+		ID:                 run.ID,
+		ParticipantID:      run.ParticipantID,
+		Type:               run.Type,
+		TaskName:           run.TaskName,
+		AgentProfile:       run.AgentProfile,
+		AgentPath:          run.AgentPath,
+		ParentID:           run.ParentID,
+		Description:        run.Description,
+		WorkerRoot:         run.CWD,
+		Model:              run.Model,
+		ModelPin:           run.ModelPin,
+		ModelAlias:         run.ModelAlias,
+		ModelAliasFallback: run.ModelAliasFallback,
+		ResolvedProvider:   providerNameFromPersistedRun(run),
+		ResolvedModel:      resolvedModelFromPersistedRun(run),
+		ResolvedAPIModel:   resolvedAPIModelFromPersistedRun(run),
+		Status:             run.Status,
+		StartedAt:          run.StartedAt,
+		CompletedAt:        run.CompletedAt,
+		Result:             run.Result,
 	}
 	if strings.TrimSpace(run.Error) != "" {
 		snap.Error = errors.New(run.Error)
 	}
 	return snap
+}
+
+func providerNameFromPersistedRun(run subagent.PersistedRun) string {
+	if run.Runtime != nil {
+		return strings.TrimSpace(run.Runtime.Provider)
+	}
+	return ""
+}
+
+func resolvedModelFromPersistedRun(run subagent.PersistedRun) string {
+	if run.Runtime != nil {
+		return strings.TrimSpace(run.Runtime.Model)
+	}
+	return strings.TrimSpace(run.Model)
+}
+
+func resolvedAPIModelFromPersistedRun(run subagent.PersistedRun) string {
+	if run.Runtime != nil {
+		if api := strings.TrimSpace(run.Runtime.APIModel); api != "" {
+			return api
+		}
+		return strings.TrimSpace(run.Runtime.Model)
+	}
+	return strings.TrimSpace(run.Model)
 }
 
 // markHarnessTaskInterrupted settles one orphaned task as interrupted. The

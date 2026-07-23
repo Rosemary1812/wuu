@@ -43,14 +43,6 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 						Turn:     turn,
 					})
 				}
-				// Decision-five concurrency lock: a named agent is busy for
-				// the lifetime of its run. This is the authoritative acquire
-				// and the ONLY one for workflow-dispatched named runs, which
-				// never pass through participant/start. It is idempotent with
-				// the participant/start reservation (binds the run id).
-				if pid := strings.TrimSpace(n.Snapshot.ParticipantID); pid != "" {
-					s.markParticipantBusy(pid, "task", n.Snapshot.ID)
-				}
 			}
 			_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
 				ThreadID: threadID,
@@ -134,9 +126,6 @@ func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *ag
 			}
 			time.Sleep(participantRunCompletionRetryDelay)
 		}
-		// Kanban-OS hook: if this execution site is bound to a kanban run,
-		// fold the same terminal outcome into it (no-op otherwise).
-		s.completeKanbanRunForAgent(participantID, agentID, n.Status, summary)
 	}
 
 	// Commit the in-memory dedupe only after the durable core succeeds. Two
@@ -158,9 +147,6 @@ func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *ag
 			Agent:    s.agentFromSnapshot(control, n.Snapshot),
 		})
 		s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
-	}
-	if participantID != "" {
-		s.releaseParticipantBusy(participantID, agentID)
 	}
 	if closed {
 		return nil
@@ -435,6 +421,13 @@ func (s *Server) agentFromSnapshot(control *agentcontrol.AgentControl, snap suba
 		ParentID:            snap.ParentID,
 		Description:         snap.Description,
 		Status:              string(snap.Status),
+		ModelAlias:          snap.ModelAlias,
+		ModelAliasFallback:  snap.ModelAliasFallback,
+		Provider:            snap.ResolvedProvider,
+		Model:               snap.ResolvedModel,
+		APIModel:            snap.ResolvedAPIModel,
+		Effort:              snap.ResolvedEffort,
+		Variant:             snap.ResolvedVariant,
 		Result:              ref.Preview,
 		ResultPath:          ref.Path,
 		ResultBytes:         ref.Bytes,

@@ -54,6 +54,9 @@ import (
 // attach without rebuilding the agent.
 type Options struct {
 	RootDir string
+	// Host is immutable process metadata supplied by the shell or cloud
+	// control plane. Its zero value resolves to a local host.
+	Host Host
 	// WorkspaceID is the stable, location-independent identity of the
 	// workspace (the desktop's registered-project id). When set, the workspace
 	// state directory is keyed by this id so it survives the project being
@@ -97,6 +100,7 @@ type Session struct {
 	ProviderName             string
 	Model                    string
 	RootDir                  string
+	Host                     Host
 	WorkspaceID              string
 	StateDir                 string
 	ConfigPath               string
@@ -117,6 +121,8 @@ type Session struct {
 	// active for this session. False when Memory.Disable is set.
 	MemdirEnabled            bool
 	DreamIntervalDays        int
+	DreamClient              providers.Client
+	DreamModel               string
 	AgentControl             *agentcontrol.AgentControl
 	ProcessManager           *process.Manager
 	Toolkit                  *tools.Toolkit
@@ -190,6 +196,7 @@ func (s *Session) cloneForThreadModel() *Session {
 		ProviderName:                s.ProviderName,
 		Model:                       s.Model,
 		RootDir:                     s.RootDir,
+		Host:                        s.Host,
 		WorkspaceID:                 s.WorkspaceID,
 		StateDir:                    s.StateDir,
 		ConfigPath:                  s.ConfigPath,
@@ -207,6 +214,8 @@ func (s *Session) cloneForThreadModel() *Session {
 		Memory:                      s.Memory,
 		MemdirEnabled:               s.MemdirEnabled,
 		DreamIntervalDays:           s.DreamIntervalDays,
+		DreamClient:                 s.DreamClient,
+		DreamModel:                  s.DreamModel,
 		AgentControl:                s.AgentControl,
 		ProcessManager:              s.ProcessManager,
 		Toolkit:                     s.Toolkit,
@@ -302,6 +311,10 @@ func NewSession(opts Options) (*Session, error) {
 	rootDir := strings.TrimSpace(opts.RootDir)
 	if rootDir == "" {
 		return nil, fmt.Errorf("root dir is required")
+	}
+	host, err := ResolveHost(opts.Host)
+	if err != nil {
+		return nil, err
 	}
 	cfg := opts.Config
 
@@ -597,13 +610,36 @@ func NewSession(opts Options) (*Session, error) {
 		ruleProviderCfg,
 		cfg.Agent.MaxContextTokens,
 	)
-	dreamIntervalDays := cfg.Memory.DreamIntervalDaysValue()
-	if cfg.Memory.Disable {
-		dreamIntervalDays = 0
+	dreamIntervalDays := 0
+	var dreamClient providers.Client
+	var dreamModel string
+	if !cfg.Memory.Disable && cfg.Memory.DreamEnabled() {
+		dreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+		if dreamIntervalDays <= 0 {
+			dreamIntervalDays = config.DefaultDreamIntervalDays
+		}
+		dreamModel = cfg.Memory.DreamModel()
+		dreamProvider := cfg.Memory.DreamProvider()
+		if dreamProvider != "" {
+			if providerCfg, _, err := cfg.ResolveProvider(dreamProvider); err == nil {
+				if client, err := providerfactory.BuildClient(providerCfg, dreamProvider); err == nil {
+					dreamClient = client
+					if dreamModel == "" {
+						dreamModel = providerCfg.Model
+					}
+				} else {
+					providers.DebugLogf("dream dedicated client for provider %q: %v", dreamProvider, err)
+					dreamIntervalDays = 0
+				}
+			} else {
+				providers.DebugLogf("dream dedicated provider %q: %v", dreamProvider, err)
+				dreamIntervalDays = 0
+			}
+		}
 	}
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if toolkit != nil {
-		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays, dreamClient, dreamModel); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -650,6 +686,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProviderName:                resolvedName,
 		Model:                       providerCfg.Model,
 		RootDir:                     rootDir,
+		Host:                        host,
 		WorkspaceID:                 workspaceID,
 		StateDir:                    workspaceStateDir,
 		ConfigPath:                  opts.ConfigPath,
@@ -667,6 +704,8 @@ func NewSession(opts Options) (*Session, error) {
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
 		DreamIntervalDays:           dreamIntervalDays,
+		DreamClient:                 dreamClient,
+		DreamModel:                  dreamModel,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
@@ -972,6 +1011,75 @@ func (s *Session) NewThreadRuntimeForRootModel(sessionID, rootDir string, select
 	return threadRuntime, nil
 }
 
+// ConfigureNamedAgentThreadRuntime replaces the ordinary user-memory prompt
+// and file scope on a thread runtime with one named agent's durable identity.
+func (s *Session) ConfigureNamedAgentThreadRuntime(threadRuntime *ThreadRuntime, rootDir, memoryDir, orientation string) error {
+	if s == nil || threadRuntime == nil || threadRuntime.StreamRunner == nil {
+		return errors.New("named agent thread runtime is required")
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	memoryDir = strings.TrimSpace(memoryDir)
+	if rootDir == "" || memoryDir == "" {
+		return errors.New("named agent root and memory directory are required")
+	}
+	if err := memdir.EnsureDir(memoryDir); err != nil {
+		return fmt.Errorf("ensure named agent memory: %w", err)
+	}
+	teaching := memdir.SessionTeaching(memoryDir)
+	index := ""
+	if snap, err := memdir.ReadIndex(memoryDir); err == nil {
+		index = snap.Content
+	} else {
+		providers.DebugLogf("read named agent memory index: %v", err)
+	}
+	toolkit := threadRuntime.Toolkit
+	if toolkit != nil {
+		toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(rootDir, s.WuuHome, memoryDir))
+	}
+	catalog := ""
+	if toolkit != nil {
+		var err error
+		catalog, err = deferredToolCatalogPromptForToolkit(toolkit)
+		if err != nil {
+			return err
+		}
+	}
+	runner := threadRuntime.StreamRunner
+	userPrompt := strings.TrimSpace(strings.TrimSpace(s.UserSystemPrompt) + "\n\n" + strings.TrimSpace(orientation))
+	promptResult := buildBaseSystemPromptResult(
+		rootDir, s.SessionDate, config.DefaultSystemPrompt(), userPrompt,
+		runner.ProviderName, runner.APIModel, activeSurfaceWithDeferredToolCatalog(toolkit, catalog),
+		nil, teaching, index, s.Skills,
+	)
+	runner.UpdateSystemPromptWithSections(promptResult.Content, agentPromptSections(promptResult.Sections))
+	return nil
+}
+
+func (s *Session) NewNamedAgentThreadRuntime(sessionID, rootDir, memoryDir, orientation string, selected ThreadModelSelection) (*ThreadRuntime, error) {
+	if s == nil {
+		return nil, errors.New("runtime session is required")
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return nil, errors.New("named agent root is required")
+	}
+	stateDir, err := resolveWorkspaceStateDir(s.WuuHome, "", rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve named agent state directory: %w", err)
+	}
+	shadow := s.cloneForThreadModel()
+	shadow.WorkspaceID = ""
+	shadow.StateDir = stateDir
+	threadRuntime, err := shadow.NewThreadRuntimeForRootModel(sessionID, rootDir, selected)
+	if err != nil {
+		return nil, err
+	}
+	if err := shadow.ConfigureNamedAgentThreadRuntime(threadRuntime, rootDir, memoryDir, orientation); err != nil {
+		return nil, err
+	}
+	return threadRuntime, nil
+}
+
 // NewThreadRuntimeForRoot creates a per-conversation execution runtime whose
 // tools are rooted at rootDir while durable artifacts stay in the parent
 // workspace state directory.
@@ -1200,7 +1308,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	runner.BeforeRequest = pluginRequestInterceptor(s.PluginHost, s.ProviderName, id, threadRoot)
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
-		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays, s.DreamClient, s.DreamModel); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -2056,9 +2164,32 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 	s.UserSystemPrompt = cfg.Agent.UserSystemPrompt()
 	s.Memory = discoverMemory(s.RootDir, homeDir, cfg.Memory)
 	s.MemdirEnabled = !cfg.Memory.Disable
-	s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
-	if cfg.Memory.Disable {
-		s.DreamIntervalDays = 0
+	s.DreamIntervalDays = 0
+	s.DreamClient = nil
+	s.DreamModel = ""
+	if !cfg.Memory.Disable && cfg.Memory.DreamEnabled() {
+		s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+		if s.DreamIntervalDays <= 0 {
+			s.DreamIntervalDays = config.DefaultDreamIntervalDays
+		}
+		s.DreamModel = cfg.Memory.DreamModel()
+		dreamProvider := cfg.Memory.DreamProvider()
+		if dreamProvider != "" {
+			if providerCfg, _, err := cfg.ResolveProvider(dreamProvider); err == nil {
+				if client, err := providerfactory.BuildClient(providerCfg, dreamProvider); err == nil {
+					s.DreamClient = client
+					if s.DreamModel == "" {
+						s.DreamModel = providerCfg.Model
+					}
+				} else {
+					providers.DebugLogf("dream dedicated client for provider %q: %v", dreamProvider, err)
+					s.DreamIntervalDays = 0
+				}
+			} else {
+				providers.DebugLogf("dream dedicated provider %q: %v", dreamProvider, err)
+				s.DreamIntervalDays = 0
+			}
+		}
 	}
 	if s.Toolkit != nil {
 		s.Toolkit.SetGitAttributionEnabled(cfg.Agent.GitAttributionEnabledValue())
@@ -2071,6 +2202,9 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 			fileScopeExtras = append(fileScopeExtras, userNotebook)
 		}
 		s.Toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(s.Toolkit.RootDir(), s.WuuHome, fileScopeExtras...))
+	}
+	if s.StreamRunner != nil && s.Toolkit != nil {
+		s.StreamRunner.AfterTurn = sessionDreamAfterTurn(s.RootDir, s.StateDir, func() string { return s.Toolkit.SessionDir() }, s.DreamIntervalDays, s.DreamClient, s.DreamModel)
 	}
 	apiModel := s.Model
 	if s.StreamRunner != nil && strings.TrimSpace(s.StreamRunner.APIModel) != "" {

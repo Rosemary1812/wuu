@@ -132,6 +132,17 @@ describe("StreamingMarkdown", () => {
     ]);
   });
 
+  it("keeps a terminal fenced code block closed when adding the stream cursor", () => {
+    const key = streamTextKey("turn", "s10", "text");
+    const text = "重启开发环境：\n\n```bash\ncd desktop\nnpm run dev\n```";
+    streamTextStore.seed(key, text);
+    mount({ streamKey: key, initialText: text, isLive: false, phase: "final_answer" });
+
+    const code = document.querySelector(".rich-code-block code");
+    expect(code?.textContent).toBe("cd desktop\nnpm run dev\n");
+    expect(code?.textContent).not.toContain("```");
+  });
+
   it("renders the visible text as markdown during streaming", async () => {
     const key = streamTextKey("turn", "s1", "text");
     streamTextStore.seed(key, "");

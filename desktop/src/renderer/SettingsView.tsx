@@ -44,7 +44,6 @@ import type {
   InitializeResult,
   MCPAuthStartResult,
   MCPServerStatus,
-  ParticipantProfile,
   ProviderSummary,
   RemoteControlSnapshot,
   RuntimeConnectionUpdate,
@@ -65,13 +64,14 @@ export type ArchivedSessionView = {
   archive_project_name?: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
-import { ENABLE_REMOTE_CONTROL, ENABLE_COLLABORATION } from "./FeatureFlags";
+import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
 import { MemoryPanel } from "./MemoryPanel";
 import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 import { LanguagePreferenceControl } from "./LanguagePreferenceSection";
 import { formatCurrentNumber, useI18n } from "./i18n";
+import { SubagentModelAliases } from "./SubagentModelAliases";
 
 export type SettingsPage =
   | "providers"
@@ -91,20 +91,15 @@ function availableSettingsPage(page: SettingsPage | undefined): SettingsPage {
   if (next === "remote" && !ENABLE_REMOTE_CONTROL) {
     return "providers";
   }
-  if (next === "memory" && !ENABLE_COLLABORATION) {
-    return "providers";
-  }
   return next;
 }
 
 export function SettingsView({
   initialized,
   initialPage,
-  memoryFocusParticipantID,
   running,
   usage,
   runningProviderNames,
-  participants,
   showDebugControlsSetting,
   debugControlsEnabled,
   codexPets,
@@ -141,14 +136,9 @@ export function SettingsView({
 }: {
   initialized?: InitializeResult;
   initialPage?: SettingsPage;
-  // 记忆页打开时预选的同事笔记本（档案面板跳转带过来）。
-  memoryFocusParticipantID?: string;
   running: boolean;
   usage?: SettingsUsageResponse;
   runningProviderNames?: readonly string[];
-  // 记忆页「同事」子 Tab 的数据源：现有 roster 状态（App 的 participants），
-  // 面板内部只保留在职 named agent。
-  participants?: ParticipantProfile[];
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
   codexPets?: CodexPetsSnapshot;
@@ -777,11 +767,9 @@ export function SettingsView({
               <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
                 {t("settings.providers")}
               </SettingsNavItem>
-              {ENABLE_COLLABORATION ? (
-                <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
-                  {t("settings.memory")}
-                </SettingsNavItem>
-              ) : null}
+              <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
+                {t("settings.memory")}
+              </SettingsNavItem>
               <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
                 {t("settings.advanced")}
               </SettingsNavItem>
@@ -896,33 +884,41 @@ export function SettingsView({
                 disabled={addSubmitDisabled}
               />
             ) : activePage === "advanced" ? (
-              <SettingsAdvancedPage
-                initialized={initialized}
-                running={running}
-                autoCompact={autoCompactDraft}
-                compactThreshold={compactThresholdDraft}
-                compactKeepRecent={compactKeepRecentDraft}
-                providerContextWindow={providerContextWindowDraft}
-                providerContextWindowCurrent={formatOptionalTokenCount(
-                  initialized?.advanced_settings?.context_window_tokens,
-                )}
-                providerContextWindowSource={advancedContextSourceLabel(
-                  initialized?.advanced_settings?.context_window_source,
-                  t,
-                )}
-                maxContextTokens={maxContextTokensDraft}
-                maxSteps={maxStepsDraft}
-                temperature={temperatureDraft}
-                error={advancedError}
-                onAutoCompactToggle={toggleAutoCompact}
-                onCompactThresholdChange={setCompactThresholdDraft}
-                onCompactKeepRecentChange={setCompactKeepRecentDraft}
-                onProviderContextWindowChange={setProviderContextWindowDraft}
-                onMaxContextTokensChange={setMaxContextTokensDraft}
-                onMaxStepsChange={setMaxStepsDraft}
-                onTemperatureChange={setTemperatureDraft}
-                onCommitField={commitAdvancedField}
-              />
+              <>
+                <SubagentModelAliases
+                  aliases={initialized?.model_aliases}
+                  providers={providers}
+                  disabled={running || !initialized}
+                  onSave={onAdvancedSave}
+                />
+                <SettingsAdvancedPage
+                  initialized={initialized}
+                  running={running}
+                  autoCompact={autoCompactDraft}
+                  compactThreshold={compactThresholdDraft}
+                  compactKeepRecent={compactKeepRecentDraft}
+                  providerContextWindow={providerContextWindowDraft}
+                  providerContextWindowCurrent={formatOptionalTokenCount(
+                    initialized?.advanced_settings?.context_window_tokens,
+                  )}
+                  providerContextWindowSource={advancedContextSourceLabel(
+                    initialized?.advanced_settings?.context_window_source,
+                    t,
+                  )}
+                  maxContextTokens={maxContextTokensDraft}
+                  maxSteps={maxStepsDraft}
+                  temperature={temperatureDraft}
+                  error={advancedError}
+                  onAutoCompactToggle={toggleAutoCompact}
+                  onCompactThresholdChange={setCompactThresholdDraft}
+                  onCompactKeepRecentChange={setCompactKeepRecentDraft}
+                  onProviderContextWindowChange={setProviderContextWindowDraft}
+                  onMaxContextTokensChange={setMaxContextTokensDraft}
+                  onMaxStepsChange={setMaxStepsDraft}
+                  onTemperatureChange={setTemperatureDraft}
+                  onCommitField={commitAdvancedField}
+                />
+              </>
             ) : activePage === "general" ? (
               <SettingsGeneralPage
                 initialized={initialized}
@@ -948,11 +944,16 @@ export function SettingsView({
                 copyState={copyState}
                 onCopyVersion={copyVersionInfo}
               />
-            ) : ENABLE_COLLABORATION && activePage === "memory" ? (
-              <MemoryPanel
-                participants={participants ?? []}
-                focusParticipantID={memoryFocusParticipantID}
-              />
+            ) : activePage === "memory" ? (
+              <>
+                <MemorySettingsSection
+                  initialized={initialized}
+                  running={running}
+                  providers={providers}
+                  onGeneralSave={onGeneralSave}
+                />
+                <MemoryPanel />
+              </>
             ) : activePage === "remote" && ENABLE_REMOTE_CONTROL ? (
               <SettingsRemotePageContainer />
             ) : activePage === "archive" ? (
@@ -1540,6 +1541,165 @@ function SettingsAdvancedPage({
           </div>
         ) : null}
       </div>
+    </SettingsSection>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Memory settings section (Dream)                                          */
+/* -------------------------------------------------------------------------- */
+
+function MemorySettingsSection({
+  initialized,
+  running,
+  providers,
+  onGeneralSave
+}: {
+  initialized: InitializeResult | undefined;
+  running: boolean;
+  providers: ProviderSummary[];
+  onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
+}): JSX.Element {
+  const { t } = useI18n();
+  const generalSettings = initialized?.general_settings;
+  const [dreamEnabledDraft, setDreamEnabledDraft] = useState(generalSettings?.dream_enabled ?? false);
+  const [dreamIntervalDraft, setDreamIntervalDraft] = useState(String(generalSettings?.dream_interval_days ?? 7));
+  const [dreamProviderDraft, setDreamProviderDraft] = useState(generalSettings?.dream_provider ?? "");
+  const [dreamModelDraft, setDreamModelDraft] = useState(generalSettings?.dream_model ?? "");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDreamEnabledDraft(generalSettings?.dream_enabled ?? false);
+    setDreamIntervalDraft(String(generalSettings?.dream_interval_days ?? 7));
+    setDreamProviderDraft(generalSettings?.dream_provider ?? "");
+    setDreamModelDraft(generalSettings?.dream_model ?? "");
+    setError("");
+  }, [generalSettings?.dream_enabled, generalSettings?.dream_interval_days, generalSettings?.dream_provider, generalSettings?.dream_model]);
+
+  const providerOptions = useMemo(
+    () => [
+      { value: "", label: t("provider.current") },
+      ...providers.map((p) => ({ value: p.name, label: p.name }))
+    ],
+    [providers, t]
+  );
+
+  async function commitDreamToggle(): Promise<void> {
+    const next = !dreamEnabledDraft;
+    setDreamEnabledDraft(next);
+    setError("");
+    try {
+      await onGeneralSave({
+        dream_enabled: next,
+        dream_interval_days: parseInt(dreamIntervalDraft, 10) || 7,
+        dream_provider: dreamProviderDraft,
+        dream_model: dreamModelDraft
+      });
+    } catch (err) {
+      setDreamEnabledDraft(!next);
+      setError(err instanceof Error ? err.message : t("settings.saveDreamFailed"));
+    }
+  }
+
+  async function commitDreamFields(overrides?: { interval?: number; provider?: string; model?: string }): Promise<void> {
+    if (!generalSettings) return;
+    const interval = overrides?.interval ?? parseInt(dreamIntervalDraft, 10);
+    const provider = overrides?.provider ?? dreamProviderDraft;
+    const model = overrides?.model ?? dreamModelDraft;
+    if (Number.isNaN(interval) || interval <= 0) {
+      setError(t("settings.dreamIntervalPositive"));
+      return;
+    }
+    const update: RuntimeGeneralSettingsUpdate = {
+      dream_interval_days: interval,
+      dream_provider: provider,
+      dream_model: model
+    };
+    setError("");
+    try {
+      await onGeneralSave(update);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("settings.saveDreamFailed"));
+    }
+  }
+
+  return (
+    <SettingsSection title={t("settings.dream")} testID="settings-dream">
+      <SettingsCard>
+        <SettingsRow
+          title={t("settings.dream")}
+          description={t("settings.dreamDescription")}
+        >
+          <button
+            className="settings-switch"
+            type="button"
+            role="switch"
+            aria-checked={dreamEnabledDraft}
+            data-testid="settings-dream-toggle"
+            disabled={running || !initialized}
+            onClick={() => void commitDreamToggle()}
+          >
+            <span className="settings-switch-thumb" aria-hidden="true" />
+            <span className="sr-only">{dreamEnabledDraft ? t("settings.disableDream") : t("settings.enableDream")}</span>
+          </button>
+        </SettingsRow>
+        {dreamEnabledDraft ? (
+          <>
+            <SettingsRow
+              title={t("settings.dreamInterval")}
+              description={t("settings.dreamIntervalDescription")}
+            >
+              <input
+                type="number"
+                min={1}
+                step={1}
+                className="settings-input settings-input-num"
+                value={dreamIntervalDraft}
+                data-testid="settings-dream-interval"
+                disabled={running || !initialized}
+                onChange={(event) => setDreamIntervalDraft(event.target.value)}
+                onBlur={() => void commitDreamFields()}
+              />
+            </SettingsRow>
+            <SettingsRow
+              title={t("settings.dreamDedicatedProvider")}
+              description={t("settings.dreamDedicatedProviderDescription")}
+            >
+              <SelectMenu
+                value={dreamProviderDraft}
+                options={providerOptions}
+                disabled={running || !initialized}
+                dataTestid="settings-dream-provider"
+                onChange={(value) => {
+                  setDreamProviderDraft(value);
+                  setDreamModelDraft("");
+                  void commitDreamFields({ provider: value, model: "" });
+                }}
+              />
+            </SettingsRow>
+            <SettingsRow
+              title={t("settings.dreamDedicatedModel")}
+              description={t("settings.dreamDedicatedModelDescription")}
+            >
+              <input
+                type="text"
+                className="settings-input"
+                value={dreamModelDraft}
+                placeholder={t("provider.modelName")}
+                data-testid="settings-dream-model"
+                disabled={running || !initialized}
+                onChange={(event) => setDreamModelDraft(event.target.value)}
+                onBlur={() => void commitDreamFields()}
+              />
+            </SettingsRow>
+          </>
+        ) : null}
+        {error ? (
+          <div className="settings-row settings-row-footer">
+            <div className="settings-error">{error}</div>
+          </div>
+        ) : null}
+      </SettingsCard>
     </SettingsSection>
   );
 }

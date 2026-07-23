@@ -179,7 +179,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		},
 	}
 
-	res, err := RunToolLoop(ctx, history, cfg, &streamStep{client: providers.AdaptStreamClient(r.Client)})
+	res, err := RunToolLoop(ctx, history, cfg, NewStreamStep(r.Client))
 	return RunResult{
 		Content:             res.Content,
 		InputTokens:         res.InputTokens,

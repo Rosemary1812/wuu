@@ -1,0 +1,272 @@
+import { act, useContext, useEffect, useState } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Turn } from "../shared/protocol";
+import { I18nProvider, setActiveLocale } from "./i18n";
+import { ComposerGoalStrip } from "./ComposerGoalStrip";
+import {
+  WorkspaceDocumentDrawerContext,
+  WorkspaceDocumentTurnDock,
+} from "./WorkspaceDocumentTurnDock";
+
+function turn(
+  id: string,
+  status: Turn["status"] = "in_progress",
+  userText = "Rewrite the weak section.",
+): Turn {
+  return {
+    id,
+    items_view: "full",
+    status,
+    items: [
+      { id: `${id}-user`, type: "user_message", text: userText },
+      {
+        id: `${id}-agent`,
+        type: "agent_message",
+        phase: "final_answer",
+        status: "completed",
+        text: "I am **tightening** that section now.",
+      },
+    ],
+  };
+}
+
+function CoordinatedAccessoryProbe(): JSX.Element {
+  const documentDrawer = useContext(WorkspaceDocumentDrawerContext);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (documentDrawer?.documentResultExpanded) {
+      setExpanded(false);
+    }
+  }, [documentDrawer?.documentResultExpanded]);
+
+  return (
+    <button
+      type="button"
+      data-testid="coordinated-accessory"
+      aria-expanded={expanded}
+      onClick={() => {
+        setExpanded(true);
+        documentDrawer?.collapseDocumentResult();
+      }}
+    >
+      Accessory
+    </button>
+  );
+}
+
+describe("WorkspaceDocumentTurnDock", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    setActiveLocale("en-US");
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  function render(turns: Turn[], key = "thread-a"): void {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <WorkspaceDocumentTurnDock key={key} turns={turns}>
+            <div data-testid="composer">Composer</div>
+          </WorkspaceDocumentTurnDock>
+        </I18nProvider>,
+      );
+    });
+  }
+
+  it("shows a compact turn peek and expands only the rich final answer", () => {
+    render([turn("turn-1")]);
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".workspace-document-turn-summary",
+    );
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.textContent).toBe("");
+    expect(container.querySelector(".workspace-document-turn-details")).toBeNull();
+
+    act(() => toggle?.click());
+
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    const details = container.querySelector(".workspace-document-turn-details");
+    expect(details?.textContent).not.toContain("Rewrite the weak section.");
+    expect(details?.textContent).toContain("I am tightening that section now.");
+    expect(details?.querySelector("strong")?.textContent).toBe("tightening");
+    expect(details?.querySelector(".workspace-document-turn-message")).toBeNull();
+  });
+
+  it("keeps the previous result visible while a newer turn only has commentary", () => {
+    const previousTurn = turn("turn-previous", "completed");
+    const runningTurn = turn("turn-running");
+    runningTurn.items = [
+      runningTurn.items[0],
+      {
+        id: "turn-running-commentary",
+        type: "agent_message",
+        phase: "commentary",
+        status: "in_progress",
+        text: "Internal progress that does not belong in the result.",
+      },
+    ];
+    render([previousTurn, runningTurn]);
+
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Internal progress");
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".workspace-document-turn-summary")?.click();
+    });
+    expect(container.querySelector(".workspace-document-turn-details")?.textContent).toContain(
+      "I am tightening that section now.",
+    );
+    expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+  });
+
+  it("appears and expands automatically when final text starts", () => {
+    const runningTurn = turn("turn-live-final");
+    runningTurn.items = [runningTurn.items[0]];
+    render([runningTurn]);
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).toBeNull();
+
+    runningTurn.items = [
+      runningTurn.items[0],
+      {
+        id: "turn-live-final-agent",
+        type: "agent_message",
+        phase: "final_answer",
+        status: "completed",
+        text: "The **final result** is ready.",
+      },
+    ];
+    render([{ ...runningTurn, items: [...runningTurn.items] }]);
+
+    const toggle = container.querySelector(".workspace-document-turn-summary");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector(".workspace-document-turn-details")?.textContent).toContain(
+      "The final result is ready.",
+    );
+  });
+
+  it("resets the drawer when the active session changes", () => {
+    render([turn("turn-shared")]);
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".workspace-document-turn-summary")?.click();
+    });
+    expect(
+      container
+        .querySelector(".workspace-document-turn-summary")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+
+    render([turn("turn-shared")], "thread-b");
+
+    expect(
+      container
+        .querySelector(".workspace-document-turn-summary")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
+
+  it("coordinates document result expansion with composer accessory drawers", () => {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <WorkspaceDocumentTurnDock turns={[turn("turn-coordinated")]}>
+            <CoordinatedAccessoryProbe />
+          </WorkspaceDocumentTurnDock>
+        </I18nProvider>,
+      );
+    });
+
+    const resultToggle = container.querySelector<HTMLButtonElement>(
+      ".workspace-document-turn-summary",
+    );
+    const accessory = container.querySelector<HTMLButtonElement>(
+      '[data-testid="coordinated-accessory"]',
+    );
+
+    act(() => resultToggle?.click());
+    expect(resultToggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(accessory?.getAttribute("aria-expanded")).toBe("false");
+
+    act(() => accessory?.click());
+    expect(resultToggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(accessory?.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => resultToggle?.click());
+    expect(resultToggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(accessory?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps the Composer clean when the thread has no user turn", () => {
+    render([
+      {
+        id: "internal-turn",
+        items_view: "full",
+        status: "completed",
+        items: [{ id: "internal-agent", type: "agent_message", text: "Internal" }],
+      },
+    ]);
+
+    expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).toBeNull();
+  });
+
+  it("stacks an active conversation goal between the document result and composer", () => {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <WorkspaceDocumentTurnDock turns={[turn("turn-with-goal")]}>
+            <ComposerGoalStrip
+              summary={{
+                id: "goal-document-focus",
+                thread_id: "thread-a",
+                text: "Finish the plan while editing the document",
+                status: "running",
+                can_pause: true,
+                can_clear: true,
+              }}
+              onEdit={() => {}}
+              onPause={() => {}}
+              onResume={() => {}}
+              onClear={() => {}}
+            />
+          </WorkspaceDocumentTurnDock>
+        </I18nProvider>,
+      );
+    });
+
+    const resultDrawer = container.querySelector(
+      '[data-testid="workspace-document-turn-drawer"]',
+    );
+    const goalDrawer = container.querySelector(".composer-goal-strip");
+    const composerLayer = goalDrawer?.closest(".workspace-document-turn-composer");
+
+    expect(resultDrawer).not.toBeNull();
+    expect(goalDrawer?.textContent).toContain("Finish the plan while editing the document");
+    expect(resultDrawer?.nextElementSibling).toBe(composerLayer);
+
+    act(() => {
+      goalDrawer
+        ?.querySelector<HTMLButtonElement>('button[aria-label="Expand goal"]')
+        ?.click();
+    });
+
+    expect(goalDrawer?.querySelector(".composer-goal-strip-full-text")?.textContent).toBe(
+      "Finish the plan while editing the document",
+    );
+    expect(
+      resultDrawer?.querySelector(".workspace-document-turn-summary")?.getAttribute(
+        "aria-expanded",
+      ),
+    ).toBe("false");
+  });
+});

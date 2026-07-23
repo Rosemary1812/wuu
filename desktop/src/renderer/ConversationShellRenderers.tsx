@@ -35,8 +35,6 @@ import {
 } from "./AppLayoutState";
 import { ChipGalleryPanel } from "./ChipGalleryPanel";
 import { EnvironmentSideStack } from "./EnvironmentSideStack";
-import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
-import type { ParticipantPanelState } from "./ParticipantState";
 import {
   Composer,
 } from "./ComposerView";
@@ -53,9 +51,6 @@ import { useI18n } from "./i18n";
 
 type RunDebugPanelProps = ComponentProps<typeof RunDebugPanel>;
 type EnvironmentSideStackProps = ComponentProps<typeof EnvironmentSideStack>;
-type ParticipantProfilePanelProps = ComponentProps<
-  typeof ParticipantProfilePanel
->;
 type SettingsViewProps = ComponentProps<typeof SettingsView>;
 
 export type ConversationSplitPaneRendererProps = {
@@ -236,6 +231,7 @@ export function ConversationSplitLayoutRenderer({
 
 export type ConversationTitleContentProps = {
   state: AppState;
+  crossWorkspaceThreads: Thread[];
   sessionTabsVisible: boolean;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
@@ -250,6 +246,7 @@ export type ConversationTitleContentProps = {
 
 export function ConversationTitleContent({
   state,
+  crossWorkspaceThreads,
   sessionTabsVisible,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
@@ -265,6 +262,7 @@ export function ConversationTitleContent({
     return (
       <SessionTabStrip
         state={state}
+        crossWorkspaceThreads={crossWorkspaceThreads}
         pendingSwitchThreadID={pendingSwitchThreadID}
         pendingComposerMessagesByThread={pendingComposerMessagesByThread}
         canStartNewThread={Boolean(state.activeContext)}
@@ -471,12 +469,6 @@ export type ConversationSidePanelsProps = {
   onToggleSubagentPinned: (agent: Agent) => void;
   onArchiveSubagent: (agent: Agent) => void;
   onClearSubagentArchiveConfirm: (id: string) => void;
-  participantPanel?: ParticipantPanelState;
-  onCloseParticipantPanel: () => void;
-  onSaveParticipant: ParticipantProfilePanelProps["onSave"];
-  onFeedbackParticipant: ParticipantProfilePanelProps["onFeedback"];
-  onOpenMemoryPanel: ParticipantProfilePanelProps["onOpenMemoryPanel"];
-  onRetireParticipant: ParticipantProfilePanelProps["onRetire"];
   viewContextSwitchPending: boolean;
 };
 
@@ -506,12 +498,6 @@ export function ConversationSidePanels({
   onToggleSubagentPinned,
   onArchiveSubagent,
   onClearSubagentArchiveConfirm,
-  participantPanel,
-  onCloseParticipantPanel,
-  onSaveParticipant,
-  onFeedbackParticipant,
-  onOpenMemoryPanel,
-  onRetireParticipant,
   viewContextSwitchPending,
 }: ConversationSidePanelsProps): JSX.Element {
   return (
@@ -545,31 +531,6 @@ export function ConversationSidePanels({
         onArchiveSubagent={(agent) => onArchiveSubagent(agent as Agent)}
         onClearSubagentArchiveConfirm={onClearSubagentArchiveConfirm}
       />
-
-      {participantPanel ? (
-        <ParticipantProfilePanel
-          mode={participantPanel.mode}
-          participant={participantPanel.participant}
-          initialName={
-            participantPanel.mode === "new"
-              ? participantPanel.initialName
-              : undefined
-          }
-          providers={state.initialized?.providers}
-          loading={participantPanel.loading}
-          error={participantPanel.error}
-          saving={participantPanel.saving}
-          feedbackSubmitting={participantPanel.feedbackSubmitting}
-          feedbackReply={participantPanel.feedbackReply}
-          retiring={participantPanel.retiring}
-          archived={participantPanel.archived}
-          onClose={onCloseParticipantPanel}
-          onSave={onSaveParticipant}
-          onFeedback={onFeedbackParticipant}
-          onOpenMemoryPanel={onOpenMemoryPanel}
-          onRetire={onRetireParticipant}
-        />
-      ) : null}
 
       {viewContextSwitchPending ? <ViewSwitchLoading /> : null}
     </>

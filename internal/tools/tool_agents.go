@@ -65,6 +65,10 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Optional Agent Profile name with saved memory. Use only when the user explicitly wants that profile or an agent-profile policy requires one; omit for ordinary temporary child tasks.",
 				},
+				"model": map[string]any{
+					"type":        "string",
+					"description": "Optional configured model alias for this subagent. This must be an alias from Settings, not a provider name or raw API model ID. When omitted, blank, or unknown, the current worker model default applies.",
+				},
 				"run_in_background": map[string]any{
 					"type":        "boolean",
 					"description": "Optional. For fresh subagents only. Set true to return immediately and receive the result later through a completion notification while you do non-overlapping work. Omit or false to wait for the child and return its result from this call. Forks always run in the background. For background runs and forks, do not poll; wait for the notification when blocked on the result.",
@@ -90,6 +94,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		SubagentType    string `json:"subagent_type"`
 		Name            string `json:"name"`
 		AgentProfile    string `json:"agent_profile"`
+		Model           string `json:"model"`
 		RunInBackground bool   `json:"run_in_background"`
 		Isolation       string `json:"isolation"`
 	}
@@ -119,6 +124,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	if strings.EqualFold(agentProfile, config.DefaultAgentName) {
 		return "", errors.New("spawn_agent: agent_profile \"default\" is reserved for ordinary temporary sessions. Omit agent_profile or choose a named profile")
 	}
+	modelAlias := strings.TrimSpace(args.Model)
 	subagentType := strings.TrimSpace(args.SubagentType)
 	if subagentType == "" {
 		parentHistory := agent.HistoryFromContext(ctx)
@@ -138,6 +144,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 			ParentPath:   currentAgentPath(t.env),
 			Prompt:       wrapForkPrompt(prompt),
 			Isolation:    isolation,
+			ModelAlias:   modelAlias,
 			Synchronous:  false,
 		}, cleaned)
 		if err != nil {
@@ -163,6 +170,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		ParentID:     strings.TrimSpace(t.env.AgentID),
 		ParentPath:   currentAgentPath(t.env),
 		Isolation:    isolation,
+		ModelAlias:   modelAlias,
 		Synchronous:  !args.RunInBackground && !wt.Background,
 	})
 	if err != nil {

@@ -11,6 +11,7 @@ import {
   type SubagentRowSummary,
 } from "./EnvironmentSideStack";
 import { agentStatusLabel } from "./ThreadAgents";
+import { translateCurrent } from "./i18n";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -151,5 +152,33 @@ describe("EnvironmentSideStack", () => {
     expect(row?.title).toContain("worker");
     expect(row?.title).toContain("Check types");
     expect(row?.title).not.toContain("undefined");
+  });
+
+  it("shows only the five most recent subagents and reports older hidden ones", () => {
+    renderStack(
+      {},
+      Array.from({ length: 7 }, (_, index) => ({
+        id: `agent-${index}`,
+        status: "completed",
+        task_name: `Task ${index}`,
+        started_at: `2026-01-0${index + 1}T00:00:00Z`,
+      })),
+    );
+
+    const rows = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".subagent-row-main"),
+    );
+    expect(rows).toHaveLength(5);
+    expect(rows.map((row) => row.title)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Task 2"),
+        expect.stringContaining("Task 6"),
+      ]),
+    );
+    expect(rows.some((row) => row.title.includes("Task 0"))).toBe(false);
+    expect(rows.some((row) => row.title.includes("Task 1"))).toBe(false);
+    expect(container.querySelector(".environment-subagent-overflow-note")?.textContent).toBe(
+      translateCurrent("environment.earlierSubtasksHidden", { count: 2 }),
+    );
   });
 });

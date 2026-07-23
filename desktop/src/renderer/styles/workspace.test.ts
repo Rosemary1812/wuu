@@ -107,6 +107,36 @@ describe("workspace right panel chrome", () => {
   });
 });
 
+describe("workspace document turn glass", () => {
+  it("keeps the document composer dock aligned with the main conversation composer", () => {
+    const dock = cssRuleBody(".workspace-document-turn-dock");
+
+    expect(dock).toMatch(/width:\s*min\(100%,\s*var\(--session-composer-width\)\);/);
+    expect(dock).toMatch(/margin:\s*0 auto;/);
+  });
+
+  it("makes only the turn drawer glass while leaving the Composer surface alone", () => {
+    const drawer = cssRuleBody(".workspace-document-turn-drawer");
+    const summary = cssRuleBody(".workspace-document-turn-summary");
+    const details = cssRuleBody(".workspace-document-turn-details");
+    const composerFrame = cssRuleBody(".workspace-document-composer .composer-frame");
+
+    expect(drawer).toMatch(/width:\s*calc\(100% - 48px\);/);
+    expect(drawer).toMatch(/margin:\s*0 auto -6px;/);
+    expect(drawer).toMatch(/background:\s*radial-gradient\(/);
+    expect(drawer).toMatch(/linear-gradient\(/);
+    expect(drawer).toMatch(/var\(--paper\) 42%, transparent/);
+    expect(drawer).toMatch(/var\(--surface-2\) 16%, transparent/);
+    expect(drawer).toMatch(/backdrop-filter:\s*blur\(24px\)\s+saturate\(1\.18\);/);
+    expect(summary).toMatch(/background:\s*transparent;/);
+    expect(details).toMatch(/background:\s*transparent;/);
+    expect(composerFrame).toMatch(/0 18px 54px rgba\(20, 24, 28, 0\.14\)/);
+    expect(workspaceCss).not.toContain(
+      ".workspace-document-composer .document-composer-wrap .composer-frame",
+    );
+  });
+});
+
 describe("workspace readonly file preview", () => {
   it("removes editing chrome and gives the content the full available height", () => {
     expect(workspaceCss).not.toContain(".workspace-file-editor-toolbar");
@@ -228,19 +258,47 @@ describe("workspace file preview layout", () => {
     expect(activeSlider).toMatch(/background:\s*var\(--scrollbar-thumb-active\);/);
   });
 
-  it("lays out file content first and the file tree as the right column", () => {
+  it("supports right, left, and collapsed file-tree layouts", () => {
     const split = cssRuleBody(".workspace-files-split");
     expect(split).toMatch(/display:\s*grid;/);
-    expect(split).toMatch(
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="right"]')).toMatch(
       /grid-template-columns:\s*minmax\(0, 1fr\) minmax\(180px, var\(--workspace-file-tree-width, 320px\)\);/,
     );
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="left"]')).toMatch(
+      /grid-template-columns:\s*minmax\(180px, var\(--workspace-file-tree-width, 320px\)\) minmax\(0, 1fr\);/,
+    );
+    expect(cssRuleBody(".workspace-files-split.tree-hidden")).toMatch(
+      /grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
     const resizer = cssRuleBody(".workspace-files-resizer");
-    expect(resizer).toMatch(/grid-column:\s*2;/);
-    expect(resizer).toMatch(/justify-self:\s*start;/);
     expect(resizer).toMatch(/cursor:\s*col-resize;/);
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="right"] .workspace-files-resizer')).toMatch(
+      /grid-column:\s*2;[\s\S]*justify-self:\s*start;/,
+    );
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="left"] .workspace-files-resizer')).toMatch(
+      /grid-column:\s*1;[\s\S]*justify-self:\s*end;/,
+    );
+    expect(cssRuleBody('.workspace-files-split[data-tree-side="left"] .workspace-files-tree')).toMatch(
+      /padding:\s*10px 0;/,
+    );
     const resizerRule = cssRuleBody(".workspace-files-resizer::before");
     expect(resizerRule).toMatch(/inset:\s*0 auto 0 0;/);
     expect(resizerRule).toMatch(/width:\s*1px;/);
+    expect(cssRuleBody(".workspace-file-tree-drag-handle")).toMatch(/cursor:\s*grab;/);
+    const dockGuide = cssRuleBody(".workspace-files-split.tree-dragging::after");
+    expect(dockGuide).toMatch(/width:\s*2px;/);
+    expect(dockGuide).toMatch(/height:\s*72px;/);
+    expect(dockGuide).toMatch(/top:\s*50%;/);
+    const dragPreview = cssRuleBody(".workspace-file-tree-drag-preview");
+    expect(dragPreview).toMatch(/width:\s*168px;/);
+    expect(dragPreview).toMatch(/height:\s*44px;/);
+    expect(dragPreview).toMatch(/border-radius:\s*12px;/);
+    expect(cssRuleBody(".workspace-file-tree-reveal")).toMatch(/position:\s*absolute;/);
+    expect(cssRuleBody(".workspace-file-tree-reveal.left")).toMatch(/left:\s*8px;/);
+    expect(cssRuleBody(".workspace-file-tree-reveal.right")).toMatch(/right:\s*8px;/);
+    expect(
+      cssRuleBody(".workspace-files-tree[hidden],\n.workspace-files-resizer[hidden]"),
+    ).toMatch(/display:\s*none;/);
     expect(workspaceCss).not.toContain(".workspace-files-content-header");
     expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });

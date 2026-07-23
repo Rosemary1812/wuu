@@ -892,6 +892,13 @@ type streamStep struct {
 	enableStreamingToolExec bool
 }
 
+// NewStreamStep returns the shared stream-first model step used by agent loops.
+// Providers with native streaming use StreamChat directly; unary-only providers
+// are adapted to a synthetic stream by AdaptStreamClient.
+func NewStreamStep(client providers.Client) Step {
+	return &streamStep{client: providers.AdaptStreamClient(client)}
+}
+
 func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (StepResult, error) {
 	var err error
 	req, err = providers.EnsureInferenceExecutionContext(ctx, req, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)

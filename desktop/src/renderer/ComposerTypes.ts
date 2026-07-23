@@ -9,7 +9,7 @@ export type CodexModelLoadState = {
 };
 
 export type CodexRuntimeMenu = "main" | "model" | "effort" | null;
-export type ComposerVariant = "dock" | "hero";
+export type ComposerVariant = "dock" | "document" | "hero";
 export type FloatingMenuOwner =
   | "composer-runtime"
   | "composer-access"
