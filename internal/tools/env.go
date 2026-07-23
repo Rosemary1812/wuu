@@ -212,6 +212,10 @@ type Env struct {
 	// Tools check for nil and return a clear error rather than panic.
 	SessionID  string
 	SessionDir string // absolute session artifact path for result budgeting
+	// SessionsDir overrides the user-level SQLite session store location for
+	// tools that read conversations by ID. Empty keeps the canonical WUU_HOME
+	// lookup used by ordinary runtimes.
+	SessionsDir string
 	// ToolResultProjectionMode selects stable tool-result projection behavior
 	// ("off"/"shadow"/"active"); empty resolves to active (on by default). The
 	// WUU_TOOL_RESULT_PROJECTION environment variable overrides it.

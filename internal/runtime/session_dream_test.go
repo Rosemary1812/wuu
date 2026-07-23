@@ -12,6 +12,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessionmemory"
 )
 
@@ -72,22 +73,35 @@ func makeSessionDreamHistory(userTurns int) []providers.ChatMessage {
 	return history
 }
 
+func newSessionDreamScheduler(root, workspaceState string, sessionArtifactDir func() string, intervalDays int, client providers.Client, model string) *sessionDreamScheduler {
+	sessionsDir := filepath.Join(workspaceState, "global-sessions")
+	for i := 0; i < sessionDreamMinSessions; i++ {
+		id := fmt.Sprintf("dream-history-%d", i)
+		if _, err := sessionstore.CreateWithMetadata(sessionsDir, id, root); err != nil {
+			panic(err)
+		}
+		if err := sessionstore.AppendHistoryRecords(sessionsDir, id, []sessionstore.HistoryRecord{
+			{Role: "user", Content: fmt.Sprintf("durable lesson %d", i)},
+			{Role: "assistant", Content: "noted"},
+		}); err != nil {
+			panic(err)
+		}
+		if err := sessionstore.UpdateIndex(sessionsDir, id, 2, ""); err != nil {
+			panic(err)
+		}
+	}
+	return newSessionDreamSchedulerWithSessions(root, workspaceState, sessionsDir, "", sessionArtifactDir, intervalDays, sessionDreamMinSessions, client, model)
+}
+
 func TestBuildSessionDreamMessagesSkipsToolProtocolAndSyntheticUserMessages(t *testing.T) {
-	messages := buildSessionDreamMessages([]providers.ChatMessage{
-		{Role: "system", Content: "old sys"},
-		{Role: "user", Content: "[Hook context for read_file]: extra"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file"}}},
-		{Role: "tool", Name: "read_file", ToolCallID: "call_1", Content: "file"},
-		{Role: "user", Content: "Remember release needs visual QA"},
-		{Role: "assistant", Content: "Noted."},
-	})
+	messages := buildSessionDreamMessages([]sessionDreamCandidate{{ID: "session-1"}})
 
 	for _, msg := range messages {
 		if msg.Role == "tool" {
 			t.Fatalf("tool protocol message should not be included: %+v", messages)
 		}
-		if strings.Contains(msg.Content, "[Hook context") {
-			t.Fatalf("synthetic hook context leaked into dream: %+v", messages)
+		if !strings.Contains(msg.Content, "session-1") && msg.Role == "user" {
+			t.Fatalf("session ID missing from dream request: %+v", messages)
 		}
 	}
 	last := messages[len(messages)-1]
@@ -188,7 +202,7 @@ func TestSessionDreamPrefersNativeStreaming(t *testing.T) {
 		rootDir:            t.TempDir(),
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: filepath.Join(workspaceState, "sessions", "session-1"),
-		history:            makeSessionDreamHistory(1),
+		sessions:           []sessionDreamCandidate{{ID: "session-1"}},
 		now:                time.Now().UTC(),
 	}
 
@@ -369,6 +383,58 @@ func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
 	scheduler.finish()
 }
 
+func TestSessionDreamScheduler_PrepareRequiresTimeAndSessionThresholds(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "active-session")
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 1, nil, "")
+	history := makeSessionDreamHistory(1)
+	now := time.Now().UTC()
+
+	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{LastRunAt: now.Add(-23 * time.Hour)}); err != nil {
+		t.Fatalf("save recent dream state: %v", err)
+	}
+	if _, ok, err := scheduler.prepare(history, agent.LoopResult{Content: "done"}, "active-session", now); err != nil || ok {
+		t.Fatalf("time gate: ok=%t err=%v, want not eligible", ok, err)
+	}
+
+	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{LastRunAt: now.Add(-25 * time.Hour)}); err != nil {
+		t.Fatalf("save elapsed dream state: %v", err)
+	}
+	if sessions, ok, err := scheduler.prepare(history, agent.LoopResult{Content: "done"}, "dream-history-0", now); err != nil || ok || len(sessions) != 0 {
+		t.Fatalf("session gate after excluding current: sessions=%v ok=%t err=%v", sessions, ok, err)
+	}
+
+	sessions, ok, err := scheduler.prepare(history, agent.LoopResult{Content: "done"}, "active-session", now)
+	if err != nil || !ok || len(sessions) != sessionDreamMinSessions {
+		t.Fatalf("combined gates: sessions=%v ok=%t err=%v", sessions, ok, err)
+	}
+	scheduler.finish()
+}
+
+func TestSessionDreamExecutorRestrictsThreadGetToBatch(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	sessionsDir := filepath.Join(workspaceState, "global-sessions")
+	for _, id := range []string{"allowed-session", "other-session"} {
+		if _, err := sessionstore.CreateWithMetadata(sessionsDir, id, root); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+		if err := sessionstore.AppendHistoryRecord(sessionsDir, id, sessionstore.HistoryRecord{Role: "user", Content: id + " content"}); err != nil {
+			t.Fatalf("append %s: %v", id, err)
+		}
+	}
+	executor := newSessionDreamExecutor(root, workspaceState, filepath.Join(workspaceState, "sessions", "active"), sessionsDir, []sessionDreamCandidate{{ID: "allowed-session"}})
+
+	result, err := executor.Execute(context.Background(), providers.ToolCall{Name: "thread_get", Arguments: `{"thread_id":"allowed-session"}`})
+	if err != nil || !strings.Contains(result, "allowed-session content") {
+		t.Fatalf("allowed thread_get: result=%q err=%v", result, err)
+	}
+	if _, err := executor.Execute(context.Background(), providers.ToolCall{Name: "thread_get", Arguments: `{"thread_id":"other-session"}`}); err == nil || !strings.Contains(err.Error(), "outside this consolidation batch") {
+		t.Fatalf("out-of-batch thread_get error = %v", err)
+	}
+}
+
 func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
@@ -537,10 +603,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: sessionArtifact,
 		now:                now,
-		history: []providers.ChatMessage{
-			{Role: "user", Content: "Remember release needs visual QA."},
-			{Role: "assistant", Content: "Noted."},
-		},
+		sessions:           []sessionDreamCandidate{{ID: "session-1"}},
 	})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -592,7 +655,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	for _, def := range client.requests[0].Tools {
 		toolNames[def.Name] = true
 	}
-	wantTools := []string{"read_file", "list_files", "grep", "glob", "session_memory"}
+	wantTools := []string{"read_file", "list_files", "grep", "glob", "thread_get", "session_memory"}
 	if len(toolNames) != len(wantTools) {
 		t.Fatalf("dream tools = %+v, want %v", toolNames, wantTools)
 	}
@@ -607,7 +670,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 		}
 	}
 	firstSystem := client.requests[0].Messages[0]
-	if firstSystem.Role != "system" || !strings.Contains(firstSystem.Content, "background memory review worker") {
+	if firstSystem.Role != "system" || !strings.Contains(firstSystem.Content, "background memory consolidation worker") {
 		t.Fatalf("dream must use a profile-neutral memory system prompt, got %+v", firstSystem)
 	}
 	for _, blocked := range []string{"apply_patch", "edit_file", "write_file", "bash", "terminal", "shell", "git"} {
@@ -662,10 +725,7 @@ func TestSessionDream_RunRecordsFailureState(t *testing.T) {
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: sessionArtifact,
 		now:                started,
-		history: []providers.ChatMessage{
-			{Role: "user", Content: "Remember release needs visual QA."},
-			{Role: "assistant", Content: "Noted."},
-		},
+		sessions:           []sessionDreamCandidate{{ID: "session-1"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "provider unavailable") {
 		t.Fatalf("run error = %v, want provider unavailable", err)
@@ -711,7 +771,7 @@ func TestSessionDream_RunReturnsFailureStatePersistenceError(t *testing.T) {
 		rootDir:            root,
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: sessionArtifact,
-		history:            makeSessionDreamHistory(1),
+		sessions:           []sessionDreamCandidate{{ID: "session-1"}},
 	})
 
 	if !errors.Is(err, providerErr) {

@@ -26,7 +26,10 @@ const (
 	// agent.max_parallel is omitted or set to zero.
 	DefaultAgentMaxParallel = 5
 
-	DefaultDreamIntervalDays = 7
+	// DefaultDreamIntervalDays is the minimum elapsed-time gate for background
+	// consolidation. A dream also requires the runtime's minimum number of
+	// completed sessions, so reaching this interval alone never starts a pass.
+	DefaultDreamIntervalDays = 1
 
 	defaultCodexSubscriptionBaseURL = "https://chatgpt.com/backend-api/codex"
 )
@@ -137,9 +140,9 @@ type MemoryConfig struct {
 	// UserCharLimit is retained for compatibility with the retired indexed
 	// memory store. Current notebook memory does not apply this limit.
 	UserCharLimit int `json:"user_char_limit,omitempty"`
-	// DreamIntervalDays controls how often the background dream pass
-	// consolidates recent session history into workspace memory. nil means
-	// the default interval; 0 disables the dream pass.
+	// DreamIntervalDays is the minimum elapsed-time gate for the background
+	// dream pass. The pass also requires five completed sessions since the last
+	// successful consolidation. nil means the default interval; 0 disables it.
 	//
 	// Deprecated: use Dream.IntervalDays instead. This field is retained so
 	// existing configs keep working.

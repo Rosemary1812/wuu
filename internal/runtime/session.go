@@ -639,7 +639,7 @@ func NewSession(opts Options) (*Session, error) {
 	}
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if toolkit != nil {
-		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays, dreamClient, dreamModel); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamSchedulerWithSessions(rootDir, workspaceStateDir, sessionDir, workspaceID, func() string { return toolkit.SessionDir() }, dreamIntervalDays, sessionDreamMinSessions, dreamClient, dreamModel); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -1308,7 +1308,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	runner.BeforeRequest = pluginRequestInterceptor(s.PluginHost, s.ProviderName, id, threadRoot)
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
-		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays, s.DreamClient, s.DreamModel); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamSchedulerWithSessions(s.RootDir, stateDir, s.SessionDir, s.WorkspaceID, func() string { return artifactDir }, s.DreamIntervalDays, sessionDreamMinSessions, s.DreamClient, s.DreamModel); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -2204,7 +2204,7 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 		s.Toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(s.Toolkit.RootDir(), s.WuuHome, fileScopeExtras...))
 	}
 	if s.StreamRunner != nil && s.Toolkit != nil {
-		s.StreamRunner.AfterTurn = sessionDreamAfterTurn(s.RootDir, s.StateDir, func() string { return s.Toolkit.SessionDir() }, s.DreamIntervalDays, s.DreamClient, s.DreamModel)
+		s.StreamRunner.AfterTurn = sessionDreamAfterTurn(s.RootDir, s.StateDir, s.SessionDir, s.WorkspaceID, func() string { return s.Toolkit.SessionDir() }, s.DreamIntervalDays, sessionDreamMinSessions, s.DreamClient, s.DreamModel)
 	}
 	apiModel := s.Model
 	if s.StreamRunner != nil && strings.TrimSpace(s.StreamRunner.APIModel) != "" {
