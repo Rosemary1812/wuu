@@ -71,7 +71,7 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 	}
 }
 
-func TestNamedAgentSurfaceContainsOnlyChatTools(t *testing.T) {
+func TestNamedAgentSurfaceAddsChatToolsToCompleteMainSurface(t *testing.T) {
 	c := DefaultCompiler{}
 	for _, tt := range []struct {
 		provider string
@@ -82,18 +82,28 @@ func TestNamedAgentSurfaceContainsOnlyChatTools(t *testing.T) {
 		{provider: "anthropic", model: "claude-sonnet-4-5"},
 		{provider: "ollama", model: "llama-coder"},
 	} {
-		s := c.Compile(Resolve(tt.provider, tt.model), SurfaceNamedAgent)
-		want := []string{"chat_check", "chat_draft", "chat_read", "chat_remind", "chat_send", "chat_task"}
-		for _, name := range want {
-			if s.Tools[name] != capability.CapabilityChat {
+		profile := Resolve(tt.provider, tt.model)
+		main := c.Compile(profile, SurfaceMain)
+		named := c.Compile(profile, SurfaceNamedAgent)
+		chatTools := []string{"chat_check", "chat_draft", "chat_read", "chat_remind", "chat_send", "chat_task"}
+		for name, capabilityName := range main.Tools {
+			if named.Tools[name] != capabilityName {
+				t.Errorf("%s/%s named-agent surface lost main tool %s", tt.provider, tt.model, name)
+			}
+		}
+		for _, name := range chatTools {
+			if named.Tools[name] != capability.CapabilityChat {
 				t.Errorf("%s/%s named-agent surface must expose %s as chat capability", tt.provider, tt.model, name)
 			}
 		}
-		if got := sortedKeys(s.Tools); !slices.Equal(got, want) {
-			t.Errorf("%s/%s named-agent tools = %v, want only %v", tt.provider, tt.model, got, want)
+		wantTools := append(sortedKeys(main.Tools), chatTools...)
+		slices.Sort(wantTools)
+		if got := sortedKeys(named.Tools); !slices.Equal(got, wantTools) {
+			t.Errorf("%s/%s named-agent tools = %v, want main + chat %v", tt.provider, tt.model, got, wantTools)
 		}
-		if len(s.DeferredTools) != 0 || len(s.HiddenTools) != 0 {
-			t.Errorf("%s/%s named-agent surface must not retain deferred or hidden tools", tt.provider, tt.model)
+		if !slices.Equal(sortedKeys(named.DeferredTools), sortedKeys(main.DeferredTools)) ||
+			!slices.Equal(sortedKeys(named.HiddenTools), sortedKeys(main.HiddenTools)) {
+			t.Errorf("%s/%s named-agent surface did not retain the main deferred/hidden tools", tt.provider, tt.model)
 		}
 	}
 }

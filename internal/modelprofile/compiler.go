@@ -60,9 +60,8 @@ const (
 	// SurfaceMain is the ordinary project main-agent brain surface: it
 	// carries the task-orchestration suite plus helpme.
 	SurfaceMain
-	// SurfaceNamedAgent is a persistent group-chat agent. Its model-visible
-	// surface is limited to the six chat tools; it cannot execute workspace or
-	// orchestration tools.
+	// SurfaceNamedAgent is a persistent group-chat agent. It keeps the complete
+	// main-agent surface and adds the group-chat tools.
 	SurfaceNamedAgent
 )
 
@@ -77,11 +76,11 @@ func (k SurfaceKind) isWorker() bool {
 }
 
 func (k SurfaceKind) includesHelpme() bool {
-	return k == SurfaceMain
+	return k == SurfaceMain || k == SurfaceNamedAgent
 }
 
 func (k SurfaceKind) includesSessionWorkspace() bool {
-	return k == SurfaceMain
+	return k == SurfaceMain || k == SurfaceNamedAgent
 }
 
 func (k SurfaceKind) includesChat() bool {
@@ -103,17 +102,12 @@ type Compiler interface {
 type DefaultCompiler struct{}
 
 // Compile implements Compiler. The SurfaceKind controls the orchestration
-// boundary. Named agents get only their chat contract. Ordinary workers are
-// pure executors and keep only agent_report; Ultra workers get task
+// boundary. Named agents get the full main-agent contract plus chat. Ordinary
+// workers are pure executors and keep only agent_report; Ultra workers get task
 // orchestration plus agent_report.
 func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
-	if kind == SurfaceNamedAgent {
-		addChatTools(b)
-		b.sortCaps()
-		return b.surface
-	}
 	switch key {
 	case ProfileOpenAICodex:
 		compileOpenAICodex(b, p)
@@ -135,6 +129,9 @@ func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	}
 	if kind.isWorker() {
 		addWorkerReportTool(b)
+	}
+	if kind.includesChat() {
+		addChatTools(b)
 	}
 	b.sortCaps()
 	return b.surface

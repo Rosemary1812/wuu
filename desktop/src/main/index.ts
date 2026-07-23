@@ -34,6 +34,11 @@ import type {
   BuildInfoResult,
   ChannelAgentCreateParams,
   ChannelAgentCreateResult,
+  ChannelAgentUpdateParams,
+  ChannelAgentUpdateResult,
+  ChannelAgentDeleteParams,
+  ChannelAgentDeleteResult,
+  ChannelBootstrapResult,
   ChannelAgentListResult,
   ChannelAgentStartParams,
   ChannelAgentStartResult,
@@ -43,6 +48,8 @@ import type {
   ChannelMessageSendResult,
   ChannelRoomCreateParams,
   ChannelRoomCreateResult,
+  ChannelRoomDeleteParams,
+  ChannelRoomDeleteResult,
   ChannelRoomListResult,
   ChannelTaskCreateParams,
   ChannelTaskCreateResult,
@@ -1318,8 +1325,17 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:channel-agent-list", (event) =>
     appServerRequest<ChannelAgentListResult>(event, "channel/agent/list"),
   );
+  ipcMain.handle("wuu:channel-bootstrap", (event) =>
+    appServerRequest<ChannelBootstrapResult>(event, "channel/bootstrap"),
+  );
   ipcMain.handle("wuu:channel-agent-create", (event, params: ChannelAgentCreateParams) =>
     appServerRequest<ChannelAgentCreateResult>(event, "channel/agent/create", params),
+  );
+  ipcMain.handle("wuu:channel-agent-update", (event, params: ChannelAgentUpdateParams) =>
+    appServerRequest<ChannelAgentUpdateResult>(event, "channel/agent/update", params),
+  );
+  ipcMain.handle("wuu:channel-agent-delete", (event, params: ChannelAgentDeleteParams) =>
+    appServerRequest<ChannelAgentDeleteResult>(event, "channel/agent/delete", params),
   );
   ipcMain.handle("wuu:channel-agent-start", (event, params: ChannelAgentStartParams) =>
     appServerRequest<ChannelAgentStartResult>(event, "channel/agent/start", params),
@@ -1329,6 +1345,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:channel-room-create", (event, params: ChannelRoomCreateParams) =>
     appServerRequest<ChannelRoomCreateResult>(event, "channel/room/create", params),
+  );
+  ipcMain.handle("wuu:channel-room-delete", (event, params: ChannelRoomDeleteParams) =>
+    appServerRequest<ChannelRoomDeleteResult>(event, "channel/room/delete", params),
   );
   ipcMain.handle("wuu:channel-message-list", (event, params: ChannelMessageListParams) =>
     appServerRequest<ChannelMessageListResult>(event, "channel/message/list", params),

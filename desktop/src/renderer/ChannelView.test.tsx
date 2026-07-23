@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChannelRoom, NamedAgent, WuuDesktopApi } from "../shared/protocol";
+import { graphDensityScale } from "./AgentRelationshipGraph";
 import { ChannelView } from "./ChannelView";
 
 let container: HTMLDivElement;
@@ -13,9 +14,22 @@ const agents: NamedAgent[] = [
     id: "agent-1",
     name: "Alpha",
     memory_dir: "/agents/agent-1/memory",
+    avatar_key: "abstract-3",
+    avatar_image: "data:image/png;base64,iVBORw0KGgo=",
     model_override: "",
     autostart: true,
     created_at: "2026-07-23T00:00:00Z",
+    activity_status: "thinking",
+  },
+  {
+    id: "agent-2",
+    name: "Beta",
+    memory_dir: "/agents/agent-2/memory",
+    avatar_key: "abstract-6",
+    model_override: "",
+    autostart: true,
+    created_at: "2026-07-23T00:00:00Z",
+    activity_status: "idle",
   },
 ];
 
@@ -25,7 +39,10 @@ const rooms: ChannelRoom[] = [
     name: "general",
     kind: "channel",
     created_by: "human",
-    members: [{ room_id: "room-1", member_type: "agent", member_id: "agent-1", joined_at: "2026-07-23T00:00:00Z" }],
+    members: [
+      { room_id: "room-1", member_type: "agent", member_id: "agent-1", joined_at: "2026-07-23T00:00:00Z" },
+      { room_id: "room-1", member_type: "agent", member_id: "agent-2", joined_at: "2026-07-23T00:00:00Z" },
+    ],
     created_at: "2026-07-23T00:00:00Z",
   },
   {
@@ -40,11 +57,15 @@ const rooms: ChannelRoom[] = [
 
 function createApi(): Partial<WuuDesktopApi> {
   return {
+    bootstrapChannels: vi.fn(async () => ({ agents, rooms })),
     listNamedAgents: vi.fn(async () => ({ agents })),
     createNamedAgent: vi.fn(async (params) => ({ agent: { ...agents[0], name: params.name } })),
+    updateNamedAgent: vi.fn(async (params) => ({ agent: { ...agents[0], name: params.name } })),
+    deleteNamedAgent: vi.fn(async () => ({ deleted: true })),
     startNamedAgent: vi.fn(async () => ({ agent: agents[0] })),
     listChannelRooms: vi.fn(async () => ({ rooms })),
     createChannelRoom: vi.fn(async (params) => ({ room: { ...rooms[1], name: params.name } })),
+    deleteChannelRoom: vi.fn(async () => ({ deleted: true })),
     listChannelMessages: vi.fn(async ({ room_id }) => ({
       messages: room_id === "room-1"
         ? [{
@@ -56,6 +77,26 @@ function createApi(): Partial<WuuDesktopApi> {
             kind: "text" as const,
             body: "Hello from Alpha",
             created_at: "2026-07-23T00:00:00Z",
+          }, {
+            id: "message-2",
+            room_id,
+            seq: 2,
+            author_type: "human" as const,
+            author_id: "human",
+            kind: "text" as const,
+            body: "Human direction",
+            created_at: "2026-07-23T00:00:30Z",
+          }, {
+            id: "task-1",
+            room_id,
+            seq: 3,
+            author_type: "human" as const,
+            author_id: "human",
+            kind: "task" as const,
+            body: "Investigate flaky build",
+            task_state: "doing",
+            task_owner: "agent-1",
+            created_at: "2026-07-23T00:01:00Z",
           }]
         : [],
     })),
@@ -141,6 +182,12 @@ afterEach(() => {
 });
 
 describe("ChannelView", () => {
+  it("scales graph nodes down within a bounded range as the graph grows", () => {
+    expect(graphDensityScale(2)).toBe(1.35);
+    expect(graphDensityScale(12)).toBeLessThan(graphDensityScale(4));
+    expect(graphDensityScale(10_000)).toBe(0.68);
+  });
+
   it("loads rooms, selects a room, and sends a human message", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
@@ -150,6 +197,11 @@ describe("ChannelView", () => {
     await settle();
 
     expect(container.textContent).toContain("Hello from Alpha");
+    expect(container.querySelector(".channel-message.agent .channel-message-bubble")?.textContent).toBe("Hello from Alpha");
+    expect(container.querySelector(".channel-message.own .channel-message-bubble")?.textContent).toBe("Human direction");
+    expect(container.querySelector(".channel-message.own .channel-agent-avatar")).toBeNull();
+    expect(container.querySelector('[aria-label="Alpha: 处理中"]')).not.toBeNull();
+    expect(container.querySelector(".channel-agent-status-dot.thinking")).not.toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-row"))
       .find((button) => button.textContent?.includes("research"));
     act(() => research?.click());
@@ -159,10 +211,47 @@ describe("ChannelView", () => {
     const textarea = container.querySelector<HTMLTextAreaElement>(".channel-composer textarea");
     expect(textarea).not.toBeNull();
     act(() => setInputValue(textarea!, "Ask Alpha"));
-    const form = container.querySelector<HTMLFormElement>(".channel-composer");
-    await act(async () => form?.requestSubmit());
+    const send = container.querySelector<HTMLButtonElement>(".channel-composer .composer-send-button");
+    await act(async () => send?.click());
 
     expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha" });
+  });
+
+  it("shares a nonzero resizable sidebar width between rooms and agents", async () => {
+    Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const separator = container.querySelector<HTMLButtonElement>(".channel-split-resizer");
+    expect(separator?.getAttribute("aria-valuenow")).toBe("208");
+    act(() => separator?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+
+    expect(separator?.getAttribute("aria-valuenow")).toBe("224");
+    expect(window.localStorage.getItem("wuu.channels.splitPaneWidth")).toBe("224");
+
+    act(() => root?.render(<ChannelView section="agents" />));
+    await settle();
+    const agentSeparator = container.querySelector<HTMLButtonElement>(".channel-split-resizer");
+    expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("224");
+    expect(container.querySelector<HTMLElement>(".channel-agent-workspace")?.style.gridTemplateColumns).toContain("224px");
+
+    act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
+    expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("156");
+  });
+
+  it("tracks tasks across channels from the task section", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="tasks" />));
+    await settle();
+
+    expect(container.querySelector(".channel-task-table")?.textContent).toContain("Investigate flaky build");
+    expect(container.querySelector(".channel-task-table")?.textContent).toContain("# general");
+    expect(container.querySelector(".channel-conversation")).toBeNull();
+    expect(container.querySelector(".channel-list-pane")).toBeNull();
+    expect(api.listChannelMessages).toHaveBeenCalledWith({ room_id: "room-2", limit: 500 });
   });
 
   it("creates a named agent from the setup panel", async () => {
@@ -170,30 +259,45 @@ describe("ChannelView", () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
+    act(() => root?.render(<ChannelView section="agents" />));
     await settle();
 
-    const agentButton = container.querySelector<HTMLButtonElement>(".channel-agent-button");
-    act(() => agentButton?.click());
-    const nameInput = container.querySelector<HTMLInputElement>(".channel-setup-form input:not([type])");
+    expect(container.querySelector(".channel-conversation")).toBeNull();
+    expect(container.querySelector(".channel-list-pane")).toBeNull();
+    expect(container.querySelector(".channel-agent-directory")?.textContent).toContain("Alpha");
+    expect(container.querySelector(".channel-agent-directory .agent-avatar-image")).not.toBeNull();
+    expect(container.querySelector('svg[aria-label="关系图谱"]')).not.toBeNull();
+    expect(container.querySelectorAll(".channel-agent-graph-links line.relationship")).toHaveLength(1);
+    expect(container.querySelectorAll(".channel-agent-graph-links line.membership")).toHaveLength(2);
+    expect(container.querySelectorAll(".channel-agent-graph-node.agent")).toHaveLength(2);
+    expect(container.querySelectorAll(".channel-agent-graph-node.room")).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="放大图谱"]')).not.toBeNull();
+    const graphSettingsButton = container.querySelector<HTMLButtonElement>('button[aria-label="图谱设置"]');
+    act(() => graphSettingsButton?.click());
+    expect(container.querySelector(".channel-agent-graph-settings")?.textContent).toContain("节点斥力");
+    const newAgentButton = container.querySelector<HTMLButtonElement>('button[aria-label="新建 Agent"]');
+    act(() => newAgentButton?.click());
+    const nameInput = document.querySelector<HTMLInputElement>(".channel-setup-form input:not([type])");
     expect(nameInput).not.toBeNull();
     act(() => setInputValue(nameInput!, "Beta"));
-    const form = container.querySelector<HTMLFormElement>(".channel-setup-form");
+    const avatar = document.querySelector<HTMLButtonElement>('button[aria-label="选择头像 5"]');
+    expect(avatar).not.toBeNull();
+    expect(document.querySelector('button[aria-label="选择自定义头像图片"]')).not.toBeNull();
+    expect(document.querySelector<HTMLInputElement>('.channel-avatar-file-input')?.accept).toBe("image/png,image/jpeg,image/webp");
+    act(() => avatar?.click());
+    const form = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
     await act(async () => form?.requestSubmit());
 
     expect(api.createNamedAgent).toHaveBeenCalledWith({
       name: "Beta",
+      avatar_key: "abstract-5",
+      avatar_image: "",
+      provider_override: undefined,
       model_override: undefined,
-      autostart: true,
     });
-
-    act(() => container.querySelector<HTMLButtonElement>(".channel-agent-button")?.click());
-    const startButton = container.querySelector<HTMLButtonElement>(".channel-agent-row button");
-    await act(async () => startButton?.click());
-    expect(api.startNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
   });
 
-  it("creates a direct message with exactly one agent and toggles system notifications", async () => {
+  it("creates only a channel with selected agents and toggles system notifications", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
@@ -201,24 +305,23 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    const notificationButton = container.querySelector<HTMLButtonElement>('button[aria-pressed]');
+    const notificationButton = container.querySelector<HTMLButtonElement>('button[aria-label="开启提及系统通知"]');
     expect(notificationButton?.getAttribute("aria-pressed")).toBe("false");
     act(() => notificationButton?.click());
     expect(window.localStorage.getItem("wuu.channels.systemNotifications")).toBe("true");
 
-    const headingButtons = container.querySelectorAll<HTMLButtonElement>(".channel-heading-actions button");
-    act(() => headingButtons.item(1).click());
-    const kind = container.querySelector<HTMLSelectElement>(".channel-setup-form select");
-    expect(kind).not.toBeNull();
-    act(() => setSelectValue(kind!, "dm"));
-    const agent = container.querySelector<HTMLInputElement>('.channel-setup-form input[type="radio"]');
+    const newRoomButton = container.querySelector<HTMLButtonElement>('button[aria-label="新建频道"]');
+    act(() => newRoomButton?.click());
+    expect(document.querySelector(".channel-setup-form select")).toBeNull();
+    const name = document.querySelector<HTMLInputElement>('.channel-setup-form input:not([type])');
+    act(() => setInputValue(name!, "review"));
+    const agent = document.querySelector<HTMLInputElement>('.channel-setup-form input[type="checkbox"]');
     act(() => agent?.click());
-    const form = container.querySelector<HTMLFormElement>(".channel-setup-form");
+    const form = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
     await act(async () => form?.requestSubmit());
 
     expect(api.createChannelRoom).toHaveBeenCalledWith({
-      name: "Alpha",
-      kind: "dm",
+      name: "review",
       agent_ids: ["agent-1"],
     });
   });
@@ -232,10 +335,10 @@ describe("ChannelView", () => {
     await settle();
 
     act(() => container.querySelector<HTMLButtonElement>(".channel-task-create-button")?.click());
-    const title = container.querySelector<HTMLInputElement>(".channel-setup-form input");
+    const title = document.querySelector<HTMLInputElement>(".channel-setup-form input");
     expect(title).not.toBeNull();
     act(() => setInputValue(title!, "Investigate flaky build"));
-    const form = container.querySelector<HTMLFormElement>(".channel-setup-form");
+    const form = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
     await act(async () => form?.requestSubmit());
 
     expect(api.createChannelTask).toHaveBeenCalledWith({

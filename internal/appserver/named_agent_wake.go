@@ -92,6 +92,7 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 				Effort: th.ModelEffort, PermissionMode: th.PermissionMode,
 			}
 			if model := strings.TrimSpace(agent.ModelOverride); model != "" {
+				selection.Provider = strings.TrimSpace(agent.ProviderOverride)
 				selection.Model = model
 			}
 			threadRuntime, err := s.newNamedAgentRuntime(threadID, agent, selection)
@@ -108,6 +109,7 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 	agentHome := filepath.Dir(agent.MemoryDir)
 	selection := s.currentSessionRuntimeSelection()
 	if model := strings.TrimSpace(agent.ModelOverride); model != "" {
+		selection.Provider = strings.TrimSpace(agent.ProviderOverride)
 		selection.Model = model
 	}
 	threadRuntime, err := s.newNamedAgentRuntime(threadID, agent, runtime.ThreadModelSelection{
@@ -193,7 +195,10 @@ func (s *Server) newNamedAgentRuntime(threadID string, agent channels.NamedAgent
 		return nil, errors.New("named agent toolkit is unavailable")
 	}
 	threadRuntime.Toolkit.SetChatAgent(chatAgent)
-	if err := s.rt.ConfigureNamedAgentThreadRuntime(threadRuntime, agentHome, agent.MemoryDir, namedAgentOrientation(agent)); err != nil {
+	if err := s.rt.ConfigureNamedAgentThreadRuntime(
+		threadRuntime, agentHome, agent.MemoryDir,
+		namedAgentOrientation(agent),
+	); err != nil {
 		releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: threadRuntime})
 		return nil, err
 	}
@@ -315,11 +320,16 @@ func namedAgentWakeID(agentID string) string {
 }
 
 func namedAgentOrientation(agent channels.NamedAgent) string {
+	agentHome := filepath.Dir(agent.MemoryDir)
 	return fmt.Sprintf(`# Named agent
 
-You are %s, a persistent named agent in Wuu group chat. Your durable memory directory is %s. Use only that directory for your own long-term memory; do not treat another agent or the user's memory as yours.
+You are %s, a persistent named agent in Wuu group chat. Your agent home and default working directory is %s, and your durable memory directory is %s. The agent home is your private identity and state anchor; it is not the limit of your project activity scope. Use only your own memory directory for long-term memory; do not treat another agent or the user's memory as yours.
 
-Wake notifications contain no chat content. On wake, call chat_check, read only the items you need with chat_read, then use chat_send when you have a useful contribution. If chat_check returns has_more, check again. A direct @mention creates an obligation to respond, even briefly. Ordinary room traffic does not. Keep chat messages short, do not repeat others, and @ another agent when you need them to see a question. Silence is valid when you have no new information.
+## Project activity scope
+
+Your current registered project workspaces are supplied as request-only environment context. You may read, search, edit, and run commands in any listed project workspace, subject to the current permission mode. Use an absolute file path or set a command's cwd to the relevant project root. Do not claim that you can only access your agent home, and do not rebind the persistent session workspace merely to perform work in another listed project. Projectless conversation sessions are not project workspaces. The system temp directory may also be available for transient files, but it is not a project workspace.
+
+Wake notifications contain no chat content. On wake, call chat_check to inspect the queryable inbox, choose which signals need full context with chat_read, and use chat_send only when you have a useful contribution. If chat_check returns has_more, check again. Every committed channel message is visible to all room members and produces an inbox signal for the other agents; @mention is not a visibility or delivery gate, but it does request the named agent's immediate attention and creates a response obligation. Human messages wake room agents whether or not they contain @mentions. Ordinary agent messages do not wake other agents; an agent @mention wakes only the named agent. Agent-only @mention handoffs are bounded per thread, and after the budget is exhausted further messages remain in inbox until human participation resets it. Keep chat messages short, do not repeat others, and use @ only when immediate attention from a specific agent is useful. Silence is valid when you have no useful response and no direct obligation.
 
 Use chat_task to create, list, or update lightweight room tasks. If you own a task, keep progress in that task's thread and move its state from open to doing to done; task ownership is responsibility metadata, not an execution orchestrator. Use chat_remind when you need to wake yourself at least one minute later, optionally with room or thread context. Mention a human room member by their member ID when they must see a message.
 
@@ -328,5 +338,5 @@ chat_send requires the current basis sequence for the target room main stream or
 - as_is: chat_draft resolve as_is with a fresh basis when the independent point still stands (it may be held again if the scope moved);
 - silent: chat_draft resolve silent when others covered it or silence is better;
 - anyway: chat_draft resolve anyway only after hold_count reaches 2 and the unchanged text remains important.
-The server never rewrites or automatically resends a held draft.`, agent.Name, agent.MemoryDir)
+The server never rewrites or automatically resends a held draft.`, agent.Name, agentHome, agent.MemoryDir)
 }

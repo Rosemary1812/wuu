@@ -3,10 +3,13 @@ import {
   MESSAGE_FLOW_FONT_SIZE_RANGE,
   type DesktopPlatform,
   type ChannelAgentCreateParams,
+  type ChannelAgentUpdateParams,
+  type ChannelAgentDeleteParams,
   type ChannelAgentStartParams,
   type ChannelMessageListParams,
   type ChannelMessageSendParams,
   type ChannelRoomCreateParams,
+  type ChannelRoomDeleteParams,
   type ChannelTaskCreateParams,
   type ChannelTaskUpdateParams,
   type MessageFlowFontSize,
@@ -209,13 +212,20 @@ const api: WuuDesktopApi = {
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   listAgentTemplates: () => ipcRenderer.invoke("wuu:agent-template-list"),
   listNamedAgents: () => ipcRenderer.invoke("wuu:channel-agent-list"),
+  bootstrapChannels: () => ipcRenderer.invoke("wuu:channel-bootstrap"),
   createNamedAgent: (params: ChannelAgentCreateParams) =>
     ipcRenderer.invoke("wuu:channel-agent-create", params),
+  updateNamedAgent: (params: ChannelAgentUpdateParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-update", params),
+  deleteNamedAgent: (params: ChannelAgentDeleteParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-delete", params),
   startNamedAgent: (params: ChannelAgentStartParams) =>
     ipcRenderer.invoke("wuu:channel-agent-start", params),
   listChannelRooms: () => ipcRenderer.invoke("wuu:channel-room-list"),
   createChannelRoom: (params: ChannelRoomCreateParams) =>
     ipcRenderer.invoke("wuu:channel-room-create", params),
+  deleteChannelRoom: (params: ChannelRoomDeleteParams) =>
+    ipcRenderer.invoke("wuu:channel-room-delete", params),
   listChannelMessages: (params: ChannelMessageListParams) =>
     ipcRenderer.invoke("wuu:channel-message-list", params),
   sendChannelMessage: (params: ChannelMessageSendParams) =>

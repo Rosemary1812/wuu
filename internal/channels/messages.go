@@ -449,15 +449,32 @@ func evaluateTriggersTx(ctx context.Context, tx *sql.Tx, message Message, mentio
 	if err != nil {
 		return nil, err
 	}
+	agentSignals := make(map[string]InboxKind)
+	rows, err := tx.QueryContext(ctx, `SELECT member_id FROM room_members WHERE room_id = ? AND member_type = 'agent'`, message.RoomID)
+	if err != nil {
+		return nil, fmt.Errorf("list room agents for inbox signals: %w", err)
+	}
+	for rows.Next() {
+		var agentID string
+		if err := rows.Scan(&agentID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if message.AuthorType != MemberAgent || message.AuthorID != agentID {
+			agentSignals[agentID] = InboxThreadUpdate
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close room agent signals: %w", err)
+	}
+
 	wake := make(map[string]struct{})
 	for _, mention := range mentions {
 		if mention.MemberType == MemberAgent && message.AuthorType == MemberAgent && message.AuthorID == mention.MemberID {
 			continue
 		}
 		if mention.MemberType == MemberAgent {
-			if err := insertInboxTx(ctx, tx, MemberAgent, mention.MemberID, message.RoomID, message.ID, InboxMention, now); err != nil {
-				return nil, err
-			}
+			agentSignals[mention.MemberID] = InboxMention
 			if !suppressed {
 				wake[mention.MemberID] = struct{}{}
 			}
@@ -467,39 +484,17 @@ func evaluateTriggersTx(ctx context.Context, tx *sql.Tx, message Message, mentio
 			}
 		}
 	}
-	if reply != nil && message.AuthorType == MemberHuman && reply.AuthorType == MemberAgent {
-		if err := insertInboxTx(ctx, tx, MemberAgent, reply.AuthorID, message.RoomID, message.ID, InboxReply, now); err != nil {
+	if reply != nil && reply.AuthorType == MemberAgent && !(message.AuthorType == MemberAgent && message.AuthorID == reply.AuthorID) {
+		if agentSignals[reply.AuthorID] != InboxMention {
+			agentSignals[reply.AuthorID] = InboxReply
+		}
+	}
+	for agentID, kind := range agentSignals {
+		if err := insertInboxTx(ctx, tx, MemberAgent, agentID, message.RoomID, message.ID, kind, now); err != nil {
 			return nil, err
 		}
-		wake[reply.AuthorID] = struct{}{}
-	}
-	if message.ThreadID != "" {
-		rows, err := tx.QueryContext(ctx, `
-			SELECT DISTINCT author_id FROM room_messages
-			WHERE room_id = ? AND author_type = 'agent' AND (id = ? OR thread_id = ?)`,
-			message.RoomID, message.ThreadID, message.ThreadID)
-		if err != nil {
-			return nil, fmt.Errorf("list thread participants: %w", err)
-		}
-		var participants []string
-		for rows.Next() {
-			var agentID string
-			if err := rows.Scan(&agentID); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan thread participant: %w", err)
-			}
-			participants = append(participants, agentID)
-		}
-		if err := rows.Close(); err != nil {
-			return nil, fmt.Errorf("close thread participants: %w", err)
-		}
-		for _, agentID := range participants {
-			if message.AuthorType == MemberAgent && message.AuthorID == agentID {
-				continue
-			}
-			if err := insertInboxTx(ctx, tx, MemberAgent, agentID, message.RoomID, message.ID, InboxThreadUpdate, now); err != nil {
-				return nil, err
-			}
+		if message.AuthorType == MemberHuman && !suppressed {
+			wake[agentID] = struct{}{}
 		}
 	}
 

@@ -771,16 +771,24 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleSkillList(req)
 	case MethodAgentTemplateList:
 		return s.handleAgentTemplateList(req)
+	case MethodChannelBootstrap:
+		return s.handleChannelBootstrap(ctx, req)
 	case MethodChannelAgentList:
 		return s.handleChannelAgentList(ctx, req)
 	case MethodChannelAgentCreate:
 		return s.handleChannelAgentCreate(ctx, req)
+	case MethodChannelAgentUpdate:
+		return s.handleChannelAgentUpdate(ctx, req)
+	case MethodChannelAgentDelete:
+		return s.handleChannelAgentDelete(ctx, req)
 	case MethodChannelAgentStart:
 		return s.handleChannelAgentStart(ctx, req)
 	case MethodChannelRoomList:
 		return s.handleChannelRoomList(ctx, req)
 	case MethodChannelRoomCreate:
 		return s.handleChannelRoomCreate(ctx, req)
+	case MethodChannelRoomDelete:
+		return s.handleChannelRoomDelete(ctx, req)
 	case MethodChannelMessageList:
 		return s.handleChannelMessageList(ctx, req)
 	case MethodChannelMessageSend:

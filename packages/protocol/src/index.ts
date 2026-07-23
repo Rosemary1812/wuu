@@ -462,9 +462,13 @@ export type NamedAgent = {
   id: string;
   name: string;
   memory_dir: string;
+  avatar_key: string;
+  avatar_image?: string;
+  provider_override?: string;
   model_override?: string;
   autostart: boolean;
   created_at: string;
+  activity_status?: "idle" | "thinking";
 };
 
 export type ChannelRoomMember = {
@@ -500,21 +504,29 @@ export type ChannelMessage = {
 };
 
 export type ChannelAgentListResult = { agents: NamedAgent[] };
+export type ChannelBootstrapResult = { agents: NamedAgent[]; rooms: ChannelRoom[] };
 export type ChannelAgentCreateParams = {
   name: string;
+  avatar_key?: string;
+  avatar_image?: string;
+  provider_override?: string;
   model_override?: string;
-  autostart?: boolean;
 };
 export type ChannelAgentCreateResult = { agent: NamedAgent };
+export type ChannelAgentUpdateParams = ChannelAgentCreateParams & { agent_id: string };
+export type ChannelAgentUpdateResult = { agent: NamedAgent };
+export type ChannelAgentDeleteParams = { agent_id: string };
+export type ChannelAgentDeleteResult = { deleted: boolean };
 export type ChannelAgentStartParams = { agent_id: string };
 export type ChannelAgentStartResult = { agent: NamedAgent };
 export type ChannelRoomListResult = { rooms: ChannelRoom[] };
 export type ChannelRoomCreateParams = {
   name: string;
-  kind: "channel" | "dm";
   agent_ids?: string[];
 };
 export type ChannelRoomCreateResult = { room: ChannelRoom };
+export type ChannelRoomDeleteParams = { room_id: string };
+export type ChannelRoomDeleteResult = { deleted: boolean };
 export type ChannelMessageListParams = {
   room_id: string;
   after_seq?: number;
@@ -2030,10 +2042,14 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   listAgentTemplates: () => Promise<AgentTemplateListResult>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
+  bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;
+  updateNamedAgent: (params: ChannelAgentUpdateParams) => Promise<ChannelAgentUpdateResult>;
+  deleteNamedAgent: (params: ChannelAgentDeleteParams) => Promise<ChannelAgentDeleteResult>;
   startNamedAgent: (params: ChannelAgentStartParams) => Promise<ChannelAgentStartResult>;
   listChannelRooms: () => Promise<ChannelRoomListResult>;
   createChannelRoom: (params: ChannelRoomCreateParams) => Promise<ChannelRoomCreateResult>;
+  deleteChannelRoom: (params: ChannelRoomDeleteParams) => Promise<ChannelRoomDeleteResult>;
   listChannelMessages: (params: ChannelMessageListParams) => Promise<ChannelMessageListResult>;
   sendChannelMessage: (params: ChannelMessageSendParams) => Promise<ChannelMessageSendResult>;
   createChannelTask: (params: ChannelTaskCreateParams) => Promise<ChannelTaskCreateResult>;

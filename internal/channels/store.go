@@ -1,11 +1,13 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,8 +24,10 @@ import (
 )
 
 const (
-	databaseFileName = "channels.sqlite3"
-	agentTokenFile   = ".chat-token"
+	databaseFileName      = "channels.sqlite3"
+	agentTokenFile        = ".chat-token"
+	namedAgentAvatarCount = 9
+	maxAgentAvatarBytes   = 512 * 1024
 )
 
 var (
@@ -33,11 +37,12 @@ var (
 )
 
 type Service struct {
-	dir  string
-	db   *sql.DB
-	wake WakeSink
-	now  func() time.Time
-	mu   sync.Mutex
+	dir         string
+	db          *sql.DB
+	wake        WakeSink
+	now         func() time.Time
+	mu          sync.Mutex
+	bootstrapMu sync.Mutex
 
 	telemetryMu sync.RWMutex
 	telemetry   TelemetrySink
@@ -141,6 +146,9 @@ func (s *Service) migrate() error {
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL COLLATE NOCASE,
 			memory_dir TEXT NOT NULL,
+			avatar_key TEXT NOT NULL DEFAULT '',
+			avatar_image TEXT NOT NULL DEFAULT '',
+			provider_override TEXT,
 			model_override TEXT,
 			token_hash TEXT NOT NULL,
 			autostart INTEGER NOT NULL DEFAULT 0 CHECK (autostart IN (0, 1)),
@@ -245,11 +253,27 @@ func (s *Service) migrate() error {
 			FOREIGN KEY (thread_id) REFERENCES room_messages(id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(state, fire_at, id)`,
+		`CREATE TABLE IF NOT EXISTS channel_metadata (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.Exec(statement); err != nil {
 			return fmt.Errorf("migrate channels database: %w", err)
 		}
+	}
+	if err := s.ensureNamedAgentProviderColumn(); err != nil {
+		return err
+	}
+	if err := s.ensureLegacyColumns(); err != nil {
+		return err
+	}
+	if err := s.ensureNamedAgentAvatars(); err != nil {
+		return err
+	}
+	if err := s.migrateRoomCursors(); err != nil {
+		return err
 	}
 	if err := s.migrateInboxItems(); err != nil {
 		return err
@@ -261,6 +285,172 @@ func (s *Service) migrate() error {
 		if _, err := s.db.Exec(statement); err != nil {
 			return fmt.Errorf("migrate channels inbox index: %w", err)
 		}
+	}
+	return nil
+}
+
+func (s *Service) ensureNamedAgentProviderColumn() error {
+	rows, err := s.db.Query(`PRAGMA table_info(named_agents)`)
+	if err != nil {
+		return fmt.Errorf("inspect named agent schema: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return fmt.Errorf("inspect named agent column: %w", err)
+		}
+		if name == "provider_override" {
+			return nil
+		}
+	}
+	if _, err := s.db.Exec(`ALTER TABLE named_agents ADD COLUMN provider_override TEXT`); err != nil {
+		return fmt.Errorf("add named agent provider override: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) ensureLegacyColumns() error {
+	columns := []struct {
+		table      string
+		name       string
+		definition string
+	}{
+		{table: "room_messages", name: "task_title", definition: "TEXT"},
+		{table: "reminders", name: "created_at", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "named_agents", name: "avatar_key", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "named_agents", name: "avatar_image", definition: "TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, column := range columns {
+		exists, err := s.tableHasColumn(column.table, column.name)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		statement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, column.table, column.name, column.definition)
+		if _, err := s.db.Exec(statement); err != nil {
+			return fmt.Errorf("add %s.%s column: %w", column.table, column.name, err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) ensureNamedAgentAvatars() error {
+	rows, err := s.db.Query(`SELECT id FROM named_agents WHERE avatar_key = ''`)
+	if err != nil {
+		return fmt.Errorf("list named agents without avatars: %w", err)
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan named agent without avatar: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close named agent avatar rows: %w", err)
+	}
+	for _, id := range ids {
+		avatarKey, err := randomNamedAgentAvatarKey()
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.Exec(`UPDATE named_agents SET avatar_key = ? WHERE id = ? AND avatar_key = ''`, avatarKey, id); err != nil {
+			return fmt.Errorf("assign named agent avatar: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) tableHasColumn(table, column string) (bool, error) {
+	rows, err := s.db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false, fmt.Errorf("inspect %s schema: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, fmt.Errorf("scan %s schema: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("read %s schema: %w", table, err)
+	}
+	return false, nil
+}
+
+func (s *Service) migrateRoomCursors() error {
+	rows, err := s.db.Query(`PRAGMA table_info(room_cursors)`)
+	if err != nil {
+		return fmt.Errorf("inspect room cursor schema: %w", err)
+	}
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan room cursor schema: %w", err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close room cursor schema: %w", err)
+	}
+	if len(columns) == 0 || columns["member_type"] && columns["member_id"] {
+		return nil
+	}
+	if !columns["agent_id"] {
+		return errors.New("legacy room_cursors has no member identity column")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin room cursor migration: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`ALTER TABLE room_cursors RENAME TO room_cursors_legacy`); err != nil {
+		return fmt.Errorf("rename legacy room cursors: %w", err)
+	}
+	if _, err := tx.Exec(`
+		CREATE TABLE room_cursors (
+			room_id TEXT NOT NULL,
+			member_type TEXT NOT NULL DEFAULT 'agent' CHECK (member_type IN ('human', 'agent')),
+			member_id TEXT NOT NULL,
+			last_read_seq INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (room_id, member_type, member_id),
+			FOREIGN KEY (room_id, member_type, member_id) REFERENCES room_members(room_id, member_type, member_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create upgraded room cursors: %w", err)
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO room_cursors(room_id, member_type, member_id, last_read_seq)
+		SELECT cursor.room_id, 'agent', cursor.agent_id, cursor.last_read_seq
+		FROM room_cursors_legacy cursor
+		JOIN room_members member
+			ON member.room_id = cursor.room_id
+			AND member.member_type = 'agent'
+			AND member.member_id = cursor.agent_id`); err != nil {
+		return fmt.Errorf("copy upgraded room cursors: %w", err)
+	}
+	if _, err := tx.Exec(`DROP TABLE room_cursors_legacy`); err != nil {
+		return fmt.Errorf("drop legacy room cursors: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit room cursor migration: %w", err)
 	}
 	return nil
 }
@@ -365,6 +555,20 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 	if len([]rune(name)) > 64 {
 		return AgentCredential{}, errors.New("named agent name exceeds 64 characters")
 	}
+	avatarKey, err := normalizeNamedAgentAvatarKey(params.AvatarKey)
+	if err != nil {
+		return AgentCredential{}, err
+	}
+	if avatarKey == "" {
+		avatarKey, err = randomNamedAgentAvatarKey()
+		if err != nil {
+			return AgentCredential{}, err
+		}
+	}
+	avatarImage, err := normalizeNamedAgentAvatarImage(params.AvatarImage)
+	if err != nil {
+		return AgentCredential{}, err
+	}
 	id, err := randomID("agent", 12)
 	if err != nil {
 		return AgentCredential{}, err
@@ -375,12 +579,15 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 	}
 	now := fromMillis(toMillis(s.now()))
 	agent := NamedAgent{
-		ID:            id,
-		Name:          name,
-		MemoryDir:     filepath.Join(s.dir, "agents", id, "memory"),
-		ModelOverride: strings.TrimSpace(params.ModelOverride),
-		Autostart:     params.Autostart,
-		CreatedAt:     now,
+		ID:               id,
+		Name:             name,
+		MemoryDir:        filepath.Join(s.dir, "agents", id, "memory"),
+		AvatarKey:        avatarKey,
+		AvatarImage:      avatarImage,
+		ProviderOverride: strings.TrimSpace(params.ProviderOverride),
+		ModelOverride:    strings.TrimSpace(params.ModelOverride),
+		Autostart:        params.Autostart,
+		CreatedAt:        now,
 	}
 	if err := securefs.Mkdir(agent.MemoryDir); err != nil {
 		return AgentCredential{}, fmt.Errorf("create named agent memory directory: %w", err)
@@ -397,9 +604,9 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO named_agents (id, name, memory_dir, model_override, token_hash, autostart, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		agent.ID, agent.Name, agent.MemoryDir, nullableString(agent.ModelOverride), tokenHash(token), boolInt(agent.Autostart), toMillis(now),
+		INSERT INTO named_agents (id, name, memory_dir, avatar_key, avatar_image, provider_override, model_override, token_hash, autostart, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		agent.ID, agent.Name, agent.MemoryDir, agent.AvatarKey, agent.AvatarImage, nullableString(agent.ProviderOverride), nullableString(agent.ModelOverride), tokenHash(token), boolInt(agent.Autostart), toMillis(now),
 	)
 	if err != nil {
 		if isUniqueConstraint(err) {
@@ -424,13 +631,13 @@ func (s *Service) GetNamedAgent(ctx context.Context, id string) (NamedAgent, err
 		return NamedAgent{}, errors.New("named agent id is required")
 	}
 	return scanNamedAgent(s.db.QueryRowContext(ctx, `
-		SELECT id, name, memory_dir, COALESCE(model_override, ''), autostart, created_at
+		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), autostart, created_at
 		FROM named_agents WHERE id = ?`, id))
 }
 
 func (s *Service) ListNamedAgents(ctx context.Context) ([]NamedAgent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, memory_dir, COALESCE(model_override, ''), autostart, created_at
+		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), autostart, created_at
 		FROM named_agents ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list named agents: %w", err)
@@ -450,6 +657,81 @@ func (s *Service) ListNamedAgents(ctx context.Context) ([]NamedAgent, error) {
 	return agents, nil
 }
 
+func (s *Service) UpdateNamedAgent(ctx context.Context, params UpdateNamedAgentParams) (NamedAgent, error) {
+	id := strings.TrimSpace(params.ID)
+	name := strings.TrimSpace(params.Name)
+	provider := strings.TrimSpace(params.ProviderOverride)
+	model := strings.TrimSpace(params.ModelOverride)
+	if id == "" || name == "" {
+		return NamedAgent{}, errors.New("named agent id and name are required")
+	}
+	if (provider == "") != (model == "") {
+		return NamedAgent{}, errors.New("named agent provider and model overrides must be set together")
+	}
+	avatarKey, err := normalizeNamedAgentAvatarKey(params.AvatarKey)
+	if err != nil {
+		return NamedAgent{}, err
+	}
+	current, err := s.GetNamedAgent(ctx, id)
+	if err != nil {
+		return NamedAgent{}, err
+	}
+	if avatarKey == "" {
+		avatarKey = current.AvatarKey
+	}
+	avatarImage := current.AvatarImage
+	if params.AvatarImage != nil {
+		avatarImage, err = normalizeNamedAgentAvatarImage(*params.AvatarImage)
+		if err != nil {
+			return NamedAgent{}, err
+		}
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE named_agents SET name = ?, avatar_key = ?, avatar_image = ?, provider_override = ?, model_override = ? WHERE id = ?`,
+		name, avatarKey, avatarImage, nullableString(provider), nullableString(model), id)
+	if err != nil {
+		if isUniqueConstraint(err) {
+			return NamedAgent{}, fmt.Errorf("%w: named agent %q already exists", ErrConflict, name)
+		}
+		return NamedAgent{}, fmt.Errorf("update named agent: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return NamedAgent{}, ErrNotFound
+	}
+	return s.GetNamedAgent(ctx, id)
+}
+
+func (s *Service) DeleteNamedAgent(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("named agent id is required")
+	}
+	agent, err := s.GetNamedAgent(ctx, id)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin named agent delete: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE room_messages SET task_owner = NULL WHERE task_owner = ?`, id); err != nil {
+		return fmt.Errorf("clear named agent task ownership: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM room_members WHERE member_type = 'agent' AND member_id = ?`, id); err != nil {
+		return fmt.Errorf("remove named agent memberships: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM named_agents WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete named agent: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit named agent delete: %w", err)
+	}
+	return os.RemoveAll(filepath.Dir(agent.MemoryDir))
+}
+
 func (s *Service) AuthenticateAgent(ctx context.Context, agentID, token string) (NamedAgent, error) {
 	agentID = strings.TrimSpace(agentID)
 	token = strings.TrimSpace(token)
@@ -461,9 +743,9 @@ func (s *Service) AuthenticateAgent(ctx context.Context, agentID, token string) 
 	var autostart int
 	var createdAt int64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, memory_dir, COALESCE(model_override, ''), autostart, created_at, token_hash
+		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), autostart, created_at, token_hash
 		FROM named_agents WHERE id = ?`, agentID,
-	).Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.ModelOverride, &autostart, &createdAt, &storedHash)
+	).Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.AvatarKey, &agent.AvatarImage, &agent.ProviderOverride, &agent.ModelOverride, &autostart, &createdAt, &storedHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return NamedAgent{}, ErrUnauthorized
 	}
@@ -637,6 +919,71 @@ func (s *Service) ListRooms(ctx context.Context) ([]Room, error) {
 	return rooms, nil
 }
 
+func (s *Service) EnsureBootstrap(ctx context.Context, humanID string) (BootstrapResult, error) {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	var completed string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM channel_metadata WHERE key = 'bootstrap_completed'`).Scan(&completed)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return BootstrapResult{}, fmt.Errorf("read channel bootstrap state: %w", err)
+	}
+	agents, err := s.ListNamedAgents(ctx)
+	if err != nil {
+		return BootstrapResult{}, err
+	}
+	rooms, err := s.ListRooms(ctx)
+	if err != nil {
+		return BootstrapResult{}, err
+	}
+	if completed == "1" {
+		return BootstrapResult{Agents: agents, Rooms: rooms}, nil
+	}
+	if len(agents) == 0 && len(rooms) == 0 {
+		credential, err := s.CreateNamedAgent(ctx, CreateNamedAgentParams{Name: "Andy", Autostart: true})
+		if err != nil {
+			return BootstrapResult{}, err
+		}
+		room, err := s.CreateRoom(ctx, CreateRoomParams{
+			Kind: RoomChannel, Name: "General", CreatedBy: humanID,
+			Members: []RoomMember{{MemberType: MemberAgent, MemberID: credential.Agent.ID}},
+		})
+		if err != nil {
+			_ = s.DeleteNamedAgent(ctx, credential.Agent.ID)
+			return BootstrapResult{}, err
+		}
+		agents = []NamedAgent{credential.Agent}
+		rooms = []Room{room}
+	} else if len(agents) == 1 && agents[0].Name == "Andy" && len(rooms) == 0 {
+		room, err := s.CreateRoom(ctx, CreateRoomParams{
+			Kind: RoomChannel, Name: "General", CreatedBy: humanID,
+			Members: []RoomMember{{MemberType: MemberAgent, MemberID: agents[0].ID}},
+		})
+		if err != nil {
+			return BootstrapResult{}, err
+		}
+		rooms = []Room{room}
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO channel_metadata (key, value) VALUES ('bootstrap_completed', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value`); err != nil {
+		return BootstrapResult{}, fmt.Errorf("persist channel bootstrap state: %w", err)
+	}
+	return BootstrapResult{Agents: agents, Rooms: rooms}, nil
+}
+
+func (s *Service) DeleteRoom(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("room id is required")
+	}
+	result, err := s.db.ExecContext(ctx, `DELETE FROM rooms WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete room: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Service) WakeState(ctx context.Context, agentID string) (WakeState, error) {
 	var state WakeState
 	var outstanding, pending int
@@ -675,7 +1022,7 @@ func scanNamedAgent(row scanner) (NamedAgent, error) {
 	var agent NamedAgent
 	var autostart int
 	var createdAt int64
-	if err := row.Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.ModelOverride, &autostart, &createdAt); err != nil {
+	if err := row.Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.AvatarKey, &agent.AvatarImage, &agent.ProviderOverride, &agent.ModelOverride, &autostart, &createdAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NamedAgent{}, ErrNotFound
 		}
@@ -725,6 +1072,59 @@ func randomID(prefix string, byteCount int) (string, error) {
 		return "", fmt.Errorf("generate %s id: %w", prefix, err)
 	}
 	return prefix + "-" + hex.EncodeToString(buffer), nil
+}
+
+func randomNamedAgentAvatarKey() (string, error) {
+	var value [1]byte
+	for {
+		if _, err := rand.Read(value[:]); err != nil {
+			return "", fmt.Errorf("generate named agent avatar: %w", err)
+		}
+		if value[0] < 252 {
+			return fmt.Sprintf("abstract-%d", int(value[0])%namedAgentAvatarCount+1), nil
+		}
+	}
+}
+
+func normalizeNamedAgentAvatarKey(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	for index := 1; index <= namedAgentAvatarCount; index++ {
+		if value == fmt.Sprintf("abstract-%d", index) {
+			return value, nil
+		}
+	}
+	return "", fmt.Errorf("invalid named agent avatar %q", value)
+}
+
+func normalizeNamedAgentAvatarImage(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	header, encoded, ok := strings.Cut(value, ",")
+	if !ok || (header != "data:image/png;base64" && header != "data:image/jpeg;base64" && header != "data:image/webp;base64") {
+		return "", errors.New("named agent avatar image must be PNG, JPEG, or WebP")
+	}
+	if len(encoded) > base64.StdEncoding.EncodedLen(maxAgentAvatarBytes) {
+		return "", fmt.Errorf("named agent avatar image exceeds %d bytes", maxAgentAvatarBytes)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", errors.New("named agent avatar image is not valid base64 data")
+	}
+	if len(decoded) == 0 || len(decoded) > maxAgentAvatarBytes {
+		return "", fmt.Errorf("named agent avatar image must be between 1 and %d bytes", maxAgentAvatarBytes)
+	}
+	validImage := (header == "data:image/png;base64" && bytes.HasPrefix(decoded, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})) ||
+		(header == "data:image/jpeg;base64" && bytes.HasPrefix(decoded, []byte{0xff, 0xd8, 0xff})) ||
+		(header == "data:image/webp;base64" && len(decoded) >= 12 && string(decoded[:4]) == "RIFF" && string(decoded[8:12]) == "WEBP")
+	if !validImage {
+		return "", errors.New("named agent avatar image data does not match its media type")
+	}
+	return value, nil
 }
 
 func tokenHash(token string) string {

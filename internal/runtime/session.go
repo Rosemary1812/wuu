@@ -1045,6 +1045,12 @@ func (s *Session) ConfigureNamedAgentThreadRuntime(threadRuntime *ThreadRuntime,
 		}
 	}
 	runner := threadRuntime.StreamRunner
+	runner.BeforeRequestContext = RuntimeContextInjector(
+		threadRuntime.AgentControl,
+		rootDir,
+		toolkitContextBlockProvider(toolkit),
+		namedAgentWorkspaceContextProvider(s.WuuHome, rootDir, memoryDir, toolkit),
+	)
 	userPrompt := strings.TrimSpace(strings.TrimSpace(s.UserSystemPrompt) + "\n\n" + strings.TrimSpace(orientation))
 	promptResult := buildBaseSystemPromptResult(
 		rootDir, s.SessionDate, config.DefaultSystemPrompt(), userPrompt,
@@ -1669,6 +1675,41 @@ func toolkitContextBlockProvider(toolkit *tools.Toolkit) func() []wuucontext.Blo
 		return nil
 	}
 	return toolkit.ContextBlocks
+}
+
+func namedAgentWorkspaceContextProvider(wuuHome, agentHome, memoryDir string, toolkit *tools.Toolkit) func() []wuucontext.Block {
+	return func() []wuucontext.Block {
+		if toolkit != nil {
+			toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(agentHome, wuuHome, memoryDir))
+		}
+		registered, err := workspaces.List(wuuHome)
+		if err != nil {
+			providers.DebugLogf("read named agent registered workspaces: %v", err)
+			return nil
+		}
+		var content strings.Builder
+		fmt.Fprintf(&content, "Agent home (identity/state anchor, not project scope): %s\n", agentHome)
+		if len(registered) == 0 {
+			content.WriteString("Registered project workspaces: none. Projectless conversation sessions are excluded.")
+		} else {
+			content.WriteString("Registered project workspaces available for activity:\n")
+			for _, workspace := range registered {
+				name := strings.TrimSpace(workspace.Name)
+				root := strings.TrimSpace(workspace.Root)
+				if name == "" {
+					name = root
+				}
+				fmt.Fprintf(&content, "- %s — %s\n", name, root)
+			}
+			content.WriteString("Use absolute paths or a command-specific cwd to work in any listed project.")
+		}
+		return []wuucontext.Block{{
+			Kind:    wuucontext.BlockEnvironment,
+			Title:   "Named agent project activity scope",
+			Source:  "runtime.named_agent_workspaces",
+			Content: strings.TrimSpace(content.String()),
+		}}
+	}
 }
 
 func setupCatwalk(cfg config.Config) {

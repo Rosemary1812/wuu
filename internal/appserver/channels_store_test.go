@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/channels"
-	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -63,7 +62,7 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 
 	var createdRoom ChannelRoomCreateResult
 	callChannelRPC(t, server, out, MethodChannelRoomCreate, ChannelRoomCreateParams{
-		Name: "Review", Kind: string(channels.RoomChannel), AgentIDs: []string{createdAgent.Agent.ID},
+		Name: "Review", AgentIDs: []string{createdAgent.Agent.ID},
 	}, &createdRoom)
 	if len(createdRoom.Room.Members) != 2 {
 		t.Fatalf("created room members = %#v", createdRoom.Room.Members)
@@ -223,20 +222,17 @@ func TestEnsureNamedAgentThreadRebuildsNamedRuntimeAfterLoad(t *testing.T) {
 	wantTools := map[string]bool{
 		"chat_check": false, "chat_read": false, "chat_send": false,
 		"chat_draft": false, "chat_task": false, "chat_remind": false,
+		"read_file": false, "list_files": false, "bash": false, "spawn_agent": false,
 	}
 	for _, definition := range loaded.execRuntime.Toolkit.Definitions() {
-		if _, ok := wantTools[definition.Name]; !ok {
-			t.Fatalf("named-agent runtime exposed non-chat tool %q", definition.Name)
+		if _, ok := wantTools[definition.Name]; ok {
+			wantTools[definition.Name] = true
 		}
-		wantTools[definition.Name] = true
 	}
 	for name, found := range wantTools {
 		if !found {
-			t.Fatalf("named-agent runtime omitted chat tool %q", name)
+			t.Fatalf("named-agent runtime omitted main/chat tool %q", name)
 		}
-	}
-	if _, err := loaded.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: `{}`}); err == nil {
-		t.Fatal("named-agent runtime executed a non-chat tool")
 	}
 	if !strings.Contains(loaded.execRuntime.StreamRunner.SystemPrompt, credential.Agent.MemoryDir) {
 		t.Fatal("loaded named-agent thread was rebuilt without chat tools or private memory prompt")

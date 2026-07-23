@@ -30,11 +30,15 @@ const (
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
 	MethodAgentTemplateList    = "agent-template/list"
+	MethodChannelBootstrap     = "channel/bootstrap"
 	MethodChannelAgentList     = "channel/agent/list"
 	MethodChannelAgentCreate   = "channel/agent/create"
+	MethodChannelAgentUpdate   = "channel/agent/update"
+	MethodChannelAgentDelete   = "channel/agent/delete"
 	MethodChannelAgentStart    = "channel/agent/start"
 	MethodChannelRoomList      = "channel/room/list"
 	MethodChannelRoomCreate    = "channel/room/create"
+	MethodChannelRoomDelete    = "channel/room/delete"
 	MethodChannelMessageList   = "channel/message/list"
 	MethodChannelMessageSend   = "channel/message/send"
 	MethodChannelTaskCreate    = "channel/task/create"
@@ -2016,14 +2020,37 @@ type ChannelAgentListResult struct {
 	Agents []channels.NamedAgent `json:"agents"`
 }
 
+type ChannelBootstrapResult = channels.BootstrapResult
+
 type ChannelAgentCreateParams struct {
-	Name          string `json:"name"`
-	ModelOverride string `json:"model_override,omitempty"`
-	Autostart     bool   `json:"autostart,omitempty"`
+	Name             string `json:"name"`
+	AvatarKey        string `json:"avatar_key,omitempty"`
+	AvatarImage      string `json:"avatar_image,omitempty"`
+	ProviderOverride string `json:"provider_override,omitempty"`
+	ModelOverride    string `json:"model_override,omitempty"`
 }
 
 type ChannelAgentCreateResult struct {
 	Agent channels.NamedAgent `json:"agent"`
+}
+
+type ChannelAgentUpdateParams struct {
+	AgentID          string  `json:"agent_id"`
+	Name             string  `json:"name"`
+	AvatarKey        string  `json:"avatar_key,omitempty"`
+	AvatarImage      *string `json:"avatar_image,omitempty"`
+	ProviderOverride string  `json:"provider_override,omitempty"`
+	ModelOverride    string  `json:"model_override,omitempty"`
+}
+
+type ChannelAgentUpdateResult struct {
+	Agent channels.NamedAgent `json:"agent"`
+}
+type ChannelAgentDeleteParams struct {
+	AgentID string `json:"agent_id"`
+}
+type ChannelAgentDeleteResult struct {
+	Deleted bool `json:"deleted"`
 }
 
 type ChannelAgentStartParams struct {
@@ -2040,12 +2067,18 @@ type ChannelRoomListResult struct {
 
 type ChannelRoomCreateParams struct {
 	Name     string   `json:"name"`
-	Kind     string   `json:"kind"`
 	AgentIDs []string `json:"agent_ids,omitempty"`
 }
 
 type ChannelRoomCreateResult struct {
 	Room channels.Room `json:"room"`
+}
+
+type ChannelRoomDeleteParams struct {
+	RoomID string `json:"room_id"`
+}
+type ChannelRoomDeleteResult struct {
+	Deleted bool `json:"deleted"`
 }
 
 type ChannelMessageListParams struct {

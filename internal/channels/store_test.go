@@ -150,6 +150,9 @@ func TestNamedAgentIdentityIsIndependentAndTokenIsHashed(t *testing.T) {
 	if credential.Agent.ID == "" || credential.Token == "" {
 		t.Fatalf("credential = %#v, want generated id and token", credential)
 	}
+	if _, err := normalizeNamedAgentAvatarKey(credential.Agent.AvatarKey); err != nil || credential.Agent.AvatarKey == "" {
+		t.Fatalf("generated avatar = %q, err %v", credential.Agent.AvatarKey, err)
+	}
 	if credential.Agent.MemoryDir != filepath.Join(service.Dir(), "agents", credential.Agent.ID, "memory") {
 		t.Errorf("memory dir = %q", credential.Agent.MemoryDir)
 	}
@@ -231,6 +234,111 @@ func TestRoomMembershipAndDMConstraints(t *testing.T) {
 	}
 }
 
+func TestBootstrapCreatesDeletableAndyAndGeneralOnlyOnce(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	first, err := service.EnsureBootstrap(ctx, "local-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Agents) != 1 || first.Agents[0].Name != "Andy" || first.Agents[0].ModelOverride != "" {
+		t.Fatalf("bootstrap agents = %#v", first.Agents)
+	}
+	if len(first.Rooms) != 1 || first.Rooms[0].Name != "General" || first.Rooms[0].Kind != RoomChannel || len(first.Rooms[0].Members) != 2 {
+		t.Fatalf("bootstrap rooms = %#v", first.Rooms)
+	}
+	if err := service.DeleteRoom(ctx, first.Rooms[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteNamedAgent(ctx, first.Agents[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.EnsureBootstrap(ctx, "local-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Agents) != 0 || len(second.Rooms) != 0 {
+		t.Fatalf("deleted bootstrap records were recreated: %#v", second)
+	}
+}
+
+func TestBootstrapRecoversAndyCreatedBeforeGeneral(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	andy, err := service.CreateNamedAgent(ctx, CreateNamedAgentParams{Name: "Andy", Autostart: true})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent(Andy) error = %v", err)
+	}
+
+	result, err := service.EnsureBootstrap(ctx, "local-user")
+	if err != nil {
+		t.Fatalf("EnsureBootstrap() error = %v", err)
+	}
+	if len(result.Agents) != 1 || result.Agents[0].ID != andy.Agent.ID {
+		t.Fatalf("bootstrap agents = %#v, want existing Andy", result.Agents)
+	}
+	if len(result.Rooms) != 1 || result.Rooms[0].Name != "General" {
+		t.Fatalf("bootstrap rooms = %#v, want General", result.Rooms)
+	}
+	if len(result.Rooms[0].Members) != 2 {
+		t.Fatalf("General members = %#v, want human and Andy", result.Rooms[0].Members)
+	}
+}
+
+func TestNamedAgentModelCanFollowWorkspaceOrUseExplicitProvider(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	created := createTestAgent(t, service, "Andy")
+	updated, err := service.UpdateNamedAgent(ctx, UpdateNamedAgentParams{
+		ID: created.Agent.ID, Name: "Andy", AvatarKey: "abstract-9", ProviderOverride: "anthropic", ModelOverride: "claude-sonnet",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AvatarKey != "abstract-9" || updated.ProviderOverride != "anthropic" || updated.ModelOverride != "claude-sonnet" {
+		t.Fatalf("updated = %#v", updated)
+	}
+	inherited, err := service.UpdateNamedAgent(ctx, UpdateNamedAgentParams{ID: created.Agent.ID, Name: "Andy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inherited.ProviderOverride != "" || inherited.ModelOverride != "" {
+		t.Fatalf("inherited = %#v", inherited)
+	}
+	if inherited.AvatarKey != "abstract-9" {
+		t.Fatalf("avatar was not preserved: %#v", inherited)
+	}
+}
+
+func TestNamedAgentCustomAvatarImagePersistsAndCanBeCleared(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	created, err := service.CreateNamedAgent(ctx, CreateNamedAgentParams{Name: "Andy", AvatarKey: "abstract-2", AvatarImage: image})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Agent.AvatarImage != image {
+		t.Fatalf("created avatar image = %q", created.Agent.AvatarImage)
+	}
+	listed, err := service.ListNamedAgents(ctx)
+	if err != nil || len(listed) != 1 || listed[0].AvatarImage != image {
+		t.Fatalf("listed agents = %#v, err = %v", listed, err)
+	}
+	empty := ""
+	updated, err := service.UpdateNamedAgent(ctx, UpdateNamedAgentParams{ID: created.Agent.ID, Name: "Andy", AvatarImage: &empty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AvatarImage != "" || updated.AvatarKey != "abstract-2" {
+		t.Fatalf("cleared avatar = %#v", updated)
+	}
+	invalid := "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
+	if _, err := service.UpdateNamedAgent(ctx, UpdateNamedAgentParams{ID: created.Agent.ID, Name: "Andy", AvatarImage: &invalid}); err == nil {
+		t.Fatal("UpdateNamedAgent() accepted an SVG avatar")
+	}
+}
+
 func TestMessageTriggersCoalesceWakeAndPersistInbox(t *testing.T) {
 	ctx := context.Background()
 	wake := &recordingWakeSink{}
@@ -244,8 +352,13 @@ func TestMessageTriggersCoalesceWakeAndPersistInbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plain SendHuman() error = %v", err)
 	}
-	if plain.Message.Seq != 1 || len(plain.WakeAgentIDs) != 0 || len(wake.take()) != 0 {
+	if plain.Message.Seq != 1 || len(plain.WakeAgentIDs) != 3 || len(wake.take()) != 3 {
 		t.Fatalf("plain send = %#v", plain)
+	}
+	for _, agent := range []AgentCredential{alpha, alphaBeta, beta} {
+		if err := service.ClearWakeOnCheck(ctx, agent.Agent.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mentioned, err := service.SendHuman(ctx, HumanSendParams{RoomID: room.ID, HumanID: "human-1", Body: "@Alpha, please review"})
 	if err != nil {
@@ -254,10 +367,12 @@ func TestMessageTriggersCoalesceWakeAndPersistInbox(t *testing.T) {
 	if got, want := mentioned.Message.Mentions, []string{alpha.Agent.ID}; !equalStrings(got, want) {
 		t.Fatalf("mentions = %v, want %v", got, want)
 	}
-	if got, want := mentioned.WakeAgentIDs, []string{alpha.Agent.ID}; !equalStrings(got, want) {
+	wantRoomAgents := []string{alpha.Agent.ID, alphaBeta.Agent.ID, beta.Agent.ID}
+	sort.Strings(wantRoomAgents)
+	if got, want := mentioned.WakeAgentIDs, wantRoomAgents; !equalStrings(got, want) {
 		t.Fatalf("wake targets = %v, want %v", got, want)
 	}
-	if got := wake.take(); !equalStrings(got, []string{alpha.Agent.ID}) {
+	if got := wake.take(); !equalStrings(got, wantRoomAgents) {
 		t.Fatalf("delivered wake = %v", got)
 	}
 
@@ -272,7 +387,11 @@ func TestMessageTriggersCoalesceWakeAndPersistInbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListInbox() error = %v", err)
 	}
-	if len(items) != 2 || items[0].Kind != InboxMention || items[1].Kind != InboxMention {
+	kindCounts := make(map[InboxKind]int)
+	for _, item := range items {
+		kindCounts[item.Kind]++
+	}
+	if len(items) != 3 || kindCounts[InboxThreadUpdate] != 1 || kindCounts[InboxMention] != 2 {
 		t.Fatalf("alpha inbox = %#v", items)
 	}
 
@@ -323,8 +442,8 @@ func TestMessageTriggersCoalesceWakeAndPersistInbox(t *testing.T) {
 		}
 	}
 	sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
-	if len(kinds) != 2 || kinds[0] != InboxReply || kinds[1] != InboxThreadUpdate {
-		t.Fatalf("reply inbox kinds = %v, want reply + thread_update", kinds)
+	if len(kinds) != 1 || kinds[0] != InboxReply {
+		t.Fatalf("reply inbox kinds = %v, want one reply signal", kinds)
 	}
 }
 
@@ -622,6 +741,118 @@ func TestOpenMigratesLegacyAgentInboxAndPreservesItems(t *testing.T) {
 	}, MinReminderDur)
 	if err != nil || reminder.RoomID != "" {
 		t.Fatalf("SetReminderAfter(upgraded) = %#v, %v", reminder, err)
+	}
+}
+
+func TestOpenMigratesLegacyAgentRoomCursorsBeforeBootstrap(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	service, err := Open(dir, nil)
+	if err != nil {
+		t.Fatalf("Open(current) error = %v", err)
+	}
+	alpha := createTestAgent(t, service, "Alpha")
+	room := createTestRoom(t, service, alpha)
+	if _, err := service.db.Exec(`UPDATE room_cursors SET last_read_seq = 7 WHERE room_id = ? AND member_type = 'agent' AND member_id = ?`, room.ID, alpha.Agent.ID); err != nil {
+		t.Fatalf("seed current room cursor: %v", err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("Close(current) error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite", sqliteDSN(filepath.Join(dir, databaseFileName)))
+	if err != nil {
+		t.Fatalf("open legacy fixture database: %v", err)
+	}
+	for _, statement := range []string{
+		`PRAGMA foreign_keys = OFF`,
+		`ALTER TABLE room_cursors RENAME TO room_cursors_current`,
+		`CREATE TABLE room_cursors (
+			room_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			last_read_seq INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (room_id, agent_id),
+			FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+			FOREIGN KEY (agent_id) REFERENCES named_agents(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO room_cursors(room_id, agent_id, last_read_seq)
+			SELECT room_id, member_id, last_read_seq FROM room_cursors_current WHERE member_type = 'agent'`,
+		`DROP TABLE room_cursors_current`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatalf("prepare legacy room cursors with %q: %v", statement, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy fixture database: %v", err)
+	}
+
+	upgraded, err := Open(dir, nil)
+	if err != nil {
+		t.Fatalf("Open(legacy) error = %v", err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+	var memberType string
+	var lastReadSeq int64
+	if err := upgraded.db.QueryRow(`SELECT member_type, last_read_seq FROM room_cursors WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID).Scan(&memberType, &lastReadSeq); err != nil {
+		t.Fatalf("read upgraded room cursor: %v", err)
+	}
+	if memberType != string(MemberAgent) || lastReadSeq != 7 {
+		t.Fatalf("upgraded room cursor = (%q, %d), want (agent, 7)", memberType, lastReadSeq)
+	}
+	if _, err := upgraded.EnsureBootstrap(ctx, "local-user"); err != nil {
+		t.Fatalf("EnsureBootstrap(upgraded) error = %v", err)
+	}
+}
+
+func TestOpenAddsColumnsMissingFromLegacySchema(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	service, err := Open(dir, nil)
+	if err != nil {
+		t.Fatalf("Open(current) error = %v", err)
+	}
+	alpha := createTestAgent(t, service, "Alpha")
+	room := createTestRoom(t, service, alpha)
+	if err := service.Close(); err != nil {
+		t.Fatalf("Close(current) error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite", sqliteDSN(filepath.Join(dir, databaseFileName)))
+	if err != nil {
+		t.Fatalf("open legacy fixture database: %v", err)
+	}
+	for _, statement := range []string{
+		`ALTER TABLE room_messages DROP COLUMN task_title`,
+		`ALTER TABLE reminders DROP COLUMN created_at`,
+		`ALTER TABLE named_agents DROP COLUMN avatar_key`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatalf("prepare legacy schema with %q: %v", statement, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy fixture database: %v", err)
+	}
+
+	upgraded, err := Open(dir, nil)
+	if err != nil {
+		t.Fatalf("Open(legacy) error = %v", err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+	upgradedAgent, err := upgraded.GetNamedAgent(ctx, alpha.Agent.ID)
+	if err != nil || upgradedAgent.AvatarKey == "" {
+		t.Fatalf("GetNamedAgent(upgraded) = %#v, err %v", upgradedAgent, err)
+	}
+	if _, err := upgraded.ListMessages(ctx, room.ID, 0, 50); err != nil {
+		t.Fatalf("ListMessages(upgraded) error = %v", err)
+	}
+	if _, err := upgraded.SetReminderAfter(ctx, ReminderSetParams{
+		AgentID: alpha.Agent.ID, Token: alpha.Token, Note: "after schema upgrade",
+	}, MinReminderDur); err != nil {
+		t.Fatalf("SetReminderAfter(upgraded) error = %v", err)
 	}
 }
 

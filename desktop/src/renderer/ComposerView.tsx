@@ -184,6 +184,7 @@ export function Composer({
   queryHistory = [],
   hideRuntimeControls = false,
   placeholder,
+  maxLength,
   textOnly = false,
   slashCommandsOverride,
   onResetSideThread,
@@ -283,6 +284,7 @@ export function Composer({
   // are removed.
   textOnly?: boolean;
   placeholder?: string;
+  maxLength?: number;
   // Replaces the built-in main-conversation command list with a
   // surface-specific one (e.g. the side chat's /reset). The menu, keyboard
   // handling, and action dispatch stay the canonical Composer machinery, so
@@ -1037,6 +1039,7 @@ export function Composer({
               ref={textareaRef}
               value={visiblePromptValue}
               placeholder={composerPlaceholder}
+              maxLength={maxLength}
               disabled={readOnly}
               aria-readonly={readOnly}
               aria-controls={slashMenuOpen ? slashMenuID : undefined}

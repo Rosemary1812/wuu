@@ -59,12 +59,16 @@ const (
 )
 
 type NamedAgent struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	MemoryDir     string    `json:"memory_dir"`
-	ModelOverride string    `json:"model_override,omitempty"`
-	Autostart     bool      `json:"autostart"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	MemoryDir        string    `json:"memory_dir"`
+	AvatarKey        string    `json:"avatar_key"`
+	AvatarImage      string    `json:"avatar_image,omitempty"`
+	ProviderOverride string    `json:"provider_override,omitempty"`
+	ModelOverride    string    `json:"model_override,omitempty"`
+	Autostart        bool      `json:"autostart"`
+	CreatedAt        time.Time `json:"created_at"`
+	ActivityStatus   string    `json:"activity_status,omitempty"`
 }
 
 type AgentCredential struct {
@@ -73,9 +77,26 @@ type AgentCredential struct {
 }
 
 type CreateNamedAgentParams struct {
-	Name          string
-	ModelOverride string
-	Autostart     bool
+	Name             string
+	AvatarKey        string
+	AvatarImage      string
+	ProviderOverride string
+	ModelOverride    string
+	Autostart        bool
+}
+
+type UpdateNamedAgentParams struct {
+	ID               string
+	Name             string
+	AvatarKey        string
+	AvatarImage      *string
+	ProviderOverride string
+	ModelOverride    string
+}
+
+type BootstrapResult struct {
+	Agents []NamedAgent `json:"agents"`
+	Rooms  []Room       `json:"rooms"`
 }
 
 type RoomMember struct {

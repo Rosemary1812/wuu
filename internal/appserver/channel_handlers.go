@@ -6,15 +6,32 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/channels"
+	"github.com/blueberrycongee/wuu/internal/session"
 )
 
 const localChannelHumanID = "local-user"
+
+func (s *Server) handleChannelBootstrap(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	result, err := s.channelService.EnsureBootstrap(ctx, localChannelHumanID)
+	return s.writeResponse(req.ID, ChannelBootstrapResult(result), err)
+}
 
 func (s *Server) handleChannelAgentList(ctx context.Context, req Request) error {
 	if s == nil || s.channelService == nil {
 		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
 	}
 	agents, err := s.channelService.ListNamedAgents(ctx)
+	if err == nil {
+		for i := range agents {
+			agents[i].ActivityStatus = "idle"
+			if thread := s.thread(namedAgentSessionID(agents[i])); thread != nil && threadIsRunning(thread) {
+				agents[i].ActivityStatus = "thinking"
+			}
+		}
+	}
 	return s.writeResponse(req.ID, ChannelAgentListResult{Agents: agents}, err)
 }
 
@@ -27,9 +44,63 @@ func (s *Server) handleChannelAgentCreate(ctx context.Context, req Request) erro
 		return s.writeResponse(req.ID, nil, err)
 	}
 	credential, err := s.channelService.CreateNamedAgent(ctx, channels.CreateNamedAgentParams{
-		Name: params.Name, ModelOverride: params.ModelOverride, Autostart: params.Autostart,
+		Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride, Autostart: true,
 	})
 	return s.writeResponse(req.ID, ChannelAgentCreateResult{Agent: credential.Agent}, err)
+}
+
+func (s *Server) handleChannelAgentUpdate(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelAgentUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	current, err := s.channelService.GetNamedAgent(ctx, params.AgentID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread := s.thread(namedAgentSessionID(current))
+	if thread != nil && threadIsRunning(thread) {
+		return s.writeResponse(req.ID, nil, errors.New("named agent cannot be edited while it is running"))
+	}
+	agent, err := s.channelService.UpdateNamedAgent(ctx, channels.UpdateNamedAgentParams{
+		ID: params.AgentID, Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride,
+	})
+	if err == nil && thread != nil {
+		selection := s.currentSessionRuntimeSelection()
+		if agent.ModelOverride != "" {
+			selection.Provider = agent.ProviderOverride
+			selection.Model = agent.ModelOverride
+		}
+		thread.mu.Lock()
+		oldRuntime := thread.execRuntime
+		thread.execRuntime = nil
+		thread.Title = agent.Name
+		applyThreadRuntimeSelection(thread, selection)
+		thread.mu.Unlock()
+		if oldRuntime != nil {
+			releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: oldRuntime})
+		}
+		if s.rt != nil {
+			_, _ = session.UpdateTitle(s.rt.SessionDir, thread.ID, agent.Name)
+			_, _ = session.SetRuntimeSelection(s.rt.SessionDir, thread.ID, selection)
+		}
+	}
+	return s.writeResponse(req.ID, ChannelAgentUpdateResult{Agent: agent}, err)
+}
+
+func (s *Server) handleChannelAgentDelete(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelAgentDeleteParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	err := s.channelService.DeleteNamedAgent(ctx, params.AgentID)
+	return s.writeResponse(req.ID, ChannelAgentDeleteResult{Deleted: err == nil}, err)
 }
 
 func (s *Server) handleChannelAgentStart(ctx context.Context, req Request) error {
@@ -92,9 +163,21 @@ func (s *Server) handleChannelRoomCreate(ctx context.Context, req Request) error
 		members = append(members, channels.RoomMember{MemberType: channels.MemberAgent, MemberID: agentID})
 	}
 	room, err := s.channelService.CreateRoom(ctx, channels.CreateRoomParams{
-		Name: params.Name, Kind: channels.RoomKind(params.Kind), CreatedBy: localChannelHumanID, Members: members,
+		Name: params.Name, Kind: channels.RoomChannel, CreatedBy: localChannelHumanID, Members: members,
 	})
 	return s.writeResponse(req.ID, ChannelRoomCreateResult{Room: room}, err)
+}
+
+func (s *Server) handleChannelRoomDelete(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelRoomDeleteParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	err := s.channelService.DeleteRoom(ctx, params.RoomID)
+	return s.writeResponse(req.ID, ChannelRoomDeleteResult{Deleted: err == nil}, err)
 }
 
 func (s *Server) handleChannelMessageList(ctx context.Context, req Request) error {

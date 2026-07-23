@@ -67,7 +67,7 @@ import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
   AppSidebar,
 } from "./AppSidebar";
-import { ChannelView } from "./ChannelView";
+import { ChannelView, type ChannelSection } from "./ChannelView";
 import { channelSystemNotificationsEnabled } from "./ChannelPreferences";
 import {
   type EnvironmentPanelMenu,
@@ -496,6 +496,7 @@ export function App(): JSX.Element {
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
+  const [channelSection, setChannelSection] = useState<ChannelSection>("rooms");
   const [channelMentionCount, setChannelMentionCount] = useState(0);
   const previousChannelMentionCount = useRef<number | null>(null);
   const [settingsInitialPage, setSettingsInitialPage] =
@@ -3963,7 +3964,7 @@ export function App(): JSX.Element {
         {ENABLE_GROUP_CHAT && channelsOpen ? (
           <>
             <header className="titlebar">
-              <div className="title-block">
+              <div className="title-block channel-title-block">
                 {sidebarVisible ? (
                   <button
                     className="icon-button side-panel-toggle-button sidebar-toggle-button"
@@ -3983,10 +3984,25 @@ export function App(): JSX.Element {
                     <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
                   </button>
                 ) : null}
-                <strong>{t("channels.title")}</strong>
+                <div className="channel-title-content">
+                  <strong>{t("channels.title")}</strong>
+                  <nav className="channel-mode-tabs" aria-label={t("channels.title")}>
+                    {(["rooms", "agents", "tasks"] as const).map((mode) => (
+                      <button
+                        className={channelSection === mode ? "active" : ""}
+                        type="button"
+                        key={mode}
+                        aria-current={channelSection === mode ? "page" : undefined}
+                        onClick={() => setChannelSection(mode)}
+                      >
+                        {t(mode === "rooms" ? "channels.rooms" : mode === "agents" ? "channels.agents" : "channels.tasks")}
+                      </button>
+                    ))}
+                  </nav>
+                </div>
               </div>
             </header>
-            <ChannelView />
+            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} />
           </>
         ) : (
           <>

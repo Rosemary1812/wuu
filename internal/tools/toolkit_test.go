@@ -3499,6 +3499,30 @@ func TestToolkit_RepeatedToolInputGuardExemptsPollingTools(t *testing.T) {
 	}
 }
 
+func TestToolkit_RepeatedToolInputGuardExemptsChatPolling(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	revision := workspaceRevision(context.Background(), kit.env.RootDir)
+	for _, call := range []providers.ToolCall{
+		{Name: "chat_check", Arguments: `{}`},
+		{Name: "chat_read", Arguments: `{"room_id":"room-1","after_seq":4}`},
+	} {
+		hash := toolArgumentsSHA256(call.Arguments)
+		kit.env.toolTelemetry.record(ToolExecutionRecord{Name: call.Name, ArgumentsSHA256: hash, RevisionBefore: revision})
+		kit.env.toolTelemetry.record(ToolExecutionRecord{Name: call.Name, ArgumentsSHA256: hash, RevisionBefore: revision})
+		if got := kit.repeatedToolInputCount(call, revision); got != 0 {
+			t.Fatalf("%s polling should be exempt from repeated input guard, got count %d", call.Name, got)
+		}
+	}
+
+	if isRepeatablePollingTool(providers.ToolCall{Name: "chat_send", Arguments: `{"room_id":"room-1","body":"hello"}`}) {
+		t.Fatal("chat mutations must remain protected by the repeated input guard")
+	}
+}
+
 func TestToolkit_RepeatedToolInputGuardExemptsCUAObserve(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

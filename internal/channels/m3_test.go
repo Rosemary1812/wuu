@@ -377,8 +377,14 @@ func TestM3ThreadLoopBudgetSixAgentOnlySuppressedAndHumanReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendHuman() error = %v", err)
 	}
-	if got := sink.take(); len(got) != 0 {
-		t.Fatalf("human message should not wake: %v", got)
+	if got := sink.take(); len(got) != 2 {
+		t.Fatalf("human message should wake room agents: %v", got)
+	}
+	if err := service.ClearWakeOnCheck(ctx, alpha.Agent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ClearWakeOnCheck(ctx, beta.Agent.ID); err != nil {
+		t.Fatal(err)
 	}
 
 	basis := root.Message.Seq
@@ -407,12 +413,13 @@ func TestM3ThreadLoopBudgetSixAgentOnlySuppressedAndHumanReset(t *testing.T) {
 		wakes := sink.take()
 		if i == 5 {
 			if len(wakes) != 1 || wakes[0] != beta.Agent.ID {
-				t.Fatalf("5th @mention below budget should wake beta, got %v", wakes)
+				t.Fatalf("agent @mention should wake Beta, got %v", wakes)
 			}
-		} else {
-			if len(wakes) != 0 {
-				t.Fatalf("mention-less reply %d should not wake, got %v", i, wakes)
+			if err := service.ClearWakeOnCheck(ctx, beta.Agent.ID); err != nil {
+				t.Fatal(err)
 			}
+		} else if len(wakes) != 0 {
+			t.Fatalf("agent message %d must not start another agent, got %v", i, wakes)
 		}
 	}
 
@@ -445,8 +452,14 @@ func TestM3ThreadLoopBudgetSixAgentOnlySuppressedAndHumanReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("human reset send error = %v", err)
 	}
-	if got := sink.take(); len(got) != 1 || got[0] != alpha.Agent.ID {
-		t.Fatalf("human reply reset should wake the replied-to agent, got %v", got)
+	if got := sink.take(); len(got) != 2 {
+		t.Fatalf("human reply reset should wake all room agents, got %v", got)
+	}
+	if err := service.ClearWakeOnCheck(ctx, alpha.Agent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ClearWakeOnCheck(ctx, beta.Agent.ID); err != nil {
+		t.Fatal(err)
 	}
 
 	afterReset, err := service.SendAgent(ctx, AgentSendParams{
@@ -461,7 +474,7 @@ func TestM3ThreadLoopBudgetSixAgentOnlySuppressedAndHumanReset(t *testing.T) {
 		t.Fatalf("after reset send = %#v, err = %v", afterReset, err)
 	}
 	if got := sink.take(); len(got) != 1 || got[0] != beta.Agent.ID {
-		t.Fatalf("after reset @beta should wake, got %v", got)
+		t.Fatalf("agent @mention should wake Beta after human reset, got %v", got)
 	}
 }
 

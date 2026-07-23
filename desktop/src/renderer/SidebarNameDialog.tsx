@@ -4,6 +4,7 @@ import {
   useEffect,
   type MouseEvent,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -21,6 +22,8 @@ export interface SidebarNameDialogProps {
   icon: LucideIcon;
   submitLabel: string;
   cancelLabel: string;
+  content?: ReactNode;
+  submitDisabled?: boolean;
 }
 
 // Shared floating name dialog for the sidebar flows that need a single text
@@ -40,6 +43,8 @@ export function SidebarNameDialog({
   icon: Icon,
   submitLabel,
   cancelLabel,
+  content,
+  submitDisabled,
 }: SidebarNameDialogProps): ReactElement | null {
   useEffect(() => {
     if (!open) {
@@ -93,7 +98,7 @@ export function SidebarNameDialog({
             {dialogTitle}
           </h2>
         </div>
-        <label className="sidebar-name-dialog-field">
+        {content ?? <label className="sidebar-name-dialog-field">
           <span className="sidebar-name-dialog-label">{fieldLabel}</span>
           <input
             className="sidebar-name-dialog-input"
@@ -104,12 +109,12 @@ export function SidebarNameDialog({
             onChange={handleInputChange}
             onFocus={(event) => event.currentTarget.select()}
           />
-        </label>
+        </label>}
         <div className="sidebar-name-dialog-actions">
           <button type="button" onClick={onClose}>
             {cancelLabel}
           </button>
-          <button type="submit" disabled={title.trim().length === 0}>
+          <button type="submit" disabled={submitDisabled ?? title.trim().length === 0}>
             {submitLabel}
           </button>
         </div>
