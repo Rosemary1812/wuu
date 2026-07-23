@@ -2449,14 +2449,16 @@ describe("Composer expand button", () => {
   });
 
   it("moves the goal / steer / queue header actions in sync with the expand button", () => {
-    // The expand button intentionally mirrors the input-header row actions;
-    // when it shifts right by 6px the header row inline padding must follow
-    // so the right-edge control column stays aligned across rows.
+    // The drawer stays inset when open. Its details wrapper must not add
+    // another horizontal inset around rows that already own their 8px gutter.
     expect(composerCSS).toMatch(
       /--composer-input-header-inline-padding:\s*8px;/,
     );
     expect(composerCSS).not.toMatch(
-      /--composer-input-header-inline-padding:\s*14px;/,
+      /\.composer-accessory-drawer\.expanded\s*\{[^}]*width:/,
+    );
+    expect(composerCSS).toMatch(
+      /\.composer-pending-details\s*\{[^}]*padding:\s*4px\s+0\s+16px/,
     );
   });
 });
