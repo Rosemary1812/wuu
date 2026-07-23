@@ -267,17 +267,28 @@ export function ComposerGoalStrip({
         aria-live="polite"
       >
         <div className="composer-goal-strip-summary">
-          <span className="composer-goal-strip-icon" aria-hidden="true">
-            <Target className="icon-sm" />
-          </span>
-          <span className="composer-goal-strip-main">
-            <span className="composer-goal-strip-text" title={displayText}>
-              {displayText}
+          <button
+            type="button"
+            className="composer-goal-strip-summary-select composer-drawer-summary-select"
+            aria-controls={`composer-goal-details-${summary.id}`}
+            aria-expanded={expanded}
+            onClick={() => {
+              setActionsOpen(false);
+              setExpanded(!expanded);
+            }}
+          >
+            <span className="composer-goal-strip-icon" aria-hidden="true">
+              <Target className="icon-sm" />
             </span>
-            {visibleStatus ? (
-              <span className="composer-goal-strip-state">{visibleStatus}</span>
-            ) : null}
-          </span>
+            <span className="composer-goal-strip-main">
+              <span className="composer-goal-strip-text" title={displayText}>
+                {displayText}
+              </span>
+              {visibleStatus ? (
+                <span className="composer-goal-strip-state">{visibleStatus}</span>
+              ) : null}
+            </span>
+          </button>
           <div
             ref={controlsRef}
             className="composer-goal-strip-actions composer-input-header-actions"

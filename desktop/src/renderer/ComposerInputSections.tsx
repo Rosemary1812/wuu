@@ -410,19 +410,27 @@ export function ComposerQueueStrip({
       className={`composer-pending-drawer composer-accessory-drawer${expanded ? " expanded" : ""}${hasHeldMessages ? " is-held" : ""}`}
     >
       <div className="composer-pending-summary">
-        <span className="composer-pending-icon" aria-hidden="true">
-          <ListTodo className="icon-sm" />
-        </span>
-        <span className="composer-pending-main" role="status" aria-live="polite">
-          <span className="composer-pending-title">
-            {t(hasHeldMessages ? "composer.pendingHeldSummary" : "composer.pendingSummary", {
-              count: rows.length,
-            })}
+        <button
+          type="button"
+          className="composer-pending-summary-select composer-drawer-summary-select"
+          aria-controls={detailsID}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span className="composer-pending-icon" aria-hidden="true">
+            <ListTodo className="icon-sm" />
           </span>
-          <span className="composer-pending-preview" title={latestMessage?.text}>
-            {latestMessage ? queuedMessagePreview(latestMessage) : ""}
+          <span className="composer-pending-main" role="status" aria-live="polite">
+            <span className="composer-pending-title">
+              {t(hasHeldMessages ? "composer.pendingHeldSummary" : "composer.pendingSummary", {
+                count: rows.length,
+              })}
+            </span>
+            <span className="composer-pending-preview" title={latestMessage?.text}>
+              {latestMessage ? queuedMessagePreview(latestMessage) : ""}
+            </span>
           </span>
-        </span>
+        </button>
         <button
           type="button"
           className="composer-pending-toggle composer-input-header-action"

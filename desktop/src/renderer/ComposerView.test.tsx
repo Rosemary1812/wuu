@@ -1718,6 +1718,8 @@ describe("Composer queue strip", () => {
     expect(
       actions.every((action) => action.classList.contains("composer-input-header-action")),
     ).toBe(true);
+    expect(pending?.querySelector(".composer-pending-summary-select")).not.toBeNull();
+    expect(goal?.querySelector(".composer-goal-strip-summary-select")).not.toBeNull();
   });
 
   it("allows only one goal or pending drawer to be expanded", () => {
@@ -1739,7 +1741,9 @@ describe("Composer queue strip", () => {
     expect(pendingToggle?.getAttribute("aria-expanded")).toBe("false");
 
     act(() => {
-      pendingToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      container
+        .querySelector<HTMLButtonElement>(".composer-pending-summary-select")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(container.querySelector(".composer-pending-drawer")?.classList.contains("expanded")).toBe(true);
     expect(container.querySelector(".composer-goal-strip")?.classList.contains("expanded")).toBe(false);
@@ -2228,7 +2232,31 @@ describe("Composer expand button", () => {
       /\.document-composer-wrap\s+\.composer-bar\s*\{[^}]*height:\s*36px[^}]*padding-bottom:\s*2px/,
     );
     expect(workspaceCSS).toMatch(
-      /\.workspace-document-turn-drawer:not\(\.expanded\)\s*\{[^}]*width:\s*40px[^}]*margin-right:\s*12px[^}]*border-radius:\s*18px/,
+      /\.workspace-document-turn-drawer\s*\{[^}]*width:\s*calc\(100% - 48px\)/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-goal-strip:has\(\+ \.composer-pending-drawer\)\s*\{[^}]*width:\s*calc\(100% - 48px\)/,
+    );
+    expect(workspaceCSS).toMatch(
+      /\.workspace-document-turn-dock:has\([^}]*\.composer-goal-strip \+ \.composer-pending-drawer[^}]*\)[^{]*\.workspace-document-turn-drawer\s*\{[^}]*width:\s*calc\(100% - 72px\)/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-accessory-drawer:hover,[^{]*\.document-composer-wrap\s+\.composer-accessory-drawer:focus-within\s*\{[^}]*translate:\s*0 -2px[^}]*border-color:[^}]*box-shadow:/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-accessory-drawer\.expanded\s*\{[^}]*z-index:\s*4[^}]*translate:\s*0 -6px/,
+    );
+    expect(composerCSS).toMatch(
+      /\.composer-accessory-drawer\s*\{[^}]*border-radius:\s*12px 12px 10px 10px/,
+    );
+    expect(workspaceCSS).toMatch(
+      /\.workspace-document-turn-drawer\.expanded\s*\{[^}]*translate:\s*0 -6px[^}]*border-radius:\s*16px/,
+    );
+    expect(workspaceCSS).not.toMatch(
+      /\.workspace-document-turn-drawer\.expanded\s*\{[^}]*width:/,
+    );
+    expect(workspaceCSS).toMatch(
+      /\.workspace-document-turn-summary\s*\{[^}]*width:\s*100%[^}]*justify-items:\s*end[^}]*padding:\s*0 12px 0 0/,
     );
   });
 
