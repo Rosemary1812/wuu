@@ -1923,12 +1923,6 @@ html.resizing-workspace-terminal-split * {
   letter-spacing: 0;
 }
 
-.skills-section-heading span {
-  color: var(--ink-muted);
-  font-size: var(--font-meta);
-  font-weight: var(--weight-medium);
-}
-
 .skills-list {
   display: grid;
   width: min(100%, 960px);

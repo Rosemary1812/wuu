@@ -8,7 +8,7 @@ import type {
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
-import { formatCurrentNumber, translateCurrent, useI18n } from "./i18n";
+import { translateCurrent, useI18n } from "./i18n";
 
 type LoadState = {
   loading: boolean;
