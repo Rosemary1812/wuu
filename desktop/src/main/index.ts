@@ -7,6 +7,7 @@ import {
   ipcMain,
   type IpcMainInvokeEvent,
   Menu,
+  nativeImage,
   nativeTheme,
   screen,
   session as electronSession,
@@ -1653,12 +1654,14 @@ app.whenReady().then(async () => {
     const iconApplications = associations.defaultApplication
       ? [associations.defaultApplication, ...associations.applications]
       : associations.applications;
-    const iconEntries = await Promise.all(
-      iconApplications.map(async (application) => [
-        application.path,
-        await app.getFileIcon(application.path, { size: "small" }).catch(() => undefined),
-      ] as const),
-    );
+    const iconEntries = iconApplications.map((application) => {
+      if (!application.iconPng) return [application.path, undefined] as const;
+      const icon = nativeImage.createFromBuffer(
+        Buffer.from(application.iconPng, "base64"),
+        { scaleFactor: 2 },
+      );
+      return [application.path, icon.isEmpty() ? undefined : icon] as const;
+    });
     const icons = new Map(iconEntries);
     return new Promise<{ action: "none" }>((resolve) => {
       const template = macWorkspaceItemMenuTemplate({

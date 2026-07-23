@@ -14,6 +14,30 @@ function run(argv) {
   const defaultURL = workspace.URLForApplicationToOpenURL(fileURL);
   const applicationURLs = ObjC.unwrap(workspace.URLsForApplicationsToOpenURL(fileURL));
 
+  function iconPNG(path) {
+    try {
+      const rect = $.NSMakeRect(0, 0, 16, 16);
+      const source = workspace.iconForFile(path);
+      const target = $.NSImage.alloc.initWithSize(rect.size);
+      target.lockFocus;
+      source.drawInRectFromRectOperationFraction(
+        rect,
+        $.NSZeroRect,
+        $.NSCompositingOperationCopy,
+        1,
+      );
+      const representation = $.NSBitmapImageRep.alloc.initWithFocusedViewRect(rect);
+      target.unlockFocus;
+      const data = representation.representationUsingTypeProperties(
+        $.NSBitmapImageFileTypePNG,
+        $(),
+      );
+      return ObjC.unwrap(data.base64EncodedStringWithOptions(0));
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function describe(applicationURL) {
     const bundle = $.NSBundle.bundleWithURL(applicationURL);
     const displayName = bundle.objectForInfoDictionaryKey("CFBundleDisplayName")
@@ -23,6 +47,7 @@ function run(argv) {
       path: ObjC.unwrap(applicationURL.path),
       name: displayName ? ObjC.unwrap(displayName) : null,
       bundle_id: bundle.bundleIdentifier ? ObjC.unwrap(bundle.bundleIdentifier) : null,
+      icon_png: iconPNG(ObjC.unwrap(applicationURL.path)),
     };
   }
 
@@ -36,6 +61,7 @@ export type MacWorkspaceApplication = {
   path: string;
   name: string;
   bundleId?: string;
+  iconPng?: string;
 };
 
 export type MacWorkspaceApplicationAssociations = {
@@ -92,6 +118,7 @@ type RawApplication = {
   path?: unknown;
   name?: unknown;
   bundle_id?: unknown;
+  icon_png?: unknown;
 };
 
 type RawAssociations = {
@@ -158,6 +185,9 @@ function normalizeApplication(raw: RawApplication): MacWorkspaceApplication | un
     name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : fallbackName,
     bundleId: typeof raw.bundle_id === "string" && raw.bundle_id.trim()
       ? raw.bundle_id.trim()
+      : undefined,
+    iconPng: typeof raw.icon_png === "string" && raw.icon_png.trim()
+      ? raw.icon_png
       : undefined,
   };
 }

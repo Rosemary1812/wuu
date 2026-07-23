@@ -49,7 +49,12 @@ describe("normalizeMacWorkspaceApplications", () => {
     expect(normalizeMacWorkspaceApplications({
       default_path: "/Applications/Cursor.app",
       applications: [
-        { path: "/Applications/Cursor.app", name: "Cursor", bundle_id: "com.cursor" },
+        {
+          path: "/Applications/Cursor.app",
+          name: "Cursor",
+          bundle_id: "com.cursor",
+          icon_png: "cursor-png",
+        },
         { path: "/Users/me/Desktop/Cursor.app", name: "Cursor copy", bundle_id: "com.cursor" },
         { path: "/Users/me/Library/Caches/ms-playwright/Playwright.app", bundle_id: "org.webkit.Playwright" },
         { path: "/System/Applications/TextEdit.app", name: "TextEdit", bundle_id: "com.apple.TextEdit" },
@@ -59,10 +64,21 @@ describe("normalizeMacWorkspaceApplications", () => {
         path: "/Applications/Cursor.app",
         name: "Cursor",
         bundleId: "com.cursor",
+        iconPng: "cursor-png",
       },
       applications: [
-        { path: "/Applications/Cursor.app", name: "Cursor", bundleId: "com.cursor" },
-        { path: "/System/Applications/TextEdit.app", name: "TextEdit", bundleId: "com.apple.TextEdit" },
+        {
+          path: "/Applications/Cursor.app",
+          name: "Cursor",
+          bundleId: "com.cursor",
+          iconPng: "cursor-png",
+        },
+        {
+          path: "/System/Applications/TextEdit.app",
+          name: "TextEdit",
+          bundleId: "com.apple.TextEdit",
+          iconPng: undefined,
+        },
       ],
     });
   });
@@ -75,6 +91,7 @@ describe("normalizeMacWorkspaceApplications", () => {
       path: "/Applications/Zed.app",
       name: "Zed",
       bundleId: undefined,
+      iconPng: undefined,
     });
   });
 
@@ -91,11 +108,13 @@ describe("normalizeMacWorkspaceApplications", () => {
         path: helper,
         name: "Browser Helper",
         bundleId: "com.example.helper",
+        iconPng: undefined,
       },
       applications: [{
         path: "/Applications/Editor.app",
         name: "Editor",
         bundleId: "com.example.editor",
+        iconPng: undefined,
       }],
     });
   });
