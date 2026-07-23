@@ -100,6 +100,12 @@
   container: composer-shell / inline-size;
 }
 
+.composer-frame-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+}
+
 .composer-frame {
   position: relative;
   width: 100%;
@@ -450,6 +456,8 @@
 @media (prefers-reduced-motion: reduce) {
   .composer-stack,
   .composer,
+  .composer-goal-strip,
+  .composer-pending-drawer,
   .composer textarea,
   .composer-expand-button {
     transition: none;
@@ -484,8 +492,13 @@
   overflow: visible;
 }
 
-.composer-stack.is-expanded .composer-frame {
+.composer-stack.is-expanded .composer-frame-shell {
   margin-bottom: calc(var(--composer-expanded-offset, var(--composer-expanded-delta)) * -1);
+  transform: translateY(calc(var(--composer-expanded-offset, var(--composer-expanded-delta)) * -1));
+}
+
+.composer-stack.is-expanded .composer-goal-strip,
+.composer-stack.is-expanded .composer-pending-drawer {
   transform: translateY(calc(var(--composer-expanded-offset, var(--composer-expanded-delta)) * -1));
 }
 
@@ -669,7 +682,7 @@
 
 .composer-queue-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 42px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: var(--composer-input-header-row-height, 36px);
@@ -690,7 +703,6 @@
   border-radius: var(--radius-xs);
 }
 
-                                                                             
 .composer-queue-row.guide .composer-queue-preview {
   color: var(--turn-warning-text, var(--warning));
 }
@@ -702,6 +714,21 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
   user-select: none;
+}
+
+.composer-queue-kind {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.composer-queue-row.guide .composer-queue-kind {
+  color: var(--turn-warning-text, var(--warning));
 }
 
 .composer-queue-preview {
@@ -747,20 +774,115 @@
   }
 }
 
-.composer-goal-strip {
+.composer-accessory-drawer {
   position: relative;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 8px;
-  row-gap: 2px;
-  min-height: var(--composer-input-header-row-height, 36px);
-  padding: 4px var(--composer-input-header-inline-padding, 8px);
-  margin: 0;
-  background: transparent;
+  z-index: 0;
+  width: calc(100% - 24px);
+  max-height: 40px;
+  margin: 0 auto -8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 22px 22px 14px 14px;
+  background:
+    radial-gradient(
+      circle at 24% 0%,
+      color-mix(in srgb, var(--paper) 44%, transparent) 0 16%,
+      transparent 48%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--paper) 38%, transparent),
+      color-mix(in srgb, var(--surface-2) 18%, transparent)
+    );
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--ink) 7%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(24px) saturate(1.18);
   color: var(--ink);
   font-size: 13.5px;
   line-height: 1.5;
+  transition:
+    max-height 180ms var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.composer-accessory-drawer.expanded {
+  max-height: min(34vh, 280px);
+}
+
+.composer-pending-drawer.is-held {
+  border-color: color-mix(in srgb, var(--warning) 24%, transparent);
+}
+
+.composer-goal-strip-summary {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: 40px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 0 8px 8px;
+}
+
+.composer-pending-summary {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: 40px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 0 8px 8px;
+}
+
+.composer-pending-icon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: var(--ink-muted);
+}
+
+.composer-pending-drawer.is-held .composer-pending-icon,
+.composer-pending-drawer.is-held .composer-pending-title {
+  color: var(--turn-warning-text, var(--warning));
+}
+
+.composer-pending-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-pending-title {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: var(--line-ui);
+  white-space: nowrap;
+}
+
+.composer-pending-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-pending-details {
+  max-height: calc(min(34vh, 280px) - 40px);
+  margin-top: -8px;
+  padding: 4px 8px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.composer-pending-details .composer-held-notice {
+  padding: 8px;
+  border-bottom: 1px solid var(--ink-overlay-6);
 }
 
 .composer-goal-strip-icon {
@@ -774,7 +896,6 @@
 
 .composer-goal-strip-main {
   display: flex;
-  grid-column: 2;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -797,7 +918,6 @@
 }
 
 .composer-goal-strip-actions {
-  grid-column: 3;
   justify-self: end;
 }
 
@@ -811,7 +931,6 @@
   cursor: not-allowed;
 }
 
-.composer-goal-strip-info,
 .composer-goal-strip-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -825,36 +944,45 @@
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
-.floating-menu-layer > .composer-goal-strip-info,
 .floating-menu-layer > .composer-goal-strip-menu {
   position: static;
   inset: auto;
   max-width: calc(100vw - 16px);
 }
 
-.composer-goal-strip-info {
-  width: min(280px, calc(100vw - 40px));
-  padding: 12px;
-  color: var(--ink);
+.composer-goal-strip-details {
+  display: grid;
+  max-height: calc(min(34vh, 280px) - 40px);
+  gap: 14px;
+  margin-top: -8px;
+  padding: 10px 16px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.composer-goal-strip-info-title {
-  margin-bottom: 9px;
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  line-height: var(--line-ui);
+.composer-goal-strip-full-text {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .composer-goal-strip-info-list {
   display: grid;
-  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 18px;
   margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--ink-overlay-6);
 }
 
 .composer-goal-strip-info-row {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px;
   align-items: start;
   font-size: var(--font-sm);
   line-height: var(--line-meta);
@@ -909,14 +1037,10 @@
 }
 
 .composer-goal-strip-error {
-  grid-column: 1 / -1;
   min-width: 0;
-  overflow: hidden;
   font-size: 12px;
   color: var(--danger);
-  padding: 0 0 2px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .composer-goal-strip-spin {

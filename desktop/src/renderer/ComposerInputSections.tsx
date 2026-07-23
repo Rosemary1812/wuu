@@ -1,14 +1,17 @@
 import {
+  ChevronDown,
+  ChevronUp,
   CornerDownRight,
   CornerUpLeft,
   FileText,
+  ListTodo,
   Paperclip,
   PencilLine,
   Send,
   Square,
   X
 } from "lucide-react";
-import { type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useImagePreview } from "./ImagePreview";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
@@ -364,6 +367,8 @@ function buildQueueRows(
 export function ComposerQueueStrip({
   guideMessages,
   queuedMessages,
+  expanded: controlledExpanded,
+  onExpandedChange,
   onRemoveGuideMessage,
   onRemoveQueuedMessage,
   onGuideQueuedMessage,
@@ -372,6 +377,8 @@ export function ComposerQueueStrip({
 }: {
   guideMessages: QueuedComposerMessage[];
   queuedMessages: QueuedComposerMessage[];
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   onRemoveGuideMessage: (id: string) => void;
   onRemoveQueuedMessage: (id: string) => void;
   onGuideQueuedMessage: (id: string) => void;
@@ -379,45 +386,92 @@ export function ComposerQueueStrip({
   onEditQueuedMessage: (id: string) => void;
 }): JSX.Element | null {
   const { t } = useI18n();
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const pendingDetailsID = useId();
+  const expanded = controlledExpanded ?? internalExpanded;
   const rows = buildQueueRows(guideMessages, queuedMessages);
   if (rows.length === 0) {
     return null;
   }
 
   const hasHeldMessages = rows.some((row) => row.message.held);
+  const latestMessage = rows.at(-1)?.message;
+  const detailsID = `composer-pending-message-details-${pendingDetailsID}`;
+
+  function setExpanded(next: boolean): void {
+    if (controlledExpanded === undefined) {
+      setInternalExpanded(next);
+    }
+    onExpandedChange?.(next);
+  }
+
   return (
-    <>
-      {hasHeldMessages ? (
-        <div className="composer-held-notice" role="status">
-          {t("composer.heldNotice")}
+    <section
+      className={`composer-pending-drawer composer-accessory-drawer${expanded ? " expanded" : ""}${hasHeldMessages ? " is-held" : ""}`}
+    >
+      <div className="composer-pending-summary">
+        <span className="composer-pending-icon" aria-hidden="true">
+          <ListTodo className="icon-sm" />
+        </span>
+        <span className="composer-pending-main" role="status" aria-live="polite">
+          <span className="composer-pending-title">
+            {t(hasHeldMessages ? "composer.pendingHeldSummary" : "composer.pendingSummary", {
+              count: rows.length,
+            })}
+          </span>
+          <span className="composer-pending-preview" title={latestMessage?.text}>
+            {latestMessage ? queuedMessagePreview(latestMessage) : ""}
+          </span>
+        </span>
+        <button
+          type="button"
+          className="composer-pending-toggle composer-input-header-action"
+          aria-controls={detailsID}
+          aria-expanded={expanded}
+          aria-label={t(expanded ? "composer.collapsePending" : "composer.expandPending")}
+          title={t(expanded ? "composer.collapsePending" : "composer.expandPending")}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? (
+            <ChevronDown className="icon-sm" aria-hidden="true" />
+          ) : (
+            <ChevronUp className="icon-sm" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="composer-pending-details" id={detailsID}>
+          {hasHeldMessages ? (
+            <div className="composer-held-notice">{t("composer.heldNotice")}</div>
+          ) : null}
+          <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
+            {rows.map((row, index) => (
+              <ComposerQueueItem
+                key={row.key}
+                position={index + 1}
+                message={row.message}
+                kind={row.kind}
+                onGuide={
+                  row.kind === "queue" || row.message.held
+                    ? () => onGuideQueuedMessage(row.message.id)
+                    : undefined
+                }
+                onEdit={() =>
+                  row.kind === "queue"
+                    ? onEditQueuedMessage(row.message.id)
+                    : onEditGuideMessage(row.message.id)
+                }
+                onRemove={() =>
+                  row.kind === "queue"
+                    ? onRemoveQueuedMessage(row.message.id)
+                    : onRemoveGuideMessage(row.message.id)
+                }
+              />
+            ))}
+          </ol>
         </div>
       ) : null}
-      <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
-      {rows.map((row, index) => (
-        <ComposerQueueItem
-          key={row.key}
-          position={index + 1}
-          message={row.message}
-          kind={row.kind}
-          onGuide={
-            row.kind === "queue" || row.message.held
-              ? () => onGuideQueuedMessage(row.message.id)
-              : undefined
-          }
-          onEdit={() =>
-            row.kind === "queue"
-              ? onEditQueuedMessage(row.message.id)
-              : onEditGuideMessage(row.message.id)
-          }
-          onRemove={() =>
-            row.kind === "queue"
-              ? onRemoveQueuedMessage(row.message.id)
-              : onRemoveGuideMessage(row.message.id)
-          }
-        />
-      ))}
-      </ol>
-    </>
+    </section>
   );
 }
 
@@ -447,6 +501,9 @@ function ComposerQueueItem({
     <li className={`composer-queue-row ${kind}`} data-position={position}>
       <span className="composer-queue-index" aria-hidden="true">
         {position}
+      </span>
+      <span className="composer-queue-kind">
+        {t(kind === "guide" ? "composer.pendingKindSteer" : "composer.pendingKindQueue")}
       </span>
       <button
         type="button"

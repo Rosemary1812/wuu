@@ -19,6 +19,7 @@ import {
   type Ref,
   type RefObject,
   type ReactNode,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -57,6 +58,7 @@ import { FloatingMenuPortal } from "./ComposerFloatingMenu";
 import { ComposerContextMenu } from "./ComposerContextMenu";
 import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSections";
 import { ComposerGoalStrip } from "./ComposerGoalStrip";
+import { WorkspaceDocumentDrawerContext } from "./WorkspaceDocumentTurnDock";
 import {
   AccessMenu,
   ComposerPlusButton,
@@ -84,6 +86,8 @@ type CollapsedComposerPromptBlock = {
   id: string;
   text: string;
 };
+
+type ExpandedComposerDrawer = "goal" | "pending" | null;
 
 const COLLAPSIBLE_COMPOSER_PROMPT_LINE_THRESHOLD = 14;
 const COLLAPSIBLE_COMPOSER_PROMPT_CHAR_THRESHOLD = 1200;
@@ -318,13 +322,57 @@ export function Composer({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
+  const documentDrawer = useContext(WorkspaceDocumentDrawerContext);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const [expandedDrawer, setExpandedDrawer] = useState<ExpandedComposerDrawer>(null);
   const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
   const previousUltraEnabledRef = useRef(ultraEnabled);
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
+  const hasPendingMessages = guideMessages.length > 0 || queuedMessages.length > 0;
+  const hasHeldMessages = [...guideMessages, ...queuedMessages].some((message) => message.held);
+  const previousHeldMessagesRef = useRef(false);
+  const previousDrawerSessionRef = useRef(queryHistorySessionID);
+
+  useEffect(() => {
+    if (previousDrawerSessionRef.current === queryHistorySessionID) {
+      return;
+    }
+    previousDrawerSessionRef.current = queryHistorySessionID;
+    previousHeldMessagesRef.current = false;
+    setExpandedDrawer(null);
+  }, [queryHistorySessionID]);
+
+  useEffect(() => {
+    if (documentDrawer?.documentResultExpanded) {
+      setExpandedDrawer(null);
+    }
+  }, [documentDrawer?.documentResultExpanded]);
+
+  useEffect(() => {
+    if (hasHeldMessages && !previousHeldMessagesRef.current) {
+      setComposerDrawer("pending");
+    }
+    previousHeldMessagesRef.current = hasHeldMessages;
+  }, [hasHeldMessages]);
+
+  useEffect(() => {
+    setExpandedDrawer((current) => {
+      if (current === "goal" && !goalSummary) return null;
+      if (current === "pending" && !hasPendingMessages) return null;
+      return current;
+    });
+  }, [goalSummary, hasPendingMessages]);
+
+  function setComposerDrawer(next: ExpandedComposerDrawer): void {
+    setExpandedDrawer(next);
+    if (next) {
+      documentDrawer?.collapseDocumentResult();
+    }
+  }
+
   useEffect(() => {
     if (previousUltraEnabledRef.current === ultraEnabled) {
       return;
@@ -395,7 +443,6 @@ export function Composer({
     setPrompt,
     textareaRef
   });
-
   useEffect(() => {
     setSelectedSlashIndex(firstEnabledSlashCommandIndex(visibleSlashCommands));
   }, [visibleSlashCommands]);
@@ -884,76 +931,77 @@ export function Composer({
             )}
           </div>
         ) : null}
-        {onToggleUltra ? (
-          <>
-            <button
-              className={`composer-ultra-button${ultraEnabled ? " is-active" : ""}`}
-              type="button"
-              aria-label={ultraEnabled ? t("composer.disableUltraMode") : t("composer.enableUltraMode")}
-              aria-pressed={ultraEnabled}
-              title={ultraEnabled ? t("composer.disableUltra") : t("composer.enableUltra")}
-              onClick={() => onToggleUltra(!ultraEnabled)}
-            >
-              <span className="composer-ultra-notch" aria-hidden="true" />
-              <span className="composer-ultra-impact" aria-hidden="true" />
-            </button>
-            {ultraAnimationCycle > 0 ? (
-              <span
-                className={`composer-ultra-energy${ultraEnabled ? " turning-on" : " turning-off"}`}
-                key={ultraAnimationCycle}
-                aria-hidden="true"
-              />
-            ) : null}
-          </>
-        ) : null}
-        <div
-          className={`composer-frame${ultraEnabled ? " is-ultra" : ""}${dropActive ? " composer-frame-drop-active" : ""}`}
-          ref={composerFrameRef}
-          onDragOver={handleComposerDragOver}
-          onDragLeave={handleComposerDragLeave}
-          onDrop={handleComposerDrop}
-        >
-          {goalSummary || guideMessages.length > 0 || queuedMessages.length > 0 ? (
-            <div className="composer-input-header">
-              <ComposerGoalStrip
-                summary={goalSummary ?? null}
-                disabled={readOnly}
-                onEdit={(nextText) => {
-                  if (onEditGoal) {
-                    return onEditGoal(nextText);
-                  }
-                  return undefined;
-                }}
-                onPause={() => {
-                  if (onPauseGoal) {
-                    return onPauseGoal();
-                  }
-                  return undefined;
-                }}
-                onResume={() => {
-                  if (onResumeGoal) {
-                    return onResumeGoal();
-                  }
-                  return undefined;
-                }}
-                onClear={() => {
-                  if (onClearGoal) {
-                    return onClearGoal();
-                  }
-                  return undefined;
-                }}
-              />
-              <ComposerQueueStrip
-                guideMessages={guideMessages}
-                queuedMessages={queuedMessages}
-                onRemoveGuideMessage={onRemoveGuideMessage}
-                onRemoveQueuedMessage={onRemoveQueuedMessage}
-                onGuideQueuedMessage={onGuideQueuedMessage}
-                onEditGuideMessage={onEditGuideMessage}
-                onEditQueuedMessage={onEditQueuedMessage}
-              />
-            </div>
+        <ComposerGoalStrip
+          summary={goalSummary ?? null}
+          disabled={readOnly}
+          expanded={expandedDrawer === "goal"}
+          onExpandedChange={(expanded) => setComposerDrawer(expanded ? "goal" : null)}
+          onEdit={(nextText) => {
+            if (onEditGoal) {
+              return onEditGoal(nextText);
+            }
+            return undefined;
+          }}
+          onPause={() => {
+            if (onPauseGoal) {
+              return onPauseGoal();
+            }
+            return undefined;
+          }}
+          onResume={() => {
+            if (onResumeGoal) {
+              return onResumeGoal();
+            }
+            return undefined;
+          }}
+          onClear={() => {
+            if (onClearGoal) {
+              return onClearGoal();
+            }
+            return undefined;
+          }}
+        />
+        <ComposerQueueStrip
+          guideMessages={guideMessages}
+          queuedMessages={queuedMessages}
+          expanded={expandedDrawer === "pending"}
+          onExpandedChange={(expanded) => setComposerDrawer(expanded ? "pending" : null)}
+          onRemoveGuideMessage={onRemoveGuideMessage}
+          onRemoveQueuedMessage={onRemoveQueuedMessage}
+          onGuideQueuedMessage={onGuideQueuedMessage}
+          onEditGuideMessage={onEditGuideMessage}
+          onEditQueuedMessage={onEditQueuedMessage}
+        />
+        <div className="composer-frame-shell">
+          {onToggleUltra ? (
+            <>
+              <button
+                className={`composer-ultra-button${ultraEnabled ? " is-active" : ""}`}
+                type="button"
+                aria-label={ultraEnabled ? t("composer.disableUltraMode") : t("composer.enableUltraMode")}
+                aria-pressed={ultraEnabled}
+                title={ultraEnabled ? t("composer.disableUltra") : t("composer.enableUltra")}
+                onClick={() => onToggleUltra(!ultraEnabled)}
+              >
+                <span className="composer-ultra-notch" aria-hidden="true" />
+                <span className="composer-ultra-impact" aria-hidden="true" />
+              </button>
+              {ultraAnimationCycle > 0 ? (
+                <span
+                  className={`composer-ultra-energy${ultraEnabled ? " turning-on" : " turning-off"}`}
+                  key={ultraAnimationCycle}
+                  aria-hidden="true"
+                />
+              ) : null}
+            </>
           ) : null}
+          <div
+            className={`composer-frame${ultraEnabled ? " is-ultra" : ""}${dropActive ? " composer-frame-drop-active" : ""}`}
+            ref={composerFrameRef}
+            onDragOver={handleComposerDragOver}
+            onDragLeave={handleComposerDragLeave}
+            onDrop={handleComposerDrop}
+          >
           <div className={`composer${hasCollapsedPromptBlocks ? " has-collapsed-prompt" : ""}`}>
             {textOnly ? null : (
               <>
@@ -1179,6 +1227,7 @@ export function Composer({
                 </button>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
