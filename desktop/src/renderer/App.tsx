@@ -2627,6 +2627,7 @@ export function App(): JSX.Element {
     nextDraftSessionTab,
     selectThread,
     beginViewSwitch,
+    beginInstantThreadSwitch,
     finishViewSwitch,
     cancelViewSwitch,
     loadRuntime,
