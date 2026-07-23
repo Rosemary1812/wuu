@@ -162,7 +162,7 @@ import {
 import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
-import { ENABLE_ULTRA_MODE } from "./FeatureFlags";
+import { ENABLE_GROUP_CHAT, ENABLE_ULTRA_MODE } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
 import { CircleAlert } from "lucide-react";
@@ -507,7 +507,7 @@ export function App(): JSX.Element {
   } = useSettingsRuntimeState({ settingsOpen });
 
   useEffect(() => {
-    if (!window.wuu || !state.initialized) {
+    if (!ENABLE_GROUP_CHAT || !window.wuu || !state.initialized) {
       setChannelMentionCount(0);
       return;
     }
@@ -3769,6 +3769,7 @@ export function App(): JSX.Element {
               setChannelsOpen(false);
               openSkillsTab();
             }}
+            groupChatEnabled={ENABLE_GROUP_CHAT}
             channelsOpen={channelsOpen}
             channelMentionCount={channelMentionCount}
             onOpenChannels={() => {
@@ -3877,7 +3878,7 @@ export function App(): JSX.Element {
         }`}
         ref={conversationPaneRef}
       >
-        {channelsOpen ? (
+        {ENABLE_GROUP_CHAT && channelsOpen ? (
           <>
             <header className="titlebar">
               <div className="title-block">

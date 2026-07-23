@@ -66,6 +66,7 @@ const sidebarProjects: DesktopProject[] = [
 interface RenderOptions {
   sectionOrder?: string[];
   state?: AppState;
+  groupChatEnabled?: boolean;
   channelMentionCount?: number;
 }
 
@@ -80,6 +81,7 @@ function renderSidebar({
       cwd: "/repo/wuu",
     },
   },
+  groupChatEnabled = false,
   channelMentionCount,
 }: RenderOptions = {}): void {
   act(() => {
@@ -102,7 +104,9 @@ function renderSidebar({
         sectionOrder={sectionOrder}
         onStartNewThread={() => {}}
         onOpenSkillsTab={() => {}}
+        groupChatEnabled={groupChatEnabled}
         channelMentionCount={channelMentionCount}
+        onOpenChannels={() => {}}
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
@@ -127,8 +131,14 @@ function renderSidebar({
 }
 
 describe("AppSidebar layout", () => {
+  it("hides group chat unless the frontend flag is enabled", () => {
+    renderSidebar();
+
+    expect(container.textContent).not.toContain("群聊");
+  });
+
   it("shows the unread human mention badge on group chat", () => {
-    renderSidebar({ channelMentionCount: 3 });
+    renderSidebar({ groupChatEnabled: true, channelMentionCount: 3 });
 
     expect(container.querySelector(".channel-mention-badge")?.textContent).toBe("3");
   });

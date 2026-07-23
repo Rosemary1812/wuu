@@ -23,4 +23,15 @@ describe("frontend feature flags", () => {
     featureFlags = await import("./FeatureFlags");
     expect(featureFlags.ENABLE_ULTRA_MODE).toBe(true);
   });
+
+  it("keeps group chat disabled unless explicitly enabled", async () => {
+    vi.stubEnv("VITE_ENABLE_GROUP_CHAT", "false");
+    let featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_GROUP_CHAT).toBe(false);
+
+    vi.resetModules();
+    vi.stubEnv("VITE_ENABLE_GROUP_CHAT", "true");
+    featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_GROUP_CHAT).toBe(true);
+  });
 });
