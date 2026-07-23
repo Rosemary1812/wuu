@@ -3931,6 +3931,7 @@ export function App(): JSX.Element {
             ) : null}
             <ConversationTitleContent
               state={state}
+              crossWorkspaceThreads={sidebarThreads}
               sessionTabsVisible={sessionTabsVisible}
               pendingSwitchThreadID={visiblePendingThreadID}
               pendingComposerMessagesByThread={pendingComposerMessagesByThread}

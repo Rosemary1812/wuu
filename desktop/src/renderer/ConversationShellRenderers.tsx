@@ -231,6 +231,7 @@ export function ConversationSplitLayoutRenderer({
 
 export type ConversationTitleContentProps = {
   state: AppState;
+  crossWorkspaceThreads: Thread[];
   sessionTabsVisible: boolean;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
@@ -245,6 +246,7 @@ export type ConversationTitleContentProps = {
 
 export function ConversationTitleContent({
   state,
+  crossWorkspaceThreads,
   sessionTabsVisible,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
@@ -260,6 +262,7 @@ export function ConversationTitleContent({
     return (
       <SessionTabStrip
         state={state}
+        crossWorkspaceThreads={crossWorkspaceThreads}
         pendingSwitchThreadID={pendingSwitchThreadID}
         pendingComposerMessagesByThread={pendingComposerMessagesByThread}
         canStartNewThread={Boolean(state.activeContext)}

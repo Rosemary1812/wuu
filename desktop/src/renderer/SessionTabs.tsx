@@ -17,6 +17,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, X } from "lucide-react";
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, useRef, useState } from "react";
+import type { Thread } from "../shared/protocol";
 import {
   isThreadRunning,
   isThreadUnread,
@@ -39,6 +40,7 @@ const POP_OUT_DRAG_DISTANCE_PX = 54;
 
 export function SessionTabStrip({
   state,
+  crossWorkspaceThreads,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
   canStartNewThread,
@@ -50,6 +52,7 @@ export function SessionTabStrip({
   onReorder,
 }: {
   state: AppState;
+  crossWorkspaceThreads?: Thread[];
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   canStartNewThread: boolean;
@@ -77,6 +80,9 @@ export function SessionTabStrip({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
+  const tabState = crossWorkspaceThreads
+    ? { ...state, threads: crossWorkspaceThreads }
+    : state;
   const draggingTab = draggingTabID
     ? state.sessionTabs.find((tab) => tab.id === draggingTabID)
     : undefined;
@@ -126,7 +132,7 @@ export function SessionTabStrip({
   for (const tab of state.sessionTabs) {
     if (
       tab.kind === "thread" &&
-      isThreadRunning(threadForTab(state, tab.threadID))
+      isThreadRunning(threadForTab(tabState, tab.threadID))
     ) {
       runningTabIDs.add(tab.id);
     }
@@ -177,7 +183,7 @@ export function SessionTabStrip({
                 const active = tab.id === state.activeSessionTabID;
                 const tabThread =
                   tab.kind === "thread"
-                    ? threadForTab(state, tab.threadID)
+                    ? threadForTab(tabState, tab.threadID)
                     : undefined;
                 const running = isThreadRunning(tabThread);
                 const pendingSwitch =

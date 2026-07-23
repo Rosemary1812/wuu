@@ -549,12 +549,17 @@ describe("SessionTabStrip right-click menu", () => {
     };
   }
 
-  function renderWith(state: AppState, captured: ReturnType<typeof makeCaptured>): void {
+  function renderWith(
+    state: AppState,
+    captured: ReturnType<typeof makeCaptured>,
+    crossWorkspaceThreads?: Thread[],
+  ): void {
     act(() => {
       root = createRoot(container);
       root.render(
         <SessionTabStrip
           state={state}
+          crossWorkspaceThreads={crossWorkspaceThreads}
           pendingComposerMessagesByThread={{}}
           canStartNewThread
           onSelect={captured.onSelect}
@@ -819,6 +824,45 @@ describe("SessionTabStrip right-click menu", () => {
     expect(captured.closedBatches).toEqual([
       [threadSessionTabID(threadA.id), threadSessionTabID(threadC.id)],
     ]);
+  });
+
+  it("keeps a running tab from another workspace spinning and out of 'close non-running'", () => {
+    const contextA = projectContext();
+    const contextB: RuntimeContext = {
+      kind: "project",
+      project_id: "project-2",
+      cwd: "/tmp/project-2",
+    };
+    const threadA = makeThreadWithTurn("thread-a", "turn-a-1", "completed");
+    const threadB = {
+      ...makeThreadWithTurn("thread-b", "turn-b-1", "in_progress"),
+      cwd: contextB.cwd,
+    };
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: contextA,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, contextA),
+          createThreadSessionTab(threadB, contextB),
+        ],
+        threads: [threadA],
+      },
+      captured,
+      [threadA, threadB],
+    );
+
+    expect(container.querySelectorAll(".session-tab")[1]?.classList.contains("running")).toBe(
+      true,
+    );
+
+    rightClickTab(0);
+    clickMenuItem("关闭未运行的");
+
+    expect(captured.closedBatches).toEqual([[threadSessionTabID(threadA.id)]]);
   });
 
   it("disables 'close others' and 'close all' when only one tab is open", () => {
