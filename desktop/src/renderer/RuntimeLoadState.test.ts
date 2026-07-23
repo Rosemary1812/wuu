@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  InitializeResult,
   ProjectListResult,
   RuntimeContext,
   Thread,
@@ -46,6 +47,38 @@ function projectList(activeContext?: RuntimeContext): ProjectListResult {
 }
 
 describe("runtime load helpers", () => {
+  it("starts runtime initialization and conversation loading together", async () => {
+    const activeContext: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project-1",
+    };
+    let resolveInitialize: ((value: InitializeResult) => void) | undefined;
+    const initialize = vi.fn(
+      () =>
+        new Promise<InitializeResult>((resolve) => {
+          resolveInitialize = resolve;
+        }),
+    );
+    const listThreads = vi.fn().mockResolvedValue({ threads: [] });
+    const listArchivedThreads = vi.fn().mockResolvedValue({ threads: [] });
+    installWuuStub({ initialize, listThreads, listArchivedThreads });
+
+    const loading = loadRuntime(projectList(activeContext));
+
+    expect(initialize).toHaveBeenCalledOnce();
+    expect(listThreads).toHaveBeenCalledOnce();
+    expect(listArchivedThreads).toHaveBeenCalledOnce();
+    resolveInitialize?.({
+      status: "ready",
+      protocol_version: "wuu-app-server/v0.1",
+      provider: "fake",
+      model: "gpt-test",
+      workspace_root: activeContext.cwd,
+    });
+    await loading;
+  });
+
   it("returns a no-runtime state without initializing when no active context exists", async () => {
     const initialize = vi.fn();
     installWuuStub({ initialize });

@@ -1013,7 +1013,28 @@ app.whenReady().then(async () => {
     // that session because no later focus event is guaranteed.
     observationCoordinator.setActiveThread(threadID);
   });
-  ipcMain.handle("wuu:project-list", () => projectManager.list());
+  ipcMain.handle("wuu:project-list", () => {
+    const result = projectManager.list();
+    const contexts: RuntimeContext[] = [];
+    if (result.active_context) {
+      contexts.push(result.active_context);
+    }
+    for (const project of result.projects) {
+      if (project.missing || project.id === result.active_project_id) {
+        continue;
+      }
+      contexts.push({
+        kind: "project",
+        project_id: project.id,
+        cwd: project.path,
+      });
+    }
+    // Project runtimes take seconds to cold-start. Fill the small client pool
+    // while the user is still reading the current project so switching among
+    // the pooled projects does not begin that startup work after the click.
+    appServerClientPool.prewarmContexts(contexts);
+    return result;
+  });
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
     projectManager.select(projectIDToSelect),
   );

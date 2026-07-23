@@ -64,7 +64,7 @@ describe("useViewSwitchState", () => {
     expect(hook.get().viewContextSwitchPending).toBe(false);
   });
 
-  it("delays project switch visibility until the loading delay expires", async () => {
+  it("marks project switches visible immediately", async () => {
     vi.useFakeTimers();
     const hook = await renderViewSwitchState();
 
@@ -74,13 +74,8 @@ describe("useViewSwitchState", () => {
     expect(hook.get().pendingViewSwitch).toEqual({
       kind: "project",
       targetID: "project-1",
-      visible: false,
+      visible: true,
     });
-
-    act(() => {
-      vi.advanceTimersByTime(50);
-    });
-
     expect(hook.get().visiblePendingProjectID).toBe("project-1");
     expect(hook.get().viewContextSwitchPending).toBe(true);
   });

@@ -29,8 +29,8 @@ export async function loadRuntime(
     return unavailableProjectRuntimeState(projectState);
   }
   const resumeLatestThread = options.resumeLatestThread ?? true;
-  const initialized = await window.wuu.initialize();
-  const [listed, archived] = await Promise.all([
+  const [initialized, listed, archived] = await Promise.all([
+    window.wuu.initialize(),
     window.wuu.listThreads(),
     window.wuu.listArchivedThreads(),
   ]);
