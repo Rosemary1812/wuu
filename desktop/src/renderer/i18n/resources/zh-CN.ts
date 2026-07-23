@@ -1406,8 +1406,6 @@ export const zhCN = {
   "skills.empty": "暂无 Skills",
   "skills.noMatches": "没有匹配项",
   "skills.noneInRuntime": "当前运行时未发现 Skills",
-  "skills.loading": "加载中",
-  "skills.filteredCount": "{visible} / {total}",
   "participant.role.generalPurpose": "通用",
   "participant.role.planner": "规划",
   "participant.role.researcher": "研究",

@@ -1408,8 +1408,6 @@ export const enUS = {
   "skills.empty": "No Skills",
   "skills.noMatches": "No matches",
   "skills.noneInRuntime": "No Skills found in the current runtime",
-  "skills.loading": "Loading",
-  "skills.filteredCount": "{visible} / {total}",
   "participant.role.generalPurpose": "General purpose",
   "participant.role.planner": "Planner",
   "participant.role.researcher": "Researcher",

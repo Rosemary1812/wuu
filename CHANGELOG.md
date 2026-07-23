@@ -8,6 +8,11 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Fixed
+
+- Centered the skills catalog content within its scroll region on the desktop.
+- Removed count badges from the skills catalog section headings on the desktop.
+
 ## [0.11.1] - 2026-07-23
 
 ### Fixed
