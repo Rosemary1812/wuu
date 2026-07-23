@@ -1003,7 +1003,17 @@ html.resizing-workspace-file-split * {
   -webkit-backdrop-filter: blur(24px) saturate(1.18);
   backdrop-filter: blur(24px) saturate(1.18);
   pointer-events: auto;
-  transition: max-height 180ms ease;
+  transition:
+    width 180ms var(--ease-out),
+    max-height 180ms var(--ease-out),
+    margin 180ms var(--ease-out),
+    border-radius 180ms var(--ease-out);
+}
+
+.workspace-document-turn-drawer:not(.expanded) {
+  width: 40px;
+  margin-right: 12px;
+  border-radius: 18px;
 }
 
 .workspace-document-turn-drawer.expanded {

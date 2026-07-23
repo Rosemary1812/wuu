@@ -2227,11 +2227,8 @@ describe("Composer expand button", () => {
     expect(composerCSS).toMatch(
       /\.document-composer-wrap\s+\.composer-bar\s*\{[^}]*height:\s*36px[^}]*padding-bottom:\s*2px/,
     );
-    expect(composerCSS).toMatch(
-      /\.document-composer-wrap\s+\.composer-accessory-drawer\s*\{[^}]*width:\s*100%[^}]*margin:\s*0 0 -1px[^}]*box-shadow:\s*none/,
-    );
-    expect(composerCSS).toMatch(
-      /\.document-composer-wrap\s+\.composer-shell:has\(\.composer-accessory-drawer\)\s+\.composer-frame\s*\{[^}]*border-radius:\s*0 0/,
+    expect(workspaceCSS).toMatch(
+      /\.workspace-document-turn-drawer:not\(\.expanded\)\s*\{[^}]*width:\s*40px[^}]*margin-right:\s*12px[^}]*border-radius:\s*18px/,
     );
   });
 
