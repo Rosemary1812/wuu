@@ -1633,6 +1633,8 @@ export type ThreadItem = {
   reason?: string;
 };
 
+export type ThreadForkTarget = Pick<ThreadItem, "type" | "seq" | "source_id">;
+
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
 
 export type PlanStep = {
@@ -2063,6 +2065,7 @@ export type WuuDesktopApi = {
     turnId?: string,
     itemId?: string,
     mode?: "local" | "worktree",
+    target?: ThreadForkTarget,
   ) => Promise<ThreadForkResult>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;

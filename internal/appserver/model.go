@@ -743,10 +743,12 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 		var out []outboundNotification
 		if strings.TrimSpace(msg.ReasoningContent) != "" && th.activeReasoningItemID == "" && !th.hasReasoningTextLocked(turnID, msg.ReasoningContent) {
 			item := ThreadItem{
-				ID:     th.nextItemIDLocked(turnID),
-				Type:   ThreadItemReasoning,
-				Status: ThreadItemStatusCompleted,
-				Text:   msg.ReasoningContent,
+				ID:       th.nextItemIDLocked(turnID),
+				Seq:      msg.Seq,
+				SourceID: msg.ProviderItemID,
+				Type:     ThreadItemReasoning,
+				Status:   ThreadItemStatusCompleted,
+				Text:     msg.ReasoningContent,
 			}
 			th.upsertItemLocked(turnID, item, now)
 			out = append(out, itemStarted(th.ID, turnID, item, now), itemCompleted(th.ID, turnID, item, now))
@@ -763,6 +765,8 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 			out = append(out, itemStarted(th.ID, turnID, item, now))
 		}
 		item.Text = msg.Content
+		item.Seq = msg.Seq
+		item.SourceID = msg.ProviderItemID
 		item.Phase = phase
 		item.Status = ThreadItemStatusCompleted
 		item.FinishReason = string(msg.FinishReason)
@@ -1367,6 +1371,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 			return ThreadItem{
 				ID:           id,
 				Seq:          msg.Seq,
+				SourceID:     msg.ProviderItemID,
 				Type:         ThreadItemAgentMessage,
 				Status:       ThreadItemStatusCompleted,
 				Phase:        assistantMessagePhase(msg),
@@ -1379,11 +1384,12 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 		}
 		if strings.TrimSpace(msg.ReasoningContent) != "" {
 			return ThreadItem{
-				ID:     id,
-				Seq:    msg.Seq,
-				Type:   ThreadItemReasoning,
-				Status: ThreadItemStatusCompleted,
-				Text:   msg.ReasoningContent,
+				ID:       id,
+				Seq:      msg.Seq,
+				SourceID: msg.ProviderItemID,
+				Type:     ThreadItemReasoning,
+				Status:   ThreadItemStatusCompleted,
+				Text:     msg.ReasoningContent,
 			}
 		}
 	case "tool":

@@ -279,7 +279,20 @@ describe("createConversationHistoryActions", () => {
   });
 
   it("forks a pending conversation and clears the pending dialog", async () => {
-    const source = thread("source-thread");
+    const source = thread("source-thread", {
+      turns: [
+        turn("turn-1", [
+          {
+            id: "item-1",
+            seq: 42,
+            source_id: "msg-42",
+            type: "agent_message",
+            role: "assistant",
+            text: "Checkpoint",
+          },
+        ]),
+      ],
+    });
     const fork = thread("fork-thread");
     const api = installWuuApi({ forkThreadResult: fork });
     const harness = buildActions({
@@ -300,6 +313,7 @@ describe("createConversationHistoryActions", () => {
       "turn-1",
       "item-1",
       "local",
+      { seq: 42, source_id: "msg-42", type: "agent_message" },
     );
     expect(harness.enableConversationAutoFollow).toHaveBeenCalled();
     expect(harness.getPendingFork()).toBeUndefined();

@@ -19,6 +19,7 @@ import {
   type SideThreadEventEnvelope,
   type SideThreadSendParams,
   type ThreadStartParams,
+  type ThreadForkTarget,
   type ThemePreference,
   type LanguagePreference,
   type WindowResizeState,
@@ -272,7 +273,8 @@ const api: WuuDesktopApi = {
     turnId?: string,
     itemId?: string,
     mode?: "local" | "worktree",
-  ) => ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId, mode),
+    target?: ThreadForkTarget,
+  ) => ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId, mode, target),
   editThreadMessage: (threadId: string, turnId: string, itemId: string) =>
     ipcRenderer.invoke("wuu:thread-edit-message", threadId, turnId, itemId),
   getThreadContextComposition: (threadId: string) =>

@@ -950,10 +950,17 @@ type ThreadResumeResult struct {
 }
 
 type ThreadForkParams struct {
-	ThreadID string `json:"thread_id"`
-	TurnID   string `json:"turn_id,omitempty"`
-	ItemID   string `json:"item_id,omitempty"`
-	Mode     string `json:"mode,omitempty"`
+	ThreadID string            `json:"thread_id"`
+	TurnID   string            `json:"turn_id,omitempty"`
+	ItemID   string            `json:"item_id,omitempty"`
+	Target   *ThreadForkTarget `json:"target,omitempty"`
+	Mode     string            `json:"mode,omitempty"`
+}
+
+type ThreadForkTarget struct {
+	Seq      int            `json:"seq,omitempty"`
+	Type     ThreadItemType `json:"type,omitempty"`
+	SourceID string         `json:"source_id,omitempty"`
 }
 
 type ThreadForkResult struct {

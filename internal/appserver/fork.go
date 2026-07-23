@@ -17,6 +17,10 @@ var (
 )
 
 func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string, turns []Turn, targetTurnID, targetItemID string) ([]providers.ChatMessage, error) {
+	return forkHistoryAtTargetWithIdentity(history, sourceThreadID, turns, targetTurnID, targetItemID, ThreadItem{})
+}
+
+func forkHistoryAtTargetWithIdentity(history []providers.ChatMessage, sourceThreadID string, turns []Turn, targetTurnID, targetItemID string, target ThreadItem) ([]providers.ChatMessage, error) {
 	targetTurnID = strings.TrimSpace(targetTurnID)
 	targetItemID = strings.TrimSpace(targetItemID)
 	if targetTurnID == "" && targetItemID == "" {
@@ -24,12 +28,43 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 	}
 
 	projection := projectHistory(sourceThreadID, history, time.Time{})
+	origin, err := forkOriginAtTarget(projection, turns, targetTurnID, targetItemID, target)
+	if err != nil {
+		return nil, err
+	}
+	if origin.EndIndex < 0 || origin.EndIndex >= len(history) {
+		return nil, errForkTargetNotFound
+	}
+	return cloneForkHistory(history[:origin.EndIndex+1]), nil
+}
+
+func forkPersistedHistoryAtTarget(history []persistedMessage, sourceThreadID string, turns []Turn, targetTurnID, targetItemID string, target ThreadItem) ([]providers.ChatMessage, error) {
+	targetTurnID = strings.TrimSpace(targetTurnID)
+	targetItemID = strings.TrimSpace(targetItemID)
+	if targetTurnID == "" && targetItemID == "" {
+		return cloneForkHistory(chatMessagesFromPersistedMessages(history)), nil
+	}
+	projection := projectPersistedHistory(sourceThreadID, history, time.Time{}, nil)
+	origin, err := forkOriginAtTarget(projection, turns, targetTurnID, targetItemID, target)
+	if err != nil {
+		return nil, err
+	}
+	if origin.EndIndex < 0 || origin.EndIndex >= len(history) {
+		return nil, errForkTargetNotFound
+	}
+	return cloneForkHistory(chatMessagesFromPersistedMessages(history[:origin.EndIndex+1])), nil
+}
+
+func forkOriginAtTarget(projection historyProjection, turns []Turn, targetTurnID, targetItemID string, target ThreadItem) (historyItemOrigin, error) {
 	var origin historyItemOrigin
 	var ok bool
 	if targetItemID != "" {
-		origin, ok = projectionOriginForTarget(projection, turns, targetTurnID, targetItemID)
+		origin, ok = projectionOriginForIdentity(projection, target)
+		if !ok {
+			origin, ok = projectionOriginForTarget(projection, turns, targetTurnID, targetItemID)
+		}
 		if ok && !origin.Complete {
-			return nil, errForkToolResultsNotFound
+			return historyItemOrigin{}, errForkToolResultsNotFound
 		}
 	} else {
 		origin, ok = projection.TurnSpans[targetTurnID]
@@ -41,10 +76,28 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 			}
 		}
 	}
-	if !ok || origin.EndIndex < 0 || origin.EndIndex >= len(history) {
-		return nil, errForkTargetNotFound
+	if !ok {
+		return historyItemOrigin{}, errForkTargetNotFound
 	}
-	return cloneForkHistory(history[:origin.EndIndex+1]), nil
+	return origin, nil
+}
+
+func projectionOriginForIdentity(projection historyProjection, target ThreadItem) (historyItemOrigin, bool) {
+	if target.Type == "" {
+		return historyItemOrigin{}, false
+	}
+	for _, origin := range projection.ItemOrigins {
+		if origin.Item.Type != target.Type {
+			continue
+		}
+		if target.Seq > 0 && origin.Item.Seq == target.Seq && (target.SourceID == "" || origin.Item.SourceID == target.SourceID) {
+			return origin, true
+		}
+		if target.Seq <= 0 && strings.TrimSpace(target.SourceID) != "" && origin.Item.SourceID == target.SourceID {
+			return origin, true
+		}
+	}
+	return historyItemOrigin{}, false
 }
 
 func projectionOriginForTarget(projection historyProjection, turns []Turn, turnID, itemID string) (historyItemOrigin, bool) {

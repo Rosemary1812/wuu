@@ -98,6 +98,7 @@ import type {
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
   ThreadForkResult,
+  ThreadForkTarget,
   ThreadResumeResult,
   ThreadStartParams,
   Turn,
@@ -1468,11 +1469,13 @@ app.whenReady().then(async () => {
       turnId?: string,
       itemId?: string,
       mode?: "local" | "worktree",
+      target?: ThreadForkTarget,
     ) =>
       appServerRequest<ThreadForkResult>(event, "thread/fork", {
         thread_id: threadId,
         turn_id: turnId ?? "",
         item_id: itemId ?? "",
+        ...(target ? { target } : {}),
         ...(mode ? { mode } : {}),
       }),
   );
