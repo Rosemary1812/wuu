@@ -12,6 +12,7 @@ import (
 
 func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
 	configPath := filepath.Join(root, ".wuu.json")
 	if err := os.WriteFile(configPath, []byte(`{
 		"default_provider": "test",
@@ -70,6 +71,7 @@ func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 
 func TestLocalAppServerControllerEffortOverrideClearsConfiguredVariant(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
 	configPath := filepath.Join(root, ".wuu.json")
 	if err := os.WriteFile(configPath, []byte(`{
 		"default_provider": "test",

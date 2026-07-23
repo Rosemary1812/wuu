@@ -1,6 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { InitializeResult, RuntimeContext, SkillSummary } from "../shared/protocol";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { translateCurrent as t } from "./i18n";
 
 export type ComposerSlashCommandAction =
@@ -208,7 +207,6 @@ export function buildComposerSlashCommands({
       kind: "action",
       action: "open-memory",
       keywords: ["memory", "notebook", "记忆", "笔记本"],
-      disabledReason: !ENABLE_COLLABORATION ? t("slash.collaborationDisabled") : undefined,
     },
     {
       id: "commit",

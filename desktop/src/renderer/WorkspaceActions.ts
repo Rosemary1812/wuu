@@ -18,7 +18,7 @@ import { localizedText, translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
-export type CollaborationActionsDeps = {
+export type WorkspaceActionsDeps = {
   getAppState: () => AppState;
   setAppState: SetAppState;
   getActiveTitle: () => string;
@@ -38,19 +38,17 @@ export type CollaborationActionsDeps = {
   >;
   scheduleStreamScroll: () => void;
   closeProjectMenus: () => void;
-  setSettingsMemoryFocusID: (participantID: string | undefined) => void;
   setSettingsInitialPage: (page: SettingsPage) => void;
   setSettingsOpen: (open: boolean) => void;
 };
 
-export type CollaborationActions = {
+export type WorkspaceActions = {
   openSkillsTab: () => void;
   dismissContextCompositionEntry: (id: string) => void;
   dismissInstructionFilesEntry: (id: string) => void;
   openInstructions: () => void;
   openContextComposition: () => void;
-  openCollaborationIntake: () => void;
-  openMemorySettings: (participantID?: string) => void;
+  openMemorySettings: () => void;
 };
 
 function createContextCompositionEntryID(): string {
@@ -61,9 +59,9 @@ function createInstructionFilesEntryID(): string {
   return `instructions-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function createCollaborationActions(
-  deps: CollaborationActionsDeps,
-): CollaborationActions {
+export function createWorkspaceActions(
+  deps: WorkspaceActionsDeps,
+): WorkspaceActions {
   function openSkillsTab(): void {
     const state = deps.getAppState();
     if (!state.activeContext) {
@@ -101,7 +99,7 @@ export function createCollaborationActions(
     if (!activeThread) {
       deps.setAppState((current) => ({
         ...current,
-        status: localizedText("collaboration.noCurrentConversation"),
+        status: localizedText("contextComposition.noCurrentConversation"),
       }));
       return;
     }
@@ -136,7 +134,7 @@ export function createCollaborationActions(
               ? {
                   ...entry,
                   loading: false,
-                  error: desktopApiErrorMessage(error, translateCurrent("collaboration.instructionsReadFailed")),
+                  error: desktopApiErrorMessage(error, translateCurrent("instructions.readFailed")),
                 }
               : entry,
           ),
@@ -150,7 +148,7 @@ export function createCollaborationActions(
     if (!activeThread) {
       deps.setAppState((current) => ({
         ...current,
-        status: localizedText("collaboration.noCurrentConversation"),
+        status: localizedText("contextComposition.noCurrentConversation"),
       }));
       return;
     }
@@ -192,7 +190,7 @@ export function createCollaborationActions(
               ? {
                   ...entry,
                   loading: false,
-                  error: desktopApiErrorMessage(error, translateCurrent("collaboration.contextReadFailed")),
+                  error: desktopApiErrorMessage(error, translateCurrent("contextComposition.readFailed")),
                 }
               : entry,
           ),
@@ -201,13 +199,8 @@ export function createCollaborationActions(
     })();
   }
 
-  function openCollaborationIntake(): void {
+  function openMemorySettings(): void {
     deps.closeProjectMenus();
-  }
-
-  function openMemorySettings(participantID?: string): void {
-    deps.closeProjectMenus();
-    deps.setSettingsMemoryFocusID(participantID);
     deps.setSettingsInitialPage("memory");
     deps.setSettingsOpen(true);
   }
@@ -218,7 +211,6 @@ export function createCollaborationActions(
     dismissInstructionFilesEntry,
     openInstructions,
     openContextComposition,
-    openCollaborationIntake,
     openMemorySettings,
   };
 }

@@ -48,7 +48,7 @@ type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.M
 // instructions.
 type WorkerSystemPromptFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error)
 
-// ParticipantStore persists Kanban agent and task-worker identities. It is
+// ParticipantStore persists participant identities used by restored runs. It is
 // defined here (instead of importing internal/session) so agentcontrol
 // stays decoupled from the session storage layer.
 type ParticipantStore interface {
@@ -1542,6 +1542,9 @@ type ForkRequest struct {
 	// string is persisted with queued forks so it can be re-resolved
 	// when the queued item actually launches.
 	ModelAlias string
+	// ModelPin is separate internal participant plumbing. Public spawn_agent
+	// calls never populate it; it is used only when ModelAlias is omitted.
+	ModelPin string
 }
 
 // Fork launches a sub-agent that inherits a snapshot of the parent
@@ -1564,7 +1567,6 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if len(parentHistory) == 0 {
 		return nil, errors.New("spawn_agent fork: no parent history (only the main agent in an interactive session can fork)")
 	}
-
 	// Resolve the default agent type so the fork has the full tool set.
 	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {

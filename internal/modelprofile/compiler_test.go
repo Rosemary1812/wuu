@@ -1,6 +1,7 @@
 package modelprofile
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -66,6 +67,33 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 		}
 		if s.SystemFragment == "" {
 			t.Fatalf("compile must emit a system fragment for %s", s.ProfileName)
+		}
+	}
+}
+
+func TestNamedAgentSurfaceContainsOnlyChatTools(t *testing.T) {
+	c := DefaultCompiler{}
+	for _, tt := range []struct {
+		provider string
+		model    string
+	}{
+		{provider: "openai", model: "gpt-5-codex"},
+		{provider: "openai", model: "gpt-5.5"},
+		{provider: "anthropic", model: "claude-sonnet-4-5"},
+		{provider: "ollama", model: "llama-coder"},
+	} {
+		s := c.Compile(Resolve(tt.provider, tt.model), SurfaceNamedAgent)
+		want := []string{"chat_check", "chat_draft", "chat_read", "chat_remind", "chat_send", "chat_task"}
+		for _, name := range want {
+			if s.Tools[name] != capability.CapabilityChat {
+				t.Errorf("%s/%s named-agent surface must expose %s as chat capability", tt.provider, tt.model, name)
+			}
+		}
+		if got := sortedKeys(s.Tools); !slices.Equal(got, want) {
+			t.Errorf("%s/%s named-agent tools = %v, want only %v", tt.provider, tt.model, got, want)
+		}
+		if len(s.DeferredTools) != 0 || len(s.HiddenTools) != 0 {
+			t.Errorf("%s/%s named-agent surface must not retain deferred or hidden tools", tt.provider, tt.model)
 		}
 	}
 }

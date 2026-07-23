@@ -68,13 +68,11 @@ export function WorkspaceFileTree({
   open,
   selectedFilePath,
   onOpenFile,
-  onAddToTask,
 }: {
   activeContext?: RuntimeContext;
   open: boolean;
   selectedFilePath?: string;
   onOpenFile: (path: string) => void;
-  onAddToTask?: (path: string) => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [directories, setDirectories] = useState<Record<string, WorkspaceDirectoryListResult>>({});
@@ -133,7 +131,6 @@ export function WorkspaceFileTree({
         workspaceRoot={rootDirectory.root}
         selectedFilePath={selectedWorkspaceFilePath}
         onOpenFile={onOpenFile}
-        onAddToTask={onAddToTask}
         onLoadDirectory={(path) => {
           if (directories[path] || loadingDirectoriesRef.current.has(path)) return;
           loadingDirectoriesRef.current.add(path);
@@ -148,12 +145,11 @@ export function WorkspaceFileTree({
   );
 }
 
-const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories, workspaceRoot, selectedFilePath, onOpenFile, onAddToTask, onLoadDirectory }: {
+const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories, workspaceRoot, selectedFilePath, onOpenFile, onLoadDirectory }: {
   directories: Record<string, WorkspaceDirectoryListResult>;
   workspaceRoot: string;
   selectedFilePath?: string;
   onOpenFile: (path: string) => void;
-  onAddToTask?: (path: string) => void;
   onLoadDirectory: (path: string) => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
@@ -279,8 +275,6 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
         renderContextMenu={(item, context) => desktopPlatform() === "darwin" ? (
           <MacWorkspaceTreeContextMenu
             absolutePath={absoluteWorkspacePath(workspaceRoot, item.path)}
-            relativePath={item.path}
-            onAddToTask={onAddToTask}
             onClose={() => context.close()}
           />
         ) : (
@@ -299,23 +293,17 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
 
 function MacWorkspaceTreeContextMenu({
   absolutePath,
-  relativePath,
-  onAddToTask,
   onClose,
 }: {
   absolutePath: string;
-  relativePath: string;
-  onAddToTask?: (path: string) => void;
   onClose: () => void;
 }): null {
   const openedRef = useRef(false);
   useEffect(() => {
     if (openedRef.current) return;
     openedRef.current = true;
-    void window.wuu.showWorkspaceItemMenu(absolutePath).then((result) => {
-      if (result.action === "add_to_task") onAddToTask?.(relativePath);
-    }).finally(onClose);
-  }, [absolutePath, onAddToTask, onClose, relativePath]);
+    void window.wuu.showWorkspaceItemMenu(absolutePath).finally(onClose);
+  }, [absolutePath, onClose]);
   return null;
 }
 

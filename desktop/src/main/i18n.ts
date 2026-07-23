@@ -17,7 +17,6 @@ const resources = {
     openInApplication: "在 {application} 中打开",
     openWith: "打开方式",
     copyPath: "复制路径",
-    addToTask: "添加到任务",
     projectUnavailable:
       "工作区目录当前不可用：{path}。请恢复该目录，或从工作区菜单选择“重新定位…”。",
   },
@@ -37,7 +36,6 @@ const resources = {
     openInApplication: "Open in {application}",
     openWith: "Open With",
     copyPath: "Copy Path",
-    addToTask: "Add to Task",
     projectUnavailable:
       "The workspace folder is currently unavailable: {path}. Restore the folder or choose Relocate from the workspace menu.",
   },

@@ -25,7 +25,6 @@ import type {
   Turn,
 } from "../shared/protocol";
 import {
-  appendWorkspacePathToPrompt,
   awaitComposerImages,
   createComposerMessage,
   createOptimisticCompactTurn,
@@ -63,12 +62,13 @@ import {
   type SideThreadPanelHandle,
 } from "./SideThreadPanel";
 import { SideThreadComposer } from "./SideThreadComposer";
-import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
   AppSidebar,
 } from "./AppSidebar";
+import { ChannelView } from "./ChannelView";
+import { channelSystemNotificationsEnabled } from "./ChannelPreferences";
 import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
@@ -91,9 +91,7 @@ import {
   cloneSessionTabDraft,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
-  createBoardSessionTab,
   createDraftSessionTab,
-  createGlobalCollaborationBoardTab,
   emptyComposerDraft,
   ensureSessionTab,
   handleStreamingNotification,
@@ -164,17 +162,15 @@ import {
 import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
-import { ENABLE_COLLABORATION, ENABLE_ULTRA_MODE } from "./FeatureFlags";
+import { ENABLE_ULTRA_MODE } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
 import { CircleAlert } from "lucide-react";
-import type { ComposerGoalSummary, KanbanCrystallizeResult } from "../shared/protocol";
+import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
-import { KanbanBoardView } from "./KanbanBoardView";
-import { KanbanCrystallizeDialog } from "./KanbanCrystallizeDialog";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
 import { useSideThreadController } from "./SideThreadController";
@@ -216,11 +212,11 @@ import {
   selectRuntimeContext,
 } from "./RuntimeLoadState";
 import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
+import { createWorkspaceActions } from "./WorkspaceActions";
 import { createSessionTabActions } from "./SessionTabActions";
 import { createThreadActivationActions } from "./ThreadActivationActions";
 import { createThreadMutationActions } from "./ThreadMutationActions";
 import { createRuntimeSettingsActions } from "./RuntimeSettingsActions";
-import { createCollaborationActions } from "./CollaborationActions";
 import { createConversationDemoPaneActions } from "./ConversationDemoPaneActions";
 import {
   createConversationHistoryActions,
@@ -496,12 +492,11 @@ export function App(): JSX.Element {
   });
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
+  const [channelMentionCount, setChannelMentionCount] = useState(0);
+  const previousChannelMentionCount = useRef<number | null>(null);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
-  // 设置 → 记忆 打开时预选的同事笔记本（档案面板「在记忆面板中管理」）。
-  const [settingsMemoryFocusID, setSettingsMemoryFocusID] = useState<
-    string | undefined
-  >(undefined);
   const {
     settingsUsage,
     codexPets,
@@ -510,6 +505,50 @@ export function App(): JSX.Element {
     refreshCodexPets,
     updateCodexPets,
   } = useSettingsRuntimeState({ settingsOpen });
+
+  useEffect(() => {
+    if (!window.wuu || !state.initialized) {
+      setChannelMentionCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = async (): Promise<void> => {
+      try {
+        if (channelsOpen) {
+          await window.wuu.ackChannelHumanMentions();
+          if (active) {
+            previousChannelMentionCount.current = 0;
+            setChannelMentionCount(0);
+          }
+          return;
+        }
+        const result = await window.wuu.getChannelHumanMentionStatus();
+        if (active) {
+          const previous = previousChannelMentionCount.current;
+          previousChannelMentionCount.current = result.count;
+          setChannelMentionCount(result.count);
+          if (
+            previous !== null &&
+            result.count > previous &&
+            channelSystemNotificationsEnabled() &&
+            typeof Notification !== "undefined"
+          ) {
+            new Notification(t("channels.notificationTitle"), {
+              body: t("channels.unreadMentions", { count: result.count }),
+            });
+          }
+        }
+      } catch (reason) {
+        console.warn("channel mention refresh failed", reason);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [channelsOpen, state.initialized, t]);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const {
@@ -584,6 +623,7 @@ export function App(): JSX.Element {
     workspaceRightPanelDockableWithoutSidebar,
   ]);
   const revealConversationFromFocusedWorkspace = useCallback((): void => {
+    setChannelsOpen(false);
     if (!rightPanelGlobalized) {
       return;
     }
@@ -616,39 +656,15 @@ export function App(): JSX.Element {
   const [instructionFilesEntries, setInstructionFilesEntries] = useState<
     InstructionFilesEntry[]
   >([]);
-  const [boardRefreshTick, setBoardRefreshTick] = useState(0);
-  // Crystallize flow state.
-  const [crystallizeOpen, setCrystallizeOpen] = useState(false);
-  const [crystallizePending, setCrystallizePending] = useState(false);
-  const [crystallizeResult, setCrystallizeResult] = useState<
-    KanbanCrystallizeResult | undefined
-  >(undefined);
-  const {
-    participants,
-    setParticipants,
-    participantPanel,
-    setParticipantPanel,
-    refreshParticipants,
-    handleParticipantSave,
-    handleParticipantFeedback,
-    handleParticipantRetire,
-  } = useParticipantState({
-    initialized: Boolean(state.initialized),
-    setStatus: (status) =>
-      setState((current) => ({
-        ...current,
-        status,
-      })),
-  });
-  // Archive is now a single-click action (the previous two-step "click again
-  // to confirm" pattern was too easy to misfire). Success and failure feedback
-  // lives in `archiveTip` below; the underlying IPC still goes through
-  // `window.wuu.archiveThread(id, true)`.
   const [archiveTip, setArchiveTip] = useState<{
     threadID: string;
     threadTitle: string;
     errorMessage?: string;
   } | null>(null);
+  // Archive is now a single-click action (the previous two-step "click again
+  // to confirm" pattern was too easy to misfire). Success and failure feedback
+  // lives in `archiveTip` above; the underlying IPC still goes through
+  // `window.wuu.archiveThread(id, true)`.
   const dismissArchiveTip = useCallback(() => {
     setArchiveTip(null);
   }, []);
@@ -864,7 +880,6 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activeTabKind = activeSessionTab(state)?.kind;
-  const boardTabActive = ENABLE_COLLABORATION && activeTabKind === "board";
   const environmentContext = workspacePanelContext(state.activeContext, activeThread);
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
@@ -1428,28 +1443,6 @@ export function App(): JSX.Element {
         return;
       }
       setActivitySessions((current) => reduceActivitySessionEvent(current, event));
-      if (
-        event.kind === "notification" &&
-        event.message.method === "participant/updated"
-      ) {
-        void refreshParticipants().catch((error) => {
-          setState((current) => ({
-            ...current,
-            status: desktopApiErrorMessage(error, t("app.refreshAgentsFailed")),
-          }));
-        });
-      }
-      // Kanban board changes for this session should refresh the mounted board.
-      if (
-        event.kind === "notification" &&
-        event.message.method === "kanban/updated"
-      ) {
-        const note = event.message.params as { session_id?: string } | undefined;
-        const activeID = activeThreadIDForState(appStateRef.current);
-        if (!note?.session_id || note.session_id === activeID) {
-          setBoardRefreshTick((tick) => tick + 1);
-        }
-      }
       if (!serverEventTargetsActiveContext(event, appStateRef.current)) {
         return;
       }
@@ -1536,26 +1529,7 @@ export function App(): JSX.Element {
         gitRefreshTimerRef.current = undefined;
       }
     };
-  }, [popOutInit, refreshParticipants]);
-
-  useEffect(() => {
-    if (!state.initialized || !state.activeContext) {
-      setParticipants([]);
-      setParticipantPanel(undefined);
-      return;
-    }
-    void refreshParticipants().catch((error) => {
-      setParticipantPanel((current) =>
-        current
-          ? {
-              ...current,
-              loading: false,
-              error: desktopApiErrorMessage(error, t("app.loadAgentsFailed")),
-            }
-          : current,
-      );
-    });
-  }, [state.initialized, activeContextKey, refreshParticipants]);
+  }, [popOutInit]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent): void {
@@ -1687,7 +1661,6 @@ export function App(): JSX.Element {
     : [];
   const emptyConversation =
     !showingSkillsCatalog &&
-    !boardTabActive &&
     !activePendingNewThreadTurn &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
@@ -2171,7 +2144,6 @@ export function App(): JSX.Element {
     !poppedOutMode &&
     !previewingLaunch &&
     !rightPanelGlobalized &&
-    !participantPanel &&
     !sideThreadPanelVisible,
   );
   const environmentPanelTargetVisible =
@@ -2181,7 +2153,6 @@ export function App(): JSX.Element {
         !environmentPanelDismissed &&
         !emptyConversation));
   const environmentPanelVisible = environmentPanelTargetVisible;
-  const participantPanelVisible = Boolean(participantPanel);
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(
@@ -2190,18 +2161,10 @@ export function App(): JSX.Element {
   const sidebarVisible = !poppedOutMode;
 
   useEffect(() => {
-    if (
-      sideThread.entry?.open &&
-      (environmentPanelOpen || participantPanel)
-    ) {
+    if (sideThread.entry?.open && environmentPanelOpen) {
       sideThread.close();
     }
-  }, [
-    environmentPanelOpen,
-    participantPanel,
-    sideThread.close,
-    sideThread.entry?.open,
-  ]);
+  }, [environmentPanelOpen, sideThread.close, sideThread.entry?.open]);
 
   const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarDrawerMode ? " sidebar-collapsed" : ""}${
     sidebarDrawerMode && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
@@ -2298,7 +2261,6 @@ export function App(): JSX.Element {
       setEnvironmentPanelOpen(false);
       setEnvironmentPanelDismissed(true);
       setEnvironmentPanelMenu(null);
-      setParticipantPanel(undefined);
       sideThread.open();
     }
   }
@@ -2456,41 +2418,8 @@ export function App(): JSX.Element {
         onClearGoal={clearCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
-        onConvertToTask={
-          ENABLE_COLLABORATION &&
-          turns.length > 0 &&
-          activeThreadID &&
-          state.activeContext?.kind !== "project"
-            ? handleConvertToTask
-            : undefined
-        }
       />
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Kanban "convert conversation to task" flow.
-  // ---------------------------------------------------------------------------
-  async function handleConvertToTask(): Promise<void> {
-    if (!ENABLE_COLLABORATION) {
-      return;
-    }
-    const threadId = activeThreadID;
-    if (!threadId) return;
-    setCrystallizeOpen(true);
-    setCrystallizePending(true);
-    setCrystallizeResult(undefined);
-    try {
-      const result = await window.wuu.kanbanCrystallize({
-        thread_id: threadId,
-      });
-      setCrystallizeResult(result);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("kanban crystallize failed", error);
-    } finally {
-      setCrystallizePending(false);
-    }
   }
 
   function handleEmptyStateHint(action: EmptyStateHintAction): void {
@@ -2815,9 +2744,8 @@ export function App(): JSX.Element {
     dismissInstructionFilesEntry,
     openInstructions,
     openContextComposition,
-    openCollaborationIntake,
     openMemorySettings,
-  } = createCollaborationActions({
+  } = createWorkspaceActions({
     getAppState: () => appStateRef.current,
     setAppState: setState,
     getActiveTitle: () => activeTitle,
@@ -2832,7 +2760,6 @@ export function App(): JSX.Element {
     setInstructionFilesEntries,
     scheduleStreamScroll,
     closeProjectMenus,
-    setSettingsMemoryFocusID,
     setSettingsInitialPage,
     setSettingsOpen,
   });
@@ -3748,10 +3675,8 @@ export function App(): JSX.Element {
         <SettingsShellRenderer
           initialized={sessionRuntime}
           initialPage={settingsInitialPage}
-          memoryFocusParticipantID={settingsMemoryFocusID}
           running={viewContextSwitchPending}
           runningProviderNames={runningProviderNames}
-          participants={participants}
           usage={settingsUsage}
           codexPets={codexPets}
           codexPetsLoading={codexPetsLoading}
@@ -3775,7 +3700,6 @@ export function App(): JSX.Element {
           activeSessionTabID={activeThreadID ?? ""}
           onBack={() => {
             setSettingsOpen(false);
-            setSettingsMemoryFocusID(undefined);
           }}
           onSave={updateRuntimeSettings}
           onRemoveProvider={removeProvider}
@@ -3837,31 +3761,25 @@ export function App(): JSX.Element {
               debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
             }
             sectionOrder={sidebarSectionOrder}
-            kanbanBoardVisible={boardTabActive}
             onStartNewThread={() => {
               revealConversationFromFocusedWorkspace();
               startNewThreadWithComposerFocus();
             }}
-            onOpenSkillsTab={openSkillsTab}
-            onOpenCollaboration={() => {
-              if (!ENABLE_COLLABORATION) {
-                return;
-              }
-              closeProjectMenus();
-              const currentState = appStateRef.current;
-              const context = currentState.activeContext;
-              if (!context) {
-                return;
-              }
-              const boardTab = createGlobalCollaborationBoardTab(context);
-              setState((current) => ({
-                ...current,
-                sessionTabs: ensureSessionTab(current.sessionTabs, boardTab),
-                activeSessionTabID: boardTab.id,
-                activePane: "primary",
-                secondaryThread: undefined,
-                allowThreadAutoActivation: false,
-              }));
+            onOpenSkillsTab={() => {
+              setChannelsOpen(false);
+              openSkillsTab();
+            }}
+            channelsOpen={channelsOpen}
+            channelMentionCount={channelMentionCount}
+            onOpenChannels={() => {
+              setProjectMenuOpen(false);
+              setRuntimeMenuOpen(false);
+              setCodexRuntimeMenu(null);
+              setEnvironmentPanelOpen(false);
+              setRightPanelOpenWithMotion(false);
+              setChannelsOpen(true);
+              setChannelMentionCount(0);
+              closeSidebarDrawer();
             }}
             onToggleConversationSearch={toggleConversationSearch}
             onSeedConversationFixture={seedConversationFixture}
@@ -3951,16 +3869,44 @@ export function App(): JSX.Element {
       <main
         inert={rightPanelOpen && rightPanelGlobalized}
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
-          environmentPanelReserved || participantPanelVisible ? " environment-panel-reserved" : ""
+          environmentPanelReserved ? " environment-panel-reserved" : ""
         }${
           sideThreadPanelVisible ? " side-thread-panel-visible" : ""
-        }${
-          participantPanelVisible ? " participant-panel-visible" : ""
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
         }`}
         ref={conversationPaneRef}
       >
+        {channelsOpen ? (
+          <>
+            <header className="titlebar">
+              <div className="title-block">
+                {sidebarVisible ? (
+                  <button
+                    className="icon-button side-panel-toggle-button sidebar-toggle-button"
+                    type="button"
+                    aria-label={t(
+                      sidebarCollapsed
+                        ? "app.expandLeftSidebar"
+                        : "app.collapseLeftSidebar",
+                    )}
+                    aria-pressed={!sidebarCollapsed}
+                    onClick={toggleSidebar}
+                    onPointerEnter={scheduleSidebarDrawerOpen}
+                    onPointerLeave={(event) =>
+                      scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+                    }
+                  >
+                    <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+                  </button>
+                ) : null}
+                <strong>{t("channels.title")}</strong>
+              </div>
+            </header>
+            <ChannelView />
+          </>
+        ) : (
+          <>
         <header className="titlebar">
           <div className="title-block">
             {sidebarVisible ? (
@@ -4099,14 +4045,6 @@ export function App(): JSX.Element {
               current === id ? undefined : current,
             )
           }
-          participantPanel={participantPanel}
-          onCloseParticipantPanel={() => setParticipantPanel(undefined)}
-          onSaveParticipant={handleParticipantSave}
-          onFeedbackParticipant={handleParticipantFeedback}
-          onOpenMemoryPanel={(participantID) =>
-            openMemorySettings(participantID)
-          }
-          onRetireParticipant={handleParticipantRetire}
           viewContextSwitchPending={viewContextSwitchPending}
         />
 
@@ -4145,7 +4083,7 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
               splitConversation ? " split-scroll-region" : ""
-            }${showingSkillsCatalog ? " skills-scroll-region" : ""}${boardTabActive ? " kanban-board-scroll-region" : ""}`}
+            }${showingSkillsCatalog ? " skills-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -4154,12 +4092,6 @@ export function App(): JSX.Element {
               <SkillsCatalog
                 activeContext={state.activeContext}
                 extensionInventory={state.initialized?.extension_inventory}
-              />
-            ) : boardTabActive ? (
-              <KanbanBoardView
-                spaceId="global"
-                refreshToken={boardRefreshTick}
-                onOpenSourceThread={(threadId) => void activateThread(threadId)}
               />
             ) : (
               <>
@@ -4334,6 +4266,8 @@ export function App(): JSX.Element {
             ) : null}
           </div>
         ) : null}
+          </>
+        )}
       </main>
 
       {!poppedOutMode && (rightPanelOpen || rightPanelAnimating) ? (
@@ -4373,12 +4307,6 @@ export function App(): JSX.Element {
           onDirtyFileTabsChange={rememberWorkspaceDirtyFiles}
           onReorderTabs={reorderWorkspaceViewTabs}
           onOpenFile={openWorkspaceFile}
-          onAddFileToTask={(path) => {
-            setPrompt((current) => appendWorkspacePathToPrompt(current, path));
-            requestMainComposerFocus(
-              rightPanelGlobalized && activeWorkspaceFileTabID ? "document" : "dock",
-            );
-          }}
           onClose={() => setRightPanelOpenWithMotion(false)}
           globalized={rightPanelGlobalized}
           sheetPhase={workspaceSheetPhase}
@@ -4463,40 +4391,6 @@ export function App(): JSX.Element {
             />
           </div>
         </FloatingMenuPortal>
-      ) : null}
-      {ENABLE_COLLABORATION && activeThreadID ? (
-        <KanbanCrystallizeDialog
-          threadId={activeThreadID}
-          isOpen={crystallizeOpen}
-          pending={crystallizePending}
-          result={crystallizeResult}
-          participants={participants}
-          onClose={() => {
-            setCrystallizeOpen(false);
-            setCrystallizeResult(undefined);
-          }}
-          onSwitchToBoard={() => {
-            if (!ENABLE_COLLABORATION) {
-              return;
-            }
-            setCrystallizeOpen(false);
-            setCrystallizeResult(undefined);
-            const currentState = appStateRef.current;
-            const context = currentState.activeContext;
-            if (!context) {
-              return;
-            }
-            const boardTab = createBoardSessionTab(currentState.thread, context);
-            setState((current) => ({
-              ...current,
-              sessionTabs: ensureSessionTab(current.sessionTabs, boardTab),
-              activeSessionTabID: boardTab.id,
-              activePane: "primary",
-              secondaryThread: undefined,
-              allowThreadAutoActivation: false,
-            }));
-          }}
-        />
       ) : null}
       </div>
     </ImagePreviewProvider>

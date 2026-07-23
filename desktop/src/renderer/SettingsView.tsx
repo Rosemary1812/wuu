@@ -44,7 +44,6 @@ import type {
   InitializeResult,
   MCPAuthStartResult,
   MCPServerStatus,
-  ParticipantProfile,
   ProviderSummary,
   RemoteControlSnapshot,
   RuntimeConnectionUpdate,
@@ -65,7 +64,7 @@ export type ArchivedSessionView = {
   archive_project_name?: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
-import { ENABLE_REMOTE_CONTROL, ENABLE_COLLABORATION } from "./FeatureFlags";
+import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
 import { MemoryPanel } from "./MemoryPanel";
 import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
@@ -98,11 +97,9 @@ function availableSettingsPage(page: SettingsPage | undefined): SettingsPage {
 export function SettingsView({
   initialized,
   initialPage,
-  memoryFocusParticipantID,
   running,
   usage,
   runningProviderNames,
-  participants,
   showDebugControlsSetting,
   debugControlsEnabled,
   codexPets,
@@ -139,14 +136,9 @@ export function SettingsView({
 }: {
   initialized?: InitializeResult;
   initialPage?: SettingsPage;
-  // 记忆页打开时预选的同事笔记本（档案面板跳转带过来）。
-  memoryFocusParticipantID?: string;
   running: boolean;
   usage?: SettingsUsageResponse;
   runningProviderNames?: readonly string[];
-  // 记忆页「同事」子 Tab 的数据源：现有 roster 状态（App 的 participants），
-  // 面板内部只保留在职 named agent。
-  participants?: ParticipantProfile[];
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
   codexPets?: CodexPetsSnapshot;
@@ -960,12 +952,7 @@ export function SettingsView({
                   providers={providers}
                   onGeneralSave={onGeneralSave}
                 />
-                {ENABLE_COLLABORATION ? (
-                  <MemoryPanel
-                    participants={participants ?? []}
-                    focusParticipantID={memoryFocusParticipantID}
-                  />
-                ) : null}
+                <MemoryPanel />
               </>
             ) : activePage === "remote" && ENABLE_REMOTE_CONTROL ? (
               <SettingsRemotePageContainer />

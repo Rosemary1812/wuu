@@ -11,7 +11,6 @@ describe("macWorkspaceItemMenuTemplate", () => {
   it("builds the native capability menu from discovered applications", () => {
     const onOpenDefault = vi.fn();
     const onCopyPath = vi.fn();
-    const onAddToTask = vi.fn();
     const template = macWorkspaceItemMenuTemplate({
       associations: {
         defaultApplication: { path: "/Applications/Cursor.app", name: "Cursor" },
@@ -26,12 +25,10 @@ describe("macWorkspaceItemMenuTemplate", () => {
         openInApplication: (application) => `在 ${application} 中打开`,
         openWith: "打开方式",
         copyPath: "复制路径",
-        addToTask: "添加到任务",
       },
       onOpenDefault,
       onOpenWith: vi.fn(),
       onCopyPath,
-      onAddToTask,
     });
     const openWith = template[1]?.submenu as MenuItemConstructorOptions[];
 
@@ -40,12 +37,10 @@ describe("macWorkspaceItemMenuTemplate", () => {
       "打开方式",
       "separator",
       "复制路径",
-      "添加到任务",
     ]);
     expect(openWith.map((item) => item.label)).toEqual(["Cursor", "Zed"]);
     expect(template[0]?.click).toBe(onOpenDefault);
     expect(template[3]?.click).toBe(onCopyPath);
-    expect(template[4]?.click).toBe(onAddToTask);
   });
 });
 

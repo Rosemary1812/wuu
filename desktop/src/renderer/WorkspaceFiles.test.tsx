@@ -671,9 +671,8 @@ describe("WorkspaceFileTree", () => {
     expect(menu?.textContent).toContain("在文件管理器中显示");
   });
 
-  it("uses the macOS native menu and adds its relative path to the task", async () => {
-    const onAddToTask = vi.fn();
-    const showWorkspaceItemMenu = vi.fn().mockResolvedValue({ action: "add_to_task" });
+  it("uses the macOS native menu", async () => {
+    const showWorkspaceItemMenu = vi.fn().mockResolvedValue({ action: "none" });
     Object.assign(window.wuu, { platform: "darwin", showWorkspaceItemMenu });
 
     await render(
@@ -681,7 +680,6 @@ describe("WorkspaceFileTree", () => {
         activeContext={activeContext}
         open
         onOpenFile={() => {}}
-        onAddToTask={onAddToTask}
       />,
     );
     await settleDirectoryLoads();
@@ -690,7 +688,6 @@ describe("WorkspaceFileTree", () => {
     await flushMacrotask();
 
     expect(showWorkspaceItemMenu).toHaveBeenCalledWith("/repo/README.md");
-    expect(onAddToTask).toHaveBeenCalledWith("README.md");
     expect(contextMenu()).toBeNull();
   });
 

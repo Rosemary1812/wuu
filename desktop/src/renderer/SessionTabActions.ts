@@ -89,7 +89,7 @@ export function createSessionTabActions(
       tab.context,
       currentState.activeContext,
     );
-    if (tab.kind === "skills" || tab.kind === "board") {
+    if (tab.kind === "skills") {
       const outgoingDraft = deps.getPrimaryComposerDraft();
       const requestID = sameContext
         ? undefined
@@ -253,7 +253,7 @@ export function createSessionTabActions(
       deps.nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
     
-    if (fallbackTab.kind === "skills" || fallbackTab.kind === "board") {
+    if (fallbackTab.kind === "skills") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
         currentState.activeContext,

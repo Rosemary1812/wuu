@@ -1011,6 +1011,75 @@ func (s *Session) NewThreadRuntimeForRootModel(sessionID, rootDir string, select
 	return threadRuntime, nil
 }
 
+// ConfigureNamedAgentThreadRuntime replaces the ordinary user-memory prompt
+// and file scope on a thread runtime with one named agent's durable identity.
+func (s *Session) ConfigureNamedAgentThreadRuntime(threadRuntime *ThreadRuntime, rootDir, memoryDir, orientation string) error {
+	if s == nil || threadRuntime == nil || threadRuntime.StreamRunner == nil {
+		return errors.New("named agent thread runtime is required")
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	memoryDir = strings.TrimSpace(memoryDir)
+	if rootDir == "" || memoryDir == "" {
+		return errors.New("named agent root and memory directory are required")
+	}
+	if err := memdir.EnsureDir(memoryDir); err != nil {
+		return fmt.Errorf("ensure named agent memory: %w", err)
+	}
+	teaching := memdir.SessionTeaching(memoryDir)
+	index := ""
+	if snap, err := memdir.ReadIndex(memoryDir); err == nil {
+		index = snap.Content
+	} else {
+		providers.DebugLogf("read named agent memory index: %v", err)
+	}
+	toolkit := threadRuntime.Toolkit
+	if toolkit != nil {
+		toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(rootDir, s.WuuHome, memoryDir))
+	}
+	catalog := ""
+	if toolkit != nil {
+		var err error
+		catalog, err = deferredToolCatalogPromptForToolkit(toolkit)
+		if err != nil {
+			return err
+		}
+	}
+	runner := threadRuntime.StreamRunner
+	userPrompt := strings.TrimSpace(strings.TrimSpace(s.UserSystemPrompt) + "\n\n" + strings.TrimSpace(orientation))
+	promptResult := buildBaseSystemPromptResult(
+		rootDir, s.SessionDate, config.DefaultSystemPrompt(), userPrompt,
+		runner.ProviderName, runner.APIModel, activeSurfaceWithDeferredToolCatalog(toolkit, catalog),
+		nil, teaching, index, s.Skills,
+	)
+	runner.UpdateSystemPromptWithSections(promptResult.Content, agentPromptSections(promptResult.Sections))
+	return nil
+}
+
+func (s *Session) NewNamedAgentThreadRuntime(sessionID, rootDir, memoryDir, orientation string, selected ThreadModelSelection) (*ThreadRuntime, error) {
+	if s == nil {
+		return nil, errors.New("runtime session is required")
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return nil, errors.New("named agent root is required")
+	}
+	stateDir, err := resolveWorkspaceStateDir(s.WuuHome, "", rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve named agent state directory: %w", err)
+	}
+	shadow := s.cloneForThreadModel()
+	shadow.WorkspaceID = ""
+	shadow.StateDir = stateDir
+	threadRuntime, err := shadow.NewThreadRuntimeForRootModel(sessionID, rootDir, selected)
+	if err != nil {
+		return nil, err
+	}
+	if err := shadow.ConfigureNamedAgentThreadRuntime(threadRuntime, rootDir, memoryDir, orientation); err != nil {
+		return nil, err
+	}
+	return threadRuntime, nil
+}
+
 // NewThreadRuntimeForRoot creates a per-conversation execution runtime whose
 // tools are rooted at rootDir while durable artifacts stay in the parent
 // workspace state directory.

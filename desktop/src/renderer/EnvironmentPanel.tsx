@@ -32,6 +32,8 @@ import { useI18n } from "./i18n";
 export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
 
+const MAX_VISIBLE_ENVIRONMENT_SUBAGENTS = 5;
+
 export function EnvironmentPanel({
   panelRef,
   motionState,
@@ -263,13 +265,18 @@ function EnvironmentSubagents({
   const ordered: SubagentRowSummary[] = sortChildAgents(
     agents as unknown as Agent[],
   );
+  const hiddenCount = Math.max(
+    0,
+    ordered.length - MAX_VISIBLE_ENVIRONMENT_SUBAGENTS,
+  );
+  const visibleAgents = ordered.slice(-MAX_VISIBLE_ENVIRONMENT_SUBAGENTS);
   return (
     <div
       role="group"
       aria-label={t("environment.subtasks")}
       className="environment-subagent-group"
     >
-      {ordered.map((agent) => {
+      {visibleAgents.map((agent) => {
           const archiveConfirming = archiveConfirmID === agent.id;
           const nestedTotal = agent.nested_count ?? 0;
           const nestedRunning = agent.nested_running_count ?? 0;
@@ -344,6 +351,11 @@ function EnvironmentSubagents({
             </div>
           );
         })}
+      {hiddenCount > 0 ? (
+        <div className="environment-subagent-overflow-note" role="note">
+          {t("environment.earlierSubtasksHidden", { count: hiddenCount })}
+        </div>
+      ) : null}
     </div>
   );
 }

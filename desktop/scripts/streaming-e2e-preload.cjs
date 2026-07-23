@@ -79,22 +79,17 @@ contextBridge.exposeInMainWorld("wuu", {
   }),
   startThread: async (params = {}) => {
     startedThreadCount += 1;
-    const collaboration = params.collaboration === true;
-    const id = collaboration
-      ? "thread-collaboration-e2e"
-      : startedThreadCount === 1
-        ? "thread-immediate-title-e2e"
-        : startedThreadCount === 2
-          ? "thread-streaming-e2e"
-          : `thread-started-e2e-${startedThreadCount}`;
-    return { thread: mockThread(id, collaboration ? "collaboration" : undefined) };
+    const id = startedThreadCount === 1
+      ? "thread-immediate-title-e2e"
+      : startedThreadCount === 2
+        ? "thread-streaming-e2e"
+        : `thread-started-e2e-${startedThreadCount}`;
+    return { thread: mockThread(id) };
   },
   resumeThread: async () => ({ thread: null }),
   forkThread: async () => ({ thread: null }),
   listThreads: async () => ({ threads: [] }),
   listArchivedThreads: async () => ({ threads: [] }),
-  listParticipants: async () => ({ participants: [] }),
-  kanbanListTasks: async () => [],
   startTurn: async (threadId, text, images = []) => {
     const now = new Date().toISOString();
     return {

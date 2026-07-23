@@ -101,14 +101,6 @@ type SessionTab =
       kind: "skills";
       context: RuntimeContext;
       title: string;
-    }
-  | {
-      // Kanban board tab for the owning conversation or global collaboration space.
-      id: string;
-      kind: "board";
-      context: RuntimeContext;
-      threadID?: string;
-      title: string;
     };
 
 type AppState = {
@@ -1797,37 +1789,8 @@ function createSkillsSessionTab(context: RuntimeContext): SessionTab {
   };
 }
 
-function createBoardSessionTab(
-  thread: Thread | undefined,
-  context: RuntimeContext,
-): SessionTab {
-  if (thread) {
-    return {
-      id: boardSessionTabID(thread.id),
-      kind: "board",
-      context,
-      threadID: thread.id,
-      title: threadDisplayTitle(thread),
-    };
-  }
-  return {
-    id: "board:global",
-    kind: "board",
-    context,
-    title: "",
-  };
-}
-
-function createGlobalCollaborationBoardTab(context: RuntimeContext): SessionTab {
-  return createBoardSessionTab(undefined, context);
-}
-
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
-}
-
-function boardSessionTabID(threadID: string): string {
-  return `board:${threadID}`;
 }
 
 function skillsSessionTabID(context: RuntimeContext): string {
@@ -2096,7 +2059,7 @@ function sessionTabDraftForThreadID(
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
-  if (tab.kind === "skills" || tab.kind === "board") {
+  if (tab.kind === "skills") {
     return emptyComposerDraft();
   }
   return {
@@ -2146,16 +2109,6 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   }
   if (tab.kind === "skills") {
     return t("skills.title");
-  }
-  if (tab.kind === "board") {
-    const threadTitle = tab.threadID
-      ? threadDisplayTitle(
-          threadForTab(state, tab.threadID),
-          state.threads,
-          tab.title || t("search.untitledConversation"),
-        )
-      : tab.title || t("kanban.globalTitle");
-    return `${t("kanban.title")} · ${threadTitle}`;
   }
   return threadDisplayTitle(
     threadForTab(state, tab.threadID),
@@ -3145,8 +3098,6 @@ export {
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
   createDraftSessionTab,
-  createBoardSessionTab,
-  createGlobalCollaborationBoardTab,
   createSkillsSessionTab,
   createThreadSessionTab,
   draftSessionTabForContext,
@@ -3190,7 +3141,6 @@ export {
   sessionTabForLoadedRuntime,
   sessionTabLabel,
   setThreadForPane,
-  boardSessionTabID,
   skillsSessionTabID,
   sortThreads,
   summarizeThreadsForSidebar,

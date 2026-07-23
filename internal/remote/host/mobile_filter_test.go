@@ -28,8 +28,8 @@ func TestFilterMobileChatLineSlimsThreadListResponse(t *testing.T) {
 		"result":{
 			"threads":[
 				{
-					"id":"collaboration",
-					"source":"collaboration",
+					"id":"non-project",
+					"source":"automation",
 					"turns":[{
 						"id":"turn-1",
 						"items":[
@@ -65,7 +65,7 @@ func TestFilterMobileChatLineSlimsThreadListResponse(t *testing.T) {
 		t.Fatalf("decode filtered line: %v\n%s", err, got)
 	}
 	if len(env.Result.Threads) != 0 {
-		t.Fatalf("expected no mobile chat threads after collaboration removal, got %+v", env.Result.Threads)
+		t.Fatalf("expected no mobile chat threads after filtering non-project entries, got %+v", env.Result.Threads)
 	}
 }
 

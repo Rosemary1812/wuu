@@ -13,20 +13,36 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
 // newMemoryPanelServer builds a server whose runtime has a real WuuHome so
-// the memory-panel scope resolution has notebooks to point at. WuuHome is
-// set AFTER New so the default-participant seed (gated on SessionDir and
-// WuuHome both being set at construction) stays off, like the rest of the
-// appserver tests.
+// the memory-panel scope resolution has notebooks to point at.
 func newMemoryPanelServer(t *testing.T, client *fakeClient) (*Server, string) {
 	t.Helper()
 	rt := newTestRuntime(t, client)
 	srv := New(rt, &lockedBuffer{})
 	rt.WuuHome = t.TempDir()
 	return srv, rt.WuuHome
+}
+
+func saveNamedParticipant(t *testing.T, rt *runtime.Session, name, role, model string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	p := participant.Participant{
+		ID:        participant.NewID(),
+		Kind:      participant.KindNamed,
+		Name:      name,
+		Role:      role,
+		Model:     model,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := session.UpsertParticipant(rt.SessionDir, p); err != nil {
+		t.Fatalf("upsert participant: %v", err)
+	}
+	return p.ID
 }
 
 func callMemoryRPC(t *testing.T, srv *Server, id, method, paramsJSON string) map[string]any {

@@ -48,7 +48,6 @@ export type MacWorkspaceItemMenuLabels = {
   openInApplication: (application: string) => string;
   openWith: string;
   copyPath: string;
-  addToTask: string;
 };
 
 export function macWorkspaceItemMenuTemplate({
@@ -58,7 +57,6 @@ export function macWorkspaceItemMenuTemplate({
   onOpenDefault,
   onOpenWith,
   onCopyPath,
-  onAddToTask,
 }: {
   associations: MacWorkspaceApplicationAssociations;
   icons: ReadonlyMap<string, NativeImage | undefined>;
@@ -66,7 +64,6 @@ export function macWorkspaceItemMenuTemplate({
   onOpenDefault: () => void;
   onOpenWith: (application: MacWorkspaceApplication) => void;
   onCopyPath: () => void;
-  onAddToTask: () => void;
 }): MenuItemConstructorOptions[] {
   const defaultApplication = associations.defaultApplication;
   return [
@@ -88,7 +85,6 @@ export function macWorkspaceItemMenuTemplate({
     },
     { type: "separator" },
     { label: labels.copyPath, click: onCopyPath },
-    { label: labels.addToTask, click: onAddToTask },
   ];
 }
 

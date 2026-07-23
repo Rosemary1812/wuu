@@ -998,9 +998,9 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 	// restores after a process restart the AgentControl calls the
 	// installed resolver to rebuild the client; otherwise it would
 	// silently fall back to the worker default client and route the
-	// request to the wrong provider. Capture workerProviderName in the
-	// closure so the resolver sees the same value the original spawn
-	// saw.
+	// request to the wrong provider. Read the provider from AgentControl
+	// on every call because advanced config updates change worker defaults
+	// without rebuilding the thread runtime.
 	if s.rt != nil && control != nil {
 		// The AgentControl was built with this conversation's own worker
 		// provider (NewThreadRuntimeForRoot, from its worker role). Do NOT
@@ -1017,7 +1017,7 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		}
 		ref := newRuntimeSessionReference(s.rt)
 		control.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
-			return resolveParticipantModelOverride(ref, "queued-restore", rawPin, workerProvider)
+			return resolveParticipantModelOverride(ref, "spawn", rawPin, control.WorkerProviderName())
 		})
 		control.SetModelAliasResolver(s.resolveSubagentModelAlias)
 		control.SetProviderClientResolver(s.resolveSubagentProviderClient)
@@ -1714,6 +1714,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	// group-broadcast outlet so a thread/updated snapshot in the batch is
 	// re-wrapped with group Members (see notifyOutboundBatch).
 	notifyBatch := s.notifyOutboundBatch
+	if th != nil && strings.TrimSpace(th.NamedAgentID) != "" {
+		notify = func(string, any) {}
+		notifyBatch = func([]outboundNotification) {}
+	}
 	runner := s.rt.StreamRunner
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
@@ -2269,7 +2273,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		}
 		return
 	}
-	if !turnRuntime.CompactOnly {
+	if !turnRuntime.CompactOnly && strings.TrimSpace(th.NamedAgentID) == "" {
 		_ = s.startBackground(func() { s.generateThreadTitle(th.ID, titleHistory, threadRuntime) })
 	}
 	s.kickAgentCompletionDrain(th.ID)

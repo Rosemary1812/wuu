@@ -8,6 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/insight"
@@ -29,6 +30,17 @@ const (
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
 	MethodAgentTemplateList    = "agent-template/list"
+	MethodChannelAgentList     = "channel/agent/list"
+	MethodChannelAgentCreate   = "channel/agent/create"
+	MethodChannelAgentStart    = "channel/agent/start"
+	MethodChannelRoomList      = "channel/room/list"
+	MethodChannelRoomCreate    = "channel/room/create"
+	MethodChannelMessageList   = "channel/message/list"
+	MethodChannelMessageSend   = "channel/message/send"
+	MethodChannelTaskCreate    = "channel/task/create"
+	MethodChannelTaskUpdate    = "channel/task/update"
+	MethodChannelMentionStatus = "channel/human-mention/status"
+	MethodChannelMentionAck    = "channel/human-mention/ack"
 	MethodAutomationList       = "automation/list"
 	MethodAutomationRuns       = "automation/run/list"
 	MethodAutomationUpdate     = "automation/update"
@@ -63,23 +75,6 @@ const (
 	MethodThreadRename             = "thread/rename"
 	MethodThreadDelete             = "thread/delete"
 	MethodWorkspaceStateCleanup    = "workspace/state/cleanup"
-	MethodParticipantList          = "participant/list"
-	MethodKanbanCreateTask         = "kanban/create-task"
-	MethodKanbanListTasks          = "kanban/list-tasks"
-	MethodKanbanTransitionTask     = "kanban/transition-task"
-	MethodKanbanDispatchRun        = "kanban/dispatch-run"
-	MethodKanbanListRuns           = "kanban/list-runs"
-	MethodKanbanListArtifacts      = "kanban/list-artifacts"
-	MethodKanbanCrystallize        = "kanban/crystallize"
-	MethodKanbanAutoDispatch       = "kanban/auto-dispatch"
-	MethodKanbanSpawnSuggestions   = "kanban/spawn-suggestions"
-	MethodKanbanSpawnAgent         = "kanban/spawn-agent"
-	MethodParticipantGetManifest   = "participant/get-manifest"
-	MethodParticipantSaveManifest  = "participant/save-manifest"
-	MethodParticipantSave          = "participant/save"
-	MethodParticipantFeedback      = "participant/feedback"
-	MethodParticipantReset         = "participant/reset"
-	MethodParticipantRetire        = "participant/retire"
 	// Memory panel RPCs (设置 → 记忆). Wire contract fixed ahead of
 	// implementation by docs/plans/2026-07-04-memory-redesign.md §8.2 and
 	// mirrored field-for-field by desktop/src/shared/protocol.ts.
@@ -138,7 +133,6 @@ const (
 	NotificationThreadStarted          = "thread/started"
 	NotificationThreadResumed          = "thread/resumed"
 	NotificationThreadUpdated          = "thread/updated"
-	NotificationParticipantUpdated     = "participant/updated"
 	NotificationTurnStarted            = "turn/started"
 	NotificationTurnQueued             = "turn/queued"
 	NotificationTurnDequeued           = "turn/dequeued"
@@ -168,7 +162,6 @@ const (
 	NotificationToolCallDelta       = "item/toolCall/delta"
 	NotificationToolCallOutput      = "item/toolCall/outputDelta"
 	NotificationAgentUpdated        = "agent/updated"
-	NotificationKanbanUpdated       = "kanban/updated"
 	NotificationAgentMailbox        = "agent/mailbox"
 	NotificationMCPStatusUpdated    = "mcp/status/updated"
 )
@@ -1113,98 +1106,6 @@ type SideThreadEventNotification struct {
 	ErrorMessage string                 `json:"error_message,omitempty"`
 }
 
-type ParticipantProfile struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-	Role string `json:"role,omitempty"`
-	// AvatarImage is the participant's uploaded avatar as a data URL
-	// (e.g. "data:image/png;base64,..."). Populated on the profile read
-	// path when the workspace contains an avatar image; omitted on the
-	// lightweight wire Summary.
-	AvatarImage string                `json:"avatar_image,omitempty"`
-	Tagline     string                `json:"tagline,omitempty"`
-	Workspace   string                `json:"workspace,omitempty"`
-	Model       string                `json:"model,omitempty"`
-	Memory      string                `json:"memory,omitempty"`
-	TrackRecord []ParticipantRunEntry `json:"track_record,omitempty"`
-	CreatedAt   time.Time             `json:"created_at,omitempty"`
-	UpdatedAt   time.Time             `json:"updated_at,omitempty"`
-}
-
-type ParticipantRunEntry struct {
-	TaskID    string    `json:"task_id,omitempty"`
-	Summary   string    `json:"summary,omitempty"`
-	Outcome   string    `json:"outcome,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-}
-
-type ParticipantListResult struct {
-	Participants []ParticipantProfile `json:"participants"`
-}
-
-type ParticipantSaveParams struct {
-	ID      string `json:"id,omitempty"`
-	Name    string `json:"name"`
-	Role    string `json:"role,omitempty"`
-	Tagline string `json:"tagline,omitempty"`
-	Model   string `json:"model,omitempty"`
-	Memory  string `json:"memory,omitempty"`
-	// AvatarImage accepts an image data URL
-	// ("data:image/<mime>;base64,...") to upload a custom avatar.
-	// Decoded bytes are capped at 512KB; only image/png, image/jpeg,
-	// and image/webp are accepted.
-	AvatarImage string `json:"avatar_image,omitempty"`
-	// ClearAvatarImage removes any previously uploaded avatar image
-	// for this participant. Takes precedence over AvatarImage when set.
-	ClearAvatarImage bool `json:"clear_avatar_image,omitempty"`
-}
-
-type ParticipantSaveResult struct {
-	Participant ParticipantProfile `json:"participant"`
-	// ArchivedPredecessorID is set when this save CREATED a named
-	// participant and a retired predecessor with the same name (case-
-	// insensitive) exists in the store — its on-disk state lives under
-	// participants/.archived/<id>/. The new participant still starts
-	// fresh; surfacing the predecessor lets a future rehire/inherit UI
-	// offer the archived notebook (memory-redesign §9). Never set on
-	// updates of existing participants.
-	ArchivedPredecessorID string `json:"archived_predecessor_id,omitempty"`
-}
-
-type ParticipantFeedbackParams struct {
-	ParticipantID string `json:"participant_id"`
-	Text          string `json:"text"`
-	TaskID        string `json:"task_id,omitempty"`
-	MessageID     string `json:"message_id,omitempty"`
-}
-
-type ParticipantFeedbackResult struct {
-	Participant ParticipantProfile `json:"participant"`
-}
-
-type ParticipantResetParams struct {
-	ParticipantID string `json:"participant_id"`
-	Scope         string `json:"scope,omitempty"`
-}
-
-type ParticipantResetResult struct {
-	Participant ParticipantProfile `json:"participant"`
-}
-
-type ParticipantRetireParams struct {
-	ParticipantID string `json:"participant_id"`
-}
-
-type ParticipantRetireResult struct {
-	Participant ParticipantProfile `json:"participant"`
-}
-
-type ParticipantUpdatedNotification struct {
-	ParticipantID string              `json:"participant_id,omitempty"`
-	Participant   *ParticipantProfile `json:"participant,omitempty"`
-}
-
 type ContextCompositionCategory struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
@@ -1707,7 +1608,7 @@ type Agent struct {
 	Archived    bool      `json:"archived,omitempty"`
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
-	// Participant identifies the Kanban agent or task worker this run uses.
+	// Participant identifies the persisted participant attached to this run.
 	// Always populated on live snapshots: resolved from the
 	// participant store when possible, synthesized from the snapshot's
 	// type/task name otherwise.
@@ -2109,4 +2010,89 @@ type SettingsUsageResponse struct {
 	Metrics         SettingsUsageMetrics `json:"metrics"`
 	ModelBreakdowns []insight.ModelUsage `json:"model_breakdowns"`
 	Days            []SettingsUsageDay   `json:"days"`
+}
+
+type ChannelAgentListResult struct {
+	Agents []channels.NamedAgent `json:"agents"`
+}
+
+type ChannelAgentCreateParams struct {
+	Name          string `json:"name"`
+	ModelOverride string `json:"model_override,omitempty"`
+	Autostart     bool   `json:"autostart,omitempty"`
+}
+
+type ChannelAgentCreateResult struct {
+	Agent channels.NamedAgent `json:"agent"`
+}
+
+type ChannelAgentStartParams struct {
+	AgentID string `json:"agent_id"`
+}
+
+type ChannelAgentStartResult struct {
+	Agent channels.NamedAgent `json:"agent"`
+}
+
+type ChannelRoomListResult struct {
+	Rooms []channels.Room `json:"rooms"`
+}
+
+type ChannelRoomCreateParams struct {
+	Name     string   `json:"name"`
+	Kind     string   `json:"kind"`
+	AgentIDs []string `json:"agent_ids,omitempty"`
+}
+
+type ChannelRoomCreateResult struct {
+	Room channels.Room `json:"room"`
+}
+
+type ChannelMessageListParams struct {
+	RoomID   string `json:"room_id"`
+	AfterSeq int64  `json:"after_seq,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+type ChannelMessageListResult struct {
+	Messages []channels.Message `json:"messages"`
+}
+
+type ChannelMessageSendParams struct {
+	RoomID   string `json:"room_id"`
+	ThreadID string `json:"thread_id,omitempty"`
+	ReplyTo  string `json:"reply_to,omitempty"`
+	Body     string `json:"body"`
+}
+
+type ChannelMessageSendResult struct {
+	Message channels.Message `json:"message"`
+}
+
+type ChannelTaskCreateParams struct {
+	RoomID  string `json:"room_id"`
+	Title   string `json:"title"`
+	OwnerID string `json:"owner_id"`
+}
+
+type ChannelTaskCreateResult struct {
+	Task channels.Message `json:"task"`
+}
+
+type ChannelTaskUpdateParams struct {
+	TaskID  string `json:"task_id"`
+	State   string `json:"state,omitempty"`
+	OwnerID string `json:"owner_id,omitempty"`
+}
+
+type ChannelTaskUpdateResult struct {
+	Task channels.Message `json:"task"`
+}
+
+type ChannelHumanMentionStatusResult struct {
+	Count int `json:"count"`
+}
+
+type ChannelHumanMentionAckResult struct {
+	Acknowledged int `json:"acknowledged"`
 }

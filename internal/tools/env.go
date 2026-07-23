@@ -14,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -237,6 +238,7 @@ type Env struct {
 	ProcessMgr           *proc.Manager
 	AgentControl         *agentcontrol.AgentControl
 	AutomationManager    *automation.Manager
+	ChatAgent            *channels.AgentClient
 	// BrowserBridge routes the browser tool's actions to the desktop host that
 	// owns the hidden WebContentsView + CDP session. Nil means no embedded
 	// browser backend is attached (for example the CLI/headless runtime), and

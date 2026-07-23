@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
@@ -1785,6 +1786,88 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	childRecords := childKit.ToolTelemetry()
 	if len(childRecords) != 1 || childRecords[0].Name != "agent_report" || childRecords[0].ResultAction != "agent_report" {
 		t.Fatalf("agent_report telemetry action mismatch: %+v", childRecords)
+	}
+}
+
+func TestSpawnAgent_ModelAliasAndLiveDefault(t *testing.T) {
+	root := t.TempDir()
+	client := &toolkitFakeClient{content: "agent done"}
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       client,
+		DefaultModel: "expensive-model",
+		ParentRepo:   root,
+		SessionID:    "spawn-model-session",
+		HistoryDir:   filepath.Join(root, "state", "workers"),
+		ThreadDir:    filepath.Join(root, "state", "threads"),
+		HarnessDir:   filepath.Join(root, "state", "harness"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return toolkitNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopToolkitAgentControl(control)
+	control.SetModelAliasResolver(func(alias string) agentcontrol.AliasResolutionResult {
+		models := map[string]string{
+			"cheap":  "cheap-model",
+			"review": "review-model",
+		}
+		model, ok := models[alias]
+		if !ok {
+			return agentcontrol.AliasResolutionResult{Unknown: true, ValidAliases: []string{"cheap", "review"}}
+		}
+		return agentcontrol.AliasResolutionResult{
+			Found: true,
+			Runtime: subagent.WorkerRuntime{
+				Provider: "test-provider",
+				Model:    model,
+				APIModel: model,
+				Client:   client,
+			},
+		}
+	})
+
+	tool := NewSpawnAgentTool(&Env{AgentControl: control})
+	properties, ok := tool.Definition().InputSchema["properties"].(map[string]any)
+	if !ok || properties["model"] == nil {
+		t.Fatalf("spawn_agent schema does not expose model: %+v", tool.Definition().InputSchema)
+	}
+
+	spawn := func(args string) agentcontrol.SpawnResult {
+		t.Helper()
+		resultJSON, executeErr := tool.Execute(context.Background(), args)
+		if executeErr != nil {
+			t.Fatalf("spawn_agent: %v", executeErr)
+		}
+		var result agentcontrol.SpawnResult
+		if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+			t.Fatalf("decode spawn result: %v", err)
+		}
+		return result
+	}
+
+	explicit := spawn(`{"name":"cheap_backend","description":"Cheap backend","prompt":"Implement backend.","subagent_type":"general-purpose","model":"cheap"}`)
+	if snap := control.Manager().Get(explicit.AgentID).Snapshot(); snap.Model != "cheap-model" || snap.ModelAlias != "cheap" || snap.ModelPin != "" {
+		t.Fatalf("explicit alias snapshot = model %q alias %q pin %q, want cheap-model via cheap with no raw pin", snap.Model, snap.ModelAlias, snap.ModelPin)
+	}
+	forkContext := agent.ContextWithHistory(context.Background(), []providers.ChatMessage{{Role: "user", Content: "Plan the feature."}})
+	forkJSON, err := tool.Execute(forkContext, `{"name":"cheap_review","description":"Cheap review","prompt":"Review the plan.","model":"review"}`)
+	if err != nil {
+		t.Fatalf("spawn_agent fork: %v", err)
+	}
+	var forked agentcontrol.SpawnResult
+	if err := json.Unmarshal([]byte(forkJSON), &forked); err != nil {
+		t.Fatalf("decode fork result: %v", err)
+	}
+	if snap := control.Manager().Get(forked.AgentID).Snapshot(); snap.Model != "review-model" || snap.ModelAlias != "review" || snap.ModelPin != "" {
+		t.Fatalf("fork alias snapshot = model %q alias %q pin %q, want review-model via review with no raw pin", snap.Model, snap.ModelAlias, snap.ModelPin)
+	}
+
+	control.UpdateWorkerDefaults(client, "new-live-default", subagent.ManagerOptions{})
+	inherited := spawn(`{"name":"default_frontend","description":"Default frontend","prompt":"Implement frontend.","subagent_type":"general-purpose"}`)
+	if snap := control.Manager().Get(inherited.AgentID).Snapshot(); snap.Model != "new-live-default" || snap.ModelPin != "" {
+		t.Fatalf("live default snapshot = model %q pin %q, want new-live-default with no pin", snap.Model, snap.ModelPin)
 	}
 }
 

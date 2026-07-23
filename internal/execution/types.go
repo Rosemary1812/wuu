@@ -96,7 +96,7 @@ type TurnRef struct {
 }
 
 // Run is the execution record of one invocation. Higher-level orchestration
-// (kanban dispatch, automation schedules) keeps its own dispatch record and
+// (such as automation schedules) keeps its own dispatch record and
 // references the execution Run; it does not redefine execution state here.
 type Run struct {
 	ID          string          `json:"id"`

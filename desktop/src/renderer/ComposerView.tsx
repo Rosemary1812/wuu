@@ -7,7 +7,6 @@ import {
   FolderOpen,
   FolderX,
   Send,
-  Sparkles,
   Square,
   X
 } from "lucide-react";
@@ -81,6 +80,7 @@ import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
+import { WorkspaceDocumentDrawerContext } from "./WorkspaceDocumentTurnDock";
 
 type CollapsedComposerPromptBlock = {
   id: string;
@@ -188,7 +188,6 @@ export function Composer({
   textOnly = false,
   slashCommandsOverride,
   onResetSideThread,
-  onConvertToTask,
 }: {
   variant?: ComposerVariant;
   mainConversation?: boolean;
@@ -292,8 +291,6 @@ export function Composer({
   slashCommandsOverride?: ComposerSlashCommand[];
   // Reset the side thread this composer is embedded in.
   onResetSideThread?: () => void;
-  // Convert the current conversation to a kanban task (main conversation only).
-  onConvertToTask?: () => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const statusText = composerStatusText(status);
@@ -322,6 +319,7 @@ export function Composer({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
+  const submitAfterCompositionRef = useRef(false);
   const documentDrawer = useContext(WorkspaceDocumentDrawerContext);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [expandedDrawer, setExpandedDrawer] = useState<ExpandedComposerDrawer>(null);
@@ -331,6 +329,7 @@ export function Composer({
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
+  const [compositionSubmitRequest, setCompositionSubmitRequest] = useState(0);
   const hasPendingMessages = guideMessages.length > 0 || queuedMessages.length > 0;
   const hasHeldMessages = [...guideMessages, ...queuedMessages].some((message) => message.held);
   const previousHeldMessagesRef = useRef(false);
@@ -1203,17 +1202,6 @@ export function Composer({
                       {statusText}
                     </span>
                   </span>
-                ) : null}
-                {onConvertToTask ? (
-                  <button
-                    className="composer-action-button composer-convert-task-button"
-                    type="button"
-                    aria-label={t("composer.convertToTask")}
-                    title={t("composer.convertToTask")}
-                    onClick={onConvertToTask}
-                  >
-                    <Sparkles size={16} aria-hidden="true" />
-                  </button>
                 ) : null}
                 <button
                   className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
