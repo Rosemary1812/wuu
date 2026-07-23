@@ -2301,3 +2301,312 @@ func TestRemoveProviderClearsModelRoleReferences(t *testing.T) {
 		t.Fatalf("compact role provider was unexpectedly removed: %s", data)
 	}
 }
+
+func TestConfig_ModelAliases(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "model": "gpt-5-codex"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "model": "claude-sonnet-4-5"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "cheap": {"provider": "main", "model": "gpt-5-mini"},
+      "frontend": {"provider": "anthropic", "model": "claude-sonnet-4-5", "effort": "high"}
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadProjectConfig(workdir)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig returned error: %v", err)
+	}
+	if cfg.Agent.ModelAliases["cheap"].Provider != "main" || cfg.Agent.ModelAliases["cheap"].Model != "gpt-5-mini" {
+		t.Fatalf("cheap alias not parsed: %+v", cfg.Agent.ModelAliases["cheap"])
+	}
+	if cfg.Agent.ModelAliases["frontend"].Provider != "anthropic" || cfg.Agent.ModelAliases["frontend"].Effort != "high" {
+		t.Fatalf("frontend alias not parsed: %+v", cfg.Agent.ModelAliases["frontend"])
+	}
+}
+
+func TestConfig_ModelAliasesColonContainingModelID(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.com/v1",
+				Model:   "gpt-5-codex",
+			},
+		},
+		Agent: AgentConfig{
+			ModelAliases: map[string]ModelRoleConfig{
+				"local": {Provider: "main", Model: "llama3.2:latest"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("colon-containing API model ID should be valid: %v", err)
+	}
+}
+
+func TestConfig_ModelAliasesRejectInvalidName(t *testing.T) {
+	cases := []string{"", "Frontend", "1cheap", "cheap!", "cheap alias"}
+	for _, name := range cases {
+		cfg := Config{
+			DefaultProvider: "main",
+			Providers: map[string]ProviderConfig{
+				"main": {Type: "openai-compatible", BaseURL: "https://example.com/v1", Model: "gpt-5-codex"},
+			},
+			Agent: AgentConfig{
+				ModelAliases: map[string]ModelRoleConfig{
+					name: {Provider: "main", Model: "gpt-5-mini"},
+				},
+			},
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("expected invalid alias name %q to be rejected", name)
+		}
+	}
+}
+
+func TestConfig_ModelAliasesRejectDuplicateNormalizedName(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {Type: "openai-compatible", BaseURL: "https://example.com/v1", Model: "gpt-5-codex"},
+		},
+		Agent: AgentConfig{
+			ModelAliases: map[string]ModelRoleConfig{
+				"cheap":  {Provider: "main", Model: "gpt-5-mini"},
+				" cheap": {Provider: "main", Model: "gpt-5-nano"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "normalize") {
+		t.Fatalf("expected duplicate normalized alias error, got %v", err)
+	}
+}
+
+func TestConfig_ModelAliasesRejectEmptyProvider(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {Type: "openai-compatible", BaseURL: "https://example.com/v1", Model: "gpt-5-codex"},
+		},
+		Agent: AgentConfig{
+			ModelAliases: map[string]ModelRoleConfig{
+				"cheap": {Provider: "", Model: "gpt-5-mini"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "provider is required") {
+		t.Fatalf("expected empty provider error, got %v", err)
+	}
+}
+
+func TestConfig_ModelAliasesRejectEmptyModel(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {Type: "openai-compatible", BaseURL: "https://example.com/v1", Model: "gpt-5-codex"},
+		},
+		Agent: AgentConfig{
+			ModelAliases: map[string]ModelRoleConfig{
+				"cheap": {Provider: "main", Model: ""},
+			},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "model is required") {
+		t.Fatalf("expected empty model error, got %v", err)
+	}
+}
+
+func TestConfig_ModelAliasesRejectUnknownProvider(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {Type: "openai-compatible", BaseURL: "https://example.com/v1", Model: "gpt-5-codex"},
+		},
+		Agent: AgentConfig{
+			ModelAliases: map[string]ModelRoleConfig{
+				"cheap": {Provider: "missing", Model: "gpt-5-mini"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), `provider "missing" not found`) {
+		t.Fatalf("expected unknown provider error, got %v", err)
+	}
+}
+
+func TestConfig_ModelAliasesRejectInvalidConfiguredVariant(t *testing.T) {
+	cfg := Config{
+		DefaultProvider: "main",
+		Providers: map[string]ProviderConfig{
+			"main": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.com/v1",
+				Model:   "gpt-5-codex",
+				Models: map[string]ProviderModelConfig{
+					"custom-model": {
+						Variants: map[string]map[string]any{
+							"low":  {"reasoningEffort": "low"},
+							"high": {"reasoningEffort": "high"},
+						},
+					},
+				},
+			},
+		},
+		Agent: AgentConfig{
+			ModelAliases: map[string]ModelRoleConfig{
+				"bad": {Provider: "main", Model: "custom-model", Effort: "medium"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected invalid effort error, got %v", err)
+	}
+}
+
+func TestRemoveProviderDeletesModelAliases(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "keep",
+  "providers": {
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.com/v1",
+      "model": "keep-model"
+    },
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.com/v1",
+      "model": "drop-model"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "drop-alias": { "provider": "drop", "model": "drop-model" },
+      "keep-alias": { "provider": "keep", "model": "keep-model" }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveProvider(path, "drop", "", ""); err != nil {
+		t.Fatalf("RemoveProvider: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"drop-alias"`) {
+		t.Fatalf("drop alias was not deleted: %s", data)
+	}
+	if !strings.Contains(string(data), `"keep-alias"`) {
+		t.Fatalf("keep alias was unexpectedly deleted: %s", data)
+	}
+}
+
+func TestUpdateAdvancedRuntimeModelAliases(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "model": "gpt-5-codex"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "old": { "provider": "main", "model": "old-model" }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cheap := ModelRoleConfig{Provider: "main", Model: "gpt-5-mini"}
+	frontend := ModelRoleConfig{Provider: "main", Model: "gpt-5-frontend", Effort: "high"}
+	if err := UpdateAdvancedRuntime(path, "main", AdvancedRuntimeUpdate{
+		ModelAliases: map[string]*ModelRoleConfig{
+			"cheap":    &cheap,
+			"frontend": &frontend,
+			"old":      nil,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAdvancedRuntime: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"old"`) {
+		t.Fatalf("old alias was not removed: %s", data)
+	}
+	if !strings.Contains(string(data), `"cheap"`) || !strings.Contains(string(data), `"frontend"`) {
+		t.Fatalf("new aliases were not written: %s", data)
+	}
+	if !strings.Contains(string(data), `"effort": "high"`) {
+		t.Fatalf("frontend effort was not written: %s", data)
+	}
+}
+
+func TestUpdateAdvancedRuntimeModelAliasesEmptyMapClearsAll(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "model": "gpt-5-codex"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "old": { "provider": "main", "model": "old-model" }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := UpdateAdvancedRuntime(path, "main", AdvancedRuntimeUpdate{ModelAliases: map[string]*ModelRoleConfig{}}); err != nil {
+		t.Fatalf("UpdateAdvancedRuntime: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), "model_aliases") {
+		t.Fatalf("model_aliases was not cleared: %s", data)
+	}
+}

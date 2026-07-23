@@ -13,9 +13,44 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolledger"
 )
+
+// WorkerRuntime is a complete immutable worker inference runtime resolved from
+// a configured model alias. It carries every value the runner needs so that
+// once a sub-agent starts, its runtime stays fixed across follow-up turns and
+// cross-restart resume regardless of later settings changes.
+//
+// The Client field is live state and is intentionally not persisted; resume
+// rebuilds it from the persisted Provider via an installed provider-client
+// resolver.
+type WorkerRuntime struct {
+	Provider                string
+	Model                   string
+	APIModel                string
+	Effort                  string
+	Variant                 string
+	ProviderOptions         map[string]any
+	Temperature             float64
+	ContextWindow           int
+	MaxInputTokens          int
+	OutputReserveTokens     int
+	CompactThresholdTokens  int
+	CompactThresholdPct     float64
+	CompactKeepRecentTokens int
+	DisableAutoCompact      bool
+	Client                  providers.StreamClient
+}
+
+// Clone returns a deep copy of the runtime with the Client pointer shared (it
+// is not persisted and is replaced by resume anyway).
+func (r WorkerRuntime) Clone() WorkerRuntime {
+	out := r
+	out.ProviderOptions = provideroptions.Clone(r.ProviderOptions)
+	return out
+}
 
 // Status describes a sub-agent's lifecycle state.
 type Status string
@@ -99,6 +134,25 @@ type SpawnOptions struct {
 	// Model is the model identifier to use. Empty inherits whatever
 	// the runner's default is.
 	Model string
+
+	// ModelAlias is the configured alias requested by the caller (e.g.
+	// "cheap" or "frontend"). It is recorded for provenance and diagnostics.
+	// The resolved runtime is supplied via WorkerRuntime. AgentControl also
+	// snapshots the current worker default into WorkerRuntime for omitted or
+	// unknown aliases so that runtime remains fixed after the first run.
+	ModelAlias string
+
+	// ModelAliasFallback is true when ModelAlias was non-empty but could not
+	// be resolved to a configured alias. The worker falls back to the
+	// current default runtime and the fallback is surfaced in diagnostics.
+	ModelAliasFallback bool
+
+	// WorkerRuntime, when non-nil, overrides the manager's default runtime
+	// for this spawn. It carries the complete resolved alias runtime
+	// (provider, model, effort, provider options, budgets, temperature).
+	// Once set, the runtime is snapshotted and persisted so follow-ups and
+	// resume reuse it exactly.
+	WorkerRuntime *WorkerRuntime
 
 	// WorkerRoot is the sub-agent's working directory: the shared parent
 	// repo for inplace workers or the worktree path for isolated ones. It
@@ -198,19 +252,22 @@ type SubAgent struct {
 	ActivityAt time.Time
 
 	// Internal state — read-only from outside.
-	prompt          string
-	systemPrompt    string
-	model           string
-	modelPin        string // raw participant pin, persisted for cross-restart resume
-	workerRoot      string // working directory, persisted so a resume can validate + reroot
-	ultra           bool   // inherited Ultra-mode value, fixed at spawn
-	toolkit         agent.ToolExecutor
-	historyPath     string
-	initialHistory  []providers.ChatMessage
-	history         []providers.ChatMessage
-	maxSteps        int
-	maxLifetime     time.Duration
-	runtimeDefaults managerDefaults
+	prompt             string
+	systemPrompt       string
+	model              string
+	modelPin           string         // raw participant pin, persisted for cross-restart resume
+	modelAlias         string         // configured alias requested at spawn time
+	modelAliasFallback bool           // true when modelAlias was unknown and the default runtime was used
+	runtime            *WorkerRuntime // complete resolved runtime; overrides manager defaults when non-nil
+	workerRoot         string         // working directory, persisted so a resume can validate + reroot
+	ultra              bool           // inherited Ultra-mode value, fixed at spawn
+	toolkit            agent.ToolExecutor
+	historyPath        string
+	initialHistory     []providers.ChatMessage
+	history            []providers.ChatMessage
+	maxSteps           int
+	maxLifetime        time.Duration
+	runtimeDefaults    managerDefaults
 	// Follow-up messages queued by the coordinator while this worker
 	// is already running. Manager.run drains this queue between model
 	// turns and appends each entry as a new user message.
@@ -271,6 +328,13 @@ type SubAgentSnapshot struct {
 	WorkerRoot          string
 	Model               string
 	ModelPin            string
+	ModelAlias          string
+	ModelAliasFallback  bool
+	ResolvedProvider    string
+	ResolvedModel       string
+	ResolvedAPIModel    string
+	ResolvedEffort      string
+	ResolvedVariant     string
 	Ultra               bool
 	Status              Status
 	StartedAt           time.Time

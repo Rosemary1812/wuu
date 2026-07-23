@@ -616,9 +616,9 @@ describe("SettingsView advanced settings", () => {
     expect(rootText()).toContain("当前服务上下文上限");
     expect(rootText()).toContain("来自当前通道输入上限");
     expect(rootText()).toContain("400,000");
-    // Instant-apply: no draft form, no Save button.
+    // Instant-apply: no draft form, no Save button inside the numeric advanced card.
     expect(
-      Array.from(container.querySelectorAll("button")).some((button) =>
+      Array.from(container.querySelectorAll("[data-testid=\"settings-advanced\"] button")).some((button) =>
         button.textContent?.includes("保存"),
       ),
     ).toBe(false);

@@ -1019,6 +1019,8 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		control.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
 			return resolveParticipantModelOverride(ref, "queued-restore", rawPin, workerProvider)
 		})
+		control.SetModelAliasResolver(s.resolveSubagentModelAlias)
+		control.SetProviderClientResolver(s.resolveSubagentProviderClient)
 	}
 	sub := &threadRuntimeSubscription{
 		statusCh:       make(chan subagent.Notification, 64),

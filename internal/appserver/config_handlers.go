@@ -77,6 +77,7 @@ func (s *Server) handleInitialize(req Request) error {
 		ModelProfile:       modelProfile,
 		ToolSurface:        toolSurface,
 		ModelRoles:         s.currentModelRoleSummaries(),
+		ModelAliases:       s.currentModelAliasSummaries(),
 		Providers:          s.providerSummaries(),
 		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
 		GeneralSettings:    s.currentGeneralSettingsSummary(),
@@ -103,6 +104,7 @@ func (s *Server) handleConfigRead(req Request) error {
 		ModelProfile:       modelProfile,
 		ToolSurface:        toolSurface,
 		ModelRoles:         s.currentModelRoleSummaries(),
+		ModelAliases:       s.currentModelAliasSummaries(),
 		Providers:          s.providerSummaries(),
 		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
 		GeneralSettings:    s.currentGeneralSettingsSummary(),
@@ -129,6 +131,17 @@ func (s *Server) currentModelRoleSummaries() []ModelRoleSummary {
 		})
 	}
 	return out
+}
+
+func (s *Server) currentModelAliasSummaries() map[string]ModelAliasSummary {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	cfg, _, err := s.rt.LoadEffectiveConfig()
+	if err != nil {
+		return nil
+	}
+	return modelAliasSummaries(cfg.Agent.ModelAliases)
 }
 
 func (s *Server) currentPermissionSummary() PermissionSummary {
@@ -622,6 +635,22 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	if s.rt == nil {
 		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
 	}
+	modelAliases := modelAliasConfigUpdate(params.ModelAliases)
+	if modelAliases != nil {
+		candidate, _, err := s.rt.LoadEffectiveConfig()
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		candidate.Agent.ModelAliases = make(map[string]config.ModelRoleConfig, len(modelAliases))
+		for name, alias := range modelAliases {
+			if alias != nil {
+				candidate.Agent.ModelAliases[name] = *alias
+			}
+		}
+		if err := candidate.Validate(); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	if err := config.UpdateAdvancedRuntime(s.rt.ConfigPath, s.rt.ProviderName, config.AdvancedRuntimeUpdate{
 		MaxSteps:                params.MaxSteps,
 		MaxContextTokens:        params.MaxContextTokens,
@@ -630,6 +659,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		CompactKeepRecentTokens: params.CompactKeepRecentTokens,
 		DisableAutoCompact:      params.DisableAutoCompact,
 		ProviderContextWindow:   params.ProviderContextWindow,
+		ModelAliases:            modelAliases,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -678,8 +708,42 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	}
 	return s.writeResponse(req.ID, ConfigAdvancedUpdateResult{
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
+		ModelAliases:     modelAliasSummaries(cfg.Agent.ModelAliases),
 		Providers:        s.providerSummaries(),
 	}, nil)
+}
+
+func modelAliasConfigUpdate(input *map[string]ModelAliasSummary) map[string]*config.ModelRoleConfig {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]*config.ModelRoleConfig, len(*input))
+	for name, alias := range *input {
+		selection := alias
+		out[name] = &config.ModelRoleConfig{
+			Provider: selection.Provider,
+			Model:    selection.Model,
+			Effort:   selection.Effort,
+			Variant:  selection.Variant,
+		}
+	}
+	return out
+}
+
+func modelAliasSummaries(input map[string]config.ModelRoleConfig) map[string]ModelAliasSummary {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]ModelAliasSummary, len(input))
+	for name, alias := range input {
+		out[strings.TrimSpace(name)] = ModelAliasSummary{
+			Provider: alias.Provider,
+			Model:    alias.Model,
+			Effort:   alias.Effort,
+			Variant:  alias.Variant,
+		}
+	}
+	return out
 }
 
 func (s *Server) handleConfigGeneralUpdate(req Request) error {

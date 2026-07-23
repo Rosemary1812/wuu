@@ -2017,6 +2017,86 @@
   }
 }
 
+/* Subagent model aliases --------------------------------------------------- */
+
+.settings-alias-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-alias-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) 140px 32px;
+  align-items: start;
+  gap: 8px;
+}
+
+@media (max-width: 800px) {
+  .settings-alias-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .settings-alias-row .settings-alias-field:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .settings-alias-remove {
+    justify-self: end;
+  }
+}
+
+.settings-alias-row .settings-input,
+.settings-alias-row .settings-select-trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-alias-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-alias-field-error {
+  color: var(--error);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+
+.settings-alias-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.settings-alias-remove:hover:not(:disabled),
+.settings-alias-remove:focus-visible {
+  background: var(--fill-danger);
+  color: var(--error);
+}
+
+.settings-alias-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.settings-alias-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings-button,
   .settings-card,

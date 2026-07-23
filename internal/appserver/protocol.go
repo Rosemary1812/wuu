@@ -237,29 +237,30 @@ type ReverseRPCCapabilities struct {
 }
 
 type InitializeResult struct {
-	Status             string                     `json:"status"`
-	Issues             []RuntimeIssue             `json:"issues,omitempty"`
-	ProtocolVersion    string                     `json:"protocol_version"`
-	AgentTemplateCount int                        `json:"agent_template_count,omitempty"`
-	Core               CoreBuildInfo              `json:"core"`
-	Provider           string                     `json:"provider"`
-	Model              string                     `json:"model"`
-	Effort             string                     `json:"effort,omitempty"`
-	Variant            string                     `json:"variant,omitempty"`
-	Ultra              bool                       `json:"ultra"`
-	MaxParallel        int                        `json:"max_parallel"`
-	RuntimeHost        RuntimeHostSummary         `json:"runtime_host"`
-	WorkspaceRoot      string                     `json:"workspace_root"`
-	Permissions        PermissionSummary          `json:"permissions"`
-	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
-	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory,omitempty"`
-	ModelProfile       *ModelProfileSummary       `json:"model_profile,omitempty"`
-	ToolSurface        *ToolSurfaceSummary        `json:"tool_surface,omitempty"`
-	ModelRoles         []ModelRoleSummary         `json:"model_roles,omitempty"`
-	Providers          []ProviderSummary          `json:"providers,omitempty"`
-	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
-	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
-	Features           FeatureFlags               `json:"features"`
+	Status             string                       `json:"status"`
+	Issues             []RuntimeIssue               `json:"issues,omitempty"`
+	ProtocolVersion    string                       `json:"protocol_version"`
+	AgentTemplateCount int                          `json:"agent_template_count,omitempty"`
+	Core               CoreBuildInfo                `json:"core"`
+	Provider           string                       `json:"provider"`
+	Model              string                       `json:"model"`
+	Effort             string                       `json:"effort,omitempty"`
+	Variant            string                       `json:"variant,omitempty"`
+	Ultra              bool                         `json:"ultra"`
+	MaxParallel        int                          `json:"max_parallel"`
+	RuntimeHost        RuntimeHostSummary           `json:"runtime_host"`
+	WorkspaceRoot      string                       `json:"workspace_root"`
+	Permissions        PermissionSummary            `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary        `json:"extension_trust"`
+	ExtensionInventory []ExtensionInventoryRecord   `json:"extension_inventory,omitempty"`
+	ModelProfile       *ModelProfileSummary         `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary          `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary           `json:"model_roles,omitempty"`
+	ModelAliases       map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
+	Providers          []ProviderSummary            `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary      `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary       `json:"general_settings"`
+	Features           FeatureFlags                 `json:"features"`
 }
 
 type FeatureFlags struct {
@@ -359,25 +360,26 @@ type ModelProfileSummary struct {
 type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
-	Provider           string                     `json:"provider"`
-	AgentTemplateCount int                        `json:"agent_template_count,omitempty"`
-	Model              string                     `json:"model"`
-	Effort             string                     `json:"effort,omitempty"`
-	Variant            string                     `json:"variant,omitempty"`
-	Ultra              bool                       `json:"ultra"`
-	MaxParallel        int                        `json:"max_parallel"`
-	ConfigPath         string                     `json:"config_path"`
-	WorkspaceRoot      string                     `json:"workspace_root"`
-	SessionDir         string                     `json:"session_dir"`
-	Permissions        PermissionSummary          `json:"permissions"`
-	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
-	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory,omitempty"`
-	ModelProfile       *ModelProfileSummary       `json:"model_profile,omitempty"`
-	ToolSurface        *ToolSurfaceSummary        `json:"tool_surface,omitempty"`
-	ModelRoles         []ModelRoleSummary         `json:"model_roles,omitempty"`
-	Providers          []ProviderSummary          `json:"providers,omitempty"`
-	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
-	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
+	Provider           string                       `json:"provider"`
+	AgentTemplateCount int                          `json:"agent_template_count,omitempty"`
+	Model              string                       `json:"model"`
+	Effort             string                       `json:"effort,omitempty"`
+	Variant            string                       `json:"variant,omitempty"`
+	Ultra              bool                         `json:"ultra"`
+	MaxParallel        int                          `json:"max_parallel"`
+	ConfigPath         string                       `json:"config_path"`
+	WorkspaceRoot      string                       `json:"workspace_root"`
+	SessionDir         string                       `json:"session_dir"`
+	Permissions        PermissionSummary            `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary        `json:"extension_trust"`
+	ExtensionInventory []ExtensionInventoryRecord   `json:"extension_inventory,omitempty"`
+	ModelProfile       *ModelProfileSummary         `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary          `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary           `json:"model_roles,omitempty"`
+	ModelAliases       map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
+	Providers          []ProviderSummary            `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary      `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary       `json:"general_settings"`
 }
 
 type PermissionSummary struct {
@@ -600,18 +602,20 @@ type ConfigProviderRemoveResult struct {
 }
 
 type ConfigAdvancedUpdateParams struct {
-	MaxSteps                *int     `json:"max_steps,omitempty"`
-	MaxContextTokens        *int     `json:"max_context_tokens,omitempty"`
-	Temperature             *float64 `json:"temperature,omitempty"`
-	CompactThresholdPct     *float64 `json:"compact_threshold_pct,omitempty"`
-	CompactKeepRecentTokens *int     `json:"compact_keep_recent_tokens,omitempty"`
-	DisableAutoCompact      *bool    `json:"disable_auto_compact,omitempty"`
-	ProviderContextWindow   *int     `json:"provider_context_window,omitempty"`
+	MaxSteps                *int                          `json:"max_steps,omitempty"`
+	MaxContextTokens        *int                          `json:"max_context_tokens,omitempty"`
+	Temperature             *float64                      `json:"temperature,omitempty"`
+	CompactThresholdPct     *float64                      `json:"compact_threshold_pct,omitempty"`
+	CompactKeepRecentTokens *int                          `json:"compact_keep_recent_tokens,omitempty"`
+	DisableAutoCompact      *bool                         `json:"disable_auto_compact,omitempty"`
+	ProviderContextWindow   *int                          `json:"provider_context_window,omitempty"`
+	ModelAliases            *map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
 }
 
 type ConfigAdvancedUpdateResult struct {
-	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
-	Providers        []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings AdvancedSettingsSummary      `json:"advanced_settings"`
+	ModelAliases     map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
+	Providers        []ProviderSummary            `json:"providers,omitempty"`
 }
 
 type ConfigGeneralUpdateParams struct {
@@ -913,6 +917,13 @@ type ModelRoleSummary struct {
 	Inherited    bool                   `json:"inherited,omitempty"`
 	Capabilities ModelCapabilitySummary `json:"capabilities,omitempty"`
 	Behavior     ModelBehaviorSummary   `json:"behavior,omitempty"`
+}
+
+type ModelAliasSummary struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Effort   string `json:"effort,omitempty"`
+	Variant  string `json:"variant,omitempty"`
 }
 
 type ModelCapabilitySummary = modelroles.Capabilities
@@ -1669,6 +1680,13 @@ type Agent struct {
 	ParentID            string `json:"parent_id,omitempty"`
 	Description         string `json:"description,omitempty"`
 	Status              string `json:"status"`
+	ModelAlias          string `json:"model_alias,omitempty"`
+	ModelAliasFallback  bool   `json:"model_alias_fallback,omitempty"`
+	Provider            string `json:"provider,omitempty"`
+	Model               string `json:"model,omitempty"`
+	APIModel            string `json:"api_model,omitempty"`
+	Effort              string `json:"effort,omitempty"`
+	Variant             string `json:"variant,omitempty"`
 	Result              string `json:"result,omitempty"`
 	ResultPath          string `json:"result_path,omitempty"`
 	ResultBytes         int    `json:"result_bytes,omitempty"`

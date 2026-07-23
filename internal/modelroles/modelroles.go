@@ -1,6 +1,7 @@
 package modelroles
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -205,6 +206,76 @@ func Resolve(cfg config.Config, opts ResolveOptions) (Set, error) {
 		return Set{}, resolveErr
 	}
 	return set, nil
+}
+
+// ResolveAlias resolves a configured agent.model_aliases entry into a complete
+// worker Selection. Aliases are explicit routing labels: they do not inherit
+// provider, model, effort, or variant from the active main conversation
+// selection. The returned Selection has RoleWorker and uses the same catalog,
+// variant, and behavior derivation paths as normal model role resolution.
+func ResolveAlias(cfg config.Config, aliasName string) (Selection, error) {
+	aliasName = strings.TrimSpace(aliasName)
+	if aliasName == "" {
+		return Selection{}, errors.New("model alias name is required")
+	}
+	alias, ok := cfg.Agent.ModelAliases[aliasName]
+	if !ok {
+		for rawName, candidate := range cfg.Agent.ModelAliases {
+			if strings.TrimSpace(rawName) == aliasName {
+				alias = candidate
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		return Selection{}, fmt.Errorf("model alias %q not found", aliasName)
+	}
+	providerName := strings.TrimSpace(alias.Provider)
+	if providerName == "" {
+		return Selection{}, fmt.Errorf("model alias %q has no provider", aliasName)
+	}
+	providerCfg, ok := cfg.Providers[providerName]
+	if !ok {
+		return Selection{}, fmt.Errorf("model alias %q provider %q not found", aliasName, providerName)
+	}
+	model := strings.TrimSpace(alias.Model)
+	if model == "" {
+		return Selection{}, fmt.Errorf("model alias %q has no model", aliasName)
+	}
+	if err := validateAliasEffortVariant(providerName, providerCfg, model, alias.Effort, alias.Variant); err != nil {
+		return Selection{}, fmt.Errorf("model alias %q: %w", aliasName, err)
+	}
+	providerCfg.Model = model
+	return buildSelection(RoleWorker, providerName, providerCfg, model, alias.Variant, alias.Effort, false), nil
+}
+
+func validateAliasEffortVariant(providerName string, provider config.ProviderConfig, model, effort, variant string) error {
+	if strings.TrimSpace(effort) == "" && strings.TrimSpace(variant) == "" {
+		return nil
+	}
+	summaries := modelvariant.SummariesForProvider(providerName, provider, model)
+	if len(summaries) == 0 {
+		return nil
+	}
+	valid := make(map[string]struct{}, len(summaries))
+	for _, summary := range summaries {
+		if id := strings.TrimSpace(summary.ID); id != "" {
+			valid[id] = struct{}{}
+		}
+	}
+	for _, field := range []struct {
+		name, value string
+	}{{"effort", effort}, {"variant", variant}} {
+		value := strings.TrimSpace(field.value)
+		if value == "" {
+			continue
+		}
+		if _, ok := valid[value]; !ok {
+			return fmt.Errorf("%s %q is not supported for provider %q model %q", field.name, value, providerName, model)
+		}
+	}
+	return nil
 }
 
 func BuildFacts(providerName string, provider config.ProviderConfig, model string) (Capabilities, Behavior) {

@@ -72,6 +72,7 @@ import { SettingsRemotePage } from "./SettingsRemotePage";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 import { LanguagePreferenceControl } from "./LanguagePreferenceSection";
 import { formatCurrentNumber, useI18n } from "./i18n";
+import { SubagentModelAliases } from "./SubagentModelAliases";
 
 export type SettingsPage =
   | "providers"
@@ -891,33 +892,41 @@ export function SettingsView({
                 disabled={addSubmitDisabled}
               />
             ) : activePage === "advanced" ? (
-              <SettingsAdvancedPage
-                initialized={initialized}
-                running={running}
-                autoCompact={autoCompactDraft}
-                compactThreshold={compactThresholdDraft}
-                compactKeepRecent={compactKeepRecentDraft}
-                providerContextWindow={providerContextWindowDraft}
-                providerContextWindowCurrent={formatOptionalTokenCount(
-                  initialized?.advanced_settings?.context_window_tokens,
-                )}
-                providerContextWindowSource={advancedContextSourceLabel(
-                  initialized?.advanced_settings?.context_window_source,
-                  t,
-                )}
-                maxContextTokens={maxContextTokensDraft}
-                maxSteps={maxStepsDraft}
-                temperature={temperatureDraft}
-                error={advancedError}
-                onAutoCompactToggle={toggleAutoCompact}
-                onCompactThresholdChange={setCompactThresholdDraft}
-                onCompactKeepRecentChange={setCompactKeepRecentDraft}
-                onProviderContextWindowChange={setProviderContextWindowDraft}
-                onMaxContextTokensChange={setMaxContextTokensDraft}
-                onMaxStepsChange={setMaxStepsDraft}
-                onTemperatureChange={setTemperatureDraft}
-                onCommitField={commitAdvancedField}
-              />
+              <>
+                <SubagentModelAliases
+                  aliases={initialized?.model_aliases}
+                  providers={providers}
+                  disabled={running || !initialized}
+                  onSave={onAdvancedSave}
+                />
+                <SettingsAdvancedPage
+                  initialized={initialized}
+                  running={running}
+                  autoCompact={autoCompactDraft}
+                  compactThreshold={compactThresholdDraft}
+                  compactKeepRecent={compactKeepRecentDraft}
+                  providerContextWindow={providerContextWindowDraft}
+                  providerContextWindowCurrent={formatOptionalTokenCount(
+                    initialized?.advanced_settings?.context_window_tokens,
+                  )}
+                  providerContextWindowSource={advancedContextSourceLabel(
+                    initialized?.advanced_settings?.context_window_source,
+                    t,
+                  )}
+                  maxContextTokens={maxContextTokensDraft}
+                  maxSteps={maxStepsDraft}
+                  temperature={temperatureDraft}
+                  error={advancedError}
+                  onAutoCompactToggle={toggleAutoCompact}
+                  onCompactThresholdChange={setCompactThresholdDraft}
+                  onCompactKeepRecentChange={setCompactKeepRecentDraft}
+                  onProviderContextWindowChange={setProviderContextWindowDraft}
+                  onMaxContextTokensChange={setMaxContextTokensDraft}
+                  onMaxStepsChange={setMaxStepsDraft}
+                  onTemperatureChange={setTemperatureDraft}
+                  onCommitField={commitAdvancedField}
+                />
+              </>
             ) : activePage === "general" ? (
               <SettingsGeneralPage
                 initialized={initialized}

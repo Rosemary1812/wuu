@@ -107,6 +107,7 @@ export type InitializeResult = {
   // fingerprints and permission names, never resolved environment/header values.
   extension_inventory?: ExtensionInventoryRecord[];
   model_roles?: ModelRoleSummary[];
+  model_aliases?: Record<string, ModelAliasSummary>;
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
   general_settings?: GeneralSettingsSummary;
@@ -306,6 +307,7 @@ export type ConfigModelUpdateResult = {
   tool_surface?: ToolSurfaceSummary;
   extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
+  model_aliases?: Record<string, ModelAliasSummary>;
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
 };
@@ -342,6 +344,13 @@ export type ModelRoleSummary = {
   inherited?: boolean;
   capabilities?: ModelCapabilitySummary;
   behavior?: ModelBehaviorSummary;
+};
+
+export type ModelAliasSummary = {
+  provider: string;
+  model: string;
+  effort?: string;
+  variant?: string;
 };
 
 export type ModelCapabilitySummary = {
@@ -561,10 +570,12 @@ export type RuntimeAdvancedSettingsUpdate = {
   compact_keep_recent_tokens?: number;
   disable_auto_compact?: boolean;
   provider_context_window?: number;
+  model_aliases?: Record<string, ModelAliasSummary>;
 };
 
 export type ConfigAdvancedUpdateResult = {
   advanced_settings: AdvancedSettingsSummary;
+  model_aliases?: Record<string, ModelAliasSummary>;
   providers?: ProviderSummary[];
 };
 
@@ -956,6 +967,13 @@ export type Agent = {
   parent_id?: string;
   description?: string;
   status: string;
+  model_alias?: string;
+  model_alias_fallback?: boolean;
+  provider?: string;
+  model?: string;
+  api_model?: string;
+  effort?: string;
+  variant?: string;
   result?: string;
   error?: string;
   input_tokens?: number;

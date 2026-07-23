@@ -815,6 +815,42 @@ func TestServerInitializeExposesModelRoles(t *testing.T) {
 	}
 }
 
+func TestServerInitializeExposesModelAliases(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "frontend": {
+        "provider": "fake-provider",
+        "model": "ui-model:latest",
+        "effort": "high"
+      }
+    }
+  }
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	alias, ok := result.ModelAliases["frontend"]
+	if !ok || alias.Provider != "fake-provider" || alias.Model != "ui-model:latest" || alias.Effort != "high" {
+		t.Fatalf("unexpected frontend alias: %+v", result.ModelAliases)
+	}
+}
+
 func TestProviderSummariesExposeOpenCodeStyleVariants(t *testing.T) {
 	cfg := config.Config{
 		DefaultProvider: "xiaomi",
@@ -1909,7 +1945,7 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
-	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"compact_keep_recent_tokens":20000,"disable_auto_compact":true,"provider_context_window":512000}}`
+	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"compact_keep_recent_tokens":20000,"disable_auto_compact":true,"provider_context_window":512000,"model_aliases":{"cheap":{"provider":"fake-provider","model":"cheap-model:latest","effort":"low"}}}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/advanced/update: %v", err)
 	}
@@ -1924,6 +1960,9 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		!result.AdvancedSettings.DisableAutoCompact ||
 		result.AdvancedSettings.ProviderContextWindow != 512000 {
 		t.Fatalf("unexpected advanced settings result: %+v", result.AdvancedSettings)
+	}
+	if alias, ok := result.ModelAliases["cheap"]; !ok || alias.Provider != "fake-provider" || alias.Model != "cheap-model:latest" || alias.Effort != "low" {
+		t.Fatalf("unexpected model aliases result: %+v", result.ModelAliases)
 	}
 	if rt.StreamRunner.MaxSteps != 12 ||
 		rt.StreamRunner.Temperature != 0.4 ||
@@ -1944,6 +1983,8 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		`"compact_keep_recent_tokens": 20000`,
 		`"disable_auto_compact": true`,
 		`"context_window": 512000`,
+		`"cheap"`,
+		`"model": "cheap-model:latest"`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("config missing %s: %s", want, data)

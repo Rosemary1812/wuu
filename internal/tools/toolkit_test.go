@@ -4448,10 +4448,15 @@ func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation"} {
+		for _, field := range []string{"description", "prompt", "subagent_type", "name", "model", "run_in_background", "isolation"} {
 			if _, ok := props[field]; !ok {
 				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
 			}
+		}
+		modelProp, _ := props["model"].(map[string]any)
+		modelDescription, _ := modelProp["description"].(string)
+		if !strings.Contains(modelDescription, "configured model alias") || !strings.Contains(modelDescription, "not a provider name or raw API model ID") {
+			t.Fatalf("spawn_agent model must be alias-only, description=%q", modelDescription)
 		}
 		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability", "goal_id", "goal_dir"} {
 			if _, ok := props[old]; ok {

@@ -312,6 +312,10 @@ export function createRuntimeSettingsActions(
           ? {
               ...current.initialized,
               advanced_settings: updated.advanced_settings,
+              model_aliases:
+                updated.model_aliases ??
+                settings.model_aliases ??
+                current.initialized.model_aliases,
               providers: updated.providers ?? current.initialized.providers,
             }
           : current.initialized;
