@@ -260,7 +260,7 @@ export function StreamingMarkdown({
   // the raw `**` in the rendered message. The text renderer removes this
   // parsing-only boundary before it reaches the DOM.
   const tailText = showCursor
-    ? `${split.tail}${CURSOR_MARKDOWN_BOUNDARY}${CURSOR_SENTINEL}`
+    ? `${split.tail}${cursorBoundaryForMarkdown(split.tail)}${CURSOR_SENTINEL}`
     : split.tail;
 
   /* ------------------------------- Render -------------------------------- */
@@ -390,6 +390,47 @@ function cursorContainerText(surface: HTMLDivElement | null): string | undefined
 
 export function containsMermaidFence(text: string): boolean {
   return /(^|\n)```[ \t]*mermaid[ \t]*\r?\n/i.test(text);
+}
+
+function cursorBoundaryForMarkdown(text: string): string {
+  return endsWithFenceCloser(text) ? "\n" : CURSOR_MARKDOWN_BOUNDARY;
+}
+
+function endsWithFenceCloser(text: string): boolean {
+  if (!text || text.endsWith("\n")) {
+    return false;
+  }
+
+  let activeFence: { marker: "`" | "~"; length: number } | undefined;
+  const lines = text.split("\n");
+  for (const [index, line] of lines.entries()) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!match) {
+      continue;
+    }
+
+    const marker = match[1][0] as "`" | "~";
+    if (!activeFence) {
+      if (marker === "`" && match[2].includes("`")) {
+        continue;
+      }
+      activeFence = { marker, length: match[1].length };
+      continue;
+    }
+
+    const isCloser =
+      marker === activeFence.marker &&
+      match[1].length >= activeFence.length &&
+      match[2].trim() === "";
+    if (!isCloser) {
+      continue;
+    }
+    if (index === lines.length - 1) {
+      return true;
+    }
+    activeFence = undefined;
+  }
+  return false;
 }
 
 /**
