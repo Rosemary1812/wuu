@@ -52,6 +52,10 @@
   pointer-events: none;
 }
 
+.dock-composer-wrap:has(.composer-accessory-drawer)::before {
+  background: transparent;
+}
+
 .dock-composer-wrap .composer-stack {
   position: relative;
   z-index: 1;
@@ -1166,10 +1170,10 @@
   --composer-collapsed-min-height: 80px;
 }
 
-/* Document mode can show the result, goal, and pending drawers together.
-   Step each complete drawer inward by the same amount so the stack reads as
-   one ordered set instead of several same-size cards colliding. */
-.document-composer-wrap .composer-goal-strip:has(+ .composer-pending-drawer) {
+/* Goal and pending drawers can appear together in both the main conversation
+   and document mode. Step the complete goal drawer inward so the pair reads
+   as one ordered stack instead of two same-size cards colliding. */
+.composer-goal-strip:has(+ .composer-pending-drawer) {
   width: calc(100% - 48px);
 }
 
