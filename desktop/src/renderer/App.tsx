@@ -2897,13 +2897,11 @@ export function App(): JSX.Element {
     const sent = await sendComposerMessage(message, true);
     if (!sent && focusRequest) {
       cancelMainComposerFocusRequest(focusRequest);
-      window.requestAnimationFrame(() => {
-        focusMainComposer(
-          "hero",
-          focusRequest.origin,
-          focusRequest.interactionVersion,
-        );
-      });
+      requestMainComposerFocus(
+        "hero",
+        focusRequest.origin,
+        focusRequest.interactionVersion,
+      );
     }
   }
 
