@@ -186,7 +186,6 @@ export function SkillsCatalog({
 
       <div className="skills-section-heading">
         <strong>{t("skills.sectionSkills")}</strong>
-        <span>{catalogCount(state.loading, filter, visibleSkills.length, state.skills.length)}</span>
       </div>
 
       <div className="skills-list">
@@ -219,7 +218,6 @@ export function SkillsCatalog({
         <>
           <div className="skills-section-heading">
             <strong>{t("skills.sectionPlugins")}</strong>
-            <span>{catalogCount(state.loading, filter, visiblePlugins.length, plugins.length)}</span>
           </div>
 
           <div className="skills-list">
@@ -247,7 +245,6 @@ export function SkillsCatalog({
 
       <div className="skills-section-heading">
         <strong>{t("skills.sectionAgentTemplates")}</strong>
-        <span>{catalogCount(state.loading, filter, visibleAgentTemplates.length, state.agentTemplates.length)}</span>
       </div>
 
       <div className="skills-list">
@@ -319,18 +316,6 @@ function sourceRank(source: string): number {
     default:
       return 3;
   }
-}
-
-function catalogCount(loading: boolean, filter: string, visible: number, total: number): string {
-  if (loading) {
-    return translateCurrent("skills.loading");
-  }
-  return filter.trim()
-    ? translateCurrent("skills.filteredCount", {
-        visible: formatCurrentNumber(visible),
-        total: formatCurrentNumber(total),
-      })
-    : formatCurrentNumber(total);
 }
 
 function runtimeContextKey(context: RuntimeContext): string {
