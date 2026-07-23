@@ -80,7 +80,6 @@ import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
-import { WorkspaceDocumentDrawerContext } from "./WorkspaceDocumentTurnDock";
 
 type CollapsedComposerPromptBlock = {
   id: string;
