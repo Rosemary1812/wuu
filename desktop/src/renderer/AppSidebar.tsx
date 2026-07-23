@@ -250,6 +250,7 @@ function SortableSection({
 export function AppSidebar({
   state,
   sidebarProjects,
+  activeProjectID,
   pinnedThreads,
   activeThreadID,
   pendingThreadID,
@@ -282,6 +283,7 @@ export function AppSidebar({
   onCreateProject,
   onOpenProjectFolder,
   onToggleSidebarSectionCollapsed,
+  onSelectProjectWorkspace,
   onStartNewThreadForProject,
   onSelectProjectThread,
   onRemoveProject,
@@ -298,6 +300,7 @@ export function AppSidebar({
   // state.projects list is unchanged; sidebarProjects is what the sidebar
   // actually shows.
   sidebarProjects: DesktopProject[];
+  activeProjectID?: string;
   pinnedThreads: ThreadSummary[];
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -333,6 +336,7 @@ export function AppSidebar({
   onCreateProject: () => void;
   onOpenProjectFolder: () => void;
   onToggleSidebarSectionCollapsed: (id: string) => void;
+  onSelectProjectWorkspace?: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
   onRemoveProject: (id: string) => void;
@@ -656,7 +660,7 @@ export function AppSidebar({
               >
                 <ProjectGroup
                   project={project}
-                  activeID={state.activeProjectId}
+                  activeID={activeProjectID ?? state.activeProjectId}
                   pendingProjectID={pendingProjectID}
                   expandedSidebarSectionIDs={expandedSidebarSectionIDs}
                   loadingProjectThreadIDs={loadingProjectThreadIDs}
@@ -670,6 +674,7 @@ export function AppSidebar({
                   onToggleSidebarSectionCollapsed={
                     onToggleSidebarSectionCollapsed
                   }
+                  onSelectProjectWorkspace={onSelectProjectWorkspace}
                   onStartNewThread={onStartNewThreadForProject}
                   onSelectThread={onSelectProjectThread}
                   onToggleThreadPinned={onTogglePinned}

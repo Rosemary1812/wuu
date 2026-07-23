@@ -136,6 +136,7 @@ export const enUS = {
   "sidebar.projectNamed": "Project {name}",
   "threadSidebar.collapseProject": "Collapse conversations in {name}{unread}",
   "threadSidebar.expandProject": "Expand conversations in {name}{unread}",
+  "threadSidebar.openWorkspace": "Open workspace {name}",
   "threadSidebar.hasUnread": ", with unread conversations",
   "threadSidebar.collapseConversations": "Collapse conversations",
   "threadSidebar.expandConversations": "Expand conversations",

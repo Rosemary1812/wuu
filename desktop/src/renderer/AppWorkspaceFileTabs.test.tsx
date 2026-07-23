@@ -130,7 +130,15 @@ function installWuuApi(): void {
   startTurnMock = vi.fn().mockResolvedValue({ turn: thread.turns[0] });
   const api = {
     listProjects: vi.fn().mockResolvedValue({
-      projects: [],
+      projects: [
+        {
+          id: "project-wuu",
+          name: "wuu",
+          path: "/repo/wuu",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
       active_context: { kind: "no_project", cwd: workspace },
     }),
     selectNoProject: vi.fn().mockResolvedValue({
@@ -413,6 +421,21 @@ describe("workspace file tabs", () => {
     });
     expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="打开工作区 wuu"]')
+        ?.click();
+    });
+    await flushAsync();
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(
+      container
+        .querySelector('[data-section-id="project-wuu"] .project-row')
+        ?.getAttribute("aria-current"),
+    ).toBe("page");
+    expect(window.wuu.listWorkspaceDirectory).toHaveBeenCalledWith("", "/repo/wuu");
 
     await act(async () => {
       setInnerWidth(1000);

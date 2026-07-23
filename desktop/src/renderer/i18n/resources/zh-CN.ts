@@ -134,6 +134,7 @@ export const zhCN = {
   "sidebar.projectNamed": "项目 {name}",
   "threadSidebar.collapseProject": "收起 {name} 的会话{unread}",
   "threadSidebar.expandProject": "展开 {name} 的会话{unread}",
+  "threadSidebar.openWorkspace": "打开工作区 {name}",
   "threadSidebar.hasUnread": "，有未读会话",
   "threadSidebar.collapseConversations": "收起会话",
   "threadSidebar.expandConversations": "展开会话",

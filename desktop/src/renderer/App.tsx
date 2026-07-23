@@ -588,6 +588,13 @@ export function App(): JSX.Element {
   const [rightPanelFilePath, setRightPanelFilePath] = useState<
     string | undefined
   >(undefined);
+  const [focusedWorkspaceContext, setFocusedWorkspaceContext] =
+    useState<RuntimeContext | undefined>(undefined);
+  useEffect(() => {
+    if (!rightPanelGlobalized) {
+      setFocusedWorkspaceContext(undefined);
+    }
+  }, [rightPanelGlobalized]);
   // Manual focus is user intent; automatic focus is derived independently
   // from current layout capacity above. Closing the workspace clears only the
   // manual request, while resizing can freely enter/leave automatic focus.
@@ -861,10 +868,21 @@ export function App(): JSX.Element {
   // main remaining case is a worktree-fork thread, whose cwd is a git
   // worktree directory distinct from the project root activeContext stays
   // pinned to.
-  const workspaceContext = useMemo(
+  const conversationWorkspaceContext = useMemo(
     () => workspacePanelContext(state.activeContext, state.thread),
     [state.activeContext, state.thread],
   );
+  const workspaceContext =
+    rightPanelGlobalized && focusedWorkspaceContext
+      ? focusedWorkspaceContext
+      : conversationWorkspaceContext;
+  const activeWorkspaceViewTab = workspaceActiveViewTabID
+    ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveViewTabID)
+    : undefined;
+  const workspaceProjectSelectionEnabled =
+    rightPanelGlobalized &&
+    (activeWorkspaceViewTab?.kind === "files" ||
+      activeWorkspaceViewTab?.kind === "file");
   const activeWorkspaceFileTab = workspaceActiveFileTabID
     ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveFileTabID)
     : undefined;
@@ -3747,6 +3765,11 @@ export function App(): JSX.Element {
           <AppSidebar
             state={state}
             sidebarProjects={sidebarProjects}
+            activeProjectID={
+              workspaceProjectSelectionEnabled && workspaceContext?.kind === "project"
+                ? workspaceContext.project_id
+                : undefined
+            }
             pinnedThreads={sidebarPinnedThreads}
             activeThreadID={activeThreadID}
             pendingThreadID={visiblePendingThreadID}
@@ -3809,6 +3832,22 @@ export function App(): JSX.Element {
             onCreateProject={() => void createBlankProject()}
             onOpenProjectFolder={() => void chooseProjectFolder()}
             onToggleSidebarSectionCollapsed={toggleSidebarSectionCollapsed}
+            onSelectProjectWorkspace={
+              workspaceProjectSelectionEnabled
+                ? (id) => {
+                    const project = state.projects.find((item) => item.id === id);
+                    if (!project || project.missing) {
+                      return;
+                    }
+                    setFocusedWorkspaceContext({
+                      kind: "project",
+                      project_id: project.id,
+                      cwd: project.path,
+                    });
+                    openWorkspaceTool("files");
+                  }
+                : undefined
+            }
             onStartNewThreadForProject={(id) => {
               revealConversationFromFocusedWorkspace();
               startNewThreadForProjectWithComposerFocus(id);
