@@ -2237,6 +2237,12 @@ describe("Composer expand button", () => {
     expect(composerCSS).toMatch(
       /\.document-composer-wrap\s+\.composer-goal-strip:has\(\+ \.composer-pending-drawer\)\s*\{[^}]*width:\s*calc\(100% - 48px\)/,
     );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-frame-shell\s*\{[^}]*z-index:\s*10/,
+    );
+    expect(workspaceCSS).toMatch(
+      /\.workspace-document-turn-composer\s*\{[^}]*z-index:\s*10/,
+    );
     expect(workspaceCSS).toMatch(
       /\.workspace-document-turn-dock:has\([^}]*\.composer-goal-strip \+ \.composer-pending-drawer[^}]*\)[^{]*\.workspace-document-turn-drawer\s*\{[^}]*width:\s*calc\(100% - 72px\)/,
     );
@@ -2247,7 +2253,7 @@ describe("Composer expand button", () => {
       /\.document-composer-wrap\s+\.composer-accessory-drawer\.expanded\s*\{[^}]*z-index:\s*4[^}]*translate:\s*0 -6px/,
     );
     expect(composerCSS).toMatch(
-      /\.composer-accessory-drawer\s*\{[^}]*border-radius:\s*12px 12px 0 0/,
+      /\.composer-accessory-drawer\s*\{[^}]*border-bottom:\s*0[^}]*border-radius:\s*12px 12px 0 0[^}]*box-shadow:\s*0 -6px 24px/,
     );
     expect(workspaceCSS).toMatch(
       /\.workspace-document-turn-drawer\.expanded\s*\{[^}]*translate:\s*0 -6px[^}]*border-radius:\s*16px 16px 0 0/,
