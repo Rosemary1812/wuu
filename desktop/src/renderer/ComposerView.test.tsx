@@ -2227,6 +2227,12 @@ describe("Composer expand button", () => {
     expect(composerCSS).toMatch(
       /\.document-composer-wrap\s+\.composer-bar\s*\{[^}]*height:\s*36px[^}]*padding-bottom:\s*2px/,
     );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-accessory-drawer\s*\{[^}]*width:\s*100%[^}]*margin:\s*0 0 -1px[^}]*box-shadow:\s*none/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-shell:has\(\.composer-accessory-drawer\)\s+\.composer-frame\s*\{[^}]*border-radius:\s*0 0/,
+    );
   });
 
   it("uses anchored flex layouts so the bottom toolbar stays pinned when expanded", () => {

@@ -1142,6 +1142,35 @@
   --composer-collapsed-min-height: 80px;
 }
 
+/* In the global document view, pending messages sit directly above the
+   composer. Treat them as the composer's header instead of stacking another
+   floating glass card over the document. */
+.document-composer-wrap .composer-accessory-drawer {
+  width: 100%;
+  margin: 0 0 -1px;
+  border-color: var(--surface-4);
+  border-radius: var(--session-composer-radius, var(--radius-sm))
+    var(--session-composer-radius, var(--radius-sm)) 0 0;
+  background: var(--paper);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.document-composer-wrap .composer-accessory-drawer + .composer-accessory-drawer {
+  border-radius: 0;
+}
+
+.document-composer-wrap .composer-goal-strip-summary,
+.document-composer-wrap .composer-pending-summary {
+  padding: 0 12px;
+}
+
+.document-composer-wrap .composer-shell:has(.composer-accessory-drawer) .composer-frame {
+  border-radius: 0 0 var(--session-composer-radius, var(--radius-sm))
+    var(--session-composer-radius, var(--radius-sm));
+}
+
 .document-composer-wrap .composer-stack:not(.is-expanded) .composer textarea {
   height: 44px;
   min-height: 44px;
