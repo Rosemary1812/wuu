@@ -4,7 +4,6 @@ import {
   CornerDownRight,
   CornerUpLeft,
   FileText,
-  ListTodo,
   Paperclip,
   PencilLine,
   Send,
@@ -417,18 +416,13 @@ export function ComposerQueueStrip({
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
-          <span className="composer-pending-icon" aria-hidden="true">
-            <ListTodo className="icon-sm" />
-          </span>
-          <span className="composer-pending-main" role="status" aria-live="polite">
-            <span className="composer-pending-title">
-              {t(hasHeldMessages ? "composer.pendingHeldSummary" : "composer.pendingSummary", {
-                count: rows.length,
-              })}
-            </span>
-            <span className="composer-pending-preview" title={latestMessage?.text}>
-              {latestMessage ? queuedMessagePreview(latestMessage) : ""}
-            </span>
+          <span
+            className="composer-pending-preview"
+            role="status"
+            aria-live="polite"
+            title={latestMessage?.text}
+          >
+            {latestMessage ? queuedMessagePreview(latestMessage) : ""}
           </span>
         </button>
         <button

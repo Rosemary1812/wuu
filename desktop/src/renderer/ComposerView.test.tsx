@@ -1711,7 +1711,8 @@ describe("Composer queue strip", () => {
     expect(frame?.parentElement).toBe(frameShell);
     expect(goal?.nextElementSibling).toBe(pending);
     expect(pending?.nextElementSibling).toBe(frameShell);
-    expect(pending?.querySelector(".composer-pending-title")?.textContent).toBe("待处理 1");
+    expect(pending?.querySelector(".composer-pending-title")).toBeNull();
+    expect(pending?.querySelector(".composer-pending-icon")).toBeNull();
     expect(pending?.querySelector(".composer-pending-preview")?.textContent).toBe("排队消息");
     expect(pending?.querySelector(".composer-queue-list")).toBeNull();
     expect(actions.length).toBeGreaterThan(0);
@@ -1772,7 +1773,7 @@ describe("Composer queue strip", () => {
     });
 
     expect(container.querySelector(".composer-goal-strip-state")?.textContent).toBe("已暂停");
-    expect(container.querySelector(".composer-pending-title")?.textContent).toBe("待处理 1");
+    expect(container.querySelector(".composer-pending-title")).toBeNull();
     expect(container.querySelector(".composer-pending-drawer")?.classList.contains("is-held")).toBe(false);
     expect(container.querySelector(".composer-held-notice")).toBeNull();
   });
@@ -1850,7 +1851,7 @@ describe("Composer queue strip", () => {
     expect(container.querySelector(".composer-held-notice")?.textContent).toBe(
       "当前回复已中断；这些 Steer 和 Queue 不会自动执行。",
     );
-    expect(container.querySelector(".composer-pending-title")?.textContent).toBe("已暂存 3");
+    expect(container.querySelector(".composer-pending-title")).toBeNull();
     expect(container.querySelector(".composer-pending-drawer")?.classList.contains("expanded")).toBe(true);
     expect(container.querySelector(".composer-goal-strip")?.classList.contains("expanded")).toBe(false);
     const rows = Array.from(

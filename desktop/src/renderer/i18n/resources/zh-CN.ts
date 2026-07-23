@@ -655,8 +655,6 @@ export const zhCN = {
   "composer.removeFile": "移除文件 {number}",
   "composer.continueBranch": "继续这个分支",
   "composer.pendingMessages": "待发送消息",
-  "composer.pendingSummary": "待处理 {count}",
-  "composer.pendingHeldSummary": "已暂存 {count}",
   "composer.expandPending": "展开待处理消息",
   "composer.collapsePending": "收起待处理消息",
   "composer.pendingKindSteer": "Steer",

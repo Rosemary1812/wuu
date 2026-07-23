@@ -657,8 +657,6 @@ export const enUS = {
   "composer.removeFile": "Remove file {number}",
   "composer.continueBranch": "Continue this branch",
   "composer.pendingMessages": "Pending messages",
-  "composer.pendingSummary": "{count} pending",
-  "composer.pendingHeldSummary": "{count} held",
   "composer.expandPending": "Expand pending messages",
   "composer.collapsePending": "Collapse pending messages",
   "composer.pendingKindSteer": "Steer",
