@@ -11,6 +11,7 @@ import {
   nativeTheme,
   screen,
   session as electronSession,
+  systemPreferences,
   type OpenDialogOptions,
   shell,
   WebContentsView,
@@ -146,6 +147,7 @@ import { openExternalURL, wireExternalNavigationGuards } from "./externalNavigat
 import { ProjectManager, wuuHomePath } from "./projects";
 import { mainTranslate, resolveMainLocale, setMainLocale } from "./i18n";
 import { sideThreadEventFromServerEvent } from "./sideThreadEvents";
+import { createSpeechRecognitionService } from "./speechRecognition";
 import {
   registerRenderableFileProtocol,
   registerRenderableFileScheme,
@@ -194,6 +196,10 @@ registerRenderableFileScheme();
 let mainWindow: BrowserWindow | null = null;
 const windowRegistry: WindowRegistry = createWindowRegistry();
 const projectManager = new ProjectManager();
+const speechRecognitionService = createSpeechRecognitionService({
+  askForMicrophoneAccess: () =>
+    systemPreferences.askForMediaAccess("microphone"),
+});
 
 // Build-time globals injected by electron.vite.config.ts. TypeScript
 // doesn't know about them by default; declare them so we can reference
@@ -1223,6 +1229,17 @@ app.whenReady().then(async () => {
     core: cachedCoreBuildInfo,
     desktop: DESKTOP_BUILD_INFO,
   }));
+  ipcMain.handle("wuu:speech-start", (event, locale: string) =>
+    speechRecognitionService.start(locale, (payload) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("wuu:speech-event", payload);
+      }
+    }),
+  );
+  ipcMain.handle("wuu:speech-stop", () => {
+    speechRecognitionService.stop();
+    return { ok: true as const };
+  });
   ipcMain.handle("wuu:open-external", async (_event, url: string) => {
     await openExternalNavigation(url);
   });
@@ -1950,6 +1967,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  speechRecognitionService.stop();
   terminalSessionManager.cleanup();
   // Destroy every agent view + the hidden host window before the pool shuts
   // down so no WebContentsView leaks past quit.

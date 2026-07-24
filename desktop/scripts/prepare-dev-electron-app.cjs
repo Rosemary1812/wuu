@@ -19,7 +19,7 @@ const electronPackagePath = join(desktopRoot, "node_modules", "electron", "packa
 const builtHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac");
 const builtPiPHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac-pip");
 const helperBuildInfo = join(desktopRoot, "build", "bin", "wuu-cua-mac.build.json");
-const identityVersion = 7;
+const identityVersion = 8;
 
 function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", name: "ad-hoc" }) {
   const electronVersion = JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
@@ -52,6 +52,16 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
     info,
     "NSScreenCaptureUsageDescription",
     "Wuu uses screen capture to show a live preview while an agent operates a Mac app.",
+  );
+  setPlistString(
+    info,
+    "NSMicrophoneUsageDescription",
+    "Wuu uses the microphone only while you are dictating text.",
+  );
+  setPlistString(
+    info,
+    "NSSpeechRecognitionUsageDescription",
+    "Wuu uses macOS Speech Recognition to turn your dictation into text.",
   );
   const packagedHelper = helperPathForApp(devApp);
   const packagedPiPHelper = pipHelperPathForApp(devApp);

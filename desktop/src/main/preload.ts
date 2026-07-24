@@ -18,6 +18,7 @@ import {
   type ServerEvent,
   type SideThreadEventEnvelope,
   type SideThreadSendParams,
+  type SpeechRecognitionEvent,
   type ThreadStartParams,
   type ThreadForkTarget,
   type ThemePreference,
@@ -179,6 +180,19 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:managed-process-stop", threadId, processId),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   getBuildInfo: () => ipcRenderer.invoke("wuu:build-info"),
+  startSpeechRecognition: (locale: string) =>
+    ipcRenderer.invoke("wuu:speech-start", locale),
+  stopSpeechRecognition: () => ipcRenderer.invoke("wuu:speech-stop"),
+  onSpeechRecognitionEvent: (
+    handler: (event: SpeechRecognitionEvent) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: SpeechRecognitionEvent,
+    ) => handler(payload);
+    ipcRenderer.on("wuu:speech-event", listener);
+    return () => ipcRenderer.removeListener("wuu:speech-event", listener);
+  },
   loadCodexModels: (provider?: string) =>
     ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (

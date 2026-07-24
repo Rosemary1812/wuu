@@ -1938,6 +1938,21 @@ export type ActiveDocumentContext = {
   path: string;
 };
 
+export type SpeechRecognitionState =
+  | "requesting_microphone_permission"
+  | "requesting_speech_permission"
+  | "listening"
+  | "stopped";
+
+export type SpeechRecognitionEvent =
+  | { type: "state"; state: SpeechRecognitionState }
+  | { type: "result"; text: string; is_final: boolean }
+  | { type: "error"; code: string; message: string };
+
+export type SpeechRecognitionStartResult =
+  | { ok: true; session_id: string }
+  | { ok: false; error: string };
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -1995,6 +2010,13 @@ export type WuuDesktopApi = {
   ) => Promise<ManagedProcessActionResult>;
   initialize: () => Promise<InitializeResult>;
   getBuildInfo: () => Promise<BuildInfoResult>;
+  startSpeechRecognition: (
+    locale: string,
+  ) => Promise<SpeechRecognitionStartResult>;
+  stopSpeechRecognition: () => Promise<{ ok: true }>;
+  onSpeechRecognitionEvent: (
+    handler: (event: SpeechRecognitionEvent) => void,
+  ) => () => void;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   // provider/model may be omitted when threadId is set: the server inherits
   // omitted selection fields from the target thread and leaves the workspace
