@@ -48,6 +48,7 @@ export class SpeechRecognitionService {
     this.owner = emit;
     let stdoutBuffer = "";
     let stderr = "";
+    let protocolErrorReported = false;
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -58,6 +59,9 @@ export class SpeechRecognitionService {
       for (const line of lines) {
         const event = parseSpeechEvent(line);
         if (event && this.process === child) {
+          if (event.type === "error") {
+            protocolErrorReported = true;
+          }
           emit(event);
         }
       }
@@ -77,7 +81,7 @@ export class SpeechRecognitionService {
     child.once("exit", (code) => {
       if (this.process !== child) return;
       this.clear(child);
-      if (code && code !== 0) {
+      if (code && code !== 0 && !protocolErrorReported) {
         emit({
           type: "error",
           code: "recognition_process_failed",

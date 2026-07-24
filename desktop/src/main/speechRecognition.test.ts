@@ -82,4 +82,31 @@ describe("SpeechRecognitionService", () => {
     expect(child.stdin.write).toHaveBeenCalledWith("\n");
     expect(child.stdin.end).toHaveBeenCalled();
   });
+
+  it("does not replace a structured helper failure with a generic exit error", async () => {
+    const child = fakeProcess();
+    const events: unknown[] = [];
+    const service = new SpeechRecognitionService({
+      platform: "darwin",
+      resourcesPath: "/resources",
+      askForMicrophoneAccess: async () => true,
+      spawnHelper: vi.fn(() => child as never),
+    });
+    await service.start("zh-CN", (event) => events.push(event));
+
+    child.stdout.emit(
+      "data",
+      '{"type":"error","code":"speech_permission_denied","message":"denied"}\n',
+    );
+    child.emit("exit", 3);
+
+    expect(events).toContainEqual({
+      type: "error",
+      code: "speech_permission_denied",
+      message: "denied",
+    });
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ code: "recognition_process_failed" }),
+    );
+  });
 });

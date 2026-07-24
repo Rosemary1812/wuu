@@ -5,6 +5,7 @@ const {
   helperPathForApp,
   pipHelperPathForApp,
   prepareDevElectronApp,
+  speechHelperPathForApp,
 } = require("./prepare-dev-electron-app.cjs");
 const { ensureDevSigningIdentity } = require("./dev-signing.cjs");
 
@@ -47,11 +48,8 @@ if (process.platform === "darwin") {
   env.WUU_DEV_ELECTRON_APP = prepareDevElectronApp(devSigning);
   env.WUU_CUA_MAC_HELPER = helperPathForApp(env.WUU_DEV_ELECTRON_APP);
   env.WUU_CUA_MAC_PIP_HELPER = pipHelperPathForApp(env.WUU_DEV_ELECTRON_APP);
-  env.WUU_SPEECH_MAC_HELPER = join(
-    desktopRoot,
-    "build",
-    "bin",
-    "wuu-speech-mac",
+  env.WUU_SPEECH_MAC_HELPER = speechHelperPathForApp(
+    env.WUU_DEV_ELECTRON_APP,
   );
   env.ELECTRON_EXEC_PATH = join(__dirname, "launch-electron-via-open.cjs");
 }
