@@ -16,6 +16,8 @@ import {
   type MessageFlowFontSize,
   type LanguagePreference,
   type ThemePreference,
+  type VoiceInputSettings,
+  type VoiceInputLanguage,
 } from "../shared/protocol";
 import type { WindowBounds } from "./windowState";
 
@@ -24,6 +26,7 @@ export type {
   MessageFlowFontSize,
   ThemePreference,
   LanguagePreference,
+  VoiceInputSettings,
   WindowBounds,
 };
 
@@ -44,6 +47,7 @@ export type DesktopSettings = {
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
   language?: LanguagePreference;
+  voice_input?: VoiceInputSettings;
   // User-facing reading size for the message stream, in pixels. The
   // renderer clamps incoming values to MESSAGE_FLOW_FONT_SIZE_RANGE
   // (13–20 step 0.5 default 14) before applying and the IPC boundary
@@ -63,6 +67,7 @@ export type DesktopSettings = {
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
 const LANGUAGE_PREFERENCES: readonly LanguagePreference[] = ["system", "zh-CN", "en-US"];
+const VOICE_INPUT_LANGUAGES: readonly VoiceInputLanguage[] = ["system", "zh-CN", "en-US"];
 
 export function desktopSettingsPath(): string {
   return join(wuuHomePath(), "desktop-settings.json");
@@ -81,6 +86,21 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     }
     if (LANGUAGE_PREFERENCES.includes(record.language as LanguagePreference)) {
       settings.language = record.language as LanguagePreference;
+    }
+    if (
+      typeof record.voice_input === "object" &&
+      record.voice_input !== null &&
+      !Array.isArray(record.voice_input)
+    ) {
+      const voiceInput = record.voice_input as Record<string, unknown>;
+      settings.voice_input = {
+        polish_enabled: voiceInput.polish_enabled === true,
+        language: VOICE_INPUT_LANGUAGES.includes(
+          voiceInput.language as VoiceInputLanguage,
+        )
+          ? (voiceInput.language as VoiceInputLanguage)
+          : "system",
+      };
     }
     if (
       isMessageFlowFontSize(record.message_flow_font_size)
@@ -162,6 +182,35 @@ export function getLanguagePreference(filePath?: string): LanguagePreference {
 export function setLanguagePreference(language: LanguagePreference, filePath?: string): void {
   const settings = readDesktopSettings(filePath);
   writeDesktopSettings({ ...settings, language }, filePath);
+}
+
+export function getVoiceInputSettings(filePath?: string): VoiceInputSettings {
+  return (
+    readDesktopSettings(filePath).voice_input ?? {
+      polish_enabled: false,
+      language: "system",
+    }
+  );
+}
+
+export function setVoiceInputSettings(
+  voiceInput: VoiceInputSettings,
+  filePath?: string,
+): void {
+  const settings = readDesktopSettings(filePath);
+  const language = VOICE_INPUT_LANGUAGES.includes(voiceInput.language)
+    ? voiceInput.language
+    : "system";
+  writeDesktopSettings(
+    {
+      ...settings,
+      voice_input: {
+        polish_enabled: voiceInput.polish_enabled === true,
+        language,
+      },
+    },
+    filePath,
+  );
 }
 
 export function getMessageFlowFontSize(

@@ -1798,6 +1798,23 @@ export const MESSAGE_FLOW_FONT_SIZE_RANGE = {
 export type ThemePreference = "system" | "light" | "dark";
 export type LanguagePreference = "system" | "zh-CN" | "en-US";
 export type AppLocale = Exclude<LanguagePreference, "system">;
+export type VoiceInputLanguage = "system" | AppLocale;
+export type VoicePermissionStatus =
+  | "granted"
+  | "denied"
+  | "restricted"
+  | "not_determined"
+  | "unavailable"
+  | "unknown";
+export type VoiceInputSettings = {
+  polish_enabled: boolean;
+  language: VoiceInputLanguage;
+};
+export type VoiceInputSettingsSnapshot = {
+  settings: VoiceInputSettings;
+  microphone_permission: VoicePermissionStatus;
+  speech_permission: VoicePermissionStatus;
+};
 
 // The three OS families the desktop shell distinguishes. Anything more
 // exotic collapses to "linux" (native-frame fallback chrome).
@@ -2121,6 +2138,17 @@ export type WuuDesktopApi = {
   onLanguagePreferenceChange: (
     handler: (language: LanguagePreference) => void,
   ) => () => void;
+  initialVoiceInputSettings?: VoiceInputSettings;
+  getVoiceInputSettings: () => Promise<VoiceInputSettingsSnapshot>;
+  updateVoiceInputSettings: (
+    settings: VoiceInputSettings,
+  ) => Promise<VoiceInputSettings>;
+  onVoiceInputSettingsChange: (
+    handler: (settings: VoiceInputSettings) => void,
+  ) => () => void;
+  openVoicePrivacySettings: (
+    permission: "microphone" | "speech",
+  ) => Promise<{ ok: true }>;
   // The preference is app-global: the main process broadcasts every change
   // (explicit choice, or an OS dark-mode flip while on "system") to all
   // windows, and each renderer re-applies data-theme. Returns a disposer.

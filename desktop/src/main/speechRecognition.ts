@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type {
   SpeechRecognitionEvent,
   SpeechRecognitionStartResult,
+  VoicePermissionStatus,
 } from "../shared/protocol";
 
 type SpeechProcess = Pick<
@@ -92,6 +93,49 @@ export class SpeechRecognitionService {
     return { ok: true, session_id: sessionID };
   }
 
+  permissionStatus(): Promise<VoicePermissionStatus> {
+    if (this.deps.platform !== "darwin") {
+      return Promise.resolve("unavailable");
+    }
+    const helperPath =
+      this.deps.helperPath ||
+      join(this.deps.resourcesPath, "bin", "wuu-speech-mac");
+    return new Promise((resolve) => {
+      const child = this.deps.spawnHelper(helperPath, [
+        "--authorization-status",
+      ]);
+      let buffer = "";
+      let settled = false;
+      const finish = (status: VoicePermissionStatus): void => {
+        if (settled) return;
+        settled = true;
+        resolve(status);
+      };
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        buffer += chunk;
+        for (const line of buffer.split("\n")) {
+          try {
+            const value = JSON.parse(line) as {
+              type?: string;
+              status?: VoicePermissionStatus;
+            };
+            if (
+              value.type === "authorization_status" &&
+              isVoicePermissionStatus(value.status)
+            ) {
+              finish(value.status);
+            }
+          } catch {
+            // Wait for a complete protocol line.
+          }
+        }
+      });
+      child.once("error", () => finish("unavailable"));
+      child.once("exit", () => finish("unknown"));
+    });
+  }
+
   stop(): void {
     const child = this.process;
     if (!child) return;
@@ -112,6 +156,19 @@ export class SpeechRecognitionService {
       this.process = undefined;
     }
   }
+}
+
+function isVoicePermissionStatus(
+  value: unknown,
+): value is VoicePermissionStatus {
+  return (
+    value === "granted" ||
+    value === "denied" ||
+    value === "restricted" ||
+    value === "not_determined" ||
+    value === "unavailable" ||
+    value === "unknown"
+  );
 }
 
 export function createSpeechRecognitionService({

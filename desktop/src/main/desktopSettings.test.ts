@@ -9,12 +9,14 @@ import {
   getMainWindowBounds,
   getMessageFlowFontSize,
   getThemePreference,
+  getVoiceInputSettings,
   getLanguagePreference,
   readDesktopSettings,
   setCodexPetSettings,
   setMainWindowBounds,
   setMessageFlowFontSize,
   setThemePreference,
+  setVoiceInputSettings,
   setLanguagePreference,
   writeDesktopSettings,
 } from "./desktopSettings";
@@ -71,6 +73,34 @@ describe("desktopSettings", () => {
   it("rejects unknown language preferences", async () => {
     await writeFile(file, JSON.stringify({ language: "fr-FR" }));
     expect(getLanguagePreference(file)).toBe("system");
+  });
+
+  it("defaults and round-trips voice input settings", () => {
+    expect(getVoiceInputSettings(file)).toEqual({
+      polish_enabled: false,
+      language: "system",
+    });
+    setVoiceInputSettings(
+      { polish_enabled: true, language: "zh-CN" },
+      file,
+    );
+    expect(getVoiceInputSettings(file)).toEqual({
+      polish_enabled: true,
+      language: "zh-CN",
+    });
+  });
+
+  it("normalizes malformed voice input settings", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        voice_input: { polish_enabled: "yes", language: "fr-FR" },
+      }),
+    );
+    expect(getVoiceInputSettings(file)).toEqual({
+      polish_enabled: false,
+      language: "system",
+    });
   });
 
   it("round-trips the theme preference", () => {

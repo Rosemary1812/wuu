@@ -9,22 +9,27 @@ private struct Event: Encodable {
     let isFinal: Bool?
     let code: String?
     let message: String?
+    let status: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, state, text, code, message
+        case type, state, text, code, message, status
         case isFinal = "is_final"
     }
 
     static func state(_ value: String) -> Event {
-        Event(type: "state", state: value, text: nil, isFinal: nil, code: nil, message: nil)
+        Event(type: "state", state: value, text: nil, isFinal: nil, code: nil, message: nil, status: nil)
     }
 
     static func result(_ text: String, final: Bool) -> Event {
-        Event(type: "result", state: nil, text: text, isFinal: final, code: nil, message: nil)
+        Event(type: "result", state: nil, text: text, isFinal: final, code: nil, message: nil, status: nil)
     }
 
     static func error(_ code: String, _ message: String) -> Event {
-        Event(type: "error", state: nil, text: nil, isFinal: nil, code: code, message: message)
+        Event(type: "error", state: nil, text: nil, isFinal: nil, code: code, message: message, status: nil)
+    }
+
+    static func authorizationStatus(_ status: String) -> Event {
+        Event(type: "authorization_status", state: nil, text: nil, isFinal: nil, code: nil, message: nil, status: status)
     }
 }
 
@@ -143,6 +148,24 @@ private final class SpeechSession {
             exit(4)
         }
     }
+}
+
+if CommandLine.arguments.contains("--authorization-status") {
+    let status: String
+    switch SFSpeechRecognizer.authorizationStatus() {
+    case .authorized:
+        status = "granted"
+    case .denied:
+        status = "denied"
+    case .restricted:
+        status = "restricted"
+    case .notDetermined:
+        status = "not_determined"
+    @unknown default:
+        status = "unknown"
+    }
+    emit(.authorizationStatus(status))
+    exit(0)
 }
 
 let localeFlagIndex = CommandLine.arguments.firstIndex(of: "--locale")

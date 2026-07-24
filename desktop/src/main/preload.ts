@@ -25,6 +25,7 @@ import {
   type LanguagePreference,
   type WindowResizeState,
   type WuuDesktopApi,
+  type VoiceInputSettings,
 } from "../shared/protocol";
 
 // Read the persisted theme preference synchronously so the very first
@@ -47,6 +48,23 @@ const initialLanguagePreference = ((): LanguagePreference => {
     return value === "zh-CN" || value === "en-US" || value === "system" ? value : "system";
   } catch {
     return "system";
+  }
+})();
+
+const initialVoiceInputSettings = ((): VoiceInputSettings => {
+  try {
+    const value = ipcRenderer.sendSync(
+      "wuu:voice-input-settings-get-sync",
+    ) as Partial<VoiceInputSettings>;
+    return {
+      polish_enabled: value?.polish_enabled === true,
+      language:
+        value?.language === "zh-CN" || value?.language === "en-US"
+          ? value.language
+          : "system",
+    };
+  } catch {
+    return { polish_enabled: false, language: "system" };
   }
 })();
 
@@ -313,6 +331,7 @@ const api: WuuDesktopApi = {
   },
   initialThemePreference,
   initialLanguagePreference,
+  initialVoiceInputSettings,
   initialSystemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
   getLanguagePreference: () => ipcRenderer.invoke("wuu:language-preference-get"),
   setLanguagePreference: (language: LanguagePreference) =>
@@ -330,6 +349,23 @@ const api: WuuDesktopApi = {
     return () =>
       ipcRenderer.removeListener("wuu:language-preference-changed", listener);
   },
+  getVoiceInputSettings: () =>
+    ipcRenderer.invoke("wuu:voice-input-settings-get"),
+  updateVoiceInputSettings: (settings: VoiceInputSettings) =>
+    ipcRenderer.invoke("wuu:voice-input-settings-set", settings),
+  onVoiceInputSettingsChange: (
+    handler: (settings: VoiceInputSettings) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: VoiceInputSettings,
+    ) => handler(payload);
+    ipcRenderer.on("wuu:voice-input-settings-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:voice-input-settings-changed", listener);
+  },
+  openVoicePrivacySettings: (permission: "microphone" | "speech") =>
+    ipcRenderer.invoke("wuu:voice-input-open-privacy-settings", permission),
   initialMessageFlowFontSize,
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>

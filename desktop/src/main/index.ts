@@ -115,6 +115,9 @@ import type {
   SideThreadHistoryResult,
   SideThreadSendParams,
   SideThreadSendResult,
+  VoiceInputSettings,
+  VoiceInputSettingsSnapshot,
+  VoicePermissionStatus,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { ObservationCoordinator } from "./cuaActivityWindows";
@@ -135,10 +138,12 @@ import {
   getMessageFlowFontSize,
   getThemePreference,
   getLanguagePreference,
+  getVoiceInputSettings,
   setCodexPetSettings,
   setMessageFlowFontSize,
   setThemePreference,
   setLanguagePreference,
+  setVoiceInputSettings,
   type MessageFlowFontSize,
   type ThemePreference,
   type LanguagePreference,
@@ -683,6 +688,25 @@ function broadcastThemePreference(): void {
 
 function broadcastLanguagePreference(): void {
   broadcastToAll("wuu:language-preference-changed", getLanguagePreference());
+}
+
+function broadcastVoiceInputSettings(): void {
+  broadcastToAll("wuu:voice-input-settings-changed", getVoiceInputSettings());
+}
+
+function microphonePermissionStatus(): VoicePermissionStatus {
+  if (process.platform !== "darwin") return "unavailable";
+  const status = systemPreferences.getMediaAccessStatus("microphone");
+  if (status === "not-determined") return "not_determined";
+  if (
+    status === "granted" ||
+    status === "denied" ||
+    status === "restricted" ||
+    status === "unknown"
+  ) {
+    return status;
+  }
+  return "unknown";
 }
 
 function syncThemeAcrossWindows(): void {
@@ -1566,6 +1590,48 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("wuu:theme-preference-get", () => getThemePreference());
   ipcMain.handle("wuu:language-preference-get", () => getLanguagePreference());
+  ipcMain.on("wuu:voice-input-settings-get-sync", (event) => {
+    event.returnValue = getVoiceInputSettings();
+  });
+  ipcMain.handle(
+    "wuu:voice-input-settings-get",
+    async (): Promise<VoiceInputSettingsSnapshot> => ({
+      settings: getVoiceInputSettings(),
+      microphone_permission: microphonePermissionStatus(),
+      speech_permission: await speechRecognitionService.permissionStatus(),
+    }),
+  );
+  ipcMain.handle(
+    "wuu:voice-input-settings-set",
+    (_event, settings: VoiceInputSettings): VoiceInputSettings => {
+      const next: VoiceInputSettings = {
+        polish_enabled: settings?.polish_enabled === true,
+        language:
+          settings?.language === "zh-CN" || settings?.language === "en-US"
+            ? settings.language
+            : "system",
+      };
+      setVoiceInputSettings(next);
+      broadcastVoiceInputSettings();
+      return next;
+    },
+  );
+  ipcMain.handle(
+    "wuu:voice-input-open-privacy-settings",
+    async (_event, permission: "microphone" | "speech") => {
+      if (process.platform !== "darwin") {
+        throw new Error("Voice privacy settings are available only on macOS");
+      }
+      const pane =
+        permission === "speech"
+          ? "Privacy_SpeechRecognition"
+          : "Privacy_Microphone";
+      await shell.openExternal(
+        `x-apple.systempreferences:com.apple.preference.security?${pane}`,
+      );
+      return { ok: true as const };
+    },
+  );
   ipcMain.on("wuu:language-preference-get-sync", (event) => {
     event.returnValue = getLanguagePreference();
   });

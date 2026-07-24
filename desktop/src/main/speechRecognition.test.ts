@@ -109,4 +109,27 @@ describe("SpeechRecognitionService", () => {
       expect.objectContaining({ code: "recognition_process_failed" }),
     );
   });
+
+  it("reads speech authorization status without starting recognition", async () => {
+    const child = fakeProcess();
+    const spawnHelper = vi.fn(() => child as never);
+    const service = new SpeechRecognitionService({
+      platform: "darwin",
+      resourcesPath: "/resources",
+      askForMicrophoneAccess: async () => true,
+      spawnHelper,
+    });
+
+    const status = service.permissionStatus();
+    child.stdout.emit(
+      "data",
+      '{"type":"authorization_status","status":"denied"}\n',
+    );
+
+    await expect(status).resolves.toBe("denied");
+    expect(spawnHelper).toHaveBeenCalledWith(
+      "/resources/bin/wuu-speech-mac",
+      ["--authorization-status"],
+    );
+  });
 });
