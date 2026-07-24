@@ -10,6 +10,10 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ### Fixed
 
+- Fixed resumed goals so they start a continuation turn instead of only changing
+  the banner status, and clarified idle active goals as ready to continue.
+- Returned a recovery-focused error when the goal tool tries to complete a
+  blocked or paused goal before the user resumes it.
 - Centered the skills catalog content within its scroll region on the desktop.
 - Removed count badges from the skills catalog section headings on the desktop.
 

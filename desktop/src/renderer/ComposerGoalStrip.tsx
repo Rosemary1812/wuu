@@ -516,7 +516,7 @@ function goalStatusText(summary: ComposerGoalSummary): string {
     case "":
     case "active":
     case "running":
-      return translate("goal.running");
+      return summary.running_since ? translate("goal.running") : translate("goal.ready");
     case "paused":
       return translate("goal.paused");
     case "blocked":

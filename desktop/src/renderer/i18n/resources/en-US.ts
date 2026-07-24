@@ -711,6 +711,7 @@ export const enUS = {
   "goal.confirmClear": "Click again to confirm clearing",
   "goal.content": "Goal content",
   "goal.noText": "(No goal text)",
+  "goal.ready": "Ready to continue",
   "goal.running": "Running",
   "goal.paused": "Paused",
   "goal.blocked": "Blocked",

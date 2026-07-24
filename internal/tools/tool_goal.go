@@ -194,8 +194,8 @@ func currentActiveRuntimeGoalForTool(env *Env) (goalruntime.Goal, error) {
 	if !ok {
 		return goalruntime.Goal{}, errors.New("active runtime goal not found")
 	}
-	if goalruntime.IsTerminalStatus(goal.Status) {
-		return goalruntime.Goal{}, fmt.Errorf("active runtime goal %q is already %s", goal.GoalID, goal.Status)
+	if goal.Status != goalruntime.StatusActive {
+		return goalruntime.Goal{}, fmt.Errorf("active runtime goal %q is currently %s; ask the user to resume the goal before updating it", goal.GoalID, goal.Status)
 	}
 	return goal, nil
 }

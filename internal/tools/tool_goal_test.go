@@ -164,6 +164,33 @@ func TestUpdateGoalBlocksDirectly(t *testing.T) {
 	}
 }
 
+func TestGoalUpdateBlockedCannotBeMarkedCompleteDirectly(t *testing.T) {
+	env := &Env{
+		RootDir:     t.TempDir(),
+		StateDir:    filepath.Join(t.TempDir(), "state"),
+		SessionID:   "thread-goal-blocked-complete",
+		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
+	}
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{"action":"create","objective":"Recover after blocker"}`); err != nil {
+		t.Fatalf("goal create: %v", err)
+	}
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{"action":"update","status":"blocked"}`); err != nil {
+		t.Fatalf("goal update blocked: %v", err)
+	}
+
+	_, err := NewGoalTool(env).Execute(context.Background(), `{"action":"update","status":"complete"}`)
+	if err == nil {
+		t.Fatal("blocked goal should require resume before complete")
+	}
+	message := err.Error()
+	if strings.Contains(message, "invalid goal runtime transition") {
+		t.Fatalf("goal tool should not expose state-machine transition errors: %v", err)
+	}
+	if !strings.Contains(message, "currently blocked") || !strings.Contains(message, "resume") {
+		t.Fatalf("goal tool should explain how to recover from blocked status: %v", err)
+	}
+}
+
 func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
 	def := NewGoalTool(&Env{}).Definition()
 	desc := def.Description
