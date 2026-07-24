@@ -1320,9 +1320,6 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
-  ipcMain.handle("wuu:agent-template-list", (event) =>
-    appServerRequest(event, "agent-template/list"),
-  );
   ipcMain.handle("wuu:channel-agent-list", (event) =>
     appServerRequest<ChannelAgentListResult>(event, "channel/agent/list"),
   );

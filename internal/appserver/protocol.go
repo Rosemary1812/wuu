@@ -29,7 +29,6 @@ const (
 	MethodConfigCodexModels    = "config/codex/models"
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
-	MethodAgentTemplateList    = "agent-template/list"
 	MethodChannelBootstrap     = "channel/bootstrap"
 	MethodChannelAgentList     = "channel/agent/list"
 	MethodChannelAgentCreate   = "channel/agent/create"
@@ -237,7 +236,6 @@ type InitializeResult struct {
 	Status             string                       `json:"status"`
 	Issues             []RuntimeIssue               `json:"issues,omitempty"`
 	ProtocolVersion    string                       `json:"protocol_version"`
-	AgentTemplateCount int                          `json:"agent_template_count,omitempty"`
 	Core               CoreBuildInfo                `json:"core"`
 	Provider           string                       `json:"provider"`
 	Model              string                       `json:"model"`
@@ -358,7 +356,6 @@ type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
 	Provider           string                       `json:"provider"`
-	AgentTemplateCount int                          `json:"agent_template_count,omitempty"`
 	Model              string                       `json:"model"`
 	Effort             string                       `json:"effort,omitempty"`
 	Variant            string                       `json:"variant,omitempty"`
@@ -693,28 +690,6 @@ type SkillSummary struct {
 
 type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
-}
-
-type AgentTemplateSummary struct {
-	Name           string            `json:"name"`
-	Description    string            `json:"description"`
-	Instructions   string            `json:"instructions,omitempty"`
-	Source         string            `json:"source"`
-	Path           string            `json:"path,omitempty"`
-	Model          string            `json:"model,omitempty"`
-	PermissionMode string            `json:"permission_mode,omitempty"`
-	Effort         string            `json:"effort,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-}
-
-type AgentTemplateDiagnostic struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
-}
-
-type AgentTemplateListResult struct {
-	Templates   []AgentTemplateSummary    `json:"templates"`
-	Diagnostics []AgentTemplateDiagnostic `json:"diagnostics,omitempty"`
 }
 
 // GoalActiveSummary is the composer-banner view of the most recently

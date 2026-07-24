@@ -1428,7 +1428,6 @@ export const zhCN = {
   "skills.pluginTag": "插件 · {id}",
   "skills.sectionPlugins": "插件",
   "skills.officialPluginTitle": "随 Wuu 内置分发的官方插件",
-  "skills.sectionAgentTemplates": "Agent 模板",
   "skills.empty": "暂无 Skills",
   "skills.noMatches": "没有匹配项",
   "skills.noneInRuntime": "当前运行时未发现 Skills",

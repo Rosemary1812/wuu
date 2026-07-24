@@ -82,7 +82,6 @@ export type InitializeResult = {
   status?: "ready" | "needs_setup";
   issues?: RuntimeIssue[];
   protocol_version: string;
-  agent_template_count?: number;
   core?: CoreBuildInfo;
   provider: string;
   model: string;
@@ -262,7 +261,7 @@ export type ExtensionSurfaceTrustSummary = {
   visible_tools?: number;
 };
 
-export type ExtensionKind = "skill" | "command" | "agent_template" | "mcp" | "hook" | "plugin";
+export type ExtensionKind = "skill" | "command" | "mcp" | "hook" | "plugin";
 
 export type ExtensionState = "active" | "read_only" | "pending" | "granted" | "rejected" | "changed";
 
@@ -434,28 +433,6 @@ export type SkillSummary = {
 
 export type SkillListResult = {
   skills: SkillSummary[];
-};
-
-export type AgentTemplateSummary = {
-  name: string;
-  description: string;
-  instructions?: string;
-  source: string;
-  path?: string;
-  model?: string;
-  permission_mode?: string;
-  effort?: string;
-  metadata?: Record<string, string>;
-};
-
-export type AgentTemplateDiagnostic = {
-  path: string;
-  message: string;
-};
-
-export type AgentTemplateListResult = {
-  templates: AgentTemplateSummary[];
-  diagnostics?: AgentTemplateDiagnostic[];
 };
 
 export type NamedAgent = {
@@ -2046,7 +2023,6 @@ export type WuuDesktopApi = {
   releaseActivity: (threadId: string, activityId: string) => Promise<ActivityReleaseResult>;
   stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
-  listAgentTemplates: () => Promise<AgentTemplateListResult>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
   bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;

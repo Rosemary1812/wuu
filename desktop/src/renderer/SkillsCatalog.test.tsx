@@ -23,42 +23,6 @@ afterEach(() => {
 });
 
 describe("SkillsCatalog", () => {
-  it("lists Claude agent templates without repeating the section label", async () => {
-    const stub: Partial<WuuDesktopApi> = {
-      listSkills: vi.fn().mockResolvedValue({ skills: [] }),
-      listAgentTemplates: vi.fn().mockResolvedValue({
-        templates: [
-          {
-            name: "reviewer",
-            description: "Review a change",
-            instructions: "Inspect the diff.",
-            source: "project",
-            path: "/repo/.claude/agents/reviewer.md",
-            permission_mode: "plan",
-          },
-        ],
-        diagnostics: [
-          {
-            path: "/repo/.claude/agents/broken.md",
-            message: "invalid frontmatter",
-          },
-        ],
-      }),
-    };
-    (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
-    (window as unknown as { wuu: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
-
-    await act(async () => {
-      root = createRoot(container);
-      root.render(<SkillsCatalog />);
-    });
-
-    expect(container.textContent).toContain("reviewer");
-    expect(container.textContent).toContain("Agent 模板");
-    expect(container.textContent).not.toContain("临时子代理模板");
-    expect(container.textContent).toContain("invalid frontmatter");
-  });
-
   it("lists installed plugins and tags plugin-provided skills", async () => {
     const stub: Partial<WuuDesktopApi> = {
       listSkills: vi.fn().mockResolvedValue({
@@ -71,7 +35,6 @@ describe("SkillsCatalog", () => {
           },
         ],
       }),
-      listAgentTemplates: vi.fn().mockResolvedValue({ templates: [], diagnostics: [] }),
     };
     (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
     (window as unknown as { wuu: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
