@@ -22,6 +22,7 @@ func init() {
 	toolProjectors["grep"] = projectGrepResult
 	toolProjectors["read_file"] = projectReadFileResult
 	toolProjectors["bash"] = projectBashResult
+	toolProjectors["thread_get"] = projectThreadGetResult
 
 	// bash embeds a recoverable full log in its own envelope; reuse it instead
 	// of persisting a duplicate copy of the raw result.
@@ -99,10 +100,21 @@ func projectRecordArray(rawText, arrayKey, recover string, pc projectorContext, 
 		return "", projectionOmission{}, false
 	}
 	total := len(arr)
+	offset := intJSONNumber(m["offset"])
+	revision, _ := m["workspace_revision"].(string)
+	sourceHasMore, _ := m["has_more"].(bool)
+	setPage := func(candidate map[string]any, kept int) {
+		hasMore := sourceHasMore || kept < total
+		candidate["offset"] = offset
+		candidate["returned_count"] = kept
+		candidate["has_more"] = hasMore
+		candidate["page"] = continuationPage(offset, kept, hasMore, revision)
+	}
 
 	size := func(keep int) int {
 		candidate := cloneShallow(m)
 		candidate[arrayKey] = arr[:keep]
+		setPage(candidate, keep)
 		om := map[string]any{"omitted_" + singular(arrayKey): total - keep}
 		if extraOmitted != nil {
 			for k, v := range extraOmitted(keep, total-keep) {
@@ -118,8 +130,12 @@ func projectRecordArray(rawText, arrayKey, recover string, pc projectorContext, 
 	}
 
 	keep := largestFitting(total, pc.BudgetTokens, size)
+	if total > 0 && keep == 0 {
+		return "", projectionOmission{}, false
+	}
 	omitted := total - keep
 	m[arrayKey] = arr[:keep]
+	setPage(m, keep)
 	om := map[string]any{"omitted_" + singular(arrayKey): omitted}
 	if extraOmitted != nil {
 		for k, v := range extraOmitted(keep, omitted) {
@@ -132,6 +148,20 @@ func projectRecordArray(rawText, arrayKey, recover string, pc projectorContext, 
 		return "", projectionOmission{}, false
 	}
 	return out, projectionOmission{Records: omitted}, true
+}
+
+func intJSONNumber(value any) int {
+	switch typed := value.(type) {
+	case json.Number:
+		n, _ := typed.Int64()
+		return int(n)
+	case float64:
+		return int(typed)
+	case int:
+		return typed
+	default:
+		return 0
+	}
 }
 
 func cloneShallow(m map[string]any) map[string]any {
@@ -161,13 +191,13 @@ func singular(arrayKey string) string {
 
 func projectGlobResult(rawText string, pc projectorContext) (string, projectionOmission, bool) {
 	return projectRecordArray(rawText, "files",
-		fmt.Sprintf("narrow the glob pattern or path; the full match list is saved at %s", pc.ArtifactRef),
+		fmt.Sprintf("use page.next with the same glob arguments for the next non-overlapping page; the full match list is saved at %s", pc.ArtifactRef),
 		pc, nil)
 }
 
 func projectListFilesResult(rawText string, pc projectorContext) (string, projectionOmission, bool) {
 	return projectRecordArray(rawText, "entries",
-		fmt.Sprintf("narrow the directory or read specific entries; the full listing is saved at %s", pc.ArtifactRef),
+		fmt.Sprintf("use page.next with the same list_files path for the next non-overlapping page; the full listing is saved at %s", pc.ArtifactRef),
 		pc, nil)
 }
 
@@ -189,7 +219,7 @@ func projectGrepResult(rawText string, pc projectorContext) (string, projectionO
 	if arrayKey == "" {
 		return "", projectionOmission{}, false
 	}
-	recover := fmt.Sprintf("narrow the grep pattern, path, or include filter; the full matches are saved at %s", pc.ArtifactRef)
+	recover := fmt.Sprintf("use page.next with the same grep arguments for the next non-overlapping page; the full matches are saved at %s", pc.ArtifactRef)
 	// grep content mode also carries returned/omitted match counters that the
 	// model relies on; keep them consistent with what actually remains.
 	extra := func(kept, omitted int) map[string]any {
@@ -235,7 +265,25 @@ func projectReadFileResult(rawText string, pc projectorContext) (string, project
 	lines := contentLines(content)
 	numLines := len(lines)
 	path, _ := m["path"].(string)
-	recover := fmt.Sprintf("re-run read_file on %s with an offset/limit for the omitted lines, or open the full saved result at %s", path, pc.ArtifactRef)
+	recover := fmt.Sprintf("use continuation.next to read the omitted range without overlap, or open the full saved result at %s", pc.ArtifactRef)
+	startLine := intJSONNumber(m["start_line"])
+	if startLine <= 0 {
+		startLine = 1
+	}
+	contentSHA, _ := m["content_sha256"].(string)
+	setContinuation := func(candidate map[string]any, keep, omitted int) {
+		continuation := map[string]any{"has_more": omitted > 0}
+		if omitted > 0 {
+			head := (keep + 1) / 2
+			continuation["next"] = map[string]any{
+				"path":            path,
+				"offset":          startLine + head,
+				"limit":           omitted,
+				"expected_sha256": contentSHA,
+			}
+		}
+		candidate["continuation"] = continuation
+	}
 
 	build := func(keep int) (string, int) {
 		if keep >= numLines {
@@ -261,6 +309,7 @@ func projectReadFileResult(rawText string, pc projectorContext) (string, project
 		c, omitted := build(keep)
 		cand := cloneShallow(m)
 		cand["content"] = c
+		setContinuation(cand, keep, omitted)
 		setProjectionMeta(cand, pc.BudgetTokens, pc.ArtifactRef, recover, map[string]any{
 			"omitted_lines": omitted,
 			"shown_lines":   keep,
@@ -275,6 +324,7 @@ func projectReadFileResult(rawText string, pc projectorContext) (string, project
 	keep := largestFitting(numLines, pc.BudgetTokens, size)
 	c, omitted := build(keep)
 	m["content"] = c
+	setContinuation(m, keep, omitted)
 	setProjectionMeta(m, pc.BudgetTokens, pc.ArtifactRef, recover, map[string]any{
 		"omitted_lines": omitted,
 		"shown_lines":   keep,
@@ -338,6 +388,7 @@ func projectBashResult(rawText string, pc projectorContext) (string, projectionO
 		cand := cloneShallow(m)
 		cand["stdout_tail"] = so
 		cand["stderr_tail"] = se
+		cand["continuation"] = bashProjectionContinuation(m, pc.ArtifactRef, so, se)
 		setProjectionMeta(cand, pc.BudgetTokens, pc.ArtifactRef,
 			fmt.Sprintf("open the full command log at %s", pc.ArtifactRef),
 			map[string]any{
@@ -379,4 +430,42 @@ func projectBashResult(rawText string, pc projectorContext) (string, projectionO
 	// Return best-effort even if still over budget: verification/metadata is the
 	// evidence we refuse to drop.
 	return s, projectionOmission{Bytes: droppedOutput}, true
+}
+
+func bashProjectionContinuation(m map[string]any, artifactRef, shownStdout, shownStderr string) map[string]any {
+	sections, _ := m["full_log_sections"].(map[string]any)
+	fullLogSHA, _ := m["full_log_sha256"].(string)
+	type streamRange struct {
+		name        string
+		start, end  int
+		shownSuffix string
+	}
+	streams := []streamRange{
+		{name: "stderr", start: intJSONNumber(sections["stderr_start"]), end: intJSONNumber(sections["stderr_end"]), shownSuffix: shownStderr},
+		{name: "stdout", start: intJSONNumber(sections["stdout_start"]), end: intJSONNumber(sections["stdout_end"]), shownSuffix: shownStdout},
+	}
+	ranges := make([]any, 0, len(streams))
+	for _, stream := range streams {
+		omittedEnd := stream.end - len(stream.shownSuffix)
+		if stream.start < 0 || omittedEnd <= stream.start {
+			continue
+		}
+		ranges = append(ranges, map[string]any{
+			"stream": stream.name,
+			"next": map[string]any{
+				"path":            artifactRef,
+				"expected_sha256": fullLogSHA,
+				"byte_range": map[string]any{
+					"offset":     stream.start,
+					"limit":      projectionPreviewBytes,
+					"end_offset": omittedEnd,
+				},
+			},
+		})
+	}
+	return map[string]any{
+		"kind":     "ranked_artifact_ranges",
+		"has_more": len(ranges) > 0,
+		"ranges":   ranges,
+	}
 }

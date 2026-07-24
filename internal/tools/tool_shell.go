@@ -74,6 +74,7 @@ type shellExecutionResult struct {
 	PromotedProcessID   string                  `json:"promoted_process_id,omitempty"`
 	FullLogRef          string                  `json:"full_log_ref,omitempty"`
 	FullLogBytes        int                     `json:"full_log_bytes,omitempty"`
+	FullLogSections     shellLogSections        `json:"full_log_sections,omitempty"`
 	FullLogError        string                  `json:"full_log_error,omitempty"`
 	NextSuggestions     []string                `json:"next_suggestions,omitempty"`
 	Verification        *bashVerificationResult `json:"verification,omitempty"`
@@ -81,27 +82,35 @@ type shellExecutionResult struct {
 	redactedStderr      string
 }
 
-func persistShellLog(sessionDir string, shellResult shellExecutionResult) (path string, bytes int, errSummary string) {
+type shellLogSections struct {
+	StdoutStart int `json:"stdout_start"`
+	StdoutEnd   int `json:"stdout_end"`
+	StderrStart int `json:"stderr_start"`
+	StderrEnd   int `json:"stderr_end"`
+}
+
+func persistShellLog(sessionDir string, shellResult shellExecutionResult) (path string, bytes int, sections shellLogSections, errSummary string) {
 	sessionDir = strings.TrimSpace(sessionDir)
 	if sessionDir == "" {
-		return "", 0, ""
+		return "", 0, shellLogSections{}, ""
 	}
 	dir := filepath.Join(sessionDir, "tool-results", "shell-logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", 0, redactToolOutput(err.Error())
+		return "", 0, shellLogSections{}, redactToolOutput(err.Error())
 	}
 	commandHash := sha256Hex([]byte(shellResult.Command))
 	name := fmt.Sprintf("%s-%s.log", time.Now().UTC().Format("20060102T150405.000000000Z"), commandHashPrefix(commandHash))
 	path = filepath.Join(dir, name)
-	content := buildShellLog(shellResult)
+	content, sections := buildShellLog(shellResult)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", 0, redactToolOutput(err.Error())
+		return "", 0, shellLogSections{}, redactToolOutput(err.Error())
 	}
-	return path, len(content), ""
+	return path, len(content), sections, ""
 }
 
-func buildShellLog(shellResult shellExecutionResult) string {
+func buildShellLog(shellResult shellExecutionResult) (string, shellLogSections) {
 	var b strings.Builder
+	var sections shellLogSections
 	fmt.Fprintf(&b, "command: %s\n", shellResult.Command)
 	if strings.TrimSpace(shellResult.Purpose) != "" {
 		fmt.Fprintf(&b, "purpose: %s\n", shellResult.Purpose)
@@ -113,16 +122,20 @@ func buildShellLog(shellResult shellExecutionResult) string {
 	fmt.Fprintf(&b, "stderr_bytes: %d\n", shellResult.StderrBytes)
 	fmt.Fprintf(&b, "workspace_revision: %s\n\n", shellResult.WorkspaceRevision)
 	b.WriteString("--- stdout (redacted) ---\n")
+	sections.StdoutStart = b.Len()
 	b.WriteString(shellResult.redactedStdout)
+	sections.StdoutEnd = b.Len()
 	if !strings.HasSuffix(shellResult.redactedStdout, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n--- stderr (redacted) ---\n")
+	sections.StderrStart = b.Len()
 	b.WriteString(shellResult.redactedStderr)
+	sections.StderrEnd = b.Len()
 	if !strings.HasSuffix(shellResult.redactedStderr, "\n") {
 		b.WriteString("\n")
 	}
-	return b.String()
+	return b.String(), sections
 }
 
 func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, timeoutSeconds int, cwd string) (shellExecutionResult, error) {
