@@ -465,7 +465,7 @@
 
 .channel-message-content {
   width: fit-content;
-  max-width: min(100%, 680px);
+  max-width: 100%;
   min-width: 0;
 }
 
