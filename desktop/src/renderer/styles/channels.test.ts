@@ -33,10 +33,14 @@ describe("channel message resizing", () => {
     const stream = ruleFor(".channel-message-stream");
     const composer = ruleFor(".channel-composer");
     const messageContent = ruleFor(".channel-message-content");
+    const ownMessageContent = ruleFor(".channel-message.own .channel-message-content");
+    const messageBubble = ruleFor(".channel-message-bubble");
 
     expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 12px/);
     expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
     expect(messageContent).toMatch(/max-width:\s*100%/);
+    expect(ownMessageContent).toMatch(/max-width:\s*calc\(100% - 40px\)/);
+    expect(messageBubble).toMatch(/max-width:\s*100%/);
     expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
   });
 
