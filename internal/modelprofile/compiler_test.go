@@ -1,6 +1,7 @@
 package modelprofile
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -66,6 +67,43 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 		}
 		if s.SystemFragment == "" {
 			t.Fatalf("compile must emit a system fragment for %s", s.ProfileName)
+		}
+	}
+}
+
+func TestNamedAgentSurfaceAddsChatToolsToCompleteMainSurface(t *testing.T) {
+	c := DefaultCompiler{}
+	for _, tt := range []struct {
+		provider string
+		model    string
+	}{
+		{provider: "openai", model: "gpt-5-codex"},
+		{provider: "openai", model: "gpt-5.5"},
+		{provider: "anthropic", model: "claude-sonnet-4-5"},
+		{provider: "ollama", model: "llama-coder"},
+	} {
+		profile := Resolve(tt.provider, tt.model)
+		main := c.Compile(profile, SurfaceMain)
+		named := c.Compile(profile, SurfaceNamedAgent)
+		chatTools := []string{"chat_check", "chat_draft", "chat_read", "chat_remind", "chat_send", "chat_task"}
+		for name, capabilityName := range main.Tools {
+			if named.Tools[name] != capabilityName {
+				t.Errorf("%s/%s named-agent surface lost main tool %s", tt.provider, tt.model, name)
+			}
+		}
+		for _, name := range chatTools {
+			if named.Tools[name] != capability.CapabilityChat {
+				t.Errorf("%s/%s named-agent surface must expose %s as chat capability", tt.provider, tt.model, name)
+			}
+		}
+		wantTools := append(sortedKeys(main.Tools), chatTools...)
+		slices.Sort(wantTools)
+		if got := sortedKeys(named.Tools); !slices.Equal(got, wantTools) {
+			t.Errorf("%s/%s named-agent tools = %v, want main + chat %v", tt.provider, tt.model, got, wantTools)
+		}
+		if !slices.Equal(sortedKeys(named.DeferredTools), sortedKeys(main.DeferredTools)) ||
+			!slices.Equal(sortedKeys(named.HiddenTools), sortedKeys(main.HiddenTools)) {
+			t.Errorf("%s/%s named-agent surface did not retain the main deferred/hidden tools", tt.provider, tt.model)
 		}
 	}
 }

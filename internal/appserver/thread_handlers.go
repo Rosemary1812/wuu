@@ -238,6 +238,7 @@ type persistedThreadSnapshot struct {
 	repairNeeded    bool
 	baselineSeq     int
 	displayHistory  []persistedMessage
+	rawHistory      []persistedMessage
 	tokenMetas      []persistedMessage
 }
 
@@ -277,6 +278,7 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 	if err != nil {
 		return persistedThreadSnapshot{}, err
 	}
+	rawHistory := append([]persistedMessage(nil), displayHistory...)
 	displayHistory = displayHistoryAcrossProviderCheckpoint(displayHistory, providerRecords)
 	tokenMetas, err := loadMetaMessages(s.rt.SessionDir, id)
 	if err != nil {
@@ -288,6 +290,7 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 		repairNeeded:    !reflect.DeepEqual(repaired, history),
 		baselineSeq:     historyHeadSeq,
 		displayHistory:  displayHistory,
+		rawHistory:      rawHistory,
 		tokenMetas:      tokenMetas,
 	}
 	systemPrompt := s.rt.StreamRunner.SystemPrompt
@@ -300,6 +303,7 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 type forkSourceThread struct {
 	history        []providers.ChatMessage
 	displayHistory []providers.ChatMessage
+	rawHistory     []persistedMessage
 	modelProvider  string
 	model          string
 	modelVariant   string
@@ -331,9 +335,18 @@ func (s *Server) handleThreadFork(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	history, err := forkHistoryAtTarget(source.history, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID)
+	target := ThreadItem{}
+	if params.Target != nil {
+		target.Seq = params.Target.Seq
+		target.Type = params.Target.Type
+		target.SourceID = strings.TrimSpace(params.Target.SourceID)
+	}
+	history, err := forkHistoryAtTargetWithIdentity(source.history, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID, target)
+	if errors.Is(err, errForkTargetNotFound) && len(source.rawHistory) > 0 {
+		history, err = forkPersistedHistoryAtTarget(source.rawHistory, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID, target)
+	}
 	if errors.Is(err, errForkTargetNotFound) && len(source.displayHistory) > 0 {
-		history, err = forkHistoryAtTarget(source.displayHistory, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID)
+		history, err = forkHistoryAtTargetWithIdentity(source.displayHistory, source.thread.ID, source.thread.Turns, params.TurnID, params.ItemID, target)
 	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -551,6 +564,7 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 				return forkSourceThread{}, err
 			}
 			source.displayHistory = chatMessagesFromPersistedMessages(loaded.displayHistory)
+			source.rawHistory = loaded.rawHistory
 		}
 		return source, nil
 	}
@@ -573,10 +587,12 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	history = replaceBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
 	displayHistory := cloneHistory(history)
+	var rawHistory []persistedMessage
 	if loaded, loadErr := s.loadPersistedThreadSnapshot(id); loadErr != nil {
 		return forkSourceThread{}, loadErr
 	} else {
 		displayHistory = chatMessagesFromPersistedMessages(loaded.displayHistory)
+		rawHistory = loaded.rawHistory
 		th.Turns = turnsFromPersistedHistory(id, loaded.displayHistory, now, s.resolveParticipantSummary)
 	}
 	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
@@ -595,6 +611,7 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	return forkSourceThread{
 		history:        cloneHistory(th.History),
 		displayHistory: displayHistory,
+		rawHistory:     rawHistory,
 		modelProvider:  th.ModelProvider,
 		model:          th.Model,
 		modelVariant:   th.ModelVariant,

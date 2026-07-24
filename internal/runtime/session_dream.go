@@ -2,8 +2,11 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessionmemory"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -20,33 +24,58 @@ const (
 	sessionDreamStateRecoveryAfter = 2 * sessionDreamTimeout
 	sessionDreamFailureBackoff     = time.Hour
 	sessionDreamMaxSteps           = 6
+	sessionDreamMinSessions        = 5
 )
 
 type sessionDreamScheduler struct {
 	rootDir            string
 	workspaceStateDir  string
+	sessionsDir        string
+	workspaceID        string
 	sessionArtifactDir func() string
 	interval           time.Duration
+	minSessions        int
 	reportError        func(error)
+
+	// Optional dedicated client/model. When client is nil the scheduler falls
+	// back to the runner's client and model (the current selected provider).
+	client providers.Client
+	model  string
 
 	mu      sync.Mutex
 	running bool
 }
 
-func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifactDir func() string, intervalDays int) *sessionDreamScheduler {
+func newSessionDreamSchedulerWithSessions(rootDir, workspaceStateDir, sessionsDir, workspaceID string, sessionArtifactDir func() string, intervalDays, minSessions int, dedicatedClient providers.Client, dedicatedModel string) *sessionDreamScheduler {
 	rootDir = strings.TrimSpace(rootDir)
-	if rootDir == "" || strings.TrimSpace(workspaceStateDir) == "" || sessionArtifactDir == nil || intervalDays <= 0 {
+	if rootDir == "" || strings.TrimSpace(workspaceStateDir) == "" || strings.TrimSpace(sessionsDir) == "" || sessionArtifactDir == nil || intervalDays <= 0 || minSessions <= 0 {
 		return nil
 	}
 	return &sessionDreamScheduler{
 		rootDir:            rootDir,
 		workspaceStateDir:  workspaceStateDir,
+		sessionsDir:        sessionsDir,
+		workspaceID:        strings.TrimSpace(workspaceID),
 		sessionArtifactDir: sessionArtifactDir,
 		interval:           time.Duration(intervalDays) * 24 * time.Hour,
+		minSessions:        minSessions,
+		client:             dedicatedClient,
+		model:              strings.TrimSpace(dedicatedModel),
 		reportError: func(err error) {
 			providers.DebugLogf("session dream: %v", err)
 		},
 	}
+}
+
+// sessionDreamAfterTurn builds a fresh dream scheduler AfterTurn hook. It is
+// used to rebuild the hook after live settings changes without recreating the
+// whole StreamRunner.
+func sessionDreamAfterTurn(rootDir, workspaceStateDir, sessionsDir, workspaceID string, sessionArtifactDir func() string, intervalDays, minSessions int, dedicatedClient providers.Client, dedicatedModel string) func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) {
+	scheduler := newSessionDreamSchedulerWithSessions(rootDir, workspaceStateDir, sessionsDir, workspaceID, sessionArtifactDir, intervalDays, minSessions, dedicatedClient, dedicatedModel)
+	if scheduler == nil {
+		return nil
+	}
+	return scheduler.AfterTurn
 }
 
 func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.StreamRunner, history []providers.ChatMessage, result agent.LoopResult) {
@@ -60,7 +89,16 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 	if err != nil || !acquired {
 		return
 	}
-	if !s.shouldStart(history, result, time.Now().UTC()) {
+	now := time.Now().UTC()
+	sessions, shouldStart, err := s.prepare(history, result, filepath.Base(strings.TrimSpace(s.sessionArtifactDir())), now)
+	if err != nil {
+		_ = lock.Release()
+		if s.reportError != nil {
+			s.reportError(err)
+		}
+		return
+	}
+	if !shouldStart {
 		_ = lock.Release()
 		return
 	}
@@ -77,10 +115,16 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		releaseStart()
 		return
 	}
-	client := runner.Client
+	var client providers.Client = runner.Client
 	model := strings.TrimSpace(runner.APIModel)
 	if model == "" {
 		model = strings.TrimSpace(runner.Model)
+	}
+	if s.client != nil {
+		client = s.client
+	}
+	if s.model != "" {
+		model = s.model
 	}
 	if client == nil || model == "" {
 		releaseStart()
@@ -96,8 +140,8 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		rootDir:            s.rootDir,
 		workspaceStateDir:  s.workspaceStateDir,
 		sessionArtifactDir: sessionArtifactDir,
-		history:            cloneMemoryReviewHistory(history),
-		now:                time.Now().UTC(),
+		sessions:           sessions,
+		now:                now,
 	}
 	journal := runner.InferenceJournal
 	go func() {
@@ -136,17 +180,17 @@ func isPureSessionDreamCancellation(err error) bool {
 	return errors.Is(err, context.Canceled)
 }
 
-func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, result agent.LoopResult, now time.Time) bool {
+func (s *sessionDreamScheduler) prepare(history []providers.ChatMessage, result agent.LoopResult, currentSessionID string, now time.Time) ([]sessionDreamCandidate, bool, error) {
 	if strings.TrimSpace(result.Content) == "" || countMemoryReviewUserTurns(history) == 0 {
-		return false
+		return nil, false, nil
 	}
 	if !s.tryStart() {
-		return false
+		return nil, false, nil
 	}
 	state, err := sessionmemory.LoadDreamState(s.workspaceStateDir)
 	if err != nil {
 		s.finish()
-		return false
+		return nil, false, err
 	}
 	// Crash self-heal (repair plan 2026-07-04 item #9): a dream that died
 	// with its process leaves LastStatus=running forever — the state file
@@ -157,28 +201,77 @@ func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, res
 	// elapsed when the interrupted dream was allowed to start. Lock ownership
 	// is independent of this timestamp; the OS-backed lock below still rejects
 	// the retry if another process is actually running the dream.
+	forceRetry := false
 	if state.LastStatus == sessionmemory.DreamStatusRunning {
 		if !state.LastStartedAt.IsZero() && now.Sub(state.LastStartedAt) < sessionDreamStateRecoveryAfter {
 			s.finish()
-			return false
+			return nil, false, nil
 		}
 		if err := sessionmemory.RecordDreamFailed(s.workspaceStateDir, now, errors.New("interrupted: process exited while a dream was running (stale running state reconciled)")); err != nil {
 			s.finish()
-			return false
+			return nil, false, err
 		}
-		return true
+		forceRetry = true
 	}
 	if state.LastStatus == sessionmemory.DreamStatusFailed &&
 		!state.LastFinishedAt.IsZero() &&
 		now.Sub(state.LastFinishedAt) < sessionDreamFailureBackoff {
 		s.finish()
-		return false
+		return nil, false, nil
 	}
-	if !state.LastRunAt.IsZero() && now.Sub(state.LastRunAt) < s.interval {
+	if !forceRetry && !state.LastRunAt.IsZero() && now.Sub(state.LastRunAt) < s.interval {
 		s.finish()
-		return false
+		return nil, false, nil
 	}
-	return true
+	sessions, err := listPendingDreamSessions(s.sessionsDir, s.rootDir, s.workspaceID, currentSessionID, state.LastRunAt)
+	if err != nil {
+		s.finish()
+		return nil, false, err
+	}
+	if len(sessions) < s.minSessions {
+		s.finish()
+		return nil, false, nil
+	}
+	return sessions, true, nil
+}
+
+func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, result agent.LoopResult, now time.Time) bool {
+	_, ok, err := s.prepare(history, result, "", now)
+	return err == nil && ok
+}
+
+type sessionDreamCandidate struct {
+	ID        string
+	UpdatedAt time.Time
+}
+
+func listPendingDreamSessions(sessionsDir, rootDir, workspaceID, currentSessionID string, since time.Time) ([]sessionDreamCandidate, error) {
+	sessions, err := sessionstore.ListForCWD(sessionsDir, rootDir, workspaceID, 0)
+	if err != nil {
+		return nil, fmt.Errorf("list dream sessions: %w", err)
+	}
+	currentSessionID = strings.TrimSpace(currentSessionID)
+	candidates := make([]sessionDreamCandidate, 0, len(sessions))
+	for _, candidate := range sessions {
+		if strings.TrimSpace(candidate.ID) == currentSessionID || candidate.Entries <= 0 {
+			continue
+		}
+		updatedAt := candidate.UpdatedAt
+		if updatedAt.IsZero() {
+			updatedAt = candidate.CreatedAt
+		}
+		if !since.IsZero() && !updatedAt.After(since) {
+			continue
+		}
+		candidates = append(candidates, sessionDreamCandidate{ID: candidate.ID, UpdatedAt: updatedAt.UTC()})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].UpdatedAt.Equal(candidates[j].UpdatedAt) {
+			return candidates[i].ID < candidates[j].ID
+		}
+		return candidates[i].UpdatedAt.Before(candidates[j].UpdatedAt)
+	})
+	return candidates, nil
 }
 
 func (s *sessionDreamScheduler) tryStart() bool {
@@ -207,7 +300,7 @@ type sessionDreamJob struct {
 	rootDir            string
 	workspaceStateDir  string
 	sessionArtifactDir string
-	history            []providers.ChatMessage
+	sessions           []sessionDreamCandidate
 	now                time.Time
 }
 
@@ -215,7 +308,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	if job.client == nil || strings.TrimSpace(job.model) == "" {
 		return nil
 	}
-	messages := buildSessionDreamMessages(job.history)
+	messages := buildSessionDreamMessages(job.sessions)
 	if len(messages) == 0 {
 		return nil
 	}
@@ -226,7 +319,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	if err := sessionmemory.RecordDreamStarted(job.workspaceStateDir, started); err != nil {
 		return err
 	}
-	executor := newSessionDreamExecutor(job.rootDir, job.workspaceStateDir, job.sessionArtifactDir)
+	executor := newSessionDreamExecutor(job.rootDir, job.workspaceStateDir, job.sessionArtifactDir, s.sessionsDir, job.sessions)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
 		Tools:                    executor,
 		Model:                    job.model,
@@ -236,7 +329,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 		MaxSteps:                 sessionDreamMaxSteps,
 		Effort:                   job.effort,
 		ProviderOptions:          provideroptions.Clone(job.providerOptions),
-	}, backgroundMemoryStep{client: job.client})
+	}, agent.NewStreamStep(job.client))
 	if err != nil {
 		if recordErr := sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err); recordErr != nil {
 			return errors.Join(err, fmt.Errorf("record dream failure: %w", recordErr))
@@ -247,24 +340,31 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 }
 
 type sessionDreamExecutor struct {
-	registry *tools.Registry
-	defs     []providers.ToolDefinition
+	registry          *tools.Registry
+	defs              []providers.ToolDefinition
+	allowedSessionIDs map[string]struct{}
 }
 
-func newSessionDreamExecutor(rootDir, workspaceStateDir, sessionArtifactDir string) *sessionDreamExecutor {
+func newSessionDreamExecutor(rootDir, workspaceStateDir, sessionArtifactDir, sessionsDir string, sessions []sessionDreamCandidate) *sessionDreamExecutor {
 	env := &tools.Env{
-		RootDir:    rootDir,
-		StateDir:   workspaceStateDir,
-		SessionDir: sessionArtifactDir,
+		RootDir:     rootDir,
+		StateDir:    workspaceStateDir,
+		SessionDir:  sessionArtifactDir,
+		SessionsDir: sessionsDir,
 	}
 	registry := tools.NewRegistry(
 		tools.NewReadFileTool(env),
 		tools.NewListFilesTool(env),
 		tools.NewGrepTool(env),
 		tools.NewGlobTool(env),
+		tools.NewThreadGetTool(env),
 		tools.NewSessionMemoryTool(env),
 	)
-	return &sessionDreamExecutor{registry: registry, defs: registry.Definitions()}
+	allowedSessionIDs := make(map[string]struct{}, len(sessions))
+	for _, candidate := range sessions {
+		allowedSessionIDs[candidate.ID] = struct{}{}
+	}
+	return &sessionDreamExecutor{registry: registry, defs: registry.Definitions(), allowedSessionIDs: allowedSessionIDs}
 }
 
 func (e *sessionDreamExecutor) Definitions() []providers.ToolDefinition {
@@ -281,6 +381,17 @@ func (e *sessionDreamExecutor) Execute(ctx context.Context, call providers.ToolC
 	tool := e.registry.Lookup(call.Name)
 	if tool == nil {
 		return "", fmt.Errorf("background dream: tool %q is not available", call.Name)
+	}
+	if call.Name == "thread_get" {
+		var args struct {
+			ThreadID string `json:"thread_id"`
+		}
+		if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+			return "", fmt.Errorf("background dream: decode thread_get arguments: %w", err)
+		}
+		if _, allowed := e.allowedSessionIDs[strings.TrimSpace(args.ThreadID)]; !allowed {
+			return "", fmt.Errorf("background dream: thread_get session %q is outside this consolidation batch", args.ThreadID)
+		}
 	}
 	result, err := tool.Execute(ctx, call.Arguments)
 	if err == nil && call.Name == "session_memory" {
@@ -313,31 +424,37 @@ func (e *sessionDreamExecutor) ToolMetadata(call providers.ToolCall) (agent.Tool
 	}, true
 }
 
-func buildSessionDreamMessages(history []providers.ChatMessage) []providers.ChatMessage {
-	out := make([]providers.ChatMessage, 0, len(history)+2)
-	out = append(out, providers.ChatMessage{Role: "system", Content: sessionDreamSystemPrompt})
-	transcript := selectMemoryReviewTranscript(history)
-	if len(transcript) == 0 {
+func buildSessionDreamMessages(sessions []sessionDreamCandidate) []providers.ChatMessage {
+	var review strings.Builder
+	review.WriteString(sessionDreamPrompt)
+	for _, candidate := range sessions {
+		review.WriteString("\n- ")
+		review.WriteString(candidate.ID)
+		review.WriteString(" (updated ")
+		review.WriteString(candidate.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		review.WriteByte(')')
+	}
+	if len(sessions) == 0 {
 		return nil
 	}
-	out = append(out, transcript...)
-	out = append(out, providers.ChatMessage{Role: "user", Content: sessionDreamPrompt})
-	return out
+	return []providers.ChatMessage{
+		{Role: "system", Content: sessionDreamSystemPrompt},
+		{Role: "user", Content: review.String()},
+	}
 }
 
-const sessionDreamSystemPrompt = `You are a background memory review worker. Your only job is to inspect the recent conversation and maintain durable memory. Do not modify workspace files or use capabilities outside the listed memory-review tools.`
+const sessionDreamSystemPrompt = `You are a background memory consolidation worker. Your only job is to inspect the listed completed sessions and maintain durable workspace memory. Do not modify workspace files or use capabilities outside the listed memory-review tools.`
 
-const sessionDreamPrompt = `Review the recent conversation and consolidate durable workspace/session memory.
+const sessionDreamPrompt = `Review the completed session transcripts below and consolidate durable workspace memory across them.
 
-Available tools are read_file, list_files, glob, grep, and session_memory.
+Available tools are read_file, list_files, glob, grep, thread_get, and session_memory.
 
-Use read_file, list_files, glob, and grep only when workspace inspection is required to confirm what should be remembered. Stay within the listed memory-review tools; do not modify source files directly, access network resources, or invoke external programs.
+Use thread_get with each listed session ID to inspect the conversations being consolidated. Calls are read-only and may be issued in parallel. Use read_file, list_files, glob, and grep only when workspace inspection is required to confirm what should be remembered. Stay within the listed memory-review tools; do not modify source files directly, access network resources, or invoke external programs.
 
 Use session_memory for durable writes:
-1. Read existing project_memory, summary, checkpoint, or notes when needed before editing them.
+1. Read existing project_memory when needed before editing it.
 2. Write project_memory only for stable workspace facts, architecture decisions, durable conventions, tool quirks, or recurring workflow lessons that should survive future sessions.
-3. Write summary for compact recoverable state of the active task: active intent, next concrete action, current work, decisions, and open questions. Use checkpoint only when maintaining older checkpoint.md content.
-4. Write notes for useful session scratch details that are not durable enough for project_memory.
+3. Do not write summary, checkpoint, or notes: those belong to an active individual session, while this pass consolidates several completed sessions.
 
 If session_memory is insufficient for a memory artifact, reply with what is missing instead of writing files directly. Do not modify source files.
 

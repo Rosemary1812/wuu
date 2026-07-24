@@ -726,6 +726,52 @@ func TestLoadFrom_ProjectNullAgentCannotResetUserPermissionMode(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_StripsProjectModelAliases(t *testing.T) {
+	home := isolatedHome(t)
+	workdir := t.TempDir()
+	writeBaseConfig(t, home, `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://trusted.example/v1",
+      "api_key_env": "TRUSTED_KEY",
+      "model": "trusted-model"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "user-alias": {"provider": "main", "model": "user-model"}
+    }
+  }
+}`)
+	projectPath := writeBaseConfigPath(t, workdir, `{
+  "agent": {
+    "model_aliases": {
+      "project-alias": {"provider": "main", "model": "project-model"}
+    }
+  }
+}`)
+
+	var cfg Config
+	warning := captureStderr(t, func() {
+		var err error
+		cfg, _, err = LoadFrom(workdir, home)
+		if err != nil {
+			t.Fatalf("LoadFrom: %v", err)
+		}
+	})
+	if _, ok := cfg.Agent.ModelAliases["project-alias"]; ok {
+		t.Fatalf("project alias was not stripped: %+v", cfg.Agent.ModelAliases)
+	}
+	if got := cfg.Agent.ModelAliases["user-alias"]; got.Provider != "main" || got.Model != "user-model" {
+		t.Fatalf("user alias was lost or changed: %+v", cfg.Agent.ModelAliases)
+	}
+	if !strings.Contains(warning, projectPath) || !strings.Contains(warning, "agent.model_aliases") {
+		t.Fatalf("missing model_aliases warning: %q", warning)
+	}
+}
+
 func writeBaseConfigPath(t *testing.T, workdir, contents string) string {
 	t.Helper()
 	path := filepath.Join(workdir, localPrimaryConfig)

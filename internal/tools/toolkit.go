@@ -18,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
@@ -270,6 +271,9 @@ func (t *Toolkit) rebuildRegistry() {
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
+	if e.ChatAgent != nil {
+		registered = append(registered, NewChatCheckTool(e), NewChatReadTool(e), NewChatSendTool(e), NewChatDraftTool(e), NewChatTaskTool(e), NewChatRemindTool(e))
+	}
 	t.registry = NewRegistry(registered...)
 }
 
@@ -278,6 +282,15 @@ func (t *Toolkit) rebuildRegistry() {
 // SetAgentControl attaches the shared agent control runtime.
 func (t *Toolkit) SetAgentControl(c *agentcontrol.AgentControl) {
 	t.env.AgentControl = c
+}
+
+func (t *Toolkit) SetChatAgent(client *channels.AgentClient) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ChatAgent = client
+	t.rebuildRegistry()
+	t.setActiveProfileForSurface(t.ActiveProfile(), modelprofile.SurfaceNamedAgent)
 }
 
 // SetNativeDeferredToolDiscovery configures whether ordinary tool results may
@@ -727,7 +740,7 @@ func (t *Toolkit) RootDir() string {
 }
 
 // SetFileScopeRoots installs (or clears, with an empty slice) the file-tool
-// whitelist for ordinary turns and Kanban task runs: agent home,
+// whitelist for ordinary turns and scoped participant runs: agent home,
 // registered workspace roots, and the system temp directory. Empty roots
 // keep the ordinary single-RootDir confinement.
 func (t *Toolkit) SetFileScopeRoots(roots []string) {
@@ -811,12 +824,16 @@ func (t *Toolkit) setActiveProfileForSurface(p modelprofile.Profile, kind modelp
 	t.activeProfileMu.Lock()
 	defer t.activeProfileMu.Unlock()
 	t.activeProfile = p
-	if (p == modelprofile.Profile{}) {
+	if (p == modelprofile.Profile{}) && kind != modelprofile.SurfaceNamedAgent {
 		t.activeSurface = capability.Surface{}
 		t.publishActiveSurfaceLocked()
 		return
 	}
-	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, kind)
+	compiledProfile := p
+	if (compiledProfile == modelprofile.Profile{}) {
+		compiledProfile = modelprofile.Resolve("wuu", "named-agent-chat")
+	}
+	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(compiledProfile, kind)
 	t.publishActiveSurfaceLocked()
 }
 

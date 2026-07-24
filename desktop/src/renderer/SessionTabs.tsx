@@ -17,6 +17,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, X } from "lucide-react";
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, useRef, useState } from "react";
+import type { Thread } from "../shared/protocol";
 import {
   isThreadRunning,
   isThreadUnread,
@@ -34,12 +35,12 @@ import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMe
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
 import { translateCurrent as translate, useI18n } from "./i18n";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
 export function SessionTabStrip({
   state,
+  crossWorkspaceThreads,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
   canStartNewThread,
@@ -51,6 +52,7 @@ export function SessionTabStrip({
   onReorder,
 }: {
   state: AppState;
+  crossWorkspaceThreads?: Thread[];
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   canStartNewThread: boolean;
@@ -65,24 +67,22 @@ export function SessionTabStrip({
   const newTabButtonRef = useRef<HTMLButtonElement>(null);
   const { requestFocusRestoration, tabListRef } = useTabCloseFocusRestoration(
     state.activeSessionTabID,
-    state.sessionTabs
-      .filter((tab) => ENABLE_COLLABORATION || tab.kind !== "board")
-      .map((tab) => tab.id),
+    state.sessionTabs.map((tab) => tab.id),
     newTabButtonRef,
   );
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>();
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>();
   const enterReady = useStripEnterReady();
-  const visibleTabs = ENABLE_COLLABORATION
-    ? state.sessionTabs
-    : state.sessionTabs.filter((tab) => tab.kind !== "board");
-  const sessionTabEntries = useTabExitRetention(visibleTabs, (tab) => tab.id);
+  const sessionTabEntries = useTabExitRetention(state.sessionTabs, (tab) => tab.id);
   const [tabContextMenu, setTabContextMenu] = useState<
     { tabID: string; x: number; y: number } | undefined
   >();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
+  const tabState = crossWorkspaceThreads
+    ? { ...state, threads: crossWorkspaceThreads }
+    : state;
   const draggingTab = draggingTabID
     ? state.sessionTabs.find((tab) => tab.id === draggingTabID)
     : undefined;
@@ -132,7 +132,7 @@ export function SessionTabStrip({
   for (const tab of state.sessionTabs) {
     if (
       tab.kind === "thread" &&
-      isThreadRunning(threadForTab(state, tab.threadID))
+      isThreadRunning(threadForTab(tabState, tab.threadID))
     ) {
       runningTabIDs.add(tab.id);
     }
@@ -183,7 +183,7 @@ export function SessionTabStrip({
                 const active = tab.id === state.activeSessionTabID;
                 const tabThread =
                   tab.kind === "thread"
-                    ? threadForTab(state, tab.threadID)
+                    ? threadForTab(tabState, tab.threadID)
                     : undefined;
                 const running = isThreadRunning(tabThread);
                 const pendingSwitch =

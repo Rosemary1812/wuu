@@ -13,20 +13,57 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
 // newMemoryPanelServer builds a server whose runtime has a real WuuHome so
-// the memory-panel scope resolution has notebooks to point at. WuuHome is
-// set AFTER New so the default-participant seed (gated on SessionDir and
-// WuuHome both being set at construction) stays off, like the rest of the
-// appserver tests.
+// the memory-panel scope resolution has notebooks to point at.
 func newMemoryPanelServer(t *testing.T, client *fakeClient) (*Server, string) {
 	t.Helper()
 	rt := newTestRuntime(t, client)
 	srv := New(rt, &lockedBuffer{})
 	rt.WuuHome = t.TempDir()
 	return srv, rt.WuuHome
+}
+
+type streamFirstMemoryClient struct {
+	chatCalls   int
+	streamCalls int
+	requests    []providers.ChatRequest
+}
+
+func (c *streamFirstMemoryClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	c.chatCalls++
+	return providers.ChatResponse{}, fmt.Errorf("unary Chat must not be called")
+}
+
+func (c *streamFirstMemoryClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.streamCalls++
+	c.requests = append(c.requests, req)
+	events := make(chan providers.StreamEvent, 2)
+	events <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "流式记忆概览"}
+	events <- providers.StreamEvent{Type: providers.EventDone, StopReason: "end_turn"}
+	close(events)
+	return events, nil
+}
+
+func saveNamedParticipant(t *testing.T, rt *runtime.Session, name, role, model string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	p := participant.Participant{
+		ID:        participant.NewID(),
+		Kind:      participant.KindNamed,
+		Name:      name,
+		Role:      role,
+		Model:     model,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := session.UpsertParticipant(rt.SessionDir, p); err != nil {
+		t.Fatalf("upsert participant: %v", err)
+	}
+	return p.ID
 }
 
 func callMemoryRPC(t *testing.T, srv *Server, id, method, paramsJSON string) map[string]any {
@@ -354,6 +391,42 @@ func TestMemoryOverviewCacheSurvivesServerRestart(t *testing.T) {
 	}
 	if len(restartedClient.requests) != 0 {
 		t.Fatalf("restart cache hit must not call the model, got %d calls", len(restartedClient.requests))
+	}
+}
+
+func TestMemoryOverviewPrefersNativeStreaming(t *testing.T) {
+	srv, _ := newMemoryPanelServer(t, &fakeClient{})
+	client := &streamFirstMemoryClient{}
+	srv.rt.StreamRunner.Client = client
+
+	resp := callMemoryRPC(t, srv, "stream-first", MethodMemoryOverview, `{"scope":"user"}`)
+	result := remarshal[MemoryOverviewResult](t, resp["result"])
+	if result.EssayMD != "流式记忆概览" {
+		t.Fatalf("essay_md = %q", result.EssayMD)
+	}
+	if client.streamCalls != 1 || client.chatCalls != 0 {
+		t.Fatalf("memory overview calls: stream=%d chat=%d, want stream=1 chat=0", client.streamCalls, client.chatCalls)
+	}
+	if len(client.requests) != 1 || client.requests[0].Operation.Kind != providers.InferenceOperationMemory {
+		t.Fatalf("unexpected streamed memory request: %+v", client.requests)
+	}
+}
+
+func TestMemoryChatPrefersNativeStreaming(t *testing.T) {
+	srv, _ := newMemoryPanelServer(t, &fakeClient{})
+	client := &streamFirstMemoryClient{}
+	srv.rt.StreamRunner.Client = client
+
+	resp := callMemoryRPC(t, srv, "stream-first-chat", MethodMemoryChat, `{"scope":"user","message":"检查记忆"}`)
+	result := remarshal[MemoryChatResult](t, resp["result"])
+	if result.ReplyMD != "流式记忆概览" {
+		t.Fatalf("reply_md = %q", result.ReplyMD)
+	}
+	if client.streamCalls != 1 || client.chatCalls != 0 {
+		t.Fatalf("memory chat calls: stream=%d chat=%d, want stream=1 chat=0", client.streamCalls, client.chatCalls)
+	}
+	if len(client.requests) != 1 || client.requests[0].Operation.Kind != providers.InferenceOperationMemory {
+		t.Fatalf("unexpected streamed memory chat request: %+v", client.requests)
 	}
 }
 

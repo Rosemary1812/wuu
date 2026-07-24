@@ -63,6 +63,17 @@ function thread(id = "thread-1", cwd = "/tmp/project-1"): Thread {
   };
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
 function installWuuApi(resumedThread: Thread): {
   resumeThread: ReturnType<typeof vi.fn>;
 } {
@@ -94,6 +105,7 @@ function buildActions({
   let appState = initial;
   let currentDraft = draft;
   const beginViewSwitch = vi.fn(() => 1);
+  const beginInstantThreadSwitch = vi.fn(() => 2);
   const finishViewSwitch = vi.fn(() => true);
   const cancelViewSwitch = vi.fn();
   const restorePrimaryComposerDraft = vi.fn((nextDraft: ComposerDraftState) => {
@@ -118,7 +130,7 @@ function buildActions({
     getSidebarProjectThreadsByProjectID: () => sidebarProjectThreadsByProjectID,
     
     beginViewSwitch,
-    beginInstantThreadSwitch: vi.fn(() => 2),
+    beginInstantThreadSwitch,
     finishViewSwitch,
     cancelViewSwitch,
     isCurrentViewSwitchRequest: vi.fn(() => true),
@@ -130,6 +142,7 @@ function buildActions({
     actions,
     getAppState: () => appState,
     beginViewSwitch,
+    beginInstantThreadSwitch,
     finishViewSwitch,
     cancelViewSwitch,
     restorePrimaryComposerDraft,
@@ -198,6 +211,43 @@ describe("createThreadActivationActions", () => {
     );
     expect(harness.getAppState().activeProjectId).toBe("project-2");
     expect(harness.getAppState().thread?.id).toBe("thread-2");
+  });
+
+  it("shows a loaded thread from another project before runtime selection resolves", async () => {
+    const projectTwo = project("project-2");
+    const targetContext = projectContext("project-2");
+    const targetThread = {
+      ...thread("thread-2", projectTwo.path),
+      turns: [{ id: "turn-1", status: "completed", items_view: "full", items: [] }],
+    } as Thread;
+    installWuuApi(targetThread);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: projectContext("project-1"),
+        activeProjectId: "project-1",
+        projects: [project("project-1"), projectTwo],
+        status: "ready",
+      },
+      sidebarThreads: [targetThread],
+      sidebarProjectThreadsByProjectID: { "project-2": [targetThread] },
+      loadedState: {
+        activeContext: targetContext,
+        activeProjectId: "project-2",
+        projects: [project("project-1"), projectTwo],
+        threads: [targetThread],
+      },
+    });
+    const runtimeSelection = deferred<Record<string, never>>();
+    harness.selectRuntimeContext.mockReturnValue(runtimeSelection.promise);
+
+    const activation = harness.actions.activateThread(targetThread.id);
+
+    expect(harness.beginInstantThreadSwitch).toHaveBeenCalledOnce();
+    expect(harness.getAppState().activeContext).toEqual(targetContext);
+    expect(harness.getAppState().thread?.id).toBe(targetThread.id);
+    runtimeSelection.resolve({});
+    await activation;
   });
 
   it("ignores duplicate selection while the same thread switch is pending", async () => {

@@ -56,6 +56,14 @@ function installBuildInfoStub(info: BuildInfoResult): void {
     openExternal: vi.fn(),
     listCodexPets: vi.fn().mockResolvedValue(emptyCodexPetsSnapshot()),
     updateCodexPetSettings: vi.fn().mockResolvedValue(emptyCodexPetsSnapshot()),
+    getMemoryOverview: vi.fn().mockResolvedValue({
+      essay_md: "",
+      generated_at: "1970-01-01T00:00:00Z",
+      source_mtime: "1970-01-01T00:00:00Z",
+      cached: false,
+    }),
+    sendMemoryChat: vi.fn().mockResolvedValue({ reply_md: "", changed_files: [] }),
+    readMemoryRaw: vi.fn().mockResolvedValue({ index_md: "", files: [] }),
   };
   (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
   (window as unknown as GlobalWindow).wuu = stub as WuuDesktopApi;
@@ -616,9 +624,9 @@ describe("SettingsView advanced settings", () => {
     expect(rootText()).toContain("当前服务上下文上限");
     expect(rootText()).toContain("来自当前通道输入上限");
     expect(rootText()).toContain("400,000");
-    // Instant-apply: no draft form, no Save button.
+    // Instant-apply: no draft form, no Save button inside the numeric advanced card.
     expect(
-      Array.from(container.querySelectorAll("button")).some((button) =>
+      Array.from(container.querySelectorAll("[data-testid=\"settings-advanced\"] button")).some((button) =>
         button.textContent?.includes("保存"),
       ),
     ).toBe(false);
@@ -743,6 +751,8 @@ describe("SettingsView general settings", () => {
           git_attribution_enabled: true,
           memory_disabled: false,
           mcp_server_enabled: {},
+          dream_enabled: false,
+          dream_interval_days: 7,
         },
       }),
       initialPage: "general",
@@ -786,6 +796,8 @@ describe("SettingsView general settings", () => {
             docs: true,
             search: false,
           },
+          dream_enabled: false,
+          dream_interval_days: 7,
         },
       }),
       onGeneralSave,
@@ -930,6 +942,50 @@ describe("SettingsView general settings", () => {
       await Promise.resolve();
     });
     expect(onCodexPetsUpdate).toHaveBeenCalledWith({ selected_id: "beta" });
+  });
+});
+
+describe("SettingsView Dream settings", () => {
+  it("keeps the Memory page available and enables Dream with explicit defaults", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onGeneralSave = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      locale: "en-US",
+      initialPage: "memory",
+      initialized: baseInitialized({
+        providers: [],
+        general_settings: {
+          append_system_prompt: "",
+          memory_disabled: false,
+          mcp_server_enabled: {},
+          dream_enabled: false,
+          dream_interval_days: 7,
+        },
+      }),
+      onGeneralSave,
+    });
+
+    const dreamSwitch = container.querySelector<HTMLButtonElement>(
+      '[data-testid="settings-dream-toggle"]',
+    );
+    expect(dreamSwitch).not.toBeNull();
+    expect(dreamSwitch?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      dreamSwitch?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onGeneralSave).toHaveBeenCalledWith({
+      dream_enabled: true,
+      dream_interval_days: 7,
+      dream_provider: "",
+      dream_model: "",
+    });
   });
 });
 

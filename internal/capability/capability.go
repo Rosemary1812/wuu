@@ -72,6 +72,9 @@ const (
 	// Schedule.
 	CapabilitySchedule Capability = "schedule"
 
+	// Persistent named-agent group chat.
+	CapabilityChat Capability = "chat"
+
 	// Extensions (MCP, plugins).
 	CapabilityMCP Capability = "mcp"
 
@@ -115,6 +118,7 @@ func All() []Capability {
 		CapabilityGoal,
 		CapabilitySkill,
 		CapabilitySchedule,
+		CapabilityChat,
 		CapabilityMCP,
 		CapabilityDiscovery,
 		CapabilityBrowser,

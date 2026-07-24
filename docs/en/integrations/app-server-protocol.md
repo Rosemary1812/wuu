@@ -11,6 +11,24 @@ than building separate agent loops.
 
 The current app-server transport is newline-delimited JSON over stdio.
 
+A cloud control plane starts the same core binary with an explicit process
+identity and config:
+
+```bash
+WUU_HOME=/state/wuu wuu app-server \
+  --host cloud \
+  --instance-id run_123 \
+  --workspace-id workspace_123 \
+  --workdir /workspace \
+  --config /run/wuu/config.json
+```
+
+Cloud mode requires `--instance-id`, `--workspace-id`, and `--config`. It never
+creates a local starter config from ambient host state. The sandbox or container
+boundary, transport authentication, organization membership, secrets injection,
+and quota enforcement belong to the host control plane; they are not implemented
+by `app-server`.
+
 Requests have this shape:
 
 ```json
@@ -74,9 +92,42 @@ siblings like `config/read`, `config/model/update`, `config/general/update`,
 
 `initialize`
 
-Returns provider, model, workspace, tool policy, permission summary, extension
-trust summary, protocol version, and the effective `ultra` and `max_parallel`
-values.
+The client may identify itself, require an exact protocol version, and advertise
+the server-initiated methods it can handle:
+
+```json
+{
+  "id": "1",
+  "method": "initialize",
+  "params": {
+    "protocol_version": "wuu-app-server/v0.1",
+    "client": {"name": "wuu-desktop", "version": "0.10.1"},
+    "capabilities": {
+      "reverse_rpc": {
+        "methods": [
+          "browser/cdp",
+          "browser/screenshot",
+          "browser/open_tab",
+          "browser/close_tab",
+          "browser/set_visibility",
+          "browser/list_tabs"
+        ]
+      }
+    }
+  }
+}
+```
+
+Capabilities are opt-in. When `params` or `reverse_rpc.methods` is omitted, the
+core does not send server-initiated requests to that client. A supplied protocol
+version must match exactly; an incompatible client fails during initialization
+instead of failing later in a turn.
+
+The result returns provider, model, workspace, permission and extension trust
+summaries, the effective `ultra` and `max_parallel` values, and `runtime_host`.
+`runtime_host.kind` is `local` or `cloud`; a cloud process also reports the
+control-plane-supplied `instance_id`. Organization, seat, agent definition,
+quota, and sandbox details remain outside the core protocol.
 
 `config/read`
 

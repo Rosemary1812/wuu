@@ -6,7 +6,7 @@ import type {
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
-import { formatCurrentNumber, translateCurrent, useI18n } from "./i18n";
+import { translateCurrent, useI18n } from "./i18n";
 
 type LoadState = {
   loading: boolean;
@@ -147,7 +147,6 @@ export function SkillsCatalog({
 
       <div className="skills-section-heading">
         <strong>{t("skills.sectionSkills")}</strong>
-        <span>{catalogCount(state.loading, filter, visibleSkills.length, state.skills.length)}</span>
       </div>
 
       <div className="skills-list">
@@ -180,7 +179,6 @@ export function SkillsCatalog({
         <>
           <div className="skills-section-heading">
             <strong>{t("skills.sectionPlugins")}</strong>
-            <span>{catalogCount(state.loading, filter, visiblePlugins.length, plugins.length)}</span>
           </div>
 
           <div className="skills-list">
@@ -205,7 +203,6 @@ export function SkillsCatalog({
           </div>
         </>
       ) : null}
-
 
       {!state.loading &&
       visibleSkills.length === 0 &&
@@ -251,18 +248,6 @@ function sourceRank(source: string): number {
     default:
       return 3;
   }
-}
-
-function catalogCount(loading: boolean, filter: string, visible: number, total: number): string {
-  if (loading) {
-    return translateCurrent("skills.loading");
-  }
-  return filter.trim()
-    ? translateCurrent("skills.filteredCount", {
-        visible: formatCurrentNumber(visible),
-        total: formatCurrentNumber(total),
-      })
-    : formatCurrentNumber(total);
 }
 
 function runtimeContextKey(context: RuntimeContext): string {

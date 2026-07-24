@@ -13,6 +13,10 @@ const resources = {
     createProject: "创建项目",
     relocateWorkspace: "重新定位工作区",
     relocateHere: "定位到此文件夹",
+    open: "打开",
+    openInApplication: "在 {application} 中打开",
+    openWith: "打开方式",
+    copyPath: "复制路径",
     projectUnavailable:
       "工作区目录当前不可用：{path}。请恢复该目录，或从工作区菜单选择“重新定位…”。",
   },
@@ -28,6 +32,10 @@ const resources = {
     createProject: "Create project",
     relocateWorkspace: "Relocate workspace",
     relocateHere: "Use this folder",
+    open: "Open",
+    openInApplication: "Open in {application}",
+    openWith: "Open With",
+    copyPath: "Copy Path",
     projectUnavailable:
       "The workspace folder is currently unavailable: {path}. Restore the folder or choose Relocate from the workspace menu.",
   },

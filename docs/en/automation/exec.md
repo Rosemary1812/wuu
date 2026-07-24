@@ -276,17 +276,6 @@ automation. `archive` hides a session from default lists without deleting its
 persisted data. `delete` removes the session, its durable history, and any
 workspace-scoped artifacts Wuu can locate for that thread.
 
-## Named Agents and Kanban
-
-`wuu exec` runs ordinary coding-agent sessions. Named agents are not a separate
-CLI execution mode.
-
-Named agents belong to the desktop Kanban workflow. Open the global
-**Collaboration** entry in the desktop sidebar, use its message view to shape
-the work, switch to the board, and assign or dispatch Kanban tasks there.
-Ordinary sessions still support general subagents, but their composer does not
-offer named-agent mentions.
-
 ## Safety
 
 `wuu exec` runs through the same workspace boundary and tool guards as the

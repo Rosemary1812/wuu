@@ -56,7 +56,7 @@ export function useViewSwitchState({
       const requestID = viewSwitchRequestRef.current + 1;
       viewSwitchRequestRef.current = requestID;
       clearViewSwitchDelay();
-      if (kind === "thread") {
+      if (kind === "thread" || kind === "project") {
         setPendingViewSwitch({ kind, targetID, visible: true });
         return requestID;
       }

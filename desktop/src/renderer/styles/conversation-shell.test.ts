@@ -35,7 +35,7 @@ describe("conversation shell visible center", () => {
       /--conversation-visible-inset-right:\s*var\(--environment-panel-content-inset\);/,
     );
     expect(cssRuleBody(".jump-to-latest-cluster")).toMatch(
-      /right:\s*var\(--conversation-visible-inset-right\);/,
+      /right:\s*calc\(\s*var\(--conversation-visible-inset-right\)\s*\+\s*var\(--conversation-scrollbar-gutter\)\s*\);/,
     );
   });
 
@@ -106,7 +106,7 @@ describe("conversation shell message typography tokens", () => {
     // rather than via a hard-coded redeclaration.
     const root = cssRuleBody(":root");
     expect(root).toMatch(/"SF Pro Text"/);
-    expect(root).toMatch(/--conversation-message-font-weight:\s*400;/);
+    expect(root).toMatch(/--conversation-message-font-weight:\s*450;/);
 
     const body = cssRuleBody(".conversation-pane");
     expect(body).not.toMatch(/--conversation-message-font-family\s*:/);

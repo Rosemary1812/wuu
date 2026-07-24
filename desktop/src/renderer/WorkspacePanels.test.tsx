@@ -239,27 +239,16 @@ describe("WorkspaceRightPanel", () => {
     expect(idleCallback).toBeDefined();
   });
 
-  it("opens navigation over a focused workspace and explains forced compact focus", () => {
-    const onOpenSidebar = vi.fn();
+  it("does not duplicate the shell sidebar toggle in the panel tabbar", () => {
     const props = {
       ...baseProps(),
       globalized: true,
-      onOpenSidebar,
       canExitGlobalized: false,
     } as Parameters<typeof WorkspaceRightPanel>[0];
     mount(<WorkspaceRightPanel {...props} />);
 
-    const navigation = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="打开导航侧栏"]',
-    );
-    expect(navigation).not.toBeNull();
-    const navigationIcon = navigation?.querySelector("svg");
-    expect(navigationIcon?.getAttribute("width")).toBe("18");
-    expect(navigationIcon?.getAttribute("height")).toBe("18");
-    expect(navigationIcon?.getAttribute("viewBox")).toBe("2 2 20 20");
-    expect(navigationIcon?.getAttribute("stroke-width")).toBe("1.67");
-    act(() => navigation?.click());
-    expect(onOpenSidebar).toHaveBeenCalledTimes(1);
+    expect(container?.querySelector(".workspace-panel-sidebar")).toBeNull();
+    expect(container?.querySelector(".workspace-panel-sidebar-hit-hole")).not.toBeNull();
 
     const restore = container?.querySelector<HTMLButtonElement>(
       '[aria-label="窗口过窄，无法停靠右侧栏"]',
@@ -449,6 +438,105 @@ describe("WorkspaceRightPanel", () => {
     expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe(
       `${WORKSPACE_FILE_TREE_DEFAULT_WIDTH}px`,
     );
+  });
+
+  it("drags, auto-collapses, restores, and persists the file tree layout", async () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/repo/project",
+    };
+    const fileTab = workspaceFileViewTab({ context, path: "src/App.tsx" });
+    const panel = (
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
+        activeFileTabID={fileTab.id}
+        workspaceContext={context}
+        focusedComposer={<div data-testid="focused-composer-content" />}
+      />
+    );
+    mount(panel);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+
+    let split = container!.querySelector<HTMLElement>(".workspace-files-split")!;
+    const tree = split.querySelector<HTMLElement>(".workspace-files-tree")!;
+    const separator = split.querySelector<HTMLElement>(".workspace-files-resizer")!;
+    const dragHandle = tree.querySelector<HTMLElement>(".workspace-file-tree-drag-handle")!;
+    const dragPreview = document.body.querySelector<HTMLElement>(".workspace-file-tree-drag-preview")!;
+
+    expect(split.dataset.treeSide).toBe("right");
+    expect(tree.hidden).toBe(false);
+    expect(container!.querySelector(".workspace-panel-file-tree-side")).toBeNull();
+    expect(container!.querySelector(".workspace-panel-file-tree-visibility")).toBeNull();
+    expect(
+      split.querySelector(".workspace-files-content > [data-testid='workspace-document-composer']"),
+    ).not.toBeNull();
+
+    Object.defineProperty(split, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 0, width: 1000 }),
+    });
+    Object.defineProperty(dragPreview, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 168, height: 44 }),
+    });
+    const dataTransfer = {
+      dropEffect: "none",
+      effectAllowed: "none",
+      setData: vi.fn(),
+      setDragImage: vi.fn(),
+    };
+    function dragEvent(type: string, clientX: number): Event {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        clientX: { value: clientX },
+        dataTransfer: { value: dataTransfer },
+      });
+      return event;
+    }
+
+    act(() => dragHandle.dispatchEvent(dragEvent("dragstart", 850)));
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(dragPreview, 84, 22);
+    act(() => split.dispatchEvent(dragEvent("dragover", 100)));
+    expect(split.dataset.treeDropSide).toBe("left");
+    act(() => split.dispatchEvent(dragEvent("drop", 100)));
+    expect(split.dataset.treeSide).toBe("left");
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeSide")).toBe("left");
+
+    act(() => {
+      separator.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 320 }),
+      );
+    });
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 100 }));
+      window.dispatchEvent(new MouseEvent("pointerup"));
+    });
+    await act(async () => Promise.resolve());
+    expect(split.classList.contains("tree-hidden")).toBe(true);
+    expect(tree.hidden).toBe(true);
+    expect(separator.hidden).toBe(true);
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeVisible")).toBe("false");
+
+    mount(panel);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+    split = container!.querySelector<HTMLElement>(".workspace-files-split")!;
+    expect(split.dataset.treeSide).toBe("left");
+    expect(split.classList.contains("tree-hidden")).toBe(true);
+    const revealButton = container!.querySelector<HTMLButtonElement>(".workspace-file-tree-reveal.left")!;
+    expect(revealButton).not.toBeNull();
+
+    await act(async () => {
+      revealButton.click();
+      await Promise.resolve();
+    });
+    await act(async () => Promise.resolve());
+    expect(split.classList.contains("tree-hidden")).toBe(false);
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeVisible")).toBe("true");
   });
 
   it("clamps the tree width so the file content keeps usable space", () => {

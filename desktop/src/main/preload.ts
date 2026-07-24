@@ -2,6 +2,16 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   MESSAGE_FLOW_FONT_SIZE_RANGE,
   type DesktopPlatform,
+  type ChannelAgentCreateParams,
+  type ChannelAgentUpdateParams,
+  type ChannelAgentDeleteParams,
+  type ChannelAgentStartParams,
+  type ChannelMessageListParams,
+  type ChannelMessageSendParams,
+  type ChannelRoomCreateParams,
+  type ChannelRoomDeleteParams,
+  type ChannelTaskCreateParams,
+  type ChannelTaskUpdateParams,
   type MessageFlowFontSize,
   type PopOutInitResult,
   type RemoteControlEvent,
@@ -9,6 +19,7 @@ import {
   type SideThreadEventEnvelope,
   type SideThreadSendParams,
   type ThreadStartParams,
+  type ThreadForkTarget,
   type ThemePreference,
   type LanguagePreference,
   type WindowResizeState,
@@ -200,6 +211,33 @@ const api: WuuDesktopApi = {
   updateGeneralSettings: (settings) =>
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
+  listNamedAgents: () => ipcRenderer.invoke("wuu:channel-agent-list"),
+  bootstrapChannels: () => ipcRenderer.invoke("wuu:channel-bootstrap"),
+  createNamedAgent: (params: ChannelAgentCreateParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-create", params),
+  updateNamedAgent: (params: ChannelAgentUpdateParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-update", params),
+  deleteNamedAgent: (params: ChannelAgentDeleteParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-delete", params),
+  startNamedAgent: (params: ChannelAgentStartParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-start", params),
+  listChannelRooms: () => ipcRenderer.invoke("wuu:channel-room-list"),
+  createChannelRoom: (params: ChannelRoomCreateParams) =>
+    ipcRenderer.invoke("wuu:channel-room-create", params),
+  deleteChannelRoom: (params: ChannelRoomDeleteParams) =>
+    ipcRenderer.invoke("wuu:channel-room-delete", params),
+  listChannelMessages: (params: ChannelMessageListParams) =>
+    ipcRenderer.invoke("wuu:channel-message-list", params),
+  sendChannelMessage: (params: ChannelMessageSendParams) =>
+    ipcRenderer.invoke("wuu:channel-message-send", params),
+  createChannelTask: (params: ChannelTaskCreateParams) =>
+    ipcRenderer.invoke("wuu:channel-task-create", params),
+  updateChannelTask: (params: ChannelTaskUpdateParams) =>
+    ipcRenderer.invoke("wuu:channel-task-update", params),
+  getChannelHumanMentionStatus: () =>
+    ipcRenderer.invoke("wuu:channel-human-mention-status"),
+  ackChannelHumanMentions: () =>
+    ipcRenderer.invoke("wuu:channel-human-mention-ack"),
   getSettingsUsage: () => ipcRenderer.invoke("wuu:settings-usage"),
   listMCPServers: () => ipcRenderer.invoke("wuu:mcp-list"),
   connectMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-connect", name),
@@ -234,7 +272,8 @@ const api: WuuDesktopApi = {
     turnId?: string,
     itemId?: string,
     mode?: "local" | "worktree",
-  ) => ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId, mode),
+    target?: ThreadForkTarget,
+  ) => ipcRenderer.invoke("wuu:thread-fork", threadId, turnId, itemId, mode, target),
   editThreadMessage: (threadId: string, turnId: string, itemId: string) =>
     ipcRenderer.invoke("wuu:thread-edit-message", threadId, turnId, itemId),
   getThreadContextComposition: (threadId: string) =>
@@ -296,38 +335,6 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:message-flow-font-size-get"),
   setMessageFlowFontSize: (fontSize: MessageFlowFontSize) =>
     ipcRenderer.invoke("wuu:message-flow-font-size-set", fontSize),
-  listParticipants: () => ipcRenderer.invoke("wuu:participant-list"),
-  saveParticipant: (params) => ipcRenderer.invoke("wuu:participant-save", params),
-  sendParticipantFeedback: (participantId, text, taskId, messageId) =>
-    ipcRenderer.invoke(
-      "wuu:participant-feedback",
-      participantId,
-      text,
-      taskId,
-      messageId,
-    ),
-  resetParticipant: (participantId, scope) =>
-    ipcRenderer.invoke("wuu:participant-reset", participantId, scope),
-  retireParticipant: (participantId) =>
-    ipcRenderer.invoke("wuu:participant-retire", participantId),
-  kanbanListTasks: (spaceId, parentId) =>
-    ipcRenderer.invoke("wuu:kanban-list-tasks", { space_id: spaceId, parent_id: parentId }),
-  kanbanCreateTask: (params) =>
-    ipcRenderer.invoke("wuu:kanban-create-task", params),
-  kanbanTransitionTask: (taskId, status) =>
-    ipcRenderer.invoke("wuu:kanban-transition-task", { task_id: taskId, status }),
-  kanbanDispatchRun: (params) =>
-    ipcRenderer.invoke("wuu:kanban-dispatch-run", params),
-  kanbanListRuns: (taskId) =>
-    ipcRenderer.invoke("wuu:kanban-list-runs", { task_id: taskId }),
-  kanbanListArtifacts: (taskId) =>
-    ipcRenderer.invoke("wuu:kanban-list-artifacts", { task_id: taskId }),
-  kanbanCrystallize: (params) =>
-    ipcRenderer.invoke("wuu:kanban-crystallize", params),
-  participantGetManifest: (participantId) =>
-    ipcRenderer.invoke("wuu:participant-get-manifest", { participant_id: participantId }),
-  participantSaveManifest: (params) =>
-    ipcRenderer.invoke("wuu:participant-save-manifest", params),
   getMemoryOverview: (params) =>
     ipcRenderer.invoke("wuu:memory-overview", params),
   sendMemoryChat: (params) => ipcRenderer.invoke("wuu:memory-chat", params),
@@ -356,6 +363,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:reveal-session", threadId),
   revealWorkspaceItem: (path: string) =>
     ipcRenderer.invoke("wuu:file-show-in-folder", path),
+  showWorkspaceItemMenu: (path: string) =>
+    ipcRenderer.invoke("wuu:file-show-menu", path),
   openExternal: (url: string) =>
     ipcRenderer.invoke("wuu:open-external", url),
   startTurn: (threadId: string, prompt: string, images, files, permissionMode, activeDocument) =>

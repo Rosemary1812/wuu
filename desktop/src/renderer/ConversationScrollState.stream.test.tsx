@@ -750,6 +750,27 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(layout.scrollTop).toBe(2000 - 600 - 17);
   });
 
+  it("lets an upward wheel take control before the following scroll event", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => {
+      // Model the browser's wheel/default-scroll timing while output is
+      // streaming: an auto-follow frame is already queued, the wheel intent
+      // arrives, and the compositor moves the viewport before the DOM scroll
+      // event is delivered.
+      layout!.scrollHeight += 24;
+      handle!.scheduleStreamScroll();
+      node!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -8 }));
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 8;
+    });
+
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(2000 + 24 - 600 - 8);
+  });
+
   it("keeps auto-follow disabled during smooth jump startup near the bottom", () => {
     mount({ scrollHeight: 2000, clientHeight: 600 });
     if (!layout || !handle || !node) throw new Error("not mounted");

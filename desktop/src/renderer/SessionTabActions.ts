@@ -3,6 +3,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import {
   activeSessionTab,
   cloneSessionTabDraft,
+  conversationPaneThreadsByID,
   createThreadSessionTab,
   draftSessionTabForContext,
   ensureSessionTab,
@@ -39,6 +40,7 @@ export type SessionTabActionsDeps = {
   ) => SessionTab;
   selectThread: (threadID: string) => Promise<void>;
   beginViewSwitch: (kind: ViewSwitchKind, targetID: string) => number;
+  beginInstantThreadSwitch: () => number;
   finishViewSwitch: (requestID: number) => boolean;
   cancelViewSwitch: () => void;
   loadRuntime?: typeof defaultLoadRuntime;
@@ -89,7 +91,7 @@ export function createSessionTabActions(
       tab.context,
       currentState.activeContext,
     );
-    if (tab.kind === "skills" || tab.kind === "board") {
+    if (tab.kind === "skills") {
       const outgoingDraft = deps.getPrimaryComposerDraft();
       const requestID = sameContext
         ? undefined
@@ -187,7 +189,46 @@ export function createSessionTabActions(
     }
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = cloneSessionTabDraft(tab);
-    const requestID = deps.beginViewSwitch("thread", tab.threadID);
+    const localThread = conversationPaneThreadsByID(
+      currentState.threads,
+      currentState.thread,
+      currentState.secondaryThread,
+    ).get(tab.threadID);
+    const canSwitchInstantly = localThread !== undefined && localThread.turns.length > 0;
+    const requestID = canSwitchInstantly
+      ? deps.beginInstantThreadSwitch()
+      : deps.beginViewSwitch("thread", tab.threadID);
+    if (canSwitchInstantly) {
+      deps.restorePrimaryComposerDraft(targetDraft);
+      deps.resetSplitComposerDrafts();
+      deps.setAppState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        const optimisticThread =
+          conversationPaneThreadsByID(
+            withDraft.threads,
+            withDraft.thread,
+            withDraft.secondaryThread,
+          ).get(tab.threadID) ?? localThread;
+        return {
+          ...withDraft,
+          activeContext: tab.context,
+          activeProjectId:
+            tab.context.kind === "project" ? tab.context.project_id : undefined,
+          thread: optimisticThread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(optimisticThread, tab.context, targetDraft),
+          ),
+          activeSessionTabID: threadSessionTabID(optimisticThread.id),
+          threads: upsertThread(withDraft.threads, optimisticThread),
+          running: isThreadRunning(optimisticThread),
+          status: "ready",
+        };
+      });
+    }
     try {
       const projectState = await selectRuntimeContext(tab.context);
       const loadedState = await loadRuntime(projectState, {
@@ -252,8 +293,13 @@ export function createSessionTabActions(
       nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ??
       deps.nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
+    deps.setAppState((current) => ({
+      ...current,
+      sessionTabs: tabsWithFallback,
+      activeSessionTabID: fallbackTab.id,
+    }));
     
-    if (fallbackTab.kind === "skills" || fallbackTab.kind === "board") {
+    if (fallbackTab.kind === "skills") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
         currentState.activeContext,
@@ -278,7 +324,7 @@ export function createSessionTabActions(
           const next = loadedState ? { ...current, ...loadedState } : current;
           return {
             ...next,
-            sessionTabs: tabsWithFallback,
+            sessionTabs: current.sessionTabs,
             activeSessionTabID: fallbackTab.id,
             secondaryThread: undefined,
             activePane: "primary",
@@ -321,7 +367,7 @@ export function createSessionTabActions(
           const next = loadedState ? { ...current, ...loadedState } : current;
           return {
             ...next,
-            sessionTabs: tabsWithFallback,
+            sessionTabs: current.sessionTabs,
             activeSessionTabID: fallbackTab.id,
             thread: undefined,
             secondaryThread: undefined,
@@ -370,7 +416,7 @@ export function createSessionTabActions(
           activePane: "primary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
-            tabsWithFallback,
+            current.sessionTabs,
             createThreadSessionTab(thread, fallbackTab.context, restoredDraft),
           ),
           activeSessionTabID: threadSessionTabID(thread.id),

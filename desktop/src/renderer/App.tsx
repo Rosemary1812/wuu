@@ -62,12 +62,12 @@ import {
   type SideThreadPanelHandle,
 } from "./SideThreadPanel";
 import { SideThreadComposer } from "./SideThreadComposer";
-import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
   AppSidebar,
 } from "./AppSidebar";
+import { ChannelView, type ChannelSection } from "./ChannelView";
 import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
@@ -90,9 +90,7 @@ import {
   cloneSessionTabDraft,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
-  createBoardSessionTab,
   createDraftSessionTab,
-  createGlobalCollaborationBoardTab,
   emptyComposerDraft,
   ensureSessionTab,
   handleStreamingNotification,
@@ -110,6 +108,7 @@ import {
   scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
+  resolveComposerRunningAction,
   requireThread,
   runtimeContextKey,
   sameRuntimeContext,
@@ -162,17 +161,15 @@ import {
 import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
+import { ENABLE_GROUP_CHAT, ENABLE_ULTRA_MODE } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
 import { CircleAlert } from "lucide-react";
-import type { ComposerGoalSummary, KanbanCrystallizeResult } from "../shared/protocol";
+import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
-import { KanbanBoardView } from "./KanbanBoardView";
-import { KanbanCrystallizeDialog } from "./KanbanCrystallizeDialog";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
 import { useSideThreadController } from "./SideThreadController";
@@ -185,6 +182,7 @@ import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceRightPanel,
 } from "./WorkspacePanels";
+import { WorkspaceDocumentTurnDock } from "./WorkspaceDocumentTurnDock";
 import type { WorkspaceTerminalRunRequest } from "./WorkspaceTerminalPanel";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
@@ -213,11 +211,11 @@ import {
   selectRuntimeContext,
 } from "./RuntimeLoadState";
 import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
+import { createWorkspaceActions } from "./WorkspaceActions";
 import { createSessionTabActions } from "./SessionTabActions";
 import { createThreadActivationActions } from "./ThreadActivationActions";
 import { createThreadMutationActions } from "./ThreadMutationActions";
 import { createRuntimeSettingsActions } from "./RuntimeSettingsActions";
-import { createCollaborationActions } from "./CollaborationActions";
 import { createConversationDemoPaneActions } from "./ConversationDemoPaneActions";
 import {
   createConversationHistoryActions,
@@ -454,12 +452,15 @@ export function App(): JSX.Element {
     scheduleSidebarDrawerCloseFromPointerLeave,
   } = useSidebarDrawerState({
     appShellRef,
-    sidebarCollapsed: sidebarDrawerMode,
+    sidebarCollapsed,
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
     dockingMotionMs: SIDEBAR_MOTION_MS,
   });
+  const sidebarDrawerVisible =
+    sidebarDrawerPhase === "open" ||
+    (rightPanelGlobalized && !sidebarCollapsed);
   const {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
@@ -493,12 +494,12 @@ export function App(): JSX.Element {
   });
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
+  const [channelSection, setChannelSection] = useState<ChannelSection>("rooms");
+  const [channelMentionCount, setChannelMentionCount] = useState(0);
+  const previousChannelMentionCount = useRef<number | null>(null);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
-  // 设置 → 记忆 打开时预选的同事笔记本（档案面板「在记忆面板中管理」）。
-  const [settingsMemoryFocusID, setSettingsMemoryFocusID] = useState<
-    string | undefined
-  >(undefined);
   const {
     settingsUsage,
     codexPets,
@@ -507,6 +508,39 @@ export function App(): JSX.Element {
     refreshCodexPets,
     updateCodexPets,
   } = useSettingsRuntimeState({ settingsOpen });
+
+  useEffect(() => {
+    if (!ENABLE_GROUP_CHAT || !window.wuu || !state.initialized) {
+      setChannelMentionCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = async (): Promise<void> => {
+      try {
+        if (channelsOpen) {
+          await window.wuu.ackChannelHumanMentions();
+          if (active) {
+            previousChannelMentionCount.current = 0;
+            setChannelMentionCount(0);
+          }
+          return;
+        }
+        const result = await window.wuu.getChannelHumanMentionStatus();
+        if (active) {
+          previousChannelMentionCount.current = result.count;
+          setChannelMentionCount(result.count);
+        }
+      } catch (reason) {
+        console.warn("channel mention refresh failed", reason);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [channelsOpen, state.initialized, t]);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const {
@@ -546,6 +580,13 @@ export function App(): JSX.Element {
   const [rightPanelFilePath, setRightPanelFilePath] = useState<
     string | undefined
   >(undefined);
+  const [focusedWorkspaceContext, setFocusedWorkspaceContext] =
+    useState<RuntimeContext | undefined>(undefined);
+  useEffect(() => {
+    if (!rightPanelGlobalized) {
+      setFocusedWorkspaceContext(undefined);
+    }
+  }, [rightPanelGlobalized]);
   // Manual focus is user intent; automatic focus is derived independently
   // from current layout capacity above. Closing the workspace clears only the
   // manual request, while resizing can freely enter/leave automatic focus.
@@ -581,6 +622,7 @@ export function App(): JSX.Element {
     workspaceRightPanelDockableWithoutSidebar,
   ]);
   const revealConversationFromFocusedWorkspace = useCallback((): void => {
+    setChannelsOpen(false);
     if (!rightPanelGlobalized) {
       return;
     }
@@ -613,39 +655,15 @@ export function App(): JSX.Element {
   const [instructionFilesEntries, setInstructionFilesEntries] = useState<
     InstructionFilesEntry[]
   >([]);
-  const [boardRefreshTick, setBoardRefreshTick] = useState(0);
-  // Crystallize flow state.
-  const [crystallizeOpen, setCrystallizeOpen] = useState(false);
-  const [crystallizePending, setCrystallizePending] = useState(false);
-  const [crystallizeResult, setCrystallizeResult] = useState<
-    KanbanCrystallizeResult | undefined
-  >(undefined);
-  const {
-    participants,
-    setParticipants,
-    participantPanel,
-    setParticipantPanel,
-    refreshParticipants,
-    handleParticipantSave,
-    handleParticipantFeedback,
-    handleParticipantRetire,
-  } = useParticipantState({
-    initialized: Boolean(state.initialized),
-    setStatus: (status) =>
-      setState((current) => ({
-        ...current,
-        status,
-      })),
-  });
-  // Archive is now a single-click action (the previous two-step "click again
-  // to confirm" pattern was too easy to misfire). Success and failure feedback
-  // lives in `archiveTip` below; the underlying IPC still goes through
-  // `window.wuu.archiveThread(id, true)`.
   const [archiveTip, setArchiveTip] = useState<{
     threadID: string;
     threadTitle: string;
     errorMessage?: string;
   } | null>(null);
+  // Archive is now a single-click action (the previous two-step "click again
+  // to confirm" pattern was too easy to misfire). Success and failure feedback
+  // lives in `archiveTip` above; the underlying IPC still goes through
+  // `window.wuu.archiveThread(id, true)`.
   const dismissArchiveTip = useCallback(() => {
     setArchiveTip(null);
   }, []);
@@ -734,6 +752,7 @@ export function App(): JSX.Element {
     pendingComposerMessagesForThread: pendingComposerMessagesForActiveThread,
     updateThreadPendingComposerMessages,
     clearThreadPendingComposerMessages,
+    removePendingComposerMessageByID,
     syncPendingComposerMessagesFromServerEvent,
     reconcilePendingComposerMessagesForState,
     enqueueComposerMessage,
@@ -812,7 +831,7 @@ export function App(): JSX.Element {
       ?.querySelector<HTMLElement>(".sidebar")
       ?.toggleAttribute(
         "inert",
-        fullPanel && sidebarDrawerPhase !== "open",
+        fullPanel && !sidebarDrawerVisible,
       );
 
     if (fullPanel && !previous.fullPanel) {
@@ -835,17 +854,28 @@ export function App(): JSX.Element {
         )
         ?.focus();
     }
-  }, [rightPanelGlobalized, rightPanelOpen, sidebarDrawerPhase]);
+  }, [rightPanelGlobalized, rightPanelOpen, sidebarDrawerVisible]);
 
   // Workspace panel (file tree / file preview / terminal / review) root: follows the
   // active thread's own cwd when it differs from state.activeContext — the
   // main remaining case is a worktree-fork thread, whose cwd is a git
   // worktree directory distinct from the project root activeContext stays
   // pinned to.
-  const workspaceContext = useMemo(
+  const conversationWorkspaceContext = useMemo(
     () => workspacePanelContext(state.activeContext, state.thread),
     [state.activeContext, state.thread],
   );
+  const workspaceContext =
+    rightPanelGlobalized && focusedWorkspaceContext
+      ? focusedWorkspaceContext
+      : conversationWorkspaceContext;
+  const activeWorkspaceViewTab = workspaceActiveViewTabID
+    ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveViewTabID)
+    : undefined;
+  const workspaceProjectSelectionEnabled =
+    rightPanelGlobalized &&
+    (activeWorkspaceViewTab?.kind === "files" ||
+      activeWorkspaceViewTab?.kind === "file");
   const activeWorkspaceFileTab = workspaceActiveFileTabID
     ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveFileTabID)
     : undefined;
@@ -861,7 +891,6 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activeTabKind = activeSessionTab(state)?.kind;
-  const boardTabActive = ENABLE_COLLABORATION && activeTabKind === "board";
   const environmentContext = workspacePanelContext(state.activeContext, activeThread);
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
@@ -1425,28 +1454,6 @@ export function App(): JSX.Element {
         return;
       }
       setActivitySessions((current) => reduceActivitySessionEvent(current, event));
-      if (
-        event.kind === "notification" &&
-        event.message.method === "participant/updated"
-      ) {
-        void refreshParticipants().catch((error) => {
-          setState((current) => ({
-            ...current,
-            status: desktopApiErrorMessage(error, t("app.refreshAgentsFailed")),
-          }));
-        });
-      }
-      // Kanban board changes for this session should refresh the mounted board.
-      if (
-        event.kind === "notification" &&
-        event.message.method === "kanban/updated"
-      ) {
-        const note = event.message.params as { session_id?: string } | undefined;
-        const activeID = activeThreadIDForState(appStateRef.current);
-        if (!note?.session_id || note.session_id === activeID) {
-          setBoardRefreshTick((tick) => tick + 1);
-        }
-      }
       if (!serverEventTargetsActiveContext(event, appStateRef.current)) {
         return;
       }
@@ -1533,26 +1540,7 @@ export function App(): JSX.Element {
         gitRefreshTimerRef.current = undefined;
       }
     };
-  }, [popOutInit, refreshParticipants]);
-
-  useEffect(() => {
-    if (!state.initialized || !state.activeContext) {
-      setParticipants([]);
-      setParticipantPanel(undefined);
-      return;
-    }
-    void refreshParticipants().catch((error) => {
-      setParticipantPanel((current) =>
-        current
-          ? {
-              ...current,
-              loading: false,
-              error: desktopApiErrorMessage(error, t("app.loadAgentsFailed")),
-            }
-          : current,
-      );
-    });
-  }, [state.initialized, activeContextKey, refreshParticipants]);
+  }, [popOutInit]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent): void {
@@ -1684,7 +1672,6 @@ export function App(): JSX.Element {
     : [];
   const emptyConversation =
     !showingSkillsCatalog &&
-    !boardTabActive &&
     !activePendingNewThreadTurn &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
@@ -2050,6 +2037,8 @@ export function App(): JSX.Element {
   );
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
+  const activeThreadCanSteer = Boolean(activeTurnIDForThread(activeThread));
+  const activeThreadStreamStatus = turnStreamStatusForThread(state, activeThread);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const runningThreadKey = useMemo(() => {
     const running = new Set<string>();
@@ -2166,7 +2155,6 @@ export function App(): JSX.Element {
     !poppedOutMode &&
     !previewingLaunch &&
     !rightPanelGlobalized &&
-    !participantPanel &&
     !sideThreadPanelVisible,
   );
   const environmentPanelTargetVisible =
@@ -2176,7 +2164,6 @@ export function App(): JSX.Element {
         !environmentPanelDismissed &&
         !emptyConversation));
   const environmentPanelVisible = environmentPanelTargetVisible;
-  const participantPanelVisible = Boolean(participantPanel);
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(
@@ -2185,23 +2172,17 @@ export function App(): JSX.Element {
   const sidebarVisible = !poppedOutMode;
 
   useEffect(() => {
-    if (
-      sideThread.entry?.open &&
-      (environmentPanelOpen || participantPanel)
-    ) {
+    if (sideThread.entry?.open && environmentPanelOpen) {
       sideThread.close();
     }
-  }, [
-    environmentPanelOpen,
-    participantPanel,
-    sideThread.close,
-    sideThread.entry?.open,
-  ]);
+  }, [environmentPanelOpen, sideThread.close, sideThread.entry?.open]);
 
   const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarDrawerMode ? " sidebar-collapsed" : ""}${
-    sidebarDrawerMode && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
+    sidebarDrawerMode && sidebarDrawerVisible ? " sidebar-drawer-open" : ""
   }${
-    sidebarDrawerMode && sidebarDrawerPhase === "closing"
+    sidebarDrawerMode &&
+    !(!sidebarCollapsed && rightPanelGlobalized) &&
+    sidebarDrawerPhase === "closing"
       ? " sidebar-drawer-closing"
       : ""
   }${
@@ -2293,7 +2274,6 @@ export function App(): JSX.Element {
       setEnvironmentPanelOpen(false);
       setEnvironmentPanelDismissed(true);
       setEnvironmentPanelMenu(null);
-      setParticipantPanel(undefined);
       sideThread.open();
     }
   }
@@ -2311,7 +2291,7 @@ export function App(): JSX.Element {
       contextWindowTokens:
         state.initialized?.advanced_settings?.context_window_tokens,
     });
-    const streamStatus = turnStreamStatusForThread(state, activeThread);
+    const streamStatus = activeThreadStreamStatus;
     return (
       <Composer
         variant={variant}
@@ -2328,10 +2308,14 @@ export function App(): JSX.Element {
           (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
         }
-        ultraEnabled={Boolean(state.initialized?.ultra)}
-        onToggleUltra={(enabled) => {
-          void updateUltraMode(enabled).catch(() => undefined);
-        }}
+        ultraEnabled={ENABLE_ULTRA_MODE && Boolean(state.initialized?.ultra)}
+        onToggleUltra={
+          ENABLE_ULTRA_MODE
+            ? (enabled) => {
+                void updateUltraMode(enabled).catch(() => undefined);
+              }
+            : undefined
+        }
         runtimeControlsDisabled={
           (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
@@ -2430,7 +2414,7 @@ export function App(): JSX.Element {
         onEditGuideMessage={(id) => void editGuideMessage(id)}
         onSend={() => void sendPrompt()}
         onSteer={
-          activeThreadIsRunning && activeThread
+          activeThreadIsRunning && activeThread && activeThreadCanSteer
             ? () => void sendPrompt("steer")
             : undefined
         }
@@ -2447,41 +2431,8 @@ export function App(): JSX.Element {
         onClearGoal={clearCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
-        onConvertToTask={
-          ENABLE_COLLABORATION &&
-          turns.length > 0 &&
-          activeThreadID &&
-          state.activeContext?.kind !== "project"
-            ? handleConvertToTask
-            : undefined
-        }
       />
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Kanban "convert conversation to task" flow.
-  // ---------------------------------------------------------------------------
-  async function handleConvertToTask(): Promise<void> {
-    if (!ENABLE_COLLABORATION) {
-      return;
-    }
-    const threadId = activeThreadID;
-    if (!threadId) return;
-    setCrystallizeOpen(true);
-    setCrystallizePending(true);
-    setCrystallizeResult(undefined);
-    try {
-      const result = await window.wuu.kanbanCrystallize({
-        thread_id: threadId,
-      });
-      setCrystallizeResult(result);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("kanban crystallize failed", error);
-    } finally {
-      setCrystallizePending(false);
-    }
   }
 
   function handleEmptyStateHint(action: EmptyStateHintAction): void {
@@ -2689,6 +2640,7 @@ export function App(): JSX.Element {
     nextDraftSessionTab,
     selectThread,
     beginViewSwitch,
+    beginInstantThreadSwitch,
     finishViewSwitch,
     cancelViewSwitch,
     loadRuntime,
@@ -2806,9 +2758,8 @@ export function App(): JSX.Element {
     dismissInstructionFilesEntry,
     openInstructions,
     openContextComposition,
-    openCollaborationIntake,
     openMemorySettings,
-  } = createCollaborationActions({
+  } = createWorkspaceActions({
     getAppState: () => appStateRef.current,
     setAppState: setState,
     getActiveTitle: () => activeTitle,
@@ -2823,7 +2774,6 @@ export function App(): JSX.Element {
     setInstructionFilesEntries,
     scheduleStreamScroll,
     closeProjectMenus,
-    setSettingsMemoryFocusID,
     setSettingsInitialPage,
     setSettingsOpen,
   });
@@ -2921,7 +2871,8 @@ export function App(): JSX.Element {
     setComposerImages([]);
     setComposerFiles([]);
     if (isStateActiveThreadRunning(currentState)) {
-      const sent = runningAction === "steer"
+      const resolvedAction = resolveComposerRunningAction(runningAction, targetThread);
+      const sent = resolvedAction === "steer"
         ? await steerComposerMessage(message, targetThread)
         : await queueComposerMessage(message, targetThread);
       if (!sent) {
@@ -2934,13 +2885,11 @@ export function App(): JSX.Element {
     const sent = await sendComposerMessage(message, true);
     if (!sent && focusRequest) {
       cancelMainComposerFocusRequest(focusRequest);
-      window.requestAnimationFrame(() => {
-        focusMainComposer(
-          "hero",
-          focusRequest.origin,
-          focusRequest.interactionVersion,
-        );
-      });
+      requestMainComposerFocus(
+        "hero",
+        focusRequest.origin,
+        focusRequest.interactionVersion,
+      );
     }
   }
 
@@ -3112,6 +3061,7 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
+    enqueueComposerMessage(targetThread.id, message);
     try {
       const encodedImages = await awaitComposerImages(message.images);
       const images = inputImagesFromComposer(encodedImages);
@@ -3124,13 +3074,21 @@ export function App(): JSX.Element {
         targetThread.permission_mode || currentState.initialized.permissions?.mode,
         message.activeDocument,
       );
-      enqueueComposerMessage(targetThread.id, {
-        ...message,
-        id: result.queued.id || message.id,
-        images: encodedImages,
-      });
+      updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
+        ...previous,
+        queued: previous.queued.map((candidate) =>
+          candidate.id === message.id
+            ? {
+                ...candidate,
+                id: result.queued.id || message.id,
+                images: encodedImages,
+              }
+            : candidate,
+        ),
+      }));
       return true;
     } catch (error) {
+      removePendingComposerMessageByID(targetThread.id, message.id, "queue");
       setState((current) => ({
         ...current,
         status:
@@ -3159,6 +3117,10 @@ export function App(): JSX.Element {
     ) {
       return false;
     }
+    updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
+      ...previous,
+      guides: [...previous.guides, { ...message, origin: "steer" }],
+    }));
     try {
       const encodedImages = await awaitComposerImages(message.images);
       await window.wuu.steerTurn(
@@ -3172,13 +3134,15 @@ export function App(): JSX.Element {
       );
       updateThreadPendingComposerMessages(targetThread.id, (previous) => ({
         ...previous,
-        guides: [
-          ...previous.guides,
-          { ...message, images: encodedImages, origin: "steer" },
-        ],
+        guides: previous.guides.map((candidate) =>
+          candidate.id === message.id
+            ? { ...candidate, images: encodedImages }
+            : candidate,
+        ),
       }));
       return true;
     } catch (error) {
+      removePendingComposerMessageByID(targetThread.id, message.id, "guide");
       setState((current) => ({
         ...current,
         status:
@@ -3738,10 +3702,8 @@ export function App(): JSX.Element {
         <SettingsShellRenderer
           initialized={sessionRuntime}
           initialPage={settingsInitialPage}
-          memoryFocusParticipantID={settingsMemoryFocusID}
           running={viewContextSwitchPending}
           runningProviderNames={runningProviderNames}
-          participants={participants}
           usage={settingsUsage}
           codexPets={codexPets}
           codexPetsLoading={codexPetsLoading}
@@ -3765,7 +3727,6 @@ export function App(): JSX.Element {
           activeSessionTabID={activeThreadID ?? ""}
           onBack={() => {
             setSettingsOpen(false);
-            setSettingsMemoryFocusID(undefined);
           }}
           onSave={updateRuntimeSettings}
           onRemoveProvider={removeProvider}
@@ -3809,9 +3770,35 @@ export function App(): JSX.Element {
             onPointerEnter={scheduleSidebarDrawerOpen}
             onPointerLeave={cancelSidebarDrawerOpen}
           />
+          {rightPanelGlobalized ? (
+            <div className="globalized-sidebar-toggle-region">
+              <button
+                className="icon-button side-panel-toggle-button sidebar-toggle-button globalized-sidebar-toggle"
+                type="button"
+                aria-label={t(
+                  sidebarCollapsed
+                    ? "app.expandLeftSidebar"
+                    : "app.collapseLeftSidebar",
+                )}
+                aria-pressed={!sidebarCollapsed}
+                onClick={toggleSidebar}
+                onPointerEnter={scheduleSidebarDrawerOpen}
+                onPointerLeave={(event) =>
+                  scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+                }
+              >
+                <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+              </button>
+            </div>
+          ) : null}
           <AppSidebar
             state={state}
             sidebarProjects={sidebarProjects}
+            activeProjectID={
+              workspaceProjectSelectionEnabled && workspaceContext?.kind === "project"
+                ? workspaceContext.project_id
+                : undefined
+            }
             pinnedThreads={sidebarPinnedThreads}
             activeThreadID={activeThreadID}
             pendingThreadID={visiblePendingThreadID}
@@ -3827,31 +3814,26 @@ export function App(): JSX.Element {
               debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
             }
             sectionOrder={sidebarSectionOrder}
-            kanbanBoardVisible={boardTabActive}
             onStartNewThread={() => {
               revealConversationFromFocusedWorkspace();
               startNewThreadWithComposerFocus();
             }}
-            onOpenSkillsTab={openSkillsTab}
-            onOpenCollaboration={() => {
-              if (!ENABLE_COLLABORATION) {
-                return;
-              }
-              closeProjectMenus();
-              const currentState = appStateRef.current;
-              const context = currentState.activeContext;
-              if (!context) {
-                return;
-              }
-              const boardTab = createGlobalCollaborationBoardTab(context);
-              setState((current) => ({
-                ...current,
-                sessionTabs: ensureSessionTab(current.sessionTabs, boardTab),
-                activeSessionTabID: boardTab.id,
-                activePane: "primary",
-                secondaryThread: undefined,
-                allowThreadAutoActivation: false,
-              }));
+            onOpenSkillsTab={() => {
+              setChannelsOpen(false);
+              openSkillsTab();
+            }}
+            groupChatEnabled={ENABLE_GROUP_CHAT}
+            channelsOpen={channelsOpen}
+            channelMentionCount={channelMentionCount}
+            onOpenChannels={() => {
+              setProjectMenuOpen(false);
+              setRuntimeMenuOpen(false);
+              setCodexRuntimeMenu(null);
+              setEnvironmentPanelOpen(false);
+              setRightPanelOpenWithMotion(false);
+              setChannelsOpen(true);
+              setChannelMentionCount(0);
+              closeSidebarDrawer();
             }}
             onToggleConversationSearch={toggleConversationSearch}
             onSeedConversationFixture={seedConversationFixture}
@@ -3879,6 +3861,22 @@ export function App(): JSX.Element {
             onCreateProject={() => void createBlankProject()}
             onOpenProjectFolder={() => void chooseProjectFolder()}
             onToggleSidebarSectionCollapsed={toggleSidebarSectionCollapsed}
+            onSelectProjectWorkspace={
+              workspaceProjectSelectionEnabled
+                ? (id) => {
+                    const project = state.projects.find((item) => item.id === id);
+                    if (!project || project.missing) {
+                      return;
+                    }
+                    setFocusedWorkspaceContext({
+                      kind: "project",
+                      project_id: project.id,
+                      cwd: project.path,
+                    });
+                    openWorkspaceTool("files");
+                  }
+                : undefined
+            }
             onStartNewThreadForProject={(id) => {
               revealConversationFromFocusedWorkspace();
               startNewThreadForProjectWithComposerFocus(id);
@@ -3941,16 +3939,56 @@ export function App(): JSX.Element {
       <main
         inert={rightPanelOpen && rightPanelGlobalized}
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
-          environmentPanelReserved || participantPanelVisible ? " environment-panel-reserved" : ""
+          environmentPanelReserved ? " environment-panel-reserved" : ""
         }${
           sideThreadPanelVisible ? " side-thread-panel-visible" : ""
-        }${
-          participantPanelVisible ? " participant-panel-visible" : ""
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
         }`}
         ref={conversationPaneRef}
       >
+        {ENABLE_GROUP_CHAT && channelsOpen ? (
+          <>
+            <header className="titlebar">
+              <div className="title-block channel-title-block">
+                {sidebarVisible ? (
+                  <button
+                    className="icon-button side-panel-toggle-button sidebar-toggle-button"
+                    type="button"
+                    aria-label={t(
+                      sidebarCollapsed
+                        ? "app.expandLeftSidebar"
+                        : "app.collapseLeftSidebar",
+                    )}
+                    aria-pressed={!sidebarCollapsed}
+                    onClick={toggleSidebar}
+                    onPointerEnter={scheduleSidebarDrawerOpen}
+                    onPointerLeave={(event) =>
+                      scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+                    }
+                  >
+                    <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+                  </button>
+                ) : null}
+                <nav className="channel-mode-tabs" aria-label={t("channels.title")}>
+                  {(["rooms", "agents", "tasks"] as const).map((mode) => (
+                    <button
+                      className={channelSection === mode ? "active" : ""}
+                      type="button"
+                      key={mode}
+                      aria-current={channelSection === mode ? "page" : undefined}
+                      onClick={() => setChannelSection(mode)}
+                    >
+                      {t(mode === "rooms" ? "channels.rooms" : mode === "agents" ? "channels.agents" : "channels.tasks")}
+                    </button>
+                  ))}
+                </nav>
+              </div>
+            </header>
+            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} />
+          </>
+        ) : (
+          <>
         <header className="titlebar">
           <div className="title-block">
             {sidebarVisible ? (
@@ -3974,6 +4012,7 @@ export function App(): JSX.Element {
             ) : null}
             <ConversationTitleContent
               state={state}
+              crossWorkspaceThreads={sidebarThreads}
               sessionTabsVisible={sessionTabsVisible}
               pendingSwitchThreadID={visiblePendingThreadID}
               pendingComposerMessagesByThread={pendingComposerMessagesByThread}
@@ -4089,14 +4128,6 @@ export function App(): JSX.Element {
               current === id ? undefined : current,
             )
           }
-          participantPanel={participantPanel}
-          onCloseParticipantPanel={() => setParticipantPanel(undefined)}
-          onSaveParticipant={handleParticipantSave}
-          onFeedbackParticipant={handleParticipantFeedback}
-          onOpenMemoryPanel={(participantID) =>
-            openMemorySettings(participantID)
-          }
-          onRetireParticipant={handleParticipantRetire}
           viewContextSwitchPending={viewContextSwitchPending}
         />
 
@@ -4135,7 +4166,7 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
               splitConversation ? " split-scroll-region" : ""
-            }${showingSkillsCatalog ? " skills-scroll-region" : ""}${boardTabActive ? " kanban-board-scroll-region" : ""}`}
+            }${showingSkillsCatalog ? " skills-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -4144,12 +4175,6 @@ export function App(): JSX.Element {
               <SkillsCatalog
                 activeContext={state.activeContext}
                 extensionInventory={state.initialized?.extension_inventory}
-              />
-            ) : boardTabActive ? (
-              <KanbanBoardView
-                spaceId="global"
-                refreshToken={boardRefreshTick}
-                onOpenSourceThread={(threadId) => void activateThread(threadId)}
               />
             ) : (
               <>
@@ -4324,6 +4349,8 @@ export function App(): JSX.Element {
             ) : null}
           </div>
         ) : null}
+          </>
+        )}
       </main>
 
       {!poppedOutMode && (rightPanelOpen || rightPanelAnimating) ? (
@@ -4367,7 +4394,6 @@ export function App(): JSX.Element {
           globalized={rightPanelGlobalized}
           sheetPhase={workspaceSheetPhase}
           onToggleGlobalize={toggleWorkspacePanelGlobalized}
-          onOpenSidebar={openSidebarDrawerNow}
           canExitGlobalized={
             !rightPanelAutoGlobalized ||
             workspaceRightPanelDockableWithoutSidebar
@@ -4378,7 +4404,20 @@ export function App(): JSX.Element {
           onBrowserActivityStop={() => void stopBrowserActivity()}
           focusedComposer={
             rightPanelGlobalized && activeWorkspaceFileTabID
-              ? renderComposer("dock")
+              ? (
+                  <WorkspaceDocumentTurnDock
+                    key={activeThreadID ?? state.activeSessionTabID}
+                    cwd={activeThread?.cwd ?? state.activeContext?.cwd}
+                    onOpenFile={openWorkspaceFile}
+                    turns={
+                      activePendingNewThreadTurn
+                        ? [...turns, activePendingNewThreadTurn]
+                        : turns
+                    }
+                  >
+                    {renderComposer("document")}
+                  </WorkspaceDocumentTurnDock>
+                )
               : undefined
           }
           fileRefreshKey={
@@ -4434,40 +4473,6 @@ export function App(): JSX.Element {
             />
           </div>
         </FloatingMenuPortal>
-      ) : null}
-      {ENABLE_COLLABORATION && activeThreadID ? (
-        <KanbanCrystallizeDialog
-          threadId={activeThreadID}
-          isOpen={crystallizeOpen}
-          pending={crystallizePending}
-          result={crystallizeResult}
-          participants={participants}
-          onClose={() => {
-            setCrystallizeOpen(false);
-            setCrystallizeResult(undefined);
-          }}
-          onSwitchToBoard={() => {
-            if (!ENABLE_COLLABORATION) {
-              return;
-            }
-            setCrystallizeOpen(false);
-            setCrystallizeResult(undefined);
-            const currentState = appStateRef.current;
-            const context = currentState.activeContext;
-            if (!context) {
-              return;
-            }
-            const boardTab = createBoardSessionTab(currentState.thread, context);
-            setState((current) => ({
-              ...current,
-              sessionTabs: ensureSessionTab(current.sessionTabs, boardTab),
-              activeSessionTabID: boardTab.id,
-              activePane: "primary",
-              secondaryThread: undefined,
-              allowThreadAutoActivation: false,
-            }));
-          }}
-        />
       ) : null}
       </div>
     </ImagePreviewProvider>

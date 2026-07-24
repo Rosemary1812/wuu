@@ -7,6 +7,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  Hash,
   LayoutGrid,
   List as ListIcon,
   MessageSquare,
@@ -53,7 +54,6 @@ import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { useI18n } from "./i18n";
 
 /**
@@ -250,6 +250,7 @@ function SortableSection({
 export function AppSidebar({
   state,
   sidebarProjects,
+  activeProjectID,
   pinnedThreads,
   activeThreadID,
   pendingThreadID,
@@ -265,8 +266,10 @@ export function AppSidebar({
   sectionOrder,
   onStartNewThread,
   onOpenSkillsTab,
-  kanbanBoardVisible = false,
-  onOpenCollaboration = () => {},
+  groupChatEnabled = false,
+  channelsOpen,
+  channelMentionCount,
+  onOpenChannels,
   onToggleConversationSearch,
   onSeedConversationFixture,
   onSeedAgentTreeDemo,
@@ -280,6 +283,7 @@ export function AppSidebar({
   onCreateProject,
   onOpenProjectFolder,
   onToggleSidebarSectionCollapsed,
+  onSelectProjectWorkspace,
   onStartNewThreadForProject,
   onSelectProjectThread,
   onRemoveProject,
@@ -296,6 +300,7 @@ export function AppSidebar({
   // state.projects list is unchanged; sidebarProjects is what the sidebar
   // actually shows.
   sidebarProjects: DesktopProject[];
+  activeProjectID?: string;
   pinnedThreads: ThreadSummary[];
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -314,8 +319,10 @@ export function AppSidebar({
   sectionOrder: string[];
   onStartNewThread: () => void;
   onOpenSkillsTab: () => void;
-  kanbanBoardVisible?: boolean;
-  onOpenCollaboration?: () => void;
+  groupChatEnabled?: boolean;
+  channelsOpen?: boolean;
+  channelMentionCount?: number;
+  onOpenChannels?: () => void;
   onToggleConversationSearch: () => void;
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
   onSeedAgentTreeDemo: () => void;
@@ -329,6 +336,7 @@ export function AppSidebar({
   onCreateProject: () => void;
   onOpenProjectFolder: () => void;
   onToggleSidebarSectionCollapsed: (id: string) => void;
+  onSelectProjectWorkspace?: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
   onRemoveProject: (id: string) => void;
@@ -434,6 +442,25 @@ export function AppSidebar({
             <MessageSquarePlus className="icon-lg" />
             <span>{t("sidebar.newConversation")}</span>
           </button>
+          {groupChatEnabled ? (
+            <button
+              className="nav-item"
+              type="button"
+              aria-current={channelsOpen ? "page" : undefined}
+              onClick={onOpenChannels}
+              disabled={!state.initialized}
+            >
+              <Hash className="icon-lg" />
+              <span className="channel-nav-label">
+                <span>{t("sidebar.groupChat")}</span>
+                {channelMentionCount ? (
+                  <span className="channel-mention-badge" aria-label={t("channels.unreadMentions", { count: channelMentionCount })}>
+                    {channelMentionCount > 99 ? "99+" : channelMentionCount}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          ) : null}
           <button
             className="nav-item conversation-search-trigger"
             type="button"
@@ -453,18 +480,6 @@ export function AppSidebar({
             <Wrench className="icon-lg" />
             <span>{t("skills.sectionSkills")}</span>
           </button>
-          {ENABLE_COLLABORATION ? (
-            <button
-              className={`nav-item collaboration-nav-item${kanbanBoardVisible ? " active" : ""}`}
-              type="button"
-              aria-current={kanbanBoardVisible ? "page" : undefined}
-              onClick={onOpenCollaboration}
-              disabled={!hasRuntimeContext}
-            >
-              <MessagesSquare className="icon-lg" />
-              <span>{t("sidebar.collaboration")}</span>
-            </button>
-          ) : null}
           {debugFixturesVisible ? (
             <div className="dev-fixture-nav" aria-label={t("sidebar.devFixtures.label")}>
               <div className="dev-fixture-label">{t("sidebar.devFixtures.title")}</div>
@@ -645,7 +660,7 @@ export function AppSidebar({
               >
                 <ProjectGroup
                   project={project}
-                  activeID={state.activeProjectId}
+                  activeID={activeProjectID ?? state.activeProjectId}
                   pendingProjectID={pendingProjectID}
                   expandedSidebarSectionIDs={expandedSidebarSectionIDs}
                   loadingProjectThreadIDs={loadingProjectThreadIDs}
@@ -659,6 +674,7 @@ export function AppSidebar({
                   onToggleSidebarSectionCollapsed={
                     onToggleSidebarSectionCollapsed
                   }
+                  onSelectProjectWorkspace={onSelectProjectWorkspace}
                   onStartNewThread={onStartNewThreadForProject}
                   onSelectThread={onSelectProjectThread}
                   onToggleThreadPinned={onTogglePinned}

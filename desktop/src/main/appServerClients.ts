@@ -89,6 +89,21 @@ export class AppServerClientPool {
     return this.client().request<T>(method, params);
   }
 
+  prewarmContexts(contexts: readonly RuntimeContext[]): void {
+    for (const context of contexts) {
+      const workdir = resolve(context.cwd);
+      const existing = this.clients.get(workdir);
+      if (existing) {
+        existing.start();
+        continue;
+      }
+      if (this.clients.size >= MAX_APP_SERVER_CLIENTS) {
+        return;
+      }
+      this.clientForContext(context).start();
+    }
+  }
+
   requestInContext<T>(
     context: RuntimeContext,
     method: string,
@@ -279,9 +294,13 @@ export class AppServerClient {
     private readonly resolveCommand: typeof resolveWuuCommand = resolveWuuCommand,
   ) {}
 
-  request<T>(method: string, params?: unknown): Promise<T> {
+  start(): void {
     this.touch();
     this.ensureStarted();
+  }
+
+  request<T>(method: string, params?: unknown): Promise<T> {
+    this.start();
     const id = `client-${this.nextRequestID++}`;
     const payload: AppServerRequest = { id, method, params };
     return new Promise<T>((resolveRequest, rejectRequest) => {

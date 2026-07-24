@@ -162,3 +162,144 @@ func TestResolveUsesCatalogToolAndMediaCapabilities(t *testing.T) {
 		t.Fatalf("o3 should expose tool and media capabilities: %+v", roles.Main.Capabilities)
 	}
 }
+
+func TestResolveAliasProducesCompleteSelection(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai",
+		Providers: map[string]config.ProviderConfig{
+			"openai": {
+				Type:    "openai",
+				BaseURL: "https://api.openai.com/v1",
+				Model:   "gpt-4.1",
+			},
+			"anthropic": {
+				Type:    "anthropic",
+				BaseURL: "https://api.anthropic.com",
+				Model:   "claude-sonnet-4-5",
+			},
+		},
+		Agent: config.AgentConfig{
+			ModelAliases: map[string]config.ModelRoleConfig{
+				"frontend": {Provider: "anthropic", Model: "claude-sonnet-4-5", Effort: "high"},
+			},
+		},
+	}
+
+	selection, err := ResolveAlias(cfg, "frontend")
+	if err != nil {
+		t.Fatalf("ResolveAlias: %v", err)
+	}
+	if selection.Role != RoleWorker {
+		t.Fatalf("role = %q, want worker", selection.Role)
+	}
+	if selection.Inherited {
+		t.Fatalf("alias selection should not be inherited: %+v", selection)
+	}
+	if selection.Provider != "anthropic" || selection.Model != "claude-sonnet-4-5" {
+		t.Fatalf("unexpected provider/model: %+v", selection)
+	}
+	if selection.Effort != "high" {
+		t.Fatalf("effort = %q, want high", selection.Effort)
+	}
+	if selection.Behavior.Family != "claude" {
+		t.Fatalf("expected claude behavior facts: %+v", selection.Behavior)
+	}
+	if selection.Capabilities.ContextWindow == 0 {
+		t.Fatalf("expected non-zero context window: %+v", selection.Capabilities)
+	}
+}
+
+func TestResolveAliasDoesNotInheritFromMain(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai",
+		Providers: map[string]config.ProviderConfig{
+			"openai": {
+				Type:    "openai",
+				BaseURL: "https://api.openai.com/v1",
+				Model:   "gpt-4.1",
+			},
+		},
+		Agent: config.AgentConfig{
+			ModelAliases: map[string]config.ModelRoleConfig{
+				" cheap ": {Provider: "openai", Model: "gpt-5-mini"},
+			},
+		},
+	}
+
+	selection, err := ResolveAlias(cfg, "cheap")
+	if err != nil {
+		t.Fatalf("ResolveAlias: %v", err)
+	}
+	if selection.Provider != "openai" || selection.Model != "gpt-5-mini" {
+		t.Fatalf("alias should not inherit main model: %+v", selection)
+	}
+}
+
+func TestResolveAliasUnknownAlias(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai",
+		Providers: map[string]config.ProviderConfig{
+			"openai": {Type: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-4.1"},
+		},
+	}
+	if _, err := ResolveAlias(cfg, "missing"); err == nil {
+		t.Fatalf("expected error for unknown alias")
+	}
+}
+
+func TestResolveAliasInvalidVariant(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "custom",
+		Providers: map[string]config.ProviderConfig{
+			"custom": {
+				Type:    "openai-compatible",
+				BaseURL: "https://example.test/v1",
+				Model:   "main-model",
+				Models: map[string]config.ProviderModelConfig{
+					"worker-model": {
+						Variants: map[string]map[string]any{
+							"low":  {"reasoningEffort": "low"},
+							"high": {"reasoningEffort": "high"},
+						},
+					},
+				},
+			},
+		},
+		Agent: config.AgentConfig{
+			ModelAliases: map[string]config.ModelRoleConfig{
+				"bad": {Provider: "custom", Model: "worker-model", Variant: "medium"},
+			},
+		},
+	}
+	if _, err := ResolveAlias(cfg, "bad"); err == nil {
+		t.Fatalf("expected error for invalid variant")
+	}
+}
+
+func TestResolveAliasColonContainingModelID(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "local",
+		Providers: map[string]config.ProviderConfig{
+			"local": {
+				Type:    "openai-compatible",
+				BaseURL: "http://127.0.0.1:11434/v1",
+				Model:   "llama3.2",
+			},
+		},
+		Agent: config.AgentConfig{
+			ModelAliases: map[string]config.ModelRoleConfig{
+				"ollama": {Provider: "local", Model: "llama3.2:latest"},
+			},
+		},
+	}
+	selection, err := ResolveAlias(cfg, "ollama")
+	if err != nil {
+		t.Fatalf("ResolveAlias: %v", err)
+	}
+	if selection.Model != "llama3.2:latest" {
+		t.Fatalf("colon-containing model ID lost: %q", selection.Model)
+	}
+	if selection.Role != RoleWorker {
+		t.Fatalf("role = %q, want worker", selection.Role)
+	}
+}

@@ -37,6 +37,7 @@ const (
 	ToolKindSchedule  ToolKind = "schedule"
 	ToolKindMCP       ToolKind = "mcp"
 	ToolKindBrowser   ToolKind = "browser"
+	ToolKindChat      ToolKind = "chat"
 	ToolKindUnknown   ToolKind = "unknown"
 )
 
@@ -218,6 +219,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindAgent
 	case "cron":
 		return ToolKindSchedule
+	case "chat_check", "chat_read", "chat_send", "chat_draft", "chat_task", "chat_remind":
+		return ToolKindChat
 	case "browser", browserToolName:
 		return ToolKindBrowser
 	default:

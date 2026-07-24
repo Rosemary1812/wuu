@@ -50,7 +50,7 @@
     "Microsoft YaHei UI", "Source Han Sans SC", "Noto Sans CJK SC",
     "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
-  --conversation-message-font-weight: 400;
+  --conversation-message-font-weight: 450;
   /* Outer message-flow rhythm. Structural containers must consume these
      landmarks instead of adding their own anonymous gaps on top. */
   --conversation-flow-top-gap: 36px;
@@ -1020,7 +1020,9 @@
   position: absolute;
   bottom: calc(var(--dock-composer-height, 0px) + 8px);
   left: var(--conversation-visible-inset-left);
-  right: var(--conversation-visible-inset-right);
+  right: calc(
+    var(--conversation-visible-inset-right) + var(--conversation-scrollbar-gutter)
+  );
   --jump-to-latest-max-width: min(
     var(--session-composer-width),
     calc(

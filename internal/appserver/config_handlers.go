@@ -31,8 +31,17 @@ import (
 )
 
 func (s *Server) handleInitialize(req Request) error {
+	var params InitializeParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.ProtocolVersion != "" && params.ProtocolVersion != ProtocolVersion {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("unsupported protocol version %q (server uses %q)", params.ProtocolVersion, ProtocolVersion))
+	}
+	s.setClientMethods(params.Capabilities.ReverseRPC.Methods)
 	s.pinLegacyRuntimeSelections()
 	core := version.Info()
+	runtimeHost := s.rt.HostInfo()
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	status := "ready"
 	issues := make([]RuntimeIssue, 0, len(s.rt.ReadinessIssues))
@@ -41,21 +50,25 @@ func (s *Server) handleInitialize(req Request) error {
 		issues = append(issues, RuntimeIssue{Code: issue.Code, Provider: issue.Provider, Message: issue.Message})
 	}
 	return s.writeResponse(req.ID, InitializeResult{
-		Status:             status,
-		Issues:             issues,
-		ProtocolVersion:    ProtocolVersion,
+		Status:          status,
+		Issues:          issues,
+		ProtocolVersion: ProtocolVersion,
 		Core: CoreBuildInfo{
 			Version: core.Version,
 			Commit:  core.Commit,
 			Date:    core.Date,
 			Dirty:   core.Dirty,
 		},
-		Provider:           s.rt.ProviderName,
-		Model:              s.rt.Model,
-		Effort:             s.currentDisplayEffort(),
-		Variant:            s.currentVariant(),
-		Ultra:              s.rt.UltraMode(),
-		MaxParallel:        s.rt.MaxParallel(),
+		Provider:    s.rt.ProviderName,
+		Model:       s.rt.Model,
+		Effort:      s.currentDisplayEffort(),
+		Variant:     s.currentVariant(),
+		Ultra:       s.rt.UltraMode(),
+		MaxParallel: s.rt.MaxParallel(),
+		RuntimeHost: RuntimeHostSummary{
+			Kind:       string(runtimeHost.Kind),
+			InstanceID: runtimeHost.InstanceID,
+		},
 		WorkspaceRoot:      s.rt.RootDir,
 		Permissions:        s.currentPermissionSummary(),
 		ExtensionTrust:     s.currentExtensionTrustSummary(),
@@ -63,12 +76,11 @@ func (s *Server) handleInitialize(req Request) error {
 		ModelProfile:       modelProfile,
 		ToolSurface:        toolSurface,
 		ModelRoles:         s.currentModelRoleSummaries(),
+		ModelAliases:       s.currentModelAliasSummaries(),
 		Providers:          s.providerSummaries(),
 		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
 		GeneralSettings:    s.currentGeneralSettingsSummary(),
-		// Browser stays false in this skeleton; a later layer wires the real
-		// "this client hosts the embedded browser backend" state through here.
-		Features: FeatureFlags{HelpMe: s.rt.ExperimentalHelpMe, Browser: false},
+		Features:           FeatureFlags{HelpMe: s.rt.ExperimentalHelpMe, Browser: s.supportsBrowserClient()},
 	}, nil)
 }
 
@@ -90,6 +102,7 @@ func (s *Server) handleConfigRead(req Request) error {
 		ModelProfile:       modelProfile,
 		ToolSurface:        toolSurface,
 		ModelRoles:         s.currentModelRoleSummaries(),
+		ModelAliases:       s.currentModelAliasSummaries(),
 		Providers:          s.providerSummaries(),
 		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
 		GeneralSettings:    s.currentGeneralSettingsSummary(),
@@ -116,6 +129,17 @@ func (s *Server) currentModelRoleSummaries() []ModelRoleSummary {
 		})
 	}
 	return out
+}
+
+func (s *Server) currentModelAliasSummaries() map[string]ModelAliasSummary {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	cfg, _, err := s.rt.LoadEffectiveConfig()
+	if err != nil {
+		return nil
+	}
+	return modelAliasSummaries(cfg.Agent.ModelAliases)
 }
 
 func (s *Server) currentPermissionSummary() PermissionSummary {
@@ -175,6 +199,13 @@ func (s *Server) currentGeneralSettingsSummary() GeneralSettingsSummary {
 		summary.AppendSystemPrompt = cfg.Agent.AppendSystemPrompt
 		summary.GitAttributionEnabled = cfg.Agent.GitAttributionEnabledValue()
 		summary.MemoryDisabled = cfg.Memory.Disable
+		summary.DreamEnabled = cfg.Memory.DreamEnabled()
+		summary.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+		if summary.DreamIntervalDays <= 0 {
+			summary.DreamIntervalDays = config.DefaultDreamIntervalDays
+		}
+		summary.DreamProvider = cfg.Memory.DreamProvider()
+		summary.DreamModel = cfg.Memory.DreamModel()
 		activePluginServers := make(map[string]bool)
 		for _, item := range s.rt.Plugins {
 			for name := range item.MCPServers {
@@ -586,6 +617,22 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	if s.rt == nil {
 		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
 	}
+	modelAliases := modelAliasConfigUpdate(params.ModelAliases)
+	if modelAliases != nil {
+		candidate, _, err := s.rt.LoadEffectiveConfig()
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		candidate.Agent.ModelAliases = make(map[string]config.ModelRoleConfig, len(modelAliases))
+		for name, alias := range modelAliases {
+			if alias != nil {
+				candidate.Agent.ModelAliases[name] = *alias
+			}
+		}
+		if err := candidate.Validate(); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	if err := config.UpdateAdvancedRuntime(s.rt.ConfigPath, s.rt.ProviderName, config.AdvancedRuntimeUpdate{
 		MaxSteps:                params.MaxSteps,
 		MaxContextTokens:        params.MaxContextTokens,
@@ -594,6 +641,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		CompactKeepRecentTokens: params.CompactKeepRecentTokens,
 		DisableAutoCompact:      params.DisableAutoCompact,
 		ProviderContextWindow:   params.ProviderContextWindow,
+		ModelAliases:            modelAliases,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -642,8 +690,42 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	}
 	return s.writeResponse(req.ID, ConfigAdvancedUpdateResult{
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
+		ModelAliases:     modelAliasSummaries(cfg.Agent.ModelAliases),
 		Providers:        s.providerSummaries(),
 	}, nil)
+}
+
+func modelAliasConfigUpdate(input *map[string]ModelAliasSummary) map[string]*config.ModelRoleConfig {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]*config.ModelRoleConfig, len(*input))
+	for name, alias := range *input {
+		selection := alias
+		out[name] = &config.ModelRoleConfig{
+			Provider: selection.Provider,
+			Model:    selection.Model,
+			Effort:   selection.Effort,
+			Variant:  selection.Variant,
+		}
+	}
+	return out
+}
+
+func modelAliasSummaries(input map[string]config.ModelRoleConfig) map[string]ModelAliasSummary {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]ModelAliasSummary, len(input))
+	for name, alias := range input {
+		out[strings.TrimSpace(name)] = ModelAliasSummary{
+			Provider: alias.Provider,
+			Model:    alias.Model,
+			Effort:   alias.Effort,
+			Variant:  alias.Variant,
+		}
+	}
+	return out
 }
 
 func (s *Server) handleConfigGeneralUpdate(req Request) error {
@@ -662,6 +744,10 @@ func (s *Server) handleConfigGeneralUpdate(req Request) error {
 		GitAttributionEnabled: params.GitAttributionEnabled,
 		MemoryDisable:         params.MemoryDisable,
 		MCPEnabledToggles:     params.MCPEnabledToggles,
+		DreamEnabled:          params.DreamEnabled,
+		DreamIntervalDays:     params.DreamIntervalDays,
+		DreamProvider:         params.DreamProvider,
+		DreamModel:            params.DreamModel,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}

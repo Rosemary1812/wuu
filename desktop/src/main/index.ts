@@ -2,10 +2,12 @@ import {
   app,
   BrowserWindow,
   type BrowserWindowConstructorOptions,
+  clipboard,
   dialog,
   ipcMain,
   type IpcMainInvokeEvent,
   Menu,
+  nativeImage,
   nativeTheme,
   screen,
   session as electronSession,
@@ -16,7 +18,11 @@ import {
 import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
+import {
+  APP_SERVER_PROTOCOL_VERSION,
+  BROWSER_REVERSE_RPC_METHODS,
+  MESSAGE_FLOW_FONT_SIZE_RANGE,
+} from "../shared/protocol";
 import type {
   ComposerGoalSummary,
   ConfigAdvancedUpdateResult,
@@ -26,6 +32,31 @@ import type {
   GitCommitParams,
   GitPullRequestParams,
   BuildInfoResult,
+  ChannelAgentCreateParams,
+  ChannelAgentCreateResult,
+  ChannelAgentUpdateParams,
+  ChannelAgentUpdateResult,
+  ChannelAgentDeleteParams,
+  ChannelAgentDeleteResult,
+  ChannelBootstrapResult,
+  ChannelAgentListResult,
+  ChannelAgentStartParams,
+  ChannelAgentStartResult,
+  ChannelMessageListParams,
+  ChannelMessageListResult,
+  ChannelMessageSendParams,
+  ChannelMessageSendResult,
+  ChannelRoomCreateParams,
+  ChannelRoomCreateResult,
+  ChannelRoomDeleteParams,
+  ChannelRoomDeleteResult,
+  ChannelRoomListResult,
+  ChannelTaskCreateParams,
+  ChannelTaskCreateResult,
+  ChannelTaskUpdateParams,
+  ChannelTaskUpdateResult,
+  ChannelHumanMentionStatusResult,
+  ChannelHumanMentionAckResult,
   ActivityActionResult,
   ActivityListResult,
   ActivityReleaseResult,
@@ -55,23 +86,6 @@ import type {
   MemoryOverviewResult,
   MemoryReadParams,
   MemoryReadResult,
-  ParticipantFeedbackResult,
-  ParticipantListResult,
-  ParticipantResetResult,
-  ParticipantRetireResult,
-  ParticipantSaveParams,
-  ParticipantSaveResult,
-  ParticipantGetManifestParams,
-  ParticipantSaveManifestParams,
-  ParticipantManifest,
-  KanbanTask,
-  KanbanCreateTaskParams,
-  KanbanTransitionTaskParams,
-  KanbanDispatchRunParams,
-  KanbanRun,
-  KanbanArtifact,
-  KanbanCrystallizeParams,
-  KanbanCrystallizeResult,
   RemoteControlSnapshot,
   RemoteControlStatus,
   ServerEvent,
@@ -84,6 +98,7 @@ import type {
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
   ThreadForkResult,
+  ThreadForkTarget,
   ThreadResumeResult,
   ThreadStartParams,
   Turn,
@@ -134,6 +149,11 @@ import {
 } from "./renderableFileProtocol";
 import { TerminalSessionManager } from "./terminalSessions";
 import { WorkspaceFileService } from "./workspaceFiles";
+import {
+  macWorkspaceItemMenuTemplate,
+  macWorkspaceApplications,
+  openMacWorkspaceItemWithApplication,
+} from "./macWorkspaceApplications";
 
 import {
   appShellWebPreferences,
@@ -1001,7 +1021,28 @@ app.whenReady().then(async () => {
     // that session because no later focus event is guaranteed.
     observationCoordinator.setActiveThread(threadID);
   });
-  ipcMain.handle("wuu:project-list", () => projectManager.list());
+  ipcMain.handle("wuu:project-list", () => {
+    const result = projectManager.list();
+    const contexts: RuntimeContext[] = [];
+    if (result.active_context) {
+      contexts.push(result.active_context);
+    }
+    for (const project of result.projects) {
+      if (project.missing || project.id === result.active_project_id) {
+        continue;
+      }
+      contexts.push({
+        kind: "project",
+        project_id: project.id,
+        cwd: project.path,
+      });
+    }
+    // Project runtimes take seconds to cold-start. Fill the small client pool
+    // while the user is still reading the current project so switching among
+    // the pooled projects does not begin that startup work after the click.
+    appServerClientPool.prewarmContexts(contexts);
+    return result;
+  });
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
     projectManager.select(projectIDToSelect),
   );
@@ -1163,7 +1204,13 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("wuu:initialize", async (event) => {
-    const result = await appServerRequest<InitializeResult>(event, "initialize");
+    const result = await appServerRequest<InitializeResult>(event, "initialize", {
+      protocol_version: APP_SERVER_PROTOCOL_VERSION,
+      client: { name: "wuu-desktop", version: DESKTOP_BUILD_INFO.version },
+      capabilities: {
+        reverse_rpc: { methods: [...BROWSER_REVERSE_RPC_METHODS] },
+      },
+    });
     if (result.core) {
       cachedCoreBuildInfo = result.core;
     }
@@ -1273,6 +1320,51 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
+  ipcMain.handle("wuu:channel-agent-list", (event) =>
+    appServerRequest<ChannelAgentListResult>(event, "channel/agent/list"),
+  );
+  ipcMain.handle("wuu:channel-bootstrap", (event) =>
+    appServerRequest<ChannelBootstrapResult>(event, "channel/bootstrap"),
+  );
+  ipcMain.handle("wuu:channel-agent-create", (event, params: ChannelAgentCreateParams) =>
+    appServerRequest<ChannelAgentCreateResult>(event, "channel/agent/create", params),
+  );
+  ipcMain.handle("wuu:channel-agent-update", (event, params: ChannelAgentUpdateParams) =>
+    appServerRequest<ChannelAgentUpdateResult>(event, "channel/agent/update", params),
+  );
+  ipcMain.handle("wuu:channel-agent-delete", (event, params: ChannelAgentDeleteParams) =>
+    appServerRequest<ChannelAgentDeleteResult>(event, "channel/agent/delete", params),
+  );
+  ipcMain.handle("wuu:channel-agent-start", (event, params: ChannelAgentStartParams) =>
+    appServerRequest<ChannelAgentStartResult>(event, "channel/agent/start", params),
+  );
+  ipcMain.handle("wuu:channel-room-list", (event) =>
+    appServerRequest<ChannelRoomListResult>(event, "channel/room/list"),
+  );
+  ipcMain.handle("wuu:channel-room-create", (event, params: ChannelRoomCreateParams) =>
+    appServerRequest<ChannelRoomCreateResult>(event, "channel/room/create", params),
+  );
+  ipcMain.handle("wuu:channel-room-delete", (event, params: ChannelRoomDeleteParams) =>
+    appServerRequest<ChannelRoomDeleteResult>(event, "channel/room/delete", params),
+  );
+  ipcMain.handle("wuu:channel-message-list", (event, params: ChannelMessageListParams) =>
+    appServerRequest<ChannelMessageListResult>(event, "channel/message/list", params),
+  );
+  ipcMain.handle("wuu:channel-message-send", (event, params: ChannelMessageSendParams) =>
+    appServerRequest<ChannelMessageSendResult>(event, "channel/message/send", params),
+  );
+  ipcMain.handle("wuu:channel-task-create", (event, params: ChannelTaskCreateParams) =>
+    appServerRequest<ChannelTaskCreateResult>(event, "channel/task/create", params),
+  );
+  ipcMain.handle("wuu:channel-task-update", (event, params: ChannelTaskUpdateParams) =>
+    appServerRequest<ChannelTaskUpdateResult>(event, "channel/task/update", params),
+  );
+  ipcMain.handle("wuu:channel-human-mention-status", (event) =>
+    appServerRequest<ChannelHumanMentionStatusResult>(event, "channel/human-mention/status"),
+  );
+  ipcMain.handle("wuu:channel-human-mention-ack", (event) =>
+    appServerRequest<ChannelHumanMentionAckResult>(event, "channel/human-mention/ack"),
+  );
   ipcMain.handle("wuu:codex-pets-list", () => {
     const snapshot = codexPetsSnapshot();
     // Sync the pet window from the renderer-side list call so a failed
@@ -1374,11 +1466,13 @@ app.whenReady().then(async () => {
       turnId?: string,
       itemId?: string,
       mode?: "local" | "worktree",
+      target?: ThreadForkTarget,
     ) =>
       appServerRequest<ThreadForkResult>(event, "thread/fork", {
         thread_id: threadId,
         turn_id: turnId ?? "",
         item_id: itemId ?? "",
+        ...(target ? { target } : {}),
         ...(mode ? { mode } : {}),
       }),
   );
@@ -1485,86 +1579,6 @@ app.whenReady().then(async () => {
       return { ok: true, fontSize: next };
     },
   );
-  ipcMain.handle("wuu:participant-list", (event) =>
-    appServerRequest<ParticipantListResult>(event, "participant/list"),
-  );
-  ipcMain.handle("wuu:participant-save", (event, params: ParticipantSaveParams) =>
-    appServerRequest<ParticipantSaveResult>(event, "participant/save", params),
-  );
-  ipcMain.handle(
-    "wuu:participant-feedback",
-    (
-      event,
-      participantId: string,
-      text: string,
-      taskId?: string,
-      messageId?: string,
-    ) =>
-      appServerRequest<ParticipantFeedbackResult>(event, "participant/feedback", {
-        participant_id: participantId,
-        text,
-        task_id: taskId ?? "",
-        message_id: messageId ?? "",
-      }),
-  );
-  ipcMain.handle(
-    "wuu:participant-reset",
-    (event, participantId: string, scope: "restart" | "session" | "full") =>
-      appServerRequest<ParticipantResetResult>(event, "participant/reset", {
-        participant_id: participantId,
-        scope,
-      }),
-  );
-  ipcMain.handle("wuu:participant-retire", (event, participantId: string) =>
-    appServerRequest<ParticipantRetireResult>(event, "participant/retire", {
-      participant_id: participantId,
-    }),
-  );
-  ipcMain.handle(
-    "wuu:participant-get-manifest",
-    (event, params: ParticipantGetManifestParams) =>
-      appServerRequest<ParticipantManifest>(event, "participant/get-manifest", params),
-  );
-  ipcMain.handle(
-    "wuu:participant-save-manifest",
-    (event, params: ParticipantSaveManifestParams) =>
-      appServerRequest<ParticipantManifest>(event, "participant/save-manifest", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-list-tasks",
-    (event, params: { session_id: string; parent_id?: string }) =>
-      appServerRequest<KanbanTask[]>(event, "kanban/list-tasks", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-create-task",
-    (event, params: KanbanCreateTaskParams) =>
-      appServerRequest<KanbanTask>(event, "kanban/create-task", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-transition-task",
-    (event, params: KanbanTransitionTaskParams) =>
-      appServerRequest<KanbanTask>(event, "kanban/transition-task", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-dispatch-run",
-    (event, params: KanbanDispatchRunParams) =>
-      appServerRequest<KanbanRun>(event, "kanban/dispatch-run", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-list-runs",
-    (event, params: { task_id: string }) =>
-      appServerRequest<KanbanRun[]>(event, "kanban/list-runs", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-list-artifacts",
-    (event, params: { task_id: string }) =>
-      appServerRequest<KanbanArtifact[]>(event, "kanban/list-artifacts", params),
-  );
-  ipcMain.handle(
-    "wuu:kanban-crystallize",
-    (event, params: KanbanCrystallizeParams) =>
-      appServerRequest<KanbanCrystallizeResult>(event, "kanban/crystallize", params),
-  );
   // 记忆面板 RPC（memory-redesign.md §8.2）。participant_id 只在
   // participant scope 下附带，避免后端 DisallowUnknownFields 之外的
   // 空字段歧义；user scope 的请求只带 scope。
@@ -1664,6 +1678,55 @@ app.whenReady().then(async () => {
       shell.showItemInFolder(path);
     },
   );
+  ipcMain.handle("wuu:file-show-menu", async (event, path: string) => {
+    if (process.platform !== "darwin") {
+      return { action: "none" } as const;
+    }
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner || owner.isDestroyed()) {
+      return { action: "none" } as const;
+    }
+
+    const associations = await macWorkspaceApplications(path).catch(() => ({
+      defaultApplication: undefined,
+      applications: [],
+    }));
+    const iconApplications = associations.defaultApplication
+      ? [associations.defaultApplication, ...associations.applications]
+      : associations.applications;
+    const iconEntries = iconApplications.map((application) => {
+      if (!application.iconPng) return [application.path, undefined] as const;
+      const icon = nativeImage.createFromBuffer(
+        Buffer.from(application.iconPng, "base64"),
+        { scaleFactor: 2 },
+      );
+      return [application.path, icon.isEmpty() ? undefined : icon] as const;
+    });
+    const icons = new Map(iconEntries);
+    return new Promise<{ action: "none" }>((resolve) => {
+      const template = macWorkspaceItemMenuTemplate({
+        associations,
+        icons,
+        labels: {
+          open: mainTranslate("open"),
+          openInApplication: (application) => mainTranslate("openInApplication", { application }),
+          openWith: mainTranslate("openWith"),
+          copyPath: mainTranslate("copyPath"),
+        },
+        onOpenDefault: () => { void shell.openPath(path); },
+        onOpenWith: (application) => {
+          void openMacWorkspaceItemWithApplication(path, application.path).catch((error) => {
+            console.error("[desktop] failed to open workspace item with application", error);
+          });
+        },
+        onCopyPath: () => clipboard.writeText(path),
+      });
+      Menu.buildFromTemplate(template).popup({
+        window: owner,
+        callback: () => resolve({ action: "none" }),
+      });
+    });
+  });
   ipcMain.handle(
     "wuu:turn-start",
     (

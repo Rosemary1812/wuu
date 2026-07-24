@@ -115,6 +115,61 @@ func TestForkHistoryUsesStableOriginsAcrossProviderCheckpoint(t *testing.T) {
 	}
 }
 
+func TestForkRawHistoryResolvesLiveItemIDAfterDisplayPruning(t *testing.T) {
+	threadID := "thread-live-checkpoint"
+	rawMessages := []providers.ChatMessage{
+		{Seq: 1, Role: "user", Content: "older prompt"},
+		{
+			Seq:              2,
+			Role:             "assistant",
+			Content:          "checking the repository",
+			ReasoningContent: "plan the inspection",
+			ToolCalls: []providers.ToolCall{{
+				ID: "call-read", Name: "read_file", Arguments: `{"path":"README.md"}`,
+			}},
+		},
+		{Seq: 3, Role: "tool", ToolCallID: "call-read", Content: "contents"},
+		{Seq: 4, Role: "assistant", Content: "older answer", Phase: providers.MessagePhaseFinalAnswer},
+		{Seq: 5, Role: "system", Content: compact.ConversationSummaryPrefix + "\nOlder context"},
+		{Seq: 6, Role: "user", Content: "recent prompt"},
+	}
+	raw := make([]persistedMessage, 0, len(rawMessages))
+	for _, msg := range rawMessages {
+		raw = append(raw, persistedMessageFromChatMessage(msg))
+	}
+	liveTurns := turnsFromPersistedHistory(threadID, raw[:4], time.Unix(0, 0).UTC(), nil)
+	targetTurn, targetItem := finalAnswerItemForForkTest(t, liveTurns, "older answer")
+	if targetItem.ID != targetTurn.ID+"-item-5" {
+		t.Fatalf("live target ID = %q, want item-5 after reasoning and tool items", targetItem.ID)
+	}
+	// Live items created from stream events in v0.11.1 did not carry a durable
+	// seq or provider source id, so only their original positional id survives.
+	targetItem.Seq = 0
+	targetItem.SourceID = ""
+	for turnIndex := range liveTurns {
+		for itemIndex := range liveTurns[turnIndex].Items {
+			if liveTurns[turnIndex].Items[itemIndex].ID == targetItem.ID {
+				liveTurns[turnIndex].Items[itemIndex].Seq = 0
+				liveTurns[turnIndex].Items[itemIndex].SourceID = ""
+			}
+		}
+	}
+
+	display := displayHistoryAcrossProviderCheckpoint(raw, raw[4:])
+	displayMessages := chatMessagesFromPersistedMessages(display)
+	if _, err := forkHistoryAtTargetWithIdentity(displayMessages, threadID, liveTurns, targetTurn.ID, targetItem.ID, targetItem); !errors.Is(err, errForkTargetNotFound) {
+		t.Fatalf("pruned display history unexpectedly resolved stale live ID: %v", err)
+	}
+
+	forked, err := forkPersistedHistoryAtTarget(raw, threadID, liveTurns, targetTurn.ID, targetItem.ID, targetItem)
+	if err != nil {
+		t.Fatalf("fork raw history at stale live ID: %v", err)
+	}
+	if last := forked[len(forked)-1]; last.Seq != 4 || last.Content != "older answer" {
+		t.Fatalf("fork resolved the wrong raw origin: %+v", forked)
+	}
+}
+
 func TestForkHistoryAtFinalAnswerSkipsRetiredContextArtifacts(t *testing.T) {
 	threadID := "thread-retired-context"
 	history := []providers.ChatMessage{

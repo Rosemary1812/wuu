@@ -2056,6 +2056,9 @@ func runAppServer(args []string) error {
 	modelOverride := fs.String("model", "", "model override")
 	workdir := fs.String("workdir", "", "workspace directory")
 	workspaceID := fs.String("workspace-id", "", "stable workspace identity (survives the workspace moving on disk)")
+	configFile := fs.String("config", "", "explicit runtime config file")
+	hostKind := fs.String("host", string(runtime.HostLocal), "runtime host: local or cloud")
+	instanceID := fs.String("instance-id", "", "cloud runtime instance identity")
 	noTools := fs.Bool("no-tools", false, "disable local tools")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -2065,21 +2068,27 @@ func runAppServer(args []string) error {
 	if err != nil {
 		return err
 	}
+	host, err := resolveAppServerHost(*hostKind, *instanceID, *workspaceID, *configFile)
+	if err != nil {
+		return err
+	}
 	homeDir := os.Getenv("HOME")
-	cfg, configPath, err := loadOrCreateAppServerConfig(rootDir, homeDir)
+	cfg, configPath, configLoadMode, err := loadAppServerRuntimeConfig(rootDir, homeDir, *configFile)
 	if err != nil {
 		return err
 	}
 
 	rt, err := runtime.NewSession(runtime.Options{
-		RootDir:       rootDir,
-		WorkspaceID:   *workspaceID,
-		HomeDir:       homeDir,
-		ConfigPath:    configPath,
-		Config:        cfg,
-		ProviderName:  *providerName,
-		ModelOverride: *modelOverride,
-		NoTools:       *noTools,
+		RootDir:        rootDir,
+		Host:           host,
+		WorkspaceID:    *workspaceID,
+		HomeDir:        homeDir,
+		ConfigPath:     configPath,
+		ConfigLoadMode: configLoadMode,
+		Config:         cfg,
+		ProviderName:   *providerName,
+		ModelOverride:  *modelOverride,
+		NoTools:        *noTools,
 	})
 	if err != nil {
 		return err
@@ -2089,6 +2098,36 @@ func runAppServer(args []string) error {
 	}()
 
 	return appserver.RunStdio(context.Background(), rt, os.Stdin, os.Stdout)
+}
+
+func resolveAppServerHost(kind, instanceID, workspaceID, configFile string) (runtime.Host, error) {
+	host, err := runtime.ResolveHost(runtime.Host{Kind: runtime.HostKind(kind), InstanceID: instanceID})
+	if err != nil {
+		return runtime.Host{}, err
+	}
+	if host.Kind != runtime.HostCloud {
+		return host, nil
+	}
+	if strings.TrimSpace(workspaceID) == "" {
+		return runtime.Host{}, errors.New("cloud host requires --workspace-id")
+	}
+	if strings.TrimSpace(configFile) == "" {
+		return runtime.Host{}, errors.New("cloud host requires --config; managed runtimes do not create starter config")
+	}
+	return host, nil
+}
+
+func loadAppServerRuntimeConfig(rootDir, homeDir, configFile string) (config.Config, string, runtime.ConfigLoadMode, error) {
+	path := strings.TrimSpace(configFile)
+	if path == "" {
+		cfg, configPath, err := loadOrCreateAppServerConfig(rootDir, homeDir)
+		return cfg, configPath, runtime.ConfigLoadNormal, err
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(rootDir, path)
+	}
+	cfg, configPath, err := config.LoadPath(path)
+	return cfg, configPath, runtime.ConfigLoadFile, err
 }
 
 func loadOrCreateAppServerConfig(rootDir, homeDir string) (config.Config, string, error) {

@@ -1,15 +1,18 @@
 import {
+  ChevronDown,
+  ChevronUp,
   CornerDownRight,
   CornerUpLeft,
   FileText,
+  ListTodo,
   Paperclip,
   PencilLine,
   Send,
   Square,
   X
 } from "lucide-react";
-import { type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, useRef, useState } from "react";
-import { useImagePreview } from "./ImagePreview";
+import { type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { useOptionalImagePreview } from "./ImagePreview";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
   WORKSPACE_FILE_DRAG_MIME,
@@ -29,15 +32,17 @@ export function ComposerAttachmentStrip({
   files,
   images,
   onRemoveFile,
-  onRemoveImage
+  onRemoveImage,
+  removable = true
 }: {
   files: ComposerFile[];
   images: ComposerImage[];
-  onRemoveFile: (id: string) => void;
-  onRemoveImage: (id: string) => void;
+  onRemoveFile?: (id: string) => void;
+  onRemoveImage?: (id: string) => void;
+  removable?: boolean;
 }): JSX.Element | null {
   const { t } = useI18n();
-  const { openPreview } = useImagePreview();
+  const imagePreview = useOptionalImagePreview();
   if (images.length === 0 && files.length === 0) {
     return null;
   }
@@ -47,7 +52,7 @@ export function ComposerAttachmentStrip({
         const src = imageSource(image);
         const label = t("composer.imageNumber", { number: index + 1 });
         const handleOpen = (): void => {
-          openPreview({ src, alt: label, title: label });
+          imagePreview?.openPreview({ src, alt: label, title: label });
         };
         const handleKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
           if (event.key === "Enter" || event.key === " ") {
@@ -66,16 +71,18 @@ export function ComposerAttachmentStrip({
               onClick={handleOpen}
               onKeyDown={handleKeyDown}
             />
-            <button
-              type="button"
-              aria-label={t("composer.removeImage", { number: index + 1 })}
-              onClick={(event) => {
-                event.stopPropagation();
-                onRemoveImage(image.id);
-              }}
-            >
-              <X className="icon-xs" />
-            </button>
+            {removable ? (
+              <button
+                type="button"
+                aria-label={t("composer.removeImage", { number: index + 1 })}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemoveImage?.(image.id);
+                }}
+              >
+                <X className="icon-xs" />
+              </button>
+            ) : null}
           </div>
         );
       })}
@@ -83,9 +90,11 @@ export function ComposerAttachmentStrip({
         <div className="composer-file-attachment" key={file.id}>
           <FileText className="icon" aria-hidden="true" />
           <span>{file.filename?.trim() || t("composer.pdfNumber", { number: index + 1 })}</span>
-          <button type="button" aria-label={t("composer.removeFile", { number: index + 1 })} onClick={() => onRemoveFile(file.id)}>
-            <X className="icon-xs" />
-          </button>
+          {removable ? (
+            <button type="button" aria-label={t("composer.removeFile", { number: index + 1 })} onClick={() => onRemoveFile?.(file.id)}>
+              <X className="icon-xs" />
+            </button>
+          ) : null}
         </div>
       ))}
     </div>
@@ -214,7 +223,10 @@ export function SplitPaneComposer({
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
-    if (readOnly || isComposerTextComposing(event)) {
+    if (readOnly) {
+      return;
+    }
+    if (isComposerTextComposing(event)) {
       return;
     }
     if (handleQueryHistoryKeyDown(event)) {
@@ -361,6 +373,8 @@ function buildQueueRows(
 export function ComposerQueueStrip({
   guideMessages,
   queuedMessages,
+  expanded: controlledExpanded,
+  onExpandedChange,
   onRemoveGuideMessage,
   onRemoveQueuedMessage,
   onGuideQueuedMessage,
@@ -369,6 +383,8 @@ export function ComposerQueueStrip({
 }: {
   guideMessages: QueuedComposerMessage[];
   queuedMessages: QueuedComposerMessage[];
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   onRemoveGuideMessage: (id: string) => void;
   onRemoveQueuedMessage: (id: string) => void;
   onGuideQueuedMessage: (id: string) => void;
@@ -376,45 +392,98 @@ export function ComposerQueueStrip({
   onEditQueuedMessage: (id: string) => void;
 }): JSX.Element | null {
   const { t } = useI18n();
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const pendingDetailsID = useId();
+  const expanded = controlledExpanded ?? internalExpanded;
   const rows = buildQueueRows(guideMessages, queuedMessages);
   if (rows.length === 0) {
     return null;
   }
 
   const hasHeldMessages = rows.some((row) => row.message.held);
+  const latestMessage = rows.at(-1)?.message;
+  const detailsID = `composer-pending-message-details-${pendingDetailsID}`;
+
+  function setExpanded(next: boolean): void {
+    if (controlledExpanded === undefined) {
+      setInternalExpanded(next);
+    }
+    onExpandedChange?.(next);
+  }
+
   return (
-    <>
-      {hasHeldMessages ? (
-        <div className="composer-held-notice" role="status">
-          {t("composer.heldNotice")}
+    <section
+      className={`composer-pending-drawer composer-accessory-drawer${expanded ? " expanded" : ""}${hasHeldMessages ? " is-held" : ""}`}
+    >
+      <div className="composer-pending-summary">
+        <button
+          type="button"
+          className="composer-pending-summary-select composer-drawer-summary-select"
+          aria-controls={detailsID}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span className="composer-pending-icon" aria-hidden="true">
+            <ListTodo className="icon-sm" />
+          </span>
+          <span
+            className="composer-pending-preview"
+            role="status"
+            aria-live="polite"
+            title={latestMessage?.text}
+          >
+            {latestMessage ? queuedMessagePreview(latestMessage) : ""}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="composer-pending-toggle composer-input-header-action"
+          aria-controls={detailsID}
+          aria-expanded={expanded}
+          aria-label={t(expanded ? "composer.collapsePending" : "composer.expandPending")}
+          title={t(expanded ? "composer.collapsePending" : "composer.expandPending")}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? (
+            <ChevronDown className="icon-sm" aria-hidden="true" />
+          ) : (
+            <ChevronUp className="icon-sm" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="composer-pending-details" id={detailsID}>
+          {hasHeldMessages ? (
+            <div className="composer-held-notice">{t("composer.heldNotice")}</div>
+          ) : null}
+          <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
+            {rows.map((row, index) => (
+              <ComposerQueueItem
+                key={row.key}
+                position={index + 1}
+                message={row.message}
+                kind={row.kind}
+                onGuide={
+                  row.kind === "queue" || row.message.held
+                    ? () => onGuideQueuedMessage(row.message.id)
+                    : undefined
+                }
+                onEdit={() =>
+                  row.kind === "queue"
+                    ? onEditQueuedMessage(row.message.id)
+                    : onEditGuideMessage(row.message.id)
+                }
+                onRemove={() =>
+                  row.kind === "queue"
+                    ? onRemoveQueuedMessage(row.message.id)
+                    : onRemoveGuideMessage(row.message.id)
+                }
+              />
+            ))}
+          </ol>
         </div>
       ) : null}
-      <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
-      {rows.map((row, index) => (
-        <ComposerQueueItem
-          key={row.key}
-          position={index + 1}
-          message={row.message}
-          kind={row.kind}
-          onGuide={
-            row.kind === "queue" || row.message.held
-              ? () => onGuideQueuedMessage(row.message.id)
-              : undefined
-          }
-          onEdit={() =>
-            row.kind === "queue"
-              ? onEditQueuedMessage(row.message.id)
-              : onEditGuideMessage(row.message.id)
-          }
-          onRemove={() =>
-            row.kind === "queue"
-              ? onRemoveQueuedMessage(row.message.id)
-              : onRemoveGuideMessage(row.message.id)
-          }
-        />
-      ))}
-      </ol>
-    </>
+    </section>
   );
 }
 

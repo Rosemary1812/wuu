@@ -27,7 +27,7 @@ describe("reconcileSidebarSectionOrder", () => {
     ]);
   });
 
-  it("drops fixed, legacy collaboration, unknown, and duplicate ids", () => {
+  it("drops retired fixed, unknown, and duplicate ids", () => {
     expect(
       reconcileSidebarSectionOrder(
         [

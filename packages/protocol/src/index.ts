@@ -28,6 +28,17 @@ export type AppServerNotification<T = unknown> = {
   params?: T;
 };
 
+export const APP_SERVER_PROTOCOL_VERSION = "wuu-app-server/v0.1";
+
+export const BROWSER_REVERSE_RPC_METHODS = [
+  "browser/cdp",
+  "browser/screenshot",
+  "browser/open_tab",
+  "browser/close_tab",
+  "browser/set_visibility",
+  "browser/list_tabs",
+] as const;
+
 export type CoreBuildInfo = {
   version?: string;
   commit?: string;
@@ -40,9 +51,31 @@ export type DesktopBuildInfo = {
   date: string;
 };
 
+export type WorkspaceItemMenuResult = {
+  action: "none";
+};
+
 export type BuildInfoResult = {
   core: CoreBuildInfo | undefined;
   desktop: DesktopBuildInfo;
+};
+
+export type RuntimeHostSummary = {
+  kind: "local" | "cloud";
+  instance_id?: string;
+};
+
+export type InitializeParams = {
+  protocol_version?: string;
+  client?: {
+    name?: string;
+    version?: string;
+  };
+  capabilities?: {
+    reverse_rpc?: {
+      methods?: string[];
+    };
+  };
 };
 
 export type InitializeResult = {
@@ -58,6 +91,7 @@ export type InitializeResult = {
   // Effective anonymous-worker execution capacity after applying the
   // default (docs/app-server-protocol.md, Ultra Mode Configuration).
   max_parallel?: number;
+  runtime_host?: RuntimeHostSummary;
   workspace_root: string;
   permissions?: PermissionSummary;
   // model_profile + tool_surface summarise the workspace-default runtime.
@@ -72,6 +106,7 @@ export type InitializeResult = {
   // fingerprints and permission names, never resolved environment/header values.
   extension_inventory?: ExtensionInventoryRecord[];
   model_roles?: ModelRoleSummary[];
+  model_aliases?: Record<string, ModelAliasSummary>;
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
   general_settings?: GeneralSettingsSummary;
@@ -171,6 +206,10 @@ export type GeneralSettingsSummary = {
   git_attribution_enabled?: boolean;
   memory_disabled: boolean;
   mcp_server_enabled: Record<string, boolean>;
+  dream_enabled: boolean;
+  dream_interval_days: number;
+  dream_provider?: string;
+  dream_model?: string;
 };
 
 export type PermissionSummary = {
@@ -267,6 +306,7 @@ export type ConfigModelUpdateResult = {
   tool_surface?: ToolSurfaceSummary;
   extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
+  model_aliases?: Record<string, ModelAliasSummary>;
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
 };
@@ -303,6 +343,13 @@ export type ModelRoleSummary = {
   inherited?: boolean;
   capabilities?: ModelCapabilitySummary;
   behavior?: ModelBehaviorSummary;
+};
+
+export type ModelAliasSummary = {
+  provider: string;
+  model: string;
+  effort?: string;
+  variant?: string;
 };
 
 export type ModelCapabilitySummary = {
@@ -387,6 +434,107 @@ export type SkillSummary = {
 export type SkillListResult = {
   skills: SkillSummary[];
 };
+
+export type NamedAgent = {
+  id: string;
+  name: string;
+  memory_dir: string;
+  avatar_key: string;
+  avatar_image?: string;
+  provider_override?: string;
+  model_override?: string;
+  autostart: boolean;
+  created_at: string;
+  activity_status?: "idle" | "thinking";
+};
+
+export type ChannelRoomMember = {
+  room_id: string;
+  member_type: "human" | "agent";
+  member_id: string;
+  joined_at: string;
+};
+
+export type ChannelRoom = {
+  id: string;
+  kind: "channel" | "dm";
+  name: string;
+  created_by: string;
+  created_at: string;
+  members: ChannelRoomMember[];
+};
+
+export type ChannelMessage = {
+  id: string;
+  room_id: string;
+  seq: number;
+  thread_id?: string;
+  author_type: "human" | "agent";
+  author_id: string;
+  kind: "text" | "task" | "system";
+  body: string;
+  images?: InputImage[];
+  files?: InputFile[];
+  mentions?: string[];
+  reply_to?: string;
+  task_state?: string;
+  task_owner?: string;
+  created_at: string;
+};
+
+export type ChannelAgentListResult = { agents: NamedAgent[] };
+export type ChannelBootstrapResult = { agents: NamedAgent[]; rooms: ChannelRoom[] };
+export type ChannelAgentCreateParams = {
+  name: string;
+  avatar_key?: string;
+  avatar_image?: string;
+  provider_override?: string;
+  model_override?: string;
+};
+export type ChannelAgentCreateResult = { agent: NamedAgent };
+export type ChannelAgentUpdateParams = ChannelAgentCreateParams & { agent_id: string };
+export type ChannelAgentUpdateResult = { agent: NamedAgent };
+export type ChannelAgentDeleteParams = { agent_id: string };
+export type ChannelAgentDeleteResult = { deleted: boolean };
+export type ChannelAgentStartParams = { agent_id: string };
+export type ChannelAgentStartResult = { agent: NamedAgent };
+export type ChannelRoomListResult = { rooms: ChannelRoom[] };
+export type ChannelRoomCreateParams = {
+  name: string;
+  agent_ids?: string[];
+};
+export type ChannelRoomCreateResult = { room: ChannelRoom };
+export type ChannelRoomDeleteParams = { room_id: string };
+export type ChannelRoomDeleteResult = { deleted: boolean };
+export type ChannelMessageListParams = {
+  room_id: string;
+  after_seq?: number;
+  limit?: number;
+};
+export type ChannelMessageListResult = { messages: ChannelMessage[] };
+export type ChannelMessageSendParams = {
+  room_id: string;
+  thread_id?: string;
+  reply_to?: string;
+  body: string;
+  images?: InputImage[];
+  files?: InputFile[];
+};
+export type ChannelMessageSendResult = { message: ChannelMessage };
+export type ChannelTaskCreateParams = {
+  room_id: string;
+  title: string;
+  owner_id: string;
+};
+export type ChannelTaskCreateResult = { task: ChannelMessage };
+export type ChannelTaskUpdateParams = {
+  task_id: string;
+  state?: "open" | "doing" | "done";
+  owner_id?: string;
+};
+export type ChannelTaskUpdateResult = { task: ChannelMessage };
+export type ChannelHumanMentionStatusResult = { count: number };
+export type ChannelHumanMentionAckResult = { acknowledged: number };
 
 export type MCPServerStatus = {
   name: string;
@@ -500,10 +648,12 @@ export type RuntimeAdvancedSettingsUpdate = {
   compact_keep_recent_tokens?: number;
   disable_auto_compact?: boolean;
   provider_context_window?: number;
+  model_aliases?: Record<string, ModelAliasSummary>;
 };
 
 export type ConfigAdvancedUpdateResult = {
   advanced_settings: AdvancedSettingsSummary;
+  model_aliases?: Record<string, ModelAliasSummary>;
   providers?: ProviderSummary[];
 };
 
@@ -512,6 +662,10 @@ export type RuntimeGeneralSettingsUpdate = {
   git_attribution_enabled?: boolean;
   memory_disable?: boolean;
   mcp_enabled_toggles?: Record<string, boolean>;
+  dream_enabled?: boolean;
+  dream_interval_days?: number;
+  dream_provider?: string;
+  dream_model?: string;
 };
 
 export type ConfigGeneralUpdateResult = {
@@ -858,15 +1012,14 @@ export type ToolResult = {
   activity?: ToolResultActivityRef;
 };
 
-// ParticipantSummary is the wire identity attached to named Kanban workers and
-// generic subagent activity for display attribution.
+// ParticipantSummary is the wire identity attached to named subagent activity
+// for display attribution.
 export type ParticipantSummary = {
   id: string;
   name: string;
   kind: string;
   role?: string;
-  // avatar_image is an uploaded image data URL (see
-  // ParticipantProfile.avatar_image). The backend fills it for every
+  // avatar_image is an uploaded image data URL. The backend fills it for every
   // summary resolved from the participant store, but caps the embedded payload at
   // 64KB raw bytes (appserver participantSummaryAvatarMaxBytes):
   // summaries are duplicated into each thread item they attribute, so
@@ -891,6 +1044,13 @@ export type Agent = {
   parent_id?: string;
   description?: string;
   status: string;
+  model_alias?: string;
+  model_alias_fallback?: boolean;
+  provider?: string;
+  model?: string;
+  api_model?: string;
+  effort?: string;
+  variant?: string;
   result?: string;
   error?: string;
   input_tokens?: number;
@@ -909,214 +1069,6 @@ export type Agent = {
   participant?: ParticipantSummary;
 };
 
-export type ParticipantRunEntry = {
-  task_id?: string;
-  summary?: string;
-  outcome?: string;
-  created_at?: string;
-};
-
-export type ParticipantProfile = {
-  id: string;
-  kind: string;
-  name: string;
-  role?: string;
-  // avatar_image is an uploaded image data URL (e.g. "data:image/png;base64,...").
-  // Populated by the profile read path when the workspace stores an avatar
-  // image; absent on the lightweight wire Summary used in agent and task
-  // card attribution.
-  avatar_image?: string;
-  tagline?: string;
-  workspace?: string;
-  model?: string;
-  memory?: string;
-  track_record?: ParticipantRunEntry[];
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type ParticipantListResult = {
-  participants: ParticipantProfile[];
-};
-
-export type ParticipantSaveParams = {
-  id?: string;
-  name: string;
-  role?: string;
-  // avatar_image accepts an image data URL to upload a custom avatar.
-  avatar_image?: string;
-  // clear_avatar_image removes any previously uploaded avatar image.
-  // Takes precedence over avatar_image when set.
-  clear_avatar_image?: boolean;
-  tagline?: string;
-  model?: string;
-  memory?: string;
-};
-
-export type ParticipantSaveResult = {
-  participant: ParticipantProfile;
-};
-
-export type ParticipantFeedbackResult = {
-  participant: ParticipantProfile;
-};
-
-export type ParticipantResetResult = {
-  participant: ParticipantProfile;
-};
-
-export type ParticipantRetireParams = {
-  participant_id: string;
-};
-
-export type ParticipantRetireResult = {
-  participant: ParticipantProfile;
-};
-
-export type ParticipantUpdatedNotification = {
-  participant_id?: string;
-  participant?: ParticipantProfile;
-};
-
-// ---------------------------------------------------------------------------
-// Kanban board (multi-agent task board). Wire contract fixed by the
-// feat/kanban-os backend; methods are forwarded through the app-server bridge
-// with the exact JSON-RPC names and snake_case params below.
-
-export type KanbanTaskStatus =
-  | "draft"
-  | "ready"
-  | "running"
-  | "review"
-  | "done"
-  | "cancelled";
-
-export type KanbanRunStatus =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "interrupted";
-
-export type KanbanRunKind = "execute" | "review";
-
-export type KanbanTask = {
-  id: string;
-  session_id: string;
-  parent_id?: string;
-  title: string;
-  brief?: string;
-  status: KanbanTaskStatus;
-  source_thread_id?: string;
-  created_by?: string;
-  sort_index: number;
-  latest_run_id?: string;
-  created_at: number;
-  updated_at: number;
-  latest_run?: KanbanRun;
-};
-
-export type KanbanRun = {
-  id: string;
-  task_id: string;
-  session_id: string;
-  kind: KanbanRunKind;
-  target_id: string;
-  thread_id?: string;
-  status: KanbanRunStatus;
-  summary?: string;
-  error_message?: string;
-  created_by?: string;
-  created_at: number;
-  started_at?: number;
-  finished_at?: number;
-};
-
-export type KanbanArtifact = {
-  id: string;
-  run_id: string;
-  task_id: string;
-  path: string;
-  display_name?: string;
-  media_type?: string;
-  size_bytes: number;
-  created_at: number;
-};
-
-export type KanbanListTasksParams = {
-  space_id: string;
-  parent_id?: string;
-};
-
-export type KanbanCreateTaskParams = {
-  space_id: string;
-  title: string;
-  brief?: string;
-  parent_id?: string;
-  source_thread_id?: string;
-  status?: KanbanTaskStatus;
-  created_by?: string;
-  sort_index?: number;
-};
-
-export type KanbanTransitionTaskParams = {
-  task_id: string;
-  status: KanbanTaskStatus;
-};
-
-export type KanbanDispatchRunParams = {
-  thread_id: string;
-  task_id: string;
-  target_id: string;
-  kind?: KanbanRunKind;
-  created_by?: string;
-};
-
-export type KanbanListRunsParams = {
-  task_id: string;
-};
-
-export type KanbanListArtifactsParams = {
-  task_id: string;
-};
-
-export type KanbanCrystallizeParams = {
-  thread_id: string;
-  created_by?: string;
-};
-
-export type KanbanCrystallizeSubtask = KanbanTask & {
-  suggested_target_id?: string;
-  suggested_target_name?: string;
-};
-
-export type KanbanCrystallizeResult = {
-  task: KanbanTask;
-  subtasks: KanbanCrystallizeSubtask[];
-};
-
-export type KanbanUpdatedNotification = {
-  session_id?: string;
-  task_id?: string;
-};
-
-export type ParticipantManifest = {
-  skills: string[];
-  permission_tier: "workspace" | "unrestricted";
-  prompt_overlay: string;
-};
-
-export type ParticipantGetManifestParams = {
-  participant_id: string;
-};
-
-export type ParticipantSaveManifestParams = {
-  participant_id: string;
-  skills?: string[];
-  permission_tier?: "workspace" | "unrestricted";
-  prompt_overlay?: string;
-};
-
 // ---------------------------------------------------------------------------
 // Memory panel (设置 → 记忆). Wire contract fixed ahead of implementation by
 // docs/plans/2026-07-04-memory-redesign.md §8.2. The three RPCs are served
@@ -1125,9 +1077,8 @@ export type ParticipantSaveManifestParams = {
 // "记忆面板后端尚未就绪" placeholder instead of crashing.
 
 // MemoryScope selects which notebook an RPC targets: "user" is the user
-// notebook (~/.wuu/memory), "participant" is a named agent's identity
-// notebook (~/.wuu/participants/<id>/memory). participant scope requires
-// participant_id.
+// notebook (~/.wuu/memory). The participant scope is no longer exposed by the
+// product; the type remains for backwards compatibility with persisted data.
 export type MemoryScope = "user" | "participant";
 
 export type MemoryOverviewParams = {
@@ -1227,7 +1178,6 @@ export type Thread = {
 
 export type ThreadStartParams = {
   ephemeral?: boolean;
-  collaboration?: boolean;
 };
 
 export type ThreadSearchResultItem = {
@@ -1664,6 +1614,8 @@ export type ThreadItem = {
   reason?: string;
 };
 
+export type ThreadForkTarget = Pick<ThreadItem, "type" | "seq" | "source_id">;
+
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
 
 export type PlanStep = {
@@ -2071,6 +2023,21 @@ export type WuuDesktopApi = {
   releaseActivity: (threadId: string, activityId: string) => Promise<ActivityReleaseResult>;
   stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
+  listNamedAgents: () => Promise<ChannelAgentListResult>;
+  bootstrapChannels: () => Promise<ChannelBootstrapResult>;
+  createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;
+  updateNamedAgent: (params: ChannelAgentUpdateParams) => Promise<ChannelAgentUpdateResult>;
+  deleteNamedAgent: (params: ChannelAgentDeleteParams) => Promise<ChannelAgentDeleteResult>;
+  startNamedAgent: (params: ChannelAgentStartParams) => Promise<ChannelAgentStartResult>;
+  listChannelRooms: () => Promise<ChannelRoomListResult>;
+  createChannelRoom: (params: ChannelRoomCreateParams) => Promise<ChannelRoomCreateResult>;
+  deleteChannelRoom: (params: ChannelRoomDeleteParams) => Promise<ChannelRoomDeleteResult>;
+  listChannelMessages: (params: ChannelMessageListParams) => Promise<ChannelMessageListResult>;
+  sendChannelMessage: (params: ChannelMessageSendParams) => Promise<ChannelMessageSendResult>;
+  createChannelTask: (params: ChannelTaskCreateParams) => Promise<ChannelTaskCreateResult>;
+  updateChannelTask: (params: ChannelTaskUpdateParams) => Promise<ChannelTaskUpdateResult>;
+  getChannelHumanMentionStatus: () => Promise<ChannelHumanMentionStatusResult>;
+  ackChannelHumanMentions: () => Promise<ChannelHumanMentionAckResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<ThreadResumeResult>;
   forkThread: (
@@ -2078,6 +2045,7 @@ export type WuuDesktopApi = {
     turnId?: string,
     itemId?: string,
     mode?: "local" | "worktree",
+    target?: ThreadForkTarget,
   ) => Promise<ThreadForkResult>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
@@ -2143,43 +2111,6 @@ export type WuuDesktopApi = {
   onCodexPetJumpRequest: (
     handler: (event: { thread_id: string }) => void,
   ) => () => void;
-  listParticipants: () => Promise<ParticipantListResult>;
-  saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
-  sendParticipantFeedback: (
-    participantId: string,
-    text: string,
-    taskId?: string,
-    messageId?: string
-  ) => Promise<ParticipantFeedbackResult>;
-  resetParticipant: (
-    participantId: string,
-    scope: "restart" | "session" | "full"
-  ) => Promise<ParticipantResetResult>;
-  retireParticipant: (participantId: string) => Promise<ParticipantRetireResult>;
-  // Kanban board (multi-agent task board).
-  kanbanListTasks: (
-    spaceId: string,
-    parentId?: string,
-  ) => Promise<KanbanTask[]>;
-  kanbanCreateTask: (
-    params: KanbanCreateTaskParams,
-  ) => Promise<KanbanTask>;
-  kanbanTransitionTask: (
-    taskId: string,
-    status: KanbanTaskStatus,
-  ) => Promise<KanbanTask>;
-  kanbanDispatchRun: (
-    params: KanbanDispatchRunParams,
-  ) => Promise<KanbanRun>;
-  kanbanListRuns: (taskId: string) => Promise<KanbanRun[]>;
-  kanbanListArtifacts: (taskId: string) => Promise<KanbanArtifact[]>;
-  kanbanCrystallize: (
-    params: KanbanCrystallizeParams,
-  ) => Promise<KanbanCrystallizeResult>;
-  participantGetManifest: (participantId: string) => Promise<ParticipantManifest>;
-  participantSaveManifest: (
-    params: ParticipantSaveManifestParams,
-  ) => Promise<ParticipantManifest>;
   // 记忆面板（设置 → 记忆）。契约见 memory-redesign.md §8.2；后端 M2
   // 未落地时三个方法都会以 unknown method 错误拒绝，面板渲染占位态。
   getMemoryOverview: (params: MemoryOverviewParams) => Promise<MemoryOverviewResult>;
@@ -2251,6 +2182,10 @@ export type WuuDesktopApi = {
   // renderer via the same channel and we trust it without an extra
   // project-root check (the dir listing itself is what gates that).
   revealWorkspaceItem: (path: string) => Promise<void>;
+  // macOS uses Launch Services to build a native file menu with the current
+  // default app and the installed apps that can open this specific item.
+  // Other shells keep their existing renderer-owned context menu.
+  showWorkspaceItemMenu: (path: string) => Promise<WorkspaceItemMenuResult>;
   // Open an external URL via the OS default browser. Used by the
   // assistant turn's 来源 pill to send the user to the page the agent
   // actually consulted (web_search hit / web_fetch target) instead of

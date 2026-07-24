@@ -167,8 +167,23 @@ export function createConversationHistoryActions(
       status: localizedText("history.forking"),
     }));
     try {
+      const targetItem = sourceThread.turns
+        .find((turn) => turn.id === turnID)
+        ?.items.find((item) => item.id === itemID);
       const fork = requireThread(
-        await window.wuu.forkThread(sourceThread.id, turnID, itemID, mode),
+        await window.wuu.forkThread(
+          sourceThread.id,
+          turnID,
+          itemID,
+          mode,
+          targetItem
+            ? {
+                seq: targetItem.seq,
+                source_id: targetItem.source_id,
+                type: targetItem.type,
+              }
+            : undefined,
+        ),
         "thread/fork did not return a thread",
       );
       deps.enableConversationAutoFollow();

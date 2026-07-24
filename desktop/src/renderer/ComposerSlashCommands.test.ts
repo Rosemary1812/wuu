@@ -1,8 +1,4 @@
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-
-vi.hoisted(() => {
-  vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
-});
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildComposerSlashCommands,
@@ -15,10 +11,6 @@ import type { InitializeResult, SkillSummary } from "../shared/protocol";
 import { setActiveLocale } from "./i18n";
 
 afterEach(() => setActiveLocale("zh-CN"));
-
-afterAll(() => {
-  vi.unstubAllEnvs();
-});
 
 function initialized(model: string, models: string[], helpMe = false): InitializeResult {
   return {

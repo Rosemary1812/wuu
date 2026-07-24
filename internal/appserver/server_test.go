@@ -395,6 +395,9 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if !initResult.Ultra || initResult.MaxParallel != config.DefaultAgentMaxParallel {
 		t.Fatalf("initialize missing Ultra runtime state: %+v", initResult)
 	}
+	if initResult.RuntimeHost.Kind != string(runtime.HostLocal) || initResult.RuntimeHost.InstanceID != "" {
+		t.Fatalf("initialize missing default local host: %+v", initResult.RuntimeHost)
+	}
 	configMsg := responseByID(t, msgs, "2")
 	configResult := remarshal[ConfigReadResult](t, configMsg["result"])
 	if configResult.ConfigPath == "" || configResult.SessionDir == "" {
@@ -402,6 +405,51 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 	if !configResult.Ultra || configResult.MaxParallel != config.DefaultAgentMaxParallel {
 		t.Fatalf("config/read missing Ultra runtime state: %+v", configResult)
+	}
+}
+
+func TestServerInitializeReportsCloudRuntimeHost(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Host = runtime.Host{Kind: runtime.HostCloud, InstanceID: "run-123"}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.RuntimeHost.Kind != "cloud" || result.RuntimeHost.InstanceID != "run-123" {
+		t.Fatalf("unexpected runtime host: %+v", result.RuntimeHost)
+	}
+}
+
+func TestServerInitializeNegotiatesBrowserClient(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	request := `{"id":"1","method":"initialize","params":{"protocol_version":"wuu-app-server/v0.1","capabilities":{"reverse_rpc":{"methods":["browser/cdp","browser/screenshot","browser/open_tab","browser/close_tab","browser/set_visibility","browser/list_tabs"]}}}}`
+
+	if err := srv.handleLine(context.Background(), []byte(request)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if !result.Features.Browser {
+		t.Fatalf("browser feature not negotiated: %+v", result.Features)
+	}
+}
+
+func TestServerInitializeRejectsIncompatibleProtocol(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize","params":{"protocol_version":"wuu-app-server/v9"}}`)); err != nil {
+		t.Fatalf("initialize write: %v", err)
+	}
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	errorPayload := remarshal[ResponseError](t, response["error"])
+	if !strings.Contains(errorPayload.Message, "unsupported protocol version") {
+		t.Fatalf("unexpected initialize error: %+v", errorPayload)
 	}
 }
 
@@ -763,6 +811,42 @@ func TestServerInitializeExposesModelRoles(t *testing.T) {
 	}
 	if !review.Capabilities.Tools || review.Capabilities.ProtocolFamily == "" {
 		t.Fatalf("review capabilities missing: %+v", review.Capabilities)
+	}
+}
+
+func TestServerInitializeExposesModelAliases(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  },
+  "agent": {
+    "model_aliases": {
+      "frontend": {
+        "provider": "fake-provider",
+        "model": "ui-model:latest",
+        "effort": "high"
+      }
+    }
+  }
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	alias, ok := result.ModelAliases["frontend"]
+	if !ok || alias.Provider != "fake-provider" || alias.Model != "ui-model:latest" || alias.Effort != "high" {
+		t.Fatalf("unexpected frontend alias: %+v", result.ModelAliases)
 	}
 }
 
@@ -1860,7 +1944,7 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
-	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"compact_keep_recent_tokens":20000,"disable_auto_compact":true,"provider_context_window":512000}}`
+	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"compact_keep_recent_tokens":20000,"disable_auto_compact":true,"provider_context_window":512000,"model_aliases":{"cheap":{"provider":"fake-provider","model":"cheap-model:latest","effort":"low"}}}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/advanced/update: %v", err)
 	}
@@ -1875,6 +1959,9 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		!result.AdvancedSettings.DisableAutoCompact ||
 		result.AdvancedSettings.ProviderContextWindow != 512000 {
 		t.Fatalf("unexpected advanced settings result: %+v", result.AdvancedSettings)
+	}
+	if alias, ok := result.ModelAliases["cheap"]; !ok || alias.Provider != "fake-provider" || alias.Model != "cheap-model:latest" || alias.Effort != "low" {
+		t.Fatalf("unexpected model aliases result: %+v", result.ModelAliases)
 	}
 	if rt.StreamRunner.MaxSteps != 12 ||
 		rt.StreamRunner.Temperature != 0.4 ||
@@ -1895,6 +1982,8 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		`"compact_keep_recent_tokens": 20000`,
 		`"disable_auto_compact": true`,
 		`"context_window": 512000`,
+		`"cheap"`,
+		`"model": "cheap-model:latest"`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("config missing %s: %s", want, data)
@@ -9260,124 +9349,6 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 	time.Sleep(150 * time.Millisecond)
 	if got := turnCompletedCountForThread(t, out, threadID); got != 1 {
 		t.Fatalf("expected awaited agent completion not to trigger a second root turn, got %d; output:\n%s", got, out.String())
-	}
-}
-
-func TestServerParticipantProfileLifecycle(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	savePayload := map[string]any{
-		"id":     "save",
-		"method": MethodParticipantSave,
-		"params": ParticipantSaveParams{
-			Name:    "Noel",
-			Role:    "reviewer",
-			Tagline: "Find regressions",
-			Memory:  "Prefers concise reports.",
-		},
-	}
-	rawSave, err := json.Marshal(savePayload)
-	if err != nil {
-		t.Fatalf("marshal save: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), rawSave); err != nil {
-		t.Fatalf("participant/save: %v", err)
-	}
-	save := remarshal[ParticipantSaveResult](t, responseByID(t, parseOutput(t, out.String()), "save")["result"])
-	if save.Participant.ID == "" || save.Participant.Name != "Noel" || save.Participant.Memory != "Prefers concise reports." {
-		t.Fatalf("unexpected saved participant: %+v", save.Participant)
-	}
-	if !strings.Contains(save.Participant.Workspace, filepath.Join(".wuu", "participants", save.Participant.ID)) {
-		t.Fatalf("participant workspace should live under wuu home: %+v", save.Participant)
-	}
-
-	rawList := []byte(fmt.Sprintf(`{"id":"list","method":%q}`, MethodParticipantList))
-	if err := srv.handleLine(context.Background(), rawList); err != nil {
-		t.Fatalf("participant/list: %v", err)
-	}
-	list := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
-	if len(list.Participants) < 1 {
-		t.Fatalf("participant list empty: %+v", list.Participants)
-	}
-	var found *ParticipantProfile
-	for i, p := range list.Participants {
-		if p.ID == save.Participant.ID {
-			found = &list.Participants[i]
-			break
-		}
-	}
-	if found == nil {
-		t.Fatalf("saved participant %q not in list: %+v", save.Participant.ID, list.Participants)
-	}
-	if err := session.UpsertParticipantRun(rt.SessionDir, session.ParticipantRun{
-		ID:            "run-1",
-		ParticipantID: save.Participant.ID,
-		AgentID:       "agent-1",
-		TaskID:        "task-1",
-		SessionID:     "session-1",
-		Summary:       "Reviewed auth diff.",
-		Outcome:       "completed",
-	}); err != nil {
-		t.Fatalf("upsert participant run: %v", err)
-	}
-	rawListWithRun := []byte(fmt.Sprintf(`{"id":"list-with-run","method":%q}`, MethodParticipantList))
-	if err := srv.handleLine(context.Background(), rawListWithRun); err != nil {
-		t.Fatalf("participant/list with run: %v", err)
-	}
-	listWithRun := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list-with-run")["result"])
-	var withRun *ParticipantProfile
-	for i, p := range listWithRun.Participants {
-		if p.ID == save.Participant.ID {
-			withRun = &listWithRun.Participants[i]
-			break
-		}
-	}
-	if withRun == nil {
-		t.Fatalf("saved participant %q not in run list: %+v", save.Participant.ID, listWithRun.Participants)
-	}
-	if len(withRun.TrackRecord) != 1 || withRun.TrackRecord[0].Summary != "Reviewed auth diff." {
-		t.Fatalf("unexpected participant track record: %+v", withRun.TrackRecord)
-	}
-
-	feedbackPayload := map[string]any{
-		"id":     "feedback",
-		"method": MethodParticipantFeedback,
-		"params": ParticipantFeedbackParams{
-			ParticipantID: save.Participant.ID,
-			Text:          "Use numbers instead of adjectives.",
-			TaskID:        "task-1",
-		},
-	}
-	rawFeedback, err := json.Marshal(feedbackPayload)
-	if err != nil {
-		t.Fatalf("marshal feedback: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), rawFeedback); err != nil {
-		t.Fatalf("participant/feedback: %v", err)
-	}
-	feedback := remarshal[ParticipantFeedbackResult](t, responseByID(t, parseOutput(t, out.String()), "feedback")["result"])
-	if !strings.Contains(feedback.Participant.Memory, "Use numbers instead of adjectives.") {
-		t.Fatalf("feedback was not appended to memory: %q", feedback.Participant.Memory)
-	}
-
-	resetPayload := map[string]any{
-		"id":     "reset",
-		"method": MethodParticipantReset,
-		"params": ParticipantResetParams{ParticipantID: save.Participant.ID, Scope: "full"},
-	}
-	rawReset, err := json.Marshal(resetPayload)
-	if err != nil {
-		t.Fatalf("marshal reset: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), rawReset); err != nil {
-		t.Fatalf("participant/reset: %v", err)
-	}
-	reset := remarshal[ParticipantResetResult](t, responseByID(t, parseOutput(t, out.String()), "reset")["result"])
-	if reset.Participant.Memory != "" {
-		t.Fatalf("full reset should clear memory, got %q", reset.Participant.Memory)
 	}
 }
 

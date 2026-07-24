@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
@@ -25,7 +26,10 @@ const (
 	// agent.max_parallel is omitted or set to zero.
 	DefaultAgentMaxParallel = 5
 
-	DefaultDreamIntervalDays = 7
+	// DefaultDreamIntervalDays is the minimum elapsed-time gate for background
+	// consolidation. A dream also requires the runtime's minimum number of
+	// completed sessions, so reaching this interval alone never starts a pass.
+	DefaultDreamIntervalDays = 1
 
 	defaultCodexSubscriptionBaseURL = "https://chatgpt.com/backend-api/codex"
 )
@@ -136,17 +140,62 @@ type MemoryConfig struct {
 	// UserCharLimit is retained for compatibility with the retired indexed
 	// memory store. Current notebook memory does not apply this limit.
 	UserCharLimit int `json:"user_char_limit,omitempty"`
-	// DreamIntervalDays controls how often the background dream pass
-	// consolidates recent session history into workspace memory. nil means
-	// the default interval; 0 disables the dream pass.
+	// DreamIntervalDays is the minimum elapsed-time gate for the background
+	// dream pass. The pass also requires five completed sessions since the last
+	// successful consolidation. nil means the default interval; 0 disables it.
+	//
+	// Deprecated: use Dream.IntervalDays instead. This field is retained so
+	// existing configs keep working.
 	DreamIntervalDays *int `json:"dream_interval_days,omitempty"`
+	// Dream configures the background session-dream memory consolidation pass.
+	Dream *DreamConfig `json:"dream,omitempty"`
+}
+
+// DreamConfig configures the background session-dream memory consolidation
+// pass. It is intentionally scoped: an enable switch, interval, and optional
+// dedicated provider/model. Empty provider/model means the dream uses the
+// currently selected main provider/model.
+type DreamConfig struct {
+	Enabled      bool   `json:"enabled,omitempty"`
+	IntervalDays int    `json:"interval_days,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	Model        string `json:"model,omitempty"`
+}
+
+func (m MemoryConfig) DreamEnabled() bool {
+	if m.Dream != nil {
+		return m.Dream.Enabled
+	}
+	// Backward compatibility: the legacy dream_interval_days field toggled the
+	// pass by value. A positive interval meant enabled; zero meant disabled.
+	if m.DreamIntervalDays != nil {
+		return *m.DreamIntervalDays > 0
+	}
+	return false
 }
 
 func (m MemoryConfig) DreamIntervalDaysValue() int {
-	if m.DreamIntervalDays == nil {
-		return DefaultDreamIntervalDays
+	if m.Dream != nil && m.Dream.IntervalDays > 0 {
+		return m.Dream.IntervalDays
 	}
-	return *m.DreamIntervalDays
+	if m.DreamIntervalDays != nil {
+		return *m.DreamIntervalDays
+	}
+	return DefaultDreamIntervalDays
+}
+
+func (m MemoryConfig) DreamProvider() string {
+	if m.Dream != nil {
+		return strings.TrimSpace(m.Dream.Provider)
+	}
+	return ""
+}
+
+func (m MemoryConfig) DreamModel() string {
+	if m.Dream != nil {
+		return strings.TrimSpace(m.Dream.Model)
+	}
+	return ""
 }
 
 // ProviderConfig configures one model gateway.
@@ -303,6 +352,11 @@ type AgentConfig struct {
 	// preserving the main model as the default. Empty role entries inherit the
 	// active provider/model/effort/variant selected above.
 	ModelRoles ModelRolesConfig `json:"model_roles,omitempty"`
+	// ModelAliases are stable labels that skills can pass as spawn_agent.model
+	// values. Each alias must explicitly name a configured provider and model;
+	// unlike model_roles entries, aliases never inherit from the active main
+	// selection. Project layers cannot define aliases.
+	ModelAliases map[string]ModelRoleConfig `json:"model_aliases,omitempty"`
 	// DisableAutoCompact turns off the proactive auto-compact pass
 	// that fires when the conversation reaches the model's usable input
 	// window after reserving output headroom. The reactive overflow
@@ -381,6 +435,10 @@ type AdvancedRuntimeUpdate struct {
 	CompactKeepRecentTokens *int
 	DisableAutoCompact      *bool
 	ProviderContextWindow   *int
+	// ModelAliases replaces the entire agent.model_aliases map. A non-nil map
+	// clears any existing aliases and writes only the entries with non-nil
+	// values. Settings uses this to add, edit, and delete aliases in one call.
+	ModelAliases map[string]*ModelRoleConfig
 }
 
 type GeneralSettingsUpdate struct {
@@ -388,6 +446,10 @@ type GeneralSettingsUpdate struct {
 	GitAttributionEnabled *bool
 	MemoryDisable         *bool
 	MCPEnabledToggles     map[string]*bool // server name → enabled; nil = skip
+	DreamEnabled          *bool
+	DreamIntervalDays     *int
+	DreamProvider         *string
+	DreamModel            *string
 }
 
 func (a AgentConfig) GitAttributionEnabledValue() bool {
@@ -723,10 +785,21 @@ func (c Config) Validate() error {
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
 	}
+	if c.Memory.Dream != nil && c.Memory.Dream.IntervalDays < 0 {
+		return errors.New("memory.dream.interval_days cannot be negative")
+	}
+	if c.Memory.Dream != nil && strings.TrimSpace(c.Memory.Dream.Provider) != "" {
+		if _, ok := c.Providers[c.Memory.Dream.Provider]; !ok {
+			return fmt.Errorf("memory.dream.provider %q not found in providers", c.Memory.Dream.Provider)
+		}
+	}
 	if err := validatePermissionConfig(c.Agent); err != nil {
 		return err
 	}
 	if err := validateModelRolesConfig(c); err != nil {
+		return err
+	}
+	if err := validateModelAliasesConfig(c); err != nil {
 		return err
 	}
 
@@ -749,6 +822,79 @@ func validateModelRolesConfig(c Config) error {
 		}
 		if _, ok := c.Providers[provider]; !ok {
 			return fmt.Errorf("agent.model_roles.%s.provider %q not found in providers", role, provider)
+		}
+	}
+	return nil
+}
+
+var modelAliasNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+func normalizeModelAliasName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func validateModelAliasesConfig(c Config) error {
+	seen := make(map[string]string, len(c.Agent.ModelAliases))
+	for rawName, alias := range c.Agent.ModelAliases {
+		name := normalizeModelAliasName(rawName)
+		if name == "" {
+			return errors.New("agent.model_aliases contains an alias with an empty normalized name")
+		}
+		if !modelAliasNamePattern.MatchString(name) {
+			return fmt.Errorf("agent.model_aliases alias %q is invalid: alias names must start with a lowercase letter and contain only lowercase letters, digits, underscores, and hyphens", name)
+		}
+		if previousRaw, ok := seen[name]; ok {
+			return fmt.Errorf("agent.model_aliases aliases %q and %q normalize to the same name", previousRaw, rawName)
+		}
+		seen[name] = rawName
+
+		providerName := strings.TrimSpace(alias.Provider)
+		if providerName == "" {
+			return fmt.Errorf("agent.model_aliases.%s.provider is required", name)
+		}
+		providerCfg, ok := c.Providers[providerName]
+		if !ok {
+			return fmt.Errorf("agent.model_aliases.%s.provider %q not found in providers", name, providerName)
+		}
+		model := strings.TrimSpace(alias.Model)
+		if model == "" {
+			return fmt.Errorf("agent.model_aliases.%s.model is required", name)
+		}
+		if err := validateAliasEffortVariant(name, alias, providerCfg, model); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAliasEffortVariant(aliasName string, alias ModelRoleConfig, providerCfg ProviderConfig, model string) error {
+	modelCfg, ok := providerCfg.Models[model]
+	if !ok {
+		return nil
+	}
+	valid := make(map[string]struct{})
+	for _, effort := range modelCfg.SupportedEfforts {
+		if e := strings.TrimSpace(effort); e != "" {
+			valid[e] = struct{}{}
+		}
+	}
+	for variantID := range modelCfg.Variants {
+		if id := strings.TrimSpace(variantID); id != "" {
+			valid[id] = struct{}{}
+		}
+	}
+	if len(valid) == 0 {
+		return nil
+	}
+	for _, field := range []struct {
+		name, value string
+	}{{"effort", alias.Effort}, {"variant", alias.Variant}} {
+		value := strings.TrimSpace(field.value)
+		if value == "" {
+			continue
+		}
+		if _, ok := valid[value]; !ok {
+			return fmt.Errorf("agent.model_aliases.%s.%s %q is not supported by model %q", aliasName, field.name, value, model)
 		}
 	}
 	return nil
@@ -1080,6 +1226,20 @@ func RemoveProvider(configPath, providerName, fallbackName, fallbackModel string
 				_ = roleKey
 			}
 		}
+		// Aliases require an explicit provider and model, so an alias that
+		// pointed at the removed provider is no longer valid. Delete the
+		// whole entry to keep the config valid.
+		if aliases, ok := agent["model_aliases"].(map[string]any); ok {
+			for aliasKey, raw := range aliases {
+				alias, _ := raw.(map[string]any)
+				if alias == nil {
+					continue
+				}
+				if name, _ := alias["provider"].(string); name == providerName {
+					delete(aliases, aliasKey)
+				}
+			}
+		}
 	}
 
 	out, err := json.MarshalIndent(raw, "", "  ")
@@ -1115,6 +1275,31 @@ func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRunti
 	setOptionalFloat(agent, "compact_threshold_pct", update.CompactThresholdPct, 0)
 	setOptionalInt(agent, "compact_keep_recent_tokens", update.CompactKeepRecentTokens)
 	setOptionalBool(agent, "disable_auto_compact", update.DisableAutoCompact)
+	if update.ModelAliases != nil {
+		aliases := make(map[string]any, len(update.ModelAliases))
+		for rawName, alias := range update.ModelAliases {
+			name := normalizeModelAliasName(rawName)
+			if name == "" || alias == nil {
+				continue
+			}
+			entry := map[string]any{
+				"provider": strings.TrimSpace(alias.Provider),
+				"model":    strings.TrimSpace(alias.Model),
+			}
+			if effort := strings.TrimSpace(alias.Effort); effort != "" {
+				entry["effort"] = effort
+			}
+			if variant := strings.TrimSpace(alias.Variant); variant != "" {
+				entry["variant"] = variant
+			}
+			aliases[name] = entry
+		}
+		if len(aliases) == 0 {
+			delete(agent, "model_aliases")
+		} else {
+			agent["model_aliases"] = aliases
+		}
+	}
 	if len(agent) == 0 {
 		delete(raw, "agent")
 	}
@@ -1202,6 +1387,44 @@ func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) erro
 			memory["disable"] = true
 		} else {
 			delete(memory, "disable")
+		}
+		if len(memory) == 0 {
+			delete(raw, "memory")
+		}
+	}
+
+	if update.DreamEnabled != nil || update.DreamIntervalDays != nil || update.DreamProvider != nil || update.DreamModel != nil {
+		memory, _ := raw["memory"].(map[string]any)
+		if memory == nil {
+			memory = make(map[string]any)
+			raw["memory"] = memory
+		}
+		dream, _ := memory["dream"].(map[string]any)
+		if dream == nil {
+			dream = make(map[string]any)
+			memory["dream"] = dream
+		}
+		if update.DreamEnabled != nil {
+			dream["enabled"] = *update.DreamEnabled
+		}
+		if update.DreamIntervalDays != nil {
+			if *update.DreamIntervalDays <= 0 {
+				delete(dream, "interval_days")
+			} else {
+				dream["interval_days"] = *update.DreamIntervalDays
+			}
+		}
+		if update.DreamProvider != nil {
+			setOptionalString(dream, "provider", update.DreamProvider)
+		}
+		if update.DreamModel != nil {
+			setOptionalString(dream, "model", update.DreamModel)
+		}
+		// Migrate away from the legacy flat field so the new section is the
+		// single source of truth.
+		delete(memory, "dream_interval_days")
+		if len(dream) == 0 {
+			delete(memory, "dream")
 		}
 		if len(memory) == 0 {
 			delete(raw, "memory")

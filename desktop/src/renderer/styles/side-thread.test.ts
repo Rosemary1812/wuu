@@ -11,10 +11,27 @@ describe("side thread message-flow spacing", () => {
     )?.[1];
 
     expect(conversationRule).toMatch(/padding-block:\s*4px\s+0;/);
-    expect(sideThreadCss).toMatch(/\.side-thread-panel__body\s*\{[\s\S]*?padding:\s*12px\s+0\s+8px;/);
+    expect(sideThreadCss).toMatch(
+      /\.side-thread-panel__body\s*\{[\s\S]*?padding:\s*12px\s+0\s+calc\(var\(--side-thread-footer-height, 0px\) \+ 12px\);/,
+    );
     expect(conversationRule).not.toMatch(/(?:^|\s)padding(?:-inline)?:/);
     expect(sideThreadCss).not.toMatch(
       /(?:^|\})\s*\.side-thread-panel__conversation\s*\{/,
+    );
+  });
+
+  it("runs the scroll surface to the bottom behind a floating composer", () => {
+    expect(sideThreadCss).toMatch(
+      /\.side-thread-panel\s*\{[\s\S]*?grid-template-rows:\s*48px\s+minmax\(0, 1fr\);/,
+    );
+    expect(sideThreadCss).toMatch(
+      /\.side-thread-panel__body\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;[\s\S]*?overflow-y:\s*auto;/,
+    );
+    expect(sideThreadCss).toMatch(
+      /\.side-thread-panel__footer\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;[\s\S]*?align-self:\s*end;/,
+    );
+    expect(sideThreadCss).not.toMatch(
+      /\.side-thread-panel__composer-host\s+\.dock-composer-wrap::before\s*\{[^}]*display:\s*none/,
     );
   });
 });

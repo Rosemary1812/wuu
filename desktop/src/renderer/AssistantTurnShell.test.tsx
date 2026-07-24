@@ -144,7 +144,7 @@ function makeToolCall(name = "lookup"): ThreadItem {
   };
 }
 
-function makeCollabAgentToolCall(): ThreadItem {
+function makeAgentToolCall(): ThreadItem {
   return {
     id: nextID("collab-tool"),
     type: "collab_agent_tool_call",
@@ -704,8 +704,8 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(collapseCompletions).toBe(0);
   });
 
-  it("keeps collaboration agent tool calls in process activity", () => {
-    const turn = makeTurn("completed", [makeCollabAgentToolCall()]);
+  it("keeps agent tool calls in process activity", () => {
+    const turn = makeTurn("completed", [makeAgentToolCall()]);
     const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(true);

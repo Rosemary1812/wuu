@@ -1,11 +1,9 @@
 package runtime
 
 import (
-	"context"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -13,27 +11,6 @@ const (
 	memoryReviewMaxTranscriptMessages = 60
 	memoryReviewMaxMessageBytes       = 2000
 )
-
-type backgroundMemoryStep struct {
-	client providers.Client
-}
-
-func (s backgroundMemoryStep) Execute(ctx context.Context, req providers.ChatRequest) (agent.StepResult, error) {
-	resp, err := providers.ExecuteChat(ctx, s.client, req, providers.InferenceOperationMemory, providers.InferenceProfileBestEffort)
-	if err != nil {
-		return agent.StepResult{}, err
-	}
-	return agent.StepResult{
-		Content:          resp.Content,
-		ReasoningContent: resp.ReasoningContent,
-		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), resp.ReasoningBlocks...),
-		ToolCalls:        append([]providers.ToolCall(nil), resp.ToolCalls...),
-		FinishReason:     resp.FinishReason,
-		Truncated:        resp.Truncated,
-		StopReason:       resp.StopReason,
-		Usage:            resp.Usage,
-	}, nil
-}
 
 func selectMemoryReviewTranscript(history []providers.ChatMessage) []providers.ChatMessage {
 	transcript := make([]providers.ChatMessage, 0, len(history))
