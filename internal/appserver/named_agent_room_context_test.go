@@ -39,9 +39,14 @@ func TestNamedAgentRoomContextChangesOnlyWithRoomStructure(t *testing.T) {
 	if len(before) != 1 || before[0].Source != namedAgentRoomsContextSource {
 		t.Fatalf("room context blocks = %#v", before)
 	}
-	for _, want := range []string{"Design", room.ID, "Alpha", alpha.Agent.ID, "Beta", beta.Agent.ID, localChannelHumanID} {
+	for _, want := range []string{"Design", "Alpha", "Beta", "User"} {
 		if !strings.Contains(before[0].Content, want) {
 			t.Fatalf("room context missing %q:\n%s", want, before[0].Content)
+		}
+	}
+	for _, internalID := range []string{room.ID, alpha.Agent.ID, beta.Agent.ID, localChannelHumanID} {
+		if strings.Contains(before[0].Content, internalID) {
+			t.Fatalf("room context exposed internal ID %q:\n%s", internalID, before[0].Content)
 		}
 	}
 	if _, err := server.channelService.SendHuman(ctx, channels.HumanSendParams{
@@ -62,7 +67,7 @@ func TestNamedAgentRoomContextChangesOnlyWithRoomStructure(t *testing.T) {
 		t.Fatalf("CreateRoom(Private) error = %v", err)
 	}
 	afterUnrelatedRoom := server.namedAgentRoomContextBlocks(alpha.Agent.ID)
-	if afterUnrelatedRoom[0].Content != before[0].Content || strings.Contains(afterUnrelatedRoom[0].Content, other.ID) {
+	if afterUnrelatedRoom[0].Content != before[0].Content || strings.Contains(afterUnrelatedRoom[0].Content, other.Name) {
 		t.Fatalf("unrelated room changed Alpha context: %q", afterUnrelatedRoom[0].Content)
 	}
 
@@ -74,7 +79,7 @@ func TestNamedAgentRoomContextChangesOnlyWithRoomStructure(t *testing.T) {
 		t.Fatalf("CreateRoom(Delivery) error = %v", err)
 	}
 	afterMembershipChange := server.namedAgentRoomContextBlocks(alpha.Agent.ID)
-	if afterMembershipChange[0].Content == before[0].Content || !strings.Contains(afterMembershipChange[0].Content, joined.ID) {
+	if afterMembershipChange[0].Content == before[0].Content || !strings.Contains(afterMembershipChange[0].Content, joined.Name) || strings.Contains(afterMembershipChange[0].Content, joined.ID) {
 		t.Fatalf("membership change did not update room context: %q", afterMembershipChange[0].Content)
 	}
 }

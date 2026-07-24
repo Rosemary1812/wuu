@@ -75,9 +75,9 @@ func (s *Server) namedAgentRoomContextBlocks(agentID string) []wuucontext.Block 
 			}
 			roomName := strings.TrimSpace(room.Name)
 			if roomName == "" {
-				roomName = room.ID
+				roomName = "Unnamed room"
 			}
-			fmt.Fprintf(&content, "- %s (%s, id: %s)\n", roomName, room.Kind, room.ID)
+			fmt.Fprintf(&content, "- %s (%s)\n", roomName, room.Kind)
 			members := append([]channels.RoomMember(nil), room.Members...)
 			sort.Slice(members, func(i, j int) bool {
 				if members[i].MemberType != members[j].MemberType {
@@ -86,8 +86,9 @@ func (s *Server) namedAgentRoomContextBlocks(agentID string) []wuucontext.Block 
 				return members[i].MemberID < members[j].MemberID
 			})
 			for _, member := range members {
-				name := member.MemberID
+				name := "User"
 				if member.MemberType == channels.MemberAgent {
+					name = "Unnamed agent"
 					if named := strings.TrimSpace(agentNames[member.MemberID]); named != "" {
 						name = named
 					}
@@ -96,7 +97,7 @@ func (s *Server) namedAgentRoomContextBlocks(agentID string) []wuucontext.Block 
 				if member.MemberType == channels.MemberAgent && member.MemberID == agentID {
 					you = ", you"
 				}
-				fmt.Fprintf(&content, "  - %s (%s, id: %s%s)\n", name, member.MemberType, member.MemberID, you)
+				fmt.Fprintf(&content, "  - %s (%s%s)\n", name, member.MemberType, you)
 			}
 		}
 	}
