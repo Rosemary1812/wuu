@@ -31,6 +31,7 @@ describe("AgentRelationshipGraph", () => {
   });
 
   it("uses a full-height canvas and keeps a dragged node where it is placed", () => {
+    const onSelectAgent = vi.fn();
     const agents = [
       { id: "agent-1", name: "Andy", avatar_key: "abstract-1" },
       { id: "agent-2", name: "Le", avatar_key: "abstract-2" },
@@ -45,7 +46,7 @@ describe("AgentRelationshipGraph", () => {
       <AgentRelationshipGraph
         agents={agents}
         rooms={rooms}
-        onSelectAgent={vi.fn()}
+        onSelectAgent={onSelectAgent}
         ariaLabel="Relationship graph"
         zoomInLabel="Zoom in"
         zoomOutLabel="Zoom out"
@@ -61,6 +62,14 @@ describe("AgentRelationshipGraph", () => {
       left: 0, top: 0, width: 960, height: 560, right: 960, bottom: 560, x: 0, y: 0, toJSON: () => ({}),
     });
     const node = container.querySelector<SVGGElement>('[aria-label="Andy"]')!;
+    const clickNode = container.querySelector<SVGGElement>('[aria-label="Le"]')!;
+    act(() => {
+      clickNode.dispatchEvent(pointerEvent("pointerdown", 350, 280));
+      clickNode.dispatchEvent(pointerEvent("pointerup", 350, 280));
+    });
+    expect(onSelectAgent).toHaveBeenCalledWith(agents[1]);
+    expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
+
     act(() => {
       node.dispatchEvent(pointerEvent("pointerdown", 610, 280));
       node.dispatchEvent(pointerEvent("pointermove", 200, 150));

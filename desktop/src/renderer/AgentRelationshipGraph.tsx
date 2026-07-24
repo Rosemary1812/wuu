@@ -283,18 +283,20 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   function handlePointerDown(event: ReactPointerEvent<SVGGElement>, node: GraphNode): void {
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { node, pointerID: event.pointerId, moved: false };
-    node.pinned = true;
-    node.vx = 0;
-    node.vy = 0;
-    if (frameRef.current !== null) {
-      window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
   }
 
   function handlePointerMove(event: ReactPointerEvent<SVGGElement>): void {
     const drag = dragRef.current;
     if (!drag || drag.pointerID !== event.pointerId) return;
+    if (!drag.moved) {
+      drag.node.pinned = true;
+      drag.node.vx = 0;
+      drag.node.vy = 0;
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    }
     const point = pointFromEvent(event);
     drag.node.x = point.x;
     drag.node.y = point.y;
