@@ -45,12 +45,12 @@ describe("channel message resizing", () => {
   });
 
   it("runs the room scroll surface to the bottom behind a floating composer", () => {
-    const conversation = ruleFor(".channel-conversation");
+    const roomMain = ruleFor(".channel-room-main");
     const stream = ruleFor(".channel-message-stream");
     const footer = ruleFor(".channel-conversation-footer");
 
-    expect(conversation).toMatch(/display:\s*grid/);
-    expect(conversation).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+    expect(roomMain).toMatch(/display:\s*grid/);
+    expect(roomMain).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
     expect(stream).toMatch(/grid-row:\s*2/);
     expect(stream).toMatch(/overflow-y:\s*auto/);
     expect(stream).toMatch(/scrollbar-gutter:\s*stable/);
