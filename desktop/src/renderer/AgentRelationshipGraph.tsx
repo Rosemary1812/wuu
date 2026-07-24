@@ -23,6 +23,7 @@ type GraphNode = {
   vx: number;
   vy: number;
   radius: number;
+  pinned: boolean;
 };
 
 type GraphLink = {
@@ -50,6 +51,7 @@ function buildGraph(agents: NamedAgent[], rooms: ChannelRoom[]): { nodes: GraphN
       vx: 0,
       vy: 0,
       radius: 24,
+      pinned: false,
     };
     nodes.push(node);
     byID.set(node.id, node);
@@ -66,6 +68,7 @@ function buildGraph(agents: NamedAgent[], rooms: ChannelRoom[]): { nodes: GraphN
       vx: 0,
       vy: 0,
       radius: 8,
+      pinned: false,
     };
     nodes.push(node);
     byID.set(node.id, node);
@@ -118,6 +121,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   const viewportElementRef = useRef<SVGGElement | null>(null);
   const viewportRef = useRef({ x: 0, y: 0, scale: 1 });
   const restartRef = useRef<() => void>(() => undefined);
+  const paintRef = useRef<() => void>(() => undefined);
   const dragRef = useRef<{ node: GraphNode; pointerID: number; moved: boolean } | null>(null);
   const panRef = useRef<{ pointerID: number; x: number; y: number; originX: number; originY: number } | null>(null);
 
@@ -137,6 +141,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         nodeRefs.current.get(node.id)?.setAttribute("transform", `translate(${node.x} ${node.y})`);
       }
     };
+    paintRef.current = paint;
     const tick = (): void => {
       frameRef.current = null;
       if (stopped) return;
@@ -181,7 +186,11 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         link.target.vy -= (dy / distance) * pull;
       }
       for (const node of graph.nodes) {
-        if (dragRef.current?.node === node) continue;
+        if (dragRef.current?.node === node || node.pinned) {
+          node.vx = 0;
+          node.vy = 0;
+          continue;
+        }
         node.vx += (GRAPH_WIDTH / 2 - node.x) * settingsRef.current.centerForce * 0.047 * alpha;
         node.vy += (GRAPH_HEIGHT / 2 - node.y) * settingsRef.current.centerForce * 0.06 * alpha;
         node.vx *= 0.88;
@@ -274,9 +283,13 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   function handlePointerDown(event: ReactPointerEvent<SVGGElement>, node: GraphNode): void {
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { node, pointerID: event.pointerId, moved: false };
+    node.pinned = true;
     node.vx = 0;
     node.vy = 0;
-    restartRef.current();
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
   }
 
   function handlePointerMove(event: ReactPointerEvent<SVGGElement>): void {
@@ -286,8 +299,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     drag.node.x = point.x;
     drag.node.y = point.y;
     drag.moved = true;
-    nodeRefs.current.get(drag.node.id)?.setAttribute("transform", `translate(${point.x} ${point.y})`);
-    restartRef.current();
+    paintRef.current();
   }
 
   function handlePointerUp(event: ReactPointerEvent<SVGGElement>): void {
@@ -295,20 +307,27 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     if (!drag || drag.pointerID !== event.pointerId) return;
     event.currentTarget.releasePointerCapture(event.pointerId);
     dragRef.current = null;
-    restartRef.current();
     if (!drag.moved && drag.node.kind === "agent") {
       const agent = agents.find((candidate) => `agent:${candidate.id}` === drag.node.id);
       if (agent) onSelectAgent(agent);
     }
   }
 
+  function resetGraph(): void {
+    viewportRef.current = { x: 0, y: 0, scale: 1 };
+    applyViewport();
+    for (const node of graph.nodes) {
+      node.pinned = false;
+      node.vx = 0;
+      node.vy = 0;
+    }
+    restartRef.current();
+  }
+
   return (
     <div className="channel-agent-graph-shell">
-      <div className="channel-agent-graph-toolbar">
-        <div><strong>{ariaLabel}</strong><span>{t("channels.graphCounts", { nodes: agents.length, links: graph.links.filter((link) => link.kind === "relationship").length })}</span></div>
-        <button className="icon-button" type="button" aria-label={t("channels.graphSettings")} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}><Settings2 className="icon" /></button>
-      </div>
       <div className="channel-agent-graph-surface">
+      <button className="icon-button channel-agent-graph-settings-toggle" type="button" aria-label={t("channels.graphSettings")} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}><Settings2 className="icon" /></button>
       <svg
         className="channel-agent-graph-canvas"
         viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
@@ -319,6 +338,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
         onPointerCancel={handleCanvasPointerUp}
+        onDoubleClick={(event) => { if (event.target === event.currentTarget) resetGraph(); }}
       >
         <g ref={viewportElementRef}>
           <g className="channel-agent-graph-links">
@@ -372,7 +392,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       ) : null}
       <div className="channel-agent-graph-controls">
         <button type="button" aria-label={zoomOutLabel} onClick={() => zoomAt(viewportRef.current.scale / 1.25, GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2)}>−</button>
-        <button type="button" aria-label={resetViewLabel} onClick={() => { viewportRef.current = { x: 0, y: 0, scale: 1 }; applyViewport(); }}>1:1</button>
+        <button type="button" aria-label={resetViewLabel} onClick={resetGraph}>1:1</button>
         <button type="button" aria-label={zoomInLabel} onClick={() => zoomAt(viewportRef.current.scale * 1.25, GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2)}>+</button>
       </div>
       </div>

@@ -582,13 +582,6 @@
   border-right: 1px solid var(--border-subtle);
 }
 
-.channel-agent-graph-toolbar {
-  min-height: 56px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
 .channel-agent-directory-list {
   min-height: 0;
   flex: 1;
@@ -666,27 +659,20 @@
   flex-direction: column;
 }
 
-.channel-agent-graph-toolbar {
-  justify-content: space-between;
-  padding: 0 12px 0 20px;
-}
-
-.channel-agent-graph-toolbar > div {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.channel-agent-graph-toolbar span {
-  color: var(--text-tertiary);
-  font-size: 11px;
-}
-
 .channel-agent-graph-surface {
   position: relative;
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.channel-agent-graph-settings-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 14px;
+  background: var(--bg-primary);
+  box-shadow: 0 3px 12px var(--ink-overlay-8);
 }
 
 .channel-agent-graph-canvas {
@@ -769,8 +755,8 @@
 .channel-agent-graph-settings {
   position: absolute;
   z-index: 2;
-  top: 12px;
-  left: 12px;
+  top: 52px;
+  right: 14px;
   width: 250px;
   display: grid;
   gap: 18px;
