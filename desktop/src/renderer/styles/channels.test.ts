@@ -36,7 +36,7 @@ describe("channel message resizing", () => {
 
     expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 12px/);
     expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
-    expect(messageContent).toMatch(/max-width:\s*72%/);
+    expect(messageContent).toMatch(/max-width:\s*min\(100%, 680px\)/);
     expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
   });
 
