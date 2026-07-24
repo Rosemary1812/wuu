@@ -10,6 +10,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ### Fixed
 
+- Added desktop skill preview dialogs that show the underlying Skill content and
+  keep the preview body scrolling inside a stable modal.
 - Centered the skills catalog content within its scroll region on the desktop.
 - Removed count badges from the skills catalog section headings on the desktop.
 

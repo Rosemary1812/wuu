@@ -2698,6 +2698,21 @@ export function App(): JSX.Element {
     );
   }
 
+  function trySkillFromCatalog(skill: { name: string }): void {
+    const origin = document.activeElement;
+    const context = appStateRef.current.activeContext;
+    if (!context) {
+      return;
+    }
+    revealConversationFromFocusedWorkspace();
+    void startNewThread().then(() => {
+      setComposerImages([]);
+      setComposerFiles([]);
+      setPrompt(`/${skill.name} `);
+      requestMainComposerFocus("hero", origin);
+    });
+  }
+
   function startNewThreadForProjectWithComposerFocus(id: string): void {
     const origin = document.activeElement;
     focusHeroAfter(
@@ -4190,6 +4205,7 @@ export function App(): JSX.Element {
               <SkillsCatalog
                 activeContext={state.activeContext}
                 extensionInventory={state.initialized?.extension_inventory}
+                onTrySkill={trySkillFromCatalog}
               />
             ) : (
               <>

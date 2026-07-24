@@ -1,8 +1,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WuuDesktopApi } from "../shared/protocol";
+import type { SkillSummary, WuuDesktopApi } from "../shared/protocol";
 import { SkillsCatalog } from "./SkillsCatalog";
+
+vi.mock("./RichContent", () => ({
+  RichContent: ({ text }: { text: string }) => <div data-testid="rich-content">{text}</div>,
+}));
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -24,20 +28,16 @@ afterEach(() => {
 
 describe("SkillsCatalog", () => {
   it("lists installed plugins and tags plugin-provided skills", async () => {
-    const stub: Partial<WuuDesktopApi> = {
-      listSkills: vi.fn().mockResolvedValue({
-        skills: [
-          {
-            name: "cua-mac",
-            description: "Observe and control native macOS apps",
-            source: "plugin:cua-mac",
-            path: "/bundle/plugins/cua-mac/skills/cua-mac/SKILL.md",
-          },
-        ],
-      }),
-    };
-    (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
-    (window as unknown as { wuu: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
+    installSkillList([
+      {
+        name: "cua-mac",
+        description: "Observe and control native macOS apps",
+        source: "plugin:cua-mac",
+        path: "/bundle/plugins/cua-mac/skills/cua-mac/SKILL.md",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
 
     await act(async () => {
       root = createRoot(container);
@@ -83,4 +83,94 @@ describe("SkillsCatalog", () => {
     // plugin list.
     expect(container.textContent).not.toContain("computer");
   });
+
+  it("opens a skill preview dialog from a skill row", async () => {
+    installSkillList([
+      {
+        name: "bug-fix",
+        description: "Fix a bug from a report",
+        when_to_use: "Use when the user reports a crash",
+        trigger_condition: "Bug reports and stack traces",
+        source: "bundled",
+        argument_hint: "Describe the failing behavior",
+        examples: ["Fix this stack trace"],
+        verification_checklist: ["Run the targeted test"],
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog />);
+    });
+
+    await act(async () => {
+      skillButton("bug-fix")?.click();
+    });
+
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(document.body.textContent).toContain("# Bug Fix Workflow");
+    expect(document.body.textContent).toContain("Read the report and inspect the code");
+    expect(document.body.textContent).not.toContain("来源");
+    expect(document.body.textContent).not.toContain("路径");
+  });
+
+  it("closes the preview and reports the selected skill when trying it", async () => {
+    const onTrySkill = vi.fn();
+    installSkillList([
+      {
+        name: "write",
+        description: "Rewrite prose",
+        source: "user",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog onTrySkill={onTrySkill} />);
+    });
+
+    await act(async () => {
+      skillButton("write")?.click();
+    });
+    await act(async () => {
+      buttonByText("立即试用")?.click();
+    });
+
+    expect(onTrySkill).toHaveBeenCalledWith(expect.objectContaining({ name: "write" }));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
 });
+
+function installSkillList(skills: SkillSummary[]): void {
+  const stub: Partial<WuuDesktopApi> = {
+    listSkills: vi.fn().mockResolvedValue({ skills }),
+    readSkillContent: vi.fn().mockResolvedValue({
+      content: [
+        "---",
+        "name: bug-fix",
+        "---",
+        "# Bug Fix Workflow",
+        "",
+        "Read the report and inspect the code.",
+      ].join("\n"),
+    }),
+  };
+  (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
+  (window as unknown as { wuu: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
+}
+
+function skillButton(name: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent?.includes(name),
+  );
+}
+
+function buttonByText(text: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === text,
+  );
+}
