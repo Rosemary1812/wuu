@@ -1107,16 +1107,3 @@
   color: var(--text-primary);
   font-size: 13px;
 }
-
-@media (max-width: 720px) {
-  .channel-message-stream,
-  .channel-composer {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-
-  .channel-message-content {
-    max-width: 86%;
-  }
-
-}

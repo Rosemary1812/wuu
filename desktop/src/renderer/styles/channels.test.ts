@@ -27,3 +27,16 @@ describe("channel directory alignment", () => {
     expect(agentIdentity).toMatch(/padding:\s*var\(--channel-directory-row-padding\)/);
   });
 });
+
+describe("channel message resizing", () => {
+  it("keeps bubble width and horizontal gutters continuous across window sizes", () => {
+    const stream = ruleFor(".channel-message-stream");
+    const composer = ruleFor(".channel-composer");
+    const messageContent = ruleFor(".channel-message-content");
+
+    expect(stream).toMatch(/padding:\s*18px clamp\(20px, 5vw, 72px\)/);
+    expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
+    expect(messageContent).toMatch(/max-width:\s*72%/);
+    expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
+  });
+});
