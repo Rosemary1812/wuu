@@ -85,12 +85,18 @@ describe("ComposerVoiceInput", () => {
         text: "这是原始转写",
         is_final: true,
       });
+      speechHandler?.({ type: "state", state: "stopped" });
     });
 
     expect(container.querySelector("output")?.textContent).toBe(
       "前文\n这是原始转写",
     );
     expect(polishText).not.toHaveBeenCalled();
+    expect(
+      container
+        .querySelector<HTMLButtonElement>(".composer-voice-button")
+        ?.classList.contains("is-active"),
+    ).toBe(false);
   });
 
   it("uses the configured BYOK model only when polish is enabled", async () => {

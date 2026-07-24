@@ -89,7 +89,10 @@ export function ComposerVoiceInput({
 
     function handleSpeechEvent(event: SpeechRecognitionEvent): void {
       if (event.type === "state") {
-        if (event.state === "stopped" && phaseRef.current === "polishing") {
+        if (event.state === "stopped") {
+          if (phaseRef.current !== "polishing") {
+            setPhase("idle");
+          }
           return;
         }
         setPhase(event.state);
