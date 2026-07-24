@@ -66,7 +66,6 @@ function AgentAvatar({ name, avatarKey, avatarImage, status, statusText, compact
       <AgentAvatarMark avatarKey={avatarKey} avatarImage={avatarImage} />
       <span className={`channel-agent-status-dot ${status}`} aria-hidden="true" />
       <span className="channel-agent-status-card" role="tooltip">
-        <strong>{name}</strong>
         <span><i className={`channel-agent-status-swatch ${status}`} />{statusText}</span>
       </span>
     </span>

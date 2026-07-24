@@ -60,3 +60,9 @@ describe("channel message resizing", () => {
     expect(channelsCss).not.toMatch(/\.channel-composer \.dock-composer-wrap::before\s*\{[^}]*display:\s*none/);
   });
 });
+
+describe("channel agent status", () => {
+  it("keeps thinking indicators static", () => {
+    expect(channelsCss).not.toContain("channel-agent-status-pulse");
+  });
+});

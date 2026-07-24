@@ -219,6 +219,8 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("Investigate flaky build");
     expect(container.querySelector('[aria-label="Alpha: 处理中"]')).not.toBeNull();
     expect(container.querySelector(".channel-agent-status-dot.thinking")).not.toBeNull();
+    expect(container.querySelector(".channel-agent-status-card")?.textContent).toBe("处理中");
+    expect(container.querySelector(".channel-agent-status-card strong")).toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-row"))
       .find((button) => button.textContent?.includes("research"));
     act(() => research?.click());

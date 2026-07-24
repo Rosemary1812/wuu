@@ -338,10 +338,6 @@
 .channel-agent-status-dot.sending,
 .channel-agent-status-swatch.sending { background: #3b82f6; }
 
-.channel-agent-status-dot.thinking {
-  animation: channel-agent-status-pulse 1.4s ease-in-out infinite;
-}
-
 .channel-agent-status-card {
   position: absolute;
   z-index: 20;
@@ -383,10 +379,6 @@
 .channel-agent-avatar:focus-visible .channel-agent-status-card {
   opacity: 1;
   transform: translateY(0);
-}
-
-@keyframes channel-agent-status-pulse {
-  50% { opacity: 0.45; }
 }
 
 .channel-agent-edit,
