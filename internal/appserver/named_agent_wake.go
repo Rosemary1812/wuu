@@ -202,6 +202,7 @@ func (s *Server) newNamedAgentRuntime(threadID string, agent channels.NamedAgent
 		releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: threadRuntime})
 		return nil, err
 	}
+	s.attachNamedAgentRoomContext(threadRuntime, agent.ID)
 	return threadRuntime, nil
 }
 
