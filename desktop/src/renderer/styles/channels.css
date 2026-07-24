@@ -36,23 +36,11 @@
   overflow: visible;
 }
 
-.channel-title-content {
-  min-width: 0;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-}
-
-.channel-title-content > strong {
-  flex: 0 0 auto;
-}
-
 .channel-mode-tabs {
   align-self: stretch;
   display: flex;
   align-items: stretch;
   gap: 22px;
-  margin-left: 28px;
   -webkit-app-region: no-drag;
 }
 

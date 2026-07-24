@@ -3970,22 +3970,19 @@ export function App(): JSX.Element {
                     <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
                   </button>
                 ) : null}
-                <div className="channel-title-content">
-                  <strong>{t("channels.title")}</strong>
-                  <nav className="channel-mode-tabs" aria-label={t("channels.title")}>
-                    {(["rooms", "agents", "tasks"] as const).map((mode) => (
-                      <button
-                        className={channelSection === mode ? "active" : ""}
-                        type="button"
-                        key={mode}
-                        aria-current={channelSection === mode ? "page" : undefined}
-                        onClick={() => setChannelSection(mode)}
-                      >
-                        {t(mode === "rooms" ? "channels.rooms" : mode === "agents" ? "channels.agents" : "channels.tasks")}
-                      </button>
-                    ))}
-                  </nav>
-                </div>
+                <nav className="channel-mode-tabs" aria-label={t("channels.title")}>
+                  {(["rooms", "agents", "tasks"] as const).map((mode) => (
+                    <button
+                      className={channelSection === mode ? "active" : ""}
+                      type="button"
+                      key={mode}
+                      aria-current={channelSection === mode ? "page" : undefined}
+                      onClick={() => setChannelSection(mode)}
+                    >
+                      {t(mode === "rooms" ? "channels.rooms" : mode === "agents" ? "channels.agents" : "channels.tasks")}
+                    </button>
+                  ))}
+                </nav>
               </div>
             </header>
             <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} />
