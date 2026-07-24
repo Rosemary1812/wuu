@@ -91,11 +91,14 @@ func (t *ThreadGetTool) Execute(ctx context.Context, args string) (string, error
 		return "", fmt.Errorf("thread_get: thread_id is required")
 	}
 
-	home, err := statepath.Home("")
-	if err != nil {
-		return "", fmt.Errorf("thread_get: resolve wuu home: %w", err)
+	sessDir := strings.TrimSpace(t.env.SessionsDir)
+	if sessDir == "" {
+		home, err := statepath.Home("")
+		if err != nil {
+			return "", fmt.Errorf("thread_get: resolve wuu home: %w", err)
+		}
+		sessDir = statepath.SessionsDir(home)
 	}
-	sessDir := statepath.SessionsDir(home)
 	if sessDir == "" {
 		return "", errors.New("thread_get: sessions dir is empty")
 	}

@@ -35,7 +35,7 @@ vi.mock("./JumpToLatestPill", () => ({
   ),
 }));
 
-import { App } from "./App";
+import { App, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./App";
 import { RIGHT_PANEL_MOTION_MS } from "./AppLayoutState";
 
 let container: HTMLDivElement;
@@ -130,7 +130,15 @@ function installWuuApi(): void {
   startTurnMock = vi.fn().mockResolvedValue({ turn: thread.turns[0] });
   const api = {
     listProjects: vi.fn().mockResolvedValue({
-      projects: [],
+      projects: [
+        {
+          id: "project-wuu",
+          name: "wuu",
+          path: "/repo/wuu",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
       active_context: { kind: "no_project", cwd: workspace },
     }),
     selectNoProject: vi.fn().mockResolvedValue({
@@ -272,11 +280,20 @@ describe("workspace file tabs", () => {
     await flushAsync();
 
     expect(shell?.classList.contains("right-panel-animating")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
-    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
     expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
+    expect(
+      container.querySelector('[data-main-conversation-composer="document"]'),
+    ).not.toBeNull();
+    expect(
+      container
+        .querySelector(".workspace-document-turn-summary")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
     expect(
       container.querySelector('[data-testid="jump-to-latest-probe"]'),
     ).toBeNull();
@@ -295,6 +312,20 @@ describe("workspace file tabs", () => {
       valueSetter?.call(focusedTextarea, "Rewrite the weak section.");
       focusedTextarea?.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    startTurnMock.mockResolvedValueOnce({
+      turn: {
+        id: "turn-document-edit",
+        items_view: "full",
+        status: "in_progress",
+        items: [
+          {
+            id: "item-document-edit-user",
+            type: "user_message",
+            text: "Rewrite the weak section.",
+          },
+        ],
+      },
+    });
     await act(async () => {
       focusedTextarea?.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
@@ -309,6 +340,7 @@ describe("workspace file tabs", () => {
       "standard",
       { path: "README.md" },
     );
+    expect(container.querySelector('[data-testid="workspace-document-turn-drawer"]')).not.toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
@@ -385,11 +417,51 @@ describe("workspace file tabs", () => {
 
     await act(async () => {
       container
-        .querySelector<HTMLButtonElement>('[aria-label="打开导航侧栏"]')
+        .querySelector<HTMLButtonElement>(
+          '.globalized-sidebar-toggle[aria-label="展开左侧栏"]',
+        )
         ?.click();
     });
     expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '.globalized-sidebar-toggle[aria-label="收起左侧栏"]',
+        )
+        ?.click();
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
+
+    const sidebarToggle = container.querySelector<HTMLButtonElement>(
+      '.globalized-sidebar-toggle[aria-label="展开左侧栏"]',
+    );
+    vi.useFakeTimers();
+    await act(async () => {
+      sidebarToggle?.dispatchEvent(
+        new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
+      );
+      vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(sidebarToggle?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="打开工作区 wuu"]')
+        ?.click();
+    });
+    await flushAsync();
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(
+      container
+        .querySelector('[data-section-id="project-wuu"] .project-row')
+        ?.getAttribute("aria-current"),
+    ).toBe("page");
+    expect(window.wuu.listWorkspaceDirectory).toHaveBeenCalledWith("", "/repo/wuu");
 
     await act(async () => {
       setInnerWidth(1000);

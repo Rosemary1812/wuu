@@ -207,7 +207,7 @@ func (s *Server) runMemoryOverviewAgent(scope, dir string) (string, error) {
 	cfg.MaxSteps = memoryOverviewMaxSteps
 	cfg.InferenceOperationKind = providers.InferenceOperationMemory
 	cfg.InferenceWorkloadProfile = providers.InferenceProfileBestEffort
-	result, err := agent.RunToolLoop(ctx, messages, cfg, memoryPanelStep{client: client})
+	result, err := agent.RunToolLoop(ctx, messages, cfg, agent.NewStreamStep(client))
 	if err != nil {
 		return "", fmt.Errorf("memory overview agent: %w", err)
 	}
@@ -341,7 +341,7 @@ func (s *Server) runMemoryChatAgent(scope, targetDir, userDir string, roots []st
 	cfg.MaxSteps = memoryChatMaxSteps
 	cfg.InferenceOperationKind = providers.InferenceOperationMemory
 	cfg.InferenceWorkloadProfile = providers.InferenceProfileInteractive
-	result, err := agent.RunToolLoop(ctx, messages, cfg, memoryPanelStep{client: client})
+	result, err := agent.RunToolLoop(ctx, messages, cfg, agent.NewStreamStep(client))
 	if err != nil {
 		return "", fmt.Errorf("memory manager agent: %w", err)
 	}
@@ -373,29 +373,6 @@ func memoryChatSystemPrompt(scope, targetDir, userDir string) string {
 		"",
 		"回复要求：完成后用中文一句话说明你做了什么（保存/修改/删除了哪条记忆）；如果没有需要修改的内容或指令不清楚，也用一句话说明原因。不要输出多余的解释或文件内容。",
 	}, "\n")
-}
-
-// memoryPanelStep is the one-round-trip Step for the panel agents: a plain
-// blocking Chat call (same shape as runtime's profileMemoryReviewStep).
-type memoryPanelStep struct {
-	client providers.Client
-}
-
-func (s memoryPanelStep) Execute(ctx context.Context, req providers.ChatRequest) (agent.StepResult, error) {
-	resp, err := providers.ExecuteChat(ctx, s.client, req, providers.InferenceOperationMemory, providers.InferenceProfileInteractive)
-	if err != nil {
-		return agent.StepResult{}, err
-	}
-	return agent.StepResult{
-		Content:          resp.Content,
-		ReasoningContent: resp.ReasoningContent,
-		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), resp.ReasoningBlocks...),
-		ToolCalls:        append([]providers.ToolCall(nil), resp.ToolCalls...),
-		FinishReason:     resp.FinishReason,
-		Truncated:        resp.Truncated,
-		StopReason:       resp.StopReason,
-		Usage:            resp.Usage,
-	}, nil
 }
 
 // memoryPanelExecutor is the restricted tool executor for both panel

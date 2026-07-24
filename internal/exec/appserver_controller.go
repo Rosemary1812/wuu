@@ -77,6 +77,8 @@ func newLocalControllerForRuntime(ctx context.Context, rt *runtime.Session) *loc
 	}
 	go func() {
 		err := appserver.RunStdio(serverCtx, rt, serverInR, serverOutW)
+		_ = serverInR.CloseWithError(err)
+		_ = serverOutW.CloseWithError(err)
 		controller.done <- err
 	}()
 	return controller

@@ -8,6 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/automation"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/insight"
@@ -29,6 +30,21 @@ const (
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
 	MethodAgentTemplateList    = "agent-template/list"
+	MethodChannelBootstrap     = "channel/bootstrap"
+	MethodChannelAgentList     = "channel/agent/list"
+	MethodChannelAgentCreate   = "channel/agent/create"
+	MethodChannelAgentUpdate   = "channel/agent/update"
+	MethodChannelAgentDelete   = "channel/agent/delete"
+	MethodChannelAgentStart    = "channel/agent/start"
+	MethodChannelRoomList      = "channel/room/list"
+	MethodChannelRoomCreate    = "channel/room/create"
+	MethodChannelRoomDelete    = "channel/room/delete"
+	MethodChannelMessageList   = "channel/message/list"
+	MethodChannelMessageSend   = "channel/message/send"
+	MethodChannelTaskCreate    = "channel/task/create"
+	MethodChannelTaskUpdate    = "channel/task/update"
+	MethodChannelMentionStatus = "channel/human-mention/status"
+	MethodChannelMentionAck    = "channel/human-mention/ack"
 	MethodAutomationList       = "automation/list"
 	MethodAutomationRuns       = "automation/run/list"
 	MethodAutomationUpdate     = "automation/update"
@@ -63,23 +79,6 @@ const (
 	MethodThreadRename             = "thread/rename"
 	MethodThreadDelete             = "thread/delete"
 	MethodWorkspaceStateCleanup    = "workspace/state/cleanup"
-	MethodParticipantList          = "participant/list"
-	MethodKanbanCreateTask         = "kanban/create-task"
-	MethodKanbanListTasks          = "kanban/list-tasks"
-	MethodKanbanTransitionTask     = "kanban/transition-task"
-	MethodKanbanDispatchRun        = "kanban/dispatch-run"
-	MethodKanbanListRuns           = "kanban/list-runs"
-	MethodKanbanListArtifacts      = "kanban/list-artifacts"
-	MethodKanbanCrystallize        = "kanban/crystallize"
-	MethodKanbanAutoDispatch       = "kanban/auto-dispatch"
-	MethodKanbanSpawnSuggestions   = "kanban/spawn-suggestions"
-	MethodKanbanSpawnAgent         = "kanban/spawn-agent"
-	MethodParticipantGetManifest   = "participant/get-manifest"
-	MethodParticipantSaveManifest  = "participant/save-manifest"
-	MethodParticipantSave          = "participant/save"
-	MethodParticipantFeedback      = "participant/feedback"
-	MethodParticipantReset         = "participant/reset"
-	MethodParticipantRetire        = "participant/retire"
 	// Memory panel RPCs (设置 → 记忆). Wire contract fixed ahead of
 	// implementation by docs/plans/2026-07-04-memory-redesign.md §8.2 and
 	// mirrored field-for-field by desktop/src/shared/protocol.ts.
@@ -138,7 +137,6 @@ const (
 	NotificationThreadStarted          = "thread/started"
 	NotificationThreadResumed          = "thread/resumed"
 	NotificationThreadUpdated          = "thread/updated"
-	NotificationParticipantUpdated     = "participant/updated"
 	NotificationTurnStarted            = "turn/started"
 	NotificationTurnQueued             = "turn/queued"
 	NotificationTurnDequeued           = "turn/dequeued"
@@ -168,7 +166,6 @@ const (
 	NotificationToolCallDelta       = "item/toolCall/delta"
 	NotificationToolCallOutput      = "item/toolCall/outputDelta"
 	NotificationAgentUpdated        = "agent/updated"
-	NotificationKanbanUpdated       = "kanban/updated"
 	NotificationAgentMailbox        = "agent/mailbox"
 	NotificationMCPStatusUpdated    = "mcp/status/updated"
 )
@@ -206,29 +203,61 @@ type CoreBuildInfo struct {
 	Dirty   bool   `json:"dirty,omitempty"`
 }
 
+// RuntimeHostSummary identifies the process behind this app-server connection.
+// Product identities such as organization, seat, and agent definition remain
+// control-plane concerns and are intentionally not part of this core contract.
+type RuntimeHostSummary struct {
+	Kind       string `json:"kind"`
+	InstanceID string `json:"instance_id,omitempty"`
+}
+
+// InitializeParams describes the client attached to the UI-neutral core.
+// Capabilities are opt-in: an omitted capability must never cause the core to
+// send a request that the client cannot handle.
+type InitializeParams struct {
+	ProtocolVersion string             `json:"protocol_version,omitempty"`
+	Client          ClientInfo         `json:"client,omitempty"`
+	Capabilities    ClientCapabilities `json:"capabilities,omitempty"`
+}
+
+type ClientInfo struct {
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+type ClientCapabilities struct {
+	ReverseRPC ReverseRPCCapabilities `json:"reverse_rpc,omitempty"`
+}
+
+type ReverseRPCCapabilities struct {
+	Methods []string `json:"methods,omitempty"`
+}
+
 type InitializeResult struct {
-	Status             string                     `json:"status"`
-	Issues             []RuntimeIssue             `json:"issues,omitempty"`
-	ProtocolVersion    string                     `json:"protocol_version"`
-	AgentTemplateCount int                        `json:"agent_template_count,omitempty"`
-	Core               CoreBuildInfo              `json:"core"`
-	Provider           string                     `json:"provider"`
-	Model              string                     `json:"model"`
-	Effort             string                     `json:"effort,omitempty"`
-	Variant            string                     `json:"variant,omitempty"`
-	Ultra              bool                       `json:"ultra"`
-	MaxParallel        int                        `json:"max_parallel"`
-	WorkspaceRoot      string                     `json:"workspace_root"`
-	Permissions        PermissionSummary          `json:"permissions"`
-	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
-	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory,omitempty"`
-	ModelProfile       *ModelProfileSummary       `json:"model_profile,omitempty"`
-	ToolSurface        *ToolSurfaceSummary        `json:"tool_surface,omitempty"`
-	ModelRoles         []ModelRoleSummary         `json:"model_roles,omitempty"`
-	Providers          []ProviderSummary          `json:"providers,omitempty"`
-	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
-	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
-	Features           FeatureFlags               `json:"features"`
+	Status             string                       `json:"status"`
+	Issues             []RuntimeIssue               `json:"issues,omitempty"`
+	ProtocolVersion    string                       `json:"protocol_version"`
+	AgentTemplateCount int                          `json:"agent_template_count,omitempty"`
+	Core               CoreBuildInfo                `json:"core"`
+	Provider           string                       `json:"provider"`
+	Model              string                       `json:"model"`
+	Effort             string                       `json:"effort,omitempty"`
+	Variant            string                       `json:"variant,omitempty"`
+	Ultra              bool                         `json:"ultra"`
+	MaxParallel        int                          `json:"max_parallel"`
+	RuntimeHost        RuntimeHostSummary           `json:"runtime_host"`
+	WorkspaceRoot      string                       `json:"workspace_root"`
+	Permissions        PermissionSummary            `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary        `json:"extension_trust"`
+	ExtensionInventory []ExtensionInventoryRecord   `json:"extension_inventory,omitempty"`
+	ModelProfile       *ModelProfileSummary         `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary          `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary           `json:"model_roles,omitempty"`
+	ModelAliases       map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
+	Providers          []ProviderSummary            `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary      `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary       `json:"general_settings"`
+	Features           FeatureFlags                 `json:"features"`
 }
 
 type FeatureFlags struct {
@@ -328,25 +357,26 @@ type ModelProfileSummary struct {
 type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
-	Provider           string                     `json:"provider"`
-	AgentTemplateCount int                        `json:"agent_template_count,omitempty"`
-	Model              string                     `json:"model"`
-	Effort             string                     `json:"effort,omitempty"`
-	Variant            string                     `json:"variant,omitempty"`
-	Ultra              bool                       `json:"ultra"`
-	MaxParallel        int                        `json:"max_parallel"`
-	ConfigPath         string                     `json:"config_path"`
-	WorkspaceRoot      string                     `json:"workspace_root"`
-	SessionDir         string                     `json:"session_dir"`
-	Permissions        PermissionSummary          `json:"permissions"`
-	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
-	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory,omitempty"`
-	ModelProfile       *ModelProfileSummary       `json:"model_profile,omitempty"`
-	ToolSurface        *ToolSurfaceSummary        `json:"tool_surface,omitempty"`
-	ModelRoles         []ModelRoleSummary         `json:"model_roles,omitempty"`
-	Providers          []ProviderSummary          `json:"providers,omitempty"`
-	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
-	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
+	Provider           string                       `json:"provider"`
+	AgentTemplateCount int                          `json:"agent_template_count,omitempty"`
+	Model              string                       `json:"model"`
+	Effort             string                       `json:"effort,omitempty"`
+	Variant            string                       `json:"variant,omitempty"`
+	Ultra              bool                         `json:"ultra"`
+	MaxParallel        int                          `json:"max_parallel"`
+	ConfigPath         string                       `json:"config_path"`
+	WorkspaceRoot      string                       `json:"workspace_root"`
+	SessionDir         string                       `json:"session_dir"`
+	Permissions        PermissionSummary            `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary        `json:"extension_trust"`
+	ExtensionInventory []ExtensionInventoryRecord   `json:"extension_inventory,omitempty"`
+	ModelProfile       *ModelProfileSummary         `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary          `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary           `json:"model_roles,omitempty"`
+	ModelAliases       map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
+	Providers          []ProviderSummary            `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary      `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary       `json:"general_settings"`
 }
 
 type PermissionSummary struct {
@@ -569,18 +599,20 @@ type ConfigProviderRemoveResult struct {
 }
 
 type ConfigAdvancedUpdateParams struct {
-	MaxSteps                *int     `json:"max_steps,omitempty"`
-	MaxContextTokens        *int     `json:"max_context_tokens,omitempty"`
-	Temperature             *float64 `json:"temperature,omitempty"`
-	CompactThresholdPct     *float64 `json:"compact_threshold_pct,omitempty"`
-	CompactKeepRecentTokens *int     `json:"compact_keep_recent_tokens,omitempty"`
-	DisableAutoCompact      *bool    `json:"disable_auto_compact,omitempty"`
-	ProviderContextWindow   *int     `json:"provider_context_window,omitempty"`
+	MaxSteps                *int                          `json:"max_steps,omitempty"`
+	MaxContextTokens        *int                          `json:"max_context_tokens,omitempty"`
+	Temperature             *float64                      `json:"temperature,omitempty"`
+	CompactThresholdPct     *float64                      `json:"compact_threshold_pct,omitempty"`
+	CompactKeepRecentTokens *int                          `json:"compact_keep_recent_tokens,omitempty"`
+	DisableAutoCompact      *bool                         `json:"disable_auto_compact,omitempty"`
+	ProviderContextWindow   *int                          `json:"provider_context_window,omitempty"`
+	ModelAliases            *map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
 }
 
 type ConfigAdvancedUpdateResult struct {
-	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
-	Providers        []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings AdvancedSettingsSummary      `json:"advanced_settings"`
+	ModelAliases     map[string]ModelAliasSummary `json:"model_aliases,omitempty"`
+	Providers        []ProviderSummary            `json:"providers,omitempty"`
 }
 
 type ConfigGeneralUpdateParams struct {
@@ -588,6 +620,10 @@ type ConfigGeneralUpdateParams struct {
 	GitAttributionEnabled *bool            `json:"git_attribution_enabled,omitempty"`
 	MemoryDisable         *bool            `json:"memory_disable,omitempty"`
 	MCPEnabledToggles     map[string]*bool `json:"mcp_enabled_toggles,omitempty"`
+	DreamEnabled          *bool            `json:"dream_enabled,omitempty"`
+	DreamIntervalDays     *int             `json:"dream_interval_days,omitempty"`
+	DreamProvider         *string          `json:"dream_provider,omitempty"`
+	DreamModel            *string          `json:"dream_model,omitempty"`
 }
 
 type ConfigGeneralUpdateResult struct {
@@ -599,6 +635,10 @@ type GeneralSettingsSummary struct {
 	GitAttributionEnabled bool            `json:"git_attribution_enabled"`
 	MemoryDisabled        bool            `json:"memory_disabled"`
 	MCPServerEnabled      map[string]bool `json:"mcp_server_enabled"`
+	DreamEnabled          bool            `json:"dream_enabled"`
+	DreamIntervalDays     int             `json:"dream_interval_days"`
+	DreamProvider         string          `json:"dream_provider,omitempty"`
+	DreamModel            string          `json:"dream_model,omitempty"`
 }
 
 type AdvancedSettingsSummary struct {
@@ -876,6 +916,13 @@ type ModelRoleSummary struct {
 	Behavior     ModelBehaviorSummary   `json:"behavior,omitempty"`
 }
 
+type ModelAliasSummary struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Effort   string `json:"effort,omitempty"`
+	Variant  string `json:"variant,omitempty"`
+}
+
 type ModelCapabilitySummary = modelroles.Capabilities
 
 type ModelBehaviorSummary = modelroles.Behavior
@@ -903,10 +950,17 @@ type ThreadResumeResult struct {
 }
 
 type ThreadForkParams struct {
-	ThreadID string `json:"thread_id"`
-	TurnID   string `json:"turn_id,omitempty"`
-	ItemID   string `json:"item_id,omitempty"`
-	Mode     string `json:"mode,omitempty"`
+	ThreadID string            `json:"thread_id"`
+	TurnID   string            `json:"turn_id,omitempty"`
+	ItemID   string            `json:"item_id,omitempty"`
+	Target   *ThreadForkTarget `json:"target,omitempty"`
+	Mode     string            `json:"mode,omitempty"`
+}
+
+type ThreadForkTarget struct {
+	Seq      int            `json:"seq,omitempty"`
+	Type     ThreadItemType `json:"type,omitempty"`
+	SourceID string         `json:"source_id,omitempty"`
 }
 
 type ThreadForkResult struct {
@@ -1061,98 +1115,6 @@ type SideThreadEventNotification struct {
 	Message      *SideThreadWireMessage `json:"message,omitempty"`
 	Items        []ThreadItem           `json:"items,omitempty"`
 	ErrorMessage string                 `json:"error_message,omitempty"`
-}
-
-type ParticipantProfile struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-	Role string `json:"role,omitempty"`
-	// AvatarImage is the participant's uploaded avatar as a data URL
-	// (e.g. "data:image/png;base64,..."). Populated on the profile read
-	// path when the workspace contains an avatar image; omitted on the
-	// lightweight wire Summary.
-	AvatarImage string                `json:"avatar_image,omitempty"`
-	Tagline     string                `json:"tagline,omitempty"`
-	Workspace   string                `json:"workspace,omitempty"`
-	Model       string                `json:"model,omitempty"`
-	Memory      string                `json:"memory,omitempty"`
-	TrackRecord []ParticipantRunEntry `json:"track_record,omitempty"`
-	CreatedAt   time.Time             `json:"created_at,omitempty"`
-	UpdatedAt   time.Time             `json:"updated_at,omitempty"`
-}
-
-type ParticipantRunEntry struct {
-	TaskID    string    `json:"task_id,omitempty"`
-	Summary   string    `json:"summary,omitempty"`
-	Outcome   string    `json:"outcome,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-}
-
-type ParticipantListResult struct {
-	Participants []ParticipantProfile `json:"participants"`
-}
-
-type ParticipantSaveParams struct {
-	ID      string `json:"id,omitempty"`
-	Name    string `json:"name"`
-	Role    string `json:"role,omitempty"`
-	Tagline string `json:"tagline,omitempty"`
-	Model   string `json:"model,omitempty"`
-	Memory  string `json:"memory,omitempty"`
-	// AvatarImage accepts an image data URL
-	// ("data:image/<mime>;base64,...") to upload a custom avatar.
-	// Decoded bytes are capped at 512KB; only image/png, image/jpeg,
-	// and image/webp are accepted.
-	AvatarImage string `json:"avatar_image,omitempty"`
-	// ClearAvatarImage removes any previously uploaded avatar image
-	// for this participant. Takes precedence over AvatarImage when set.
-	ClearAvatarImage bool `json:"clear_avatar_image,omitempty"`
-}
-
-type ParticipantSaveResult struct {
-	Participant ParticipantProfile `json:"participant"`
-	// ArchivedPredecessorID is set when this save CREATED a named
-	// participant and a retired predecessor with the same name (case-
-	// insensitive) exists in the store — its on-disk state lives under
-	// participants/.archived/<id>/. The new participant still starts
-	// fresh; surfacing the predecessor lets a future rehire/inherit UI
-	// offer the archived notebook (memory-redesign §9). Never set on
-	// updates of existing participants.
-	ArchivedPredecessorID string `json:"archived_predecessor_id,omitempty"`
-}
-
-type ParticipantFeedbackParams struct {
-	ParticipantID string `json:"participant_id"`
-	Text          string `json:"text"`
-	TaskID        string `json:"task_id,omitempty"`
-	MessageID     string `json:"message_id,omitempty"`
-}
-
-type ParticipantFeedbackResult struct {
-	Participant ParticipantProfile `json:"participant"`
-}
-
-type ParticipantResetParams struct {
-	ParticipantID string `json:"participant_id"`
-	Scope         string `json:"scope,omitempty"`
-}
-
-type ParticipantResetResult struct {
-	Participant ParticipantProfile `json:"participant"`
-}
-
-type ParticipantRetireParams struct {
-	ParticipantID string `json:"participant_id"`
-}
-
-type ParticipantRetireResult struct {
-	Participant ParticipantProfile `json:"participant"`
-}
-
-type ParticipantUpdatedNotification struct {
-	ParticipantID string              `json:"participant_id,omitempty"`
-	Participant   *ParticipantProfile `json:"participant,omitempty"`
 }
 
 type ContextCompositionCategory struct {
@@ -1630,6 +1592,13 @@ type Agent struct {
 	ParentID            string `json:"parent_id,omitempty"`
 	Description         string `json:"description,omitempty"`
 	Status              string `json:"status"`
+	ModelAlias          string `json:"model_alias,omitempty"`
+	ModelAliasFallback  bool   `json:"model_alias_fallback,omitempty"`
+	Provider            string `json:"provider,omitempty"`
+	Model               string `json:"model,omitempty"`
+	APIModel            string `json:"api_model,omitempty"`
+	Effort              string `json:"effort,omitempty"`
+	Variant             string `json:"variant,omitempty"`
 	Result              string `json:"result,omitempty"`
 	ResultPath          string `json:"result_path,omitempty"`
 	ResultBytes         int    `json:"result_bytes,omitempty"`
@@ -1650,7 +1619,7 @@ type Agent struct {
 	Archived    bool      `json:"archived,omitempty"`
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
-	// Participant identifies the Kanban agent or task worker this run uses.
+	// Participant identifies the persisted participant attached to this run.
 	// Always populated on live snapshots: resolved from the
 	// participant store when possible, synthesized from the snapshot's
 	// type/task name otherwise.
@@ -2052,4 +2021,118 @@ type SettingsUsageResponse struct {
 	Metrics         SettingsUsageMetrics `json:"metrics"`
 	ModelBreakdowns []insight.ModelUsage `json:"model_breakdowns"`
 	Days            []SettingsUsageDay   `json:"days"`
+}
+
+type ChannelAgentListResult struct {
+	Agents []channels.NamedAgent `json:"agents"`
+}
+
+type ChannelBootstrapResult = channels.BootstrapResult
+
+type ChannelAgentCreateParams struct {
+	Name             string `json:"name"`
+	AvatarKey        string `json:"avatar_key,omitempty"`
+	AvatarImage      string `json:"avatar_image,omitempty"`
+	ProviderOverride string `json:"provider_override,omitempty"`
+	ModelOverride    string `json:"model_override,omitempty"`
+}
+
+type ChannelAgentCreateResult struct {
+	Agent channels.NamedAgent `json:"agent"`
+}
+
+type ChannelAgentUpdateParams struct {
+	AgentID          string  `json:"agent_id"`
+	Name             string  `json:"name"`
+	AvatarKey        string  `json:"avatar_key,omitempty"`
+	AvatarImage      *string `json:"avatar_image,omitempty"`
+	ProviderOverride string  `json:"provider_override,omitempty"`
+	ModelOverride    string  `json:"model_override,omitempty"`
+}
+
+type ChannelAgentUpdateResult struct {
+	Agent channels.NamedAgent `json:"agent"`
+}
+type ChannelAgentDeleteParams struct {
+	AgentID string `json:"agent_id"`
+}
+type ChannelAgentDeleteResult struct {
+	Deleted bool `json:"deleted"`
+}
+
+type ChannelAgentStartParams struct {
+	AgentID string `json:"agent_id"`
+}
+
+type ChannelAgentStartResult struct {
+	Agent channels.NamedAgent `json:"agent"`
+}
+
+type ChannelRoomListResult struct {
+	Rooms []channels.Room `json:"rooms"`
+}
+
+type ChannelRoomCreateParams struct {
+	Name     string   `json:"name"`
+	AgentIDs []string `json:"agent_ids,omitempty"`
+}
+
+type ChannelRoomCreateResult struct {
+	Room channels.Room `json:"room"`
+}
+
+type ChannelRoomDeleteParams struct {
+	RoomID string `json:"room_id"`
+}
+type ChannelRoomDeleteResult struct {
+	Deleted bool `json:"deleted"`
+}
+
+type ChannelMessageListParams struct {
+	RoomID   string `json:"room_id"`
+	AfterSeq int64  `json:"after_seq,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+type ChannelMessageListResult struct {
+	Messages []channels.Message `json:"messages"`
+}
+
+type ChannelMessageSendParams struct {
+	RoomID   string `json:"room_id"`
+	ThreadID string `json:"thread_id,omitempty"`
+	ReplyTo  string `json:"reply_to,omitempty"`
+	Body     string `json:"body"`
+}
+
+type ChannelMessageSendResult struct {
+	Message channels.Message `json:"message"`
+}
+
+type ChannelTaskCreateParams struct {
+	RoomID  string `json:"room_id"`
+	Title   string `json:"title"`
+	OwnerID string `json:"owner_id"`
+}
+
+type ChannelTaskCreateResult struct {
+	Task channels.Message `json:"task"`
+}
+
+type ChannelTaskUpdateParams struct {
+	TaskID  string `json:"task_id"`
+	State   string `json:"state,omitempty"`
+	OwnerID string `json:"owner_id,omitempty"`
+}
+
+type ChannelTaskUpdateResult struct {
+	Task channels.Message `json:"task"`
+}
+
+type ChannelHumanMentionStatusResult struct {
+	Count int `json:"count"`
+}
+
+type ChannelHumanMentionAckResult struct {
+	Acknowledged int `json:"acknowledged"`
 }

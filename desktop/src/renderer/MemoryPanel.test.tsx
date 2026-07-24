@@ -5,7 +5,6 @@ import type {
   MemoryChatResult,
   MemoryOverviewResult,
   MemoryReadResult,
-  ParticipantProfile,
   WuuDesktopApi,
 } from "../shared/protocol";
 import { MemoryPanel } from "./MemoryPanel";
@@ -73,14 +72,6 @@ function readFixture(): MemoryReadResult {
   };
 }
 
-function participantsFixture(): ParticipantProfile[] {
-  return [
-    { id: "p-1", kind: "named", name: "小青", role: "reviewer" },
-    { id: "p-2", kind: "named", name: "阿蓝", role: "worker" },
-    { id: "h-1", kind: "human", name: "本人" },
-  ];
-}
-
 function installMemoryStub(overrides: Partial<MemoryStub> = {}): MemoryStub {
   const stub: MemoryStub = {
     getMemoryOverview: vi.fn().mockResolvedValue(overviewFixture()),
@@ -93,18 +84,10 @@ function installMemoryStub(overrides: Partial<MemoryStub> = {}): MemoryStub {
   return stub;
 }
 
-function mount(
-  participants: ParticipantProfile[] = [],
-  focusParticipantID?: string,
-): void {
+function mount(): void {
   act(() => {
     root = createRoot(container);
-    root!.render(
-      <MemoryPanel
-        participants={participants}
-        focusParticipantID={focusParticipantID}
-      />,
-    );
+    root!.render(<MemoryPanel />);
   });
 }
 
@@ -144,7 +127,7 @@ describe("MemoryPanel overview", () => {
 
     const header = container.querySelector(".settings-memory-header");
     expect(header?.querySelector(".settings-page-title")?.textContent).toBe("记忆");
-    expect(header?.querySelector("[data-testid=\"memory-raw-toggle\"]")).not.toBeNull();
+    expect(header?.querySelector("[data-testid=\"memory-toggle-raw\"]")).not.toBeNull();
     expect(
       header?.querySelector("[data-testid=\"memory-refresh-overview\"]"),
     ).not.toBeNull();
@@ -224,7 +207,9 @@ describe("MemoryPanel overview", () => {
       await Promise.resolve();
     });
 
-    expect(rootText()).toContain("12 小时内自动复用");
+    const cached = container.querySelector(".settings-memory-cached");
+    expect(cached?.textContent).toBe("缓存");
+    expect(cached?.getAttribute("title")).toBe("12 小时内自动复用");
     const refresh = findButton("重新总结");
     expect(refresh?.disabled).toBe(false);
     await act(async () => {
@@ -238,85 +223,6 @@ describe("MemoryPanel overview", () => {
       force_refresh: true,
     });
     expect(rootText()).toContain("新的总结");
-  });
-});
-
-describe("MemoryPanel 同事 tab", () => {
-  it("lists only named agents in the picker and requests the participant scope", async () => {
-    const stub = installMemoryStub();
-    mount(participantsFixture());
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const tab = findButton("同事");
-    expect(tab).not.toBeUndefined();
-    await act(async () => {
-      tab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const trigger = container.querySelector(
-      "[data-testid=\"memory-agent-select\"]",
-    ) as HTMLButtonElement | null;
-    expect(trigger).not.toBeNull();
-    // The SelectMenu renders its options into a floating portal on open.
-    act(() => {
-      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const options = Array.from(
-      document.querySelectorAll(".select-menu-panel .select-menu-item"),
-    );
-    expect(options.map((option) => option.getAttribute("data-value"))).toEqual([
-      "p-1",
-      "p-2",
-    ]);
-    // Human members are excluded; the closed trigger shows the active agent.
-    expect(rootText()).toContain("小青");
-    expect(rootText()).not.toContain("本人");
-
-    expect(stub.getMemoryOverview).toHaveBeenLastCalledWith({
-      scope: "participant",
-      participant_id: "p-1",
-    });
-  });
-
-  it("preselects the focused participant notebook when focusParticipantID is set", async () => {
-    const stub = installMemoryStub();
-    mount(participantsFixture(), "p-2");
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(stub.getMemoryOverview).toHaveBeenCalledWith({
-      scope: "participant",
-      participant_id: "p-2",
-    });
-    const trigger = container.querySelector(
-      "[data-testid=\"memory-agent-select\"]",
-    ) as HTMLButtonElement | null;
-    expect(trigger?.querySelector(".select-menu-value")?.textContent).toBe(
-      "阿蓝",
-    );
-  });
-
-  it("shows an empty state instead of a request when no named agent exists", async () => {
-    const stub = installMemoryStub();
-    mount();
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const tab = findButton("同事");
-    await act(async () => {
-      tab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(rootText()).toContain("还没有同事");
-    // The initial user-scope fetch is the only call — no participant fetch
-    // without a participant to target.
-    expect(stub.getMemoryOverview).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -407,7 +313,7 @@ describe("MemoryPanel 查看原文", () => {
     expect(stub.readMemoryRaw).not.toHaveBeenCalled();
 
     const toggle = container.querySelector(
-      "[data-testid=\"memory-raw-toggle\"]",
+      "[data-testid=\"memory-toggle-raw\"]",
     ) as HTMLButtonElement | null;
     expect(toggle).not.toBeNull();
     await act(async () => {
@@ -416,9 +322,7 @@ describe("MemoryPanel 查看原文", () => {
     });
 
     expect(stub.readMemoryRaw).toHaveBeenCalledWith({ scope: "user" });
-    expect(
-      container.querySelector("[data-testid=\"memory-raw-view\"]"),
-    ).not.toBeNull();
+    expect(container.querySelector(".settings-memory-raw")).not.toBeNull();
     expect(rootText()).toContain("协作偏好");
     expect(rootText()).toContain("preferences.md");
     expect(rootText()).toContain("用户的协作偏好");

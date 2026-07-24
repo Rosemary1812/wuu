@@ -82,6 +82,26 @@ describe("globalized right panel chrome", () => {
     expect(sidebarCSS).not.toMatch(
       /\.app-shell\.right-panel-globalized \.sidebar,\s*\n\.app-shell\.right-panel-globalized \.conversation-pane/,
     );
+
+    const toggleRegion = cssRule(".globalized-sidebar-toggle-region");
+    expect(toggleRegion).toMatch(/z-index:\s*150;/);
+    expect(toggleRegion).toMatch(/-webkit-app-region:\s*drag;/);
+
+    const toggle = cssRule(".globalized-sidebar-toggle");
+    expect(toggle).toMatch(/-webkit-app-region:\s*no-drag;/);
+    expect(cssRule(".globalized-sidebar-toggle *")).toMatch(
+      /-webkit-app-region:\s*no-drag;/,
+    );
+
+    const tabbar = cssRule(
+      ".app-shell.right-panel-globalized .workspace-panel-tabbar",
+    );
+    expect(tabbar).toMatch(
+      /padding-left:\s*max\(8px, var\(--window-controls-inset-left\)\);/,
+    );
+    const hitHole = cssRule(".workspace-panel-sidebar-hit-hole");
+    expect(hitHole).toMatch(/flex:\s*0 0 38px;/);
+    expect(hitHole).toMatch(/-webkit-app-region:\s*no-drag;/);
   });
 
   it("hides the docked right-panel resizer while the panel fills the window", () => {

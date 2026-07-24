@@ -80,16 +80,19 @@ describe("ComposerGoalStrip", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("keeps the default row to the goal text, info, and one action menu", () => {
+  it("keeps the collapsed drawer to the goal text and compact controls", () => {
     renderStrip({ summary: goalSummary("first line\nsecond line") });
 
     const strip = container.querySelector(".composer-goal-strip");
     expect(strip).not.toBeNull();
+    expect(strip?.classList.contains("expanded")).toBe(false);
     expect(container.querySelector(".composer-goal-strip-label")).toBeNull();
     expect(container.querySelector(".composer-goal-strip-text")?.textContent).toBe("first line");
-    expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(2);
-    expect(container.querySelector("button[aria-label=\"查看目标详情\"]")).not.toBeNull();
+    expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(3);
+    expect(container.querySelector("button[aria-label=\"编辑目标\"]")).not.toBeNull();
+    expect(container.querySelector("button[aria-label=\"展开目标\"]")).not.toBeNull();
     expect(container.querySelector("button[aria-label=\"目标操作\"]")).not.toBeNull();
+    expect(container.querySelector(".composer-goal-strip-details")).toBeNull();
     expect(document.querySelector("button[role=\"menuitem\"]")).toBeNull();
 
     act(() => {
@@ -102,10 +105,10 @@ describe("ComposerGoalStrip", () => {
       Array.from(document.querySelectorAll("button[role=\"menuitem\"]")).map(
         (button) => button.textContent,
       ),
-    ).toEqual(["暂停目标", "编辑目标", "清除目标"]);
+    ).toEqual(["暂停目标", "清除目标"]);
   });
 
-  it("moves status, active usage, and blocker detail into the info popover", () => {
+  it("expands full goal text, usage, and blocker detail inside the drawer", () => {
     renderStrip({
       summary: {
         ...goalSummary("ship runtime loop"),
@@ -122,16 +125,20 @@ describe("ComposerGoalStrip", () => {
     expect(container.querySelector(".composer-goal-strip-state")?.textContent).toBe(
       "已阻塞",
     );
-    expect(document.querySelector(".composer-goal-strip-info")).toBeNull();
+    expect(container.querySelector(".composer-goal-strip-details")).toBeNull();
 
     act(() => {
       container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"查看目标详情\"]")
+        .querySelector<HTMLButtonElement>("button[aria-label=\"展开目标\"]")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
+    expect(container.querySelector(".composer-goal-strip")?.classList.contains("expanded")).toBe(true);
+    expect(container.querySelector(".composer-goal-strip-full-text")?.textContent).toBe(
+      "ship runtime loop",
+    );
     const rows = Array.from(
-      document.querySelectorAll(".composer-goal-strip-info-row"),
+      container.querySelectorAll(".composer-goal-strip-info-row"),
     ).map((row) => row.textContent);
     expect(rows).toEqual([
       "状态已阻塞",
@@ -140,19 +147,25 @@ describe("ComposerGoalStrip", () => {
       "Tokens1,250",
       "阻塞原因等待用户选择策略",
     ]);
-    expect(document.querySelector(".composer-goal-strip-info-note")).toBeNull();
+    expect(container.querySelector("button[aria-label=\"收起目标\"]")).not.toBeNull();
   });
 
-  it("opens goal details on hover", () => {
+  it("collapses goal details from the drawer chevron", () => {
     renderStrip({ summary: goalSummary() });
 
     act(() => {
       container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"查看目标详情\"]")
-        ?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+        .querySelector<HTMLButtonElement>("button[aria-label=\"展开目标\"]")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
+    expect(container.querySelector(".composer-goal-strip-details")).not.toBeNull();
 
-    expect(document.querySelector(".composer-goal-strip-info")).not.toBeNull();
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>("button[aria-label=\"收起目标\"]")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector(".composer-goal-strip-details")).toBeNull();
   });
 
   it("does not present task-only needs_human as a Goal state", () => {
@@ -223,14 +236,8 @@ describe("ComposerGoalStrip", () => {
 
     act(() => {
       container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"目标操作\"]")
+        .querySelector<HTMLButtonElement>("button[aria-label=\"编辑目标\"]")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-    const editButton = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]"),
-    ).find((button) => button.textContent === "编辑目标");
-    act(() => {
-      editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     const dialog = document.querySelector<HTMLElement>(".composer-goal-edit-dialog");
@@ -304,11 +311,11 @@ describe("ComposerGoalStrip", () => {
 
     act(() => {
       container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"查看目标详情\"]")
+        .querySelector<HTMLButtonElement>("button[aria-label=\"展开目标\"]")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    expect(document.querySelector(".composer-goal-strip-info")?.textContent).toContain(
+    expect(container.querySelector(".composer-goal-strip-details")?.textContent).toContain(
       "运行42 秒",
     );
   });
@@ -326,11 +333,11 @@ describe("ComposerGoalStrip", () => {
 
     act(() => {
       container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"查看目标详情\"]")
+        .querySelector<HTMLButtonElement>("button[aria-label=\"展开目标\"]")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    expect(document.querySelector(".composer-goal-strip-info")?.textContent).toContain(
+    expect(container.querySelector(".composer-goal-strip-details")?.textContent).toContain(
       "运行11 秒",
     );
     nowSpy.mockRestore();

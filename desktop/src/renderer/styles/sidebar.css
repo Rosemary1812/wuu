@@ -160,6 +160,32 @@
   pointer-events: none;
 }
 
+.app-shell.right-panel-globalized .conversation-pane .titlebar {
+  visibility: hidden;
+}
+
+.globalized-sidebar-toggle-region {
+  position: fixed;
+  top: 9px;
+  left: max(8px, var(--window-controls-inset-left));
+  z-index: 150;
+  width: 34px;
+  height: 34px;
+  -webkit-app-region: drag;
+}
+
+.globalized-sidebar-toggle {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  background-clip: content-box;
+  -webkit-app-region: no-drag;
+}
+
+.globalized-sidebar-toggle * {
+  -webkit-app-region: no-drag;
+}
+
 /* In globalized mode the right panel fills column 1 starting at x=0; reserve
  * room on the left of its tabbar so the macOS traffic lights
  * (trafficLightPosition 18, 16) don't sit on top of the tabs. Mirrors the
@@ -173,6 +199,14 @@
 .app-shell.right-panel-globalized .workspace-panel-tabbar {
   padding-left: max(8px, var(--window-controls-inset-left));
   -webkit-app-region: drag;
+}
+
+.workspace-panel-sidebar-hit-hole {
+  width: 38px;
+  height: 100%;
+  flex: 0 0 38px;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
 }
 
 .app-shell.sidebar-collapsed.right-panel-open:not(.right-panel-globalized) .workspace-panel-tabbar {
@@ -770,6 +804,32 @@
   white-space: nowrap;
 }
 
+.nav-item > .channel-nav-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-nav-label > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-mention-badge {
+  min-width: 18px;
+  height: 18px;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 5px;
+  background: var(--wuu-accent);
+  color: white;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 .nav-item:hover,
 .project-row:hover,
 .thread-row:hover {
@@ -777,6 +837,11 @@
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--sidebar-nav-item-hover-ring);
   transform: translateX(1px);
+}
+
+.nav-item[aria-current="page"] {
+  background: var(--sidebar-row-selected-bg);
+  color: var(--ink);
 }
 
 .nav-item:active,

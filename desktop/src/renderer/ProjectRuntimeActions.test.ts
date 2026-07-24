@@ -444,8 +444,8 @@ describe("createProjectRuntimeActions", () => {
       thread: undefined,
       threads: [
         {
-          ...thread("collaboration"),
-          source: "collaboration",
+          ...thread("background-agent"),
+          source: "background-agent",
           workspace_kind: "scratch",
         },
       ],

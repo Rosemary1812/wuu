@@ -281,10 +281,45 @@ export function createThreadActivationActions(
     threadID: string,
   ): Promise<void> {
     const currentState = deps.getAppState();
-    
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, threadID);
-    const requestID = deps.beginViewSwitch("thread", threadID);
+    const localThread = threadForTab(currentState, threadID) ?? findKnownThread(threadID);
+    const canSwitchInstantly =
+      localThread !== undefined &&
+      localThread.turns.length > 0 &&
+      sameRuntimeContext(
+        resolveThreadRuntimeContext(localThread, currentState.projects),
+        targetContext,
+      );
+    const requestID = canSwitchInstantly
+      ? deps.beginInstantThreadSwitch()
+      : deps.beginViewSwitch("thread", threadID);
+    if (canSwitchInstantly) {
+      deps.restorePrimaryComposerDraft(targetDraft);
+      deps.resetSplitComposerDrafts();
+      deps.setAppState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        const optimisticThread = threadForTab(withDraft, threadID) ?? localThread;
+        return {
+          ...withDraft,
+          activeContext: targetContext,
+          activeProjectId:
+            targetContext.kind === "project" ? targetContext.project_id : undefined,
+          thread: optimisticThread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(optimisticThread, targetContext, targetDraft),
+          ),
+          activeSessionTabID: threadSessionTabID(optimisticThread.id),
+          threads: upsertThread(withDraft.threads, optimisticThread),
+          running: isThreadRunning(optimisticThread),
+          status: "ready",
+        };
+      });
+    }
     try {
       const projectState = await selectRuntimeContext(targetContext);
       const loadedState = await loadRuntime(projectState, {

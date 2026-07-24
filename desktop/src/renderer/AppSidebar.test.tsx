@@ -2,11 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.hoisted(() => {
-  vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
-});
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DesktopProject, InitializeResult } from "../shared/protocol";
 import { AppSidebar } from "./AppSidebar";
@@ -32,10 +28,6 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   container.remove();
-});
-
-afterAll(() => {
-  vi.unstubAllEnvs();
 });
 
 function initialized(): InitializeResult {
@@ -72,15 +64,13 @@ const sidebarProjects: DesktopProject[] = [
 ];
 
 interface RenderOptions {
-  kanbanBoardVisible?: boolean;
-  onOpenCollaboration?: () => void;
   sectionOrder?: string[];
   state?: AppState;
+  groupChatEnabled?: boolean;
+  channelMentionCount?: number;
 }
 
 function renderSidebar({
-  kanbanBoardVisible = false,
-  onOpenCollaboration = () => {},
   sectionOrder = [SCRATCH_PSEUDO_PROJECT_ID, "project-1", "project-2"],
   state = {
     ...initialState,
@@ -91,6 +81,8 @@ function renderSidebar({
       cwd: "/repo/wuu",
     },
   },
+  groupChatEnabled = false,
+  channelMentionCount,
 }: RenderOptions = {}): void {
   act(() => {
     root = createRoot(container);
@@ -112,8 +104,9 @@ function renderSidebar({
         sectionOrder={sectionOrder}
         onStartNewThread={() => {}}
         onOpenSkillsTab={() => {}}
-        kanbanBoardVisible={kanbanBoardVisible}
-        onOpenCollaboration={onOpenCollaboration}
+        groupChatEnabled={groupChatEnabled}
+        channelMentionCount={channelMentionCount}
+        onOpenChannels={() => {}}
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
@@ -138,6 +131,18 @@ function renderSidebar({
 }
 
 describe("AppSidebar layout", () => {
+  it("hides group chat unless the frontend flag is enabled", () => {
+    renderSidebar();
+
+    expect(container.textContent).not.toContain("群聊");
+  });
+
+  it("shows the unread human mention badge on group chat", () => {
+    renderSidebar({ groupChatEnabled: true, channelMentionCount: 3 });
+
+    expect(container.querySelector(".channel-mention-badge")?.textContent).toBe("3");
+  });
+
   it("defines a hover edge drawer for the collapsed sidebar", () => {
     expect(sidebarCSS).toContain(".sidebar-hover-zone");
     expect(sidebarCSS).toMatch(/\.sidebar-hover-zone\s*\{[\s\S]*width:\s*14px;/);
@@ -223,37 +228,6 @@ describe("AppSidebar layout", () => {
     // 品牌占位必须排在 traffic-spacer 之后、primary-nav 之前，等真正的
     // logo / lockup 落地后这个测试再一起替换。
     expect(brand?.nextElementSibling).toBe(primaryNav);
-  });
-
-  it("keeps collaboration in the fixed primary navigation and opens it", () => {
-    let opened = 0;
-    renderSidebar({
-      kanbanBoardVisible: true,
-      onOpenCollaboration: () => {
-        opened += 1;
-      },
-    });
-
-    const labels = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
-    ).map((button) => button.textContent?.trim());
-    expect(labels).toEqual(["新对话", "搜索会话", "技能", "协作"]);
-
-    const collaborationButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
-    ).find((button) => button.textContent?.trim() === "协作");
-    expect(collaborationButton?.classList.contains("active")).toBe(true);
-    act(() => collaborationButton?.click());
-    expect(opened).toBe(1);
-  });
-
-  it("shows collaboration even before the runtime initializes", () => {
-    renderSidebar({ state: initialState });
-
-    const collaborationButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
-    ).find((button) => button.textContent?.trim() === "协作");
-    expect(collaborationButton).toBeDefined();
   });
 
   it("renders only scratch and projects in the workspace order", () => {

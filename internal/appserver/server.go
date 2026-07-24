@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/credentialstore"
 	"github.com/blueberrycongee/wuu/internal/execution"
@@ -27,6 +28,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sidethread"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -37,11 +39,12 @@ var (
 )
 
 type threadState struct {
-	ID        string
-	Source    string
-	ParentID  string
-	AgentPath string
-	History   []providers.ChatMessage
+	ID           string
+	Source       string
+	NamedAgentID string
+	ParentID     string
+	AgentPath    string
+	History      []providers.ChatMessage
 	// historyHeadSeq is the physical append-only session_messages head that
 	// History was reconstructed through. It must not be derived from the
 	// logical messages: a checkpoint may retain no records or only old seqs.
@@ -151,8 +154,8 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
-	// clientCalls is the pending table for server-initiated requests (the
-	// core→desktop reverse-RPC channel used by browser/*). Keyed by the
+	// clientCalls is the pending table for server-initiated requests over the
+	// negotiated reverse-RPC channel. Keyed by the
 	// "srv-<seq>" id the core mints; each value is a buffered(1) chan that the
 	// scanner goroutine delivers exactly one clientResponse into. clientCallMu
 	// guards both the map and clientCallSeq; see callClient for the strict
@@ -160,6 +163,7 @@ type Server struct {
 	clientCallMu  sync.Mutex
 	clientCalls   map[string]chan clientResponse
 	clientCallSeq uint64
+	clientMethods map[string]struct{}
 
 	// pushRegistrar is the host-side hook invoked by the device/push_*
 	// methods. The desktop main pipeline leaves it nil so the methods
@@ -196,14 +200,6 @@ type Server struct {
 	afterWorkerShutdownStopWavesForTest func()
 	beforeQueuedTurnBackgroundForTest   func()
 
-	// participantBusyMu guards participantBusy, the registry of named
-	// agents currently executing a task run (decision-five
-	// concurrency lock). A named agent is "busy" for exactly the lifetime
-	// of a live participant run: acquired when the Run starts and released when
-	// it terminates. While busy, a second Run for that target is refused.
-	participantBusyMu sync.Mutex
-	participantBusy   map[string]participantBusyEntry
-
 	codexModelsMu   sync.Mutex
 	codexModelCache map[string]map[string]config.ProviderModelConfig
 
@@ -235,9 +231,14 @@ type Server struct {
 	// sideThreadStore persists side threads (1:<=1 binding per main
 	// thread). Nil when SessionDir is unset; handleSideThreadOpen /
 	// handleSideThreadGetHistory treat nil as the "feature off" path.
-	sideThreadStore *sidethread.Store
-	sideTurnMu      sync.Mutex
-	sideTurns       map[string]*sideThreadTurn
+	sideThreadStore            *sidethread.Store
+	channelService             *channels.Service
+	channelMaintenanceStop     chan struct{}
+	channelMaintenanceDone     chan struct{}
+	channelMaintenanceStopOnce sync.Once
+	namedAgentMu               sync.Mutex
+	sideTurnMu                 sync.Mutex
+	sideTurns                  map[string]*sideThreadTurn
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -259,12 +260,13 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
 		drainingGoalContinuation:     make(map[string]bool),
-		participantBusy:              make(map[string]participantBusyEntry),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
 		inferenceMaintenanceStop:     make(chan struct{}),
+		channelMaintenanceStop:       make(chan struct{}),
 		sideTurns:                    make(map[string]*sideThreadTurn),
 		clientCalls:                  make(map[string]chan clientResponse),
+		clientMethods:                make(map[string]struct{}),
 		runs:                         make(map[string]*runTracker),
 		activeRunByThread:            make(map[string]string),
 	}
@@ -286,6 +288,16 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 			return s
 		}
 		s.runStore = runStore
+	}
+	if rt != nil && strings.TrimSpace(rt.WuuHome) != "" {
+		channelService, err := channels.Open(statepath.ChannelsDir(rt.WuuHome), nil)
+		if err != nil {
+			s.startupErr = fmt.Errorf("open channels store: %w", err)
+			return s
+		}
+		s.channelService = channelService
+		channelService.SetWakeSink(s)
+		s.startChannelMaintenance()
 	}
 	if bootOwner {
 		s.recoverSideThreadsOnBoot()
@@ -309,21 +321,15 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 			s.notifyActivityEvent(event)
 		})
 	}
-	if rt != nil {
-		// Only seed Andy when the runtime is actually usable: test-only
-		// sessions frequently leave SessionDir/WuuHome empty, and the seed
-		// would otherwise log a workspace error for every unrelated
-		// appserver test.
-		if strings.TrimSpace(rt.SessionDir) != "" && strings.TrimSpace(rt.WuuHome) != "" {
-			logDefaultParticipantSeedError(s.ensureDefaultParticipant())
-		}
-	}
 	s.startInferenceJournalMaintenance()
 	if rt != nil && rt.AutomationManager != nil {
 		if err := rt.AutomationManager.Start(s); err != nil {
 			s.startupErr = fmt.Errorf("start automation manager: %w", err)
 			return s
 		}
+	}
+	if s.channelService != nil {
+		s.startBackground(s.restoreNamedAgentWakes)
 	}
 	return s
 }
@@ -407,6 +413,49 @@ func (s *Server) stopInferenceJournalMaintenance() {
 	if s.inferenceMaintenanceDone != nil {
 		<-s.inferenceMaintenanceDone
 	}
+}
+
+const channelMaintenanceInterval = time.Minute
+
+func (s *Server) startChannelMaintenance() {
+	if s == nil || s.channelService == nil {
+		return
+	}
+	s.channelMaintenanceDone = make(chan struct{})
+	go func() {
+		defer close(s.channelMaintenanceDone)
+		if err := s.channelService.ExpireDrafts(context.Background()); err != nil {
+			log.Printf("wuu: channels maintenance: %v", err)
+		}
+		if _, err := s.channelService.FireDueReminders(context.Background()); err != nil {
+			log.Printf("wuu: channel reminders: %v", err)
+		}
+		ticker := time.NewTicker(channelMaintenanceInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := s.channelService.ExpireDrafts(context.Background()); err != nil {
+					log.Printf("wuu: channels maintenance: %v", err)
+				}
+				if _, err := s.channelService.FireDueReminders(context.Background()); err != nil {
+					log.Printf("wuu: channel reminders: %v", err)
+				}
+			case <-s.channelMaintenanceStop:
+				return
+			}
+		}
+	}()
+}
+
+func (s *Server) stopChannelMaintenance() {
+	if s == nil || s.channelMaintenanceDone == nil {
+		return
+	}
+	s.channelMaintenanceStopOnce.Do(func() {
+		close(s.channelMaintenanceStop)
+	})
+	<-s.channelMaintenanceDone
 }
 
 func (s *Server) startBackground(work func()) bool {
@@ -498,6 +547,7 @@ func (s *Server) Close() {
 		}
 
 		s.stopInferenceJournalMaintenance()
+		s.stopChannelMaintenance()
 
 		// Stop every browser activity this process owns BEFORE dropping the
 		// activity subscription below. Stop emits an EventStopped that
@@ -534,6 +584,12 @@ func (s *Server) Close() {
 		s.interruptAttachedRunsOnClose()
 		for _, th := range threads {
 			releaseThreadRuntime(th)
+		}
+		if s.channelService != nil {
+			if err := s.channelService.Close(); err != nil {
+				log.Printf("wuu: close channels store: %v", err)
+			}
+			s.channelService = nil
 		}
 		s.releasePresence()
 	})
@@ -715,6 +771,36 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleSkillList(req)
 	case MethodAgentTemplateList:
 		return s.handleAgentTemplateList(req)
+	case MethodChannelBootstrap:
+		return s.handleChannelBootstrap(ctx, req)
+	case MethodChannelAgentList:
+		return s.handleChannelAgentList(ctx, req)
+	case MethodChannelAgentCreate:
+		return s.handleChannelAgentCreate(ctx, req)
+	case MethodChannelAgentUpdate:
+		return s.handleChannelAgentUpdate(ctx, req)
+	case MethodChannelAgentDelete:
+		return s.handleChannelAgentDelete(ctx, req)
+	case MethodChannelAgentStart:
+		return s.handleChannelAgentStart(ctx, req)
+	case MethodChannelRoomList:
+		return s.handleChannelRoomList(ctx, req)
+	case MethodChannelRoomCreate:
+		return s.handleChannelRoomCreate(ctx, req)
+	case MethodChannelRoomDelete:
+		return s.handleChannelRoomDelete(ctx, req)
+	case MethodChannelMessageList:
+		return s.handleChannelMessageList(ctx, req)
+	case MethodChannelMessageSend:
+		return s.handleChannelMessageSend(ctx, req)
+	case MethodChannelTaskCreate:
+		return s.handleChannelTaskCreate(ctx, req)
+	case MethodChannelTaskUpdate:
+		return s.handleChannelTaskUpdate(ctx, req)
+	case MethodChannelMentionStatus:
+		return s.handleChannelHumanMentionStatus(ctx, req)
+	case MethodChannelMentionAck:
+		return s.handleChannelHumanMentionAck(ctx, req)
 	case MethodAutomationList:
 		return s.handleAutomationList(req)
 	case MethodAutomationRuns:
@@ -777,40 +863,6 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleWorkspaceStateCleanup(req)
 	case MethodThreadRegenerateTitle:
 		return s.handleThreadRegenerateTitle(ctx, req)
-	case MethodParticipantList:
-		return s.handleParticipantList(req)
-	case MethodParticipantSave:
-		return s.handleParticipantSave(req)
-	case MethodParticipantFeedback:
-		return s.handleParticipantFeedback(req)
-	case MethodParticipantReset:
-		return s.handleParticipantReset(req)
-	case MethodParticipantRetire:
-		return s.handleParticipantRetire(req)
-	case MethodKanbanCreateTask:
-		return s.handleKanbanCreateTask(req)
-	case MethodKanbanListTasks:
-		return s.handleKanbanListTasks(req)
-	case MethodKanbanTransitionTask:
-		return s.handleKanbanTransitionTask(req)
-	case MethodKanbanDispatchRun:
-		return s.handleKanbanDispatchRun(ctx, req)
-	case MethodKanbanListRuns:
-		return s.handleKanbanListRuns(req)
-	case MethodKanbanListArtifacts:
-		return s.handleKanbanListArtifacts(req)
-	case MethodKanbanCrystallize:
-		return s.handleKanbanCrystallize(ctx, req)
-	case MethodKanbanAutoDispatch:
-		return s.handleKanbanAutoDispatch(ctx, req)
-	case MethodKanbanSpawnSuggestions:
-		return s.handleKanbanSpawnSuggestions(req)
-	case MethodKanbanSpawnAgent:
-		return s.handleKanbanSpawnAgent(req)
-	case MethodParticipantGetManifest:
-		return s.handleParticipantGetManifest(req)
-	case MethodParticipantSaveManifest:
-		return s.handleParticipantSaveManifest(req)
 	case MethodMemoryRead:
 		return s.handleMemoryRead(req)
 	case MethodMemoryOverview:

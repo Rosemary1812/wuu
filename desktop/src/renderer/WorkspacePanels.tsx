@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -23,7 +24,21 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, PanelLeftOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import {
+  FileDiff,
+  FileText,
+  FolderOpen,
+  Globe,
+  GripHorizontal,
+  Maximize2,
+  Minimize2,
+  PanelLeftOpen,
+  PanelRightOpen,
+  Plus,
+  ShieldCheck,
+  Terminal,
+  X,
+} from "lucide-react";
 import type { ActivitySession, GitStatusResult, RuntimeContext, Thread } from "../shared/protocol";
 import {
   formatWorkspaceFileTarget,
@@ -66,9 +81,14 @@ export const WORKSPACE_FILE_TREE_DEFAULT_WIDTH = 320;
 export const WORKSPACE_FILE_TREE_MIN_WIDTH = 180;
 export const WORKSPACE_FILE_TREE_MAX_WIDTH = 480;
 export const WORKSPACE_FILE_CONTENT_MIN_WIDTH = 240;
+const WORKSPACE_FILE_TREE_COLLAPSE_THRESHOLD = 140;
 const WORKSPACE_FILE_TREE_WIDTH_STEP = 24;
 const WORKSPACE_FILE_TREE_WIDTH_KEY = "wuu.desktop.fileTreeWidth";
+const WORKSPACE_FILE_TREE_SIDE_KEY = "wuu.desktop.fileTreeSide";
+const WORKSPACE_FILE_TREE_VISIBLE_KEY = "wuu.desktop.fileTreeVisible";
 const WORKSPACE_PANEL_PREWARM_TIMEOUT_MS = 2_000;
+
+type WorkspaceFileTreeSide = "left" | "right";
 
 function scheduleIdleTask(callback: () => void, timeoutMs: number): () => void {
   if (typeof window.requestIdleCallback === "function") {
@@ -108,6 +128,20 @@ function initialWorkspaceFileTreeWidth(): number {
   return clampWorkspaceFileTreeWidth(stored);
 }
 
+function initialWorkspaceFileTreeSide(): WorkspaceFileTreeSide {
+  if (typeof window === "undefined") {
+    return "right";
+  }
+  return window.localStorage.getItem(WORKSPACE_FILE_TREE_SIDE_KEY) === "left" ? "left" : "right";
+}
+
+function initialWorkspaceFileTreeVisible(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  return window.localStorage.getItem(WORKSPACE_FILE_TREE_VISIBLE_KEY) !== "false";
+}
+
 export function WorkspaceRightPanel({
   open,
   present,
@@ -132,7 +166,6 @@ export function WorkspaceRightPanel({
   globalized,
   sheetPhase = "docked",
   onToggleGlobalize,
-  onOpenSidebar,
   canExitGlobalized = true,
   browserActivity,
   onBrowserActivityTakeover,
@@ -171,7 +204,6 @@ export function WorkspaceRightPanel({
   // attribute that promotes the panel to a full-window sheet in CSS.
   sheetPhase?: "docked" | "arming" | "open" | "exiting" | "docking";
   onToggleGlobalize: () => void;
-  onOpenSidebar?: () => void;
   canExitGlobalized?: boolean;
   browserActivity?: ActivitySession;
   onBrowserActivityTakeover?: () => void;
@@ -191,10 +223,18 @@ export function WorkspaceRightPanel({
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const [fileTreeWidth, setFileTreeWidth] = useState(initialWorkspaceFileTreeWidth);
+  const [fileTreeSide, setFileTreeSide] = useState<WorkspaceFileTreeSide>(initialWorkspaceFileTreeSide);
+  const [fileTreeVisible, setFileTreeVisible] = useState(initialWorkspaceFileTreeVisible);
+  const [draggingFileTree, setDraggingFileTree] = useState(false);
+  const [fileTreeDropSide, setFileTreeDropSide] = useState<WorkspaceFileTreeSide | undefined>(undefined);
   const [bodyPrewarmed, setBodyPrewarmed] = useState(false);
   const fileTreePreferredWidthRef = useRef(fileTreeWidth);
+  const fileTreeVisibleRef = useRef(fileTreeVisible);
+  const fileTreeDockDragRef = useRef(false);
   const [resizingFileSplit, setResizingFileSplit] = useState(false);
   const fileSplitRef = useRef<HTMLDivElement>(null);
+  const fileTreeRef = useRef<HTMLElement>(null);
+  const fileTreeDragPreviewRef = useRef<HTMLDivElement>(null);
   const fileSplitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
@@ -263,10 +303,15 @@ export function WorkspaceRightPanel({
         return;
       }
       const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
-      setPreferredFileTreeWidth(
-        session.startTreeWidth - (event.clientX - session.startX),
-        panelWidth,
-      );
+      const nextWidth =
+        session.startTreeWidth +
+        (event.clientX - session.startX) * (fileTreeSide === "left" ? 1 : -1);
+      if (nextWidth < WORKSPACE_FILE_TREE_COLLAPSE_THRESHOLD) {
+        setFileTreeVisibility(false);
+        return;
+      }
+      setFileTreeVisibility(true);
+      setPreferredFileTreeWidth(nextWidth, panelWidth);
     }
 
     function finishResize(): void {
@@ -283,7 +328,7 @@ export function WorkspaceRightPanel({
       window.removeEventListener("pointerup", finishResize);
       window.removeEventListener("pointercancel", finishResize);
     };
-  }, [resizingFileSplit]);
+  }, [fileTreeSide, resizingFileSplit]);
 
   function resizeFileTreeBy(delta: number): void {
     const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
@@ -309,22 +354,93 @@ export function WorkspaceRightPanel({
   function handleFileSplitKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      resizeFileTreeBy(WORKSPACE_FILE_TREE_WIDTH_STEP);
+      resizeFileTreeBy(
+        fileTreeSide === "right" ? WORKSPACE_FILE_TREE_WIDTH_STEP : -WORKSPACE_FILE_TREE_WIDTH_STEP,
+      );
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      resizeFileTreeBy(-WORKSPACE_FILE_TREE_WIDTH_STEP);
+      resizeFileTreeBy(
+        fileTreeSide === "left" ? WORKSPACE_FILE_TREE_WIDTH_STEP : -WORKSPACE_FILE_TREE_WIDTH_STEP,
+      );
     } else if (event.key === "Home") {
       event.preventDefault();
       resizeFileTreeBy(WORKSPACE_FILE_TREE_MAX_WIDTH);
     } else if (event.key === "End") {
       event.preventDefault();
-      resizeFileTreeBy(-WORKSPACE_FILE_TREE_MAX_WIDTH);
+      setFileTreeVisibility(false);
     }
   }
 
   function resetFileTreeWidth(): void {
     const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
     setPreferredFileTreeWidth(WORKSPACE_FILE_TREE_DEFAULT_WIDTH, panelWidth);
+  }
+
+  function moveFileTree(side: WorkspaceFileTreeSide): void {
+    window.localStorage.setItem(WORKSPACE_FILE_TREE_SIDE_KEY, side);
+    setFileTreeSide(side);
+  }
+
+  function setFileTreeVisibility(visible: boolean): void {
+    if (fileTreeVisibleRef.current === visible) {
+      return;
+    }
+    fileTreeVisibleRef.current = visible;
+    window.localStorage.setItem(WORKSPACE_FILE_TREE_VISIBLE_KEY, String(visible));
+    setFileTreeVisible(visible);
+  }
+
+  function startFileTreeDockDrag(event: ReactDragEvent<HTMLDivElement>): void {
+    const dragPreview = fileTreeDragPreviewRef.current;
+    if (!dragPreview) {
+      return;
+    }
+    const rect = dragPreview.getBoundingClientRect();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-wuu-file-tree", fileTreeSide);
+    event.dataTransfer.setDragImage(dragPreview, rect.width / 2, rect.height / 2);
+    fileTreeDockDragRef.current = true;
+    setDraggingFileTree(true);
+    setFileTreeDropSide(fileTreeSide);
+  }
+
+  function fileTreeSideAt(clientX: number): WorkspaceFileTreeSide {
+    const rect = fileSplitRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return fileTreeSide;
+    }
+    return clientX < rect.left + rect.width / 2 ? "left" : "right";
+  }
+
+  function handleFileTreeDockDragOver(event: ReactDragEvent<HTMLDivElement>): void {
+    if (!fileTreeDockDragRef.current) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setFileTreeDropSide(fileTreeSideAt(event.clientX));
+  }
+
+  function finishFileTreeDockDrag(): void {
+    fileTreeDockDragRef.current = false;
+    setDraggingFileTree(false);
+    setFileTreeDropSide(undefined);
+  }
+
+  function dropFileTree(event: ReactDragEvent<HTMLDivElement>): void {
+    if (!fileTreeDockDragRef.current) {
+      return;
+    }
+    event.preventDefault();
+    moveFileTree(fileTreeSideAt(event.clientX));
+    finishFileTreeDockDrag();
+  }
+
+  function handleFileTreeDockKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      moveFileTree(event.key === "ArrowLeft" ? "left" : "right");
+    }
   }
 
   function startTabDrag(event: DragStartEvent): void {
@@ -399,22 +515,8 @@ export function WorkspaceRightPanel({
       inert={!open}
     >
       <div className="workspace-panel-tabbar">
-        {globalized && onOpenSidebar ? (
-          <button
-            className="icon-button workspace-panel-sidebar"
-            type="button"
-            aria-label={t("workspace.openNavigationSidebar")}
-            title={t("workspace.openNavigationSidebar")}
-            disabled={!open}
-            onClick={onOpenSidebar}
-          >
-            <PanelLeftOpen
-              className="icon-lg"
-              size={18}
-              strokeWidth={1.67}
-              viewBox="2 2 20 20"
-            />
-          </button>
+        {globalized ? (
+          <span className="workspace-panel-sidebar-hit-hole" aria-hidden="true" />
         ) : null}
         <DndContext
           sensors={tabSensors}
@@ -539,10 +641,14 @@ export function WorkspaceRightPanel({
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
             <div
-              className={`workspace-files-split${resizingFileSplit ? " resizing" : ""}`}
+              className={`workspace-files-split${resizingFileSplit ? " resizing" : ""}${fileTreeVisible ? "" : " tree-hidden"}${draggingFileTree ? " tree-dragging" : ""}`}
+              data-tree-drop-side={fileTreeDropSide}
+              data-tree-side={fileTreeSide}
               hidden={activeTab?.kind !== "files" && activeTab?.kind !== "file"}
               ref={fileSplitRef}
               style={{ "--workspace-file-tree-width": `${fileTreeWidth}px` } as CSSProperties}
+              onDragOver={handleFileTreeDockDragOver}
+              onDrop={dropFileTree}
             >
               <section className="workspace-files-content" aria-label={t("workspace.fileContent")}>
                 <div className="workspace-files-content-body">
@@ -568,9 +674,15 @@ export function WorkspaceRightPanel({
                     />
                   ) : null}
                 </div>
+                {focusedComposer && activeTab?.kind === "file" ? (
+                  <div className="workspace-document-composer" data-testid="workspace-document-composer">
+                    {focusedComposer}
+                  </div>
+                ) : null}
               </section>
               <div
                 className="workspace-files-resizer"
+                hidden={!fileTreeVisible}
                 role="separator"
                 aria-label={t("workspace.resizeFileContentTree")}
                 aria-orientation="vertical"
@@ -582,15 +694,66 @@ export function WorkspaceRightPanel({
                 onDoubleClick={resetFileTreeWidth}
                 onKeyDown={handleFileSplitKeyDown}
               />
-              <section className="workspace-files-tree" aria-label={t("workspace.fileTree")}>
+              <section
+                className="workspace-files-tree"
+                aria-label={t("workspace.fileTree")}
+                hidden={!fileTreeVisible}
+                ref={fileTreeRef}
+              >
+                <div
+                  className="workspace-file-tree-drag-handle"
+                  role="button"
+                  tabIndex={0}
+                  draggable
+                  aria-label={t("workspace.dragFileTree")}
+                  title={t("workspace.dragFileTree")}
+                  onDragStart={startFileTreeDockDrag}
+                  onDragEnd={finishFileTreeDockDrag}
+                  onKeyDown={handleFileTreeDockKeyDown}
+                >
+                  <GripHorizontal size={15} strokeWidth={1.8} />
+                </div>
                 <WorkspaceFileTree
                   activeContext={workspaceContext}
-                  open={open && (activeTab?.kind === "files" || activeTab?.kind === "file")}
+                  open={
+                    open &&
+                    fileTreeVisible &&
+                    (activeTab?.kind === "files" || activeTab?.kind === "file")
+                  }
                   selectedFilePath={selectedFilePath}
                   onOpenFile={onOpenFile}
                 />
               </section>
+              {!fileTreeVisible ? (
+                <button
+                  className={`icon-button workspace-file-tree-reveal ${fileTreeSide}`}
+                  type="button"
+                  aria-label={t("workspace.showFileTree")}
+                  title={t("workspace.showFileTree")}
+                  onClick={() => setFileTreeVisibility(true)}
+                >
+                  {fileTreeSide === "left" ? (
+                    <PanelLeftOpen className="icon" />
+                  ) : (
+                    <PanelRightOpen className="icon" />
+                  )}
+                </button>
+              ) : null}
             </div>
+            {createPortal(
+              <div
+                ref={fileTreeDragPreviewRef}
+                className="workspace-file-tree-drag-preview"
+                aria-hidden="true"
+              >
+                <span className="workspace-file-tree-drag-preview-icon">
+                  <FolderOpen size={17} strokeWidth={1.8} />
+                </span>
+                <span>{t("workspace.fileTree")}</span>
+                <GripHorizontal size={14} strokeWidth={1.7} />
+              </div>,
+              document.body,
+            )}
             {activeTab?.kind === "files" || activeTab?.kind === "file" ? null : (
               <div
                 className="workspace-panel-content-swap"
@@ -628,11 +791,6 @@ export function WorkspaceRightPanel({
             )}
           </div>
         </>
-      ) : null}
-      {focusedComposer && activeTab?.kind === "file" ? (
-        <div className="workspace-document-composer" data-testid="workspace-document-composer">
-          {focusedComposer}
-        </div>
       ) : null}
     </aside>
   );

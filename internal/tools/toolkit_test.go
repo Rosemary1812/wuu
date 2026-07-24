@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
@@ -1788,6 +1789,88 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	}
 }
 
+func TestSpawnAgent_ModelAliasAndLiveDefault(t *testing.T) {
+	root := t.TempDir()
+	client := &toolkitFakeClient{content: "agent done"}
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       client,
+		DefaultModel: "expensive-model",
+		ParentRepo:   root,
+		SessionID:    "spawn-model-session",
+		HistoryDir:   filepath.Join(root, "state", "workers"),
+		ThreadDir:    filepath.Join(root, "state", "threads"),
+		HarnessDir:   filepath.Join(root, "state", "harness"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return toolkitNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopToolkitAgentControl(control)
+	control.SetModelAliasResolver(func(alias string) agentcontrol.AliasResolutionResult {
+		models := map[string]string{
+			"cheap":  "cheap-model",
+			"review": "review-model",
+		}
+		model, ok := models[alias]
+		if !ok {
+			return agentcontrol.AliasResolutionResult{Unknown: true, ValidAliases: []string{"cheap", "review"}}
+		}
+		return agentcontrol.AliasResolutionResult{
+			Found: true,
+			Runtime: subagent.WorkerRuntime{
+				Provider: "test-provider",
+				Model:    model,
+				APIModel: model,
+				Client:   client,
+			},
+		}
+	})
+
+	tool := NewSpawnAgentTool(&Env{AgentControl: control})
+	properties, ok := tool.Definition().InputSchema["properties"].(map[string]any)
+	if !ok || properties["model"] == nil {
+		t.Fatalf("spawn_agent schema does not expose model: %+v", tool.Definition().InputSchema)
+	}
+
+	spawn := func(args string) agentcontrol.SpawnResult {
+		t.Helper()
+		resultJSON, executeErr := tool.Execute(context.Background(), args)
+		if executeErr != nil {
+			t.Fatalf("spawn_agent: %v", executeErr)
+		}
+		var result agentcontrol.SpawnResult
+		if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+			t.Fatalf("decode spawn result: %v", err)
+		}
+		return result
+	}
+
+	explicit := spawn(`{"name":"cheap_backend","description":"Cheap backend","prompt":"Implement backend.","subagent_type":"general-purpose","model":"cheap"}`)
+	if snap := control.Manager().Get(explicit.AgentID).Snapshot(); snap.Model != "cheap-model" || snap.ModelAlias != "cheap" || snap.ModelPin != "" {
+		t.Fatalf("explicit alias snapshot = model %q alias %q pin %q, want cheap-model via cheap with no raw pin", snap.Model, snap.ModelAlias, snap.ModelPin)
+	}
+	forkContext := agent.ContextWithHistory(context.Background(), []providers.ChatMessage{{Role: "user", Content: "Plan the feature."}})
+	forkJSON, err := tool.Execute(forkContext, `{"name":"cheap_review","description":"Cheap review","prompt":"Review the plan.","model":"review"}`)
+	if err != nil {
+		t.Fatalf("spawn_agent fork: %v", err)
+	}
+	var forked agentcontrol.SpawnResult
+	if err := json.Unmarshal([]byte(forkJSON), &forked); err != nil {
+		t.Fatalf("decode fork result: %v", err)
+	}
+	if snap := control.Manager().Get(forked.AgentID).Snapshot(); snap.Model != "review-model" || snap.ModelAlias != "review" || snap.ModelPin != "" {
+		t.Fatalf("fork alias snapshot = model %q alias %q pin %q, want review-model via review with no raw pin", snap.Model, snap.ModelAlias, snap.ModelPin)
+	}
+
+	control.UpdateWorkerDefaults(client, "new-live-default", subagent.ManagerOptions{})
+	inherited := spawn(`{"name":"default_frontend","description":"Default frontend","prompt":"Implement frontend.","subagent_type":"general-purpose"}`)
+	if snap := control.Manager().Get(inherited.AgentID).Snapshot(); snap.Model != "new-live-default" || snap.ModelPin != "" {
+		t.Fatalf("live default snapshot = model %q pin %q, want new-live-default with no pin", snap.Model, snap.ModelPin)
+	}
+}
+
 func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -3416,6 +3499,30 @@ func TestToolkit_RepeatedToolInputGuardExemptsPollingTools(t *testing.T) {
 	}
 }
 
+func TestToolkit_RepeatedToolInputGuardExemptsChatPolling(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	revision := workspaceRevision(context.Background(), kit.env.RootDir)
+	for _, call := range []providers.ToolCall{
+		{Name: "chat_check", Arguments: `{}`},
+		{Name: "chat_read", Arguments: `{"room_id":"room-1","after_seq":4}`},
+	} {
+		hash := toolArgumentsSHA256(call.Arguments)
+		kit.env.toolTelemetry.record(ToolExecutionRecord{Name: call.Name, ArgumentsSHA256: hash, RevisionBefore: revision})
+		kit.env.toolTelemetry.record(ToolExecutionRecord{Name: call.Name, ArgumentsSHA256: hash, RevisionBefore: revision})
+		if got := kit.repeatedToolInputCount(call, revision); got != 0 {
+			t.Fatalf("%s polling should be exempt from repeated input guard, got count %d", call.Name, got)
+		}
+	}
+
+	if isRepeatablePollingTool(providers.ToolCall{Name: "chat_send", Arguments: `{"room_id":"room-1","body":"hello"}`}) {
+		t.Fatal("chat mutations must remain protected by the repeated input guard")
+	}
+}
+
 func TestToolkit_RepeatedToolInputGuardExemptsCUAObserve(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -4448,10 +4555,15 @@ func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation"} {
+		for _, field := range []string{"description", "prompt", "subagent_type", "name", "model", "run_in_background", "isolation"} {
 			if _, ok := props[field]; !ok {
 				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
 			}
+		}
+		modelProp, _ := props["model"].(map[string]any)
+		modelDescription, _ := modelProp["description"].(string)
+		if !strings.Contains(modelDescription, "configured model alias") || !strings.Contains(modelDescription, "not a provider name or raw API model ID") {
+			t.Fatalf("spawn_agent model must be alias-only, description=%q", modelDescription)
 		}
 		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability", "goal_id", "goal_dir"} {
 			if _, ok := props[old]; ok {

@@ -35,7 +35,7 @@ describe("conversation shell visible center", () => {
       /--conversation-visible-inset-right:\s*var\(--environment-panel-content-inset\);/,
     );
     expect(cssRuleBody(".jump-to-latest-cluster")).toMatch(
-      /right:\s*var\(--conversation-visible-inset-right\);/,
+      /right:\s*calc\(\s*var\(--conversation-visible-inset-right\)\s*\+\s*var\(--conversation-scrollbar-gutter\)\s*\);/,
     );
   });
 

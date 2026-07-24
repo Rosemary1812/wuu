@@ -1,5 +1,6 @@
 import {
-  Info,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   MoreHorizontal,
   Pause,
@@ -33,6 +34,8 @@ type GoalInfoRow = { label: string; value: string };
 export function ComposerGoalStrip({
   summary,
   disabled,
+  expanded: controlledExpanded,
+  onExpandedChange,
   onEdit,
   onPause,
   onResume,
@@ -40,6 +43,8 @@ export function ComposerGoalStrip({
 }: {
   summary: ComposerGoalSummary | null;
   disabled?: boolean;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   onEdit: (nextText: string) => void | Promise<void>;
   onPause: () => void | Promise<void>;
   onResume: () => void | Promise<void>;
@@ -52,14 +57,13 @@ export function ComposerGoalStrip({
     useState<ConfirmableGoalAction | null>(null);
   const [busy, setBusy] = useState<GoalBusyAction | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [, setElapsedTick] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
-  const infoAnchorRef = useRef<HTMLSpanElement | null>(null);
   const actionsAnchorRef = useRef<HTMLSpanElement | null>(null);
-  const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -80,13 +84,13 @@ export function ComposerGoalStrip({
     setConfirmingAction(null);
     setBusy(null);
     setError(null);
-    setInfoOpen(false);
+    setInternalExpanded(false);
     setActionsOpen(false);
     clearConfirmTimer();
   }, [summary?.id]);
 
   useEffect(() => {
-    if (!infoOpen && !actionsOpen) return;
+    if (!actionsOpen) return;
 
     function handlePointerDown(event: PointerEvent): void {
       const target = event.target;
@@ -109,23 +113,20 @@ export function ComposerGoalStrip({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [actionsOpen, infoOpen]);
+  }, [actionsOpen]);
 
   useEffect(() => {
-    if (!infoOpen || !summary?.running_since) return;
+    if (!expanded || !summary?.running_since) return;
     const timer = window.setInterval(() => {
       setElapsedTick((tick) => tick + 1);
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [infoOpen, summary?.running_since]);
+  }, [expanded, summary?.running_since]);
 
   useEffect(() => {
     return () => {
       if (confirmTimerRef.current) {
         clearTimeout(confirmTimerRef.current);
-      }
-      if (infoCloseTimerRef.current) {
-        clearTimeout(infoCloseTimerRef.current);
       }
     };
   }, []);
@@ -146,28 +147,19 @@ export function ComposerGoalStrip({
     confirmTimerRef.current = null;
   }
 
-  function clearInfoCloseTimer(): void {
-    if (!infoCloseTimerRef.current) return;
-    clearTimeout(infoCloseTimerRef.current);
-    infoCloseTimerRef.current = null;
-  }
-
-  function scheduleInfoClose(): void {
-    clearInfoCloseTimer();
-    infoCloseTimerRef.current = setTimeout(() => {
-      setInfoOpen(false);
-      infoCloseTimerRef.current = null;
-    }, 100);
-  }
-
   function resetConfirmation(): void {
     setConfirmingAction(null);
     clearConfirmTimer();
   }
 
+  function setExpanded(next: boolean): void {
+    if (controlledExpanded === undefined) {
+      setInternalExpanded(next);
+    }
+    onExpandedChange?.(next);
+  }
+
   function closePopovers(): void {
-    clearInfoCloseTimer();
-    setInfoOpen(false);
     setActionsOpen(false);
     resetConfirmation();
   }
@@ -230,6 +222,7 @@ export function ComposerGoalStrip({
         await operation();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : failureMessage);
+        setExpanded(true);
       } finally {
         setBusy(null);
       }
@@ -268,147 +261,151 @@ export function ComposerGoalStrip({
 
   return (
     <>
-      <div className="composer-goal-strip" role="status" aria-live="polite">
-        <span className="composer-goal-strip-icon" aria-hidden="true">
-          <Target className="icon-sm" />
-        </span>
-        <span className="composer-goal-strip-main">
-          <span className="composer-goal-strip-text" title={displayText}>
-            {displayText}
-          </span>
-          {visibleStatus ? (
-            <span className="composer-goal-strip-state">{visibleStatus}</span>
-          ) : null}
-        </span>
-        <div
-          ref={controlsRef}
-          className="composer-goal-strip-actions composer-input-header-actions"
-        >
-          <span
-            ref={infoAnchorRef}
-            className="composer-goal-strip-control-anchor"
-            onMouseEnter={() => {
-              clearInfoCloseTimer();
-              setInfoOpen(true);
+      <section
+        className={`composer-goal-strip composer-accessory-drawer${expanded ? " expanded" : ""}`}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="composer-goal-strip-summary">
+          <button
+            type="button"
+            className="composer-goal-strip-summary-select composer-drawer-summary-select"
+            aria-controls={`composer-goal-details-${summary.id}`}
+            aria-expanded={expanded}
+            onClick={() => {
+              setActionsOpen(false);
+              setExpanded(!expanded);
             }}
-            onMouseLeave={scheduleInfoClose}
+          >
+            <span className="composer-goal-strip-icon" aria-hidden="true">
+              <Target className="icon-sm" />
+            </span>
+            <span className="composer-goal-strip-main">
+              <span className="composer-goal-strip-text" title={displayText}>
+                {displayText}
+              </span>
+              {visibleStatus ? (
+                <span className="composer-goal-strip-state">{visibleStatus}</span>
+              ) : null}
+            </span>
+          </button>
+          <div
+            ref={controlsRef}
+            className="composer-goal-strip-actions composer-input-header-actions"
           >
             <button
-              className="composer-goal-strip-action composer-input-header-action"
+              className="composer-goal-strip-action composer-goal-strip-edit composer-input-header-action"
               type="button"
-              aria-label={t("goal.viewDetails")}
-              aria-expanded={infoOpen}
-              title={t("goal.details")}
-              onClick={() => {
-                clearInfoCloseTimer();
-                setActionsOpen(false);
-                setInfoOpen((current) => !current);
-              }}
-            >
-              <Info className="icon-sm" aria-hidden="true" />
-            </button>
-            {infoOpen ? (
-              <FloatingMenuPortal
-                anchorRef={infoAnchorRef}
-                owner="composer-goal"
-                placement="above"
-                align="right"
-                offset={6}
-                width={280}
-              >
-                <div
-                  className="composer-goal-strip-info"
-                  role="tooltip"
-                  onMouseEnter={clearInfoCloseTimer}
-                  onMouseLeave={scheduleInfoClose}
-                >
-                  <div className="composer-goal-strip-info-title">{t("goal.details")}</div>
-                  <dl className="composer-goal-strip-info-list">
-                    {infoRows.map((row) => (
-                      <div key={row.label} className="composer-goal-strip-info-row">
-                        <dt>{row.label}</dt>
-                        <dd>{row.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-              </div>
-              </FloatingMenuPortal>
-            ) : null}
-          </span>
-          <span ref={actionsAnchorRef} className="composer-goal-strip-control-anchor">
-            <button
-              className="composer-goal-strip-action composer-input-header-action"
-              type="button"
-              aria-label={t("goal.actions")}
-              aria-expanded={actionsOpen}
-              title={t("goal.actions")}
+              aria-label={t("goal.edit")}
+              title={t("goal.edit")}
               disabled={disabled || busy !== null}
+              onClick={handleStartEdit}
+            >
+              <Pencil className="icon-sm" aria-hidden="true" />
+            </button>
+            <span ref={actionsAnchorRef} className="composer-goal-strip-control-anchor">
+              <button
+                className="composer-goal-strip-action composer-input-header-action"
+                type="button"
+                aria-label={t("goal.actions")}
+                aria-expanded={actionsOpen}
+                title={t("goal.actions")}
+                disabled={disabled || busy !== null}
+                onClick={() => setActionsOpen((current) => !current)}
+              >
+                {busy ? (
+                  <Loader2
+                    className="icon-sm composer-goal-strip-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <MoreHorizontal className="icon-sm" aria-hidden="true" />
+                )}
+              </button>
+              {actionsOpen ? (
+                <FloatingMenuPortal
+                  anchorRef={actionsAnchorRef}
+                  owner="composer-goal"
+                  placement="above"
+                  align="right"
+                  offset={6}
+                  width={168}
+                >
+                  <div className="composer-goal-strip-menu" role="menu">
+                    {canPause ? (
+                      <GoalMenuButton
+                        icon={Pause}
+                        label={t("goal.pause")}
+                        onClick={handlePauseGoal}
+                      />
+                    ) : null}
+                    {canResume ? (
+                      <GoalMenuButton
+                        icon={Play}
+                        label={t("goal.resume")}
+                        onClick={handleResumeGoal}
+                      />
+                    ) : null}
+                    {canClear ? (
+                      <GoalMenuButton
+                        danger={confirmingAction === "clear"}
+                        icon={Trash2}
+                        label={
+                          confirmingAction === "clear"
+                            ? t("goal.confirmClear")
+                            : t("goal.clear")
+                        }
+                        onClick={() => handleConfirmableGoalAction("clear")}
+                      />
+                    ) : null}
+                  </div>
+                </FloatingMenuPortal>
+              ) : null}
+            </span>
+            <button
+              className="composer-goal-strip-action composer-goal-strip-toggle composer-input-header-action"
+              type="button"
+              aria-controls={`composer-goal-details-${summary.id}`}
+              aria-expanded={expanded}
+              aria-label={t(expanded ? "goal.collapse" : "goal.expand")}
+              title={t(expanded ? "goal.collapse" : "goal.expand")}
               onClick={() => {
-                setInfoOpen(false);
-                setActionsOpen((current) => !current);
+                setActionsOpen(false);
+                setExpanded(!expanded);
               }}
             >
-              {busy ? (
-                <Loader2
-                  className="icon-sm composer-goal-strip-spin"
-                  aria-hidden="true"
-                />
+              {expanded ? (
+                <ChevronDown className="icon-sm" aria-hidden="true" />
               ) : (
-                <MoreHorizontal className="icon-sm" aria-hidden="true" />
+                <ChevronUp className="icon-sm" aria-hidden="true" />
               )}
             </button>
-            {actionsOpen ? (
-              <FloatingMenuPortal
-                anchorRef={actionsAnchorRef}
-                owner="composer-goal"
-                placement="above"
-                align="right"
-                offset={6}
-                width={168}
-              >
-                <div className="composer-goal-strip-menu" role="menu">
-                  {canPause ? (
-                    <GoalMenuButton
-                      icon={Pause}
-                      label={t("goal.pause")}
-                      onClick={handlePauseGoal}
-                    />
-                  ) : null}
-                  {canResume ? (
-                    <GoalMenuButton
-                      icon={Play}
-                      label={t("goal.resume")}
-                      onClick={handleResumeGoal}
-                    />
-                  ) : null}
-                  <GoalMenuButton
-                    icon={Pencil}
-                    label={t("goal.edit")}
-                    onClick={handleStartEdit}
-                  />
-                  {canClear ? (
-                    <GoalMenuButton
-                      danger={confirmingAction === "clear"}
-                      icon={Trash2}
-                      label={
-                        confirmingAction === "clear"
-                          ? t("goal.confirmClear")
-                          : t("goal.clear")
-                      }
-                      onClick={() => handleConfirmableGoalAction("clear")}
-                    />
-                  ) : null}
-                </div>
-              </FloatingMenuPortal>
-            ) : null}
-          </span>
+          </div>
         </div>
-        {error && !editing ? (
-          <span className="composer-goal-strip-error" role="alert">
-            {error}
-          </span>
+        {expanded ? (
+          <div
+            className="composer-goal-strip-details"
+            id={`composer-goal-details-${summary.id}`}
+          >
+            <p className="composer-goal-strip-full-text">
+              {summary.text.trim() || t("goal.noText")}
+            </p>
+            <dl className="composer-goal-strip-info-list">
+              {infoRows.map((row) => (
+                <div key={row.label} className="composer-goal-strip-info-row">
+                  <dt>{row.label}</dt>
+                  <dd>{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {error && !editing ? (
+              <span className="composer-goal-strip-error" role="alert">
+                {error}
+              </span>
+            ) : null}
+          </div>
         ) : null}
-      </div>
+      </section>
       {editing
         ? createPortal(
             <Modal

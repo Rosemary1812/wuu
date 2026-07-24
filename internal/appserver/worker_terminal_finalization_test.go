@@ -127,7 +127,6 @@ func TestServerFinalizesTerminalWorkerBeforeDeleteCanAcquireItsLease(t *testing.
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker provider request did not start")
 	}
-	owner.markParticipantBusy(participantID, "task", spawned.AgentID)
 	if err := session.UpsertParticipantRun(rt.SessionDir, session.ParticipantRun{
 		ID:            spawned.AgentID,
 		ParticipantID: participantID,
@@ -155,9 +154,6 @@ func TestServerFinalizesTerminalWorkerBeforeDeleteCanAcquireItsLease(t *testing.
 	}
 	if len(runs) != 1 || runs[0].Outcome != "running" {
 		t.Fatalf("participant run changed before durable retry succeeded: %+v", runs)
-	}
-	if info, busy := owner.participantBusyInfo(participantID); !busy || info.AgentID != spawned.AgentID {
-		t.Fatalf("participant busy reservation released before durable retry: %+v, busy=%t", info, busy)
 	}
 	if child := owner.thread(spawned.AgentID); child != nil {
 		t.Fatal("terminal worker UI state materialized before durable completion")
@@ -199,9 +195,6 @@ func TestServerFinalizesTerminalWorkerBeforeDeleteCanAcquireItsLease(t *testing.
 	}
 	if len(runs) != 1 || runs[0].AgentID != spawned.AgentID || runs[0].Outcome != string(subagent.StatusCompleted) {
 		t.Fatalf("participant run was not finalized before lease release: %+v", runs)
-	}
-	if _, busy := owner.participantBusyInfo(participantID); busy {
-		t.Fatal("participant busy reservation survived terminal finalization")
 	}
 	child := owner.thread(spawned.AgentID)
 	if child == nil {
@@ -354,7 +347,6 @@ func TestServerTerminalFinalizationFailureYieldsDurablyAndRecoversOnce(t *testin
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker provider request did not start")
 	}
-	owner.markParticipantBusy(participantID, "task", spawned.AgentID)
 	if err := session.UpsertParticipantRun(rt.SessionDir, session.ParticipantRun{
 		ID: spawned.AgentID, ParticipantID: participantID, AgentID: spawned.AgentID,
 		TaskID: spawned.TaskName, SessionID: rootID, Summary: "running", Outcome: "running",
@@ -382,9 +374,6 @@ func TestServerTerminalFinalizationFailureYieldsDurablyAndRecoversOnce(t *testin
 	}
 	if len(runs) != 1 || runs[0].Outcome != "running" {
 		t.Fatalf("participant run changed before terminal acknowledgement: %+v", runs)
-	}
-	if info, busy := owner.participantBusyInfo(participantID); !busy || info.AgentID != spawned.AgentID {
-		t.Fatalf("participant busy reservation released before terminal acknowledgement: %+v, busy=%t", info, busy)
 	}
 
 	closeDone := make(chan struct{})
@@ -577,7 +566,6 @@ func TestServerTerminalFinalizationFailureRemainsReplayable(t *testing.T) {
 	out := &lockedBuffer{}
 	owner := New(rt, out)
 	t.Cleanup(owner.Close)
-	owner.markParticipantBusy(participantID, "task", agentID)
 	now := time.Now().UTC()
 	notification := subagent.Notification{
 		AgentID: agentID,
@@ -600,9 +588,6 @@ func TestServerTerminalFinalizationFailureRemainsReplayable(t *testing.T) {
 	if got := failedAttempts.Load(); got != participantRunCompletionMaxAttempts {
 		t.Fatalf("terminal finalization attempts = %d, want %d", got, participantRunCompletionMaxAttempts)
 	}
-	if info, busy := owner.participantBusyInfo(participantID); !busy || info.AgentID != agentID {
-		t.Fatalf("participant busy reservation released after failed finalization: %+v, busy=%t", info, busy)
-	}
 	runs, err := session.ListParticipantRuns(rt.SessionDir, participantID, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -621,9 +606,6 @@ func TestServerTerminalFinalizationFailureRemainsReplayable(t *testing.T) {
 	}
 	if err := owner.finalizeAgentTerminalWithCompleter(rootID, nil, notification, succeed); err != nil {
 		t.Fatalf("replay terminal finalization: %v", err)
-	}
-	if _, busy := owner.participantBusyInfo(participantID); busy {
-		t.Fatal("participant busy reservation survived successful terminal replay")
 	}
 	runs, err = session.ListParticipantRuns(rt.SessionDir, participantID, 0)
 	if err != nil {

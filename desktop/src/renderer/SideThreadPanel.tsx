@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   type PointerEvent as ReactPointerEvent,
@@ -52,7 +53,9 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
     ref,
   ) {
     const { t } = useI18n();
+    const panelRef = useRef<HTMLElement | null>(null);
     const composerHostRef = useRef<HTMLDivElement | null>(null);
+    const footerRef = useRef<HTMLDivElement | null>(null);
     const bodyScroll = useAutoFollowScrollContainer({ open: true });
     const turns = useMemo(
       () => sideThreadMessagesToTurns(entry.messages),
@@ -81,12 +84,35 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
       bodyScroll.scrollToBottom();
     }, [bodyScroll, entry.messages, entry.streaming]);
 
+    useLayoutEffect(() => {
+      const panel = panelRef.current;
+      const footer = footerRef.current;
+      if (!panel || !footer) {
+        return undefined;
+      }
+
+      const updateFooterHeight = (): void => {
+        const height = Math.ceil(footer.getBoundingClientRect().height);
+        panel.style.setProperty("--side-thread-footer-height", `${height}px`);
+        bodyScroll.scheduleScrollToBottom();
+      };
+
+      updateFooterHeight();
+      if (typeof ResizeObserver === "undefined") {
+        return undefined;
+      }
+      const observer = new ResizeObserver(updateFooterHeight);
+      observer.observe(footer);
+      return () => observer.disconnect();
+    }, [bodyScroll]);
+
     const handleStreamFrame = useCallback(() => {
       bodyScroll.scheduleScrollToBottom();
     }, [bodyScroll]);
 
     return (
       <aside
+        ref={panelRef}
         className="side-thread-panel"
         data-main-thread-id={mainThreadId}
         data-streaming={entry.streaming ? "true" : "false"}
@@ -142,14 +168,16 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
           </div>
         </div>
 
-        {entry.lastError ? (
-          <div className="side-thread-panel__error" role="alert">
-            {entry.lastError}
-          </div>
-        ) : null}
+        <div ref={footerRef} className="side-thread-panel__footer">
+          {entry.lastError ? (
+            <div className="side-thread-panel__error" role="alert">
+              {entry.lastError}
+            </div>
+          ) : null}
 
-        <div ref={composerHostRef} className="side-thread-panel__composer-host">
-          {composer}
+          <div ref={composerHostRef} className="side-thread-panel__composer-host">
+            {composer}
+          </div>
         </div>
       </aside>
     );

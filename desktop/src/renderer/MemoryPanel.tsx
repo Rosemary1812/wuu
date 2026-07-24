@@ -2,7 +2,6 @@ import { Loader2, RefreshCw, Send } from "lucide-react";
 import {
   type FormEvent as ReactFormEvent,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -12,18 +11,14 @@ import type {
   MemoryFileInfo,
   MemoryOverviewResult,
   MemoryReadResult,
-  MemoryScope,
-  ParticipantProfile,
 } from "../shared/protocol";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent } from "./RichContent";
-import { SelectMenu } from "./SelectMenu";
 import { useI18n } from "./i18n";
 
 // 设置 → 记忆 面板（docs/plans/2026-07-04-memory-redesign.md §8.1）。
 //
-// 两个子 Tab：「我」= 用户笔记本，「同事」= 选中 named agent 的身份笔记本。
-// 打开或切换笔记本时先请求 memory/overview（概览 agent 一次 LLM 调用），
+// 用户笔记本：打开时先请求 memory/overview（概览 agent 一次 LLM 调用），
 // 等待期间渲染骨架屏；底部 chat 走 memory/chat 由管理 agent 修改真实索引
 // 记忆，返回后回显回复与变更文件清单并自动重拉 overview；「查看原文」开关
 // 直接渲染 memory/read 的 MEMORY.md 索引与文件清单（无 LLM，兜底与审计用）。
@@ -61,15 +56,6 @@ function errorMessage(error: unknown): string {
 // 转发错误里，所以只匹配子串。"method not found" 兜住 JSON-RPC 习惯拼法。
 function isMemoryBackendMissing(error: unknown): boolean {
   return /unknown method|method not found/i.test(errorMessage(error));
-}
-
-function memoryParams(
-  scope: MemoryScope,
-  participantID: string,
-): { scope: MemoryScope; participant_id?: string } {
-  return scope === "participant"
-    ? { scope, participant_id: participantID }
-    : { scope };
 }
 
 function timestampLabel(value: string | undefined, locale: string): string {
@@ -112,21 +98,8 @@ function memoryChangedFileActionLabel(
   return labels[action] ?? action;
 }
 
-export function MemoryPanel({
-  participants,
-  focusParticipantID,
-}: {
-  participants: ParticipantProfile[];
-  // 预选某位同事的笔记本（档案面板「在记忆面板中管理」跳转带过来）。
-  focusParticipantID?: string;
-}): JSX.Element {
+export function MemoryPanel(): JSX.Element {
   const { t } = useI18n();
-  const [scope, setScope] = useState<MemoryScope>(
-    focusParticipantID ? "participant" : "user",
-  );
-  const [selectedParticipantID, setSelectedParticipantID] = useState(
-    focusParticipantID ?? "",
-  );
   // 递增以强制重拉 overview（chat 成功后、点「重试」时）；原文视图打开
   // 时共用同一个 nonce，一并刷新。
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -139,46 +112,19 @@ export function MemoryPanel({
   const chatSeqRef = useRef(0);
   const forceOverviewRefreshRef = useRef(false);
 
-  // 只列在职 named agent；participant/list 本身不返回已退休的。
-  const namedAgents = useMemo(
-    () => participants.filter((participant) => participant.kind === "named"),
-    [participants],
-  );
-  const activeParticipantID =
-    selectedParticipantID &&
-    namedAgents.some((agent) => agent.id === selectedParticipantID)
-      ? selectedParticipantID
-      : namedAgents[0]?.id ?? "";
-  // 当前笔记本的稳定键：tab / agent 切换时重置 chat。
-  const notebookKey =
-    scope === "user" ? "user" : `participant:${activeParticipantID}`;
-  const notebookReady = scope === "user" || activeParticipantID.length > 0;
-
   useEffect(() => {
     setChatEntries([]);
     setChatDraft("");
-  }, [notebookKey]);
-
-  // 跳转焦点变化时切到对应同事的笔记本（初始值已在 useState 里消化，
-  // 这里兜住同一面板实例被复用的情况）。
-  useEffect(() => {
-    if (focusParticipantID) {
-      setScope("participant");
-      setSelectedParticipantID(focusParticipantID);
-    }
-  }, [focusParticipantID]);
+  }, []);
 
   useEffect(() => {
-    if (!notebookReady) {
-      return;
-    }
     let cancelled = false;
     const forceRefresh = forceOverviewRefreshRef.current;
     forceOverviewRefreshRef.current = false;
     setOverview({ status: "loading" });
     void window.wuu
       .getMemoryOverview({
-        ...memoryParams(scope, activeParticipantID),
+        scope: "user",
         ...(forceRefresh ? { force_refresh: true } : {}),
       })
       .then((result) => {
@@ -199,7 +145,7 @@ export function MemoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [scope, activeParticipantID, notebookReady, refreshNonce]);
+  }, [refreshNonce]);
 
   function refreshOverview(forceRefresh = false): void {
     forceOverviewRefreshRef.current = forceRefresh;
@@ -207,13 +153,13 @@ export function MemoryPanel({
   }
 
   useEffect(() => {
-    if (!rawOpen || !notebookReady) {
+    if (!rawOpen) {
       return;
     }
     let cancelled = false;
     setRaw({ status: "loading" });
     void window.wuu
-      .readMemoryRaw(memoryParams(scope, activeParticipantID))
+      .readMemoryRaw({ scope: "user" })
       .then((result) => {
         if (!cancelled) {
           setRaw({ status: "ready", result });
@@ -232,56 +178,51 @@ export function MemoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [rawOpen, scope, activeParticipantID, notebookReady, refreshNonce]);
+  }, [rawOpen, refreshNonce]);
 
   async function submitChat(
     event: ReactFormEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
-    const message = chatDraft.trim();
-    if (!message || chatPending || !notebookReady) {
+    const text = chatDraft.trim();
+    if (!text || chatPending) {
       return;
     }
-    const seq = ++chatSeqRef.current;
-    const replyID = `chat-${seq}-reply`;
-    setChatDraft("");
+    const id = `chat-${chatSeqRef.current + 1}`;
+    chatSeqRef.current += 1;
     setChatEntries((entries) => [
       ...entries,
-      { id: `chat-${seq}-user`, role: "user", text: message },
-      { id: replyID, role: "assistant", text: "", pending: true },
+      { id, role: "user", text },
+      { id: `${id}-pending`, role: "assistant", text: "", pending: true },
     ]);
+    setChatDraft("");
     setChatPending(true);
     try {
       const result = await window.wuu.sendMemoryChat({
-        ...memoryParams(scope, activeParticipantID),
-        message,
+        scope: "user",
+        message: text,
       });
       setChatEntries((entries) =>
         entries.map((entry) =>
-          entry.id === replyID
+          entry.id === `${id}-pending`
             ? {
-                id: replyID,
-                role: "assistant" as const,
+                ...entry,
+                pending: false,
                 text: result.reply_md,
-                changedFiles: result.changed_files ?? [],
+                changedFiles: result.changed_files,
               }
             : entry,
         ),
       );
-      // 契约 §8.1：chat 返回后自动重新拉取 overview。
-      setRefreshNonce((nonce) => nonce + 1);
+      refreshOverview(true);
     } catch (error) {
+      const message = isMemoryBackendMissing(error)
+        ? t("memory.messageNotApplied")
+        : errorMessage(error);
       setChatEntries((entries) =>
         entries.map((entry) =>
-          entry.id === replyID
-            ? {
-                id: replyID,
-                role: "assistant" as const,
-                text: "",
-                error: isMemoryBackendMissing(error)
-                  ? t("memory.messageNotApplied")
-                  : errorMessage(error),
-              }
+          entry.id === `${id}-pending`
+            ? { ...entry, pending: false, error: message }
             : entry,
         ),
       );
@@ -290,38 +231,27 @@ export function MemoryPanel({
     }
   }
 
-  const canSendChat =
-    notebookReady && chatDraft.trim().length > 0 && !chatPending;
+  const canSendChat = chatDraft.trim().length > 0 && !chatPending;
 
   return (
     <ImagePreviewProvider>
-      <div className="settings-memory" data-testid="settings-memory">
+      <div className="settings-memory">
         <header className="settings-page-header settings-memory-header">
           <h1 className="settings-page-title">{t("memory.title")}</h1>
           <div className="settings-memory-actions">
-            <div className="settings-memory-raw-toggle">
-              <span className="settings-memory-raw-label">{t("memory.viewSource")}</span>
-              <button
-                className="settings-switch"
-                type="button"
-                role="switch"
-                aria-checked={rawOpen}
-                data-testid="memory-raw-toggle"
-                onClick={() => setRawOpen((open) => !open)}
-              >
-                <span className="settings-switch-thumb" aria-hidden="true" />
-                <span className="sr-only">
-                  {rawOpen ? t("memory.closeSource") : t("memory.viewSource")}
-                </span>
-              </button>
-            </div>
             <button
-              className="settings-button"
+              className={`settings-button ${rawOpen ? "settings-button-secondary" : "settings-button-ghost"}`}
+              type="button"
+              onClick={() => setRawOpen((open) => !open)}
+              data-testid="memory-toggle-raw"
+            >
+              {rawOpen ? t("memory.closeSource") : t("memory.viewSource")}
+            </button>
+            <button
+              className="settings-button settings-button-secondary"
               type="button"
               data-testid="memory-refresh-overview"
-              disabled={
-                !notebookReady || rawOpen || overview.status === "loading"
-              }
+              disabled={rawOpen || overview.status === "loading"}
               onClick={() => refreshOverview(true)}
             >
               {overview.status === "loading" ? (
@@ -337,109 +267,58 @@ export function MemoryPanel({
           </div>
         </header>
 
-        <div className="settings-memory-toolbar">
-            <div
-              className="settings-memory-tabs"
-              role="tablist"
-              aria-label={t("memory.notebooks")}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={scope === "user"}
-                className={`settings-memory-tab${scope === "user" ? " active" : ""}`}
-                onClick={() => setScope("user")}
-              >
-                {t("memory.me")}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={scope === "participant"}
-                className={`settings-memory-tab${scope === "participant" ? " active" : ""}`}
-                onClick={() => setScope("participant")}
-              >
-                {t("memory.colleagues")}
-              </button>
-            </div>
-            {scope === "participant" && namedAgents.length > 0 ? (
-              <SelectMenu
-                className="settings-memory-agent-select"
-                triggerClassName="settings-select-trigger"
-                ariaLabel={t("memory.selectColleague")}
-                dataTestid="memory-agent-select"
-                value={activeParticipantID}
-                onChange={(next) => setSelectedParticipantID(next)}
-                options={namedAgents.map((agent) => ({
-                  value: agent.id,
-                  label: agent.name,
-                }))}
-              />
-            ) : null}
-        </div>
+        <section className="settings-card settings-memory-card">
+          {rawOpen ? (
+            <MemoryRawView raw={raw} />
+          ) : (
+            <MemoryOverviewView
+              overview={overview}
+              onRetry={() => refreshOverview(false)}
+            />
+          )}
+        </section>
 
-        {!notebookReady ? (
-          <div className="settings-card">
-            <div className="settings-empty">
-              {t("memory.noColleagues")}
-            </div>
-          </div>
-        ) : (
-          <>
-            <section className="settings-card settings-memory-card">
-              {rawOpen ? (
-                <MemoryRawView raw={raw} />
-              ) : (
-                <MemoryOverviewView
-                  overview={overview}
-                  onRetry={() => refreshOverview(false)}
-                />
-              )}
-            </section>
-
-            <section className="settings-card settings-memory-chat-card">
-              <div className="settings-memory-chat-log">
-                {chatEntries.length === 0 ? (
-                  <div className="settings-memory-chat-hint">
-                    {t("memory.chatHint")}
-                  </div>
-                ) : (
-                  chatEntries.map((entry) => (
-                    <MemoryChatEntryView key={entry.id} entry={entry} />
-                  ))
-                )}
+        <section className="settings-card settings-memory-chat-card">
+          <div className="settings-memory-chat-log">
+            {chatEntries.length === 0 ? (
+              <div className="settings-memory-chat-hint">
+                {t("memory.chatHint")}
               </div>
-              <form
-                className="settings-memory-chat-composer"
-                onSubmit={(event) => void submitChat(event)}
-              >
-                <input
-                  className="settings-input settings-memory-chat-input"
-                  data-testid="memory-chat-input"
-                  value={chatDraft}
-                  placeholder={t("memory.chatPlaceholder")}
-                  onChange={(event) => setChatDraft(event.target.value)}
-                  disabled={chatPending}
+            ) : (
+              chatEntries.map((entry) => (
+                <MemoryChatEntryView key={entry.id} entry={entry} />
+              ))
+            )}
+          </div>
+          <form
+            className="settings-memory-chat-composer"
+            onSubmit={(event) => void submitChat(event)}
+          >
+            <input
+              className="settings-input settings-memory-chat-input"
+              data-testid="memory-chat-input"
+              value={chatDraft}
+              placeholder={t("memory.chatPlaceholder")}
+              onChange={(event) => setChatDraft(event.target.value)}
+              disabled={chatPending}
+            />
+            <button
+              className="settings-button settings-button-primary"
+              type="submit"
+              disabled={!canSendChat}
+            >
+              {chatPending ? (
+                <Loader2
+                  className="icon settings-memory-spinner"
+                  aria-hidden="true"
                 />
-                <button
-                  className="settings-button settings-button-primary"
-                  type="submit"
-                  disabled={!canSendChat}
-                >
-                  {chatPending ? (
-                    <Loader2
-                      className="icon settings-memory-spinner"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Send className="icon" aria-hidden="true" />
-                  )}
-                  <span>{t("memory.send")}</span>
-                </button>
-              </form>
-            </section>
-          </>
-        )}
+              ) : (
+                <Send className="icon" aria-hidden="true" />
+              )}
+              <span>{t("memory.send")}</span>
+            </button>
+          </form>
+        </section>
       </div>
     </ImagePreviewProvider>
   );
@@ -479,8 +358,15 @@ function MemoryOverviewView({
     <div className="settings-memory-overview">
       <RichContent text={result.essay_md} />
       <div className="settings-memory-meta">
-        {t("memory.generatedAt", { time: timestampLabel(result.generated_at, locale) })}
-        {result.cached ? ` · ${t("memory.cached")}` : ""} · {t("memory.cacheLifetime")}
+        <span>{t("memory.generatedAt", { time: timestampLabel(result.generated_at, locale) })}</span>
+        {result.cached ? (
+          <span
+            className="settings-memory-cached"
+            title={t("memory.cacheLifetime")}
+          >
+            {t("memory.cached")}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -503,21 +389,16 @@ function MemoryRawView({ raw }: { raw: RawState }): JSX.Element {
   }
   const { result } = raw;
   return (
-    <div className="settings-memory-raw" data-testid="memory-raw-view">
-      {result.index_md.trim() ? (
-        <RichContent text={result.index_md} />
-      ) : (
-        <div className="settings-empty">{t("memory.emptyIndex")}</div>
-      )}
-      {result.files.length > 0 ? (
-        <div className="settings-memory-file-table-wrap">
+    <div className="settings-memory-raw">
+      <div className="settings-memory-file-table-wrap">
+        {result.files.length > 0 ? (
           <table className="settings-memory-file-table">
             <thead>
               <tr>
-                <th scope="col">{t("memory.fileName")}</th>
-                <th scope="col">{t("memory.fileDescription")}</th>
-                <th scope="col">{t("memory.fileType")}</th>
-                <th scope="col">{t("memory.fileTime")}</th>
+                <th>{t("memory.fileName")}</th>
+                <th>{t("memory.fileDescription")}</th>
+                <th>{t("memory.fileType")}</th>
+                <th>{t("memory.fileTime")}</th>
               </tr>
             </thead>
             <tbody>
@@ -526,16 +407,23 @@ function MemoryRawView({ raw }: { raw: RawState }): JSX.Element {
                   <td>
                     <code>{file.name}</code>
                   </td>
-                  <td>{file.description || "—"}</td>
+                  <td>{file.description}</td>
                   <td>{memoryFileTypeLabel(file.type, t)}</td>
-                  <td>{timestampLabel(file.mtime, locale) || "—"}</td>
+                  <td>{timestampLabel(file.mtime, locale)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        ) : (
+          <p className="settings-empty">{t("memory.noFiles")}</p>
+        )}
+      </div>
+      {result.index_md.trim() ? (
+        <div className="settings-memory-index">
+          <RichContent text={result.index_md} />
         </div>
       ) : (
-        <div className="settings-memory-meta">{t("memory.noFiles")}</div>
+        <p className="settings-empty">{t("memory.emptyIndex")}</p>
       )}
     </div>
   );

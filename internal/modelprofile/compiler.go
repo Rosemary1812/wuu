@@ -43,7 +43,7 @@ const (
 )
 
 // SurfaceKind identifies which runtime role a tool surface is compiled for.
-// It is a closed set of three values so the compiler can key decisions off one
+// It is a closed set so the compiler can key decisions off one
 // role dimension. Ultra workers are kept distinct from main agents because they
 // combine task orchestration with the worker-only agent_report handoff and never
 // receive helpme.
@@ -60,6 +60,9 @@ const (
 	// SurfaceMain is the ordinary project main-agent brain surface: it
 	// carries the task-orchestration suite plus helpme.
 	SurfaceMain
+	// SurfaceNamedAgent is a persistent group-chat agent. It keeps the complete
+	// main-agent surface and adds the group-chat tools.
+	SurfaceNamedAgent
 )
 
 // orchestrates reports whether a surface kind gets the task orchestration
@@ -73,11 +76,15 @@ func (k SurfaceKind) isWorker() bool {
 }
 
 func (k SurfaceKind) includesHelpme() bool {
-	return k == SurfaceMain
+	return k == SurfaceMain || k == SurfaceNamedAgent
 }
 
 func (k SurfaceKind) includesSessionWorkspace() bool {
-	return k == SurfaceMain
+	return k == SurfaceMain || k == SurfaceNamedAgent
+}
+
+func (k SurfaceKind) includesChat() bool {
+	return k == SurfaceNamedAgent
 }
 
 // Compiler compiles a model profile into a tool surface. Compile is given a
@@ -95,11 +102,9 @@ type Compiler interface {
 type DefaultCompiler struct{}
 
 // Compile implements Compiler. The SurfaceKind controls the orchestration
-// boundary: execution capability is equal on all surfaces, but orchestration
-// belongs to the session main agent. Main surfaces get the task-orchestration
-// suite plus helpme; ordinary worker surfaces are pure executors and keep only
-// agent_report; Ultra workers get task orchestration plus agent_report without
-// helpme.
+// boundary. Named agents get the full main-agent contract plus chat. Ordinary
+// workers are pure executors and keep only agent_report; Ultra workers get task
+// orchestration plus agent_report.
 func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
@@ -124,6 +129,9 @@ func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	}
 	if kind.isWorker() {
 		addWorkerReportTool(b)
+	}
+	if kind.includesChat() {
+		addChatTools(b)
 	}
 	b.sortCaps()
 	return b.surface
@@ -365,6 +373,15 @@ func addPlanningTools(b *surfaceBuilder) {
 
 func addScheduleTools(b *surfaceBuilder) {
 	b.addDeferred("cron", capability.CapabilitySchedule)
+}
+
+func addChatTools(b *surfaceBuilder) {
+	b.addVisible("chat_check", capability.CapabilityChat)
+	b.addVisible("chat_read", capability.CapabilityChat)
+	b.addVisible("chat_send", capability.CapabilityChat)
+	b.addVisible("chat_draft", capability.CapabilityChat)
+	b.addVisible("chat_task", capability.CapabilityChat)
+	b.addVisible("chat_remind", capability.CapabilityChat)
 }
 
 func addSkillTools(b *surfaceBuilder) {

@@ -1,6 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { InitializeResult, RuntimeContext, SkillSummary } from "../shared/protocol";
-import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { translateCurrent as t } from "./i18n";
 
 export type ComposerSlashCommandAction =
@@ -69,8 +68,7 @@ export function parseComposerSlashDraft(value: string): ComposerSlashDraft | und
 }
 
 export function isComposerTextComposing<T extends Element>(event: ReactKeyboardEvent<T>): boolean {
-  // Chromium reports keyCode 229 for some active IME key events even when isComposing is unreliable.
-  return event.nativeEvent.isComposing || event.keyCode === 229;
+  return event.nativeEvent.isComposing;
 }
 
 export function buildComposerSlashCommands({
@@ -209,7 +207,6 @@ export function buildComposerSlashCommands({
       kind: "action",
       action: "open-memory",
       keywords: ["memory", "notebook", "记忆", "笔记本"],
-      disabledReason: !ENABLE_COLLABORATION ? t("slash.collaborationDisabled") : undefined,
     },
     {
       id: "commit",

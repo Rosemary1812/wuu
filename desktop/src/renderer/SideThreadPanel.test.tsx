@@ -152,6 +152,37 @@ describe("SideThreadPanel", () => {
       composer: createElement("div", { "data-testid": "shared-composer" }),
     });
     expect(container.querySelector('[data-testid="shared-composer"]')).toBeTruthy();
+    expect(
+      container.querySelector(".side-thread-panel__footer")?.contains(
+        container.querySelector(".side-thread-panel__composer-host"),
+      ),
+    ).toBe(true);
+  });
+
+  it("reserves the measured floating footer height in the scroll flow", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function getBoundingClientRect(this: HTMLElement) {
+        const height = this.classList.contains("side-thread-panel__footer") ? 144 : 0;
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 0,
+          bottom: height,
+          left: 0,
+          width: 0,
+          height,
+          toJSON: () => ({}),
+        };
+      },
+    );
+
+    const container = renderPanel(makeEntry());
+    expect(
+      container
+        .querySelector<HTMLElement>(".side-thread-panel")
+        ?.style.getPropertyValue("--side-thread-footer-height"),
+    ).toBe("144px");
   });
 
   it("exposes safe focus control for the embedded composer", () => {

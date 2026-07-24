@@ -128,6 +128,7 @@ export function ProjectGroup({
   scratchPseudoProjectID,
   scratchPseudoActive,
   onToggleSidebarSectionCollapsed,
+  onSelectProjectWorkspace,
   onStartNewThread,
   onSelectThread,
   onToggleThreadPinned,
@@ -150,6 +151,7 @@ export function ProjectGroup({
   scratchPseudoProjectID: string;
   scratchPseudoActive: boolean;
   onToggleSidebarSectionCollapsed: (id: string) => void;
+  onSelectProjectWorkspace?: (id: string) => void;
   onStartNewThread: (id: string) => void;
   onSelectThread: (projectID: string, threadID: string) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
@@ -190,6 +192,8 @@ export function ProjectGroup({
   // A real workspace whose directory was moved away or deleted. Its "新建会话"
   // affordance is disabled so no session can be created in a cwd that is gone.
   const isMissing = !isScratchPseudo && project.missing === true;
+  const workspaceSelectionMode =
+    !isScratchPseudo && !isMissing && Boolean(onSelectProjectWorkspace);
   const activeProject = isScratchPseudo
     ? scratchPseudoActive
     : project.id === activeID;
@@ -227,30 +231,42 @@ export function ProjectGroup({
       data-missing={isMissing || undefined}
     >
       <SidebarSection
-        expanded={expanded}
+        expanded={workspaceSelectionMode ? false : expanded}
         iconKind={isScratchPseudo ? "conversation" : "project"}
         CollapsedIcon={CollapsedIcon}
         ExpandedIcon={ExpandedIcon}
         label={project.name}
-        ariaLabel={t(
-          expanded
-            ? "threadSidebar.collapseProject"
-            : "threadSidebar.expandProject",
-          {
-            name: project.name,
-            unread: projectHasUnread ? t("threadSidebar.hasUnread") : "",
-          },
-        )}
-        title={t(
-          expanded
-            ? "threadSidebar.collapseConversations"
-            : "threadSidebar.expandConversations",
-        )}
+        ariaLabel={
+          workspaceSelectionMode
+            ? t("threadSidebar.openWorkspace", { name: project.name })
+            : t(
+                expanded
+                  ? "threadSidebar.collapseProject"
+                  : "threadSidebar.expandProject",
+                {
+                  name: project.name,
+                  unread: projectHasUnread ? t("threadSidebar.hasUnread") : "",
+                },
+              )
+        }
+        title={
+          workspaceSelectionMode
+            ? t("threadSidebar.openWorkspace", { name: project.name })
+            : t(
+                expanded
+                  ? "threadSidebar.collapseConversations"
+                  : "threadSidebar.expandConversations",
+              )
+        }
         active={activeProject}
         pending={pendingProject}
         unread={projectHasUnread}
         loading={pendingProject || loadingProjectThreads}
-        onToggle={() => onToggleSidebarSectionCollapsed(project.id)}
+        onToggle={() =>
+          workspaceSelectionMode
+            ? onSelectProjectWorkspace?.(project.id)
+            : onToggleSidebarSectionCollapsed(project.id)
+        }
         onContextMenu={
           isScratchPseudo || (!onRemoveProject && !onRelocateProject)
             ? undefined

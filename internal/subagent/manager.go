@@ -199,6 +199,28 @@ type RuntimeDefaults struct {
 	OutputReserveTokens int
 }
 
+// DefaultWorkerRuntime returns the manager's current default worker runtime.
+// It is a complete runtime suitable for passing to SpawnOptions.WorkerRuntime
+// so that even omitted/unknown-alias spawns freeze their runtime at first run.
+func (m *Manager) DefaultWorkerRuntime() WorkerRuntime {
+	d := m.defaultsSnapshot()
+	return WorkerRuntime{
+		Provider:                d.providerName,
+		Model:                   d.model,
+		Effort:                  d.effort,
+		ProviderOptions:         provideroptions.Clone(d.options),
+		Temperature:             d.temperature,
+		ContextWindow:           d.contextWindow,
+		MaxInputTokens:          d.maxInputTokens,
+		OutputReserveTokens:     d.outputReserve,
+		CompactThresholdTokens:  d.compactTokens,
+		CompactThresholdPct:     d.compactPct,
+		CompactKeepRecentTokens: d.keepRecent,
+		DisableAutoCompact:      d.disableCompact,
+		Client:                  d.client,
+	}
+}
+
 // RuntimeDefaults returns a snapshot of the manager's current defaults. The
 // values track UpdateDefaults, so callers should fetch a fresh snapshot per
 // use instead of caching one.
@@ -328,20 +350,55 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 
 	defaults := m.defaultsSnapshot()
 	model := opts.Model
+	providerName := strings.TrimSpace(opts.ProviderName)
+	client := opts.Client
+
+	// A resolved alias runtime overrides the manager defaults entirely.
+	runtime := opts.WorkerRuntime
+	if runtime != nil {
+		model = strings.TrimSpace(runtime.APIModel)
+		if model == "" {
+			model = strings.TrimSpace(runtime.Model)
+		}
+		providerName = strings.TrimSpace(runtime.Provider)
+		client = runtime.Client
+	}
 	if model == "" {
 		model = defaults.model
 	}
 	if model == "" {
 		return nil, errors.New("no model configured")
 	}
-	client := opts.Client
-	providerName := strings.TrimSpace(opts.ProviderName)
 	if client == nil {
 		client = defaults.client
 		providerName = defaults.providerName
 	}
 	if client == nil {
 		return nil, errors.New("no stream client configured")
+	}
+	if providerName == "" {
+		providerName = defaults.providerName
+	}
+
+	runtimeDefaults := defaults
+	if runtime != nil {
+		runtimeDefaults = managerDefaults{
+			client:            client,
+			providerName:      providerName,
+			model:             model,
+			effort:            strings.TrimSpace(runtime.Effort),
+			options:           provideroptions.Clone(runtime.ProviderOptions),
+			contextWindow:     runtime.ContextWindow,
+			maxInputTokens:    runtime.MaxInputTokens,
+			outputReserve:     runtime.OutputReserveTokens,
+			compactTokens:     runtime.CompactThresholdTokens,
+			compactPct:        runtime.CompactThresholdPct,
+			temperature:       runtime.Temperature,
+			keepRecent:        runtime.CompactKeepRecentTokens,
+			disableCompact:    runtime.DisableAutoCompact,
+			journal:           defaults.journal,
+			toolLedgerFactory: defaults.toolLedgerFactory,
+		}
 	}
 
 	id := strings.TrimSpace(opts.ID)
@@ -364,34 +421,37 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	history := initialTurnHistory(opts)
 
 	sa := &SubAgent{
-		ID:              id,
-		ParticipantID:   opts.ParticipantID,
-		Type:            opts.Type,
-		TaskName:        opts.TaskName,
-		AgentProfile:    opts.AgentProfile,
-		AgentPath:       opts.AgentPath,
-		ParentID:        opts.ParentID,
-		Description:     opts.Description,
-		Status:          StatusRunning, // set synchronously so CountRunning sees it immediately
-		StartedAt:       time.Now(),
-		prompt:          opts.Prompt,
-		systemPrompt:    opts.SystemPrompt,
-		model:           model,
-		modelPin:        opts.ModelPin,
-		workerRoot:      opts.WorkerRoot,
-		ultra:           opts.Ultra,
-		toolkit:         opts.Toolkit,
-		historyPath:     opts.HistoryPath,
-		initialHistory:  opts.InitialHistory,
-		history:         providers.CloneChatMessages(history),
-		maxSteps:        opts.MaxSteps,
-		maxLifetime:     lifetime,
-		runtimeDefaults: defaults,
-		client:          client,
-		providerName:    providerName,
-		toolLedger:      toolLedger,
-		cancelFunc:      cancel,
-		doneCh:          make(chan struct{}),
+		ID:                 id,
+		ParticipantID:      opts.ParticipantID,
+		Type:               opts.Type,
+		TaskName:           opts.TaskName,
+		AgentProfile:       opts.AgentProfile,
+		AgentPath:          opts.AgentPath,
+		ParentID:           opts.ParentID,
+		Description:        opts.Description,
+		Status:             StatusRunning, // set synchronously so CountRunning sees it immediately
+		StartedAt:          time.Now(),
+		prompt:             opts.Prompt,
+		systemPrompt:       opts.SystemPrompt,
+		model:              model,
+		modelPin:           opts.ModelPin,
+		modelAlias:         opts.ModelAlias,
+		modelAliasFallback: opts.ModelAliasFallback,
+		runtime:            runtime,
+		workerRoot:         opts.WorkerRoot,
+		ultra:              opts.Ultra,
+		toolkit:            opts.Toolkit,
+		historyPath:        opts.HistoryPath,
+		initialHistory:     opts.InitialHistory,
+		history:            providers.CloneChatMessages(history),
+		maxSteps:           opts.MaxSteps,
+		maxLifetime:        lifetime,
+		runtimeDefaults:    runtimeDefaults,
+		client:             client,
+		providerName:       providerName,
+		toolLedger:         toolLedger,
+		cancelFunc:         cancel,
+		doneCh:             make(chan struct{}),
 	}
 
 	m.mu.Lock()
@@ -404,7 +464,7 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	doneCh := sa.doneCh
 	m.mu.Unlock()
 
-	go m.runTurn(subCtx, cancel, sa, opts.MaxSteps, history, doneCh, defaults)
+	go m.runTurn(subCtx, cancel, sa, opts.MaxSteps, history, doneCh, runtimeDefaults)
 
 	return sa, nil
 }
@@ -995,9 +1055,13 @@ type RestoreOptions struct {
 	// ProviderName names the provider Client belongs to. Ignored when
 	// Client is nil (the manager defaults' provider applies instead).
 	ProviderName string
-	HistoryPath  string
-	MaxSteps     int
-	MaxLifetime  time.Duration
+	// WorkerRuntime, when non-nil, is the complete runtime the resumed run
+	// was started with. It overrides the manager defaults and is paired
+	// with the rebuilt Client for the persisted provider.
+	WorkerRuntime *WorkerRuntime
+	HistoryPath   string
+	MaxSteps      int
+	MaxLifetime   time.Duration
 }
 
 // Restore re-registers a dormant sub-agent rebuilt from a snapshot. The
@@ -1030,6 +1094,15 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 	defaults := m.defaultsSnapshot()
 	client := opts.Client
 	providerName := strings.TrimSpace(opts.ProviderName)
+	runtime := opts.WorkerRuntime
+	if runtime != nil {
+		model = strings.TrimSpace(runtime.APIModel)
+		if model == "" {
+			model = strings.TrimSpace(runtime.Model)
+		}
+		providerName = strings.TrimSpace(runtime.Provider)
+		client = runtime.Client
+	}
 	if client == nil {
 		client = defaults.client
 		providerName = defaults.providerName
@@ -1044,6 +1117,30 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 	}
 	if client == nil {
 		return nil, fmt.Errorf("subagent %q cannot resume: no stream client configured", id)
+	}
+	if providerName == "" {
+		providerName = defaults.providerName
+	}
+
+	runtimeDefaults := defaults
+	if runtime != nil {
+		runtimeDefaults = managerDefaults{
+			client:            client,
+			providerName:      providerName,
+			model:             model,
+			effort:            strings.TrimSpace(runtime.Effort),
+			options:           provideroptions.Clone(runtime.ProviderOptions),
+			contextWindow:     runtime.ContextWindow,
+			maxInputTokens:    runtime.MaxInputTokens,
+			outputReserve:     runtime.OutputReserveTokens,
+			compactTokens:     runtime.CompactThresholdTokens,
+			compactPct:        runtime.CompactThresholdPct,
+			temperature:       runtime.Temperature,
+			keepRecent:        runtime.CompactKeepRecentTokens,
+			disableCompact:    runtime.DisableAutoCompact,
+			journal:           defaults.journal,
+			toolLedgerFactory: defaults.toolLedgerFactory,
+		}
 	}
 
 	// Terminal runs restore with an already-closed done channel so Wait
@@ -1063,34 +1160,37 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 		status = StatusInterrupted
 	}
 	sa := &SubAgent{
-		ID:              id,
-		ParticipantID:   run.ParticipantID,
-		Type:            run.Type,
-		TaskName:        run.TaskName,
-		AgentProfile:    run.AgentProfile,
-		AgentPath:       run.AgentPath,
-		ParentID:        run.ParentID,
-		Description:     run.Description,
-		Status:          status,
-		StartedAt:       run.StartedAt,
-		CompletedAt:     run.CompletedAt,
-		Result:          run.Result,
-		prompt:          run.Prompt,
-		model:           model,
-		modelPin:        run.ModelPin,
-		workerRoot:      run.CWD,
-		ultra:           run.Ultra,
-		toolkit:         opts.Toolkit,
-		historyPath:     opts.HistoryPath,
-		history:         providers.CloneChatMessages(run.Messages),
-		maxSteps:        opts.MaxSteps,
-		maxLifetime:     opts.MaxLifetime,
-		runtimeDefaults: defaults,
-		client:          client,
-		providerName:    providerName,
-		toolLedger:      toolLedger,
-		cancelFunc:      func() {},
-		doneCh:          doneCh,
+		ID:                 id,
+		ParticipantID:      run.ParticipantID,
+		Type:               run.Type,
+		TaskName:           run.TaskName,
+		AgentProfile:       run.AgentProfile,
+		AgentPath:          run.AgentPath,
+		ParentID:           run.ParentID,
+		Description:        run.Description,
+		Status:             status,
+		StartedAt:          run.StartedAt,
+		CompletedAt:        run.CompletedAt,
+		Result:             run.Result,
+		prompt:             run.Prompt,
+		model:              model,
+		modelPin:           run.ModelPin,
+		modelAlias:         run.ModelAlias,
+		modelAliasFallback: run.ModelAliasFallback,
+		runtime:            runtime,
+		workerRoot:         run.CWD,
+		ultra:              run.Ultra,
+		toolkit:            opts.Toolkit,
+		historyPath:        opts.HistoryPath,
+		history:            providers.CloneChatMessages(run.Messages),
+		maxSteps:           opts.MaxSteps,
+		maxLifetime:        opts.MaxLifetime,
+		runtimeDefaults:    runtimeDefaults,
+		client:             client,
+		providerName:       providerName,
+		toolLedger:         toolLedger,
+		cancelFunc:         func() {},
+		doneCh:             doneCh,
 	}
 	if strings.TrimSpace(run.Error) != "" {
 		sa.Error = errors.New(run.Error)
@@ -1353,6 +1453,44 @@ func cloneToolCall(call providers.ToolCall) providers.ToolCall {
 	return call
 }
 
+func providerNameFromRuntime(s *SubAgent) string {
+	if s.runtime != nil {
+		return strings.TrimSpace(s.runtime.Provider)
+	}
+	return strings.TrimSpace(s.providerName)
+}
+
+func resolvedModelFromRuntime(s *SubAgent) string {
+	if s.runtime != nil {
+		return strings.TrimSpace(s.runtime.Model)
+	}
+	return strings.TrimSpace(s.model)
+}
+
+func resolvedAPIModelFromRuntime(s *SubAgent) string {
+	if s.runtime != nil {
+		if api := strings.TrimSpace(s.runtime.APIModel); api != "" {
+			return api
+		}
+		return strings.TrimSpace(s.runtime.Model)
+	}
+	return strings.TrimSpace(s.model)
+}
+
+func resolvedEffortFromRuntime(s *SubAgent) string {
+	if s.runtime != nil {
+		return strings.TrimSpace(s.runtime.Effort)
+	}
+	return ""
+}
+
+func resolvedVariantFromRuntime(s *SubAgent) string {
+	if s.runtime != nil {
+		return strings.TrimSpace(s.runtime.Variant)
+	}
+	return ""
+}
+
 func snapshotLocked(s *SubAgent) SubAgentSnapshot {
 	return SubAgentSnapshot{
 		ID:                  s.ID,
@@ -1366,6 +1504,13 @@ func snapshotLocked(s *SubAgent) SubAgentSnapshot {
 		WorkerRoot:          s.workerRoot,
 		Model:               s.model,
 		ModelPin:            s.modelPin,
+		ModelAlias:          s.modelAlias,
+		ModelAliasFallback:  s.modelAliasFallback,
+		ResolvedProvider:    providerNameFromRuntime(s),
+		ResolvedModel:       resolvedModelFromRuntime(s),
+		ResolvedAPIModel:    resolvedAPIModelFromRuntime(s),
+		ResolvedEffort:      resolvedEffortFromRuntime(s),
+		ResolvedVariant:     resolvedVariantFromRuntime(s),
 		Ultra:               s.ultra,
 		Status:              s.Status,
 		StartedAt:           s.StartedAt,
