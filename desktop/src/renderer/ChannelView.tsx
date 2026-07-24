@@ -1,8 +1,9 @@
 import { Bell, BellOff, Bot, CheckCircle2, ClipboardList, Hash, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
+import { useAutoFollowScrollContainer } from "./AutoFollowScroll";
 import { ChannelComposer } from "./ChannelComposer";
 import { channelSystemNotificationsEnabled, setChannelSystemNotificationsEnabled } from "./ChannelPreferences";
 import { buildComposerAttachments } from "./ComposerDraftState";
@@ -124,11 +125,16 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
   const [updatingTaskID, setUpdatingTaskID] = useState("");
-  const streamEndRef = useRef<HTMLDivElement | null>(null);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
+  const composerFooterRef = useRef<HTMLDivElement | null>(null);
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const knownMessageIDsRef = useRef<Set<string>>(new Set());
   const sendingTimersRef = useRef<Map<string, number>>(new Map());
   const splitResizeStartRef = useRef({ x: 0, width: CHANNEL_SPLIT_DEFAULT_WIDTH });
+  const messageScroll = useAutoFollowScrollContainer({
+    open: section === "rooms" && Boolean(selectedRoomID),
+    observeKey: selectedRoomID,
+  });
 
   const updateSplitWidth = useCallback((width: number): void => {
     const nextWidth = clampChannelSplitWidth(width);
@@ -338,8 +344,26 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   }, [refreshTrackedTasks, section]);
 
   useEffect(() => {
-    streamEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+    messageScroll.scrollToBottom();
+  }, [messageScroll, messages]);
+
+  useLayoutEffect(() => {
+    const conversation = conversationRef.current;
+    const footer = composerFooterRef.current;
+    if (!conversation || !footer) return undefined;
+
+    const updateComposerHeight = (): void => {
+      const height = Math.ceil(footer.getBoundingClientRect().height);
+      conversation.style.setProperty("--channel-composer-height", `${height}px`);
+      messageScroll.scheduleScrollToBottom();
+    };
+
+    updateComposerHeight();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(updateComposerHeight);
+    observer.observe(footer);
+    return () => observer.disconnect();
+  }, [messageScroll]);
 
   async function submitAgent(): Promise<void> {
     if (!window.wuu || !agentName.trim()) return;
@@ -556,7 +580,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         />
       </aside> : null}
 
-      {section === "rooms" ? <div className="channel-conversation">
+      {section === "rooms" ? <div ref={conversationRef} className="channel-conversation">
         <div className="channel-conversation-heading">
           <div>
             <strong>{selectedRoom ? `# ${selectedRoom.name}` : t("channels.title")}</strong>
@@ -584,7 +608,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
           </div>
         </div>
         {error ? <div className="channel-error" role="alert">{error}</div> : null}
-        <div className="channel-message-stream" aria-live="polite">
+        <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
           {messages.map((message) => {
             const own = message.author_type === "human";
             const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
@@ -650,21 +674,22 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
           {!loading && selectedRoom && messages.length === 0 ? (
             <div className="channel-stream-empty">{t("channels.empty")}</div>
           ) : null}
-          <div ref={streamEndRef} />
         </div>
-        <ChannelComposer
-          draft={body}
-          placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}
-          disabled={!selectedRoom}
-          sending={sending}
-          files={composerFiles}
-          images={composerImages}
-          onChangeDraft={setBody}
-          onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
-          onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
-          onRemoveImage={(id) => setComposerImages((current) => current.filter((image) => image.id !== id))}
-          onSend={() => void sendMessage()}
-        />
+        <div ref={composerFooterRef} className="channel-conversation-footer">
+          <ChannelComposer
+            draft={body}
+            placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}
+            disabled={!selectedRoom}
+            sending={sending}
+            files={composerFiles}
+            images={composerImages}
+            onChangeDraft={setBody}
+            onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
+            onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
+            onRemoveImage={(id) => setComposerImages((current) => current.filter((image) => image.id !== id))}
+            onSend={() => void sendMessage()}
+          />
+        </div>
       </div> : section === "agents" ? (
         <div className="channel-agent-workspace" style={{ gridTemplateColumns: `${splitWidth}px minmax(0, 1fr)` }}>
           <aside className="channel-agent-directory">

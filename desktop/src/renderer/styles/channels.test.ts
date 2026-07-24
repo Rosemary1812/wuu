@@ -34,9 +34,25 @@ describe("channel message resizing", () => {
     const composer = ruleFor(".channel-composer");
     const messageContent = ruleFor(".channel-message-content");
 
-    expect(stream).toMatch(/padding:\s*18px clamp\(20px, 5vw, 72px\)/);
+    expect(stream).toMatch(/padding:\s*18px clamp\(20px, 5vw, 72px\)\s+calc\(var\(--channel-composer-height, 0px\) \+ 12px\)/);
     expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
     expect(messageContent).toMatch(/max-width:\s*72%/);
     expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
+  });
+
+  it("runs the room scroll surface to the bottom behind a floating composer", () => {
+    const conversation = ruleFor(".channel-conversation");
+    const stream = ruleFor(".channel-message-stream");
+    const footer = ruleFor(".channel-conversation-footer");
+
+    expect(conversation).toMatch(/display:\s*grid/);
+    expect(conversation).toMatch(/grid-template-rows:\s*48px auto minmax\(0, 1fr\)/);
+    expect(stream).toMatch(/grid-row:\s*3/);
+    expect(stream).toMatch(/overflow-y:\s*auto/);
+    expect(stream).toMatch(/scrollbar-gutter:\s*stable/);
+    expect(footer).toMatch(/position:\s*absolute/);
+    expect(footer).toMatch(/bottom:\s*0/);
+    expect(footer).toMatch(/pointer-events:\s*none/);
+    expect(channelsCss).not.toMatch(/\.channel-composer \.dock-composer-wrap::before\s*\{[^}]*display:\s*none/);
   });
 });

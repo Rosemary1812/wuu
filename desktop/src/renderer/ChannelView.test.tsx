@@ -219,6 +219,8 @@ describe("ChannelView", () => {
 
     const textarea = container.querySelector<HTMLTextAreaElement>(".channel-composer textarea");
     expect(textarea).not.toBeNull();
+    expect(container.querySelector(".channel-composer .composer-plus-button")).toBeNull();
+    expect(container.querySelector(".channel-composer .permission-chip")).toBeNull();
     act(() => setInputValue(textarea!, "Ask Alpha"));
     const send = container.querySelector<HTMLButtonElement>(".channel-composer .composer-send-button");
     await act(async () => send?.click());

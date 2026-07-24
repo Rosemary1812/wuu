@@ -44,6 +44,8 @@ export function ChannelComposer({
       <Composer
         variant="dock"
         hideRuntimeControls
+        hidePlusButton
+        hidePermissionControl
         placeholder={placeholder}
         maxLength={4000}
         prompt={draft}
