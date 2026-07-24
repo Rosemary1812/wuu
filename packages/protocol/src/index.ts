@@ -1126,6 +1126,10 @@ export type MemoryChatResult = {
   changed_files: MemoryChangedFile[];
 };
 
+export type TextPolishResult = {
+  text: string;
+};
+
 export type MemoryReadParams = {
   scope: MemoryScope;
   participant_id?: string;
@@ -2147,6 +2151,7 @@ export type WuuDesktopApi = {
   // 未落地时三个方法都会以 unknown method 错误拒绝，面板渲染占位态。
   getMemoryOverview: (params: MemoryOverviewParams) => Promise<MemoryOverviewResult>;
   sendMemoryChat: (params: MemoryChatParams) => Promise<MemoryChatResult>;
+  polishText: (text: string) => Promise<TextPolishResult>;
   readMemoryRaw: (params: MemoryReadParams) => Promise<MemoryReadResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   // Settings → Archive panel uses this to surface archived sessions across

@@ -867,6 +867,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleMemoryOverview(req)
 	case MethodMemoryChat:
 		return s.handleMemoryChat(req)
+	case MethodTextPolish:
+		return s.handleTextPolish(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:

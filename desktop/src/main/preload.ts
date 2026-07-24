@@ -180,6 +180,7 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:managed-process-stop", threadId, processId),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   getBuildInfo: () => ipcRenderer.invoke("wuu:build-info"),
+  polishText: (text: string) => ipcRenderer.invoke("wuu:text-polish", text),
   startSpeechRecognition: (locale: string) =>
     ipcRenderer.invoke("wuu:speech-start", locale),
   stopSpeechRecognition: () => ipcRenderer.invoke("wuu:speech-stop"),

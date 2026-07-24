@@ -98,6 +98,7 @@ import type {
   RuntimeGeneralSettingsUpdate,
   SettingsUsageResponse,
   TerminalSessionStartParams,
+  TextPolishResult,
   Thread,
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
@@ -1229,6 +1230,9 @@ app.whenReady().then(async () => {
     core: cachedCoreBuildInfo,
     desktop: DESKTOP_BUILD_INFO,
   }));
+  ipcMain.handle("wuu:text-polish", (event, text: string) =>
+    appServerRequest<TextPolishResult>(event, "text/polish", { text }),
+  );
   ipcMain.handle("wuu:speech-start", (event, locale: string) =>
     speechRecognitionService.start(locale, (payload) => {
       if (!event.sender.isDestroyed()) {

@@ -84,6 +84,7 @@ const (
 	MethodMemoryOverview   = "memory/overview"
 	MethodMemoryChat       = "memory/chat"
 	MethodMemoryRead       = "memory/read"
+	MethodTextPolish       = "text/polish"
 	MethodTurnStart        = "turn/start"
 	MethodTurnQueue        = "turn/queue"
 	MethodTurnUpdateQueued = "turn/update-queued"
@@ -1255,6 +1256,14 @@ type MemoryChatParams struct {
 	Scope         string `json:"scope"`
 	ParticipantID string `json:"participant_id,omitempty"`
 	Message       string `json:"message"`
+}
+
+type TextPolishParams struct {
+	Text string `json:"text"`
+}
+
+type TextPolishResult struct {
+	Text string `json:"text"`
 }
 
 // MemoryChangedFile is one real notebook file the manager agent touched.
