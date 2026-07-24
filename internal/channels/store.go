@@ -180,6 +180,8 @@ func (s *Service) migrate() error {
 			author_id TEXT NOT NULL,
 			kind TEXT NOT NULL CHECK (kind IN ('text', 'task', 'system')),
 			body TEXT NOT NULL,
+			images_json TEXT NOT NULL DEFAULT '[]',
+			files_json TEXT NOT NULL DEFAULT '[]',
 			mentions_json TEXT NOT NULL DEFAULT '[]',
 			reply_to TEXT,
 			task_title TEXT,
@@ -319,6 +321,8 @@ func (s *Service) ensureLegacyColumns() error {
 		definition string
 	}{
 		{table: "room_messages", name: "task_title", definition: "TEXT"},
+		{table: "room_messages", name: "images_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
+		{table: "room_messages", name: "files_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "reminders", name: "created_at", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "named_agents", name: "avatar_key", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "named_agents", name: "avatar_image", definition: "TEXT NOT NULL DEFAULT ''"},

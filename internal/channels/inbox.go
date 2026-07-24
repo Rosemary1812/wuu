@@ -155,7 +155,7 @@ func (s *Service) readInboxMessages(ctx context.Context, agentID string, itemIDs
 		seen[itemID] = struct{}{}
 		message, err := scanMessage(s.db.QueryRowContext(ctx, `
 			SELECT message.id, message.room_id, message.seq, COALESCE(message.thread_id, ''),
-				message.author_type, message.author_id, message.kind, message.body, message.mentions_json,
+				message.author_type, message.author_id, message.kind, message.body, message.images_json, message.files_json, message.mentions_json,
 				COALESCE(message.reply_to, ''), COALESCE(message.task_title, ''), COALESCE(message.task_state, ''),
 				COALESCE(message.task_owner, ''), message.created_at
 			FROM inbox_items inbox

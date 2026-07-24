@@ -67,7 +67,7 @@ func (s *Server) handleGoalResume(req Request) error {
 	if !params.ConfirmUserApproved {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("goal resume requires confirm_user_approved=true"))
 	}
-	_, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
+	runtimeGoal, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -77,6 +77,7 @@ func (s *Server) handleGoalResume(req Request) error {
 	if _, err := runtime.SetUserStatus(goalruntime.StatusActive, time.Now().UTC()); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	s.kickGoalContinuation(runtimeGoal.ThreadID)
 	return s.writeResponse(req.ID, GoalResumeResult{OK: true}, nil)
 }
 

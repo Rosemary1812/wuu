@@ -82,7 +82,6 @@ export type InitializeResult = {
   status?: "ready" | "needs_setup";
   issues?: RuntimeIssue[];
   protocol_version: string;
-  agent_template_count?: number;
   core?: CoreBuildInfo;
   provider: string;
   model: string;
@@ -262,7 +261,7 @@ export type ExtensionSurfaceTrustSummary = {
   visible_tools?: number;
 };
 
-export type ExtensionKind = "skill" | "command" | "agent_template" | "mcp" | "hook" | "plugin";
+export type ExtensionKind = "skill" | "command" | "mcp" | "hook" | "plugin";
 
 export type ExtensionState = "active" | "read_only" | "pending" | "granted" | "rejected" | "changed";
 
@@ -436,26 +435,13 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
-export type AgentTemplateSummary = {
+export type SkillContentParams = {
   name: string;
-  description: string;
-  instructions?: string;
   source: string;
-  path?: string;
-  model?: string;
-  permission_mode?: string;
-  effort?: string;
-  metadata?: Record<string, string>;
 };
 
-export type AgentTemplateDiagnostic = {
-  path: string;
-  message: string;
-};
-
-export type AgentTemplateListResult = {
-  templates: AgentTemplateSummary[];
-  diagnostics?: AgentTemplateDiagnostic[];
+export type SkillContentResult = {
+  content: string;
 };
 
 export type NamedAgent = {
@@ -496,6 +482,8 @@ export type ChannelMessage = {
   author_id: string;
   kind: "text" | "task" | "system";
   body: string;
+  images?: InputImage[];
+  files?: InputFile[];
   mentions?: string[];
   reply_to?: string;
   task_state?: string;
@@ -538,6 +526,8 @@ export type ChannelMessageSendParams = {
   thread_id?: string;
   reply_to?: string;
   body: string;
+  images?: InputImage[];
+  files?: InputFile[];
 };
 export type ChannelMessageSendResult = { message: ChannelMessage };
 export type ChannelTaskCreateParams = {
@@ -2042,7 +2032,7 @@ export type WuuDesktopApi = {
   releaseActivity: (threadId: string, activityId: string) => Promise<ActivityReleaseResult>;
   stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
-  listAgentTemplates: () => Promise<AgentTemplateListResult>;
+  readSkillContent: (params: SkillContentParams) => Promise<SkillContentResult>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
   bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;

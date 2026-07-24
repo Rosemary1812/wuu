@@ -211,7 +211,7 @@ const api: WuuDesktopApi = {
   updateGeneralSettings: (settings) =>
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
-  listAgentTemplates: () => ipcRenderer.invoke("wuu:agent-template-list"),
+  readSkillContent: (params) => ipcRenderer.invoke("wuu:skill-content", params),
   listNamedAgents: () => ipcRenderer.invoke("wuu:channel-agent-list"),
   bootstrapChannels: () => ipcRenderer.invoke("wuu:channel-bootstrap"),
   createNamedAgent: (params: ChannelAgentCreateParams) =>

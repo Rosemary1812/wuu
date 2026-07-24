@@ -8,6 +8,7 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "./i18n";
 
 /**
@@ -205,5 +206,5 @@ export function Modal({
     </div>
   );
 
-  return content;
+  return createPortal(content, document.body);
 }

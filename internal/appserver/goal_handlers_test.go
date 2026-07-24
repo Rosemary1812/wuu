@@ -376,7 +376,8 @@ func TestGoalClearRequiresRuntimeGoal(t *testing.T) {
 }
 
 func TestGoalPauseResumeClearRuntimeGoal(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
+	client := &fakeClient{response: providersResponse("resumed goal turn done")}
+	rt := newTestRuntime(t, client)
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 	out := &lockedBuffer{}
 	srv := New(rt, out)
@@ -423,6 +424,10 @@ func TestGoalPauseResumeClearRuntimeGoal(t *testing.T) {
 	}
 	if resumed.Status != goalruntime.StatusActive {
 		t.Fatalf("goal should be active after resume: %+v", resumed)
+	}
+	waitForMethod(t, out, NotificationTurnCompleted)
+	if got := fakeClientRequestCount(client); got != 1 {
+		t.Fatalf("goal resume should kick one continuation turn, got %d provider requests", got)
 	}
 
 	clearRaw := `{"id":"clear","method":"goal/clear","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-controls","confirm_user_approved":true}}`

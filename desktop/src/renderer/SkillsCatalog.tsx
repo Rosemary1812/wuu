@@ -1,41 +1,46 @@
-import { AlertTriangle, Bot, Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
+import { Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   AppLocale,
-  AgentTemplateDiagnostic,
-  AgentTemplateSummary,
   ExtensionInventoryRecord,
   RuntimeContext,
-  SkillSummary
+  SkillSummary,
 } from "../shared/protocol";
 import { translateCurrent, useI18n } from "./i18n";
+import { Modal } from "./Modal";
+import { RichContent } from "./RichContent";
 
 type LoadState = {
   loading: boolean;
   error: string;
   skills: SkillSummary[];
-  agentTemplates: AgentTemplateSummary[];
-  diagnostics: AgentTemplateDiagnostic[];
+};
+
+type SkillContentState = {
+  loading: boolean;
+  error: string;
+  content: string;
 };
 
 const initialLoadState: LoadState = {
   loading: true,
   error: "",
   skills: [],
-  agentTemplates: [],
-  diagnostics: []
 };
 
 export function SkillsCatalog({
   activeContext,
-  extensionInventory = []
+  extensionInventory = [],
+  onTrySkill,
 }: {
   activeContext?: RuntimeContext;
   extensionInventory?: ExtensionInventoryRecord[];
+  onTrySkill?: (skill: SkillSummary) => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [state, setState] = useState<LoadState>(initialLoadState);
   const [filter, setFilter] = useState("");
+  const [previewSkill, setPreviewSkill] = useState<SkillSummary | null>(null);
   const contextKey = activeContext ? runtimeContextKey(activeContext) : "";
 
   useEffect(() => {
@@ -51,10 +56,7 @@ export function SkillsCatalog({
       }
       setState((current) => ({ ...current, loading: true, error: "" }));
       try {
-        const [skillsResult, templatesResult] = await Promise.all([
-          window.wuu.listSkills(),
-          window.wuu.listAgentTemplates()
-        ]);
+        const [skillsResult] = await Promise.all([window.wuu.listSkills()]);
         if (cancelled) {
           return;
         }
@@ -62,8 +64,6 @@ export function SkillsCatalog({
           loading: false,
           error: "",
           skills: skillsResult.skills,
-          agentTemplates: templatesResult.templates,
-          diagnostics: templatesResult.diagnostics ?? []
         });
       } catch (error) {
         if (cancelled) {
@@ -71,10 +71,11 @@ export function SkillsCatalog({
         }
         setState({
           loading: false,
-          error: error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
+          error:
+            error instanceof Error
+              ? error.message
+              : translateCurrent("skills.loadFailed"),
           skills: [],
-          agentTemplates: [],
-          diagnostics: []
         });
       }
     }
@@ -82,69 +83,54 @@ export function SkillsCatalog({
 
   const visibleSkills = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    const items = [...state.skills].sort((left, right) => compareSkills(left, right, locale));
+    const items = [...state.skills].sort((left, right) =>
+      compareSkills(left, right, locale),
+    );
     if (!query) {
       return items;
     }
     return items.filter((skill) =>
       [skill.name, skill.description, skill.when_to_use, skill.source, skill.argument_hint]
         .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query))
+        .some((value) => value?.toLowerCase().includes(query)),
     );
   }, [filter, locale, state.skills]);
 
   const plugins = useMemo(
     () => extensionInventory.filter((record) => record.kind === "plugin"),
-    [extensionInventory]
+    [extensionInventory],
   );
 
   const visiblePlugins = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    const items = [...plugins].sort((left, right) => left.name.localeCompare(right.name, locale));
+    const items = [...plugins].sort((left, right) =>
+      left.name.localeCompare(right.name, locale),
+    );
     if (!query) {
       return items;
     }
     return items.filter((record) =>
       [record.name, record.description, ...(record.requested_permissions ?? [])]
         .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query))
+        .some((value) => value?.toLowerCase().includes(query)),
     );
   }, [filter, locale, plugins]);
-
-  const visibleAgentTemplates = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    const items = [...state.agentTemplates].sort((left, right) => compareAgentTemplates(left, right, locale));
-    if (!query) {
-      return items;
-    }
-    return items.filter((template) =>
-      [template.name, template.description, template.source, template.model, template.permission_mode]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query))
-    );
-  }, [filter, locale, state.agentTemplates]);
 
   async function refreshSkills(): Promise<void> {
     setState((current) => ({ ...current, loading: true, error: "" }));
     try {
-      const [skillsResult, templatesResult] = await Promise.all([
-        window.wuu.listSkills(),
-        window.wuu.listAgentTemplates()
-      ]);
+      const [skillsResult] = await Promise.all([window.wuu.listSkills()]);
       setState({
         loading: false,
         error: "",
         skills: skillsResult.skills,
-        agentTemplates: templatesResult.templates,
-        diagnostics: templatesResult.diagnostics ?? []
       });
     } catch (error) {
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
+        error:
+          error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
         skills: [],
-        agentTemplates: [],
-        diagnostics: []
       });
     }
   }
@@ -165,7 +151,12 @@ export function SkillsCatalog({
               onChange={(event) => setFilter(event.currentTarget.value)}
             />
           </label>
-          <button className="icon-button skills-refresh" type="button" aria-label={t("skills.refresh")} onClick={() => void refreshSkills()}>
+          <button
+            className="icon-button skills-refresh"
+            type="button"
+            aria-label={t("skills.refresh")}
+            onClick={() => void refreshSkills()}
+          >
             <RefreshCw className="icon" />
           </button>
         </div>
@@ -173,24 +164,19 @@ export function SkillsCatalog({
 
       {state.error ? <div className="skills-catalog-error">{state.error}</div> : null}
 
-      {state.diagnostics.length > 0 ? (
-        <div className="skills-catalog-error">
-          <AlertTriangle className="icon-sm" aria-hidden="true" />
-          {state.diagnostics.map((diagnostic) => (
-            <span key={`${diagnostic.path}:${diagnostic.message}`}>
-              {diagnostic.path}: {diagnostic.message}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
       <div className="skills-section-heading">
         <strong>{t("skills.sectionSkills")}</strong>
       </div>
 
       <div className="skills-list">
         {visibleSkills.map((skill) => (
-          <article key={`${skill.source}:${skill.name}`} className="skill-row">
+          <button
+            key={`${skill.source}:${skill.name}`}
+            className="skill-row skill-row-button"
+            type="button"
+            aria-label={t("skills.previewSkill", { name: skill.name })}
+            onClick={() => setPreviewSkill(skill)}
+          >
             <span className="skill-row-icon" aria-hidden="true">
               <Wrench className="icon" />
             </span>
@@ -208,11 +194,25 @@ export function SkillsCatalog({
                   </span>
                 ) : null}
               </span>
-              {skill.description || skill.when_to_use ? <p>{skill.description || skill.when_to_use}</p> : null}
+              {skill.description || skill.when_to_use ? (
+                <p>{skill.description || skill.when_to_use}</p>
+              ) : null}
             </span>
-          </article>
+          </button>
         ))}
       </div>
+
+      {previewSkill ? (
+        <SkillPreviewDialog
+          skill={previewSkill}
+          onClose={() => setPreviewSkill(null)}
+          onTry={() => {
+            const skill = previewSkill;
+            setPreviewSkill(null);
+            onTrySkill?.(skill);
+          }}
+        />
+      ) : null}
 
       {plugins.length > 0 ? (
         <>
@@ -243,30 +243,7 @@ export function SkillsCatalog({
         </>
       ) : null}
 
-      <div className="skills-section-heading">
-        <strong>{t("skills.sectionAgentTemplates")}</strong>
-      </div>
-
-      <div className="skills-list">
-        {visibleAgentTemplates.map((template) => (
-          <article key={`${template.source}:${template.name}`} className="skill-row">
-            <span className="skill-row-icon" aria-hidden="true">
-              <Bot className="icon" />
-            </span>
-            <span className="skill-row-copy">
-              <span className="skill-row-titlebar">
-                <h2>{template.name}</h2>
-              </span>
-              {template.description ? <p>{template.description}</p> : null}
-            </span>
-          </article>
-        ))}
-      </div>
-
-      {!state.loading &&
-      visibleSkills.length === 0 &&
-      visiblePlugins.length === 0 &&
-      visibleAgentTemplates.length === 0 ? (
+      {!state.loading && visibleSkills.length === 0 && visiblePlugins.length === 0 ? (
         <div className="skills-empty">
           <Wrench className="icon-xl" />
           <strong>{t("skills.empty")}</strong>
@@ -275,6 +252,93 @@ export function SkillsCatalog({
       ) : null}
     </section>
   );
+}
+
+function SkillPreviewDialog({
+  skill,
+  onClose,
+  onTry,
+}: {
+  skill: SkillSummary;
+  onClose: () => void;
+  onTry: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const [contentState, setContentState] = useState<SkillContentState>({
+    loading: true,
+    error: "",
+    content: "",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setContentState({ loading: true, error: "", content: "" });
+    void window.wuu.readSkillContent({ name: skill.name, source: skill.source })
+      .then((result) => {
+        if (!cancelled) {
+          setContentState({ loading: false, error: "", content: stripFrontmatter(result.content) });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setContentState({
+            loading: false,
+            error: error instanceof Error ? error.message : translateCurrent("skills.contentUnavailable"),
+            content: fallbackSkillContent(skill),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [skill.name, skill.source]);
+
+  return (
+    <Modal
+      ariaLabel={t("skills.previewLabel", { name: skill.name })}
+      icon={
+        <span className="skill-preview-icon-title">
+          <Wrench className="icon" />
+          <span>{t("skills.skillLabel")}</span>
+        </span>
+      }
+      title={skill.name}
+      subtitle={skill.description || skill.when_to_use || skill.trigger_condition}
+      panelClassName="skill-preview-dialog"
+      onClose={onClose}
+      footer={skill.user_invocable ? (
+        <button className="settings-button settings-button-primary" type="button" onClick={onTry}>
+          {t("skills.tryNow")}
+        </button>
+      ) : undefined}
+    >
+      <div className="skill-preview-body">
+        {contentState.loading ? (
+          <p className="skill-preview-loading">{t("skills.loadingContent")}</p>
+        ) : null}
+        {contentState.error ? (
+          <p className="skill-preview-error">{t("skills.contentFallback")}</p>
+        ) : null}
+        {contentState.content ? <RichContent text={contentState.content} /> : null}
+      </div>
+    </Modal>
+  );
+}
+
+function stripFrontmatter(content: string): string {
+  return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+}
+
+function fallbackSkillContent(skill: SkillSummary): string {
+  return [
+    skill.description,
+    skill.when_to_use ? `## When to use\n\n${skill.when_to_use}` : "",
+    skill.trigger_condition ? `## Trigger condition\n\n${skill.trigger_condition}` : "",
+    skill.examples?.length ? `## Examples\n\n${skill.examples.map((item) => `- ${item}`).join("\n")}` : "",
+    skill.verification_checklist?.length
+      ? `## Verification checklist\n\n${skill.verification_checklist.map((item) => `- ${item}`).join("\n")}`
+      : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 // Skills compiled into the Wuu binary carry source "bundled"; these are the
@@ -290,14 +354,6 @@ function pluginSkillID(source: string): string {
 }
 
 function compareSkills(left: SkillSummary, right: SkillSummary, locale: AppLocale): number {
-  const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
-  if (sourceDelta !== 0) {
-    return sourceDelta;
-  }
-  return left.name.localeCompare(right.name, locale);
-}
-
-function compareAgentTemplates(left: AgentTemplateSummary, right: AgentTemplateSummary, locale: AppLocale): number {
   const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
   if (sourceDelta !== 0) {
     return sourceDelta;
