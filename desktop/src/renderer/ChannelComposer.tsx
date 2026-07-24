@@ -17,6 +17,7 @@ export function ChannelComposer({
   sending,
   files,
   images,
+  hideExpandButton = false,
   onChangeDraft,
   onPasteAttachmentFiles,
   onRemoveFile,
@@ -29,6 +30,7 @@ export function ChannelComposer({
   sending: boolean;
   files: ComposerFile[];
   images: ComposerImage[];
+  hideExpandButton?: boolean;
   onChangeDraft: (draft: string) => void;
   onPasteAttachmentFiles: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
@@ -46,6 +48,7 @@ export function ChannelComposer({
         hideRuntimeControls
         hidePlusButton
         hidePermissionControl
+        hideExpandButton={hideExpandButton}
         placeholder={placeholder}
         maxLength={4000}
         prompt={draft}

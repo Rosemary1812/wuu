@@ -185,6 +185,7 @@ export function Composer({
   hideRuntimeControls = false,
   hidePlusButton = false,
   hidePermissionControl = false,
+  hideExpandButton = false,
   placeholder,
   maxLength,
   textOnly = false,
@@ -281,6 +282,7 @@ export function Composer({
   hideRuntimeControls?: boolean;
   hidePlusButton?: boolean;
   hidePermissionControl?: boolean;
+  hideExpandButton?: boolean;
   // A shared composer can be embedded in a conversation surface whose
   // transport accepts text only. The editor, keyboard handling, expansion,
   // context menu, and send/stop controls remain the canonical Composer; only
@@ -1065,17 +1067,19 @@ export function Composer({
               onKeyDown={handleComposerKeyDown}
               onContextMenu={handleComposerContextMenu}
             />
-            <button
-              className="composer-expand-button"
-              type="button"
-              aria-label={isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
-              aria-pressed={isComposerExpanded}
-              title={readOnly ? t("composer.readOnlyCannotExpand") : isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
-              disabled={readOnly}
-              onClick={toggleComposerExpansion}
-            >
-              {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
-            </button>
+            {!hideExpandButton ? (
+              <button
+                className="composer-expand-button"
+                type="button"
+                aria-label={isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
+                aria-pressed={isComposerExpanded}
+                title={readOnly ? t("composer.readOnlyCannotExpand") : isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
+                disabled={readOnly}
+                onClick={toggleComposerExpansion}
+              >
+                {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
+              </button>
+            ) : null}
             <div className="composer-bar">
               <div className="composer-bar-left">
                 {variant === "hero" ? (

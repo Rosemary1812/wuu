@@ -99,6 +99,17 @@ function createApi(): Partial<WuuDesktopApi> {
             task_state: "doing",
             task_owner: "agent-1",
             created_at: "2026-07-23T00:01:00Z",
+          }, {
+            id: "message-3",
+            room_id,
+            seq: 4,
+            thread_id: "message-1",
+            reply_to: "message-1",
+            author_type: "agent" as const,
+            author_id: "agent-2",
+            kind: "text" as const,
+            body: "A threaded answer",
+            created_at: "2026-07-23T00:02:00Z",
           }]
         : [],
     })),
@@ -236,6 +247,40 @@ describe("ChannelView", () => {
     await act(async () => send?.click());
 
     expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
+  });
+
+  it("opens a thread, keeps replies out of the room stream, and sends a direct reply", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("A threaded answer");
+    const threadButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-message-actions button"))
+      .find((button) => button.textContent?.includes("1 条回复"));
+    act(() => threadButton?.click());
+
+    const panel = container.querySelector<HTMLElement>(".channel-thread-panel");
+    expect(panel?.textContent).toContain("A threaded answer");
+    expect(panel?.querySelector(".channel-thread-header")).toBeNull();
+    expect(panel?.querySelector(".composer-expand-button")).toBeNull();
+    const replyActions = panel?.querySelectorAll<HTMLButtonElement>(".channel-message-actions button");
+    act(() => replyActions?.item(replyActions.length - 1).click());
+    expect(panel?.querySelector(".channel-thread-replying")?.textContent).toContain("Beta");
+
+    const textarea = panel?.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => setInputValue(textarea!, "Follow-up question"));
+    await act(async () => panel?.querySelector<HTMLButtonElement>(".composer-send-button")?.click());
+
+    expect(api.sendChannelMessage).toHaveBeenCalledWith({
+      room_id: "room-1",
+      thread_id: "message-1",
+      reply_to: "message-3",
+      body: "Follow-up question",
+      images: [],
+      files: [],
+    });
   });
 
   it("does not issue another bottom scroll when polling returns the same messages", async () => {
