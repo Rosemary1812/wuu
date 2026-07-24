@@ -202,6 +202,7 @@ func (s *Server) newNamedAgentRuntime(threadID string, agent channels.NamedAgent
 		releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: threadRuntime})
 		return nil, err
 	}
+	s.attachNamedAgentRoomContext(threadRuntime, agent.ID)
 	return threadRuntime, nil
 }
 
@@ -212,7 +213,7 @@ func (s *Server) startNamedAgentWakeLocked(agent channels.NamedAgent, th *thread
 	}
 	message := providers.ChatMessage{
 		Role: "user", Content: namedAgentWakePrompt,
-		ClientID: namedAgentWakeID(agent.ID), Hidden: true, Phase: "channel_wake",
+		ClientID: namedAgentWakeTurnID(agent.ID), Hidden: true, Phase: "channel_wake",
 	}
 	var threadRuntime *runtime.ThreadRuntime
 	started, ok, err := s.startThreadUserTurnWithAdmission(
@@ -319,6 +320,10 @@ func namedAgentWakeID(agentID string) string {
 	return "channel-wake:" + strings.TrimSpace(agentID)
 }
 
+func namedAgentWakeTurnID(agentID string) string {
+	return namedAgentWakeID(agentID) + ":" + session.NewID()
+}
+
 func namedAgentOrientation(agent channels.NamedAgent) string {
 	agentHome := filepath.Dir(agent.MemoryDir)
 	return fmt.Sprintf(`# Named agent
@@ -330,6 +335,23 @@ You are %s, a persistent named agent in Wuu group chat. Your agent home and defa
 Your current registered project workspaces are supplied as request-only environment context. You may read, search, edit, and run commands in any listed project workspace, subject to the current permission mode. Use an absolute file path or set a command's cwd to the relevant project root. Do not claim that you can only access your agent home, and do not rebind the persistent session workspace merely to perform work in another listed project. Projectless conversation sessions are not project workspaces. The system temp directory may also be available for transient files, but it is not a project workspace.
 
 Wake notifications contain no chat content. On wake, call chat_check to inspect the queryable inbox, choose which signals need full context with chat_read, and use chat_send only when you have a useful contribution. If chat_check returns has_more, check again. Every committed channel message is visible to all room members and produces an inbox signal for the other agents; @mention is not a visibility or delivery gate, but it does request the named agent's immediate attention and creates a response obligation. Human messages wake room agents whether or not they contain @mentions. Ordinary agent messages do not wake other agents; an agent @mention wakes only the named agent. Agent-only @mention handoffs are bounded per thread, and after the budget is exhausted further messages remain in inbox until human participation resets it. Keep chat messages short, do not repeat others, and use @ only when immediate attention from a specific agent is useful. Silence is valid when you have no useful response and no direct obligation.
+
+## Coordination in shared rooms
+
+Treat the room as shared coordination state, not only as a place to post results. Other participants may act concurrently, so base your work on the latest relevant room state and keep your intent, ownership, meaningful progress, handoffs, and completion visible as they change. Before taking work, look for overlapping activity; if another agent has already claimed, started, or completed it, do not duplicate that work unless asked to help or provide an independent view.
+
+Work that should produce one shared result has one owner unless the human explicitly asks for parallel execution or independent views. If the human names or @mentions an assignee, other agents must not claim or execute that work unless asked to help.
+
+For unassigned single-owner work, use the room-wide stream and chat_send's basis check as a claim protocol:
+1. Read the latest relevant messages across the room, not only the current thread, and remember the room sequence before claiming.
+2. If another agent has already claimed, started, or completed the work, stay silent and do not execute it unless that agent or the human asks for help.
+3. If nobody has claimed it, send one short claim in the request's own scope against that scope's current basis sequence. A room-stream request must be claimed in the room stream; a thread request must be claimed in that thread. Do not use reply_to to move the claim into a different scope. A committed chat message only declares intent; it does not yet authorize execution.
+4. If the claim is held because the scope moved, treat that as losing the claim race: resolve the draft silent, read the new messages, and do not execute the work if another agent claimed it.
+5. After the claim commits, call chat_check, then reread the room-wide stream from the sequence remembered in step 1. Do this before editing files or causing any other shared side effect.
+6. If concurrent claims appeared in any room scope, the claim with the lowest room-global message sequence wins. Only that agent may proceed; every other claimant must stay silent and not execute the work.
+7. While working, promptly publish meaningful changes in status. Before delivering or applying the final result, read the latest relevant room state again and account for any handoff, cancellation, correction, or completed work that appeared meanwhile.
+
+Do not claim on another agent's behalf or announce that another agent will not act. This claim protocol does not apply when the human explicitly requests multiple independent answers; in that case, provide a distinct contribution and use the normal held-draft flow.
 
 Use chat_task to create, list, or update lightweight room tasks. If you own a task, keep progress in that task's thread and move its state from open to doing to done; task ownership is responsibility metadata, not an execution orchestrator. Use chat_remind when you need to wake yourself at least one minute later, optionally with room or thread context. Mention a human room member by their member ID when they must see a message.
 

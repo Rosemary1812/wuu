@@ -1,13 +1,24 @@
-import { Bell, BellOff, Bot, CheckCircle2, ClipboardList, Hash, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bot, ClipboardList, Hash, ImagePlus, MessageCircle, Pencil, Plus, Reply, Trash2, X } from "lucide-react";
+import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
+import { AUTO_FOLLOW_BOTTOM_THRESHOLD_PX, useAutoFollowScrollContainer } from "./AutoFollowScroll";
 import { ChannelComposer } from "./ChannelComposer";
-import { channelSystemNotificationsEnabled, setChannelSystemNotificationsEnabled } from "./ChannelPreferences";
+import { buildComposerAttachments } from "./ComposerDraftState";
+import { ComposerAttachmentStrip } from "./ComposerInputSections";
+import {
+  awaitComposerImages,
+  inputFilesFromComposer,
+  inputImagesFromComposer,
+  type ComposerFile,
+  type ComposerImage,
+} from "./ComposerMessages";
 import { useI18n } from "./i18n";
+import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
+import { RichContent } from "./RichContent";
 
 type SetupPanel = "agent" | "room" | "task" | null;
 export type ChannelSection = "rooms" | "agents" | "tasks";
@@ -56,7 +67,6 @@ function AgentAvatar({ name, avatarKey, avatarImage, status, statusText, compact
       <AgentAvatarMark avatarKey={avatarKey} avatarImage={avatarImage} />
       <span className={`channel-agent-status-dot ${status}`} aria-hidden="true" />
       <span className="channel-agent-status-card" role="tooltip">
-        <strong>{name}</strong>
         <span><i className={`channel-agent-status-swatch ${status}`} />{statusText}</span>
       </span>
     </span>
@@ -100,6 +110,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [sending, setSending] = useState(false);
   const [sendingAgentIDs, setSendingAgentIDs] = useState<Set<string>>(() => new Set());
   const [body, setBody] = useState("");
+  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
+  const [activeThreadRootID, setActiveThreadRootID] = useState("");
+  const [threadReplyTargetID, setThreadReplyTargetID] = useState("");
+  const [threadBody, setThreadBody] = useState("");
+  const [threadSending, setThreadSending] = useState(false);
+  const [threadComposerImages, setThreadComposerImages] = useState<ComposerImage[]>([]);
+  const [threadComposerFiles, setThreadComposerFiles] = useState<ComposerFile[]>([]);
   const [agentName, setAgentName] = useState("");
   const [agentAvatarKey, setAgentAvatarKey] = useState<string>(() => randomAgentAvatarKey());
   const [agentAvatarImage, setAgentAvatarImage] = useState("");
@@ -107,16 +125,24 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [editingAgentID, setEditingAgentID] = useState("");
   const [roomName, setRoomName] = useState("");
   const [roomAgentIDs, setRoomAgentIDs] = useState<string[]>([]);
-  const [systemNotifications, setSystemNotifications] = useState(channelSystemNotificationsEnabled);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
-  const [updatingTaskID, setUpdatingTaskID] = useState("");
-  const streamEndRef = useRef<HTMLDivElement | null>(null);
+  const [composerFooterNode, setComposerFooterNode] = useState<HTMLDivElement | null>(null);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
+  const composerFooterRef = useRef<HTMLDivElement | null>(null);
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const knownMessageIDsRef = useRef<Set<string>>(new Set());
   const sendingTimersRef = useRef<Map<string, number>>(new Map());
   const splitResizeStartRef = useRef({ x: 0, width: CHANNEL_SPLIT_DEFAULT_WIDTH });
+  const messageScroll = useAutoFollowScrollContainer({
+    open: section === "rooms" && Boolean(selectedRoomID),
+    observeKey: selectedRoomID,
+  });
+  const setComposerFooter = useCallback((node: HTMLDivElement | null): void => {
+    composerFooterRef.current = node;
+    setComposerFooterNode(node);
+  }, []);
 
   const updateSplitWidth = useCallback((width: number): void => {
     const nextWidth = clampChannelSplitWidth(width);
@@ -137,6 +163,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [resizingSplit, updateSplitWidth]);
+
+  useEffect(() => {
+    setActiveThreadRootID("");
+    setThreadReplyTargetID("");
+    setThreadBody("");
+    setThreadComposerImages([]);
+    setThreadComposerFiles([]);
+  }, [selectedRoomID]);
 
   function startSplitResize(event: ReactPointerEvent<HTMLButtonElement>): void {
     event.preventDefault();
@@ -168,6 +202,25 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     () => new Map(agents.map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const messageByID = useMemo(
+    () => new Map(messages.map((message) => [message.id, message])),
+    [messages],
+  );
+  const rootMessages = useMemo(
+    () => messages.filter((message) => message.kind !== "task" && !message.thread_id),
+    [messages],
+  );
+  const activeThreadRoot = activeThreadRootID ? messageByID.get(activeThreadRootID) : undefined;
+  const activeThreadMessages = useMemo(
+    () => activeThreadRootID
+      ? messages.filter((message) => message.thread_id === activeThreadRootID && message.kind !== "task")
+      : [],
+    [activeThreadRootID, messages],
+  );
+  const threadScroll = useAutoFollowScrollContainer({
+    open: section === "rooms" && Boolean(activeThreadRootID),
+    observeKey: `${activeThreadRootID}:${activeThreadMessages.length}`,
+  });
   const activityFor = useCallback((agent?: NamedAgent): AgentActivityStatus => {
     if (!agent) return "idle";
     if (sendingAgentIDs.has(agent.id)) return "sending";
@@ -326,8 +379,30 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   }, [refreshTrackedTasks, section]);
 
   useEffect(() => {
-    streamEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+    messageScroll.scrollToBottom();
+  }, [messageScroll, messages.length, messages.at(-1)?.id]);
+
+  useLayoutEffect(() => {
+    const conversation = conversationRef.current;
+    const footer = composerFooterRef.current;
+    if (!conversation || !footer) return undefined;
+
+    const updateComposerHeight = (): void => {
+      const height = Math.ceil(footer.getBoundingClientRect().height);
+      if (height > 0) {
+        conversation.style.setProperty("--channel-composer-height", `${height}px`);
+      } else {
+        conversation.style.removeProperty("--channel-composer-height");
+      }
+      messageScroll.scheduleScrollToBottom();
+    };
+
+    updateComposerHeight();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(updateComposerHeight);
+    observer.observe(footer);
+    return () => observer.disconnect();
+  }, [messageScroll]);
 
   async function submitAgent(): Promise<void> {
     if (!window.wuu || !agentName.trim()) return;
@@ -376,17 +451,94 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 
   async function sendMessage(): Promise<void> {
     const messageBody = body.trim();
-    if (!window.wuu || !selectedRoomID || !messageBody || sending) return;
+    if (!window.wuu || !selectedRoomID || (!messageBody && composerImages.length === 0 && composerFiles.length === 0) || sending) return;
     setSending(true);
     setError("");
     try {
-      await window.wuu.sendChannelMessage({ room_id: selectedRoomID, body: messageBody });
+      const resolvedImages = await awaitComposerImages(composerImages);
+      await window.wuu.sendChannelMessage({
+        room_id: selectedRoomID,
+        body: messageBody,
+        images: inputImagesFromComposer(resolvedImages),
+        files: inputFilesFromComposer(composerFiles),
+      });
       setBody("");
+      setComposerImages([]);
+      setComposerFiles([]);
       await refreshMessages(selectedRoomID);
     } catch (reason) {
       setError(String(reason));
     } finally {
       setSending(false);
+    }
+  }
+
+  function openThread(message: ChannelMessage, replyTargetID = message.id): void {
+    setActiveThreadRootID(message.thread_id ?? message.id);
+    setThreadReplyTargetID(replyTargetID);
+    setThreadBody("");
+    setThreadComposerImages([]);
+    setThreadComposerFiles([]);
+  }
+
+  function closeThread(): void {
+    setActiveThreadRootID("");
+    setThreadReplyTargetID("");
+    setThreadBody("");
+    setThreadComposerImages([]);
+    setThreadComposerFiles([]);
+  }
+
+  async function sendThreadReply(): Promise<void> {
+    const messageBody = threadBody.trim();
+    if (!window.wuu || !selectedRoomID || !activeThreadRootID || (!messageBody && threadComposerImages.length === 0 && threadComposerFiles.length === 0) || threadSending) return;
+    setThreadSending(true);
+    setError("");
+    try {
+      const resolvedImages = await awaitComposerImages(threadComposerImages);
+      await window.wuu.sendChannelMessage({
+        room_id: selectedRoomID,
+        thread_id: activeThreadRootID,
+        reply_to: threadReplyTargetID || activeThreadRootID,
+        body: messageBody,
+        images: inputImagesFromComposer(resolvedImages),
+        files: inputFilesFromComposer(threadComposerFiles),
+      });
+      setThreadBody("");
+      setThreadComposerImages([]);
+      setThreadComposerFiles([]);
+      setThreadReplyTargetID(activeThreadRootID);
+      await refreshMessages(selectedRoomID);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setThreadSending(false);
+    }
+  }
+
+  async function attachMessageFiles(files: File[]): Promise<void> {
+    try {
+      await buildComposerAttachments(
+        files,
+        (placeholder) => setComposerImages((current) => [...current, placeholder]),
+        (encoded) => setComposerImages((current) => current.map((image) => image.id === encoded.id ? encoded : image)),
+        (file) => setComposerFiles((current) => [...current, file]),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function attachThreadMessageFiles(files: File[]): Promise<void> {
+    try {
+      await buildComposerAttachments(
+        files,
+        (placeholder) => setThreadComposerImages((current) => [...current, placeholder]),
+        (encoded) => setThreadComposerImages((current) => current.map((image) => image.id === encoded.id ? encoded : image)),
+        (file) => setThreadComposerFiles((current) => [...current, file]),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -410,27 +562,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     } catch (reason) {
       setError(String(reason));
     }
-  }
-
-  async function updateTask(taskID: string, state: "doing" | "done"): Promise<void> {
-    if (!window.wuu || updatingTaskID) return;
-    setUpdatingTaskID(taskID);
-    setError("");
-    try {
-      await window.wuu.updateChannelTask({ task_id: taskID, state });
-      await refreshMessages(selectedRoomID);
-      if (section === "tasks") await refreshTrackedTasks();
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setUpdatingTaskID("");
-    }
-  }
-
-  async function deleteRoom(roomID: string): Promise<void> {
-    if (!window.wuu) return;
-    await window.wuu.deleteChannelRoom({ room_id: roomID });
-    await refreshRoomsAndAgents();
   }
 
   async function deleteAgent(agentID: string): Promise<void> {
@@ -473,19 +604,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         <div className="channel-pane-heading">
           <span>{t("channels.rooms")}</span>
           <div className="channel-heading-actions">
-            <button
-              className="icon-button"
-              type="button"
-              aria-pressed={systemNotifications}
-              aria-label={t(systemNotifications ? "channels.disableSystemNotifications" : "channels.enableSystemNotifications")}
-              onClick={() => {
-                const enabled = !systemNotifications;
-                setSystemNotifications(enabled);
-                setChannelSystemNotificationsEnabled(enabled);
-              }}
-            >
-              {systemNotifications ? <Bell className="icon" /> : <BellOff className="icon" />}
-            </button>
             <button className="icon-button" type="button" aria-label={t("channels.newRoom")} onClick={() => setSetupPanel("room")}>
               <Plus className="icon" />
             </button>
@@ -523,67 +641,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         />
       </aside> : null}
 
-      {section === "rooms" ? <div className="channel-conversation">
-        <div className="channel-conversation-heading">
-          <div>
-            <strong>{selectedRoom ? `# ${selectedRoom.name}` : t("channels.title")}</strong>
-            {selectedRoom ? (
-              <span>{t("channels.memberCount", { count: selectedRoom.members.length })}</span>
-            ) : null}
-          </div>
-          <div className="channel-heading-actions">
-            <button className="icon-button" type="button" disabled={!selectedRoom} aria-label={t("channels.deleteRoom")} onClick={() => selectedRoom && void deleteRoom(selectedRoom.id)}>
-              <Trash2 className="icon" />
-            </button>
-            <button
-              className="channel-task-create-button"
-              type="button"
-              disabled={!selectedRoom || agents.length === 0}
-              onClick={() => {
-                setTaskRoomID(selectedRoomID);
-                setTaskOwnerID(agents[0]?.id ?? "");
-                setSetupPanel("task");
-              }}
-            >
-              <ClipboardList className="icon" />
-              <span>{t("channels.newTask")}</span>
-            </button>
-          </div>
-        </div>
-        {error ? <div className="channel-error" role="alert">{error}</div> : null}
-        <div className="channel-message-stream" aria-live="polite">
-          {messages.map((message) => {
+      {section === "rooms" ? <div ref={conversationRef} className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}`}>
+        <div className="channel-room-main">
+          {error ? <div className="channel-error" role="alert">{error}</div> : null}
+        <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
+          {rootMessages.map((message) => {
             const own = message.author_type === "human";
             const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
-            if (message.kind === "task") {
-              const owner = agentNames.get(message.task_owner ?? "") ?? message.task_owner ?? "";
-              const done = message.task_state === "done";
-              return (
-                <article className={`channel-task-card${done ? " done" : ""}`} key={message.id}>
-                  <div className="channel-task-title">
-                    <ClipboardList className="icon" />
-                    <strong>{message.body}</strong>
-                  </div>
-                  <div className="channel-task-meta">
-                    <span>{t("channels.taskOwner", { owner })}</span>
-                    <span>{t(taskStateKey(message.task_state))}</span>
-                  </div>
-                  {!done ? (
-                    <div className="channel-task-actions">
-                      {message.task_state === "open" ? (
-                        <button type="button" disabled={Boolean(updatingTaskID)} onClick={() => void updateTask(message.id, "doing")}>
-                          {t("channels.startTask")}
-                        </button>
-                      ) : null}
-                      <button type="button" disabled={Boolean(updatingTaskID)} onClick={() => void updateTask(message.id, "done")}>
-                        <CheckCircle2 className="icon" />
-                        {t("channels.completeTask")}
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            }
+            const replyCount = messages.filter((candidate) => candidate.thread_id === message.id && candidate.kind !== "task").length;
             return (
               <article className={`channel-message ${own ? "own" : "agent"}`} key={message.id}>
                 {!own ? (() => {
@@ -598,24 +663,140 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </time>
                   </div>
-                  <p className="channel-message-bubble">{message.body}</p>
+                  {message.body ? (
+                    <div className="channel-message-bubble">
+                      <RichContent text={message.body} />
+                    </div>
+                  ) : null}
+                  {message.images?.length || message.files?.length ? (
+                    <ComposerAttachmentStrip
+                      images={(message.images ?? []).map((image, index) => ({ id: `${message.id}-image-${index}`, ...image }))}
+                      files={(message.files ?? []).map((file, index) => ({ id: `${message.id}-file-${index}`, ...file }))}
+                      removable={false}
+                    />
+                  ) : null}
+                  <div className="channel-message-actions">
+                    <button type="button" onClick={() => openThread(message)}>
+                      <Reply aria-hidden="true" />
+                      {t("channels.reply")}
+                    </button>
+                    {replyCount > 0 ? (
+                      <button type="button" onClick={() => openThread(message)}>
+                        <MessageCircle aria-hidden="true" />
+                        {t("channels.replyCount", { count: replyCount })}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </article>
             );
           })}
-          {!loading && selectedRoom && messages.length === 0 ? (
+          {!loading && selectedRoom && rootMessages.length === 0 ? (
             <div className="channel-stream-empty">{t("channels.empty")}</div>
           ) : null}
-          <div ref={streamEndRef} />
         </div>
-        <ChannelComposer
-          draft={body}
-          placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}
-          disabled={!selectedRoom}
-          sending={sending}
-          onChangeDraft={setBody}
-          onSend={() => void sendMessage()}
+        <JumpToLatestPill
+          containerRef={messageScroll.scrollRef}
+          bottomAnchor={composerFooterNode}
+          threshold={AUTO_FOLLOW_BOTTOM_THRESHOLD_PX}
         />
+        <div ref={setComposerFooter} className="channel-conversation-footer">
+          <ChannelComposer
+            draft={body}
+            placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}
+            disabled={!selectedRoom}
+            sending={sending}
+            files={composerFiles}
+            images={composerImages}
+            onChangeDraft={setBody}
+            onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
+            onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
+            onRemoveImage={(id) => setComposerImages((current) => current.filter((image) => image.id !== id))}
+            onSend={() => void sendMessage()}
+          />
+        </div>
+        </div>
+        {activeThreadRoot ? (
+          <aside className="channel-thread-panel" aria-label={t("channels.thread")}>
+            <button className="channel-thread-close" type="button" onClick={closeThread} aria-label={t("channels.closeThread")}>
+              <X aria-hidden="true" />
+            </button>
+            <div ref={threadScroll.scrollRef} className="channel-thread-messages">
+              {[activeThreadRoot, ...activeThreadMessages].map((message) => {
+                const own = message.author_type === "human";
+                const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
+                const repliedMessage = message.reply_to ? messageByID.get(message.reply_to) : undefined;
+                return (
+                  <article className={`channel-message channel-thread-message ${own ? "own" : "agent"}`} key={message.id}>
+                    {!own ? (() => {
+                      const agent = agents.find((candidate) => candidate.id === message.author_id);
+                      const status = activityFor(agent);
+                      return <AgentAvatar name={author} avatarKey={agent?.avatar_key ?? "abstract-1"} avatarImage={agent?.avatar_image} status={status} statusText={activityText(status)} />;
+                    })() : null}
+                    <div className="channel-message-content">
+                      <div className="channel-message-meta">
+                        <strong>{author}</strong>
+                        <time dateTime={message.created_at}>
+                          {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </time>
+                      </div>
+                      {repliedMessage && repliedMessage.id !== activeThreadRoot.id ? (
+                        <button className="channel-thread-reference" type="button" onClick={() => setThreadReplyTargetID(repliedMessage.id)}>
+                          {t("channels.replyingTo", {
+                            name: repliedMessage.author_type === "human"
+                              ? t("channels.you")
+                              : (agentNames.get(repliedMessage.author_id) ?? repliedMessage.author_id),
+                          })}
+                          <span>{repliedMessage.body}</span>
+                        </button>
+                      ) : null}
+                      {message.body ? <div className="channel-message-bubble"><RichContent text={message.body} /></div> : null}
+                      {message.images?.length || message.files?.length ? (
+                        <ComposerAttachmentStrip
+                          images={(message.images ?? []).map((image, index) => ({ id: `${message.id}-thread-image-${index}`, ...image }))}
+                          files={(message.files ?? []).map((file, index) => ({ id: `${message.id}-thread-file-${index}`, ...file }))}
+                          removable={false}
+                        />
+                      ) : null}
+                      <div className="channel-message-actions">
+                        <button type="button" onClick={() => setThreadReplyTargetID(message.id)}>
+                          <Reply aria-hidden="true" />
+                          {t("channels.reply")}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="channel-thread-footer">
+              {threadReplyTargetID && threadReplyTargetID !== activeThreadRoot.id ? (
+                <div className="channel-thread-replying">
+                  <span>{t("channels.replyingTo", {
+                    name: messageByID.get(threadReplyTargetID)?.author_type === "human"
+                      ? t("channels.you")
+                      : (agentNames.get(messageByID.get(threadReplyTargetID)?.author_id ?? "") ?? messageByID.get(threadReplyTargetID)?.author_id ?? ""),
+                  })}</span>
+                  <button type="button" onClick={() => setThreadReplyTargetID(activeThreadRoot.id)} aria-label={t("channels.cancelReply")}><X aria-hidden="true" /></button>
+                </div>
+              ) : null}
+              <ChannelComposer
+                draft={threadBody}
+                placeholder={t("channels.threadPlaceholder")}
+                hideExpandButton
+                disabled={false}
+                sending={threadSending}
+                files={threadComposerFiles}
+                images={threadComposerImages}
+                onChangeDraft={setThreadBody}
+                onPasteAttachmentFiles={(files) => void attachThreadMessageFiles(files)}
+                onRemoveFile={(id) => setThreadComposerFiles((current) => current.filter((file) => file.id !== id))}
+                onRemoveImage={(id) => setThreadComposerImages((current) => current.filter((image) => image.id !== id))}
+                onSend={() => void sendThreadReply()}
+              />
+            </div>
+          </aside>
+        ) : null}
       </div> : section === "agents" ? (
         <div className="channel-agent-workspace" style={{ gridTemplateColumns: `${splitWidth}px minmax(0, 1fr)` }}>
           <aside className="channel-agent-directory">
@@ -707,34 +888,41 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             </button>
           </div>
           {error ? <div className="channel-error" role="alert">{error}</div> : null}
-          <div className="channel-management-table channel-task-table">
-            <div className="channel-management-table-head" aria-hidden="true">
-              <span>{t("channels.taskTitle")}</span>
-              <span>{t("channels.rooms")}</span>
-              <span>{t("channels.taskOwnerLabel")}</span>
-              <span>{t("channels.status")}</span>
-            </div>
-            {trackedTasks.map((task) => {
-              const room = rooms.find((candidate) => candidate.id === task.room_id);
-              const owner = agentNames.get(task.task_owner ?? "") ?? task.task_owner ?? "";
+          <div className="channel-task-board channel-task-table">
+            {(["open", "doing", "done"] as const).map((state) => {
+              const tasks = trackedTasks.filter((task) => (task.task_state ?? "open") === state);
               return (
-                <button
-                  className={`channel-management-row channel-task-management-row${task.task_state === "done" ? " done" : ""}`}
-                  type="button"
-                  key={task.id}
-                  onClick={() => {
-                    setSelectedRoomID(task.room_id);
-                    onSectionChange?.("rooms");
-                  }}
-                >
-                  <strong>{task.body}</strong>
-                  <span className="channel-management-secondary">{room ? `# ${room.name}` : task.room_id}</span>
-                  <span className="channel-management-secondary">{owner}</span>
-                  <span>{t(taskStateKey(task.task_state))}</span>
-                </button>
+                <section className={`channel-task-column channel-task-column-${state}`} key={state}>
+                  <header className="channel-task-column-heading">
+                    <strong>{t(taskStateKey(state))}</strong>
+                    <span>{tasks.length}</span>
+                  </header>
+                  <div className="channel-task-column-items">
+                    {tasks.map((task) => {
+                      const room = rooms.find((candidate) => candidate.id === task.room_id);
+                      const owner = agentNames.get(task.task_owner ?? "") ?? task.task_owner ?? "";
+                      return (
+                        <button
+                          className={`channel-task-card${state === "done" ? " done" : ""}`}
+                          type="button"
+                          key={task.id}
+                          title={`${room ? `# ${room.name}` : task.room_id} · ${owner}`}
+                          data-tooltip={`${room ? `# ${room.name}` : task.room_id} · ${owner}`}
+                          onClick={() => {
+                            setSelectedRoomID(task.room_id);
+                            onSectionChange?.("rooms");
+                          }}
+                        >
+                          <strong>{task.body}</strong>
+                          <span className="channel-task-card-meta">{room ? `# ${room.name}` : task.room_id} · {owner}</span>
+                        </button>
+                      );
+                    })}
+                    {tasks.length === 0 ? <span className="channel-task-column-empty">—</span> : null}
+                  </div>
+                </section>
               );
             })}
-            {trackedTasks.length === 0 ? <div className="channel-management-empty">{t("channels.noTasks")}</div> : null}
           </div>
         </div>
       )}

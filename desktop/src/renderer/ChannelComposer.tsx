@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import { Composer, type CodexModelLoadState } from "./ComposerView";
 
 const EMPTY_MODEL_STATE: CodexModelLoadState = {
@@ -14,14 +15,26 @@ export function ChannelComposer({
   placeholder,
   disabled,
   sending,
+  files,
+  images,
+  hideExpandButton = false,
   onChangeDraft,
+  onPasteAttachmentFiles,
+  onRemoveFile,
+  onRemoveImage,
   onSend,
 }: {
   draft: string;
   placeholder: string;
   disabled: boolean;
   sending: boolean;
+  files: ComposerFile[];
+  images: ComposerImage[];
+  hideExpandButton?: boolean;
   onChangeDraft: (draft: string) => void;
+  onPasteAttachmentFiles: (files: File[]) => void;
+  onRemoveFile: (id: string) => void;
+  onRemoveImage: (id: string) => void;
   onSend: () => void;
 }): JSX.Element {
   const runtimeRef = useRef<HTMLDivElement>(null);
@@ -33,13 +46,15 @@ export function ChannelComposer({
       <Composer
         variant="dock"
         hideRuntimeControls
-        textOnly
+        hidePlusButton
+        hidePermissionControl
+        hideExpandButton={hideExpandButton}
         placeholder={placeholder}
         maxLength={4000}
         prompt={draft}
         setPrompt={onChangeDraft}
-        files={[]}
-        images={[]}
+        files={files}
+        images={images}
         queuedMessages={[]}
         guideMessages={[]}
         running={false}
@@ -78,9 +93,9 @@ export function ChannelComposer({
         onStartNewThread={noop}
         onOpenWorkspaceTool={noop}
         onOpenInstructions={noop}
-        onPasteAttachmentFiles={noop}
-        onRemoveFile={noop}
-        onRemoveImage={noop}
+        onPasteAttachmentFiles={onPasteAttachmentFiles}
+        onRemoveFile={onRemoveFile}
+        onRemoveImage={onRemoveImage}
         onRemoveQueuedMessage={noop}
         onRemoveGuideMessage={noop}
         onGuideQueuedMessage={noop}

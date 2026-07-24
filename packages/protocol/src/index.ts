@@ -473,6 +473,8 @@ export type ChannelMessage = {
   author_id: string;
   kind: "text" | "task" | "system";
   body: string;
+  images?: InputImage[];
+  files?: InputFile[];
   mentions?: string[];
   reply_to?: string;
   task_state?: string;
@@ -515,6 +517,8 @@ export type ChannelMessageSendParams = {
   thread_id?: string;
   reply_to?: string;
   body: string;
+  images?: InputImage[];
+  files?: InputFile[];
 };
 export type ChannelMessageSendResult = { message: ChannelMessage };
 export type ChannelTaskCreateParams = {

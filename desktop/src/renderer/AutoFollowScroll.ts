@@ -243,6 +243,17 @@ export function useAutoFollowScrollContainer({
       return;
     }
     if (
+      autoFollowRef.current &&
+      scrolledUp &&
+      !atLatestScrollView(node, bottomThreshold)
+    ) {
+      // Native scrollbar drags and some platform scroll paths arrive without
+      // a preceding wheel, key, or touch event. An upward move away from the
+      // latest content is still enough evidence that the user took control.
+      setAutoFollow(false);
+      return;
+    }
+    if (
       atLatestScrollView(node, bottomThreshold) &&
       !selectionPausedAutoFollowRef.current
     ) {
@@ -273,6 +284,9 @@ export function useAutoFollowScrollContainer({
       event.stopPropagation();
       if (event.deltaY < 0) {
         markUserScrollAwayIntent();
+        // Disarm before the browser emits `scroll`. A queued resize or message
+        // update can otherwise run in that gap and pull the viewport back down.
+        setAutoFollow(false);
       } else if (event.deltaY > 0) {
         selectionPausedAutoFollowRef.current = false;
       }

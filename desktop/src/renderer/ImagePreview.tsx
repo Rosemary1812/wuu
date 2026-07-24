@@ -34,6 +34,10 @@ export function useImagePreview(): ImagePreviewContextValue {
   return value;
 }
 
+export function useOptionalImagePreview(): ImagePreviewContextValue | null {
+  return useContext(ImagePreviewContext);
+}
+
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 8;
 const SCALE_STEP = 0.5;

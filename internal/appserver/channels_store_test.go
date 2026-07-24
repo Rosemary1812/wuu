@@ -71,14 +71,18 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	var sent ChannelMessageSendResult
 	callChannelRPC(t, server, out, MethodChannelMessageSend, ChannelMessageSendParams{
 		RoomID: createdRoom.Room.ID, Body: "@Alpha review this",
+		Images: []TurnStartImage{{
+			MediaType: "image/png",
+			Data:      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+		}},
 	}, &sent)
-	if sent.Message.Seq != 1 || sent.Message.AuthorID != localChannelHumanID {
+	if sent.Message.Seq != 1 || sent.Message.AuthorID != localChannelHumanID || len(sent.Message.Images) != 1 {
 		t.Fatalf("sent message = %#v", sent.Message)
 	}
 
 	var listed ChannelMessageListResult
 	callChannelRPC(t, server, out, MethodChannelMessageList, ChannelMessageListParams{RoomID: createdRoom.Room.ID}, &listed)
-	if len(listed.Messages) != 1 || listed.Messages[0].Body != "@Alpha review this" {
+	if len(listed.Messages) != 1 || listed.Messages[0].Body != "@Alpha review this" || len(listed.Messages[0].Images) != 1 {
 		t.Fatalf("listed messages = %#v", listed.Messages)
 	}
 	state, err := server.channelService.WakeState(context.Background(), createdAgent.Agent.ID)
@@ -335,6 +339,65 @@ func TestNamedAgentRunningWakeUsesPendingHeldTurn(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("pending wake did not drain: state %#v, held %#v", state, held)
+}
+
+func TestNamedAgentSequentialWakesPersistDistinctUserTurns(t *testing.T) {
+	client := newBlockingStreamClient("done")
+	close(client.release)
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = client
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	attachNamedAgentTestToolkit(t, rt)
+	server := NewWithCredentialStore(rt, &lockedBuffer{}, nil, nil)
+	t.Cleanup(server.Close)
+	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{
+		Name: "Alpha", Autostart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent() error = %v", err)
+	}
+	server.channelService.SetWakeSink(nil)
+	room := createAppserverTestRoom(t, server.channelService, credential.Agent)
+
+	for index, body := range []string{"first", "second"} {
+		if _, err := server.channelService.SendHuman(context.Background(), channels.HumanSendParams{
+			RoomID: room.ID, HumanID: "human-1", Body: body,
+		}); err != nil {
+			t.Fatalf("SendHuman(%d) error = %v", index, err)
+		}
+		if err := server.deliverNamedAgentWake(context.Background(), credential.Agent.ID); err != nil {
+			t.Fatalf("deliverNamedAgentWake(%d) error = %v", index, err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for threadIsRunning(server.thread(namedAgentSessionID(credential.Agent))) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if threadIsRunning(server.thread(namedAgentSessionID(credential.Agent))) {
+			t.Fatalf("named agent wake %d did not complete", index)
+		}
+		if index == 0 {
+			// running becomes false just before the background turn releases its
+			// execution lease and runs the named-agent completion callback.
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err := server.channelService.ClearWakeOnCheck(context.Background(), credential.Agent.ID); err != nil {
+			t.Fatalf("ClearWakeOnCheck(%d) error = %v", index, err)
+		}
+	}
+
+	records, err := session.LoadHistoryRecords(rt.SessionDir, namedAgentSessionID(credential.Agent), false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords() error = %v", err)
+	}
+	var wakeIDs []string
+	for _, record := range records {
+		if record.Role == "user" && record.Phase == "channel_wake" {
+			wakeIDs = append(wakeIDs, record.ClientID)
+		}
+	}
+	if len(wakeIDs) != 2 || wakeIDs[0] == wakeIDs[1] {
+		t.Fatalf("persisted named agent wake IDs = %#v, want two unique turns", wakeIDs)
+	}
 }
 
 func createAppserverTestRoom(t *testing.T, service *channels.Service, agents ...channels.NamedAgent) channels.Room {
