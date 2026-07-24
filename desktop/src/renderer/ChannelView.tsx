@@ -1,4 +1,4 @@
-import { Bell, BellOff, Bot, CheckCircle2, ClipboardList, Hash, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bell, BellOff, Bot, ClipboardList, Hash, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
@@ -124,7 +124,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [taskTitle, setTaskTitle] = useState("");
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
-  const [updatingTaskID, setUpdatingTaskID] = useState("");
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const composerFooterRef = useRef<HTMLDivElement | null>(null);
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -469,21 +468,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     }
   }
 
-  async function updateTask(taskID: string, state: "doing" | "done"): Promise<void> {
-    if (!window.wuu || updatingTaskID) return;
-    setUpdatingTaskID(taskID);
-    setError("");
-    try {
-      await window.wuu.updateChannelTask({ task_id: taskID, state });
-      await refreshMessages(selectedRoomID);
-      if (section === "tasks") await refreshTrackedTasks();
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setUpdatingTaskID("");
-    }
-  }
-
   async function deleteRoom(roomID: string): Promise<void> {
     if (!window.wuu) return;
     await window.wuu.deleteChannelRoom({ room_id: roomID });
@@ -613,33 +597,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             const own = message.author_type === "human";
             const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
             if (message.kind === "task") {
-              const owner = agentNames.get(message.task_owner ?? "") ?? message.task_owner ?? "";
-              const done = message.task_state === "done";
-              return (
-                <article className={`channel-task-card${done ? " done" : ""}`} key={message.id}>
-                  <div className="channel-task-title">
-                    <ClipboardList className="icon" />
-                    <strong>{message.body}</strong>
-                  </div>
-                  <div className="channel-task-meta">
-                    <span>{t("channels.taskOwner", { owner })}</span>
-                    <span>{t(taskStateKey(message.task_state))}</span>
-                  </div>
-                  {!done ? (
-                    <div className="channel-task-actions">
-                      {message.task_state === "open" ? (
-                        <button type="button" disabled={Boolean(updatingTaskID)} onClick={() => void updateTask(message.id, "doing")}>
-                          {t("channels.startTask")}
-                        </button>
-                      ) : null}
-                      <button type="button" disabled={Boolean(updatingTaskID)} onClick={() => void updateTask(message.id, "done")}>
-                        <CheckCircle2 className="icon" />
-                        {t("channels.completeTask")}
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              );
+              return null;
             }
             return (
               <article className={`channel-message ${own ? "own" : "agent"}`} key={message.id}>

@@ -209,6 +209,8 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-message.own .composer-file-attachment")?.textContent).toContain("brief.pdf");
     expect(container.querySelector(".channel-message.own .composer-attachments button")).toBeNull();
     expect(container.querySelector(".channel-message.own .channel-agent-avatar")).toBeNull();
+    expect(container.querySelector(".channel-task-card")).toBeNull();
+    expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("Investigate flaky build");
     expect(container.querySelector('[aria-label="Alpha: 处理中"]')).not.toBeNull();
     expect(container.querySelector(".channel-agent-status-dot.thinking")).not.toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-row"))

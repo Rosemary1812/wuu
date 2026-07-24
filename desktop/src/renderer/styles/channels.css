@@ -598,54 +598,6 @@
   transform: none;
 }
 
-.channel-task-card {
-  width: min(560px, 100%);
-  display: grid;
-  gap: 10px;
-  margin: 0 auto 18px;
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  padding: 14px 16px;
-  background: var(--surface-raised);
-}
-
-.channel-task-card.done {
-  opacity: 0.7;
-}
-
-.channel-task-title,
-.channel-task-meta,
-.channel-task-actions {
-  display: flex;
-  align-items: center;
-}
-
-.channel-task-title {
-  gap: 8px;
-}
-
-.channel-task-meta {
-  gap: 14px;
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
-.channel-task-actions {
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.channel-task-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  padding: 5px 9px;
-  background: transparent;
-  color: var(--text-secondary);
-}
-
 .channel-management-view {
   min-width: 0;
   min-height: 0;
