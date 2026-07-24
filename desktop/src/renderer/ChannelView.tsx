@@ -5,6 +5,15 @@ import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./Agen
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
 import { ChannelComposer } from "./ChannelComposer";
 import { channelSystemNotificationsEnabled, setChannelSystemNotificationsEnabled } from "./ChannelPreferences";
+import { buildComposerAttachments } from "./ComposerDraftState";
+import { ComposerAttachmentStrip } from "./ComposerInputSections";
+import {
+  awaitComposerImages,
+  inputFilesFromComposer,
+  inputImagesFromComposer,
+  type ComposerFile,
+  type ComposerImage,
+} from "./ComposerMessages";
 import { useI18n } from "./i18n";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
@@ -100,6 +109,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [sending, setSending] = useState(false);
   const [sendingAgentIDs, setSendingAgentIDs] = useState<Set<string>>(() => new Set());
   const [body, setBody] = useState("");
+  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
   const [agentName, setAgentName] = useState("");
   const [agentAvatarKey, setAgentAvatarKey] = useState<string>(() => randomAgentAvatarKey());
   const [agentAvatarImage, setAgentAvatarImage] = useState("");
@@ -376,17 +387,38 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 
   async function sendMessage(): Promise<void> {
     const messageBody = body.trim();
-    if (!window.wuu || !selectedRoomID || !messageBody || sending) return;
+    if (!window.wuu || !selectedRoomID || (!messageBody && composerImages.length === 0 && composerFiles.length === 0) || sending) return;
     setSending(true);
     setError("");
     try {
-      await window.wuu.sendChannelMessage({ room_id: selectedRoomID, body: messageBody });
+      const resolvedImages = await awaitComposerImages(composerImages);
+      await window.wuu.sendChannelMessage({
+        room_id: selectedRoomID,
+        body: messageBody,
+        images: inputImagesFromComposer(resolvedImages),
+        files: inputFilesFromComposer(composerFiles),
+      });
       setBody("");
+      setComposerImages([]);
+      setComposerFiles([]);
       await refreshMessages(selectedRoomID);
     } catch (reason) {
       setError(String(reason));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function attachMessageFiles(files: File[]): Promise<void> {
+    try {
+      await buildComposerAttachments(
+        files,
+        (placeholder) => setComposerImages((current) => [...current, placeholder]),
+        (encoded) => setComposerImages((current) => current.map((image) => image.id === encoded.id ? encoded : image)),
+        (file) => setComposerFiles((current) => [...current, file]),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -598,7 +630,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </time>
                   </div>
-                  <p className="channel-message-bubble">{message.body}</p>
+                  {message.body ? <p className="channel-message-bubble">{message.body}</p> : null}
+                  {message.images?.length || message.files?.length ? (
+                    <ComposerAttachmentStrip
+                      images={(message.images ?? []).map((image, index) => ({ id: `${message.id}-image-${index}`, ...image }))}
+                      files={(message.files ?? []).map((file, index) => ({ id: `${message.id}-file-${index}`, ...file }))}
+                      removable={false}
+                    />
+                  ) : null}
                 </div>
               </article>
             );
@@ -613,7 +652,12 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
           placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}
           disabled={!selectedRoom}
           sending={sending}
+          files={composerFiles}
+          images={composerImages}
           onChangeDraft={setBody}
+          onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
+          onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
+          onRemoveImage={(id) => setComposerImages((current) => current.filter((image) => image.id !== id))}
           onSend={() => void sendMessage()}
         />
       </div> : section === "agents" ? (

@@ -85,6 +85,8 @@ function createApi(): Partial<WuuDesktopApi> {
             author_id: "human",
             kind: "text" as const,
             body: "Human direction",
+            images: [{ media_type: "image/png", data: "aW1hZ2U=" }],
+            files: [{ media_type: "application/pdf", data: "cGRm", filename: "brief.pdf" }],
             created_at: "2026-07-23T00:00:30Z",
           }, {
             id: "task-1",
@@ -199,6 +201,9 @@ describe("ChannelView", () => {
     expect(container.textContent).toContain("Hello from Alpha");
     expect(container.querySelector(".channel-message.agent .channel-message-bubble")?.textContent).toBe("Hello from Alpha");
     expect(container.querySelector(".channel-message.own .channel-message-bubble")?.textContent).toBe("Human direction");
+    expect(container.querySelector<HTMLImageElement>(".channel-message.own .composer-image-attachment img")?.src).toContain("data:image/png;base64,aW1hZ2U=");
+    expect(container.querySelector(".channel-message.own .composer-file-attachment")?.textContent).toContain("brief.pdf");
+    expect(container.querySelector(".channel-message.own .composer-attachments button")).toBeNull();
     expect(container.querySelector(".channel-message.own .channel-agent-avatar")).toBeNull();
     expect(container.querySelector('[aria-label="Alpha: 处理中"]')).not.toBeNull();
     expect(container.querySelector(".channel-agent-status-dot.thinking")).not.toBeNull();
@@ -214,7 +219,7 @@ describe("ChannelView", () => {
     const send = container.querySelector<HTMLButtonElement>(".channel-composer .composer-send-button");
     await act(async () => send?.click());
 
-    expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha" });
+    expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
   });
 
   it("shares a nonzero resizable sidebar width between rooms and agents", async () => {

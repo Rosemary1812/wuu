@@ -548,6 +548,14 @@
   border-radius: 12px 12px 3px 12px;
 }
 
+.channel-message-content > .composer-attachments {
+  margin-top: 6px;
+}
+
+.channel-message.own .composer-attachments {
+  justify-content: flex-end;
+}
+
 .channel-stream-empty {
   display: grid;
   min-height: 100%;

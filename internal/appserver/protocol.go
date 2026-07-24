@@ -2099,10 +2099,12 @@ type ChannelMessageListResult struct {
 }
 
 type ChannelMessageSendParams struct {
-	RoomID   string `json:"room_id"`
-	ThreadID string `json:"thread_id,omitempty"`
-	ReplyTo  string `json:"reply_to,omitempty"`
-	Body     string `json:"body"`
+	RoomID   string           `json:"room_id"`
+	ThreadID string           `json:"thread_id,omitempty"`
+	ReplyTo  string           `json:"reply_to,omitempty"`
+	Body     string           `json:"body"`
+	Images   []TurnStartImage `json:"images,omitempty"`
+	Files    []TurnStartFile  `json:"files,omitempty"`
 }
 
 type ChannelMessageSendResult struct {

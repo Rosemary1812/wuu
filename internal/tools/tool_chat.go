@@ -9,6 +9,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 type ChatCheckTool struct{ env *Env }
@@ -88,6 +89,45 @@ func (t *ChatReadTool) Execute(ctx context.Context, argsJSON string) (string, er
 		return "", err
 	}
 	return mustJSON(map[string]any{"messages": messages})
+}
+
+func (t *ChatReadTool) ExecuteResult(ctx context.Context, argsJSON string) (toolresult.Result, error) {
+	text, err := t.Execute(ctx, argsJSON)
+	if err != nil {
+		return toolresult.Result{}, err
+	}
+	var payload struct {
+		Messages []channels.Message `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		return toolresult.Result{}, err
+	}
+	parts := make([]toolresult.ContentPart, 0, 1)
+	for messageIndex := range payload.Messages {
+		message := &payload.Messages[messageIndex]
+		for imageIndex := range message.Images {
+			image := &message.Images[imageIndex]
+			parts = append(parts, toolresult.ContentPart{
+				Type: toolresult.ContentTypeImage, Data: image.Data, MIMEType: image.MediaType,
+				Name: message.ID + "-image",
+			})
+			image.Data = ""
+		}
+		for fileIndex := range message.Files {
+			file := &message.Files[fileIndex]
+			parts = append(parts, toolresult.ContentPart{
+				Type: toolresult.ContentTypeFile, Data: file.Data, MIMEType: file.MediaType,
+				Name: file.Filename,
+			})
+			file.Data = ""
+		}
+	}
+	projection, err := mustJSON(payload)
+	if err != nil {
+		return toolresult.Result{}, err
+	}
+	parts = append([]toolresult.ContentPart{{Type: toolresult.ContentTypeText, Text: projection}}, parts...)
+	return toolresult.Result{Content: parts}, nil
 }
 
 type ChatSendTool struct{ env *Env }

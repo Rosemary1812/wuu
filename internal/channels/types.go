@@ -123,20 +123,35 @@ type CreateRoomParams struct {
 }
 
 type Message struct {
-	ID         string      `json:"id"`
-	RoomID     string      `json:"room_id"`
-	Seq        int64       `json:"seq"`
-	ThreadID   string      `json:"thread_id,omitempty"`
-	AuthorType MemberType  `json:"author_type"`
-	AuthorID   string      `json:"author_id"`
-	Kind       MessageKind `json:"kind"`
-	Body       string      `json:"body"`
-	Mentions   []string    `json:"mentions"`
-	ReplyTo    string      `json:"reply_to,omitempty"`
-	TaskTitle  string      `json:"task_title,omitempty"`
-	TaskState  string      `json:"task_state,omitempty"`
-	TaskOwner  string      `json:"task_owner,omitempty"`
-	CreatedAt  time.Time   `json:"created_at"`
+	ID         string         `json:"id"`
+	RoomID     string         `json:"room_id"`
+	Seq        int64          `json:"seq"`
+	ThreadID   string         `json:"thread_id,omitempty"`
+	AuthorType MemberType     `json:"author_type"`
+	AuthorID   string         `json:"author_id"`
+	Kind       MessageKind    `json:"kind"`
+	Body       string         `json:"body"`
+	Images     []MessageImage `json:"images,omitempty"`
+	Files      []MessageFile  `json:"files,omitempty"`
+	Mentions   []string       `json:"mentions"`
+	ReplyTo    string         `json:"reply_to,omitempty"`
+	TaskTitle  string         `json:"task_title,omitempty"`
+	TaskState  string         `json:"task_state,omitempty"`
+	TaskOwner  string         `json:"task_owner,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+}
+
+type MessageImage struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+	Width     uint32 `json:"width,omitempty"`
+	Height    uint32 `json:"height,omitempty"`
+}
+
+type MessageFile struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+	Filename  string `json:"filename,omitempty"`
 }
 
 type HumanSendParams struct {
@@ -145,6 +160,8 @@ type HumanSendParams struct {
 	ThreadID string
 	ReplyTo  string
 	Body     string
+	Images   []MessageImage
+	Files    []MessageFile
 }
 
 type AgentSendParams struct {
