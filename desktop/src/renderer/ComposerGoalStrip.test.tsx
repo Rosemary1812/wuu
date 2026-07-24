@@ -29,6 +29,7 @@ function renderStrip(props: {
   onResume?: () => void | Promise<void>;
   onClear?: () => void | Promise<void>;
   disabled?: boolean;
+  expanded?: boolean;
 }): void {
   act(() => {
     root = createRoot(container);
@@ -36,6 +37,7 @@ function renderStrip(props: {
       <ComposerGoalStrip
         summary={props.summary}
         disabled={props.disabled}
+        expanded={props.expanded}
         onEdit={props.onEdit ?? (() => {})}
         onPause={props.onPause ?? (() => {})}
         onResume={props.onResume ?? (() => {})}
@@ -73,6 +75,29 @@ describe("ComposerGoalStrip", () => {
 
     expect(container.querySelector(".composer-goal-strip-state")?.textContent).toBe("Paused");
   });
+  it("labels an active goal without a running turn as ready to continue", () => {
+    renderStrip({ summary: { ...goalSummary("Ship"), status: "active" }, expanded: true });
+
+    expect(container.querySelector(".composer-goal-strip-details")?.textContent).toContain(
+      "状态待继续",
+    );
+  });
+
+  it("labels an active goal with running_since as running", () => {
+    renderStrip({
+      summary: {
+        ...goalSummary("Ship"),
+        status: "active",
+        running_since: "2026-07-15T02:00:03Z",
+      },
+      expanded: true,
+    });
+
+    expect(container.querySelector(".composer-goal-strip-details")?.textContent).toContain(
+      "状态运行中",
+    );
+  });
+
   it("does not occupy composer space when there is no active goal", () => {
     renderStrip({ summary: null });
 

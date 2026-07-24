@@ -713,6 +713,7 @@ export const zhCN = {
   "goal.confirmClear": "再次点击确认清除",
   "goal.content": "目标内容",
   "goal.noText": "（无目标文本）",
+  "goal.ready": "待继续",
   "goal.running": "运行中",
   "goal.paused": "已暂停",
   "goal.blocked": "已阻塞",

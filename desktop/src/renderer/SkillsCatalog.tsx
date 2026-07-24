@@ -103,7 +103,7 @@ export function SkillsCatalog({
   async function refreshSkills(): Promise<void> {
     setState((current) => ({ ...current, loading: true, error: "" }));
     try {
-        const [skillsResult] = await Promise.all([
+      const [skillsResult] = await Promise.all([
         window.wuu.listSkills(),
       ]);
       setState({
@@ -143,7 +143,6 @@ export function SkillsCatalog({
       </header>
 
       {state.error ? <div className="skills-catalog-error">{state.error}</div> : null}
-
 
       <div className="skills-section-heading">
         <strong>{t("skills.sectionSkills")}</strong>
