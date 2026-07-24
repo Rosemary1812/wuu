@@ -21,6 +21,7 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   `agent_template_count` field on initialize.
 ### Fixed
 
+- Fixed the Windows conversation search shortcut hint alignment without changing the macOS layout.
 - Added desktop skill preview dialogs that show the underlying Skill content and
   keep the preview body scrolling inside a stable modal.
 - Fixed resumed goals so they start a continuation turn instead of only changing
