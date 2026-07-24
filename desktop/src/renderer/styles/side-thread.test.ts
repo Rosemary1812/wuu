@@ -25,10 +25,10 @@ describe("side thread message-flow spacing", () => {
       /\.side-thread-panel\s*\{[\s\S]*?grid-template-rows:\s*48px\s+minmax\(0, 1fr\);/,
     );
     expect(sideThreadCss).toMatch(
-      /\.side-thread-panel__body\s*\{[\s\S]*?grid-row:\s*2;[\s\S]*?overflow-y:\s*auto;/,
+      /\.side-thread-panel__body\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;[\s\S]*?overflow-y:\s*auto;/,
     );
     expect(sideThreadCss).toMatch(
-      /\.side-thread-panel__footer\s*\{[\s\S]*?grid-row:\s*2;[\s\S]*?align-self:\s*end;/,
+      /\.side-thread-panel__footer\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;[\s\S]*?align-self:\s*end;/,
     );
     expect(sideThreadCss).not.toMatch(
       /\.side-thread-panel__composer-host\s+\.dock-composer-wrap::before\s*\{[^}]*display:\s*none/,

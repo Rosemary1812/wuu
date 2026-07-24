@@ -212,7 +212,7 @@ func (s *Server) startNamedAgentWakeLocked(agent channels.NamedAgent, th *thread
 	}
 	message := providers.ChatMessage{
 		Role: "user", Content: namedAgentWakePrompt,
-		ClientID: namedAgentWakeID(agent.ID), Hidden: true, Phase: "channel_wake",
+		ClientID: namedAgentWakeTurnID(agent.ID), Hidden: true, Phase: "channel_wake",
 	}
 	var threadRuntime *runtime.ThreadRuntime
 	started, ok, err := s.startThreadUserTurnWithAdmission(
@@ -317,6 +317,10 @@ func namedAgentSessionID(agent channels.NamedAgent) string {
 
 func namedAgentWakeID(agentID string) string {
 	return "channel-wake:" + strings.TrimSpace(agentID)
+}
+
+func namedAgentWakeTurnID(agentID string) string {
+	return namedAgentWakeID(agentID) + ":" + session.NewID()
 }
 
 func namedAgentOrientation(agent channels.NamedAgent) string {

@@ -1,5 +1,9 @@
 .channel-view {
   --channel-directory-row-height: 46px;
+  --channel-directory-row-radius: 7px;
+  --channel-directory-list-padding: 0 8px;
+  --channel-directory-row-padding: 0 9px;
+  --channel-directory-row-gap: 8px;
   --bg-primary: var(--paper);
   --bg-secondary: var(--surface-1);
   --surface-raised: var(--surface-2);
@@ -201,7 +205,7 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 0 8px;
+  padding: var(--channel-directory-list-padding);
 }
 
 .channel-agent-list-pane,
@@ -265,7 +269,7 @@
 .channel-empty-action {
   width: 100%;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--channel-directory-row-radius);
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
@@ -276,8 +280,8 @@
   height: var(--channel-directory-row-height);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 9px;
+  gap: var(--channel-directory-row-gap);
+  padding: var(--channel-directory-row-padding);
 }
 
 .channel-agent-row {
@@ -654,7 +658,7 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 8px;
+  padding: var(--channel-directory-list-padding);
 }
 
 .channel-agent-directory-row {
@@ -663,7 +667,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  border-radius: 8px;
+  border-radius: var(--channel-directory-row-radius);
 }
 
 .channel-agent-directory-row:hover {
@@ -676,9 +680,9 @@
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: var(--channel-directory-row-gap);
   border: 0;
-  padding: 8px;
+  padding: var(--channel-directory-row-padding);
   background: transparent;
   color: var(--text-primary);
   text-align: left;
