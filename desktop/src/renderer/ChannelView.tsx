@@ -468,12 +468,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     }
   }
 
-  async function deleteRoom(roomID: string): Promise<void> {
-    if (!window.wuu) return;
-    await window.wuu.deleteChannelRoom({ room_id: roomID });
-    await refreshRoomsAndAgents();
-  }
-
   async function deleteAgent(agentID: string): Promise<void> {
     if (!window.wuu) return;
     await window.wuu.deleteNamedAgent({ agent_id: agentID });
@@ -565,32 +559,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
       </aside> : null}
 
       {section === "rooms" ? <div ref={conversationRef} className="channel-conversation">
-        <div className="channel-conversation-heading">
-          <div>
-            <strong>{selectedRoom ? `# ${selectedRoom.name}` : t("channels.title")}</strong>
-            {selectedRoom ? (
-              <span>{t("channels.memberCount", { count: selectedRoom.members.length })}</span>
-            ) : null}
-          </div>
-          <div className="channel-heading-actions">
-            <button className="icon-button" type="button" disabled={!selectedRoom} aria-label={t("channels.deleteRoom")} onClick={() => selectedRoom && void deleteRoom(selectedRoom.id)}>
-              <Trash2 className="icon" />
-            </button>
-            <button
-              className="channel-task-create-button"
-              type="button"
-              disabled={!selectedRoom || agents.length === 0}
-              onClick={() => {
-                setTaskRoomID(selectedRoomID);
-                setTaskOwnerID(agents[0]?.id ?? "");
-                setSetupPanel("task");
-              }}
-            >
-              <ClipboardList className="icon" />
-              <span>{t("channels.newTask")}</span>
-            </button>
-          </div>
-        </div>
         {error ? <div className="channel-error" role="alert">{error}</div> : null}
         <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
           {messages.map((message) => {

@@ -198,6 +198,7 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
+    expect(container.querySelector(".channel-conversation-heading")).toBeNull();
     const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
     expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown\n<img src=x onerror=alert(1)>");
     expect(agentBubble?.querySelector("strong")?.textContent).toBe("Alpha");
@@ -344,10 +345,10 @@ describe("ChannelView", () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
+    act(() => root?.render(<ChannelView section="tasks" />));
     await settle();
 
-    act(() => container.querySelector<HTMLButtonElement>(".channel-task-create-button")?.click());
+    act(() => container.querySelector<HTMLButtonElement>(".channel-management-primary")?.click());
     const title = document.querySelector<HTMLInputElement>(".channel-setup-form input");
     expect(title).not.toBeNull();
     act(() => setInputValue(title!, "Investigate flaky build"));
