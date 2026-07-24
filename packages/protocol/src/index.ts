@@ -435,6 +435,15 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
+export type SkillContentParams = {
+  name: string;
+  source: string;
+};
+
+export type SkillContentResult = {
+  content: string;
+};
+
 export type NamedAgent = {
   id: string;
   name: string;
@@ -2023,6 +2032,7 @@ export type WuuDesktopApi = {
   releaseActivity: (threadId: string, activityId: string) => Promise<ActivityReleaseResult>;
   stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
+  readSkillContent: (params: SkillContentParams) => Promise<SkillContentResult>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
   bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;

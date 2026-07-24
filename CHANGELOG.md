@@ -21,6 +21,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   `agent_template_count` field on initialize.
 ### Fixed
 
+- Added desktop skill preview dialogs that show the underlying Skill content and
+  keep the preview body scrolling inside a stable modal.
 - Fixed resumed goals so they start a continuation turn instead of only changing
   the banner status, and clarified idle active goals as ready to continue.
 - Returned a recovery-focused error when the goal tool tries to complete a
