@@ -123,6 +123,7 @@
 
 .side-thread-panel__body {
   position: relative;
+  grid-column: 1;
   grid-row: 2;
   min-height: 0;
   overflow-y: auto;
@@ -152,6 +153,7 @@
 
 .side-thread-panel__footer {
   z-index: 5;
+  grid-column: 1;
   grid-row: 2;
   align-self: end;
   min-width: 0;
