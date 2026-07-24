@@ -238,6 +238,50 @@ describe("ChannelView", () => {
     expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
   });
 
+  it("does not issue another bottom scroll when polling returns the same messages", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = createApi();
+      Object.defineProperty(window, "wuu", { configurable: true, value: api });
+      root = createRoot(container);
+      act(() => root?.render(<ChannelView />));
+      await settle();
+
+      const stream = container.querySelector<HTMLDivElement>(".channel-message-stream");
+      expect(stream).not.toBeNull();
+      let scrollTop = 600;
+      let scrollWrites = 0;
+      Object.defineProperties(stream!, {
+        scrollHeight: { configurable: true, get: () => 1000 },
+        clientHeight: { configurable: true, get: () => 400 },
+        scrollTop: {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => {
+            scrollTop = value;
+            scrollWrites += 1;
+          },
+        },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      scrollTop = 600;
+      scrollWrites = 0;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+
+      expect(api.listChannelMessages).toHaveBeenCalledTimes(2);
+      expect(scrollWrites).toBe(0);
+      expect(scrollTop).toBe(600);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shares a nonzero resizable sidebar width between rooms and agents", async () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
     root = createRoot(container);

@@ -341,7 +341,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 
   useEffect(() => {
     messageScroll.scrollToBottom();
-  }, [messageScroll, messages]);
+  }, [messageScroll, messages.length, messages.at(-1)?.id]);
 
   useLayoutEffect(() => {
     const conversation = conversationRef.current;
