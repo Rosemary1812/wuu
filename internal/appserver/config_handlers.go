@@ -50,9 +50,9 @@ func (s *Server) handleInitialize(req Request) error {
 		issues = append(issues, RuntimeIssue{Code: issue.Code, Provider: issue.Provider, Message: issue.Message})
 	}
 	return s.writeResponse(req.ID, InitializeResult{
-		Status:             status,
-		Issues:             issues,
-		ProtocolVersion:    ProtocolVersion,
+		Status:          status,
+		Issues:          issues,
+		ProtocolVersion: ProtocolVersion,
 		Core: CoreBuildInfo{
 			Version: core.Version,
 			Commit:  core.Commit,

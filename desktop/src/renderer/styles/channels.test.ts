@@ -27,3 +27,42 @@ describe("channel directory alignment", () => {
     expect(agentIdentity).toMatch(/padding:\s*var\(--channel-directory-row-padding\)/);
   });
 });
+
+describe("channel message resizing", () => {
+  it("keeps bubble width and horizontal gutters continuous across window sizes", () => {
+    const stream = ruleFor(".channel-message-stream");
+    const composer = ruleFor(".channel-composer");
+    const messageContent = ruleFor(".channel-message-content");
+    const ownMessageContent = ruleFor(".channel-message.own .channel-message-content");
+    const messageBubble = ruleFor(".channel-message-bubble");
+
+    expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 12px/);
+    expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
+    expect(messageContent).toMatch(/max-width:\s*100%/);
+    expect(ownMessageContent).toMatch(/max-width:\s*calc\(100% - 40px\)/);
+    expect(messageBubble).toMatch(/max-width:\s*100%/);
+    expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
+  });
+
+  it("runs the room scroll surface to the bottom behind a floating composer", () => {
+    const conversation = ruleFor(".channel-conversation");
+    const stream = ruleFor(".channel-message-stream");
+    const footer = ruleFor(".channel-conversation-footer");
+
+    expect(conversation).toMatch(/display:\s*grid/);
+    expect(conversation).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+    expect(stream).toMatch(/grid-row:\s*2/);
+    expect(stream).toMatch(/overflow-y:\s*auto/);
+    expect(stream).toMatch(/scrollbar-gutter:\s*stable/);
+    expect(footer).toMatch(/position:\s*absolute/);
+    expect(footer).toMatch(/bottom:\s*0/);
+    expect(footer).toMatch(/pointer-events:\s*none/);
+    expect(channelsCss).not.toMatch(/\.channel-composer \.dock-composer-wrap::before\s*\{[^}]*display:\s*none/);
+  });
+});
+
+describe("channel agent status", () => {
+  it("keeps thinking indicators static", () => {
+    expect(channelsCss).not.toContain("channel-agent-status-pulse");
+  });
+});

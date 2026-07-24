@@ -143,6 +143,31 @@ describe("SkillsCatalog", () => {
     expect(onTrySkill).toHaveBeenCalledWith(expect.objectContaining({ name: "write" }));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
+
+  it("does not offer Try now for a non-user-invocable skill", async () => {
+    const onTrySkill = vi.fn();
+    installSkillList([
+      {
+        name: "internal-review",
+        description: "Model-only review workflow",
+        source: "bundled",
+        user_invocable: false,
+        disable_model_invoke: false,
+      },
+    ]);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog onTrySkill={onTrySkill} />);
+    });
+    await act(async () => {
+      skillButton("internal-review")?.click();
+    });
+
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(buttonByText("立即试用")).toBeUndefined();
+    expect(onTrySkill).not.toHaveBeenCalled();
+  });
 });
 
 function installSkillList(skills: SkillSummary[]): void {

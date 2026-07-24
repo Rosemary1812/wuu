@@ -183,6 +183,9 @@ export function Composer({
   queryHistorySessionID,
   queryHistory = [],
   hideRuntimeControls = false,
+  hidePlusButton = false,
+  hidePermissionControl = false,
+  hideExpandButton = false,
   placeholder,
   maxLength,
   textOnly = false,
@@ -277,6 +280,9 @@ export function Composer({
   // Suppress the model/context/token runtime chrome on the bar's right edge.
   // Side-thread composers reuse this input without a separate runtime picker.
   hideRuntimeControls?: boolean;
+  hidePlusButton?: boolean;
+  hidePermissionControl?: boolean;
+  hideExpandButton?: boolean;
   // A shared composer can be embedded in a conversation surface whose
   // transport accepts text only. The editor, keyboard handling, expansion,
   // context menu, and send/stop controls remain the canonical Composer; only
@@ -1061,17 +1067,19 @@ export function Composer({
               onKeyDown={handleComposerKeyDown}
               onContextMenu={handleComposerContextMenu}
             />
-            <button
-              className="composer-expand-button"
-              type="button"
-              aria-label={isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
-              aria-pressed={isComposerExpanded}
-              title={readOnly ? t("composer.readOnlyCannotExpand") : isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
-              disabled={readOnly}
-              onClick={toggleComposerExpansion}
-            >
-              {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
-            </button>
+            {!hideExpandButton ? (
+              <button
+                className="composer-expand-button"
+                type="button"
+                aria-label={isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
+                aria-pressed={isComposerExpanded}
+                title={readOnly ? t("composer.readOnlyCannotExpand") : isComposerExpanded ? t("composer.collapseInput") : t("composer.expandInput")}
+                disabled={readOnly}
+                onClick={toggleComposerExpansion}
+              >
+                {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
+              </button>
+            ) : null}
             <div className="composer-bar">
               <div className="composer-bar-left">
                 {variant === "hero" ? (
@@ -1118,49 +1126,49 @@ export function Composer({
                     ) : null}
                   </div>
                 ) : null}
-                {textOnly ? null : (
-                  <>
-                    <ComposerPlusButton
-                      variant={variant}
-                      disabled={readOnly}
-                      commands={slashCommands}
-                      menuAnchorRef={composerShellRef}
-                      onAddAttachment={() => attachmentInputRef.current?.click()}
-                      onSelectCommand={(command) => applySlashCommand(command, undefined)}
-                    />
-                    <div className="permission-menu-anchor" ref={accessMenuRef}>
-                      <button
-                        className={`permission-chip tone-${permissionOption.chipTone}`}
-                        type="button"
-                        aria-haspopup="menu"
-                        aria-expanded={accessMenuOpen}
-                        aria-label={t("composer.permissionMode", { mode: permissionChipLabel })}
-                        disabled={!initialized || readOnly || running}
-                        onClick={onToggleAccessMenu}
+                {!textOnly && !hidePlusButton ? (
+                  <ComposerPlusButton
+                    variant={variant}
+                    disabled={readOnly}
+                    commands={slashCommands}
+                    menuAnchorRef={composerShellRef}
+                    onAddAttachment={() => attachmentInputRef.current?.click()}
+                    onSelectCommand={(command) => applySlashCommand(command, undefined)}
+                  />
+                ) : null}
+                {!textOnly && !hidePermissionControl ? (
+                  <div className="permission-menu-anchor" ref={accessMenuRef}>
+                    <button
+                      className={`permission-chip tone-${permissionOption.chipTone}`}
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={accessMenuOpen}
+                      aria-label={t("composer.permissionMode", { mode: permissionChipLabel })}
+                      disabled={!initialized || readOnly || running}
+                      onClick={onToggleAccessMenu}
+                    >
+                      <permissionOption.icon aria-hidden="true" />
+                      <span>{permissionChipLabel}</span>
+                      <ChevronDown aria-hidden="true" />
+                    </button>
+                    {accessMenuOpen ? (
+                      <FloatingMenuPortal
+                        anchorRef={accessMenuRef}
+                        owner="composer-access"
+                        placement="above"
+                        align="left"
+                        offset={6}
+                        width={176}
                       >
-                        <permissionOption.icon aria-hidden="true" />
-                        <span>{permissionChipLabel}</span>
-                        <ChevronDown aria-hidden="true" />
-                      </button>
-                      {accessMenuOpen ? (
-                        <FloatingMenuPortal
-                          anchorRef={accessMenuRef}
-                          owner="composer-access"
-                          placement="above"
-                          align="left"
-                          offset={6}
-                          width={176}
-                        >
-                          <AccessMenu
-                            permissions={initialized?.permissions}
-                            disabled={!initialized || readOnly || running}
-                            onSelect={onSelectPermissionMode}
-                          />
-                        </FloatingMenuPortal>
-                      ) : null}
-                    </div>
-                  </>
-                )}
+                        <AccessMenu
+                          permissions={initialized?.permissions}
+                          disabled={!initialized || readOnly || running}
+                          onSelect={onSelectPermissionMode}
+                        />
+                      </FloatingMenuPortal>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <div className="composer-bar-right">
                 {hideRuntimeControls ? null : (

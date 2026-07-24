@@ -8,10 +8,25 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the Agent Templates section from the desktop skills catalog and the
+  underlying runtime discovery in `internal/agenttemplate/`. The desktop
+  rendered Claude Code-style `.claude/agents/*.md` files when present, but
+  nothing in the desktop UI or in `spawn_agent` ever consumed the
+  discovery to trigger work, so the section was effectively dead UI.
+  Restoring it later is a small change once a real spawn/invoke path
+  exists. Drops the `agent-template/list` IPC method, the `agent_template`
+  extension kind, the `AgentTemplate*` protocol types, and the
+  `agent_template_count` field on initialize.
 ### Fixed
 
 - Added desktop skill preview dialogs that show the underlying Skill content and
   keep the preview body scrolling inside a stable modal.
+- Fixed resumed goals so they start a continuation turn instead of only changing
+  the banner status, and clarified idle active goals as ready to continue.
+- Returned a recovery-focused error when the goal tool tries to complete a
+  blocked or paused goal before the user resumes it.
 - Centered the skills catalog content within its scroll region on the desktop.
 - Removed count badges from the skills catalog section headings on the desktop.
 
@@ -45,18 +60,6 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 - Fixed workspace navigation details including real file-menu app icons,
   file-tree context actions, sidebar restoration, scrolling intent, and stream
   cursors around fenced code blocks.
-
-### Removed
-
-- Removed the Agent Templates section from the desktop skills catalog and the
-  underlying runtime discovery in `internal/agenttemplate/`. The desktop
-  rendered Claude Code-style `.claude/agents/*.md` files when present, but
-  nothing in the desktop UI or in `spawn_agent` ever consumed the
-  discovery to trigger work, so the section was effectively dead UI.
-  Restoring it later is a small change once a real spawn/invoke path
-  exists. Drops the `agent-template/list` IPC method, the `agent_template`
-  extension kind, the `AgentTemplate*` protocol types, and the
-  `agent_template_count` field on initialize.
 
 ## [0.10.1] - 2026-07-21
 

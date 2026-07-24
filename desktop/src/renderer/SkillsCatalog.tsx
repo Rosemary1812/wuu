@@ -306,11 +306,11 @@ function SkillPreviewDialog({
       subtitle={skill.description || skill.when_to_use || skill.trigger_condition}
       panelClassName="skill-preview-dialog"
       onClose={onClose}
-      footer={
+      footer={skill.user_invocable ? (
         <button className="settings-button settings-button-primary" type="button" onClick={onTry}>
           {t("skills.tryNow")}
         </button>
-      }
+      ) : undefined}
     >
       <div className="skill-preview-body">
         {contentState.loading ? (

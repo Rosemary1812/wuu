@@ -194,7 +194,7 @@ func (s *Service) ListTasks(ctx context.Context, params TaskListParams) ([]Messa
 	}
 	query := `
 		SELECT id, room_id, seq, COALESCE(thread_id, ''), author_type, author_id,
-			kind, body, mentions_json, COALESCE(reply_to, ''),
+			kind, body, images_json, files_json, mentions_json, COALESCE(reply_to, ''),
 			COALESCE(task_title, ''), COALESCE(task_state, ''), COALESCE(task_owner, ''), created_at
 		FROM room_messages WHERE room_id = ? AND kind = 'task'`
 	args := []any{params.RoomID}

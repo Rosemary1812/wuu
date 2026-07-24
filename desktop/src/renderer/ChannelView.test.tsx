@@ -75,7 +75,7 @@ function createApi(): Partial<WuuDesktopApi> {
             author_type: "agent" as const,
             author_id: "agent-1",
             kind: "text" as const,
-            body: "Hello from Alpha",
+            body: "Hello from **Alpha** with `markdown`\n\n<img src=x onerror=alert(1)>",
             created_at: "2026-07-23T00:00:00Z",
           }, {
             id: "message-2",
@@ -85,6 +85,8 @@ function createApi(): Partial<WuuDesktopApi> {
             author_id: "human",
             kind: "text" as const,
             body: "Human direction",
+            images: [{ media_type: "image/png", data: "aW1hZ2U=" }],
+            files: [{ media_type: "application/pdf", data: "cGRm", filename: "brief.pdf" }],
             created_at: "2026-07-23T00:00:30Z",
           }, {
             id: "task-1",
@@ -97,6 +99,17 @@ function createApi(): Partial<WuuDesktopApi> {
             task_state: "doing",
             task_owner: "agent-1",
             created_at: "2026-07-23T00:01:00Z",
+          }, {
+            id: "message-3",
+            room_id,
+            seq: 4,
+            thread_id: "message-1",
+            reply_to: "message-1",
+            author_type: "agent" as const,
+            author_id: "agent-2",
+            kind: "text" as const,
+            body: "A threaded answer",
+            created_at: "2026-07-23T00:02:00Z",
           }]
         : [],
     })),
@@ -196,12 +209,29 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    expect(container.textContent).toContain("Hello from Alpha");
-    expect(container.querySelector(".channel-message.agent .channel-message-bubble")?.textContent).toBe("Hello from Alpha");
+    expect(container.querySelector(".channel-conversation-heading")).toBeNull();
+    const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
+    expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown\n<img src=x onerror=alert(1)>");
+    expect(
+      container
+        .querySelector<HTMLElement>(".channel-conversation")
+        ?.style.getPropertyValue("--channel-composer-height"),
+    ).toBe("");
+    expect(agentBubble?.querySelector("strong")?.textContent).toBe("Alpha");
+    expect(agentBubble?.querySelector("code")?.textContent).toBe("markdown");
+    expect(agentBubble?.querySelector("img")).toBeNull();
+    expect(agentBubble?.textContent).not.toContain("**");
     expect(container.querySelector(".channel-message.own .channel-message-bubble")?.textContent).toBe("Human direction");
+    expect(container.querySelector<HTMLImageElement>(".channel-message.own .composer-image-attachment img")?.src).toContain("data:image/png;base64,aW1hZ2U=");
+    expect(container.querySelector(".channel-message.own .composer-file-attachment")?.textContent).toContain("brief.pdf");
+    expect(container.querySelector(".channel-message.own .composer-attachments button")).toBeNull();
     expect(container.querySelector(".channel-message.own .channel-agent-avatar")).toBeNull();
+    expect(container.querySelector(".channel-task-card")).toBeNull();
+    expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("Investigate flaky build");
     expect(container.querySelector('[aria-label="Alpha: 处理中"]')).not.toBeNull();
     expect(container.querySelector(".channel-agent-status-dot.thinking")).not.toBeNull();
+    expect(container.querySelector(".channel-agent-status-card")?.textContent).toBe("处理中");
+    expect(container.querySelector(".channel-agent-status-card strong")).toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-row"))
       .find((button) => button.textContent?.includes("research"));
     act(() => research?.click());
@@ -210,11 +240,135 @@ describe("ChannelView", () => {
 
     const textarea = container.querySelector<HTMLTextAreaElement>(".channel-composer textarea");
     expect(textarea).not.toBeNull();
+    expect(container.querySelector(".channel-composer .composer-plus-button")).toBeNull();
+    expect(container.querySelector(".channel-composer .permission-chip")).toBeNull();
     act(() => setInputValue(textarea!, "Ask Alpha"));
     const send = container.querySelector<HTMLButtonElement>(".channel-composer .composer-send-button");
     await act(async () => send?.click());
 
-    expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha" });
+    expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
+  });
+
+  it("opens a thread, keeps replies out of the room stream, and sends a direct reply", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("A threaded answer");
+    const threadButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-message-actions button"))
+      .find((button) => button.textContent?.includes("1 条回复"));
+    act(() => threadButton?.click());
+
+    const panel = container.querySelector<HTMLElement>(".channel-thread-panel");
+    expect(panel?.textContent).toContain("A threaded answer");
+    expect(panel?.querySelector(".channel-thread-header")).toBeNull();
+    expect(panel?.querySelector(".composer-expand-button")).toBeNull();
+    const replyActions = panel?.querySelectorAll<HTMLButtonElement>(".channel-message-actions button");
+    act(() => replyActions?.item(replyActions.length - 1).click());
+    expect(panel?.querySelector(".channel-thread-replying")?.textContent).toContain("Beta");
+
+    const textarea = panel?.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => setInputValue(textarea!, "Follow-up question"));
+    await act(async () => panel?.querySelector<HTMLButtonElement>(".composer-send-button")?.click());
+
+    expect(api.sendChannelMessage).toHaveBeenCalledWith({
+      room_id: "room-1",
+      thread_id: "message-1",
+      reply_to: "message-3",
+      body: "Follow-up question",
+      images: [],
+      files: [],
+    });
+  });
+
+  it("does not issue another bottom scroll when polling returns the same messages", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = createApi();
+      Object.defineProperty(window, "wuu", { configurable: true, value: api });
+      root = createRoot(container);
+      act(() => root?.render(<ChannelView />));
+      await settle();
+
+      const stream = container.querySelector<HTMLDivElement>(".channel-message-stream");
+      expect(stream).not.toBeNull();
+      let scrollTop = 600;
+      let scrollWrites = 0;
+      Object.defineProperties(stream!, {
+        scrollHeight: { configurable: true, get: () => 1000 },
+        clientHeight: { configurable: true, get: () => 400 },
+        scrollTop: {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => {
+            scrollTop = value;
+            scrollWrites += 1;
+          },
+        },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      scrollTop = 600;
+      scrollWrites = 0;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+
+      expect(api.listChannelMessages).toHaveBeenCalledTimes(2);
+      expect(scrollWrites).toBe(0);
+      expect(scrollTop).toBe(600);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers the shared jump-to-latest control after the user leaves the bottom", async () => {
+    vi.useFakeTimers();
+    try {
+      Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
+      root = createRoot(container);
+      act(() => root?.render(<ChannelView />));
+      await settle();
+
+      const stream = container.querySelector<HTMLDivElement>(".channel-message-stream");
+      expect(stream).not.toBeNull();
+      let scrollTop = 600;
+      const scrollTo = vi.fn();
+      Object.defineProperties(stream!, {
+        scrollHeight: { configurable: true, get: () => 1000 },
+        clientHeight: { configurable: true, get: () => 400 },
+        scrollTop: {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => { scrollTop = value; },
+        },
+        scrollTo: { configurable: true, value: scrollTo },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      act(() => {
+        scrollTop = 300;
+        stream?.dispatchEvent(new WheelEvent("wheel", { deltaY: -20 }));
+        stream?.dispatchEvent(new Event("scroll"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+
+      const jump = document.body.querySelector<HTMLButtonElement>(".jump-to-latest-pill");
+      expect(jump).not.toBeNull();
+      act(() => jump?.click());
+      expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shares a nonzero resizable sidebar width between rooms and agents", async () => {
@@ -297,18 +451,13 @@ describe("ChannelView", () => {
     });
   });
 
-  it("creates only a channel with selected agents and toggles system notifications", async () => {
+  it("creates only a channel with selected agents", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
     act(() => root?.render(<ChannelView />));
     await settle();
-
-    const notificationButton = container.querySelector<HTMLButtonElement>('button[aria-label="开启提及系统通知"]');
-    expect(notificationButton?.getAttribute("aria-pressed")).toBe("false");
-    act(() => notificationButton?.click());
-    expect(window.localStorage.getItem("wuu.channels.systemNotifications")).toBe("true");
 
     const newRoomButton = container.querySelector<HTMLButtonElement>('button[aria-label="新建频道"]');
     act(() => newRoomButton?.click());
@@ -331,10 +480,10 @@ describe("ChannelView", () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
+    act(() => root?.render(<ChannelView section="tasks" />));
     await settle();
 
-    act(() => container.querySelector<HTMLButtonElement>(".channel-task-create-button")?.click());
+    act(() => container.querySelector<HTMLButtonElement>(".channel-management-primary")?.click());
     const title = document.querySelector<HTMLInputElement>(".channel-setup-form input");
     expect(title).not.toBeNull();
     act(() => setInputValue(title!, "Investigate flaky build"));
