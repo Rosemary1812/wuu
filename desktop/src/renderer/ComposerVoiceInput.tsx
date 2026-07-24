@@ -6,6 +6,7 @@ import type {
 } from "../shared/protocol";
 import { useI18n } from "./i18n";
 import type { TranslationKey } from "./i18n/resources/zh-CN";
+import { useVoiceInputSettings } from "./VoiceInputSettingsState";
 
 type VoicePhase =
   | "idle"
@@ -29,14 +30,13 @@ export function ComposerVoiceInput({
   const { t } = useI18n();
   const [phase, setPhaseState] = useState<VoicePhase>("idle");
   const [error, setError] = useState("");
-  const [polishEnabled, setPolishEnabled] = useState(
-    () => localStorage.getItem("wuu.voice.polish") === "true",
-  );
+  const { settings, updateSettings } = useVoiceInputSettings();
+  const polishEnabled = settings.polish_enabled;
   const phaseRef = useRef<VoicePhase>("idle");
   const basePromptRef = useRef("");
   const transcriptRef = useRef("");
   const finalizingRef = useRef(false);
-  const polishEnabledRef = useRef(polishEnabled);
+  const polishEnabledRef = useRef(settings.polish_enabled);
   const polishAvailableRef = useRef(polishAvailable);
   const supported =
     window.wuu?.platform === "darwin" &&
@@ -112,9 +112,9 @@ export function ComposerVoiceInput({
   }, [supported, t]);
 
   useEffect(() => {
-    polishEnabledRef.current = polishEnabled;
+    polishEnabledRef.current = settings.polish_enabled;
     polishAvailableRef.current = polishAvailable;
-  }, [polishAvailable, polishEnabled]);
+  }, [polishAvailable, settings.polish_enabled]);
 
   useEffect(
     () => () => {
@@ -142,7 +142,9 @@ export function ComposerVoiceInput({
     setError("");
     setPhase("requesting_microphone_permission");
     try {
-      const result = await window.wuu.startSpeechRecognition(locale);
+      const recognitionLocale =
+        settings.language === "system" ? locale : settings.language;
+      const result = await window.wuu.startSpeechRecognition(recognitionLocale);
       if (!result.ok) {
         setError(voiceErrorMessage(result.error, t));
         setPhase("error");
@@ -188,10 +190,16 @@ export function ComposerVoiceInput({
             : t("composer.voice.polishUnavailable")
         }
         onClick={() => {
-          const next = !polishEnabled;
-          setPolishEnabled(next);
+          const next = !settings.polish_enabled;
           polishEnabledRef.current = next;
-          localStorage.setItem("wuu.voice.polish", String(next));
+          void updateSettings({
+            ...settings,
+            polish_enabled: next,
+          }).catch(() => {
+            polishEnabledRef.current = settings.polish_enabled;
+            setError(t("composer.voice.settingsSaveFailed"));
+            setPhase("error");
+          });
         }}
       >
         <Sparkles aria-hidden="true" />

@@ -72,6 +72,7 @@ import { ThemePreferenceControl } from "./ThemePreferenceSection";
 import { LanguagePreferenceControl } from "./LanguagePreferenceSection";
 import { formatCurrentNumber, useI18n } from "./i18n";
 import { SubagentModelAliases } from "./SubagentModelAliases";
+import { VoiceInputSettingsSection } from "./VoiceInputSettingsSection";
 
 export type SettingsPage =
   | "providers"
@@ -1975,6 +1976,12 @@ function SettingsGeneralPage({
           ) : null}
         </SettingsCard>
       </SettingsSection>
+
+      <VoiceInputSettingsSection
+        polishAvailable={Boolean(
+          initialized && initialized.status !== "needs_setup",
+        )}
+      />
 
       <SettingsSection title={t("settings.behavior")} testID="settings-general">
         <SettingsCard>

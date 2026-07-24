@@ -12,8 +12,22 @@ let root: Root | null = null;
 let speechHandler: ((event: SpeechRecognitionEvent) => void) | undefined;
 
 function installApi(overrides: Partial<WuuDesktopApi> = {}): void {
+  const initialVoiceInputSettings = {
+    polish_enabled: false,
+    language: "system" as const,
+  };
   const api: Partial<WuuDesktopApi> = {
     platform: "darwin",
+    initialVoiceInputSettings,
+    getVoiceInputSettings: vi.fn().mockResolvedValue({
+      settings: initialVoiceInputSettings,
+      microphone_permission: "not_determined",
+      speech_permission: "not_determined",
+    }),
+    updateVoiceInputSettings: vi
+      .fn()
+      .mockImplementation(async (settings) => settings),
+    onVoiceInputSettingsChange: vi.fn(() => () => undefined),
     startSpeechRecognition: vi.fn().mockResolvedValue({
       ok: true,
       session_id: "speech-1",
@@ -104,7 +118,7 @@ describe("ComposerVoiceInput", () => {
     installApi({ polishText });
     renderVoiceInput();
 
-    act(() => {
+    await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".composer-polish-toggle")
         ?.click();
@@ -152,12 +166,35 @@ describe("ComposerVoiceInput", () => {
     );
   });
 
+  it("uses the recognition language selected in settings", async () => {
+    const startSpeechRecognition = vi.fn().mockResolvedValue({
+      ok: true,
+      session_id: "speech-1",
+    });
+    installApi({
+      initialVoiceInputSettings: {
+        polish_enabled: false,
+        language: "en-US",
+      },
+      startSpeechRecognition,
+    });
+    renderVoiceInput();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(".composer-voice-button")
+        ?.click();
+    });
+
+    expect(startSpeechRecognition).toHaveBeenCalledWith("en-US");
+  });
+
   it("keeps raw transcription when BYOK polish fails", async () => {
     installApi({
       polishText: vi.fn().mockRejectedValue(new Error("provider failed")),
     });
     renderVoiceInput();
-    act(() => {
+    await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".composer-polish-toggle")
         ?.click();

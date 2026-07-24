@@ -534,6 +534,33 @@
   gap: 8px;
 }
 
+.settings-voice-permission {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.settings-voice-permission.status-granted {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.settings-voice-permission.status-denied,
+.settings-voice-permission.status-restricted {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.settings-spin {
+  animation: wuu-spin var(--motion-spin) linear infinite;
+}
+
 .settings-textarea {
   min-height: 112px;
   resize: vertical;

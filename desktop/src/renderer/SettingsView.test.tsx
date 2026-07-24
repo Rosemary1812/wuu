@@ -806,6 +806,7 @@ describe("SettingsView general settings", () => {
       await Promise.resolve();
     });
     expect(container.querySelector("[data-testid=\"settings-general\"]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=\"settings-voice-input\"]")).not.toBeNull();
     expect(rootText()).toContain("附加系统提示");
     expect(rootText()).toContain("记忆");
     expect(rootText()).toContain("docs");
