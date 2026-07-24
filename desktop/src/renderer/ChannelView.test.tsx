@@ -201,6 +201,11 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-conversation-heading")).toBeNull();
     const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
     expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown\n<img src=x onerror=alert(1)>");
+    expect(
+      container
+        .querySelector<HTMLElement>(".channel-conversation")
+        ?.style.getPropertyValue("--channel-composer-height"),
+    ).toBe("");
     expect(agentBubble?.querySelector("strong")?.textContent).toBe("Alpha");
     expect(agentBubble?.querySelector("code")?.textContent).toBe("markdown");
     expect(agentBubble?.querySelector("img")).toBeNull();
@@ -311,18 +316,13 @@ describe("ChannelView", () => {
     });
   });
 
-  it("creates only a channel with selected agents and toggles system notifications", async () => {
+  it("creates only a channel with selected agents", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
     act(() => root?.render(<ChannelView />));
     await settle();
-
-    const notificationButton = container.querySelector<HTMLButtonElement>('button[aria-label="开启提及系统通知"]');
-    expect(notificationButton?.getAttribute("aria-pressed")).toBe("false");
-    act(() => notificationButton?.click());
-    expect(window.localStorage.getItem("wuu.channels.systemNotifications")).toBe("true");
 
     const newRoomButton = container.querySelector<HTMLButtonElement>('button[aria-label="新建频道"]');
     act(() => newRoomButton?.click());

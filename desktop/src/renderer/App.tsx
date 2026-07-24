@@ -68,7 +68,6 @@ import {
   AppSidebar,
 } from "./AppSidebar";
 import { ChannelView, type ChannelSection } from "./ChannelView";
-import { channelSystemNotificationsEnabled } from "./ChannelPreferences";
 import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
@@ -528,19 +527,8 @@ export function App(): JSX.Element {
         }
         const result = await window.wuu.getChannelHumanMentionStatus();
         if (active) {
-          const previous = previousChannelMentionCount.current;
           previousChannelMentionCount.current = result.count;
           setChannelMentionCount(result.count);
-          if (
-            previous !== null &&
-            result.count > previous &&
-            channelSystemNotificationsEnabled() &&
-            typeof Notification !== "undefined"
-          ) {
-            new Notification(t("channels.notificationTitle"), {
-              body: t("channels.unreadMentions", { count: result.count }),
-            });
-          }
         }
       } catch (reason) {
         console.warn("channel mention refresh failed", reason);

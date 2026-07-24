@@ -34,7 +34,7 @@ describe("channel message resizing", () => {
     const composer = ruleFor(".channel-composer");
     const messageContent = ruleFor(".channel-message-content");
 
-    expect(stream).toMatch(/padding:\s*18px clamp\(20px, 5vw, 72px\)\s+calc\(var\(--channel-composer-height, 0px\) \+ 12px\)/);
+    expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 12px/);
     expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
     expect(messageContent).toMatch(/max-width:\s*72%/);
     expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
@@ -46,8 +46,8 @@ describe("channel message resizing", () => {
     const footer = ruleFor(".channel-conversation-footer");
 
     expect(conversation).toMatch(/display:\s*grid/);
-    expect(conversation).toMatch(/grid-template-rows:\s*48px auto minmax\(0, 1fr\)/);
-    expect(stream).toMatch(/grid-row:\s*3/);
+    expect(conversation).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+    expect(stream).toMatch(/grid-row:\s*2/);
     expect(stream).toMatch(/overflow-y:\s*auto/);
     expect(stream).toMatch(/scrollbar-gutter:\s*stable/);
     expect(footer).toMatch(/position:\s*absolute/);

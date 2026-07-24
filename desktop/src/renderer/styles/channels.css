@@ -453,7 +453,12 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding: 18px clamp(20px, 5vw, 72px)
-    calc(var(--channel-composer-height, 0px) + 12px);
+    calc(
+      var(
+          --channel-composer-height,
+          calc(var(--conversation-composer-min-height, 100px) + 30px)
+        ) + 12px
+    );
 }
 
 .channel-message {

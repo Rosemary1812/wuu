@@ -1,11 +1,10 @@
-import { Bell, BellOff, Bot, ClipboardList, Hash, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, ClipboardList, Hash, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
 import { useAutoFollowScrollContainer } from "./AutoFollowScroll";
 import { ChannelComposer } from "./ChannelComposer";
-import { channelSystemNotificationsEnabled, setChannelSystemNotificationsEnabled } from "./ChannelPreferences";
 import { buildComposerAttachments } from "./ComposerDraftState";
 import { ComposerAttachmentStrip } from "./ComposerInputSections";
 import {
@@ -120,7 +119,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [editingAgentID, setEditingAgentID] = useState("");
   const [roomName, setRoomName] = useState("");
   const [roomAgentIDs, setRoomAgentIDs] = useState<string[]>([]);
-  const [systemNotifications, setSystemNotifications] = useState(channelSystemNotificationsEnabled);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
@@ -353,7 +351,11 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 
     const updateComposerHeight = (): void => {
       const height = Math.ceil(footer.getBoundingClientRect().height);
-      conversation.style.setProperty("--channel-composer-height", `${height}px`);
+      if (height > 0) {
+        conversation.style.setProperty("--channel-composer-height", `${height}px`);
+      } else {
+        conversation.style.removeProperty("--channel-composer-height");
+      }
       messageScroll.scheduleScrollToBottom();
     };
 
@@ -508,19 +510,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         <div className="channel-pane-heading">
           <span>{t("channels.rooms")}</span>
           <div className="channel-heading-actions">
-            <button
-              className="icon-button"
-              type="button"
-              aria-pressed={systemNotifications}
-              aria-label={t(systemNotifications ? "channels.disableSystemNotifications" : "channels.enableSystemNotifications")}
-              onClick={() => {
-                const enabled = !systemNotifications;
-                setSystemNotifications(enabled);
-                setChannelSystemNotificationsEnabled(enabled);
-              }}
-            >
-              {systemNotifications ? <Bell className="icon" /> : <BellOff className="icon" />}
-            </button>
             <button className="icon-button" type="button" aria-label={t("channels.newRoom")} onClick={() => setSetupPanel("room")}>
               <Plus className="icon" />
             </button>
