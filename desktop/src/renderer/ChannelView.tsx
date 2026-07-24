@@ -17,6 +17,7 @@ import {
 import { useI18n } from "./i18n";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
+import { RichContent } from "./RichContent";
 
 type SetupPanel = "agent" | "room" | "task" | null;
 export type ChannelSection = "rooms" | "agents" | "tasks";
@@ -630,7 +631,11 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </time>
                   </div>
-                  {message.body ? <p className="channel-message-bubble">{message.body}</p> : null}
+                  {message.body ? (
+                    <div className="channel-message-bubble">
+                      <RichContent text={message.body} />
+                    </div>
+                  ) : null}
                   {message.images?.length || message.files?.length ? (
                     <ComposerAttachmentStrip
                       images={(message.images ?? []).map((image, index) => ({ id: `${message.id}-image-${index}`, ...image }))}

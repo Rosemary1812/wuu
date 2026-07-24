@@ -75,7 +75,7 @@ function createApi(): Partial<WuuDesktopApi> {
             author_type: "agent" as const,
             author_id: "agent-1",
             kind: "text" as const,
-            body: "Hello from Alpha",
+            body: "Hello from **Alpha** with `markdown`",
             created_at: "2026-07-23T00:00:00Z",
           }, {
             id: "message-2",
@@ -198,8 +198,11 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    expect(container.textContent).toContain("Hello from Alpha");
-    expect(container.querySelector(".channel-message.agent .channel-message-bubble")?.textContent).toBe("Hello from Alpha");
+    const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
+    expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown");
+    expect(agentBubble?.querySelector("strong")?.textContent).toBe("Alpha");
+    expect(agentBubble?.querySelector("code")?.textContent).toBe("markdown");
+    expect(agentBubble?.textContent).not.toContain("**");
     expect(container.querySelector(".channel-message.own .channel-message-bubble")?.textContent).toBe("Human direction");
     expect(container.querySelector<HTMLImageElement>(".channel-message.own .composer-image-attachment img")?.src).toContain("data:image/png;base64,aW1hZ2U=");
     expect(container.querySelector(".channel-message.own .composer-file-attachment")?.textContent).toContain("brief.pdf");
