@@ -1350,6 +1350,85 @@
   overflow: hidden;
 }
 
+.composer-voice-input {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.composer-voice-button,
+.composer-polish-toggle {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+.composer-voice-button {
+  width: 28px;
+  padding: 0;
+}
+
+.composer-polish-toggle {
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}
+
+.composer-voice-button:hover:not(:disabled),
+.composer-polish-toggle:hover:not(:disabled),
+.composer-polish-toggle.is-active {
+  background: var(--ink-overlay-8);
+  color: var(--ink);
+}
+
+.composer-voice-button.is-active {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.composer-voice-button:focus-visible,
+.composer-polish-toggle:focus-visible {
+  outline: 2px solid var(--ink-overlay-18);
+  outline-offset: 1px;
+}
+
+.composer-voice-button:disabled,
+.composer-polish-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.composer-voice-status {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-voice-status.is-error {
+  color: var(--danger);
+}
+
+.composer-voice-spinner {
+  animation: wuu-spin var(--motion-spin) linear infinite;
+}
+
+@container composer-shell (max-width: 620px) {
+  .composer-polish-toggle span,
+  .composer-voice-status {
+    display: none;
+  }
+}
+
 .composer-bar-right {
   flex: 0 1 auto;
   justify-content: flex-end;

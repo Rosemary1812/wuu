@@ -78,6 +78,7 @@ import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerType
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
+import { ComposerVoiceInput } from "./ComposerVoiceInput";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
 
@@ -1136,6 +1137,15 @@ export function Composer({
                     onSelectCommand={(command) => applySlashCommand(command, undefined)}
                   />
                 ) : null}
+                <ComposerVoiceInput
+                  prompt={prompt}
+                  setPrompt={setPrompt}
+                  disabled={readOnly}
+                  locale={locale}
+                  polishAvailable={Boolean(
+                    initialized && initialized.status !== "needs_setup",
+                  )}
+                />
                 {!textOnly && !hidePermissionControl ? (
                   <div className="permission-menu-anchor" ref={accessMenuRef}>
                     <button
