@@ -3,7 +3,7 @@ import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
-import { useAutoFollowScrollContainer } from "./AutoFollowScroll";
+import { AUTO_FOLLOW_BOTTOM_THRESHOLD_PX, useAutoFollowScrollContainer } from "./AutoFollowScroll";
 import { ChannelComposer } from "./ChannelComposer";
 import { buildComposerAttachments } from "./ComposerDraftState";
 import { ComposerAttachmentStrip } from "./ComposerInputSections";
@@ -15,6 +15,7 @@ import {
   type ComposerImage,
 } from "./ComposerMessages";
 import { useI18n } from "./i18n";
+import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { RichContent } from "./RichContent";
@@ -121,6 +122,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [taskTitle, setTaskTitle] = useState("");
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
+  const [composerFooterNode, setComposerFooterNode] = useState<HTMLDivElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const composerFooterRef = useRef<HTMLDivElement | null>(null);
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -131,6 +133,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     open: section === "rooms" && Boolean(selectedRoomID),
     observeKey: selectedRoomID,
   });
+  const setComposerFooter = useCallback((node: HTMLDivElement | null): void => {
+    composerFooterRef.current = node;
+    setComposerFooterNode(node);
+  }, []);
 
   const updateSplitWidth = useCallback((width: number): void => {
     const nextWidth = clampChannelSplitWidth(width);
@@ -589,7 +595,12 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             <div className="channel-stream-empty">{t("channels.empty")}</div>
           ) : null}
         </div>
-        <div ref={composerFooterRef} className="channel-conversation-footer">
+        <JumpToLatestPill
+          containerRef={messageScroll.scrollRef}
+          bottomAnchor={composerFooterNode}
+          threshold={AUTO_FOLLOW_BOTTOM_THRESHOLD_PX}
+        />
+        <div ref={setComposerFooter} className="channel-conversation-footer">
           <ChannelComposer
             draft={body}
             placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}

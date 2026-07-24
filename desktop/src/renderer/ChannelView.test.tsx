@@ -282,6 +282,50 @@ describe("ChannelView", () => {
     }
   });
 
+  it("offers the shared jump-to-latest control after the user leaves the bottom", async () => {
+    vi.useFakeTimers();
+    try {
+      Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
+      root = createRoot(container);
+      act(() => root?.render(<ChannelView />));
+      await settle();
+
+      const stream = container.querySelector<HTMLDivElement>(".channel-message-stream");
+      expect(stream).not.toBeNull();
+      let scrollTop = 600;
+      const scrollTo = vi.fn();
+      Object.defineProperties(stream!, {
+        scrollHeight: { configurable: true, get: () => 1000 },
+        clientHeight: { configurable: true, get: () => 400 },
+        scrollTop: {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => { scrollTop = value; },
+        },
+        scrollTo: { configurable: true, value: scrollTo },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      act(() => {
+        scrollTop = 300;
+        stream?.dispatchEvent(new WheelEvent("wheel", { deltaY: -20 }));
+        stream?.dispatchEvent(new Event("scroll"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+
+      const jump = document.body.querySelector<HTMLButtonElement>(".jump-to-latest-pill");
+      expect(jump).not.toBeNull();
+      act(() => jump?.click());
+      expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shares a nonzero resizable sidebar width between rooms and agents", async () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
     root = createRoot(container);
