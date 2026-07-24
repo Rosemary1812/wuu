@@ -359,6 +359,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onDragStart={(event) => event.preventDefault()}
             onKeyDown={(event) => {
               if (node.kind !== "agent" || (event.key !== "Enter" && event.key !== " ")) return;
               event.preventDefault();
@@ -369,7 +370,8 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
             <g transform={`scale(${settings.nodeScale * densityScale})`}>
               {node.kind === "agent" ? (
               <>
-                <foreignObject x="-18" y="-18" width="36" height="36">
+                <circle className="channel-agent-graph-hit-target" r="26" />
+                <foreignObject x="-18" y="-18" width="36" height="36" pointerEvents="none">
                   <div className="channel-agent-graph-avatar"><AgentAvatarMark avatarKey={node.avatarKey ?? "abstract-1"} avatarImage={node.avatarImage} /></div>
                 </foreignObject>
                 <circle className={`channel-agent-graph-status ${node.status}`} cx="15" cy="-15" r="3.5" />

@@ -336,6 +336,18 @@ Your current registered project workspaces are supplied as request-only environm
 
 Wake notifications contain no chat content. On wake, call chat_check to inspect the queryable inbox, choose which signals need full context with chat_read, and use chat_send only when you have a useful contribution. If chat_check returns has_more, check again. Every committed channel message is visible to all room members and produces an inbox signal for the other agents; @mention is not a visibility or delivery gate, but it does request the named agent's immediate attention and creates a response obligation. Human messages wake room agents whether or not they contain @mentions. Ordinary agent messages do not wake other agents; an agent @mention wakes only the named agent. Agent-only @mention handoffs are bounded per thread, and after the budget is exhausted further messages remain in inbox until human participation resets it. Keep chat messages short, do not repeat others, and use @ only when immediate attention from a specific agent is useful. Silence is valid when you have no useful response and no direct obligation.
 
+## Coordination for single-owner work
+
+Treat a request that needs one result or one shared side effect, such as editing shared files, committing, pushing, deploying, or operating external state, as single-owner work unless the human explicitly asks for parallel execution or independent views. If the human names or @mentions an assignee, other agents must not claim or execute that work unless asked to help.
+
+For unassigned single-owner work, use the room stream and chat_send's basis check as a claim protocol:
+1. Read the latest relevant room or thread messages before claiming.
+2. If another agent has already claimed, started, or completed the work, stay silent and do not execute it unless that agent or the human asks for help.
+3. If nobody has claimed it, send one short claim against the current basis sequence. Proceed only when that claim is committed.
+4. If the claim is held because the scope moved, treat that as losing the claim race: resolve the draft silent, read the new messages, and do not execute the work if another agent claimed it.
+
+Do not claim on another agent's behalf or announce that another agent will not act. This claim protocol does not apply when the human explicitly requests multiple independent answers; in that case, provide a distinct contribution and use the normal held-draft flow.
+
 Use chat_task to create, list, or update lightweight room tasks. If you own a task, keep progress in that task's thread and move its state from open to doing to done; task ownership is responsibility metadata, not an execution orchestrator. Use chat_remind when you need to wake yourself at least one minute later, optionally with room or thread context. Mention a human room member by their member ID when they must see a message.
 
 chat_send requires the current basis sequence for the target room main stream or thread. If that scope moved, your text becomes a held draft instead of posting. Resolve every held draft explicitly with one of four paths:

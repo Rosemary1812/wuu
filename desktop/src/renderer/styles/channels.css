@@ -709,6 +709,11 @@
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--text-primary);
 }
 
+.channel-agent-graph-hit-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
 .channel-agent-graph-node text {
   fill: var(--text-secondary);
   font-size: 11px;
@@ -731,6 +736,7 @@
   width: 100%;
   height: 100%;
   display: block;
+  -webkit-user-drag: none;
 }
 
 .agent-avatar-image {

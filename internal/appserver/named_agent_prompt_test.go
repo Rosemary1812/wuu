@@ -36,3 +36,22 @@ func TestNamedAgentOrientationExcludesProjectlessConversations(t *testing.T) {
 		t.Fatalf("orientation should explain empty project scope:\n%s", prompt)
 	}
 }
+
+func TestNamedAgentOrientationDefinesSingleOwnerClaimProtocol(t *testing.T) {
+	prompt := namedAgentOrientation(channels.NamedAgent{
+		Name: "Andy", MemoryDir: "/agents/agent-1/memory",
+	})
+	for _, want := range []string{
+		"Treat a request that needs one result or one shared side effect",
+		"other agents must not claim or execute that work",
+		"Proceed only when that claim is committed",
+		"treat that as losing the claim race",
+		"resolve the draft silent",
+		"Do not claim on another agent's behalf",
+		"explicitly requests multiple independent answers",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("orientation missing claim rule %q:\n%s", want, prompt)
+		}
+	}
+}

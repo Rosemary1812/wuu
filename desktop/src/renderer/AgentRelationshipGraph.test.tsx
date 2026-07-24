@@ -63,6 +63,8 @@ describe("AgentRelationshipGraph", () => {
     });
     const node = container.querySelector<SVGGElement>('[aria-label="Andy"]')!;
     const clickNode = container.querySelector<SVGGElement>('[aria-label="Le"]')!;
+    expect(node.querySelector(".channel-agent-graph-hit-target")).not.toBeNull();
+    expect(node.querySelector("foreignObject")?.getAttribute("pointer-events")).toBe("none");
     act(() => {
       clickNode.dispatchEvent(pointerEvent("pointerdown", 350, 280));
       clickNode.dispatchEvent(pointerEvent("pointerup", 350, 280));
