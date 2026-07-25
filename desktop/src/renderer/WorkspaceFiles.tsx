@@ -23,6 +23,10 @@ const WorkspaceMonacoEditor = lazy(async () => ({
   default: (await import("./WorkspaceMonacoEditor")).WorkspaceMonacoEditor,
 }));
 
+const WorkspacePdfPreview = lazy(async () => ({
+  default: (await import("./WorkspacePdfPreview")).WorkspacePdfPreview,
+}));
+
 const WORKSPACE_FILE_TREE_STYLE: CSSProperties = {
   contain: "strict",
   height: "100%",
@@ -721,11 +725,9 @@ export function WorkspaceFilePreview({
     if (file.renderable_kind === "pdf") {
       return (
         <article className="workspace-file-preview readonly">
-          <iframe
-            className="workspace-file-pdf-preview"
-            src={file.renderable_url}
-            title={file.path}
-          />
+          <Suspense fallback={<div className="workspace-file-pdf-preview" />}>
+            <WorkspacePdfPreview url={file.renderable_url} title={file.path} />
+          </Suspense>
         </article>
       );
     }

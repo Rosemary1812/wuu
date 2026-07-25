@@ -2780,7 +2780,7 @@ html.resizing-workspace-terminal-split * {
   min-width: 0;
   min-height: 0;
   border: 0;
-  background: var(--surface-2);
+  background: var(--paper);
 }
 
 .workspace-markdown-reading {

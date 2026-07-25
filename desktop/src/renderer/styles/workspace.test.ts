@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const workspaceCss = readFileSync(resolve(__dirname, "workspace.css"), "utf-8");
+const workspacePdfCss = readFileSync(
+  resolve(__dirname, "workspace-pdf-preview.css"),
+  "utf-8",
+);
 
 function cssRuleBody(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -235,6 +239,18 @@ describe("workspace file preview layout", () => {
       /scrollbar-gutter:/,
     );
     expect(cssRuleBody(".workspace-monaco-editor")).toMatch(/height:\s*100%;/);
+  });
+
+  it("keeps PDF chrome on the app palette while preserving white document pages", () => {
+    expect(workspacePdfCss).toMatch(
+      /\.workspace-pdf-shell\s*\{[^}]*background:\s*var\(--paper\);/s,
+    );
+    expect(workspacePdfCss).toMatch(
+      /\.workspace-pdf-container\s*\{[^}]*background:\s*var\(--paper\);/s,
+    );
+    expect(workspacePdfCss).toMatch(
+      /\.pdfViewer \.page\s*\{[^}]*background-color:\s*#fff;/s,
+    );
   });
 
   it("makes Monaco use the renderer-wide scrollbar palette", () => {
