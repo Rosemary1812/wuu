@@ -34,4 +34,15 @@ describe("frontend feature flags", () => {
     featureFlags = await import("./FeatureFlags");
     expect(featureFlags.ENABLE_GROUP_CHAT).toBe(true);
   });
+
+  it("keeps voice input and BYOK polish disabled unless explicitly enabled", async () => {
+    vi.stubEnv("VITE_ENABLE_VOICE_INPUT", "false");
+    let featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_VOICE_INPUT).toBe(false);
+
+    vi.resetModules();
+    vi.stubEnv("VITE_ENABLE_VOICE_INPUT", "true");
+    featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_VOICE_INPUT).toBe(true);
+  });
 });

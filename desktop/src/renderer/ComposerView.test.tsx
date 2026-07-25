@@ -450,6 +450,12 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
 }
 
 describe("Composer send control", () => {
+  it("hides voice input and BYOK polish by default", () => {
+    renderComposer({ prompt: "" });
+
+    expect(container.querySelector(".composer-voice-input")).toBeNull();
+  });
+
   it("sends on Enter when Chromium leaves a stale IME keyCode", () => {
     const onSend = vi.fn();
     renderComposer({ prompt: "发送这条消息", onSend });

@@ -79,6 +79,7 @@ import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
 import { ComposerVoiceInput } from "./ComposerVoiceInput";
+import { ENABLE_VOICE_INPUT } from "./FeatureFlags";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
 
@@ -1137,15 +1138,17 @@ export function Composer({
                     onSelectCommand={(command) => applySlashCommand(command, undefined)}
                   />
                 ) : null}
-                <ComposerVoiceInput
-                  prompt={prompt}
-                  setPrompt={setPrompt}
-                  disabled={readOnly}
-                  locale={locale}
-                  polishAvailable={Boolean(
-                    initialized && initialized.status !== "needs_setup",
-                  )}
-                />
+                {ENABLE_VOICE_INPUT ? (
+                  <ComposerVoiceInput
+                    prompt={prompt}
+                    setPrompt={setPrompt}
+                    disabled={readOnly}
+                    locale={locale}
+                    polishAvailable={Boolean(
+                      initialized && initialized.status !== "needs_setup",
+                    )}
+                  />
+                ) : null}
                 {!textOnly && !hidePermissionControl ? (
                   <div className="permission-menu-anchor" ref={accessMenuRef}>
                     <button
