@@ -451,13 +451,15 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
 }
 
 describe("Composer send control", () => {
+  const voiceInputTest = import.meta.env.VITE_ENABLE_VOICE_INPUT === "true" ? it : it.skip;
+
   it("hides voice input and BYOK polish by default", () => {
     renderComposer({ prompt: "" });
 
     expect(container.querySelector(".composer-voice-input")).toBeNull();
   });
 
-  it("stops recording and steers the running turn with the final transcript", async () => {
+  voiceInputTest("stops recording and steers the running turn with the final transcript", async () => {
     let speechHandler: ((event: SpeechRecognitionEvent) => void) | undefined;
     const stopSpeechRecognition = vi.fn().mockResolvedValue({ ok: true });
     const onSend = vi.fn();

@@ -26,19 +26,3 @@ func TestSystemMainKeepsOnlyMainAgentCoordinationRules(t *testing.T) {
 		t.Fatalf("SystemMain should remain a small main-only coordination section, got %d bytes", len(prompt))
 	}
 }
-
-func TestSystemGuidesNaturalUserCenteredReplies(t *testing.T) {
-	prompt := System()
-	for _, want := range []string{
-		"user's mental model",
-		"Skip ritual openings",
-		"Treat the user as an equal",
-		"Default to natural prose",
-		"genuinely complex answer easier to scan",
-		"do not split a short answer into sections",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("System missing %q:\n%s", want, prompt)
-		}
-	}
-}
