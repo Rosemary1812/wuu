@@ -75,6 +75,11 @@ describe("SubagentModelAliases", () => {
     expect(container.textContent).toContain("Subagent model aliases");
     expect(container.textContent).toContain("Aliases are passed as spawn_agent.model values.");
     expect(aliasRows()).toHaveLength(0);
+
+    const toolbar = container.querySelector(".settings-alias-toolbar");
+    expect(toolbar?.querySelector(".settings-alias-heading")).not.toBeNull();
+    expect(toolbar?.querySelectorAll(".settings-alias-actions button")).toHaveLength(2);
+    expect(container.querySelector(".settings-row-footer")).toBeNull();
   });
 
   it("renders existing aliases from props", () => {
