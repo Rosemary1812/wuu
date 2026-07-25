@@ -1460,8 +1460,8 @@
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 32%, transparent);
+  background: var(--wuu-accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--wuu-accent) 28%, transparent);
   animation: composer-voice-live-pulse 1.6s ease-out infinite;
 }
 
