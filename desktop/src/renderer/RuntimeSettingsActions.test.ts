@@ -175,6 +175,7 @@ function buildActions({
   let branchMenuOpen = true;
   let codexRuntimeMenu: CodexRuntimeMenu = null;
   const clearThreadPendingComposerMessages = vi.fn();
+  const variantByModel = new Map<string, string>();
   const actions = createRuntimeSettingsActions({
     getAppState: () => appState,
     setAppState: (update) => {
@@ -199,6 +200,7 @@ function buildActions({
         typeof update === "function" ? update(codexRuntimeMenu) : update;
     },
     clearThreadPendingComposerMessages,
+    variantByModel,
   });
   return {
     actions,
@@ -423,6 +425,64 @@ describe("createRuntimeSettingsActions", () => {
     );
     expect(harness.getAppState().secondaryThread?.model_variant).toBe("high");
     expect(harness.getAppState().initialized?.model).toBe("gpt-5.1");
+  });
+
+  it("restores each model's own effort after switching away and back", async () => {
+    const api = installWuuApi();
+    api.updateRuntimeSettings
+      .mockResolvedValueOnce({
+        provider: "codex",
+        model: "model-a",
+        effort: "max",
+        variant: "max",
+      })
+      .mockResolvedValueOnce({
+        provider: "codex",
+        model: "model-b",
+        effort: "medium",
+        variant: "medium",
+      });
+    const primary = {
+      ...thread("thread-1"),
+      model: "model-b",
+      model_variant: "medium",
+      model_effort: "medium",
+    };
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        initialized: initialized({ model: "model-b", variant: "medium" }),
+        thread: primary,
+        threads: [primary],
+        status: "ready",
+      },
+    });
+
+    await harness.actions.selectRuntimeModel("codex", "model-a", "max");
+    await harness.actions.selectRuntimeModel("codex", "model-b", "max");
+
+    expect(api.updateRuntimeSettings).toHaveBeenNthCalledWith(
+      1,
+      "codex",
+      "model-a",
+      undefined,
+      undefined,
+      "max",
+      undefined,
+      "thread-1",
+    );
+    expect(api.updateRuntimeSettings).toHaveBeenNthCalledWith(
+      2,
+      "codex",
+      "model-b",
+      undefined,
+      undefined,
+      "medium",
+      undefined,
+      "thread-1",
+    );
+    expect(harness.getAppState().thread?.model).toBe("model-b");
+    expect(harness.getAppState().thread?.model_variant).toBe("medium");
   });
 
   it("sends an explicit empty variant when resetting effort to the model default", async () => {

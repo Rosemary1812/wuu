@@ -382,7 +382,9 @@ function RuntimeModelMenuItem({
   selectedVariant: string;
   onSelectModel: (provider: string, model: string, variant?: string) => void;
 }): JSX.Element {
-  const nextVariant = normalizedVariantForRuntimeModel(selectedVariant, provider, model);
+  const nextVariant = selected
+    ? selectedVariant
+    : defaultVariantForRuntimeModel(provider, model);
   return (
     <button role="menuitem" type="button" onClick={() => onSelectModel(provider.name, model.id, nextVariant)}>
       <span>
@@ -447,21 +449,14 @@ function runtimeModelsForProvider(provider: ProviderSummary, state: CodexModelLo
   return [{ id: provider.model, source: "selected" }];
 }
 
-function normalizedVariantForRuntimeModel(
-  currentVariant: string,
+function defaultVariantForRuntimeModel(
   provider: ProviderSummary,
   model: ProviderModelSummary
 ): string {
-  if (!currentVariant) {
-    return "";
-  }
   const modelVariants = (model.variants ?? []).map((item) => item.id).filter(Boolean);
   const supported = modelVariants.length > 0 ? modelVariants : model.supported_efforts ?? [];
   if (supported.length === 0) {
     return "";
-  }
-  if (supported.includes(currentVariant)) {
-    return currentVariant;
   }
   if (model.default_variant && supported.includes(model.default_variant)) {
     return model.default_variant;

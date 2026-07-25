@@ -794,6 +794,7 @@ export function App(): JSX.Element {
     sendComposerMessageToThread,
   });
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
+  const runtimeVariantByModelRef = useRef(new Map<string, string>());
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const draftSessionTabCounterRef = useRef(0);
   const currentSessionTab = activeSessionTab(state);
@@ -2769,6 +2770,7 @@ export function App(): JSX.Element {
     setBranchMenuOpen,
     setCodexRuntimeMenu,
     clearThreadPendingComposerMessages,
+    variantByModel: runtimeVariantByModelRef.current,
   });
 
   const {
