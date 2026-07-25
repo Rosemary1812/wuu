@@ -501,62 +501,89 @@ func TestMentionPresentRequiresTokenBoundaries(t *testing.T) {
 	}
 }
 
-func TestWakeStateBusyCheckAndCompletionTransitions(t *testing.T) {
+func TestWakeStateRetainsFollowupAndReleasesCompletedAttempt(t *testing.T) {
 	ctx := context.Background()
-	service := openTestService(t, nil)
+	sink := &recordingWakeSink{}
+	service := openTestService(t, sink)
 	agent := createTestAgent(t, service, "Alpha")
 	room := createTestRoom(t, service, agent)
 
 	if _, err := service.SendHuman(ctx, HumanSendParams{
-		RoomID: room.ID, HumanID: "human-1", Body: "@Alpha review",
+		RoomID: room.ID, HumanID: "human-1", Body: "first query",
 	}); err != nil {
-		t.Fatalf("SendHuman() error = %v", err)
+		t.Fatalf("first SendHuman() error = %v", err)
 	}
-	if err := service.MarkWakePending(ctx, agent.Agent.ID); err != nil {
-		t.Fatalf("MarkWakePending() error = %v", err)
+	if _, err := service.SendHuman(ctx, HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "second query",
+	}); err != nil {
+		t.Fatalf("second SendHuman() error = %v", err)
 	}
 	state, err := service.WakeState(ctx, agent.Agent.ID)
 	if err != nil {
 		t.Fatalf("WakeState() error = %v", err)
 	}
 	if !state.Outstanding || !state.Pending {
-		t.Fatalf("busy wake state = %#v, want outstanding and pending", state)
+		t.Fatalf("repeated query wake state = %#v, want outstanding and pending", state)
+	}
+	if got := sink.take(); len(got) != 1 || got[0] != agent.Agent.ID {
+		t.Fatalf("wake deliveries = %#v, want one coalesced delivery", got)
 	}
 
-	taken, err := service.TakePendingWake(ctx, agent.Agent.ID)
+	followup, err := service.FinishWakeAttempt(ctx, agent.Agent.ID)
 	if err != nil {
-		t.Fatalf("TakePendingWake() error = %v", err)
+		t.Fatalf("first FinishWakeAttempt() error = %v", err)
 	}
-	if !taken {
-		t.Fatal("TakePendingWake() = false, want true")
+	if !followup {
+		t.Fatal("first FinishWakeAttempt() = false, want retained follow-up")
 	}
 	state, err = service.WakeState(ctx, agent.Agent.ID)
 	if err != nil {
-		t.Fatalf("WakeState() after take error = %v", err)
+		t.Fatalf("WakeState() after first finish error = %v", err)
 	}
 	if !state.Outstanding || state.Pending {
-		t.Fatalf("taken wake state = %#v, want only outstanding", state)
+		t.Fatalf("follow-up wake state = %#v, want only outstanding", state)
 	}
 
-	if err := service.MarkWakePending(ctx, agent.Agent.ID); err != nil {
-		t.Fatalf("second MarkWakePending() error = %v", err)
-	}
-	if err := service.ClearWakeOnCheck(ctx, agent.Agent.ID); err != nil {
-		t.Fatalf("ClearWakeOnCheck() error = %v", err)
-	}
-	taken, err = service.TakePendingWake(ctx, agent.Agent.ID)
+	followup, err = service.FinishWakeAttempt(ctx, agent.Agent.ID)
 	if err != nil {
-		t.Fatalf("TakePendingWake() after check error = %v", err)
+		t.Fatalf("second FinishWakeAttempt() error = %v", err)
 	}
-	if taken {
-		t.Fatal("checked pending wake was reinjected")
+	if followup {
+		t.Fatal("second FinishWakeAttempt() retained a nonexistent query")
 	}
 	state, err = service.WakeState(ctx, agent.Agent.ID)
 	if err != nil {
 		t.Fatalf("final WakeState() error = %v", err)
 	}
 	if state.Outstanding || state.Pending {
-		t.Fatalf("checked wake state = %#v, want clear", state)
+		t.Fatalf("completed wake state = %#v, want clear", state)
+	}
+}
+
+func TestWakeCompletionAfterCheckDoesNotCreateFollowup(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	agent := createTestAgent(t, service, "Alpha")
+	room := createTestRoom(t, service, agent)
+
+	if _, err := service.SendHuman(ctx, HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "query",
+	}); err != nil {
+		t.Fatalf("SendHuman() error = %v", err)
+	}
+	if _, err := service.Check(ctx, agent.Agent.ID, agent.Token); err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	followup, err := service.FinishWakeAttempt(ctx, agent.Agent.ID)
+	if err != nil {
+		t.Fatalf("FinishWakeAttempt() error = %v", err)
+	}
+	if followup {
+		t.Fatal("checked wake created a follow-up")
+	}
+	state, err := service.WakeState(ctx, agent.Agent.ID)
+	if err != nil || state.Outstanding || state.Pending {
+		t.Fatalf("checked completion wake state = %#v, err %v", state, err)
 	}
 }
 

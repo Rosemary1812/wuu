@@ -250,16 +250,16 @@ func (s *Server) completeNamedAgentTurn(agentID string) {
 	if s.closed.Load() || s.channelService == nil {
 		return
 	}
-	pending, err := s.channelService.TakePendingWake(context.Background(), agentID)
+	followup, err := s.channelService.FinishWakeAttempt(context.Background(), agentID)
 	if err != nil {
-		providers.DebugLogf("take pending named agent wake %q: %v", agentID, err)
+		providers.DebugLogf("finish named agent wake %q: %v", agentID, err)
 		return
 	}
 	threadID := ""
 	if agent, getErr := s.channelService.GetNamedAgent(context.Background(), agentID); getErr == nil {
 		threadID = namedAgentSessionID(agent)
 		_, _, _, _ = s.removeHeldUserTurn(threadID, namedAgentWakeID(agentID))
-		if pending {
+		if followup {
 			th, ensureErr := s.ensureNamedAgentThreadLocked(agent)
 			if ensureErr == nil {
 				ensureErr = s.startNamedAgentWakeLocked(agent, th)

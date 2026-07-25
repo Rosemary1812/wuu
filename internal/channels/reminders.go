@@ -211,18 +211,13 @@ func (s *Service) FireDueReminders(ctx context.Context) ([]string, error) {
 	}
 	wake := make([]string, 0, len(agentIDs))
 	for agentID := range agentIDs {
-		var requested int
-		err := tx.QueryRowContext(ctx, `
-			UPDATE agent_wake_state SET outstanding = 1, updated_at = ?
-			WHERE agent_id = ? AND outstanding = 0
-			RETURNING 1`, now, agentID).Scan(&requested)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
+		requested, err := requestWakeTx(ctx, tx, agentID, now)
 		if err != nil {
 			return nil, fmt.Errorf("request reminder wake: %w", err)
 		}
-		wake = append(wake, agentID)
+		if requested {
+			wake = append(wake, agentID)
+		}
 	}
 	sort.Strings(wake)
 	if err := tx.Commit(); err != nil {

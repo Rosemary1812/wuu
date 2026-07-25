@@ -525,18 +525,13 @@ func evaluateTriggersTx(ctx context.Context, tx *sql.Tx, message Message, mentio
 		if message.AuthorType == MemberAgent && message.AuthorID == agentID {
 			continue
 		}
-		var requested int
-		err := tx.QueryRowContext(ctx, `
-			UPDATE agent_wake_state SET outstanding = 1, updated_at = ?
-			WHERE agent_id = ? AND outstanding = 0
-			RETURNING 1`, now, agentID).Scan(&requested)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
+		requested, err := requestWakeTx(ctx, tx, agentID, now)
 		if err != nil {
 			return nil, fmt.Errorf("request agent wake: %w", err)
 		}
-		targets = append(targets, agentID)
+		if requested {
+			targets = append(targets, agentID)
+		}
 	}
 	sort.Strings(targets)
 	return targets, nil
