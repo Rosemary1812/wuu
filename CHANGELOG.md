@@ -15,6 +15,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 - Simplified the main Agent's delegated-work guidance so completed subagent tasks
   are always integrated and verified before the overall task is reported complete,
   while per-message result-card instructions stay out of the stable base prompt.
+- Restored concise progress updates before non-trivial tool use and during longer
+  work so users can see what the Agent is doing without narrating every action.
 
 ## [0.12.0] - 2026-07-25
 
