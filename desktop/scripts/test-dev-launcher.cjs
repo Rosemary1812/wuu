@@ -10,6 +10,7 @@ const {
 const {
   helperPathForApp,
   pipHelperPathForApp,
+  speechHelperPathForApp,
   sourceHashFromBuildInfo,
 } = require("./prepare-dev-electron-app.cjs");
 const {
@@ -74,6 +75,10 @@ assert.equal(
   "/repo/desktop/build/dev-host/Wuu Dev.app/Contents/Resources/bin/wuu-cua-mac-pip",
 );
 assert.equal(
+  speechHelperPathForApp("/repo/desktop/build/dev-host/Wuu Dev.app"),
+  "/repo/desktop/build/dev-host/Wuu Dev.app/Contents/Resources/bin/wuu-speech-mac",
+);
+assert.equal(
   sourceHashFromBuildInfo({ sourceHash: "a".repeat(64) }, () => "fallback"),
   "a".repeat(64),
 );
@@ -117,8 +122,17 @@ assert.deepEqual(
 );
 assert.doesNotMatch(packageJSON.scripts["pack:mac"], /cua-mac/);
 assert.doesNotMatch(packageJSON.scripts["dist:mac"], /cua-mac/);
-assert.deepEqual(packageJSON.build.extraResources[0].filter, ["wuu-core", "wuu-core.exe"]);
-assert.equal(packageJSON.build.mac.extendInfo, undefined);
+assert.match(packageJSON.scripts["pack:mac"], /build:speech-mac/);
+assert.match(packageJSON.scripts["dist:mac"], /build:speech-mac/);
+assert.deepEqual(packageJSON.build.extraResources[0].filter, [
+  "wuu-core",
+  "wuu-core.exe",
+  "wuu-speech-mac",
+]);
+assert.equal(
+  packageJSON.build.mac.extendInfo.NSSpeechRecognitionUsageDescription,
+  "Wuu uses macOS Speech Recognition to turn your dictation into text.",
+);
 
 const identities = parseCodeSigningIdentities([
   '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Wuu Dev Signing"',

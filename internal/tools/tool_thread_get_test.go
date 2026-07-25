@@ -85,6 +85,76 @@ func TestThreadGetToolReturnsSessionAndHistory(t *testing.T) {
 	}
 }
 
+func TestThreadGetToolContinuationPinsHistorySnapshotAcrossAppends(t *testing.T) {
+	sessDir := t.TempDir()
+	const id = "snapshot-thread"
+	if _, err := session.CreateWithMetadata(sessDir, id, "/tmp/workdir"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	for _, record := range []session.HistoryRecord{
+		{Role: "user", Content: "one"},
+		{Role: "assistant", Content: "two"},
+		{Role: "user", Content: "three"},
+		{Role: "assistant", Content: "four"},
+	} {
+		if err := session.AppendHistoryRecord(sessDir, id, record); err != nil {
+			t.Fatalf("append history: %v", err)
+		}
+	}
+	tool := NewThreadGetTool(&Env{SessionsDir: sessDir})
+	firstRaw, err := tool.Execute(context.Background(), `{"thread_id":"snapshot-thread"}`)
+	if err != nil {
+		t.Fatalf("first execute: %v", err)
+	}
+	var first struct {
+		SnapshotSeq   int                     `json:"snapshot_seq"`
+		SnapshotToken string                  `json:"snapshot_token"`
+		History       []session.HistoryRecord `json:"history"`
+	}
+	if err := json.Unmarshal([]byte(firstRaw), &first); err != nil {
+		t.Fatalf("parse first result: %v", err)
+	}
+	if first.SnapshotSeq != 4 || first.SnapshotToken == "" {
+		t.Fatalf("missing initial snapshot: %+v", first)
+	}
+	if err := session.AppendHistoryRecord(sessDir, id, session.HistoryRecord{Role: "user", Content: "appended later"}); err != nil {
+		t.Fatalf("append later record: %v", err)
+	}
+	args, _ := json.Marshal(map[string]any{
+		"thread_id":         id,
+		"before_seq":        4,
+		"snapshot_seq":      first.SnapshotSeq,
+		"expected_snapshot": first.SnapshotToken,
+	})
+	secondRaw, err := tool.Execute(context.Background(), string(args))
+	if err != nil {
+		t.Fatalf("continuation after append: %v", err)
+	}
+	var second struct {
+		SnapshotToken string                  `json:"snapshot_token"`
+		History       []session.HistoryRecord `json:"history"`
+	}
+	if err := json.Unmarshal([]byte(secondRaw), &second); err != nil {
+		t.Fatalf("parse continuation: %v", err)
+	}
+	if second.SnapshotToken != first.SnapshotToken || len(second.History) != 4 {
+		t.Fatalf("append changed pinned snapshot: first=%+v second=%+v", first, second)
+	}
+	for _, record := range second.History {
+		if record.Content == "appended later" {
+			t.Fatal("continuation leaked a record appended after snapshot_seq")
+		}
+	}
+}
+
+func TestThreadGetToolContinuationRequiresSnapshotBinding(t *testing.T) {
+	tool := NewThreadGetTool(&Env{})
+	_, err := tool.Execute(context.Background(), `{"thread_id":"x","before_seq":10}`)
+	if err == nil || !strings.Contains(err.Error(), "snapshot_seq and expected_snapshot are required") {
+		t.Fatalf("unbound continuation was not rejected: %v", err)
+	}
+}
+
 func TestThreadGetToolReturnsErrSessionNotFound(t *testing.T) {
 	withTempWuuHome(t)
 

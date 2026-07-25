@@ -200,8 +200,29 @@ func (s *Server) handleChannelMessageSend(ctx context.Context, req Request) erro
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	images, err := normalizeTurnStartImages(params.Images)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	files, err := normalizeTurnStartFiles(params.Files)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	messageImages := make([]channels.MessageImage, 0, len(images))
+	for _, image := range images {
+		messageImages = append(messageImages, channels.MessageImage{
+			MediaType: image.MediaType, Data: image.Data, Width: image.Width, Height: image.Height,
+		})
+	}
+	messageFiles := make([]channels.MessageFile, 0, len(files))
+	for _, file := range files {
+		messageFiles = append(messageFiles, channels.MessageFile{
+			MediaType: file.MediaType, Data: file.Data, Filename: file.Filename,
+		})
+	}
 	result, err := s.channelService.SendHuman(ctx, channels.HumanSendParams{
 		RoomID: params.RoomID, HumanID: localChannelHumanID, ThreadID: params.ThreadID, ReplyTo: params.ReplyTo, Body: params.Body,
+		Images: messageImages, Files: messageFiles,
 	})
 	return s.writeResponse(req.ID, ChannelMessageSendResult{Message: result.Message}, err)
 }

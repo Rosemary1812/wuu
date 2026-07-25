@@ -71,14 +71,18 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	var sent ChannelMessageSendResult
 	callChannelRPC(t, server, out, MethodChannelMessageSend, ChannelMessageSendParams{
 		RoomID: createdRoom.Room.ID, Body: "@Alpha review this",
+		Images: []TurnStartImage{{
+			MediaType: "image/png",
+			Data:      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+		}},
 	}, &sent)
-	if sent.Message.Seq != 1 || sent.Message.AuthorID != localChannelHumanID {
+	if sent.Message.Seq != 1 || sent.Message.AuthorID != localChannelHumanID || len(sent.Message.Images) != 1 {
 		t.Fatalf("sent message = %#v", sent.Message)
 	}
 
 	var listed ChannelMessageListResult
 	callChannelRPC(t, server, out, MethodChannelMessageList, ChannelMessageListParams{RoomID: createdRoom.Room.ID}, &listed)
-	if len(listed.Messages) != 1 || listed.Messages[0].Body != "@Alpha review this" {
+	if len(listed.Messages) != 1 || listed.Messages[0].Body != "@Alpha review this" || len(listed.Messages[0].Images) != 1 {
 		t.Fatalf("listed messages = %#v", listed.Messages)
 	}
 	state, err := server.channelService.WakeState(context.Background(), createdAgent.Agent.ID)

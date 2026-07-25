@@ -435,6 +435,15 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
+export type SkillContentParams = {
+  name: string;
+  source: string;
+};
+
+export type SkillContentResult = {
+  content: string;
+};
+
 export type NamedAgent = {
   id: string;
   name: string;
@@ -473,6 +482,8 @@ export type ChannelMessage = {
   author_id: string;
   kind: "text" | "task" | "system";
   body: string;
+  images?: InputImage[];
+  files?: InputFile[];
   mentions?: string[];
   reply_to?: string;
   task_state?: string;
@@ -515,6 +526,8 @@ export type ChannelMessageSendParams = {
   thread_id?: string;
   reply_to?: string;
   body: string;
+  images?: InputImage[];
+  files?: InputFile[];
 };
 export type ChannelMessageSendResult = { message: ChannelMessage };
 export type ChannelTaskCreateParams = {
@@ -1111,6 +1124,10 @@ export type MemoryChangedFile = {
 export type MemoryChatResult = {
   reply_md: string;
   changed_files: MemoryChangedFile[];
+};
+
+export type TextPolishResult = {
+  text: string;
 };
 
 export type MemoryReadParams = {
@@ -1781,6 +1798,23 @@ export const MESSAGE_FLOW_FONT_SIZE_RANGE = {
 export type ThemePreference = "system" | "light" | "dark";
 export type LanguagePreference = "system" | "zh-CN" | "en-US";
 export type AppLocale = Exclude<LanguagePreference, "system">;
+export type VoiceInputLanguage = "system" | AppLocale;
+export type VoicePermissionStatus =
+  | "granted"
+  | "denied"
+  | "restricted"
+  | "not_determined"
+  | "unavailable"
+  | "unknown";
+export type VoiceInputSettings = {
+  polish_enabled: boolean;
+  language: VoiceInputLanguage;
+};
+export type VoiceInputSettingsSnapshot = {
+  settings: VoiceInputSettings;
+  microphone_permission: VoicePermissionStatus;
+  speech_permission: VoicePermissionStatus;
+};
 
 // The three OS families the desktop shell distinguishes. Anything more
 // exotic collapses to "linux" (native-frame fallback chrome).
@@ -1925,6 +1959,21 @@ export type ActiveDocumentContext = {
   path: string;
 };
 
+export type SpeechRecognitionState =
+  | "requesting_microphone_permission"
+  | "requesting_speech_permission"
+  | "listening"
+  | "stopped";
+
+export type SpeechRecognitionEvent =
+  | { type: "state"; state: SpeechRecognitionState }
+  | { type: "result"; text: string; is_final: boolean }
+  | { type: "error"; code: string; message: string };
+
+export type SpeechRecognitionStartResult =
+  | { ok: true; session_id: string }
+  | { ok: false; error: string };
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -1982,6 +2031,13 @@ export type WuuDesktopApi = {
   ) => Promise<ManagedProcessActionResult>;
   initialize: () => Promise<InitializeResult>;
   getBuildInfo: () => Promise<BuildInfoResult>;
+  startSpeechRecognition: (
+    locale: string,
+  ) => Promise<SpeechRecognitionStartResult>;
+  stopSpeechRecognition: () => Promise<{ ok: true }>;
+  onSpeechRecognitionEvent: (
+    handler: (event: SpeechRecognitionEvent) => void,
+  ) => () => void;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
   // provider/model may be omitted when threadId is set: the server inherits
   // omitted selection fields from the target thread and leaves the workspace
@@ -2019,6 +2075,7 @@ export type WuuDesktopApi = {
   releaseActivity: (threadId: string, activityId: string) => Promise<ActivityReleaseResult>;
   stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
+  readSkillContent: (params: SkillContentParams) => Promise<SkillContentResult>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
   bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;
@@ -2081,6 +2138,17 @@ export type WuuDesktopApi = {
   onLanguagePreferenceChange: (
     handler: (language: LanguagePreference) => void,
   ) => () => void;
+  initialVoiceInputSettings?: VoiceInputSettings;
+  getVoiceInputSettings: () => Promise<VoiceInputSettingsSnapshot>;
+  updateVoiceInputSettings: (
+    settings: VoiceInputSettings,
+  ) => Promise<VoiceInputSettings>;
+  onVoiceInputSettingsChange: (
+    handler: (settings: VoiceInputSettings) => void,
+  ) => () => void;
+  openVoicePrivacySettings: (
+    permission: "microphone" | "speech",
+  ) => Promise<{ ok: true }>;
   // The preference is app-global: the main process broadcasts every change
   // (explicit choice, or an OS dark-mode flip while on "system") to all
   // windows, and each renderer re-applies data-theme. Returns a disposer.
@@ -2111,6 +2179,7 @@ export type WuuDesktopApi = {
   // 未落地时三个方法都会以 unknown method 错误拒绝，面板渲染占位态。
   getMemoryOverview: (params: MemoryOverviewParams) => Promise<MemoryOverviewResult>;
   sendMemoryChat: (params: MemoryChatParams) => Promise<MemoryChatResult>;
+  polishText: (text: string) => Promise<TextPolishResult>;
   readMemoryRaw: (params: MemoryReadParams) => Promise<MemoryReadResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   // Settings → Archive panel uses this to surface archived sessions across

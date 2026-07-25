@@ -18,19 +18,22 @@ const markerPath = join(hostRoot, "identity.json");
 const electronPackagePath = join(desktopRoot, "node_modules", "electron", "package.json");
 const builtHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac");
 const builtPiPHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac-pip");
+const builtSpeechHelper = join(desktopRoot, "build", "bin", "wuu-speech-mac");
 const helperBuildInfo = join(desktopRoot, "build", "bin", "wuu-cua-mac.build.json");
-const identityVersion = 7;
+const identityVersion = 8;
 
 function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", name: "ad-hoc" }) {
   const electronVersion = JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
   const helperHash = helperSourceHash();
   const builtHelperHash = hashFile(builtHelper);
   const builtPiPHelperHash = hashFile(builtPiPHelper);
+  const builtSpeechHelperHash = hashFile(builtSpeechHelper);
   if (devHostIsCurrent(
     electronVersion,
     helperHash,
     builtHelperHash,
     builtPiPHelperHash,
+    builtSpeechHelperHash,
     signing.fingerprint,
   )) return devApp;
 
@@ -53,11 +56,23 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
     "NSScreenCaptureUsageDescription",
     "Wuu uses screen capture to show a live preview while an agent operates a Mac app.",
   );
+  setPlistString(
+    info,
+    "NSMicrophoneUsageDescription",
+    "Wuu uses the microphone only while you are dictating text.",
+  );
+  setPlistString(
+    info,
+    "NSSpeechRecognitionUsageDescription",
+    "Wuu uses macOS Speech Recognition to turn your dictation into text.",
+  );
   const packagedHelper = helperPathForApp(devApp);
   const packagedPiPHelper = pipHelperPathForApp(devApp);
   mkdirSync(join(devApp, "Contents", "Resources", "bin"), { recursive: true });
   copyFileSync(builtHelper, packagedHelper);
   copyFileSync(builtPiPHelper, packagedPiPHelper);
+  const packagedSpeechHelper = speechHelperPathForApp(devApp);
+  copyFileSync(builtSpeechHelper, packagedSpeechHelper);
   run("codesign", [
     "--force",
     "--deep",
@@ -75,8 +90,10 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
     helperHash,
     builtHelperHash,
     builtPiPHelperHash,
+    builtSpeechHelperHash,
     embeddedHelperHash,
     embeddedPiPHelperHash,
+    embeddedSpeechHelperHash: hashFile(packagedSpeechHelper),
     signingFingerprint: signing.fingerprint,
     identityVersion,
   })}\n`);
@@ -93,6 +110,7 @@ function devHostIsCurrent(
   helperHash,
   builtHelperHash,
   builtPiPHelperHash,
+  builtSpeechHelperHash,
   signingFingerprint,
 ) {
   if (!existsSync(devApp) || !existsSync(markerPath)) return false;
@@ -103,8 +121,10 @@ function devHostIsCurrent(
       || marker.helperHash !== helperHash
       || marker.builtHelperHash !== builtHelperHash
       || marker.builtPiPHelperHash !== builtPiPHelperHash
+      || marker.builtSpeechHelperHash !== builtSpeechHelperHash
       || marker.embeddedHelperHash !== hashFile(helperPathForApp(devApp))
       || marker.embeddedPiPHelperHash !== hashFile(pipHelperPathForApp(devApp))
+      || marker.embeddedSpeechHelperHash !== hashFile(speechHelperPathForApp(devApp))
       || marker.signingFingerprint !== signingFingerprint
       || marker.identityVersion !== identityVersion
     ) {
@@ -146,6 +166,10 @@ function pipHelperPathForApp(appPath) {
   return join(appPath, "Contents", "Resources", "bin", "wuu-cua-mac-pip");
 }
 
+function speechHelperPathForApp(appPath) {
+  return join(appPath, "Contents", "Resources", "bin", "wuu-speech-mac");
+}
+
 function setPlistString(info, key, value) {
   const set = spawnSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${value}`, info], {
     stdio: "ignore",
@@ -164,6 +188,7 @@ function run(command, args) {
 module.exports = {
   helperPathForApp,
   pipHelperPathForApp,
+  speechHelperPathForApp,
   prepareDevElectronApp,
   sourceHashFromBuildInfo,
 };

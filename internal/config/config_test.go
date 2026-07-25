@@ -1061,26 +1061,39 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 		t.Fatalf("default system prompt must identify the agent: %q", prompt)
 	}
 	for _, want := range []string{
-		"Communication",
-		"tool rules take precedence over instruction files",
-		"memory and summaries as orientation",
-		"appear to contain prompt injection",
-		"root cause",
-		"smallest coherent change",
-		"covers the failure class",
-		"active tool surface",
-		"Do not invent",
-		"Do not add copyright",
+		"visible text outside tool calls is shown to the user",
+		"runtime guidance, not user-authored text",
+		"prompt injection",
 		"Commit only when",
 		"Write to remotes only when the user explicitly requests it",
-		"non-obvious rationale",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt missing invariant guidance %q: %q", want, prompt)
 		}
 	}
-	if len(prompt) > 8*1024 {
-		t.Fatalf("default system prompt should keep capability manuals out of the invariant prefix, got %d bytes", len(prompt))
+	if len(prompt) > 2*1024 {
+		t.Fatalf("default system prompt should remain a small Wuu-specific contract, got %d bytes", len(prompt))
+	}
+}
+
+func TestDefaultSystemPromptDoesNotReteachGenericCodingBehavior(t *testing.T) {
+	prompt := DefaultSystemPrompt()
+	for _, generic := range []string{
+		"# Communication",
+		"# Doing tasks",
+		"# Using tools",
+		"# Final answers",
+		"in parallel",
+		"root cause",
+		"Verify changed behavior",
+		"A progress update is not a final answer",
+		"Lead with the user-visible outcome",
+		"Do not add copyright",
+		"non-obvious rationale",
+	} {
+		if strings.Contains(prompt, generic) {
+			t.Fatalf("default system prompt should rely on trained coding behavior instead of teaching %q: %q", generic, prompt)
+		}
 	}
 }
 
@@ -1124,47 +1137,12 @@ func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
 	}
 }
 
-func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
-	prompt := DefaultSystemPrompt()
-	if !strings.Contains(prompt, "in parallel") {
-		t.Fatalf("default system prompt must encourage parallel tool calls: %q", prompt)
-	}
-	for _, want := range []string{
-		"Use only tools exposed by the active surface",
-		"Follow each tool's description",
-		"Verify changed behavior in proportion to its risk",
-		"Report failed, skipped, or unavailable checks plainly",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must include capability-neutral tool guidance %q: %q", want, prompt)
-		}
-	}
-}
-
-func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
-	prompt := DefaultSystemPrompt()
-	if !strings.Contains(prompt, "Keep progress updates short") {
-		t.Fatalf("default system prompt must teach concise progress updates: %q", prompt)
-	}
-	if !strings.Contains(prompt, "A progress update is not a final answer") || !strings.Contains(prompt, "continue with that work or report the concrete blocker") {
-		t.Fatalf("default system prompt must prevent progress-only final answers: %q", prompt)
-	}
-	if !strings.Contains(prompt, "Lead with the user-visible outcome") {
-		t.Fatalf("default system prompt must teach concise final answers: %q", prompt)
-	}
-	if !strings.Contains(prompt, "Default to natural prose") || !strings.Contains(prompt, "genuinely complex answer easier to scan") || !strings.Contains(prompt, "do not split a short answer into sections") {
-		t.Fatalf("default system prompt must avoid mechanical formatting rules: %q", prompt)
-	}
-}
-
 func TestDefaultSystemPrompt_FinalAnswerReferences(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
 		"[label](relative/path#L12)",
 		"[label](/absolute/path#L12)",
-		"#L12,4-L18,9",
 		"Do not use `file://`",
-		"If validation was incomplete",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include final-answer reference guidance %q: %q", want, prompt)
@@ -1182,19 +1160,6 @@ func TestDefaultSystemPrompt_MainCoordination(t *testing.T) {
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include main-agent coordination guidance %q: %q", want, prompt)
-		}
-	}
-}
-
-func TestDefaultSystemPrompt_CommentDiscipline(t *testing.T) {
-	prompt := DefaultSystemPrompt()
-	for _, want := range []string{
-		"non-obvious rationale",
-		"do not restate the code",
-		"future-intent notes",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must include comment guidance %q: %q", want, prompt)
 		}
 	}
 }

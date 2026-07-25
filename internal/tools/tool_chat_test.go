@@ -10,6 +10,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 func TestNamedAgentChatToolsAreIsolatedAndRoundTrip(t *testing.T) {
@@ -85,7 +86,10 @@ func TestNamedAgentChatToolsAreIsolatedAndRoundTrip(t *testing.T) {
 		t.Fatalf("chat_read messages = %#v", read.Messages)
 	}
 
-	if _, err := service.SendHuman(ctx, channels.HumanSendParams{RoomID: room.ID, HumanID: "human-1", Body: "@Alpha follow up"}); err != nil {
+	if _, err := service.SendHuman(ctx, channels.HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "@Alpha follow up",
+		Images: []channels.MessageImage{{MediaType: "image/png", Data: "aW1hZ2U="}},
+	}); err != nil {
 		t.Fatalf("SendHuman() error = %v", err)
 	}
 	checkJSON, err := kit.Execute(ctx, providers.ToolCall{Name: "chat_check", Arguments: `{}`})
@@ -99,15 +103,21 @@ func TestNamedAgentChatToolsAreIsolatedAndRoundTrip(t *testing.T) {
 	if len(check.Items) != 1 || check.Items[0].MessageID == "" {
 		t.Fatalf("chat_check result = %#v", check)
 	}
-	itemReadJSON, err := kit.Execute(ctx, providers.ToolCall{Name: "chat_read", Arguments: `{"item_ids":["` + check.Items[0].ID + `"]}`})
+	richRead, err := kit.ExecuteResult(ctx, providers.ToolCall{Name: "chat_read", Arguments: `{"item_ids":["` + check.Items[0].ID + `"]}`})
 	if err != nil {
-		t.Fatalf("chat_read(item_ids) error = %v", err)
+		t.Fatalf("rich chat_read error = %v", err)
 	}
-	if err := json.Unmarshal([]byte(itemReadJSON), &read); err != nil {
-		t.Fatalf("decode chat_read(item_ids) = %v: %s", err, itemReadJSON)
+	if len(richRead.Content) != 2 || richRead.Content[0].Type != toolresult.ContentTypeText || richRead.Content[1].Type != toolresult.ContentTypeImage {
+		t.Fatalf("rich chat_read content = %#v", richRead.Content)
 	}
-	if len(read.Messages) != 1 || read.Messages[0].Body != "@Alpha follow up" {
-		t.Fatalf("chat_read(item_ids) messages = %#v", read.Messages)
+	if richRead.Content[1].Data != "aW1hZ2U=" || strings.Contains(richRead.Content[0].Text, "aW1hZ2U=") {
+		t.Fatalf("rich chat_read did not separate binary payload: %#v", richRead.Content)
+	}
+	if err := json.Unmarshal([]byte(richRead.Content[0].Text), &read); err != nil {
+		t.Fatalf("decode rich chat_read text = %v: %s", err, richRead.Content[0].Text)
+	}
+	if len(read.Messages) != 1 || read.Messages[0].Body != "@Alpha follow up" || len(read.Messages[0].Images) != 1 {
+		t.Fatalf("rich chat_read messages = %#v", read.Messages)
 	}
 
 	heldJSON, err := kit.Execute(ctx, providers.ToolCall{Name: "chat_send", Arguments: `{"room_id":"` + room.ID + `","kind":"text","body":"stale answer","basis_seq":1}`})

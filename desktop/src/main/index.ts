@@ -11,11 +11,12 @@ import {
   nativeTheme,
   screen,
   session as electronSession,
+  systemPreferences,
   type OpenDialogOptions,
   shell,
   WebContentsView,
 } from "electron";
-import { readdir, rm, stat } from "node:fs/promises";
+import { readFile, readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -89,11 +90,15 @@ import type {
   RemoteControlSnapshot,
   RemoteControlStatus,
   ServerEvent,
+  SkillContentParams,
+  SkillContentResult,
+  SkillListResult,
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
   SettingsUsageResponse,
   TerminalSessionStartParams,
+  TextPolishResult,
   Thread,
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
@@ -110,6 +115,9 @@ import type {
   SideThreadHistoryResult,
   SideThreadSendParams,
   SideThreadSendResult,
+  VoiceInputSettings,
+  VoiceInputSettingsSnapshot,
+  VoicePermissionStatus,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { ObservationCoordinator } from "./cuaActivityWindows";
@@ -130,10 +138,12 @@ import {
   getMessageFlowFontSize,
   getThemePreference,
   getLanguagePreference,
+  getVoiceInputSettings,
   setCodexPetSettings,
   setMessageFlowFontSize,
   setThemePreference,
   setLanguagePreference,
+  setVoiceInputSettings,
   type MessageFlowFontSize,
   type ThemePreference,
   type LanguagePreference,
@@ -143,6 +153,7 @@ import { openExternalURL, wireExternalNavigationGuards } from "./externalNavigat
 import { ProjectManager, wuuHomePath } from "./projects";
 import { mainTranslate, resolveMainLocale, setMainLocale } from "./i18n";
 import { sideThreadEventFromServerEvent } from "./sideThreadEvents";
+import { createSpeechRecognitionService } from "./speechRecognition";
 import {
   registerRenderableFileProtocol,
   registerRenderableFileScheme,
@@ -191,6 +202,10 @@ registerRenderableFileScheme();
 let mainWindow: BrowserWindow | null = null;
 const windowRegistry: WindowRegistry = createWindowRegistry();
 const projectManager = new ProjectManager();
+const speechRecognitionService = createSpeechRecognitionService({
+  askForMicrophoneAccess: () =>
+    systemPreferences.askForMediaAccess("microphone"),
+});
 
 // Build-time globals injected by electron.vite.config.ts. TypeScript
 // doesn't know about them by default; declare them so we can reference
@@ -673,6 +688,25 @@ function broadcastThemePreference(): void {
 
 function broadcastLanguagePreference(): void {
   broadcastToAll("wuu:language-preference-changed", getLanguagePreference());
+}
+
+function broadcastVoiceInputSettings(): void {
+  broadcastToAll("wuu:voice-input-settings-changed", getVoiceInputSettings());
+}
+
+function microphonePermissionStatus(): VoicePermissionStatus {
+  if (process.platform !== "darwin") return "unavailable";
+  const status = systemPreferences.getMediaAccessStatus("microphone");
+  if (status === "not-determined") return "not_determined";
+  if (
+    status === "granted" ||
+    status === "denied" ||
+    status === "restricted" ||
+    status === "unknown"
+  ) {
+    return status;
+  }
+  return "unknown";
 }
 
 function syncThemeAcrossWindows(): void {
@@ -1220,6 +1254,20 @@ app.whenReady().then(async () => {
     core: cachedCoreBuildInfo,
     desktop: DESKTOP_BUILD_INFO,
   }));
+  ipcMain.handle("wuu:text-polish", (event, text: string) =>
+    appServerRequest<TextPolishResult>(event, "text/polish", { text }),
+  );
+  ipcMain.handle("wuu:speech-start", (event, locale: string) =>
+    speechRecognitionService.start(locale, (payload) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("wuu:speech-event", payload);
+      }
+    }),
+  );
+  ipcMain.handle("wuu:speech-stop", () => {
+    speechRecognitionService.stop();
+    return { ok: true as const };
+  });
   ipcMain.handle("wuu:open-external", async (_event, url: string) => {
     await openExternalNavigation(url);
   });
@@ -1320,6 +1368,23 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
+  ipcMain.handle("wuu:skill-content", async (event, params: SkillContentParams): Promise<SkillContentResult> => {
+    const name = typeof params?.name === "string" ? params.name : "";
+    const source = typeof params?.source === "string" ? params.source : "";
+    if (!name || !source) {
+      throw new Error("invalid skill content request");
+    }
+    const catalog = await appServerRequest<SkillListResult>(event, "skill/list");
+    const skill = catalog.skills.find((candidate) => candidate.name === name && candidate.source === source);
+    if (!skill?.path) {
+      throw new Error("skill content unavailable");
+    }
+    const fileInfo = await stat(skill.path);
+    if (!fileInfo.isFile() || fileInfo.size > 512 * 1024) {
+      throw new Error("skill content unavailable");
+    }
+    return { content: await readFile(skill.path, "utf8") };
+  });
   ipcMain.handle("wuu:channel-agent-list", (event) =>
     appServerRequest<ChannelAgentListResult>(event, "channel/agent/list"),
   );
@@ -1525,6 +1590,48 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("wuu:theme-preference-get", () => getThemePreference());
   ipcMain.handle("wuu:language-preference-get", () => getLanguagePreference());
+  ipcMain.on("wuu:voice-input-settings-get-sync", (event) => {
+    event.returnValue = getVoiceInputSettings();
+  });
+  ipcMain.handle(
+    "wuu:voice-input-settings-get",
+    async (): Promise<VoiceInputSettingsSnapshot> => ({
+      settings: getVoiceInputSettings(),
+      microphone_permission: microphonePermissionStatus(),
+      speech_permission: await speechRecognitionService.permissionStatus(),
+    }),
+  );
+  ipcMain.handle(
+    "wuu:voice-input-settings-set",
+    (_event, settings: VoiceInputSettings): VoiceInputSettings => {
+      const next: VoiceInputSettings = {
+        polish_enabled: settings?.polish_enabled === true,
+        language:
+          settings?.language === "zh-CN" || settings?.language === "en-US"
+            ? settings.language
+            : "system",
+      };
+      setVoiceInputSettings(next);
+      broadcastVoiceInputSettings();
+      return next;
+    },
+  );
+  ipcMain.handle(
+    "wuu:voice-input-open-privacy-settings",
+    async (_event, permission: "microphone" | "speech") => {
+      if (process.platform !== "darwin") {
+        throw new Error("Voice privacy settings are available only on macOS");
+      }
+      const pane =
+        permission === "speech"
+          ? "Privacy_SpeechRecognition"
+          : "Privacy_Microphone";
+      await shell.openExternal(
+        `x-apple.systempreferences:com.apple.preference.security?${pane}`,
+      );
+      return { ok: true as const };
+    },
+  );
   ipcMain.on("wuu:language-preference-get-sync", (event) => {
     event.returnValue = getLanguagePreference();
   });
@@ -1930,6 +2037,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  speechRecognitionService.stop();
   terminalSessionManager.cleanup();
   // Destroy every agent view + the hidden host window before the pool shuts
   // down so no WebContentsView leaks past quit.

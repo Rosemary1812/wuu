@@ -76,11 +76,21 @@ func recordFor(records []ToolExecutionRecord, callID string) *ToolExecutionRecor
 	return nil
 }
 
+func assertGenericContinuation(t *testing.T, text string) {
+	t.Helper()
+	m := parseOut(t, text)
+	if m["kind"] != "archived_tool_result" || m["artifact_ref"] == "" {
+		t.Fatalf("generic budget omitted artifact identity: %s", snip(text, 200))
+	}
+	continuation, _ := m["continuation"].(map[string]any)
+	if continuation == nil || continuation["next"] == nil {
+		t.Fatalf("generic budget omitted stable continuation: %s", snip(text, 300))
+	}
+}
+
 func TestChokePoint_ModeOff_UsesGenericBudgetNoDiagnostics(t *testing.T) {
 	call, text, records := runFakeGrep(t, "off")
-	if !strings.HasPrefix(text, "[Result too large") {
-		t.Fatalf("off mode must use the generic budget, got: %s", snip(text, 80))
-	}
+	assertGenericContinuation(t, text)
 	rec := recordFor(records, call.ID)
 	if rec == nil || rec.Projection != nil {
 		t.Fatalf("off mode must not compute projection diagnostics: %+v", rec)
@@ -89,9 +99,7 @@ func TestChokePoint_ModeOff_UsesGenericBudgetNoDiagnostics(t *testing.T) {
 
 func TestChokePoint_ModeShadow_MeasuresButDoesNotApply(t *testing.T) {
 	call, text, records := runFakeGrep(t, "shadow")
-	if !strings.HasPrefix(text, "[Result too large") {
-		t.Fatalf("shadow mode must still show the generic-budgeted result, got: %s", snip(text, 80))
-	}
+	assertGenericContinuation(t, text)
 	rec := recordFor(records, call.ID)
 	if rec == nil || rec.Projection == nil {
 		t.Fatalf("shadow mode must record projection diagnostics")

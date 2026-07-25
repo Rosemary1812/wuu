@@ -84,6 +84,7 @@ const (
 	MethodMemoryOverview   = "memory/overview"
 	MethodMemoryChat       = "memory/chat"
 	MethodMemoryRead       = "memory/read"
+	MethodTextPolish       = "text/polish"
 	MethodTurnStart        = "turn/start"
 	MethodTurnQueue        = "turn/queue"
 	MethodTurnUpdateQueued = "turn/update-queued"
@@ -1257,6 +1258,14 @@ type MemoryChatParams struct {
 	Message       string `json:"message"`
 }
 
+type TextPolishParams struct {
+	Text string `json:"text"`
+}
+
+type TextPolishResult struct {
+	Text string `json:"text"`
+}
+
 // MemoryChangedFile is one real notebook file the manager agent touched.
 // Action is "created", "modified", or "deleted".
 type MemoryChangedFile struct {
@@ -2074,10 +2083,12 @@ type ChannelMessageListResult struct {
 }
 
 type ChannelMessageSendParams struct {
-	RoomID   string `json:"room_id"`
-	ThreadID string `json:"thread_id,omitempty"`
-	ReplyTo  string `json:"reply_to,omitempty"`
-	Body     string `json:"body"`
+	RoomID   string           `json:"room_id"`
+	ThreadID string           `json:"thread_id,omitempty"`
+	ReplyTo  string           `json:"reply_to,omitempty"`
+	Body     string           `json:"body"`
+	Images   []TurnStartImage `json:"images,omitempty"`
+	Files    []TurnStartFile  `json:"files,omitempty"`
 }
 
 type ChannelMessageSendResult struct {

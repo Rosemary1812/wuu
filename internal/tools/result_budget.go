@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
@@ -25,7 +25,6 @@ const (
 	// defaultResultMaxLines catches highly fragmented output that is cheap in
 	// bytes but still noisy and expensive for a model to reason over.
 	defaultResultMaxLines  = 2_000
-	projectionPreviewLines = 200
 	projectionPreviewBytes = 4_096
 )
 
@@ -88,49 +87,81 @@ func replaceToolResultContext(raw toolresult.Result, preview string) toolresult.
 
 func buildBoundedResultReference(path, contextual string, raw toolresult.Result, threshold int) string {
 	if len(raw.Content) == 0 && len(raw.StructuredContent) > 0 {
-		if indexed := buildStructuredResultIndex(path, raw.StructuredContent, len(contextual)); indexed != "" {
+		if indexed := buildStructuredResultIndex(path, raw.StructuredContent, contextual); indexed != "" {
 			return indexed
 		}
 	}
-	header := fmt.Sprintf("[Result too large (%d characters). Full content saved for recovery.]\nArtifact: %s\nUse read_file with the artifact path when omitted evidence is needed.\n\n", len(contextual), path)
+	contentSHA := sha256Hex([]byte(contextual))
 	limit := projectionPreviewBytes
 	if threshold > 0 && threshold < limit {
 		limit = threshold
 	}
-	// The recovery index is mandatory even under an unusually small configured
-	// budget. Keep a small evidence allowance instead of truncating the path.
-	if limit < len(header)+256 {
-		limit = len(header) + 256
+	build := func(evidenceBytes int) string {
+		headBudget := min(evidenceBytes*2/3, len(contextual))
+		head := utf8SafePrefix(contextual, headBudget)
+		tailBudget := min(evidenceBytes-headBudget, len(contextual)-len(head))
+		tail := utf8SafeSuffix(contextual, tailBudget)
+		omittedStart := len(head)
+		omittedEnd := len(contextual) - len(tail)
+		envelope := map[string]any{
+			"kind":                "archived_tool_result",
+			"artifact_ref":        path,
+			"content_sha256":      contentSHA,
+			"original_characters": len(contextual),
+			"preview_head":        head,
+			"preview_tail":        tail,
+		}
+		hasMore := omittedStart < omittedEnd
+		continuation := map[string]any{"has_more": hasMore}
+		if hasMore {
+			continuation["next"] = map[string]any{
+				"path":            path,
+				"expected_sha256": contentSHA,
+				"byte_range": map[string]any{
+					"offset":     omittedStart,
+					"limit":      projectionPreviewBytes,
+					"end_offset": omittedEnd,
+				},
+			}
+		}
+		envelope["continuation"] = continuation
+		encoded, _ := json.Marshal(envelope)
+		return string(encoded)
 	}
-	remaining := limit - len(header)
-	sampled := sampleResultLines(contextual, projectionPreviewLines)
-	middle := "\n\n--- omitted; see artifact ---\n\n"
-	evidenceBudget := remaining - len(middle)
-	if evidenceBudget < 0 {
-		evidenceBudget = 0
-	}
-	head := evidenceBudget * 2 / 3
-	tail := evidenceBudget - head
-	body := stringutil.HeadTail(sampled, head, tail, middle)
-	return header + body
+	keep := largestFitting(len(contextual), limit, func(evidenceBytes int) int {
+		return len(build(evidenceBytes))
+	})
+	return build(keep)
 }
 
-func sampleResultLines(text string, maximum int) string {
+func utf8SafePrefix(s string, maximum int) string {
 	if maximum <= 0 {
 		return ""
 	}
-	lines := strings.Split(text, "\n")
-	if len(lines) <= maximum {
-		return text
+	if len(s) <= maximum {
+		return s
 	}
-	head := (maximum + 1) / 2
-	tail := maximum / 2
-	return strings.Join(lines[:head], "\n") +
-		"\n\n--- omitted lines; see artifact ---\n\n" +
-		strings.Join(lines[len(lines)-tail:], "\n")
+	for maximum > 0 && !utf8.RuneStart(s[maximum]) {
+		maximum--
+	}
+	return s[:maximum]
 }
 
-func buildStructuredResultIndex(path string, raw json.RawMessage, originalCharacters int) string {
+func utf8SafeSuffix(s string, maximum int) string {
+	if maximum <= 0 {
+		return ""
+	}
+	if len(s) <= maximum {
+		return s
+	}
+	start := len(s) - maximum
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
+}
+
+func buildStructuredResultIndex(path string, raw json.RawMessage, contextual string) string {
 	var value any
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.UseNumber()
@@ -140,8 +171,17 @@ func buildStructuredResultIndex(path string, raw json.RawMessage, originalCharac
 	index := map[string]any{
 		"kind":                "archived_structured_tool_result",
 		"artifact_ref":        path,
-		"original_characters": originalCharacters,
-		"instruction":         "Use read_file with artifact_ref to inspect the complete result.",
+		"content_sha256":      sha256Hex([]byte(contextual)),
+		"original_characters": len(contextual),
+		"instruction":         "Use continuation.next, then follow each read_file continuation.next to inspect non-overlapping byte windows.",
+		"continuation": map[string]any{
+			"has_more": true,
+			"next": map[string]any{
+				"path":            path,
+				"expected_sha256": sha256Hex([]byte(contextual)),
+				"byte_range":      map[string]any{"offset": 0, "limit": projectionPreviewBytes, "end_offset": len(contextual)},
+			},
+		},
 	}
 	switch typed := value.(type) {
 	case map[string]any:

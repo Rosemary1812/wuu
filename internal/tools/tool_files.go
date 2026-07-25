@@ -2,8 +2,10 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -30,7 +33,7 @@ func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read a workspace file with line numbers. For a focused read, choose exactly one selector: offset/limit, range, or symbol; omit unused selector objects. context_lines can expand the chosen selector. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
+		Description: "Read a workspace file with line numbers. For a focused read, choose exactly one selector: offset/limit, range, symbol, or byte_range; omit unused selector objects. byte_range provides exact continuation through saved artifacts. context_lines can expand line selectors. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -45,6 +48,29 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 				"limit": map[string]any{
 					"type":        "integer",
 					"description": "Max lines to return. Omit to read the whole file when it fits size limits.",
+				},
+				"expected_sha256": map[string]any{
+					"type":        "string",
+					"description": "Optional full-file SHA-256 from a prior result; rejects a continuation if the file changed.",
+				},
+				"byte_range": map[string]any{
+					"type":        "object",
+					"description": "Read an exact byte window, primarily for stable continuation through saved tool-result artifacts.",
+					"properties": map[string]any{
+						"offset": map[string]any{
+							"type":        "integer",
+							"description": "Zero-based byte offset.",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Bytes to return, capped at the tool-result preview window.",
+						},
+						"end_offset": map[string]any{
+							"type":        "integer",
+							"description": "Optional exclusive end of a bounded artifact segment.",
+						},
+					},
+					"required": []string{"offset", "limit"},
 				},
 				"range": map[string]any{
 					"type":        "object",
@@ -108,13 +134,20 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		Name string `json:"name"`
 		Kind string `json:"kind"`
 	}
+	type byteRangeArgs struct {
+		Offset    int `json:"offset"`
+		Limit     int `json:"limit"`
+		EndOffset int `json:"end_offset"`
+	}
 	var args struct {
-		Path         string         `json:"path"`
-		Offset       int            `json:"offset"`
-		Limit        *int           `json:"limit"`
-		Range        *lineRangeArgs `json:"range"`
-		Symbol       *symbolArgs    `json:"symbol"`
-		ContextLines *int           `json:"context_lines"`
+		Path           string         `json:"path"`
+		Offset         int            `json:"offset"`
+		Limit          *int           `json:"limit"`
+		Range          *lineRangeArgs `json:"range"`
+		Symbol         *symbolArgs    `json:"symbol"`
+		ContextLines   *int           `json:"context_lines"`
+		ExpectedSHA256 string         `json:"expected_sha256"`
+		ByteRange      *byteRangeArgs `json:"byte_range"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -130,6 +163,9 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	}
 	if args.Range != nil && args.Range.StartLine == 0 && args.Range.EndLine == 0 {
 		args.Range = nil
+	}
+	if args.ByteRange != nil && args.ByteRange.Offset == 0 && args.ByteRange.Limit == 0 {
+		args.ByteRange = nil
 	}
 	if args.Limit != nil && *args.Limit == 0 {
 		args.Limit = nil
@@ -182,6 +218,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory: %s. Use list_files to inspect directories or read_file on a file inside it", args.Path)
+	}
+	if args.ByteRange != nil {
+		if args.Symbol != nil || args.Range != nil || args.Offset > 0 || args.Limit != nil || contextLines > 0 {
+			return "", errors.New("read_file accepts byte_range instead of line range, symbol, offset/limit, or context_lines")
+		}
+		return readFileByteWindow(ctx, t.env, resolved, displayPath, args.ByteRange.Offset, args.ByteRange.Limit, args.ByteRange.EndOffset, strings.TrimSpace(args.ExpectedSHA256), info.Size())
 	}
 	if args.Symbol == nil && args.Range == nil && args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
 		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
@@ -250,6 +292,9 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		return "", err
 	}
 	contentHash := readResult.ContentSHA256
+	if expected := strings.TrimSpace(args.ExpectedSHA256); expected != "" && expected != contentHash {
+		return "", fmt.Errorf("read_file continuation is stale: file content changed from %q to %q; restart without expected_sha256", expected, contentHash)
+	}
 
 	// Dedup check: same file, same range, same content → return stub.
 	if entry, ok := t.env.GetReadEntry(resolved); ok {
@@ -263,6 +308,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 					"action":             "read_unchanged",
 					"path":               displayPath,
 					"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
+					"content_sha256":     contentHash,
 					"range":              readFileRangeMetadata(args.Offset, len(readResult.Lines)),
 					"unchanged":          true,
 					"message":            "File unchanged since last read. Refer to the earlier read result.",
@@ -297,6 +343,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"action":             "read",
 		"path":               displayPath,
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
+		"content_sha256":     contentHash,
 		"content":            buf.String(),
 		"num_lines":          len(readResult.Lines),
 		"start_line":         args.Offset,
@@ -751,11 +798,117 @@ func readFileLineRange(path string, offset, limit, maxSelectedBytes int) (readFi
 		}
 	}
 
+	contentSHA := hex.EncodeToString(hasher.Sum(nil))
+	confirmedSHA, err := hashOpenFile(f)
+	if err != nil {
+		return readFileLineRangeResult{}, err
+	}
+	if confirmedSHA != contentSHA {
+		return readFileLineRangeResult{}, errors.New("read_file snapshot changed while it was being read; retry the request")
+	}
 	return readFileLineRangeResult{
 		Lines:         selected,
 		TotalLines:    currentLine - 1,
-		ContentSHA256: hex.EncodeToString(hasher.Sum(nil)),
+		ContentSHA256: contentSHA,
 	}, nil
+}
+
+func hashOpenFile(f *os.File) (string, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("seek file for hashing: %w", err)
+	}
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", fmt.Errorf("hash file: %w", err)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func readFileByteWindow(ctx context.Context, env *Env, resolved, displayPath string, offset, limit, endOffset int, expectedSHA256 string, fileSize int64) (string, error) {
+	if offset < 0 {
+		return "", errors.New("read_file byte_range.offset must be non-negative")
+	}
+	if limit <= 0 {
+		return "", errors.New("read_file byte_range.limit must be positive")
+	}
+	if limit > projectionPreviewBytes {
+		return "", fmt.Errorf("read_file byte_range.limit must be <= %d", projectionPreviewBytes)
+	}
+	segmentEnd := fileSize
+	if endOffset > 0 {
+		if endOffset <= offset || int64(endOffset) > fileSize {
+			return "", errors.New("read_file byte_range.end_offset must be greater than offset and within the file")
+		}
+		segmentEnd = int64(endOffset)
+	}
+	f, err := os.Open(resolved)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	defer f.Close()
+	contentSHA, err := hashOpenFile(f)
+	if err != nil {
+		return "", err
+	}
+	if expectedSHA256 != "" && expectedSHA256 != contentSHA {
+		return "", fmt.Errorf("read_file continuation is stale: file content changed from %q to %q; restart without expected_sha256", expectedSHA256, contentSHA)
+	}
+	if int64(offset) > fileSize {
+		offset = int(fileSize)
+	}
+	remaining := segmentEnd - int64(offset)
+	readSize := limit
+	if remaining < int64(readSize) {
+		readSize = int(remaining)
+	}
+	data := make([]byte, readSize)
+	if readSize > 0 {
+		n, readErr := f.ReadAt(data, int64(offset))
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return "", fmt.Errorf("read byte range: %w", readErr)
+		}
+		data = data[:n]
+	}
+	confirmedSHA, err := hashOpenFile(f)
+	if err != nil {
+		return "", err
+	}
+	if confirmedSHA != contentSHA {
+		return "", errors.New("read_file snapshot changed while it was being read; retry the request")
+	}
+	consumed := len(data)
+	result := map[string]any{
+		"action":             "read_bytes",
+		"path":               displayPath,
+		"workspace_revision": workspaceRevision(ctx, env.RevisionRoot(ctx)),
+		"content_sha256":     contentSHA,
+		"byte_offset":        offset,
+		"byte_count":         consumed,
+		"total_bytes":        fileSize,
+		"segment_end_offset": segmentEnd,
+	}
+	if utf8.Valid(data) && !bytes.ContainsRune(data, '\x00') {
+		result["content"] = string(data)
+		result["encoding"] = "utf-8"
+	} else {
+		result["content_base64"] = base64.StdEncoding.EncodeToString(data)
+		result["encoding"] = "base64"
+	}
+	hasMore := int64(offset+consumed) < segmentEnd
+	continuation := map[string]any{"has_more": hasMore}
+	if hasMore && consumed > 0 {
+		nextRange := map[string]any{"offset": offset + consumed, "limit": limit}
+		if endOffset > 0 {
+			nextRange["end_offset"] = endOffset
+		}
+		continuation["next"] = map[string]any{
+			"path":            displayPath,
+			"byte_range":      nextRange,
+			"expected_sha256": contentSHA,
+		}
+	}
+	result["continuation"] = continuation
+	return mustJSON(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,13 +1179,21 @@ func (t *ListFilesTool) IsConcurrencySafe() bool { return true }
 func (t *ListFilesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "list_files",
-		Description: "List directory entries. Defaults to workspace root and returns workspace_revision, name, path, is_dir, and size; large directories are capped.",
+		Description: "List directory entries. Defaults to workspace root and returns workspace_revision, name, path, is_dir, size, and page.next for stable non-overlapping continuation.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "Directory path. Defaults to workspace root.",
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "Zero-based entry offset. For continuation, use page.next.offset from the previous result.",
+				},
+				"expected_revision": map[string]any{
+					"type":        "string",
+					"description": "Required with non-zero offset; use page.next.expected_revision to reject stale continuation.",
 				},
 			},
 		},
@@ -1041,7 +1202,9 @@ func (t *ListFilesTool) Definition() providers.ToolDefinition {
 
 func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Path string `json:"path"`
+		Path             string `json:"path"`
+		Offset           int    `json:"offset"`
+		ExpectedRevision string `json:"expected_revision"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -1070,15 +1233,12 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if !info.IsDir() {
 		return "", fmt.Errorf("path is not a directory: %s. Use read_file to inspect files", args.Path)
 	}
-
 	entries, err := os.ReadDir(resolved)
 	if err != nil {
 		return "", fmt.Errorf("list directory: %w", err)
 	}
 
-	limit := defaultMaxEntries
-
-	resultEntries := make([]map[string]any, 0, min(limit, len(entries)))
+	visibleEntries := make([]map[string]any, 0, len(entries))
 	omittedProtected := 0
 	for _, entry := range entries {
 		entryPath := filepath.Join(resolved, entry.Name())
@@ -1087,10 +1247,6 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 			omittedProtected++
 			continue
 		}
-		if len(resultEntries) >= limit {
-			break
-		}
-
 		item := map[string]any{
 			"name":   entry.Name(),
 			"path":   displayPath,
@@ -1102,26 +1258,36 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 				item["size"] = info.Size()
 			}
 		}
-		resultEntries = append(resultEntries, item)
+		visibleEntries = append(visibleEntries, item)
 	}
+	revision := continuationSnapshotRevision(workspaceRevision(ctx, t.env.RevisionRoot(ctx)), "list_files", visibleEntries)
+	if err := validateStableOffset("list_files", args.Offset, args.ExpectedRevision, revision); err != nil {
+		return "", err
+	}
+	resultEntries, hasMore := pageWindow(visibleEntries, args.Offset, defaultMaxEntries)
 
 	result := map[string]any{
 		"action":              "list",
 		"path":                t.env.NormalizeDisplayPathExec(ctx, resolved),
-		"workspace_revision":  workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
+		"workspace_revision":  revision,
 		"total":               len(entries),
-		"truncated":           len(entries)-omittedProtected > limit,
-		"omitted_entry_count": max(len(entries)-omittedProtected-limit, 0),
+		"visible_total":       len(visibleEntries),
+		"offset":              args.Offset,
+		"returned_count":      len(resultEntries),
+		"has_more":            hasMore,
+		"page":                continuationPage(args.Offset, len(resultEntries), hasMore, revision),
+		"truncated":           hasMore,
+		"omitted_entry_count": max(len(visibleEntries)-args.Offset-len(resultEntries), 0),
 		"omitted_protected":   omittedProtected,
 		"entries":             resultEntries,
-		"next_suggestions":    listFilesNextSuggestions(len(entries), len(resultEntries), len(entries)-omittedProtected > limit),
+		"next_suggestions":    listFilesNextSuggestions(len(entries), len(resultEntries), hasMore),
 	}
 	return mustJSON(result)
 }
 
 func listFilesNextSuggestions(total, returned int, truncated bool) []string {
 	if truncated {
-		return []string{"narrow the list_files path or use glob to find candidate files before reading"}
+		return []string{"use page.next with the same list_files path for more entries, or narrow the path"}
 	}
 	if total == 0 {
 		return []string{"try a parent directory or glob if the expected files are elsewhere"}

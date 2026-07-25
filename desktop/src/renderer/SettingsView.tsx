@@ -64,7 +64,7 @@ export type ArchivedSessionView = {
   archive_project_name?: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
-import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
+import { ENABLE_REMOTE_CONTROL, ENABLE_VOICE_INPUT } from "./FeatureFlags";
 import { MemoryPanel } from "./MemoryPanel";
 import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
@@ -72,6 +72,7 @@ import { ThemePreferenceControl } from "./ThemePreferenceSection";
 import { LanguagePreferenceControl } from "./LanguagePreferenceSection";
 import { formatCurrentNumber, useI18n } from "./i18n";
 import { SubagentModelAliases } from "./SubagentModelAliases";
+import { VoiceInputSettingsSection } from "./VoiceInputSettingsSection";
 
 export type SettingsPage =
   | "providers"
@@ -1975,6 +1976,14 @@ function SettingsGeneralPage({
           ) : null}
         </SettingsCard>
       </SettingsSection>
+
+      {ENABLE_VOICE_INPUT ? (
+        <VoiceInputSettingsSection
+          polishAvailable={Boolean(
+            initialized && initialized.status !== "needs_setup",
+          )}
+        />
+      ) : null}
 
       <SettingsSection title={t("settings.behavior")} testID="settings-general">
         <SettingsCard>

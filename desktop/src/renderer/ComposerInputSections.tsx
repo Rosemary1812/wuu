@@ -12,7 +12,7 @@ import {
   X
 } from "lucide-react";
 import { type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
-import { useImagePreview } from "./ImagePreview";
+import { useOptionalImagePreview } from "./ImagePreview";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
   WORKSPACE_FILE_DRAG_MIME,
@@ -32,15 +32,17 @@ export function ComposerAttachmentStrip({
   files,
   images,
   onRemoveFile,
-  onRemoveImage
+  onRemoveImage,
+  removable = true
 }: {
   files: ComposerFile[];
   images: ComposerImage[];
-  onRemoveFile: (id: string) => void;
-  onRemoveImage: (id: string) => void;
+  onRemoveFile?: (id: string) => void;
+  onRemoveImage?: (id: string) => void;
+  removable?: boolean;
 }): JSX.Element | null {
   const { t } = useI18n();
-  const { openPreview } = useImagePreview();
+  const imagePreview = useOptionalImagePreview();
   if (images.length === 0 && files.length === 0) {
     return null;
   }
@@ -50,7 +52,7 @@ export function ComposerAttachmentStrip({
         const src = imageSource(image);
         const label = t("composer.imageNumber", { number: index + 1 });
         const handleOpen = (): void => {
-          openPreview({ src, alt: label, title: label });
+          imagePreview?.openPreview({ src, alt: label, title: label });
         };
         const handleKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
           if (event.key === "Enter" || event.key === " ") {
@@ -69,16 +71,18 @@ export function ComposerAttachmentStrip({
               onClick={handleOpen}
               onKeyDown={handleKeyDown}
             />
-            <button
-              type="button"
-              aria-label={t("composer.removeImage", { number: index + 1 })}
-              onClick={(event) => {
-                event.stopPropagation();
-                onRemoveImage(image.id);
-              }}
-            >
-              <X className="icon-xs" />
-            </button>
+            {removable ? (
+              <button
+                type="button"
+                aria-label={t("composer.removeImage", { number: index + 1 })}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemoveImage?.(image.id);
+                }}
+              >
+                <X className="icon-xs" />
+              </button>
+            ) : null}
           </div>
         );
       })}
@@ -86,9 +90,11 @@ export function ComposerAttachmentStrip({
         <div className="composer-file-attachment" key={file.id}>
           <FileText className="icon" aria-hidden="true" />
           <span>{file.filename?.trim() || t("composer.pdfNumber", { number: index + 1 })}</span>
-          <button type="button" aria-label={t("composer.removeFile", { number: index + 1 })} onClick={() => onRemoveFile(file.id)}>
-            <X className="icon-xs" />
-          </button>
+          {removable ? (
+            <button type="button" aria-label={t("composer.removeFile", { number: index + 1 })} onClick={() => onRemoveFile?.(file.id)}>
+              <X className="icon-xs" />
+            </button>
+          ) : null}
         </div>
       ))}
     </div>

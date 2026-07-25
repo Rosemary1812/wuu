@@ -96,23 +96,23 @@ const (
 // stream runner. UI surfaces should depend on this instead of reassembling the
 // pieces themselves.
 type Session struct {
-	ProviderName             string
-	Model                    string
-	RootDir                  string
-	Host                     Host
-	WorkspaceID              string
-	StateDir                 string
-	ConfigPath               string
-	HomeDir                  string
-	ConfigLoadMode           ConfigLoadMode
-	SessionDir               string
-	StreamRunner             *agent.StreamRunner
-	TitleClient              providers.Client
-	HookDispatcher           *hooks.Dispatcher
-	Skills                   []skills.Skill
-	Plugins                  []pluginpkg.Plugin
-	PluginHost               *pluginhost.Host
-	Memory                   []memory.File
+	ProviderName   string
+	Model          string
+	RootDir        string
+	Host           Host
+	WorkspaceID    string
+	StateDir       string
+	ConfigPath     string
+	HomeDir        string
+	ConfigLoadMode ConfigLoadMode
+	SessionDir     string
+	StreamRunner   *agent.StreamRunner
+	TitleClient    providers.Client
+	HookDispatcher *hooks.Dispatcher
+	Skills         []skills.Skill
+	Plugins        []pluginpkg.Plugin
+	PluginHost     *pluginhost.Host
+	Memory         []memory.File
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.

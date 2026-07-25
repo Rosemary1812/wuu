@@ -813,6 +813,11 @@
   padding: 0 10px 0 12px;
 }
 
+/* Ctrl+P is wider than macOS's ⌘P, so only Windows sizes the hint track to its content. */
+:root[data-platform="win32"] .conversation-search-input-wrap {
+  grid-template-columns: 24px minmax(0, 1fr) max-content;
+}
+
 .conversation-search-input-wrap input {
   min-width: 0;
   border: 0;

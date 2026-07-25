@@ -36,7 +36,7 @@ const (
 	// projectorVersion is recorded in diagnostics so telemetry can attribute a
 	// projected result to the exact projector revision that produced it. Bump
 	// on any change that alters projected bytes for the same input.
-	projectorVersion = "1"
+	projectorVersion = "2"
 )
 
 // projectionMode selects how the stable projection participates in a run.
@@ -94,6 +94,14 @@ var builtInProjectionAllowlist = map[string]bool{
 	"glob":       true,
 	"list_files": true,
 	"bash":       true,
+	"thread_get": true,
+}
+
+// Some tools use projection as their semantic read contract, not only as an
+// oversized-result optimization. They must pass through the projector even
+// when the raw envelope happens to fit the shared budget.
+var builtInAlwaysProject = map[string]bool{
+	"thread_get": true,
 }
 
 // projectionReason is a stable, low-cardinality label for why a result took a
@@ -238,7 +246,7 @@ func finalizeBuiltInToolResult(sessionDir, toolName, callID string, raw toolresu
 	}
 	diag.Eligible = true
 
-	if diag.OriginalTokens <= budgetTokens {
+	if diag.OriginalTokens <= budgetTokens && !builtInAlwaysProject[toolName] {
 		diag.Reason = reasonUnderBudget
 		return raw, diag
 	}

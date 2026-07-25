@@ -18,12 +18,14 @@ import {
   type ServerEvent,
   type SideThreadEventEnvelope,
   type SideThreadSendParams,
+  type SpeechRecognitionEvent,
   type ThreadStartParams,
   type ThreadForkTarget,
   type ThemePreference,
   type LanguagePreference,
   type WindowResizeState,
   type WuuDesktopApi,
+  type VoiceInputSettings,
 } from "../shared/protocol";
 
 // Read the persisted theme preference synchronously so the very first
@@ -46,6 +48,23 @@ const initialLanguagePreference = ((): LanguagePreference => {
     return value === "zh-CN" || value === "en-US" || value === "system" ? value : "system";
   } catch {
     return "system";
+  }
+})();
+
+const initialVoiceInputSettings = ((): VoiceInputSettings => {
+  try {
+    const value = ipcRenderer.sendSync(
+      "wuu:voice-input-settings-get-sync",
+    ) as Partial<VoiceInputSettings>;
+    return {
+      polish_enabled: value?.polish_enabled === true,
+      language:
+        value?.language === "zh-CN" || value?.language === "en-US"
+          ? value.language
+          : "system",
+    };
+  } catch {
+    return { polish_enabled: false, language: "system" };
   }
 })();
 
@@ -179,6 +198,20 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:managed-process-stop", threadId, processId),
   initialize: () => ipcRenderer.invoke("wuu:initialize"),
   getBuildInfo: () => ipcRenderer.invoke("wuu:build-info"),
+  polishText: (text: string) => ipcRenderer.invoke("wuu:text-polish", text),
+  startSpeechRecognition: (locale: string) =>
+    ipcRenderer.invoke("wuu:speech-start", locale),
+  stopSpeechRecognition: () => ipcRenderer.invoke("wuu:speech-stop"),
+  onSpeechRecognitionEvent: (
+    handler: (event: SpeechRecognitionEvent) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: SpeechRecognitionEvent,
+    ) => handler(payload);
+    ipcRenderer.on("wuu:speech-event", listener);
+    return () => ipcRenderer.removeListener("wuu:speech-event", listener);
+  },
   loadCodexModels: (provider?: string) =>
     ipcRenderer.invoke("wuu:config-codex-models", provider),
   updateRuntimeSettings: (
@@ -211,6 +244,7 @@ const api: WuuDesktopApi = {
   updateGeneralSettings: (settings) =>
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
+  readSkillContent: (params) => ipcRenderer.invoke("wuu:skill-content", params),
   listNamedAgents: () => ipcRenderer.invoke("wuu:channel-agent-list"),
   bootstrapChannels: () => ipcRenderer.invoke("wuu:channel-bootstrap"),
   createNamedAgent: (params: ChannelAgentCreateParams) =>
@@ -297,6 +331,7 @@ const api: WuuDesktopApi = {
   },
   initialThemePreference,
   initialLanguagePreference,
+  initialVoiceInputSettings,
   initialSystemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
   getLanguagePreference: () => ipcRenderer.invoke("wuu:language-preference-get"),
   setLanguagePreference: (language: LanguagePreference) =>
@@ -314,6 +349,23 @@ const api: WuuDesktopApi = {
     return () =>
       ipcRenderer.removeListener("wuu:language-preference-changed", listener);
   },
+  getVoiceInputSettings: () =>
+    ipcRenderer.invoke("wuu:voice-input-settings-get"),
+  updateVoiceInputSettings: (settings: VoiceInputSettings) =>
+    ipcRenderer.invoke("wuu:voice-input-settings-set", settings),
+  onVoiceInputSettingsChange: (
+    handler: (settings: VoiceInputSettings) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: VoiceInputSettings,
+    ) => handler(payload);
+    ipcRenderer.on("wuu:voice-input-settings-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:voice-input-settings-changed", listener);
+  },
+  openVoicePrivacySettings: (permission: "microphone" | "speech") =>
+    ipcRenderer.invoke("wuu:voice-input-open-privacy-settings", permission),
   initialMessageFlowFontSize,
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>

@@ -20,6 +20,8 @@ func (s *Service) SendHuman(ctx context.Context, params HumanSendParams) (SendRe
 		ThreadID:   params.ThreadID,
 		ReplyTo:    params.ReplyTo,
 		Body:       params.Body,
+		Images:     params.Images,
+		Files:      params.Files,
 	})
 	if err == nil {
 		s.emitSendTelemetry(MemberHuman, params.HumanID, result)
@@ -72,6 +74,8 @@ type sendParams struct {
 	ThreadID   string
 	ReplyTo    string
 	Body       string
+	Images     []MessageImage
+	Files      []MessageFile
 	BasisSeq   int64
 	DraftID    string
 	Force      bool
@@ -87,8 +91,8 @@ func (s *Service) send(ctx context.Context, params sendParams) (SendResult, erro
 	if params.RoomID == "" || params.AuthorID == "" {
 		return SendResult{}, errors.New("message room and author are required")
 	}
-	if params.Body == "" {
-		return SendResult{}, errors.New("message body is required")
+	if params.Body == "" && len(params.Images) == 0 && len(params.Files) == 0 {
+		return SendResult{}, errors.New("message body or attachment is required")
 	}
 	if utf8.RuneCountInString(params.Body) > MaxMessageRunes {
 		return SendResult{}, fmt.Errorf("message exceeds %d characters", MaxMessageRunes)
@@ -160,6 +164,14 @@ func (s *Service) send(ctx context.Context, params sendParams) (SendResult, erro
 	if err != nil {
 		return SendResult{}, err
 	}
+	imagesJSON, err := json.Marshal(params.Images)
+	if err != nil {
+		return SendResult{}, fmt.Errorf("encode room message images: %w", err)
+	}
+	filesJSON, err := json.Marshal(params.Files)
+	if err != nil {
+		return SendResult{}, fmt.Errorf("encode room message files: %w", err)
+	}
 	var seq int64
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(seq), 0) + 1 FROM room_messages WHERE room_id = ?`, params.RoomID,
@@ -180,6 +192,8 @@ func (s *Service) send(ctx context.Context, params sendParams) (SendResult, erro
 		AuthorID:   params.AuthorID,
 		Kind:       MessageText,
 		Body:       params.Body,
+		Images:     params.Images,
+		Files:      params.Files,
 		Mentions:   mentionIDs,
 		ReplyTo:    params.ReplyTo,
 		CreatedAt:  now,
@@ -187,11 +201,11 @@ func (s *Service) send(ctx context.Context, params sendParams) (SendResult, erro
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO room_messages (
 			id, room_id, seq, thread_id, author_type, author_id, kind, body,
-			mentions_json, reply_to, task_title, task_state, task_owner, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			images_json, files_json, mentions_json, reply_to, task_title, task_state, task_owner, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		message.ID, message.RoomID, message.Seq, nullableString(message.ThreadID),
 		message.AuthorType, message.AuthorID, message.Kind, message.Body,
-		mentionsJSON, nullableString(message.ReplyTo), nullableString(message.TaskTitle),
+		string(imagesJSON), string(filesJSON), mentionsJSON, nullableString(message.ReplyTo), nullableString(message.TaskTitle),
 		nullableString(message.TaskState), nullableString(message.TaskOwner), toMillis(message.CreatedAt),
 	); err != nil {
 		return SendResult{}, fmt.Errorf("insert room message: %w", err)
@@ -240,7 +254,7 @@ func (s *Service) ListMessages(ctx context.Context, roomID string, afterSeq int6
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, room_id, seq, COALESCE(thread_id, ''), author_type, author_id,
-			kind, body, mentions_json, COALESCE(reply_to, ''),
+			kind, body, images_json, files_json, mentions_json, COALESCE(reply_to, ''),
 			COALESCE(task_title, ''), COALESCE(task_state, ''), COALESCE(task_owner, ''), created_at
 		FROM room_messages WHERE room_id = ? AND seq > ? ORDER BY seq LIMIT ?`, roomID, afterSeq, limit)
 	if err != nil {
@@ -349,7 +363,7 @@ func resolveThreadTx(ctx context.Context, tx *sql.Tx, roomID, requestedThreadID,
 func loadMessageTx(ctx context.Context, tx *sql.Tx, id string) (Message, error) {
 	message, err := scanMessage(tx.QueryRowContext(ctx, `
 		SELECT id, room_id, seq, COALESCE(thread_id, ''), author_type, author_id,
-			kind, body, mentions_json, COALESCE(reply_to, ''),
+			kind, body, images_json, files_json, mentions_json, COALESCE(reply_to, ''),
 			COALESCE(task_title, ''), COALESCE(task_state, ''), COALESCE(task_owner, ''), created_at
 		FROM room_messages WHERE id = ?`, id))
 	if errors.Is(err, ErrNotFound) {
@@ -360,12 +374,14 @@ func loadMessageTx(ctx context.Context, tx *sql.Tx, id string) (Message, error) 
 
 func scanMessage(row scanner) (Message, error) {
 	var message Message
+	var imagesJSON string
+	var filesJSON string
 	var mentionsJSON string
 	var createdAt int64
 	if err := row.Scan(
 		&message.ID, &message.RoomID, &message.Seq, &message.ThreadID,
 		&message.AuthorType, &message.AuthorID, &message.Kind, &message.Body,
-		&mentionsJSON, &message.ReplyTo, &message.TaskTitle, &message.TaskState, &message.TaskOwner, &createdAt,
+		&imagesJSON, &filesJSON, &mentionsJSON, &message.ReplyTo, &message.TaskTitle, &message.TaskState, &message.TaskOwner, &createdAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Message{}, ErrNotFound
@@ -374,6 +390,12 @@ func scanMessage(row scanner) (Message, error) {
 	}
 	if err := json.Unmarshal([]byte(mentionsJSON), &message.Mentions); err != nil {
 		return Message{}, fmt.Errorf("decode room message mentions: %w", err)
+	}
+	if err := json.Unmarshal([]byte(imagesJSON), &message.Images); err != nil {
+		return Message{}, fmt.Errorf("decode room message images: %w", err)
+	}
+	if err := json.Unmarshal([]byte(filesJSON), &message.Files); err != nil {
+		return Message{}, fmt.Errorf("decode room message files: %w", err)
 	}
 	message.CreatedAt = fromMillis(createdAt)
 	return message, nil

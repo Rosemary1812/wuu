@@ -29,3 +29,12 @@ export const ENABLE_ULTRA_MODE =
  */
 export const ENABLE_GROUP_CHAT =
   import.meta.env.VITE_ENABLE_GROUP_CHAT === "true";
+
+/**
+ * Voice input and its optional BYOK text polish are hidden while the native
+ * recognition flow and polish experience are still being stabilized.
+ *
+ * Use `VITE_ENABLE_VOICE_INPUT=true npm run dev` for internal testing.
+ */
+export const ENABLE_VOICE_INPUT =
+  import.meta.env.VITE_ENABLE_VOICE_INPUT === "true";
