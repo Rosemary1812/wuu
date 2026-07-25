@@ -143,6 +143,42 @@ describe("StreamingMarkdown", () => {
     expect(code?.textContent).not.toContain("```");
   });
 
+  it("leaves no trailing cursor paragraph under a fence-final message after settle", () => {
+    const key = streamTextKey("turn", "s11", "text");
+    const text = "```text\n请使用 web-shader-extractor skill\n```";
+    streamTextStore.seed(key, text);
+    mount({ streamKey: key, initialText: text, isLive: false, phase: "final_answer" });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    // The fence is the only markdown block: no stray trailing paragraph may
+    // survive between the card and the message action bar.
+    expect(surface.querySelector(".rich-code-block")).toBeTruthy();
+    expect(surface.querySelector(".rich-paragraph")).toBeNull();
+    expect(surface.textContent).not.toContain("\uE000");
+    // The cursor keeps its settle-stable DOM slot as a zero-height sibling.
+    const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
+    expect(cursor).not.toBeNull();
+    expect(cursor?.classList.contains("stream-cursor-block-tail")).toBe(true);
+    expect(cursor?.parentElement).toBe(surface);
+  });
+
+  it("keeps the block-tail cursor sibling out of the markdown source while live", async () => {
+    const key = streamTextKey("turn", "s12", "text");
+    streamTextStore.seed(key, "```bash\nnpm run dev\n```");
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    const code = surface.querySelector(".rich-code-block code");
+    expect(code?.textContent).toBe("npm run dev\n");
+    expect(surface.querySelector(".rich-paragraph")).toBeNull();
+    const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
+    expect(cursor?.classList.contains("stream-cursor-block-tail")).toBe(true);
+  });
+
   it("renders the visible text as markdown during streaming", async () => {
     const key = streamTextKey("turn", "s1", "text");
     streamTextStore.seed(key, "");
