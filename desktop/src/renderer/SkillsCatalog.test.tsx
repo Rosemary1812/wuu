@@ -27,6 +27,35 @@ afterEach(() => {
 });
 
 describe("SkillsCatalog", () => {
+  it("separates official and personal skills and gives each a complete artwork", async () => {
+    installSkillList([
+      {
+        name: "browser",
+        description: "Navigate and observe web pages",
+        source: "bundled",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+      {
+        name: "write",
+        description: "Rewrite prose",
+        source: "user",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog />);
+    });
+
+    expect(container.textContent).toContain("Wuu 官方");
+    expect(container.textContent).toContain("你的技能");
+    expect(container.querySelector('[data-skill-artwork="official-browser"]')).toBeTruthy();
+    expect(container.querySelector('[data-skill-artwork="neutral-skill"]')).toBeTruthy();
+  });
+
   it("lists installed plugins and tags plugin-provided skills", async () => {
     installSkillList([
       {
