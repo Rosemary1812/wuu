@@ -39,6 +39,21 @@ describe("conversation shell visible center", () => {
     );
   });
 
+  it("keeps plan progress and its contents inside the responsive composer", () => {
+    const progress = cssRuleBody(".jump-to-latest-progress");
+    const detail = cssRuleBody(".jump-to-latest-progress-detail");
+    const step = cssRuleBody(".jump-to-latest-progress-step");
+
+    expect(progress).toMatch(/max-width:\s*80%;/);
+    expect(progress).toMatch(/overflow:\s*hidden;/);
+    expect(detail).toMatch(/flex:\s*0 1 auto;/);
+    expect(detail).toMatch(/min-width:\s*0;/);
+    expect(detail).toMatch(/overflow:\s*hidden;/);
+    expect(step).toMatch(/min-width:\s*0;/);
+    expect(step).toMatch(/max-width:\s*100%;/);
+    expect(step).toMatch(/text-overflow:\s*ellipsis;/);
+  });
+
   it("re-centers the fixed readable flow instead of widening it on wide screens", () => {
     expect(cssRuleBody(".conversation-pane")).toMatch(
       /--environment-panel-content-inset:\s*clamp\([\s\S]*?var\(--session-composer-width\)[\s\S]*?-\s*100vw\s*\+\s*var\(--sidebar-width,\s*0px\)[\s\S]*?var\(--environment-panel-reserved-width\)/,
