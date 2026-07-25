@@ -136,7 +136,7 @@ describe("ComposerVoiceInput", () => {
     expect(onRecordingChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("keeps earlier speech when recognition starts a new partial segment", async () => {
+  it("uses the latest complete hypothesis without duplicating recognition revisions", async () => {
     const voiceInputRef = createRef<ComposerVoiceInputHandle>();
     installApi();
     renderVoiceInput("", undefined, voiceInputRef);
@@ -148,19 +148,27 @@ describe("ComposerVoiceInput", () => {
     });
     act(() => {
       speechHandler?.({ type: "state", state: "listening" });
-      speechHandler?.({ type: "result", text: "这是前面的内容", is_final: false });
-      speechHandler?.({ type: "result", text: "这是后面的内容", is_final: false });
+      speechHandler?.({
+        type: "result",
+        text: "我发现这个为什么他会重复的录",
+        is_final: false,
+      });
+      speechHandler?.({
+        type: "result",
+        text: "我发现这个为什么他会重复地录我的录音",
+        is_final: false,
+      });
     });
 
     expect(container.querySelector("output")?.textContent).toBe(
-      "这是前面的内容这是后面的内容",
+      "我发现这个为什么他会重复地录我的录音",
     );
 
     let finalPrompt = "";
     await act(async () => {
       finalPrompt = (await voiceInputRef.current?.stop()) ?? "";
     });
-    expect(finalPrompt).toBe("这是前面的内容这是后面的内容");
+    expect(finalPrompt).toBe("我发现这个为什么他会重复地录我的录音");
   });
 
   it("keeps free ASR output as raw text when BYOK polish is off", async () => {

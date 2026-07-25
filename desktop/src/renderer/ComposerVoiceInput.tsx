@@ -131,11 +131,10 @@ export const ComposerVoiceInput = forwardRef<ComposerVoiceInputHandle, {
         setPhase("error");
         return;
       }
-      const transcript = mergeVoiceTranscript(transcriptRef.current, event.text);
-      transcriptRef.current = transcript;
-      setPrompt(composedPrompt(transcript));
+      transcriptRef.current = event.text;
+      setPrompt(composedPrompt(event.text));
       if (event.is_final) {
-        void finishTranscript(transcript);
+        void finishTranscript(event.text);
       }
     }
   }, [supported, t]);
@@ -253,38 +252,6 @@ export const ComposerVoiceInput = forwardRef<ComposerVoiceInputHandle, {
     </div>
   );
 });
-
-export function mergeVoiceTranscript(current: string, incoming: string): string {
-  const previous = current.trim();
-  const next = incoming.trim();
-  if (!previous) return next;
-  if (!next || previous === next || previous.startsWith(next)) return previous;
-  if (next.startsWith(previous)) return next;
-
-  const shorterLength = Math.min(previous.length, next.length);
-  let commonPrefixLength = 0;
-  while (
-    commonPrefixLength < shorterLength &&
-    previous[commonPrefixLength] === next[commonPrefixLength]
-  ) {
-    commonPrefixLength += 1;
-  }
-  const revisionThreshold = Math.max(2, Math.floor(shorterLength * 0.5));
-  if (commonPrefixLength >= revisionThreshold) {
-    return next.length >= previous.length * 0.75 ? next : previous;
-  }
-
-  for (let overlap = shorterLength; overlap > 0; overlap -= 1) {
-    if (previous.endsWith(next.slice(0, overlap))) {
-      return `${previous}${next.slice(overlap)}`;
-    }
-  }
-
-  const separator = /[A-Za-z0-9]$/.test(previous) && /^[A-Za-z0-9]/.test(next)
-    ? " "
-    : "";
-  return `${previous}${separator}${next}`;
-}
 
 function voiceStatusMessage(
   phase: VoicePhase,
