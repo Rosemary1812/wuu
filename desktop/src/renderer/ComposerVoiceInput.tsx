@@ -164,22 +164,6 @@ export function ComposerVoiceInput({
   return (
     <div className="composer-voice-input">
       <button
-        className={`composer-voice-button${active ? " is-active" : ""}`}
-        type="button"
-        disabled={disabled || busy}
-        aria-label={active ? t("composer.voice.stop") : t("composer.voice.start")}
-        title={active ? t("composer.voice.stop") : t("composer.voice.startHint")}
-        onClick={() => void (active ? stop() : start())}
-      >
-        {busy ? (
-          <LoaderCircle className="composer-voice-spinner" aria-hidden="true" />
-        ) : active ? (
-          <Square aria-hidden="true" />
-        ) : (
-          <Mic aria-hidden="true" />
-        )}
-      </button>
-      <button
         className={`composer-polish-toggle${polishEnabled ? " is-active" : ""}`}
         type="button"
         aria-pressed={polishEnabled}
@@ -214,6 +198,22 @@ export function ComposerVoiceInput({
           {status}
         </span>
       ) : null}
+      <button
+        className={`composer-voice-button${active ? " is-active" : ""}`}
+        type="button"
+        disabled={disabled || busy}
+        aria-label={active ? t("composer.voice.stop") : t("composer.voice.start")}
+        title={active ? t("composer.voice.stop") : t("composer.voice.startHint")}
+        onClick={() => void (active ? stop() : start())}
+      >
+        {busy ? (
+          <LoaderCircle className="composer-voice-spinner" aria-hidden="true" />
+        ) : active ? (
+          <Square aria-hidden="true" />
+        ) : (
+          <Mic aria-hidden="true" />
+        )}
+      </button>
     </div>
   );
 }

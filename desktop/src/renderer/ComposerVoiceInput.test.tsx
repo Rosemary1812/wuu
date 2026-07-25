@@ -83,6 +83,14 @@ afterEach(() => {
 });
 
 describe("ComposerVoiceInput", () => {
+  it("keeps the microphone as the trailing voice control", () => {
+    installApi();
+    renderVoiceInput();
+
+    const voiceInput = container.querySelector(".composer-voice-input");
+    expect(voiceInput?.lastElementChild?.classList.contains("composer-voice-button")).toBe(true);
+  });
+
   it("keeps free ASR output as raw text when BYOK polish is off", async () => {
     const polishText = vi.fn();
     installApi({ polishText });

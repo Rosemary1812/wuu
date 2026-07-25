@@ -1138,17 +1138,6 @@ export function Composer({
                     onSelectCommand={(command) => applySlashCommand(command, undefined)}
                   />
                 ) : null}
-                {ENABLE_VOICE_INPUT ? (
-                  <ComposerVoiceInput
-                    prompt={prompt}
-                    setPrompt={setPrompt}
-                    disabled={readOnly}
-                    locale={locale}
-                    polishAvailable={Boolean(
-                      initialized && initialized.status !== "needs_setup",
-                    )}
-                  />
-                ) : null}
                 {!textOnly && !hidePermissionControl ? (
                   <div className="permission-menu-anchor" ref={accessMenuRef}>
                     <button
@@ -1225,6 +1214,17 @@ export function Composer({
                       {statusText}
                     </span>
                   </span>
+                ) : null}
+                {ENABLE_VOICE_INPUT ? (
+                  <ComposerVoiceInput
+                    prompt={prompt}
+                    setPrompt={setPrompt}
+                    disabled={readOnly}
+                    locale={locale}
+                    polishAvailable={Boolean(
+                      initialized && initialized.status !== "needs_setup",
+                    )}
+                  />
                 ) : null}
                 <button
                   className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
