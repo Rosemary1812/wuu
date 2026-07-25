@@ -1431,18 +1431,12 @@
   min-width: 0;
   height: 28px;
   align-items: center;
-  gap: 9px;
   overflow: hidden;
   border: 0;
-  border-radius: var(--radius-pill);
-  padding: 0 10px;
-  background: color-mix(in srgb, var(--wuu-accent) 7%, transparent);
-  color: var(--ink-muted);
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
   cursor: pointer;
-}
-
-.composer-voice-recording:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--wuu-accent) 11%, transparent);
 }
 
 .composer-voice-recording:disabled {
@@ -1455,69 +1449,35 @@
   outline-offset: 1px;
 }
 
-.composer-voice-live-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--wuu-accent);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--wuu-accent) 28%, transparent);
-  animation: composer-voice-live-pulse 1.6s ease-out infinite;
-}
-
 .composer-voice-waveform {
   display: flex;
+  width: 100%;
   height: 24px;
-  min-width: 72px;
+  min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
+  justify-content: space-between;
+  gap: 1px;
   overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, #000 20%, #000 100%);
 }
 
 .composer-voice-waveform-bar {
-  width: 2px;
+  width: 3px;
   min-height: 3px;
-  flex: 0 0 2px;
+  flex: 0 1 3px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--wuu-accent) 76%, var(--ink));
+  background: var(--ink);
+  opacity: 0.82;
   transition: height 70ms linear;
 }
 
-.composer-voice-recording-label {
-  max-width: 120px;
-  flex: 0 0 auto;
-  overflow: hidden;
-  font-size: 11px;
-  font-weight: var(--weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@keyframes composer-voice-live-pulse {
-  70% {
-    box-shadow: 0 0 0 5px transparent;
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
 @container composer-shell (max-width: 620px) {
-  .composer-voice-status,
-  .composer-voice-recording-label {
+  .composer-voice-status {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-voice-live-dot {
-    animation: none;
-  }
-
   .composer-voice-waveform-bar {
     transition: none;
   }

@@ -8,7 +8,7 @@ import { useI18n } from "./i18n";
 import type { TranslationKey } from "./i18n/resources/zh-CN";
 import { useVoiceInputSettings } from "./VoiceInputSettingsState";
 
-const VOICE_WAVEFORM_BAR_COUNT = 32;
+const VOICE_WAVEFORM_BAR_COUNT = 56;
 const VOICE_WAVEFORM_FLOOR = 0.08;
 
 function emptyVoiceWaveform(): number[] {
@@ -197,7 +197,6 @@ export function ComposerVoiceInput({
           disabled={phase !== "listening"}
           onClick={() => void stop()}
         >
-          <span className="composer-voice-live-dot" aria-hidden="true" />
           <span className="composer-voice-waveform" aria-hidden="true">
             {audioLevels.map((level, index) => (
               <span
@@ -207,7 +206,6 @@ export function ComposerVoiceInput({
               />
             ))}
           </span>
-          <span className="composer-voice-recording-label">{status}</span>
         </button>
       ) : status ? (
         <span

@@ -120,7 +120,7 @@ describe("ComposerVoiceInput", () => {
     );
     expect(recording).not.toBeNull();
     expect(recording?.disabled).toBe(false);
-    expect(bars).toHaveLength(32);
+    expect(bars).toHaveLength(56);
     expect(bars.item(bars.length - 1).style.height).toBe("17px");
     expect(onRecordingChange).toHaveBeenCalledWith(true);
 
