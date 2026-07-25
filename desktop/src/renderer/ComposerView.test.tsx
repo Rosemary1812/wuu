@@ -673,25 +673,27 @@ describe("Composer send control", () => {
     expect(onQueue).not.toHaveBeenCalled();
   });
 
-  it("keeps a send (queue) button while running when the input has a draft", () => {
+  it("uses the same steer action as Enter when the send button is clicked", () => {
     const onInterrupt = vi.fn();
     const onSend = vi.fn();
+    const onSteer = vi.fn();
     renderComposer({
-      prompt: "queued follow-up",
+      prompt: "change direction",
       running: true,
       onInterrupt,
       onSend,
+      onSteer,
     });
 
-    // A draft typed mid-turn must stay sendable (queued), not be forced into a
-    // stop control — Enter already queues it, so the button must agree.
+    // A draft typed mid-turn must stay sendable, not be forced into a stop
+    // control. The button should use the same steer action as Enter.
     expect(
       container.querySelectorAll(".composer-action-button.composer-stop-button"),
     ).toHaveLength(0);
     expect(container.querySelector("button[aria-label=\"停止\"]")).toBeNull();
 
     const sendButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"排队发送\"]",
+      "button[aria-label=\"发送引导\"]",
     );
     expect(sendButton).not.toBeNull();
     expect(sendButton?.disabled).toBe(false);
@@ -700,7 +702,8 @@ describe("Composer send control", () => {
       sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSteer).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
     expect(onInterrupt).not.toHaveBeenCalled();
   });
 

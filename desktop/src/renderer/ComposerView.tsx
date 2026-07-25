@@ -315,12 +315,14 @@ export function Composer({
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   // The action button is a stop control ONLY while a turn runs AND the input
   // is empty. The moment there is something to send, it flips back to a send
-  // button — because Enter already queues a draft mid-turn, so the button must
-  // match that (queuing "排队发送" rather than interrupting). This keeps the
-  // stop affordance for the common "watching a turn, empty input" case while
-  // never blocking a queued follow-up the user has clearly typed.
+  // button. Its submit action below deliberately follows the same steer/queue
+  // decision as Enter, while preserving the stop affordance for an empty input.
   const showComposerStop = running && (forceStopWhileRunning || !hasDraft);
-  const composerSendLabel = running ? t("composer.queueSend") : t("composer.send");
+  const composerSendLabel = running && hasDraft && onSteer
+    ? t("composer.steerSend")
+    : running
+      ? t("composer.queueSend")
+      : t("composer.send");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);
   const composerFrameRef = useRef<HTMLDivElement>(null);
@@ -627,7 +629,11 @@ export function Composer({
       void stopVoiceAndSubmit();
       return;
     }
-    submitComposerWith(onSend);
+    submitDraft();
+  }
+
+  function submitDraft(): void {
+    submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
   }
 
   async function stopVoiceAndSubmit(): Promise<void> {
@@ -894,7 +900,7 @@ export function Composer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
+      submitDraft();
     }
   }
 
