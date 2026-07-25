@@ -23,7 +23,7 @@ Generic guidance belongs in the base prompt only when evaluation shows a durable
 - The desktop's clickable file-reference format.
 - Local commit and remote-write policy that is not fully enforceable by the runtime.
 
-`prompts/system_main.md` separately keeps the hidden result-card and coordinated-work protocol because only the main agent receives that UI-level collaboration context. Spawned workers receive the base prompt without this section.
+`prompts/system_main.md` separately keeps the main agent's completion boundary for delegated work: a completed subagent task still requires integration and verification before the overall task is complete. Per-message participant context carries its own result-card handling instructions, so they are not repeated here. Spawned workers receive the base prompt without this section.
 
 ## Runtime-generated context
 

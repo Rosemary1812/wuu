@@ -1117,12 +1117,11 @@ func TestDefaultSystemPromptLeavesToolManualsToActiveSurface(t *testing.T) {
 func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"Before claiming coordinated work is complete",
-		"plan, goal, or delegated result",
-		"A completed child task is evidence for the broader objective",
+		"completed subagent task does not mean the overall task is complete",
+		"integrate the result and verify the overall work",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt missing goal/workflow closure guidance %q: %q", want, prompt)
+			t.Fatalf("default system prompt missing subagent completion boundary %q: %q", want, prompt)
 		}
 	}
 	for _, bad := range []string{
@@ -1153,13 +1152,16 @@ func TestDefaultSystemPrompt_FinalAnswerReferences(t *testing.T) {
 func TestDefaultSystemPrompt_MainCoordination(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"participant posted a result card",
-		"Reference the card",
-		"plan, goal, or delegated result",
-		"evidence for the broader objective",
+		"completed subagent task does not mean the overall task is complete",
+		"integrate the result and verify the overall work",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include main-agent coordination guidance %q: %q", want, prompt)
+		}
+	}
+	for _, duplicatedTerm := range []string{"hidden context", "result card", "conversation participant"} {
+		if strings.Contains(prompt, duplicatedTerm) {
+			t.Fatalf("default system prompt should leave per-message result-card guidance out %q: %q", duplicatedTerm, prompt)
 		}
 	}
 }
