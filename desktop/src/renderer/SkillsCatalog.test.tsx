@@ -31,7 +31,7 @@ describe("SkillsCatalog", () => {
     installSkillList([
       {
         name: "browser",
-        description: "Navigate and observe web pages",
+        description: "Navigate and observe web pages. Use when no safer interface is available.",
         source: "bundled",
         user_invocable: true,
         disable_model_invoke: false,
@@ -52,6 +52,8 @@ describe("SkillsCatalog", () => {
 
     expect(container.textContent).toContain("官方技能");
     expect(container.textContent).toContain("你的技能");
+    expect(container.textContent).toContain("Navigate and observe web pages.");
+    expect(container.textContent).not.toContain("Use when no safer interface is available.");
     expect(container.querySelector('[data-skill-artwork="official-browser"]')).toBeTruthy();
     expect(container.querySelector('[data-skill-artwork="neutral-skill"]')).toBeTruthy();
   });

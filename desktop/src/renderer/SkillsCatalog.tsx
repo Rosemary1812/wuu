@@ -290,9 +290,7 @@ function SkillsList({
                 </span>
               ) : null}
             </span>
-            {skill.description || skill.when_to_use ? (
-              <p>{skill.description || skill.when_to_use}</p>
-            ) : null}
+            {catalogSkillDescription(skill) ? <p>{catalogSkillDescription(skill)}</p> : null}
           </span>
           <ChevronRight className="skill-row-chevron" aria-hidden="true" />
         </button>
@@ -358,6 +356,15 @@ function skillArtworkVariant(
     default:
       return "official-default";
   }
+}
+
+function catalogSkillDescription(skill: SkillSummary): string {
+  const description = (skill.description || skill.when_to_use || "").trim();
+  if (!description) {
+    return "";
+  }
+  const firstSentence = description.match(/^.*?[。！？.!?](?=\s|$)/u)?.[0];
+  return firstSentence?.trim() || description;
 }
 
 function skillArtworkIcon(variant: SkillArtworkVariant): JSX.Element {

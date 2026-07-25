@@ -2559,9 +2559,6 @@ html.resizing-workspace-terminal-split * {
     height: 26px;
   }
 
-  .skill-row p {
-    white-space: normal;
-  }
 }
 
 .skill-row-button {
