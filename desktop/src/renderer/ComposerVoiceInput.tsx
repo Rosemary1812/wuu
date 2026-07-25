@@ -1,4 +1,4 @@
-import { LoaderCircle, Mic, Sparkles, Square } from "lucide-react";
+import { LoaderCircle, Mic, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   SpeechRecognitionEvent,
@@ -19,25 +19,21 @@ export function ComposerVoiceInput({
   setPrompt,
   disabled,
   locale,
-  polishAvailable,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
   disabled: boolean;
   locale: string;
-  polishAvailable: boolean;
 }): JSX.Element | null {
   const { t } = useI18n();
   const [phase, setPhaseState] = useState<VoicePhase>("idle");
   const [error, setError] = useState("");
-  const { settings, updateSettings } = useVoiceInputSettings();
-  const polishEnabled = settings.polish_enabled;
+  const { settings } = useVoiceInputSettings();
   const phaseRef = useRef<VoicePhase>("idle");
   const basePromptRef = useRef("");
   const transcriptRef = useRef("");
   const finalizingRef = useRef(false);
   const polishEnabledRef = useRef(settings.polish_enabled);
-  const polishAvailableRef = useRef(polishAvailable);
   const supported =
     window.wuu?.platform === "darwin" &&
     typeof window.wuu.startSpeechRecognition === "function";
@@ -61,7 +57,7 @@ export function ComposerVoiceInput({
     }
     finalizingRef.current = true;
     setPrompt(composedPrompt(text));
-    if (!polishEnabledRef.current || !polishAvailableRef.current) {
+    if (!polishEnabledRef.current) {
       finalizingRef.current = false;
       setPhase("idle");
       return;
@@ -113,8 +109,7 @@ export function ComposerVoiceInput({
 
   useEffect(() => {
     polishEnabledRef.current = settings.polish_enabled;
-    polishAvailableRef.current = polishAvailable;
-  }, [polishAvailable, settings.polish_enabled]);
+  }, [settings.polish_enabled]);
 
   useEffect(
     () => () => {
@@ -163,32 +158,6 @@ export function ComposerVoiceInput({
 
   return (
     <div className="composer-voice-input">
-      <button
-        className={`composer-polish-toggle${polishEnabled ? " is-active" : ""}`}
-        type="button"
-        aria-pressed={polishEnabled}
-        disabled={disabled || active || busy || !polishAvailable}
-        title={
-          polishAvailable
-            ? t("composer.voice.polishHint")
-            : t("composer.voice.polishUnavailable")
-        }
-        onClick={() => {
-          const next = !settings.polish_enabled;
-          polishEnabledRef.current = next;
-          void updateSettings({
-            ...settings,
-            polish_enabled: next,
-          }).catch(() => {
-            polishEnabledRef.current = settings.polish_enabled;
-            setError(t("composer.voice.settingsSaveFailed"));
-            setPhase("error");
-          });
-        }}
-      >
-        <Sparkles aria-hidden="true" />
-        <span>{t("composer.voice.polish")}</span>
-      </button>
       {status ? (
         <span
           className={`composer-voice-status${phase === "error" ? " is-error" : ""}`}

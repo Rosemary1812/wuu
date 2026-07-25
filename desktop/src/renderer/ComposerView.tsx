@@ -1221,9 +1221,6 @@ export function Composer({
                     setPrompt={setPrompt}
                     disabled={readOnly}
                     locale={locale}
-                    polishAvailable={Boolean(
-                      initialized && initialized.status !== "needs_setup",
-                    )}
                   />
                 ) : null}
                 <button

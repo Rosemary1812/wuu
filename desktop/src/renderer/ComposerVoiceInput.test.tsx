@@ -46,7 +46,7 @@ function installApi(overrides: Partial<WuuDesktopApi> = {}): void {
     api as WuuDesktopApi;
 }
 
-function renderVoiceInput(initialPrompt = "", polishAvailable = true): void {
+function renderVoiceInput(initialPrompt = ""): void {
   function Harness(): JSX.Element {
     const [prompt, setPrompt] = useState(initialPrompt);
     return (
@@ -57,7 +57,6 @@ function renderVoiceInput(initialPrompt = "", polishAvailable = true): void {
           setPrompt={setPrompt}
           disabled={false}
           locale="zh-CN"
-          polishAvailable={polishAvailable}
         />
       </>
     );
@@ -83,12 +82,14 @@ afterEach(() => {
 });
 
 describe("ComposerVoiceInput", () => {
-  it("keeps the microphone as the trailing voice control", () => {
+  it("keeps polish configuration out of the composer", () => {
     installApi();
     renderVoiceInput();
 
     const voiceInput = container.querySelector(".composer-voice-input");
-    expect(voiceInput?.lastElementChild?.classList.contains("composer-voice-button")).toBe(true);
+    expect(voiceInput?.querySelectorAll("button")).toHaveLength(1);
+    expect(voiceInput?.querySelector(".composer-voice-button")).not.toBeNull();
+    expect(voiceInput?.querySelector(".composer-polish-toggle")).toBeNull();
   });
 
   it("keeps free ASR output as raw text when BYOK polish is off", async () => {
@@ -123,14 +124,15 @@ describe("ComposerVoiceInput", () => {
 
   it("uses the configured BYOK model only when polish is enabled", async () => {
     const polishText = vi.fn().mockResolvedValue({ text: "这是润色文本。" });
-    installApi({ polishText });
+    installApi({
+      initialVoiceInputSettings: {
+        polish_enabled: true,
+        language: "system",
+      },
+      polishText,
+    });
     renderVoiceInput();
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(".composer-polish-toggle")
-        ?.click();
-    });
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".composer-voice-button")
@@ -199,14 +201,13 @@ describe("ComposerVoiceInput", () => {
 
   it("keeps raw transcription when BYOK polish fails", async () => {
     installApi({
+      initialVoiceInputSettings: {
+        polish_enabled: true,
+        language: "system",
+      },
       polishText: vi.fn().mockRejectedValue(new Error("provider failed")),
     });
     renderVoiceInput();
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(".composer-polish-toggle")
-        ?.click();
-    });
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".composer-voice-button")
