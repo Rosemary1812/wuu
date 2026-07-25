@@ -29,4 +29,24 @@ describe("conversation search shortcut layout", () => {
       /grid-template-columns:\s*24px\s*minmax\(0,\s*1fr\)\s*max-content/,
     );
   });
+
+  it("keeps result shortcuts quiet until their row is highlighted", () => {
+    expect(cssRule(".conversation-search-result-shortcut")).toMatch(
+      /opacity:\s*0/,
+    );
+    expect(
+      cssRule(".conversation-search-result.selected .conversation-search-result-shortcut"),
+    ).toMatch(/opacity:\s*1/);
+  });
+});
+
+describe("conversation preview rhythm", () => {
+  it("uses tighter spacing within a turn than between turns", () => {
+    expect(cssRule(".conversation-search-preview-turn-group")).toMatch(
+      /gap:\s*10px/,
+    );
+    expect(cssRule(".conversation-search-preview-turns")).toMatch(
+      /gap:\s*24px/,
+    );
+  });
 });

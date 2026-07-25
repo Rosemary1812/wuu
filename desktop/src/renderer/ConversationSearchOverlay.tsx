@@ -54,6 +54,10 @@ export function ConversationSearchOverlay({
   if (!state.open && !state.closing) {
     return null;
   }
+  const resultContextLabels = results.map(({ thread }) =>
+    conversationSearchContextLabel(thread, projects),
+  );
+  const showResultContexts = new Set(resultContextLabels).size > 1;
 
   return (
     <div
@@ -106,10 +110,6 @@ export function ConversationSearchOverlay({
               const active = thread.id === activeThreadID;
               const pending = pendingThreadID === thread.id;
               const selected = state.selectedIndex === resultIndex;
-              const contextLabel = conversationSearchContextLabel(
-                thread,
-                projects,
-              );
               const snippet = conversationSearchVisibleSnippet({
                 query: state.query,
                 snippet: result.snippet,
@@ -136,9 +136,11 @@ export function ConversationSearchOverlay({
                     ) : null}
                   </span>
                   <span className="conversation-search-result-side">
-                    <span className="conversation-search-result-context">
-                      {contextLabel}
-                    </span>
+                    {showResultContexts ? (
+                      <span className="conversation-search-result-context">
+                        {resultContextLabels[resultIndex]}
+                      </span>
+                    ) : null}
                     <span className="conversation-search-result-meta">
                       {conversationSearchThreadMeta(thread)}
                     </span>
@@ -314,7 +316,7 @@ export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string })
   const userText = pickUserText(turn);
   const assistantText = pickAssistantText(turn);
   return (
-    <>
+    <div className="conversation-search-preview-turn-group">
       {userText ? (
         <PreviewRow
           key={`${turn.id}:user`}
@@ -331,7 +333,7 @@ export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string })
           query={query}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
