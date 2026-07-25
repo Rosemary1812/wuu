@@ -7074,7 +7074,7 @@ func TestServerThreadListOrdersSessionsByUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
+func TestServerThreadSearchMatchesHistoryAcrossWorkspaces(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	userThread, err := session.CreateWithMetadata(rt.SessionDir, "user-thread", rt.RootDir)
 	if err != nil {
@@ -7150,14 +7150,20 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	if err := srv.handleLine(context.Background(), rawAssistantPayload); err != nil {
 		t.Fatalf("thread/search assistant content: %v", err)
 	}
-
 	msgs := parseOutput(t, out.String())
 	userResult := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "1")["result"])
-	if len(userResult.Results) != 1 || userResult.Results[0].Thread.ID != userThread.ID {
-		t.Fatalf("expected user-thread only, got %+v", userResult.Results)
+	if len(userResult.Results) != 2 {
+		t.Fatalf("expected matches from both workspaces, got %+v", userResult.Results)
 	}
-	if !strings.Contains(userResult.Results[0].Snippet, "delta-vector") {
-		t.Fatalf("expected user query snippet, got %q", userResult.Results[0].Snippet)
+	resultIDs := map[string]bool{}
+	for _, result := range userResult.Results {
+		resultIDs[result.Thread.ID] = true
+		if !strings.Contains(result.Snippet, "delta-vector") {
+			t.Fatalf("expected user query snippet, got %q", result.Snippet)
+		}
+	}
+	if !resultIDs[userThread.ID] || !resultIDs[otherThread.ID] {
+		t.Fatalf("expected user and other workspace threads, got %+v", userResult.Results)
 	}
 	assistantResult := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "2")["result"])
 	if len(assistantResult.Results) != 1 || assistantResult.Results[0].Thread.ID != assistantThread.ID {

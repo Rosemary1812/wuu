@@ -42,6 +42,7 @@ export type SidebarProjectStateController = {
   sidebarSectionOrder: string[];
   setSidebarSectionOrder: Dispatch<SetStateAction<string[]>>;
   loadProjectThreads: (project: DesktopProject) => Promise<void>;
+  cacheSidebarThreads: (threads: Thread[]) => void;
   updateCachedSidebarThread: (thread: Thread) => void;
   removeCachedSidebarThread: (threadID: string) => void;
   toggleSidebarSectionCollapsed: (sectionID: string) => void;
@@ -356,31 +357,34 @@ export function useSidebarProjectState({
     }
   }
 
-  function updateCachedProjectThread(thread: Thread): void {
-    const projectID = projects.find(
-      (project) => threadBelongsToProject(thread, project),
-    )?.id;
-    if (!projectID) {
-      return;
+  function cacheSidebarThreads(incoming: Thread[]): void {
+    const scratchThreads = incoming.filter((thread) => isScratchThread(thread, projects));
+    if (scratchThreads.length > 0) {
+      setCachedScratchThreads((current) =>
+        mergeSidebarThreadSnapshots(current, scratchThreads),
+      );
     }
     setProjectThreadsByProjectID((current) => {
-      const currentThreads = current[projectID];
-      if (!currentThreads) {
-        return current;
+      let next = current;
+      for (const project of projects) {
+        const projectThreads = threadsForDesktopProject(incoming, project);
+        if (projectThreads.length === 0) {
+          continue;
+        }
+        if (next === current) {
+          next = { ...current };
+        }
+        next[project.id] = mergeSidebarThreadSnapshots(
+          current[project.id],
+          projectThreads,
+        );
       }
-      return {
-        ...current,
-        [projectID]: upsertThread(currentThreads, thread),
-      };
+      return next;
     });
   }
 
   function updateCachedSidebarThread(thread: Thread): void {
-    if (isScratchThread(thread, projects)) {
-      setCachedScratchThreads((current) => upsertThread(current, thread));
-      return;
-    }
-    updateCachedProjectThread(thread);
+    cacheSidebarThreads([thread]);
   }
 
   function removeCachedSidebarThread(threadID: string): void {
@@ -468,6 +472,7 @@ export function useSidebarProjectState({
     sidebarSectionOrder,
     setSidebarSectionOrder,
     loadProjectThreads,
+    cacheSidebarThreads,
     updateCachedSidebarThread,
     removeCachedSidebarThread,
     toggleSidebarSectionCollapsed,

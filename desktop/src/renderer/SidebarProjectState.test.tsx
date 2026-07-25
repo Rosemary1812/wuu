@@ -221,6 +221,31 @@ describe("useSidebarProjectState", () => {
     ).toEqual(["thread-first", "thread-second"]);
   });
 
+  it("caches search results across projects without requiring sidebar expansion", async () => {
+    const alpha = project("alpha", "/tmp/alpha");
+    const beta = project("beta", "/tmp/beta");
+    const scratch = thread("thread-scratch", "/tmp/scratch");
+    const hook = await renderSidebarProjectState({ projects: [alpha, beta] });
+
+    act(() => {
+      hook.get().cacheSidebarThreads([
+        thread("thread-alpha", alpha.path),
+        thread("thread-beta", beta.path),
+        scratch,
+      ]);
+    });
+
+    expect(hook.get().projectThreadsByProjectID.alpha?.map((item) => item.id)).toEqual([
+      "thread-alpha",
+    ]);
+    expect(hook.get().projectThreadsByProjectID.beta?.map((item) => item.id)).toEqual([
+      "thread-beta",
+    ]);
+    expect(hook.get().cachedScratchThreads.map((item) => item.id)).toEqual([
+      "thread-scratch",
+    ]);
+  });
+
   it("keeps scratch threads cached for the no-project context", async () => {
     const alpha = project("alpha", "/tmp/alpha");
     const scratchThread = thread("thread-scratch", "/tmp/other");

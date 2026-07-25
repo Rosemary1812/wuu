@@ -469,6 +469,7 @@ export function App(): JSX.Element {
     cachedScratchThreads,
     sidebarSectionOrder,
     setSidebarSectionOrder,
+    cacheSidebarThreads,
     updateCachedSidebarThread,
     removeCachedSidebarThread,
     toggleSidebarSectionCollapsed,
@@ -1160,7 +1161,7 @@ export function App(): JSX.Element {
   } = useConversationSearch({
     activeContext: state.activeContext,
     getAppState: () => appStateRef.current,
-    setAppState: setState,
+    cacheThreads: cacheSidebarThreads,
     onOpen: () => {
       setProjectMenuOpen(false);
       setRuntimeMenuOpen(false);
