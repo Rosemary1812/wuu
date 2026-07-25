@@ -118,7 +118,7 @@ func Dispatch(args []string) (bool, int) {
 		return true, 127
 	}
 	wrapperPath := args[1]
-	realGit := args[2]
+	realGit := resolveRealGitExecutable(args[2])
 	if err := validateRealGit(wrapperPath, realGit); err != nil {
 		fmt.Fprintf(os.Stderr, "wuu: internal git wrapper rejected executable %q: %v\n", realGit, err)
 		return true, 127
@@ -140,6 +140,23 @@ func Dispatch(args []string) (bool, int) {
 		return true, 126
 	}
 	return true, 0
+}
+
+func resolveRealGitExecutable(realGit string) string {
+	if runtime.GOOS != "windows" || strings.EqualFold(filepath.Ext(realGit), ".exe") {
+		return realGit
+	}
+	if _, err := os.Stat(realGit); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return realGit
+	}
+
+	// Git Bash omits .exe from command -v output before MSYS converts the path
+	// for this native Windows process.
+	executablePath := realGit + ".exe"
+	if _, err := os.Stat(executablePath); err == nil {
+		return executablePath
+	}
+	return realGit
 }
 
 func validateRealGit(wrapperPath, realGit string) error {

@@ -10,6 +10,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ### Fixed
 
+- Fixed Git attribution in Windows Git Bash shells when Git resolves without an
+  `.exe` suffix.
 - Centered the skills catalog content within its scroll region on the desktop.
 - Removed count badges from the skills catalog section headings on the desktop.
 

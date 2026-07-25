@@ -3,6 +3,7 @@ package gitattribution
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,79 @@ func TestValidateRealGitAcceptsDifferentGitExecutable(t *testing.T) {
 
 	if err := validateRealGit(wrapperPath, realGit); err != nil {
 		t.Fatalf("validateRealGit() error = %v", err)
+	}
+}
+
+func TestResolveRealGitExecutableAddsWindowsSuffix(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific executable resolution")
+	}
+
+	realGit := filepath.Join(t.TempDir(), "git")
+	executablePath := realGit + ".exe"
+	if err := os.WriteFile(executablePath, nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveRealGitExecutable(realGit); got != executablePath {
+		t.Fatalf("resolveRealGitExecutable() = %q, want %q", got, executablePath)
+	}
+}
+
+func TestResolveRealGitExecutableKeepsExistingWindowsPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific executable resolution")
+	}
+
+	realGit := filepath.Join(t.TempDir(), "git")
+	if err := os.WriteFile(realGit, nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(realGit+".exe", nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveRealGitExecutable(realGit); got != realGit {
+		t.Fatalf("resolveRealGitExecutable() = %q, want original path %q", got, realGit)
+	}
+}
+
+func TestResolveRealGitExecutableKeepsMissingWindowsPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific executable resolution")
+	}
+
+	realGit := filepath.Join(t.TempDir(), "git")
+	if got := resolveRealGitExecutable(realGit); got != realGit {
+		t.Fatalf("resolveRealGitExecutable() = %q, want original missing path %q", got, realGit)
+	}
+}
+
+func TestResolveRealGitExecutableKeepsWindowsExeExtension(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific executable resolution")
+	}
+
+	realGit := filepath.Join(t.TempDir(), "git.EXE")
+	if got := resolveRealGitExecutable(realGit); got != realGit {
+		t.Fatalf("resolveRealGitExecutable() = %q, want original .EXE path %q", got, realGit)
+	}
+}
+
+func TestResolveRealGitExecutableStillRejectsWrapperExe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific executable resolution")
+	}
+
+	realGit := filepath.Join(t.TempDir(), "git")
+	wrapperPath := realGit + ".exe"
+	if err := os.WriteFile(wrapperPath, nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved := resolveRealGitExecutable(realGit)
+	if err := validateRealGit(wrapperPath, resolved); err == nil || !strings.Contains(err.Error(), "wrapper itself") {
+		t.Fatalf("validateRealGit() error = %v, want self-wrapper rejection after resolving %q", err, resolved)
 	}
 }
 
