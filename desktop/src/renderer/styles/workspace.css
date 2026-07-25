@@ -2320,10 +2320,53 @@ html.resizing-workspace-terminal-split * {
   background: var(--skill-artwork-official-bg);
 }
 
-.skill-artwork[class*="skill-artwork-official-"] svg {
+.skill-artwork-custom-skill,
+.skill-artwork-custom-plugin {
+  background: var(--skill-artwork-official-bg);
+}
+
+.skill-artwork[class*="skill-artwork-official-"] svg,
+.skill-artwork-custom-skill svg,
+.skill-artwork-custom-plugin svg {
   width: 26px;
   height: 26px;
   overflow: visible;
+}
+
+.skill-artwork-palette-0 {
+  --skill-mark-a: #35dcc5;
+  --skill-mark-b: #438bf4;
+  --skill-mark-c: #7458e8;
+}
+
+.skill-artwork-palette-1 {
+  --skill-mark-a: #ffb14a;
+  --skill-mark-b: #ff646a;
+  --skill-mark-c: #d63fa5;
+}
+
+.skill-artwork-palette-2 {
+  --skill-mark-a: #ffe15b;
+  --skill-mark-b: #f3a526;
+  --skill-mark-c: #e6672f;
+}
+
+.skill-artwork-palette-3 {
+  --skill-mark-a: #8cdb55;
+  --skill-mark-b: #20bfa6;
+  --skill-mark-c: #368ae8;
+}
+
+.skill-artwork-palette-4 {
+  --skill-mark-a: #9d69f5;
+  --skill-mark-b: #e54db3;
+  --skill-mark-c: #fa6b69;
+}
+
+.skill-artwork-palette-5 {
+  --skill-mark-a: #56d7f2;
+  --skill-mark-b: #5979eb;
+  --skill-mark-c: #3dc7b4;
 }
 
 .skill-artwork-official-browser {
@@ -2554,7 +2597,9 @@ html.resizing-workspace-terminal-split * {
     height: 18px;
   }
 
-  .skill-artwork[class*="skill-artwork-official-"] svg {
+  .skill-artwork[class*="skill-artwork-official-"] svg,
+  .skill-artwork-custom-skill svg,
+  .skill-artwork-custom-plugin svg {
     width: 26px;
     height: 26px;
   }

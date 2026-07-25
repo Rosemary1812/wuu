@@ -1,11 +1,10 @@
 import {
   ChevronRight,
-  Puzzle,
   RefreshCw,
   Search,
   Wrench,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type {
   AppLocale,
   ExtensionInventoryRecord,
@@ -307,8 +306,10 @@ type SkillArtworkVariant =
   | "official-creator"
   | "official-plugin"
   | "official-default"
-  | "neutral-plugin"
-  | "neutral-skill";
+  | "custom-plugin"
+  | "custom-skill";
+
+type CustomSkillMotif = "orbit" | "ribbon" | "bloom" | "spark";
 
 function SkillArtwork({
   name,
@@ -320,13 +321,21 @@ function SkillArtwork({
   kind: "skill" | "plugin";
 }): JSX.Element {
   const variant = skillArtworkVariant(name, official, kind);
+  const customIdentity = variant.startsWith("custom-")
+    ? customSkillArtworkIdentity(name)
+    : null;
   return (
     <span
-      className={`skill-artwork skill-artwork-${variant}`}
+      className={[
+        "skill-artwork",
+        `skill-artwork-${variant}`,
+        customIdentity ? `skill-artwork-palette-${customIdentity.palette}` : "",
+      ].filter(Boolean).join(" ")}
       data-skill-artwork={variant}
+      data-skill-motif={customIdentity?.motif}
       aria-hidden="true"
     >
-      {skillArtworkIcon(variant)}
+      {skillArtworkIcon(variant, customIdentity?.motif)}
     </span>
   );
 }
@@ -337,7 +346,7 @@ function skillArtworkVariant(
   kind: "skill" | "plugin",
 ): SkillArtworkVariant {
   if (!official) {
-    return kind === "plugin" ? "neutral-plugin" : "neutral-skill";
+    return kind === "plugin" ? "custom-plugin" : "custom-skill";
   }
   if (kind === "plugin") {
     return "official-plugin";
@@ -367,21 +376,117 @@ function catalogSkillDescription(skill: SkillSummary): string {
   return firstSentence?.trim() || description;
 }
 
-function skillArtworkIcon(variant: SkillArtworkVariant): JSX.Element {
+function skillArtworkIcon(
+  variant: SkillArtworkVariant,
+  customMotif?: CustomSkillMotif,
+): JSX.Element {
   switch (variant) {
-    case "neutral-plugin":
-      return <Puzzle className="icon" />;
-    case "neutral-skill":
-      return <Wrench className="icon" />;
+    case "custom-plugin":
+      return <CustomSkillMark kind="plugin" motif={customMotif ?? "orbit"} />;
+    case "custom-skill":
+      return <CustomSkillMark kind="skill" motif={customMotif ?? "orbit"} />;
     default:
       return <OfficialSkillMark variant={variant} />;
+  }
+}
+
+function customSkillArtworkIdentity(name: string): {
+  palette: number;
+  motif: CustomSkillMotif;
+} {
+  const motifs: CustomSkillMotif[] = ["orbit", "ribbon", "bloom", "spark"];
+  const hash = stableSkillHash(name);
+  return {
+    palette: hash % 6,
+    motif: motifs[Math.floor(hash / 6) % motifs.length],
+  };
+}
+
+function stableSkillHash(name: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < name.length; index += 1) {
+    hash ^= name.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function CustomSkillMark({
+  kind,
+  motif,
+}: {
+  kind: "skill" | "plugin";
+  motif: CustomSkillMotif;
+}): JSX.Element {
+  const gradientID = `custom-skill-mark-${useId().replaceAll(":", "")}`;
+  const gradient = (
+    <defs>
+      <linearGradient id={gradientID} x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
+        <stop className="skill-mark-stop-a" />
+        <stop offset="0.56" className="skill-mark-stop-b" />
+        <stop offset="1" className="skill-mark-stop-c" />
+      </linearGradient>
+    </defs>
+  );
+
+  if (kind === "plugin") {
+    return (
+      <svg viewBox="0 0 32 32" focusable="false">
+        {gradient}
+        <path d="M5 4h7.5a3.5 3.5 0 1 0 7 0H27v8a3.5 3.5 0 1 1 0 7v8h-8a3.5 3.5 0 1 0-7 0H5v-7.5a3.5 3.5 0 1 1 0-7Z" fill={`url(#${gradientID})`} />
+        <circle className="skill-mark-light-fill skill-mark-muted" cx="16" cy="15.5" r="3" />
+      </svg>
+    );
+  }
+
+  switch (motif) {
+    case "orbit":
+      return (
+        <svg viewBox="0 0 32 32" focusable="false">
+          {gradient}
+          <circle cx="16" cy="16" r="12.5" fill={`url(#${gradientID})`} />
+          <ellipse className="skill-mark-light-stroke skill-mark-muted" cx="16" cy="16" rx="9" ry="4.8" transform="rotate(-28 16 16)" />
+          <circle className="skill-mark-light-fill" cx="23.5" cy="11.3" r="2" />
+          <circle className="skill-mark-light-fill skill-mark-muted" cx="14.5" cy="17" r="2.6" />
+        </svg>
+      );
+    case "ribbon":
+      return (
+        <svg viewBox="0 0 32 32" focusable="false">
+          {gradient}
+          <rect x="4" y="4" width="24" height="24" rx="8" transform="rotate(-7 16 16)" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="m8.5 18 6-8 9 2.5-5.5 9Z" />
+          <path className="skill-mark-light-fill skill-mark-muted" d="m14.5 10 3.5 11.5 5.5-9Z" />
+        </svg>
+      );
+    case "bloom":
+      return (
+        <svg viewBox="0 0 32 32" focusable="false">
+          {gradient}
+          <ellipse cx="16" cy="9.5" rx="6" ry="7.5" fill={`url(#${gradientID})`} />
+          <ellipse cx="22.5" cy="16" rx="7.5" ry="6" fill={`url(#${gradientID})`} />
+          <ellipse cx="16" cy="22.5" rx="6" ry="7.5" fill={`url(#${gradientID})`} />
+          <ellipse cx="9.5" cy="16" rx="7.5" ry="6" fill={`url(#${gradientID})`} />
+          <circle className="skill-mark-light-fill" cx="16" cy="16" r="3.2" />
+          <circle className="skill-mark-highlight-fill skill-mark-translucent" cx="17" cy="15" r="1.3" />
+        </svg>
+      );
+    case "spark":
+      return (
+        <svg viewBox="0 0 32 32" focusable="false">
+          {gradient}
+          <path d="m16 2.8 4.2 8.4 9 4.8-9 4.8-4.2 8.4-4.2-8.4-9-4.8 9-4.8Z" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-light-fill" d="m16 9.2 1.8 4.8 4.8 2-4.8 2-1.8 4.8-1.8-4.8-4.8-2 4.8-2Z" />
+          <circle className="skill-mark-light-fill skill-mark-muted" cx="24.5" cy="7.5" r="1.5" />
+        </svg>
+      );
   }
 }
 
 function OfficialSkillMark({
   variant,
 }: {
-  variant: Exclude<SkillArtworkVariant, "neutral-plugin" | "neutral-skill">;
+  variant: Exclude<SkillArtworkVariant, "custom-plugin" | "custom-skill">;
 }): JSX.Element {
   const gradientID = `skill-mark-${variant}`;
   const gradient = (
