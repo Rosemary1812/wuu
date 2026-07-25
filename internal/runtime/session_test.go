@@ -3102,9 +3102,9 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyCoordination(t *testing.T) 
 	)
 
 	for _, want := range []string{
-		"# Subagent results",
-		"completed subagent task does not mean the overall task is complete",
-		"review, integrate, and verify the result",
+		"# Coordinated work",
+		"participant posted a result card",
+		"plan, goal, or delegated result",
 	} {
 		if !strings.Contains(mainPrompt, want) {
 			t.Fatalf("main agent prompt must contain %q; got prompt:\n%s", want, mainPrompt)
@@ -3116,9 +3116,9 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyCoordination(t *testing.T) 
 		t.Fatalf("project main prompt (no workflow capability) must not contain the start_workflow path bullet; got prompt:\n%s", mainPrompt)
 	}
 	for _, banned := range []string{
-		"# Subagent results",
-		"completed subagent task does not mean the overall task is complete",
-		"review, integrate, and verify the result",
+		"# Coordinated work",
+		"participant posted a result card",
+		"plan, goal, or delegated result",
 	} {
 		if strings.Contains(workerPrompt, banned) {
 			t.Fatalf("worker prompt must not contain main-only guidance %q; got prompt:\n%s", banned, workerPrompt)
