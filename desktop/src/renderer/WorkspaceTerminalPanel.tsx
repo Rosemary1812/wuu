@@ -166,6 +166,9 @@ export function WorkspaceTerminalPanel({
   );
   const selectedRun = runs.find((run) => run.toolCallID === selectedResourceID)
     ?? (requestedRecord?.toolCallID === selectedResourceID ? requestedRecord : undefined);
+  const standaloneAgentRun = Boolean(
+    selectedRun && userTerminals.length === 0 && runs.length === 0,
+  );
   const handleManagedProcessChange = useCallback((next: ManagedProcessSummary) => {
     setManagedProcesses((current) => {
       if (!isManagedProcessLive(next)) {
@@ -339,7 +342,7 @@ export function WorkspaceTerminalPanel({
 
   return (
     <div
-      className={`workspace-terminal-workspace${resizingNavigation ? " resizing" : ""}`}
+      className={`workspace-terminal-workspace${resizingNavigation ? " resizing" : ""}${standaloneAgentRun ? " standalone-agent-run" : ""}`}
       style={{ "--workspace-terminal-navigation-width": `${navigationWidth}px` } as CSSProperties}
     >
       <nav className="workspace-terminal-navigation" aria-label={t("workspace.terminal.resources")}>
@@ -439,6 +442,7 @@ export function WorkspaceTerminalPanel({
             run={selectedRun}
             process={selectedRun.processID ? managedProcesses[selectedRun.processID] : undefined}
             onProcessChange={handleManagedProcessChange}
+            onCreateTerminal={createUserTerminal}
           />
         ) : null}
         {userTerminals.length === 0 && !selectedRun ? (
@@ -554,10 +558,12 @@ function AgentTerminalPane({
   run,
   process,
   onProcessChange,
+  onCreateTerminal,
 }: {
   run: AgentRunRecord;
   process?: ManagedProcessSummary;
   onProcessChange: (process: ManagedProcessSummary) => void;
+  onCreateTerminal: () => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -763,6 +769,15 @@ function AgentTerminalPane({
       <header className="workspace-agent-terminal-toolbar">
         <div className="workspace-agent-terminal-command" title={run.command}>{run.command}</div>
         <div className="workspace-agent-terminal-actions">
+          <button
+            className="workspace-agent-terminal-new"
+            type="button"
+            aria-label={t("workspace.terminal.newTerminal")}
+            title={t("workspace.terminal.newTerminal")}
+            onClick={onCreateTerminal}
+          >
+            <Plus size={14} />
+          </button>
           <span className={`workspace-agent-run-status ${currentProcess?.status ?? run.status}`}>
             {managedRunStatusLabel(run, currentProcess, stopping)}
           </span>

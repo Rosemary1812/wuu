@@ -432,6 +432,8 @@ describe("WorkspaceTerminalPanel", () => {
     );
 
     expect(startTerminalSession).not.toHaveBeenCalled();
+    expect(container.querySelector(".workspace-terminal-workspace")?.classList.contains("standalone-agent-run")).toBe(true);
+    expect(container.querySelector('button[aria-label="新建终端"]')).not.toBeNull();
     expect(container.querySelector(".workspace-agent-terminal")?.textContent).toContain("npm run lint");
     expect(container.textContent).toContain("失败");
     expect(container.textContent).not.toContain("AI 命令");

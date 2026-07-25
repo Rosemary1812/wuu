@@ -1397,6 +1397,15 @@ html.resizing-workspace-file-split * {
   grid-template-columns: var(--workspace-terminal-navigation-width, 212px) 1px minmax(0, 1fr);
 }
 
+.workspace-terminal-workspace.standalone-agent-run {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-terminal-workspace.standalone-agent-run .workspace-terminal-navigation,
+.workspace-terminal-workspace.standalone-agent-run .workspace-terminal-resizer {
+  display: none;
+}
+
 .workspace-terminal-navigation {
   position: relative;
   grid-column: 1;
@@ -1474,6 +1483,10 @@ html.resizing-workspace-terminal-split * {
   min-height: 0;
   overflow: hidden;
   background: var(--paper);
+}
+
+.workspace-terminal-workspace.standalone-agent-run .workspace-terminal-content {
+  grid-column: 1;
 }
 
 .workspace-terminal-resource {
@@ -1644,6 +1657,22 @@ html.resizing-workspace-terminal-split * {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+}
+
+.workspace-agent-terminal-new {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  line-height: 0;
+  padding: 0;
+}
+
+.workspace-agent-terminal-new:hover {
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .workspace-agent-run-status {
