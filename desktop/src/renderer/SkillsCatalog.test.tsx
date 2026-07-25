@@ -50,7 +50,7 @@ describe("SkillsCatalog", () => {
       root.render(<SkillsCatalog />);
     });
 
-    expect(container.textContent).toContain("Wuu 官方");
+    expect(container.textContent).toContain("官方技能");
     expect(container.textContent).toContain("你的技能");
     expect(container.querySelector('[data-skill-artwork="official-browser"]')).toBeTruthy();
     expect(container.querySelector('[data-skill-artwork="neutral-skill"]')).toBeTruthy();

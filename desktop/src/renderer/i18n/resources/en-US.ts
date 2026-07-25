@@ -1463,7 +1463,7 @@ export const enUS = {
   "skills.searchPlaceholder": "Search skills",
   "skills.refresh": "Refresh Skills",
   "skills.sectionSkills": "Skills",
-  "skills.sectionOfficial": "Official by Wuu",
+  "skills.sectionOfficial": "Official skills",
   "skills.sectionPersonal": "Your skills",
   "skills.officialSkillTitle": "Official skill bundled with Wuu",
   "skills.official": "Official",

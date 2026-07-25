@@ -1461,7 +1461,7 @@ export const zhCN = {
   "skills.searchPlaceholder": "搜索技能",
   "skills.refresh": "刷新 Skills",
   "skills.sectionSkills": "技能",
-  "skills.sectionOfficial": "Wuu 官方",
+  "skills.sectionOfficial": "官方技能",
   "skills.sectionPersonal": "你的技能",
   "skills.officialSkillTitle": "随 Wuu 内置分发的官方技能",
   "skills.official": "官方",
