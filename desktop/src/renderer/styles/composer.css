@@ -1433,7 +1433,10 @@
   align-items: center;
   overflow: hidden;
   border: 0;
-  padding: 0;
+  /* The toolbar starts one control-icon inset before the textarea text.
+     Restore that inset here so the waveform aligns with the text on both
+     dock and hero composers instead of touching the frame edges. */
+  padding: 0 var(--composer-control-icon-inset);
   background: transparent;
   color: var(--ink);
   cursor: pointer;
@@ -1462,12 +1465,12 @@
 }
 
 .composer-voice-waveform-bar {
-  width: 3px;
+  width: 2px;
   min-height: 3px;
-  flex: 0 1 3px;
+  flex: 0 0 2px;
   border-radius: var(--radius-pill);
   background: var(--ink);
-  opacity: 0.82;
+  opacity: 0.7;
   transition: height 70ms linear;
 }
 
