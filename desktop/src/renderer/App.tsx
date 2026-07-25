@@ -161,7 +161,11 @@ import {
 import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
-import { ENABLE_GROUP_CHAT, ENABLE_ULTRA_MODE } from "./FeatureFlags";
+import {
+  ENABLE_GROUP_CHAT,
+  ENABLE_SKILLS_ASSISTANT,
+  ENABLE_ULTRA_MODE,
+} from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
 import { CircleAlert } from "lucide-react";
@@ -170,6 +174,7 @@ import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
+import { skillsAssistantPrompt, userVisibleThreads } from "./SkillsAssistant";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
 import { useSideThreadController } from "./SideThreadController";
@@ -798,6 +803,22 @@ export function App(): JSX.Element {
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const draftSessionTabCounterRef = useRef(0);
   const currentSessionTab = activeSessionTab(state);
+  const [skillsAssistantDraft, setSkillsAssistantDraft] = useState("");
+  const [skillsAssistantThreadID, setSkillsAssistantThreadID] = useState<string>();
+  const [skillsAssistantStatus, setSkillsAssistantStatus] = useState("");
+  const previousSkillsTabIDRef = useRef<string | undefined>(undefined);
+  const currentSkillsTabID =
+    currentSessionTab?.kind === "skills" ? currentSessionTab.id : undefined;
+
+  useEffect(() => {
+    if (previousSkillsTabIDRef.current === currentSkillsTabID) {
+      return;
+    }
+    previousSkillsTabIDRef.current = currentSkillsTabID;
+    setSkillsAssistantDraft("");
+    setSkillsAssistantThreadID(undefined);
+    setSkillsAssistantStatus("");
+  }, [currentSkillsTabID]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
@@ -1635,6 +1656,12 @@ export function App(): JSX.Element {
     state.initialized &&
     !previewingLaunch &&
     currentSessionTab?.kind === "skills",
+  );
+  const skillsAssistantThread = skillsAssistantThreadID
+    ? state.threads.find((thread) => thread.id === skillsAssistantThreadID)
+    : undefined;
+  const skillsAssistantRunning = Boolean(
+    skillsAssistantThread && isThreadRunning(skillsAssistantThread),
   );
   const activeTitle = showingSkillsCatalog
     ? t("skills.title")
@@ -2704,6 +2731,70 @@ export function App(): JSX.Element {
       setPrompt(`/${skill.name} `);
       requestMainComposerFocus("hero", origin);
     });
+  }
+
+  async function sendSkillsAssistantPrompt(query: string): Promise<void> {
+    const currentState = appStateRef.current;
+    const context = currentState.activeContext;
+    if (!context || !currentState.initialized) {
+      return;
+    }
+    setSkillsAssistantDraft("");
+    let thread = skillsAssistantThreadID
+      ? currentState.threads.find((candidate) => candidate.id === skillsAssistantThreadID)
+      : undefined;
+    try {
+      if (!thread) {
+        setSkillsAssistantStatus(t("skills.assistantStarting"));
+        appStateRef.current = {
+          ...currentState,
+          allowThreadAutoActivation: false,
+        };
+        setState((current) => ({
+          ...current,
+          allowThreadAutoActivation: false,
+        }));
+        thread = requireThread(
+          await window.wuu.startThread({ ephemeral: true }),
+          "thread/start did not return an ephemeral thread",
+        );
+        setSkillsAssistantThreadID(thread.id);
+        appStateRef.current = {
+          ...appStateRef.current,
+          threads: upsertThread(appStateRef.current.threads, thread),
+        };
+        setState((current) => ({
+          ...current,
+          threads: upsertThread(current.threads, thread),
+        }));
+      }
+      setSkillsAssistantStatus("");
+      const message = createComposerMessage(
+        skillsAssistantPrompt(query, context),
+        [],
+        [],
+      );
+      if (!message || !(await sendComposerMessageToThread(message, thread))) {
+        setSkillsAssistantDraft(query);
+      }
+    } catch (error) {
+      setSkillsAssistantStatus("");
+      setSkillsAssistantDraft(query);
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : t("skills.assistantStartFailed"),
+      }));
+    }
+  }
+
+  async function interruptSkillsAssistant(): Promise<void> {
+    if (!skillsAssistantThreadID) {
+      return;
+    }
+    await window.wuu.interruptTurn(skillsAssistantThreadID);
   }
 
   function startNewThreadForProjectWithComposerFocus(id: string): void {
@@ -3948,7 +4039,7 @@ export function App(): JSX.Element {
       <ConversationSearchOverlay
         state={conversationSearch}
         results={conversationSearchResults}
-        threads={state.threads}
+        threads={userVisibleThreads(state.threads)}
         projects={state.projects}
         activeThreadID={activeThreadID}
         pendingThreadID={visiblePendingThreadID}
@@ -3972,6 +4063,10 @@ export function App(): JSX.Element {
           sideThreadPanelVisible ? " side-thread-panel-visible" : ""
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
+        }${
+          showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT
+            ? " skills-assistant-visible"
+            : ""
         }`}
         ref={conversationPaneRef}
       >
@@ -4342,6 +4437,32 @@ export function App(): JSX.Element {
         )}
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
+
+        {showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT ? (
+          <div className="skills-assistant-composer" data-testid="skills-assistant-composer">
+            <WorkspaceDocumentTurnDock
+              key={skillsAssistantThreadID ?? currentSkillsTabID}
+              cwd={state.activeContext?.cwd}
+              onOpenFile={openWorkspaceFile}
+              turns={skillsAssistantThread?.turns ?? []}
+            >
+              <SideThreadComposer
+                variant="document"
+                placeholder={t("skills.assistantPlaceholder")}
+                draft={skillsAssistantDraft}
+                running={skillsAssistantRunning}
+                disabledReason={skillsAssistantStatus || undefined}
+                queryHistorySessionID={
+                  skillsAssistantThreadID ?? currentSkillsTabID ?? "skills"
+                }
+                queryHistory={[]}
+                onChangeDraft={setSkillsAssistantDraft}
+                onSend={(query) => void sendSkillsAssistantPrompt(query)}
+                onInterrupt={() => void interruptSkillsAssistant()}
+              />
+            </WorkspaceDocumentTurnDock>
+          </div>
+        ) : null}
 
         {mainConversationDockVisible && activePlanVisible && !mainConversationScrolledAway ? (
           <div

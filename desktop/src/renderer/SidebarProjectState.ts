@@ -172,7 +172,10 @@ export function threadsForDesktopProject(
   // can list them; this helper feeds the sidebar surfaces and must hide them.
   return sortThreads(
     threads.filter(
-      (thread) => !thread.archived && threadBelongsToProject(thread, project),
+      (thread) =>
+        !thread.ephemeral &&
+        !thread.archived &&
+        threadBelongsToProject(thread, project),
     ),
   );
 }
@@ -310,7 +313,9 @@ export function useSidebarProjectState({
       return;
     }
     const activeScratchThreads = sortThreads(
-      threads.filter((thread) => isScratchThread(thread, projects)),
+      threads.filter(
+        (thread) => !thread.ephemeral && isScratchThread(thread, projects),
+      ),
     );
     setCachedScratchThreads((current) =>
       threadListsEquivalent(current, activeScratchThreads)

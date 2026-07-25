@@ -1177,6 +1177,9 @@ export type Thread = {
   workspace_kind?: "project" | "scratch";
   status: ThreadStatus;
   read_only?: boolean;
+  // Ephemeral threads live only in the active app-server process and must not
+  // appear in user-facing thread or session history.
+  ephemeral?: boolean;
   pinned?: boolean;
   archived?: boolean;
   forked_from_id?: string;
