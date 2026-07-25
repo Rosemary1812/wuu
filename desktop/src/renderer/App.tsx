@@ -2415,7 +2415,7 @@ export function App(): JSX.Element {
         onSend={(promptOverride) => void sendPrompt("queue", promptOverride)}
         onSteer={
           activeThreadIsRunning && activeThread && activeThreadCanSteer
-            ? () => void sendPrompt("steer")
+            ? (promptOverride) => void sendPrompt("steer", promptOverride)
             : undefined
         }
         onQueue={

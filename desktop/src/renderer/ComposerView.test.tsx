@@ -96,7 +96,7 @@ function renderComposer(props: {
   readOnly?: boolean;
   onInterrupt?: () => void;
   onSend?: (promptOverride?: string) => void;
-  onSteer?: () => void;
+  onSteer?: (promptOverride?: string) => void;
   onQueue?: () => void;
   onStartNewThread?: () => void;
   onOpenContextComposition?: () => void;
@@ -457,10 +457,11 @@ describe("Composer send control", () => {
     expect(container.querySelector(".composer-voice-input")).toBeNull();
   });
 
-  it("stops recording and sends the final transcript from the send button", async () => {
+  it("stops recording and steers the running turn with the final transcript", async () => {
     let speechHandler: ((event: SpeechRecognitionEvent) => void) | undefined;
     const stopSpeechRecognition = vi.fn().mockResolvedValue({ ok: true });
     const onSend = vi.fn();
+    const onSteer = vi.fn();
     const voiceInputSettings = {
       polish_enabled: true,
       language: "system" as const,
@@ -486,7 +487,7 @@ describe("Composer send control", () => {
       }),
       polishText: vi.fn().mockResolvedValue({ text: "润色后直接发送" }),
     } as unknown as WuuDesktopApi;
-    renderComposer({ onSend });
+    renderComposer({ running: true, onSend, onSteer });
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>(".composer-voice-button")?.click();
@@ -500,14 +501,16 @@ describe("Composer send control", () => {
       ".composer-action-button",
     );
     expect(sendButton?.classList.contains("composer-send-button")).toBe(true);
+    expect(sendButton?.getAttribute("aria-label")).toBe("发送引导");
     expect(sendButton?.disabled).toBe(false);
     await act(async () => {
       sendButton?.click();
     });
 
     expect(stopSpeechRecognition).toHaveBeenCalledOnce();
-    expect(onSend).toHaveBeenCalledOnce();
-    expect(onSend).toHaveBeenCalledWith("润色后直接发送");
+    expect(onSteer).toHaveBeenCalledOnce();
+    expect(onSteer).toHaveBeenCalledWith("润色后直接发送");
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it("sends on Enter when Chromium leaves a stale IME keyCode", () => {

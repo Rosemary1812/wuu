@@ -262,7 +262,7 @@ export function Composer({
   onToggleUltra?: (enabled: boolean) => void;
   onEditGuideMessage: (id: string) => void;
   onSend: (promptOverride?: string) => void;
-  onSteer?: () => void;
+  onSteer?: (promptOverride?: string) => void;
   onQueue?: () => void;
   onInterrupt: () => void;
   goalSummary?: ComposerGoalSummary | null;
@@ -337,6 +337,10 @@ export function Composer({
   const voiceSendPendingRef = useRef(false);
   const showComposerStopAction =
     showComposerStop && !voiceRecording && !voiceSendPending;
+  const voiceActionLabel =
+    (voiceRecording || voiceSendPending) && running && onSteer
+      ? t("composer.steerSend")
+      : composerSendLabel;
   const [expandedDrawer, setExpandedDrawer] = useState<ExpandedComposerDrawer>(null);
   const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
@@ -633,7 +637,8 @@ export function Composer({
     try {
       const finalPrompt = await voiceInputRef.current?.stop();
       if (!finalPrompt?.trim()) return;
-      submitComposerWith(() => onSend(finalPrompt));
+      const sendFinalPrompt = running && onSteer ? onSteer : onSend;
+      submitComposerWith(() => sendFinalPrompt(finalPrompt));
     } finally {
       voiceSendPendingRef.current = false;
       setVoiceSendPending(false);
@@ -1253,8 +1258,8 @@ export function Composer({
                   className={`composer-action-button ${showComposerStopAction ? "composer-stop-button" : "composer-send-button"}`}
                   type="button"
                   onClick={showComposerStopAction ? onInterrupt : submitComposer}
-                  aria-label={showComposerStopAction ? t("composer.stop") : composerSendLabel}
-                  title={showComposerStopAction ? t("composer.stop") : composerSendLabel}
+                  aria-label={showComposerStopAction ? t("composer.stop") : voiceActionLabel}
+                  title={showComposerStopAction ? t("composer.stop") : voiceActionLabel}
                   disabled={
                     !showComposerStopAction &&
                     (voiceSendPending || sendDisabled || readOnly || (!voiceRecording && !hasDraft))

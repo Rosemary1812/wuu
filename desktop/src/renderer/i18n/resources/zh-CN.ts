@@ -665,6 +665,7 @@ export const zhCN = {
   "slash.sideReset.description": "清空侧聊历史，下一条消息将基于主对话的最新进展",
   "slash.useSkill": "使用这个 Skill",
   "composer.queueSend": "排队发送",
+  "composer.steerSend": "发送引导",
   "composer.send": "发送",
   "composer.stop": "停止",
   "composer.readOnly": "子任务会话只读",

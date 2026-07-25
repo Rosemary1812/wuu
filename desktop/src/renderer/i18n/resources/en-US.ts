@@ -667,6 +667,7 @@ export const enUS = {
   "slash.sideReset.description": "Clear side-chat history so the next message uses the latest main-conversation progress",
   "slash.useSkill": "Use this Skill",
   "composer.queueSend": "Queue message",
+  "composer.steerSend": "Send guidance",
   "composer.send": "Send",
   "composer.stop": "Stop",
   "composer.readOnly": "Subtask conversation is read-only",
