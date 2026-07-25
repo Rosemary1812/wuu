@@ -69,11 +69,12 @@ describe("SpeechRecognitionService", () => {
     });
     child.stdout.emit(
       "data",
-      '{"type":"state","state":"listening"}\n{"type":"result","text":"你好","is_final":false}\n',
+      '{"type":"state","state":"listening"}\n{"type":"level","level":0.72}\n{"type":"result","text":"你好","is_final":false}\n',
     );
     service.stop();
 
     expect(events).toContainEqual({ type: "state", state: "listening" });
+    expect(events).toContainEqual({ type: "level", level: 0.72 });
     expect(events).toContainEqual({
       type: "result",
       text: "你好",

@@ -46,7 +46,10 @@ function installApi(overrides: Partial<WuuDesktopApi> = {}): void {
     api as WuuDesktopApi;
 }
 
-function renderVoiceInput(initialPrompt = ""): void {
+function renderVoiceInput(
+  initialPrompt = "",
+  onRecordingChange?: (recording: boolean) => void,
+): void {
   function Harness(): JSX.Element {
     const [prompt, setPrompt] = useState(initialPrompt);
     return (
@@ -57,6 +60,7 @@ function renderVoiceInput(initialPrompt = ""): void {
           setPrompt={setPrompt}
           disabled={false}
           locale="zh-CN"
+          onRecordingChange={onRecordingChange}
         />
       </>
     );
@@ -90,6 +94,41 @@ describe("ComposerVoiceInput", () => {
     expect(voiceInput?.querySelectorAll("button")).toHaveLength(1);
     expect(voiceInput?.querySelector(".composer-voice-button")).not.toBeNull();
     expect(voiceInput?.querySelector(".composer-polish-toggle")).toBeNull();
+  });
+
+  it("replaces the microphone with a live level waveform while recording", async () => {
+    const stopSpeechRecognition = vi.fn().mockResolvedValue({ ok: true });
+    const onRecordingChange = vi.fn();
+    installApi({ stopSpeechRecognition });
+    renderVoiceInput("", onRecordingChange);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(".composer-voice-button")
+        ?.click();
+    });
+    act(() => {
+      speechHandler?.({ type: "state", state: "listening" });
+      speechHandler?.({ type: "level", level: 0.72 });
+    });
+
+    const recording = container.querySelector<HTMLButtonElement>(
+      ".composer-voice-recording",
+    );
+    const bars = container.querySelectorAll<HTMLElement>(
+      ".composer-voice-waveform-bar",
+    );
+    expect(recording).not.toBeNull();
+    expect(recording?.disabled).toBe(false);
+    expect(bars).toHaveLength(32);
+    expect(bars.item(bars.length - 1).style.height).toBe("17px");
+    expect(onRecordingChange).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      recording?.click();
+    });
+    expect(stopSpeechRecognition).toHaveBeenCalledOnce();
+    expect(onRecordingChange).toHaveBeenLastCalledWith(false);
   });
 
   it("keeps free ASR output as raw text when BYOK polish is off", async () => {

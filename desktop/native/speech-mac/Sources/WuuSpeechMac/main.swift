@@ -7,38 +7,67 @@ private struct Event: Encodable {
     let state: String?
     let text: String?
     let isFinal: Bool?
+    let level: Double?
     let code: String?
     let message: String?
     let status: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, state, text, code, message, status
+        case type, state, text, level, code, message, status
         case isFinal = "is_final"
     }
 
+    init(
+        type: String,
+        state: String? = nil,
+        text: String? = nil,
+        isFinal: Bool? = nil,
+        level: Double? = nil,
+        code: String? = nil,
+        message: String? = nil,
+        status: String? = nil
+    ) {
+        self.type = type
+        self.state = state
+        self.text = text
+        self.isFinal = isFinal
+        self.level = level
+        self.code = code
+        self.message = message
+        self.status = status
+    }
+
     static func state(_ value: String) -> Event {
-        Event(type: "state", state: value, text: nil, isFinal: nil, code: nil, message: nil, status: nil)
+        Event(type: "state", state: value)
+    }
+
+    static func level(_ value: Double) -> Event {
+        Event(type: "level", level: value)
     }
 
     static func result(_ text: String, final: Bool) -> Event {
-        Event(type: "result", state: nil, text: text, isFinal: final, code: nil, message: nil, status: nil)
+        Event(type: "result", text: text, isFinal: final)
     }
 
     static func error(_ code: String, _ message: String) -> Event {
-        Event(type: "error", state: nil, text: nil, isFinal: nil, code: code, message: message, status: nil)
+        Event(type: "error", code: code, message: message)
     }
 
     static func authorizationStatus(_ status: String) -> Event {
-        Event(type: "authorization_status", state: nil, text: nil, isFinal: nil, code: nil, message: nil, status: status)
+        Event(type: "authorization_status", status: status)
     }
 }
+
+private let eventOutputQueue = DispatchQueue(label: "com.blueberrycongee.wuu.speech-events")
 
 private func emit(_ event: Event) {
     guard let data = try? JSONEncoder().encode(event),
           let line = String(data: data, encoding: .utf8) else {
         return
     }
-    FileHandle.standardOutput.write(Data((line + "\n").utf8))
+    eventOutputQueue.sync {
+        FileHandle.standardOutput.write(Data((line + "\n").utf8))
+    }
 }
 
 private final class SpeechSession {
@@ -47,6 +76,7 @@ private final class SpeechSession {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var stopped = false
+    private var lastLevelEmissionTime = 0.0
 
     init(localeIdentifier: String) {
         self.localeIdentifier = localeIdentifier
@@ -120,8 +150,9 @@ private final class SpeechSession {
             emit(.error("microphone_unavailable", "No usable microphone input is available."))
             exit(4)
         }
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             request.append(buffer)
+            self?.emitAudioLevel(from: buffer)
         }
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -147,6 +178,33 @@ private final class SpeechSession {
             emit(.error("audio_engine_failed", error.localizedDescription))
             exit(4)
         }
+    }
+
+    private func emitAudioLevel(from buffer: AVAudioPCMBuffer) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastLevelEmissionTime >= 0.05,
+              let channels = buffer.floatChannelData else {
+            return
+        }
+        lastLevelEmissionTime = now
+
+        let frameCount = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        guard frameCount > 0, channelCount > 0 else { return }
+
+        var sumOfSquares: Float = 0
+        for channelIndex in 0..<channelCount {
+            let samples = channels[channelIndex]
+            for frameIndex in 0..<frameCount {
+                let sample = samples[frameIndex]
+                sumOfSquares += sample * sample
+            }
+        }
+        let sampleCount = Float(frameCount * channelCount)
+        let rootMeanSquare = sqrt(sumOfSquares / sampleCount)
+        let decibels = 20 * log10(max(rootMeanSquare, 0.000_01))
+        let normalized = min(max((Double(decibels) + 60) / 54, 0), 1)
+        emit(.level(normalized))
     }
 }
 

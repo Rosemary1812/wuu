@@ -1,4 +1,4 @@
-import { LoaderCircle, Mic, Square } from "lucide-react";
+import { LoaderCircle, Mic } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   SpeechRecognitionEvent,
@@ -7,6 +7,13 @@ import type {
 import { useI18n } from "./i18n";
 import type { TranslationKey } from "./i18n/resources/zh-CN";
 import { useVoiceInputSettings } from "./VoiceInputSettingsState";
+
+const VOICE_WAVEFORM_BAR_COUNT = 32;
+const VOICE_WAVEFORM_FLOOR = 0.08;
+
+function emptyVoiceWaveform(): number[] {
+  return Array.from({ length: VOICE_WAVEFORM_BAR_COUNT }, () => VOICE_WAVEFORM_FLOOR);
+}
 
 type VoicePhase =
   | "idle"
@@ -19,15 +26,18 @@ export function ComposerVoiceInput({
   setPrompt,
   disabled,
   locale,
+  onRecordingChange,
 }: {
   prompt: string;
   setPrompt: (value: string) => void;
   disabled: boolean;
   locale: string;
+  onRecordingChange?: (recording: boolean) => void;
 }): JSX.Element | null {
   const { t } = useI18n();
   const [phase, setPhaseState] = useState<VoicePhase>("idle");
   const [error, setError] = useState("");
+  const [audioLevels, setAudioLevels] = useState(emptyVoiceWaveform);
   const { settings } = useVoiceInputSettings();
   const phaseRef = useRef<VoicePhase>("idle");
   const basePromptRef = useRef("");
@@ -84,6 +94,13 @@ export function ComposerVoiceInput({
     });
 
     function handleSpeechEvent(event: SpeechRecognitionEvent): void {
+      if (event.type === "level") {
+        const level = Number.isFinite(event.level)
+          ? Math.min(Math.max(event.level, VOICE_WAVEFORM_FLOOR), 1)
+          : VOICE_WAVEFORM_FLOOR;
+        setAudioLevels((current) => [...current.slice(1), level]);
+        return;
+      }
       if (event.type === "state") {
         if (event.state === "stopped") {
           if (phaseRef.current !== "polishing") {
@@ -111,6 +128,20 @@ export function ComposerVoiceInput({
     polishEnabledRef.current = settings.polish_enabled;
   }, [settings.polish_enabled]);
 
+  const recording =
+    phase === "requesting_microphone_permission" ||
+    phase === "requesting_speech_permission" ||
+    phase === "listening";
+
+  useEffect(() => {
+    onRecordingChange?.(recording);
+  }, [onRecordingChange, recording]);
+
+  useEffect(
+    () => () => onRecordingChange?.(false),
+    [onRecordingChange],
+  );
+
   useEffect(
     () => () => {
       if (
@@ -125,8 +156,6 @@ export function ComposerVoiceInput({
 
   if (!supported) return null;
 
-  const active =
-    phase !== "idle" && phase !== "error" && phase !== "polishing";
   const busy = phase === "polishing";
   const status = voiceStatusMessage(phase, error, t);
 
@@ -134,6 +163,7 @@ export function ComposerVoiceInput({
     basePromptRef.current = prompt;
     transcriptRef.current = "";
     finalizingRef.current = false;
+    setAudioLevels(emptyVoiceWaveform());
     setError("");
     setPhase("requesting_microphone_permission");
     try {
@@ -157,8 +187,29 @@ export function ComposerVoiceInput({
   }
 
   return (
-    <div className="composer-voice-input">
-      {status ? (
+    <div className={`composer-voice-input${recording ? " is-recording" : ""}`}>
+      {recording ? (
+        <button
+          className="composer-voice-recording"
+          type="button"
+          aria-label={t("composer.voice.stop")}
+          title={t("composer.voice.stop")}
+          disabled={phase !== "listening"}
+          onClick={() => void stop()}
+        >
+          <span className="composer-voice-live-dot" aria-hidden="true" />
+          <span className="composer-voice-waveform" aria-hidden="true">
+            {audioLevels.map((level, index) => (
+              <span
+                className="composer-voice-waveform-bar"
+                key={index}
+                style={{ height: `${Math.round(3 + level * 19)}px` }}
+              />
+            ))}
+          </span>
+          <span className="composer-voice-recording-label">{status}</span>
+        </button>
+      ) : status ? (
         <span
           className={`composer-voice-status${phase === "error" ? " is-error" : ""}`}
           role={phase === "error" ? "alert" : "status"}
@@ -167,22 +218,22 @@ export function ComposerVoiceInput({
           {status}
         </span>
       ) : null}
-      <button
-        className={`composer-voice-button${active ? " is-active" : ""}`}
-        type="button"
-        disabled={disabled || busy}
-        aria-label={active ? t("composer.voice.stop") : t("composer.voice.start")}
-        title={active ? t("composer.voice.stop") : t("composer.voice.startHint")}
-        onClick={() => void (active ? stop() : start())}
-      >
-        {busy ? (
-          <LoaderCircle className="composer-voice-spinner" aria-hidden="true" />
-        ) : active ? (
-          <Square aria-hidden="true" />
-        ) : (
-          <Mic aria-hidden="true" />
-        )}
-      </button>
+      {!recording ? (
+        <button
+          className="composer-voice-button"
+          type="button"
+          disabled={disabled || busy}
+          aria-label={t("composer.voice.start")}
+          title={t("composer.voice.startHint")}
+          onClick={() => void start()}
+        >
+          {busy ? (
+            <LoaderCircle className="composer-voice-spinner" aria-hidden="true" />
+          ) : (
+            <Mic aria-hidden="true" />
+          )}
+        </button>
+      ) : null}
     </div>
   );
 }

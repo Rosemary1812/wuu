@@ -1967,6 +1967,7 @@ export type SpeechRecognitionState =
 
 export type SpeechRecognitionEvent =
   | { type: "state"; state: SpeechRecognitionState }
+  | { type: "level"; level: number }
   | { type: "result"; text: string; is_final: boolean }
   | { type: "error"; code: string; message: string };
 

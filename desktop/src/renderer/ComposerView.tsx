@@ -331,6 +331,7 @@ export function Composer({
   const submitAfterCompositionRef = useRef(false);
   const documentDrawer = useContext(WorkspaceDocumentDrawerContext);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
   const [expandedDrawer, setExpandedDrawer] = useState<ExpandedComposerDrawer>(null);
   const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
@@ -1082,7 +1083,7 @@ export function Composer({
                 {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
               </button>
             ) : null}
-            <div className="composer-bar">
+            <div className={`composer-bar${voiceRecording ? " is-voice-recording" : ""}`}>
               <div className="composer-bar-left">
                 {variant === "hero" ? (
                   // Hero (empty/unsent) project & 对话 conversations: the
@@ -1221,6 +1222,7 @@ export function Composer({
                     setPrompt={setPrompt}
                     disabled={readOnly}
                     locale={locale}
+                    onRecordingChange={setVoiceRecording}
                   />
                 ) : null}
                 <button
@@ -1229,7 +1231,7 @@ export function Composer({
                   onClick={showComposerStop ? onInterrupt : submitComposer}
                   aria-label={showComposerStop ? t("composer.stop") : composerSendLabel}
                   title={showComposerStop ? t("composer.stop") : composerSendLabel}
-                  disabled={!showComposerStop && (sendDisabled || readOnly || !hasDraft)}
+                  disabled={!showComposerStop && (voiceRecording || sendDisabled || readOnly || !hasDraft)}
                 >
                   {showComposerStop ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
                 </button>
