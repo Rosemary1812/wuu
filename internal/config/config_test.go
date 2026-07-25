@@ -1062,6 +1062,9 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	}
 	for _, want := range []string{
 		"visible text outside tool calls is shown to the user",
+		"Before the first tool call for a non-trivial task",
+		"send concise updates at reasonable intervals",
+		"Skip an update only for a single trivial action",
 		"runtime guidance, not user-authored text",
 		"prompt injection",
 		"Commit only when",

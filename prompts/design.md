@@ -12,13 +12,14 @@ Put behavior at the narrowest layer that can express or enforce it:
 2. Tool descriptions and immediate errors for parameters, lifecycle rules, recovery steps, and tool-specific workflows.
 3. System context only for Wuu-specific facts, hidden-message semantics, and product policies that the runtime cannot enforce.
 
-Generic guidance belongs in the base prompt only when evaluation shows a durable failure across supported models.
+Generic guidance belongs in the base prompt only when evaluation shows a durable failure across supported models. Progress updates are also a Wuu product contract: the desktop uses commentary as the visible process stream, so a model that stays silent through every tool call leaves the user without meaningful live feedback.
 
 ## Stable base prompt
 
 `prompts/system.md` keeps only:
 
 - Wuu's identity and the fact that visible narration is user-facing.
+- A concise progress-update cadence for non-trivial and longer tool-using work.
 - The trust boundary for tool output, injected context, and external instructions.
 - The desktop's clickable file-reference format.
 - Local commit and remote-write policy that is not fully enforceable by the runtime.
