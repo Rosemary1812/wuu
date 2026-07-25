@@ -8,6 +8,21 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-25
+
+### Added
+
+- Added the agent collaboration workspace with room chat, message attachments,
+  Markdown rendering, room membership context, a draggable relationship graph,
+  a task board, threaded replies, and jump-to-latest controls.
+- Added native macOS voice input with saved preferences, optional BYOK text
+  polishing, live recording feedback, and a responsive waveform beside the
+  composer send control.
+- Added desktop skill preview dialogs that show the underlying Skill content and
+  keep the preview body scrolling inside a stable modal.
+- Added cross-session Dream memory consolidation and stable continuation for
+  large projected tool results.
+
 ### Removed
 
 - Removed the Agent Templates section from the desktop skills catalog and the
@@ -19,15 +34,23 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   exists. Drops the `agent-template/list` IPC method, the `agent_template`
   extension kind, the `AgentTemplate*` protocol types, and the
   `agent_template_count` field on initialize.
+
 ### Fixed
 
-- Fixed the Windows conversation search shortcut hint alignment without changing the macOS layout.
-- Added desktop skill preview dialogs that show the underlying Skill content and
-  keep the preview body scrolling inside a stable modal.
 - Fixed resumed goals so they start a continuation turn instead of only changing
   the banner status, and clarified idle active goals as ready to continue.
 - Returned a recovery-focused error when the goal tool tries to complete a
   blocked or paused goal before the user resumes it.
+- Improved channel reliability and reading behavior across repeated agent wakes,
+  missed inbox checks, resize, message polling, scrolling, and composer overlap.
+- Kept voice transcripts stable through polishing and direct-send flows, avoided
+  duplicate transcription, and steered running turns consistently from voice,
+  Enter, and the send button.
+- Let completed Agent command output use the full terminal workspace width so
+  long paths and diff statistics no longer wrap against an empty terminal list.
+- Fixed responsive session actions, side-chat composer restoration, hero composer
+  focus after send failures, conversation status alignment, plan progress width,
+  and the Windows conversation search shortcut hint.
 - Centered the skills catalog content within its scroll region on the desktop.
 - Removed count badges from the skills catalog section headings on the desktop.
 
