@@ -8,6 +8,25 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-07-25
+
+### Added
+
+- Added conversation search across workspaces so matching sessions can be found
+  without first switching to their project.
+- Added in-app PDF previews to the workspace file viewer.
+
+### Changed
+
+- Redesigned the desktop skills catalog with clearer grouping, compact summaries,
+  simpler headings, and distinctive deterministic artwork for custom skills.
+
+### Fixed
+
+- Preserved composer focus when starting a conversation in another project.
+- Kept PDF pages white while making the surrounding viewer and toolbar follow the
+  active light or dark theme.
+
 ## [0.12.1] - 2026-07-25
 
 ### Changed
