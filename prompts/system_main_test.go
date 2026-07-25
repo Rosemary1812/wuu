@@ -8,13 +8,16 @@ import (
 func TestSystemMainKeepsOnlyMainAgentCoordinationRules(t *testing.T) {
 	prompt := SystemMain()
 	for _, want := range []string{
-		"participant posted a result card",
-		"Reference the card",
-		"plan, goal, or delegated result",
-		"evidence for the broader objective",
+		"completed subagent task does not mean the overall task is complete",
+		"review, integrate, and verify the result",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("SystemMain missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, internalTerm := range []string{"hidden context", "result card", "conversation participant"} {
+		if strings.Contains(prompt, internalTerm) {
+			t.Fatalf("SystemMain should not expose UI or runtime term %q:\n%s", internalTerm, prompt)
 		}
 	}
 	for _, toolName := range []string{"tool_search", "update_plan", "spawn_agent", "helpme", "inception"} {
