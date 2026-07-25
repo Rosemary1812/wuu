@@ -20,6 +20,7 @@ import type {
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
+  SpeechRecognitionEvent,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -94,7 +95,7 @@ function renderComposer(props: {
   initialized?: InitializeResult;
   readOnly?: boolean;
   onInterrupt?: () => void;
-  onSend?: () => void;
+  onSend?: (promptOverride?: string) => void;
   onSteer?: () => void;
   onQueue?: () => void;
   onStartNewThread?: () => void;
@@ -454,6 +455,59 @@ describe("Composer send control", () => {
     renderComposer({ prompt: "" });
 
     expect(container.querySelector(".composer-voice-input")).toBeNull();
+  });
+
+  it("stops recording and sends the final transcript from the send button", async () => {
+    let speechHandler: ((event: SpeechRecognitionEvent) => void) | undefined;
+    const stopSpeechRecognition = vi.fn().mockResolvedValue({ ok: true });
+    const onSend = vi.fn();
+    const voiceInputSettings = {
+      polish_enabled: true,
+      language: "system" as const,
+    };
+    (window as unknown as { wuu: WuuDesktopApi }).wuu = {
+      platform: "darwin",
+      initialVoiceInputSettings: voiceInputSettings,
+      getVoiceInputSettings: vi.fn().mockResolvedValue({
+        settings: voiceInputSettings,
+        microphone_permission: "granted",
+        speech_permission: "granted",
+      }),
+      updateVoiceInputSettings: vi.fn().mockResolvedValue(voiceInputSettings),
+      onVoiceInputSettingsChange: vi.fn(() => () => undefined),
+      startSpeechRecognition: vi.fn().mockResolvedValue({
+        ok: true,
+        session_id: "speech-1",
+      }),
+      stopSpeechRecognition,
+      onSpeechRecognitionEvent: vi.fn((handler) => {
+        speechHandler = handler;
+        return () => undefined;
+      }),
+      polishText: vi.fn().mockResolvedValue({ text: "润色后直接发送" }),
+    } as unknown as WuuDesktopApi;
+    renderComposer({ onSend });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".composer-voice-button")?.click();
+    });
+    act(() => {
+      speechHandler?.({ type: "state", state: "listening" });
+      speechHandler?.({ type: "result", text: "直接发送这段话", is_final: false });
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      ".composer-action-button",
+    );
+    expect(sendButton?.classList.contains("composer-send-button")).toBe(true);
+    expect(sendButton?.disabled).toBe(false);
+    await act(async () => {
+      sendButton?.click();
+    });
+
+    expect(stopSpeechRecognition).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledWith("润色后直接发送");
   });
 
   it("sends on Enter when Chromium leaves a stale IME keyCode", () => {

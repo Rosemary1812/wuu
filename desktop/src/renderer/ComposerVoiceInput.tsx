@@ -1,5 +1,5 @@
 import { LoaderCircle, Mic } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type {
   SpeechRecognitionEvent,
   SpeechRecognitionState,
@@ -21,19 +21,23 @@ type VoicePhase =
   | "polishing"
   | "error";
 
-export function ComposerVoiceInput({
-  prompt,
-  setPrompt,
-  disabled,
-  locale,
-  onRecordingChange,
-}: {
+export type ComposerVoiceInputHandle = {
+  stop: () => Promise<string>;
+};
+
+export const ComposerVoiceInput = forwardRef<ComposerVoiceInputHandle, {
   prompt: string;
   setPrompt: (value: string) => void;
   disabled: boolean;
   locale: string;
   onRecordingChange?: (recording: boolean) => void;
-}): JSX.Element | null {
+}>(function ComposerVoiceInput({
+  prompt,
+  setPrompt,
+  disabled,
+  locale,
+  onRecordingChange,
+}, ref): JSX.Element | null {
   const { t } = useI18n();
   const [phase, setPhaseState] = useState<VoicePhase>("idle");
   const [error, setError] = useState("");
@@ -42,7 +46,7 @@ export function ComposerVoiceInput({
   const phaseRef = useRef<VoicePhase>("idle");
   const basePromptRef = useRef("");
   const transcriptRef = useRef("");
-  const finalizingRef = useRef(false);
+  const finalizingPromiseRef = useRef<Promise<string> | null>(null);
   const polishEnabledRef = useRef(settings.polish_enabled);
   const supported =
     window.wuu?.platform === "darwin" &&
@@ -59,31 +63,42 @@ export function ComposerVoiceInput({
     return `${base}${/\s$/.test(base) ? "" : "\n"}${text}`;
   }
 
-  async function finishTranscript(rawText: string): Promise<void> {
+  function finishTranscript(rawText: string): Promise<string> {
     const text = rawText.trim();
-    if (!text || finalizingRef.current) {
+    if (!text) {
       setPhase("idle");
-      return;
+      return Promise.resolve(basePromptRef.current);
     }
-    finalizingRef.current = true;
-    setPrompt(composedPrompt(text));
+    if (finalizingPromiseRef.current) return finalizingPromiseRef.current;
+    const finalizing = finalizeTranscript(text);
+    finalizingPromiseRef.current = finalizing;
+    return finalizing.finally(() => {
+      if (finalizingPromiseRef.current === finalizing) {
+        finalizingPromiseRef.current = null;
+      }
+    });
+  }
+
+  async function finalizeTranscript(text: string): Promise<string> {
+    const rawPrompt = composedPrompt(text);
+    setPrompt(rawPrompt);
     if (!polishEnabledRef.current) {
-      finalizingRef.current = false;
       setPhase("idle");
-      return;
+      return rawPrompt;
     }
     setPhase("polishing");
     try {
       const result = await window.wuu.polishText(text);
-      setPrompt(composedPrompt(result.text.trim() || text));
+      const polishedPrompt = composedPrompt(result.text.trim() || text);
+      setPrompt(polishedPrompt);
       setError("");
       setPhase("idle");
+      return polishedPrompt;
     } catch {
-      setPrompt(composedPrompt(text));
+      setPrompt(rawPrompt);
       setError(t("composer.voice.polishFailed"));
       setPhase("error");
-    } finally {
-      finalizingRef.current = false;
+      return rawPrompt;
     }
   }
 
@@ -116,10 +131,11 @@ export function ComposerVoiceInput({
         setPhase("error");
         return;
       }
-      transcriptRef.current = event.text;
-      setPrompt(composedPrompt(event.text));
+      const transcript = mergeVoiceTranscript(transcriptRef.current, event.text);
+      transcriptRef.current = transcript;
+      setPrompt(composedPrompt(transcript));
       if (event.is_final) {
-        void finishTranscript(event.text);
+        void finishTranscript(transcript);
       }
     }
   }, [supported, t]);
@@ -154,6 +170,8 @@ export function ComposerVoiceInput({
     [],
   );
 
+  useImperativeHandle(ref, () => ({ stop }));
+
   if (!supported) return null;
 
   const busy = phase === "polishing";
@@ -162,7 +180,7 @@ export function ComposerVoiceInput({
   async function start(): Promise<void> {
     basePromptRef.current = prompt;
     transcriptRef.current = "";
-    finalizingRef.current = false;
+    finalizingPromiseRef.current = null;
     setAudioLevels(emptyVoiceWaveform());
     setError("");
     setPhase("requesting_microphone_permission");
@@ -180,10 +198,10 @@ export function ComposerVoiceInput({
     }
   }
 
-  async function stop(): Promise<void> {
+  async function stop(): Promise<string> {
     const rawText = transcriptRef.current;
     await window.wuu.stopSpeechRecognition();
-    await finishTranscript(rawText);
+    return finishTranscript(rawText);
   }
 
   return (
@@ -234,6 +252,38 @@ export function ComposerVoiceInput({
       ) : null}
     </div>
   );
+});
+
+export function mergeVoiceTranscript(current: string, incoming: string): string {
+  const previous = current.trim();
+  const next = incoming.trim();
+  if (!previous) return next;
+  if (!next || previous === next || previous.startsWith(next)) return previous;
+  if (next.startsWith(previous)) return next;
+
+  const shorterLength = Math.min(previous.length, next.length);
+  let commonPrefixLength = 0;
+  while (
+    commonPrefixLength < shorterLength &&
+    previous[commonPrefixLength] === next[commonPrefixLength]
+  ) {
+    commonPrefixLength += 1;
+  }
+  const revisionThreshold = Math.max(2, Math.floor(shorterLength * 0.5));
+  if (commonPrefixLength >= revisionThreshold) {
+    return next.length >= previous.length * 0.75 ? next : previous;
+  }
+
+  for (let overlap = shorterLength; overlap > 0; overlap -= 1) {
+    if (previous.endsWith(next.slice(0, overlap))) {
+      return `${previous}${next.slice(overlap)}`;
+    }
+  }
+
+  const separator = /[A-Za-z0-9]$/.test(previous) && /^[A-Za-z0-9]/.test(next)
+    ? " "
+    : "";
+  return `${previous}${separator}${next}`;
 }
 
 function voiceStatusMessage(

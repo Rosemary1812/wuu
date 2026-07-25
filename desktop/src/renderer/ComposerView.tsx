@@ -78,7 +78,7 @@ import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerType
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
-import { ComposerVoiceInput } from "./ComposerVoiceInput";
+import { ComposerVoiceInput, type ComposerVoiceInputHandle } from "./ComposerVoiceInput";
 import { ENABLE_VOICE_INPUT } from "./FeatureFlags";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
@@ -261,7 +261,7 @@ export function Composer({
   onEditQueuedMessage: (id: string) => void;
   onToggleUltra?: (enabled: boolean) => void;
   onEditGuideMessage: (id: string) => void;
-  onSend: () => void;
+  onSend: (promptOverride?: string) => void;
   onSteer?: () => void;
   onQueue?: () => void;
   onInterrupt: () => void;
@@ -332,6 +332,11 @@ export function Composer({
   const documentDrawer = useContext(WorkspaceDocumentDrawerContext);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceSendPending, setVoiceSendPending] = useState(false);
+  const voiceInputRef = useRef<ComposerVoiceInputHandle>(null);
+  const voiceSendPendingRef = useRef(false);
+  const showComposerStopAction =
+    showComposerStop && !voiceRecording && !voiceSendPending;
   const [expandedDrawer, setExpandedDrawer] = useState<ExpandedComposerDrawer>(null);
   const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
@@ -614,7 +619,25 @@ export function Composer({
   }
 
   function submitComposer(): void {
+    if (voiceRecording) {
+      void stopVoiceAndSubmit();
+      return;
+    }
     submitComposerWith(onSend);
+  }
+
+  async function stopVoiceAndSubmit(): Promise<void> {
+    if (voiceSendPendingRef.current) return;
+    voiceSendPendingRef.current = true;
+    setVoiceSendPending(true);
+    try {
+      const finalPrompt = await voiceInputRef.current?.stop();
+      if (!finalPrompt?.trim()) return;
+      submitComposerWith(() => onSend(finalPrompt));
+    } finally {
+      voiceSendPendingRef.current = false;
+      setVoiceSendPending(false);
+    }
   }
 
   function updateVisiblePrompt(value: string): void {
@@ -1218,6 +1241,7 @@ export function Composer({
                 ) : null}
                 {ENABLE_VOICE_INPUT ? (
                   <ComposerVoiceInput
+                    ref={voiceInputRef}
                     prompt={prompt}
                     setPrompt={setPrompt}
                     disabled={readOnly}
@@ -1226,14 +1250,17 @@ export function Composer({
                   />
                 ) : null}
                 <button
-                  className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
+                  className={`composer-action-button ${showComposerStopAction ? "composer-stop-button" : "composer-send-button"}`}
                   type="button"
-                  onClick={showComposerStop ? onInterrupt : submitComposer}
-                  aria-label={showComposerStop ? t("composer.stop") : composerSendLabel}
-                  title={showComposerStop ? t("composer.stop") : composerSendLabel}
-                  disabled={!showComposerStop && (voiceRecording || sendDisabled || readOnly || !hasDraft)}
+                  onClick={showComposerStopAction ? onInterrupt : submitComposer}
+                  aria-label={showComposerStopAction ? t("composer.stop") : composerSendLabel}
+                  title={showComposerStopAction ? t("composer.stop") : composerSendLabel}
+                  disabled={
+                    !showComposerStopAction &&
+                    (voiceSendPending || sendDisabled || readOnly || (!voiceRecording && !hasDraft))
+                  }
                 >
-                  {showComposerStop ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
+                  {showComposerStopAction ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
                 </button>
               </div>
             </div>

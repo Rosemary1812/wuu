@@ -1,11 +1,14 @@
-import { act, useState } from "react";
+import { act, createRef, useState, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SpeechRecognitionEvent,
   WuuDesktopApi,
 } from "../shared/protocol";
-import { ComposerVoiceInput } from "./ComposerVoiceInput";
+import {
+  ComposerVoiceInput,
+  type ComposerVoiceInputHandle,
+} from "./ComposerVoiceInput";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -49,6 +52,7 @@ function installApi(overrides: Partial<WuuDesktopApi> = {}): void {
 function renderVoiceInput(
   initialPrompt = "",
   onRecordingChange?: (recording: boolean) => void,
+  voiceInputRef?: RefObject<ComposerVoiceInputHandle | null>,
 ): void {
   function Harness(): JSX.Element {
     const [prompt, setPrompt] = useState(initialPrompt);
@@ -56,6 +60,7 @@ function renderVoiceInput(
       <>
         <output data-testid="prompt">{prompt}</output>
         <ComposerVoiceInput
+          ref={voiceInputRef}
           prompt={prompt}
           setPrompt={setPrompt}
           disabled={false}
@@ -129,6 +134,33 @@ describe("ComposerVoiceInput", () => {
     });
     expect(stopSpeechRecognition).toHaveBeenCalledOnce();
     expect(onRecordingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps earlier speech when recognition starts a new partial segment", async () => {
+    const voiceInputRef = createRef<ComposerVoiceInputHandle>();
+    installApi();
+    renderVoiceInput("", undefined, voiceInputRef);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(".composer-voice-button")
+        ?.click();
+    });
+    act(() => {
+      speechHandler?.({ type: "state", state: "listening" });
+      speechHandler?.({ type: "result", text: "这是前面的内容", is_final: false });
+      speechHandler?.({ type: "result", text: "这是后面的内容", is_final: false });
+    });
+
+    expect(container.querySelector("output")?.textContent).toBe(
+      "这是前面的内容这是后面的内容",
+    );
+
+    let finalPrompt = "";
+    await act(async () => {
+      finalPrompt = (await voiceInputRef.current?.stop()) ?? "";
+    });
+    expect(finalPrompt).toBe("这是前面的内容这是后面的内容");
   });
 
   it("keeps free ASR output as raw text when BYOK polish is off", async () => {
