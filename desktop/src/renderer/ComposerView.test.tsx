@@ -20,6 +20,7 @@ import type {
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
+  SpeechRecognitionEvent,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -94,8 +95,8 @@ function renderComposer(props: {
   initialized?: InitializeResult;
   readOnly?: boolean;
   onInterrupt?: () => void;
-  onSend?: () => void;
-  onSteer?: () => void;
+  onSend?: (promptOverride?: string) => void;
+  onSteer?: (promptOverride?: string) => void;
   onQueue?: () => void;
   onStartNewThread?: () => void;
   onOpenContextComposition?: () => void;
@@ -456,6 +457,62 @@ describe("Composer send control", () => {
     expect(container.querySelector(".composer-voice-input")).toBeNull();
   });
 
+  it("stops recording and steers the running turn with the final transcript", async () => {
+    let speechHandler: ((event: SpeechRecognitionEvent) => void) | undefined;
+    const stopSpeechRecognition = vi.fn().mockResolvedValue({ ok: true });
+    const onSend = vi.fn();
+    const onSteer = vi.fn();
+    const voiceInputSettings = {
+      polish_enabled: true,
+      language: "system" as const,
+    };
+    (window as unknown as { wuu: WuuDesktopApi }).wuu = {
+      platform: "darwin",
+      initialVoiceInputSettings: voiceInputSettings,
+      getVoiceInputSettings: vi.fn().mockResolvedValue({
+        settings: voiceInputSettings,
+        microphone_permission: "granted",
+        speech_permission: "granted",
+      }),
+      updateVoiceInputSettings: vi.fn().mockResolvedValue(voiceInputSettings),
+      onVoiceInputSettingsChange: vi.fn(() => () => undefined),
+      startSpeechRecognition: vi.fn().mockResolvedValue({
+        ok: true,
+        session_id: "speech-1",
+      }),
+      stopSpeechRecognition,
+      onSpeechRecognitionEvent: vi.fn((handler) => {
+        speechHandler = handler;
+        return () => undefined;
+      }),
+      polishText: vi.fn().mockResolvedValue({ text: "润色后直接发送" }),
+    } as unknown as WuuDesktopApi;
+    renderComposer({ running: true, onSend, onSteer });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".composer-voice-button")?.click();
+    });
+    act(() => {
+      speechHandler?.({ type: "state", state: "listening" });
+      speechHandler?.({ type: "result", text: "直接发送这段话", is_final: false });
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      ".composer-action-button",
+    );
+    expect(sendButton?.classList.contains("composer-send-button")).toBe(true);
+    expect(sendButton?.getAttribute("aria-label")).toBe("发送引导");
+    expect(sendButton?.disabled).toBe(false);
+    await act(async () => {
+      sendButton?.click();
+    });
+
+    expect(stopSpeechRecognition).toHaveBeenCalledOnce();
+    expect(onSteer).toHaveBeenCalledOnce();
+    expect(onSteer).toHaveBeenCalledWith("润色后直接发送");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("sends on Enter when Chromium leaves a stale IME keyCode", () => {
     const onSend = vi.fn();
     renderComposer({ prompt: "发送这条消息", onSend });
@@ -616,25 +673,27 @@ describe("Composer send control", () => {
     expect(onQueue).not.toHaveBeenCalled();
   });
 
-  it("keeps a send (queue) button while running when the input has a draft", () => {
+  it("uses the same steer action as Enter when the send button is clicked", () => {
     const onInterrupt = vi.fn();
     const onSend = vi.fn();
+    const onSteer = vi.fn();
     renderComposer({
-      prompt: "queued follow-up",
+      prompt: "change direction",
       running: true,
       onInterrupt,
       onSend,
+      onSteer,
     });
 
-    // A draft typed mid-turn must stay sendable (queued), not be forced into a
-    // stop control — Enter already queues it, so the button must agree.
+    // A draft typed mid-turn must stay sendable, not be forced into a stop
+    // control. The button should use the same steer action as Enter.
     expect(
       container.querySelectorAll(".composer-action-button.composer-stop-button"),
     ).toHaveLength(0);
     expect(container.querySelector("button[aria-label=\"停止\"]")).toBeNull();
 
     const sendButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"排队发送\"]",
+      "button[aria-label=\"发送引导\"]",
     );
     expect(sendButton).not.toBeNull();
     expect(sendButton?.disabled).toBe(false);
@@ -643,7 +702,8 @@ describe("Composer send control", () => {
       sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSteer).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
     expect(onInterrupt).not.toHaveBeenCalled();
   });
 

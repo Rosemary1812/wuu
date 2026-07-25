@@ -78,7 +78,7 @@ import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerType
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
-import { ComposerVoiceInput } from "./ComposerVoiceInput";
+import { ComposerVoiceInput, type ComposerVoiceInputHandle } from "./ComposerVoiceInput";
 import { ENABLE_VOICE_INPUT } from "./FeatureFlags";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
@@ -261,8 +261,8 @@ export function Composer({
   onEditQueuedMessage: (id: string) => void;
   onToggleUltra?: (enabled: boolean) => void;
   onEditGuideMessage: (id: string) => void;
-  onSend: () => void;
-  onSteer?: () => void;
+  onSend: (promptOverride?: string) => void;
+  onSteer?: (promptOverride?: string) => void;
   onQueue?: () => void;
   onInterrupt: () => void;
   goalSummary?: ComposerGoalSummary | null;
@@ -315,12 +315,14 @@ export function Composer({
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   // The action button is a stop control ONLY while a turn runs AND the input
   // is empty. The moment there is something to send, it flips back to a send
-  // button — because Enter already queues a draft mid-turn, so the button must
-  // match that (queuing "排队发送" rather than interrupting). This keeps the
-  // stop affordance for the common "watching a turn, empty input" case while
-  // never blocking a queued follow-up the user has clearly typed.
+  // button. Its submit action below deliberately follows the same steer/queue
+  // decision as Enter, while preserving the stop affordance for an empty input.
   const showComposerStop = running && (forceStopWhileRunning || !hasDraft);
-  const composerSendLabel = running ? t("composer.queueSend") : t("composer.send");
+  const composerSendLabel = running && hasDraft && onSteer
+    ? t("composer.steerSend")
+    : running
+      ? t("composer.queueSend")
+      : t("composer.send");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);
   const composerFrameRef = useRef<HTMLDivElement>(null);
@@ -331,6 +333,16 @@ export function Composer({
   const submitAfterCompositionRef = useRef(false);
   const documentDrawer = useContext(WorkspaceDocumentDrawerContext);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceSendPending, setVoiceSendPending] = useState(false);
+  const voiceInputRef = useRef<ComposerVoiceInputHandle>(null);
+  const voiceSendPendingRef = useRef(false);
+  const showComposerStopAction =
+    showComposerStop && !voiceRecording && !voiceSendPending;
+  const voiceActionLabel =
+    (voiceRecording || voiceSendPending) && running && onSteer
+      ? t("composer.steerSend")
+      : composerSendLabel;
   const [expandedDrawer, setExpandedDrawer] = useState<ExpandedComposerDrawer>(null);
   const [dropActive, setDropActive] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
@@ -613,7 +625,30 @@ export function Composer({
   }
 
   function submitComposer(): void {
-    submitComposerWith(onSend);
+    if (voiceRecording) {
+      void stopVoiceAndSubmit();
+      return;
+    }
+    submitDraft();
+  }
+
+  function submitDraft(): void {
+    submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
+  }
+
+  async function stopVoiceAndSubmit(): Promise<void> {
+    if (voiceSendPendingRef.current) return;
+    voiceSendPendingRef.current = true;
+    setVoiceSendPending(true);
+    try {
+      const finalPrompt = await voiceInputRef.current?.stop();
+      if (!finalPrompt?.trim()) return;
+      const sendFinalPrompt = running && onSteer ? onSteer : onSend;
+      submitComposerWith(() => sendFinalPrompt(finalPrompt));
+    } finally {
+      voiceSendPendingRef.current = false;
+      setVoiceSendPending(false);
+    }
   }
 
   function updateVisiblePrompt(value: string): void {
@@ -865,7 +900,7 @@ export function Composer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submitComposerWith(running && hasDraft && onSteer ? onSteer : onSend);
+      submitDraft();
     }
   }
 
@@ -1082,7 +1117,7 @@ export function Composer({
                 {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
               </button>
             ) : null}
-            <div className="composer-bar">
+            <div className={`composer-bar${voiceRecording ? " is-voice-recording" : ""}`}>
               <div className="composer-bar-left">
                 {variant === "hero" ? (
                   // Hero (empty/unsent) project & 对话 conversations: the
@@ -1136,17 +1171,6 @@ export function Composer({
                     menuAnchorRef={composerShellRef}
                     onAddAttachment={() => attachmentInputRef.current?.click()}
                     onSelectCommand={(command) => applySlashCommand(command, undefined)}
-                  />
-                ) : null}
-                {ENABLE_VOICE_INPUT ? (
-                  <ComposerVoiceInput
-                    prompt={prompt}
-                    setPrompt={setPrompt}
-                    disabled={readOnly}
-                    locale={locale}
-                    polishAvailable={Boolean(
-                      initialized && initialized.status !== "needs_setup",
-                    )}
                   />
                 ) : null}
                 {!textOnly && !hidePermissionControl ? (
@@ -1226,15 +1250,28 @@ export function Composer({
                     </span>
                   </span>
                 ) : null}
+                {ENABLE_VOICE_INPUT ? (
+                  <ComposerVoiceInput
+                    ref={voiceInputRef}
+                    prompt={prompt}
+                    setPrompt={setPrompt}
+                    disabled={readOnly}
+                    locale={locale}
+                    onRecordingChange={setVoiceRecording}
+                  />
+                ) : null}
                 <button
-                  className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
+                  className={`composer-action-button ${showComposerStopAction ? "composer-stop-button" : "composer-send-button"}`}
                   type="button"
-                  onClick={showComposerStop ? onInterrupt : submitComposer}
-                  aria-label={showComposerStop ? t("composer.stop") : composerSendLabel}
-                  title={showComposerStop ? t("composer.stop") : composerSendLabel}
-                  disabled={!showComposerStop && (sendDisabled || readOnly || !hasDraft)}
+                  onClick={showComposerStopAction ? onInterrupt : submitComposer}
+                  aria-label={showComposerStopAction ? t("composer.stop") : voiceActionLabel}
+                  title={showComposerStopAction ? t("composer.stop") : voiceActionLabel}
+                  disabled={
+                    !showComposerStopAction &&
+                    (voiceSendPending || sendDisabled || readOnly || (!voiceRecording && !hasDraft))
+                  }
                 >
-                  {showComposerStop ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
+                  {showComposerStopAction ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
                 </button>
               </div>
             </div>

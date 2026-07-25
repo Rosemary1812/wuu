@@ -305,7 +305,7 @@ describe("JumpToLatestPill", () => {
     expect(host.querySelector(".jump-to-latest-pill")).toBeNull();
   });
 
-  it("tracks the visual composer frame and disappears when its anchor is removed", () => {
+  it("tracks queued drawers and expanded input in the shared composer slot", () => {
     vi.useFakeTimers();
     const resizeObservers = installMockResizeObserver();
     const { node } = scrollContainer({
@@ -319,11 +319,16 @@ describe("JumpToLatestPill", () => {
     const anchor = document.createElement("div");
     document.body.appendChild(anchor);
     mountedContainers.push(anchor);
-    stubRect(anchor, { left: 100, top: 700, bottom: 780, width: 600, height: 80 });
+    // The footer is taller than the input frame because a queued-message
+    // drawer sits above it.
+    stubRect(anchor, { left: 100, top: 620, bottom: 780, width: 600, height: 160 });
+    const queueDrawer = document.createElement("div");
+    queueDrawer.className = "composer-pending-drawer";
+    anchor.appendChild(queueDrawer);
     const frame = document.createElement("div");
     frame.className = "composer-frame";
     anchor.appendChild(frame);
-    stubRect(frame, { left: 100, top: 620, bottom: 780, width: 600, height: 160 });
+    stubRect(frame, { left: 100, top: 700, bottom: 780, width: 600, height: 80 });
     Object.defineProperty(window, "innerHeight", {
       configurable: true,
       value: 900,
@@ -355,15 +360,16 @@ describe("JumpToLatestPill", () => {
     );
     // left = container.left + container.width / 2 = 100 + 300
     expect(pill?.style.left).toBe("400px");
-    // Expanded composers move their frame above the outer footer. Position
-    // from that visual top, not from the unchanged footer box.
+    // The queued drawer is part of the same visual height used by the progress
+    // pill, so the jump pill clears it instead of overlapping it.
     expect(pill?.style.bottom).toBe("288px");
     expect(
       resizeObservers.some((observer) => observer.observed.has(frame)),
     ).toBe(true);
 
     act(() => {
-      stubRect(frame, { left: 100, top: 560, bottom: 780, width: 600, height: 220 });
+      stubRect(frame, { left: 100, top: 640, bottom: 780, width: 600, height: 140 });
+      frame.style.setProperty("--composer-expanded-offset", "60px");
       flushResizeObservers(resizeObservers, frame);
       vi.runAllTimers();
     });

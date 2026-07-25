@@ -1,11 +1,14 @@
-import { act, useState } from "react";
+import { act, createRef, useState, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SpeechRecognitionEvent,
   WuuDesktopApi,
 } from "../shared/protocol";
-import { ComposerVoiceInput } from "./ComposerVoiceInput";
+import {
+  ComposerVoiceInput,
+  type ComposerVoiceInputHandle,
+} from "./ComposerVoiceInput";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -46,18 +49,23 @@ function installApi(overrides: Partial<WuuDesktopApi> = {}): void {
     api as WuuDesktopApi;
 }
 
-function renderVoiceInput(initialPrompt = "", polishAvailable = true): void {
+function renderVoiceInput(
+  initialPrompt = "",
+  onRecordingChange?: (recording: boolean) => void,
+  voiceInputRef?: RefObject<ComposerVoiceInputHandle | null>,
+): void {
   function Harness(): JSX.Element {
     const [prompt, setPrompt] = useState(initialPrompt);
     return (
       <>
         <output data-testid="prompt">{prompt}</output>
         <ComposerVoiceInput
+          ref={voiceInputRef}
           prompt={prompt}
           setPrompt={setPrompt}
           disabled={false}
           locale="zh-CN"
-          polishAvailable={polishAvailable}
+          onRecordingChange={onRecordingChange}
         />
       </>
     );
@@ -83,6 +91,86 @@ afterEach(() => {
 });
 
 describe("ComposerVoiceInput", () => {
+  it("keeps polish configuration out of the composer", () => {
+    installApi();
+    renderVoiceInput();
+
+    const voiceInput = container.querySelector(".composer-voice-input");
+    expect(voiceInput?.querySelectorAll("button")).toHaveLength(1);
+    expect(voiceInput?.querySelector(".composer-voice-button")).not.toBeNull();
+    expect(voiceInput?.querySelector(".composer-polish-toggle")).toBeNull();
+  });
+
+  it("replaces the microphone with a live level waveform while recording", async () => {
+    const stopSpeechRecognition = vi.fn().mockResolvedValue({ ok: true });
+    const onRecordingChange = vi.fn();
+    installApi({ stopSpeechRecognition });
+    renderVoiceInput("", onRecordingChange);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(".composer-voice-button")
+        ?.click();
+    });
+    act(() => {
+      speechHandler?.({ type: "state", state: "listening" });
+      speechHandler?.({ type: "level", level: 0.72 });
+    });
+
+    const recording = container.querySelector<HTMLButtonElement>(
+      ".composer-voice-recording",
+    );
+    const bars = container.querySelectorAll<HTMLElement>(
+      ".composer-voice-waveform-bar",
+    );
+    expect(recording).not.toBeNull();
+    expect(recording?.disabled).toBe(false);
+    expect(bars).toHaveLength(56);
+    expect(bars.item(bars.length - 1).style.height).toBe("17px");
+    expect(onRecordingChange).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      recording?.click();
+    });
+    expect(stopSpeechRecognition).toHaveBeenCalledOnce();
+    expect(onRecordingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("uses the latest complete hypothesis without duplicating recognition revisions", async () => {
+    const voiceInputRef = createRef<ComposerVoiceInputHandle>();
+    installApi();
+    renderVoiceInput("", undefined, voiceInputRef);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(".composer-voice-button")
+        ?.click();
+    });
+    act(() => {
+      speechHandler?.({ type: "state", state: "listening" });
+      speechHandler?.({
+        type: "result",
+        text: "我发现这个为什么他会重复的录",
+        is_final: false,
+      });
+      speechHandler?.({
+        type: "result",
+        text: "我发现这个为什么他会重复地录我的录音",
+        is_final: false,
+      });
+    });
+
+    expect(container.querySelector("output")?.textContent).toBe(
+      "我发现这个为什么他会重复地录我的录音",
+    );
+
+    let finalPrompt = "";
+    await act(async () => {
+      finalPrompt = (await voiceInputRef.current?.stop()) ?? "";
+    });
+    expect(finalPrompt).toBe("我发现这个为什么他会重复地录我的录音");
+  });
+
   it("keeps free ASR output as raw text when BYOK polish is off", async () => {
     const polishText = vi.fn();
     installApi({ polishText });
@@ -115,14 +203,15 @@ describe("ComposerVoiceInput", () => {
 
   it("uses the configured BYOK model only when polish is enabled", async () => {
     const polishText = vi.fn().mockResolvedValue({ text: "这是润色文本。" });
-    installApi({ polishText });
+    installApi({
+      initialVoiceInputSettings: {
+        polish_enabled: true,
+        language: "system",
+      },
+      polishText,
+    });
     renderVoiceInput();
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(".composer-polish-toggle")
-        ?.click();
-    });
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".composer-voice-button")
@@ -191,14 +280,13 @@ describe("ComposerVoiceInput", () => {
 
   it("keeps raw transcription when BYOK polish fails", async () => {
     installApi({
+      initialVoiceInputSettings: {
+        polish_enabled: true,
+        language: "system",
+      },
       polishText: vi.fn().mockRejectedValue(new Error("provider failed")),
     });
     renderVoiceInput();
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(".composer-polish-toggle")
-        ?.click();
-    });
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".composer-voice-button")

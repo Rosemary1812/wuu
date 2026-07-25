@@ -375,13 +375,17 @@ func TestNamedAgentSequentialWakesPersistDistinctUserTurns(t *testing.T) {
 		if threadIsRunning(server.thread(namedAgentSessionID(credential.Agent))) {
 			t.Fatalf("named agent wake %d did not complete", index)
 		}
-		if index == 0 {
-			// running becomes false just before the background turn releases its
-			// execution lease and runs the named-agent completion callback.
-			time.Sleep(100 * time.Millisecond)
+		completionDeadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(completionDeadline) {
+			state, stateErr := server.channelService.WakeState(context.Background(), credential.Agent.ID)
+			if stateErr == nil && !state.Outstanding && !state.Pending {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		if err := server.channelService.ClearWakeOnCheck(context.Background(), credential.Agent.ID); err != nil {
-			t.Fatalf("ClearWakeOnCheck(%d) error = %v", index, err)
+		state, stateErr := server.channelService.WakeState(context.Background(), credential.Agent.ID)
+		if stateErr != nil || state.Outstanding || state.Pending {
+			t.Fatalf("named agent wake %d was not released after unchecked completion: state %#v, err %v", index, state, stateErr)
 		}
 	}
 

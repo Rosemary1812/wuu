@@ -71,7 +71,7 @@ func (s *Service) createTask(ctx context.Context, params TaskCreateParams) (Mess
 	if err := s.taskEventInboxTx(ctx, tx, message, params.OwnerID, ""); err != nil {
 		return Message{}, err
 	}
-	requested, err := s.requestWakeTx(ctx, tx, params.OwnerID, toMillis(message.CreatedAt))
+	requested, err := requestWakeTx(ctx, tx, params.OwnerID, toMillis(message.CreatedAt))
 	if err != nil {
 		return Message{}, err
 	}
@@ -162,7 +162,7 @@ func (s *Service) updateTask(ctx context.Context, params TaskUpdateParams) (Mess
 	if err := s.taskEventInboxTx(ctx, tx, message, newOwner, oldOwner); err != nil {
 		return Message{}, err
 	}
-	requested, err := s.requestWakeTx(ctx, tx, newOwner, toMillis(updatedAt))
+	requested, err := requestWakeTx(ctx, tx, newOwner, toMillis(updatedAt))
 	if err != nil {
 		return Message{}, err
 	}
@@ -356,19 +356,4 @@ func (s *Service) requireHumanMember(ctx context.Context, roomID, humanID string
 		return fmt.Errorf("validate human room membership: %w", err)
 	}
 	return nil
-}
-
-func (s *Service) requestWakeTx(ctx context.Context, tx *sql.Tx, agentID string, now int64) (bool, error) {
-	var requested int
-	err := tx.QueryRowContext(ctx, `
-		UPDATE agent_wake_state SET outstanding = 1, updated_at = ?
-		WHERE agent_id = ? AND outstanding = 0
-		RETURNING 1`, now, agentID).Scan(&requested)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("request agent wake: %w", err)
-	}
-	return true, nil
 }

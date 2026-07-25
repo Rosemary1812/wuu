@@ -37,11 +37,11 @@ vi.mock("./ComposerView", async (importOriginal) => {
           value={props.prompt}
           onChange={(event) => props.setPrompt(event.currentTarget.value)}
         />
-        <button type="button" onClick={props.onSend}>
+        <button type="button" onClick={() => props.onSend()}>
           send
         </button>
         {props.onSteer ? (
-          <button type="button" aria-label="steer" onClick={props.onSteer}>
+          <button type="button" aria-label="steer" onClick={() => props.onSteer?.()}>
             steer
           </button>
         ) : null}

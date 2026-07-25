@@ -1,5 +1,5 @@
-import { LoaderCircle, Mic, Sparkles, Square } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { LoaderCircle, Mic } from "lucide-react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type {
   SpeechRecognitionEvent,
   SpeechRecognitionState,
@@ -8,36 +8,46 @@ import { useI18n } from "./i18n";
 import type { TranslationKey } from "./i18n/resources/zh-CN";
 import { useVoiceInputSettings } from "./VoiceInputSettingsState";
 
+const VOICE_WAVEFORM_BAR_COUNT = 56;
+const VOICE_WAVEFORM_FLOOR = 0.08;
+
+function emptyVoiceWaveform(): number[] {
+  return Array.from({ length: VOICE_WAVEFORM_BAR_COUNT }, () => VOICE_WAVEFORM_FLOOR);
+}
+
 type VoicePhase =
   | "idle"
   | SpeechRecognitionState
   | "polishing"
   | "error";
 
-export function ComposerVoiceInput({
-  prompt,
-  setPrompt,
-  disabled,
-  locale,
-  polishAvailable,
-}: {
+export type ComposerVoiceInputHandle = {
+  stop: () => Promise<string>;
+};
+
+export const ComposerVoiceInput = forwardRef<ComposerVoiceInputHandle, {
   prompt: string;
   setPrompt: (value: string) => void;
   disabled: boolean;
   locale: string;
-  polishAvailable: boolean;
-}): JSX.Element | null {
+  onRecordingChange?: (recording: boolean) => void;
+}>(function ComposerVoiceInput({
+  prompt,
+  setPrompt,
+  disabled,
+  locale,
+  onRecordingChange,
+}, ref): JSX.Element | null {
   const { t } = useI18n();
   const [phase, setPhaseState] = useState<VoicePhase>("idle");
   const [error, setError] = useState("");
-  const { settings, updateSettings } = useVoiceInputSettings();
-  const polishEnabled = settings.polish_enabled;
+  const [audioLevels, setAudioLevels] = useState(emptyVoiceWaveform);
+  const { settings } = useVoiceInputSettings();
   const phaseRef = useRef<VoicePhase>("idle");
   const basePromptRef = useRef("");
   const transcriptRef = useRef("");
-  const finalizingRef = useRef(false);
+  const finalizingPromiseRef = useRef<Promise<string> | null>(null);
   const polishEnabledRef = useRef(settings.polish_enabled);
-  const polishAvailableRef = useRef(polishAvailable);
   const supported =
     window.wuu?.platform === "darwin" &&
     typeof window.wuu.startSpeechRecognition === "function";
@@ -53,31 +63,42 @@ export function ComposerVoiceInput({
     return `${base}${/\s$/.test(base) ? "" : "\n"}${text}`;
   }
 
-  async function finishTranscript(rawText: string): Promise<void> {
+  function finishTranscript(rawText: string): Promise<string> {
     const text = rawText.trim();
-    if (!text || finalizingRef.current) {
+    if (!text) {
       setPhase("idle");
-      return;
+      return Promise.resolve(basePromptRef.current);
     }
-    finalizingRef.current = true;
-    setPrompt(composedPrompt(text));
-    if (!polishEnabledRef.current || !polishAvailableRef.current) {
-      finalizingRef.current = false;
+    if (finalizingPromiseRef.current) return finalizingPromiseRef.current;
+    const finalizing = finalizeTranscript(text);
+    finalizingPromiseRef.current = finalizing;
+    return finalizing.finally(() => {
+      if (finalizingPromiseRef.current === finalizing) {
+        finalizingPromiseRef.current = null;
+      }
+    });
+  }
+
+  async function finalizeTranscript(text: string): Promise<string> {
+    const rawPrompt = composedPrompt(text);
+    setPrompt(rawPrompt);
+    if (!polishEnabledRef.current) {
       setPhase("idle");
-      return;
+      return rawPrompt;
     }
     setPhase("polishing");
     try {
       const result = await window.wuu.polishText(text);
-      setPrompt(composedPrompt(result.text.trim() || text));
+      const polishedPrompt = composedPrompt(result.text.trim() || text);
+      setPrompt(polishedPrompt);
       setError("");
       setPhase("idle");
+      return polishedPrompt;
     } catch {
-      setPrompt(composedPrompt(text));
+      setPrompt(rawPrompt);
       setError(t("composer.voice.polishFailed"));
       setPhase("error");
-    } finally {
-      finalizingRef.current = false;
+      return rawPrompt;
     }
   }
 
@@ -88,6 +109,13 @@ export function ComposerVoiceInput({
     });
 
     function handleSpeechEvent(event: SpeechRecognitionEvent): void {
+      if (event.type === "level") {
+        const level = Number.isFinite(event.level)
+          ? Math.min(Math.max(event.level, VOICE_WAVEFORM_FLOOR), 1)
+          : VOICE_WAVEFORM_FLOOR;
+        setAudioLevels((current) => [...current.slice(1), level]);
+        return;
+      }
       if (event.type === "state") {
         if (event.state === "stopped") {
           if (phaseRef.current !== "polishing") {
@@ -113,8 +141,21 @@ export function ComposerVoiceInput({
 
   useEffect(() => {
     polishEnabledRef.current = settings.polish_enabled;
-    polishAvailableRef.current = polishAvailable;
-  }, [polishAvailable, settings.polish_enabled]);
+  }, [settings.polish_enabled]);
+
+  const recording =
+    phase === "requesting_microphone_permission" ||
+    phase === "requesting_speech_permission" ||
+    phase === "listening";
+
+  useEffect(() => {
+    onRecordingChange?.(recording);
+  }, [onRecordingChange, recording]);
+
+  useEffect(
+    () => () => onRecordingChange?.(false),
+    [onRecordingChange],
+  );
 
   useEffect(
     () => () => {
@@ -128,17 +169,18 @@ export function ComposerVoiceInput({
     [],
   );
 
+  useImperativeHandle(ref, () => ({ stop }));
+
   if (!supported) return null;
 
-  const active =
-    phase !== "idle" && phase !== "error" && phase !== "polishing";
   const busy = phase === "polishing";
   const status = voiceStatusMessage(phase, error, t);
 
   async function start(): Promise<void> {
     basePromptRef.current = prompt;
     transcriptRef.current = "";
-    finalizingRef.current = false;
+    finalizingPromiseRef.current = null;
+    setAudioLevels(emptyVoiceWaveform());
     setError("");
     setPhase("requesting_microphone_permission");
     try {
@@ -155,57 +197,34 @@ export function ComposerVoiceInput({
     }
   }
 
-  async function stop(): Promise<void> {
+  async function stop(): Promise<string> {
     const rawText = transcriptRef.current;
     await window.wuu.stopSpeechRecognition();
-    await finishTranscript(rawText);
+    return finishTranscript(rawText);
   }
 
   return (
-    <div className="composer-voice-input">
-      <button
-        className={`composer-voice-button${active ? " is-active" : ""}`}
-        type="button"
-        disabled={disabled || busy}
-        aria-label={active ? t("composer.voice.stop") : t("composer.voice.start")}
-        title={active ? t("composer.voice.stop") : t("composer.voice.startHint")}
-        onClick={() => void (active ? stop() : start())}
-      >
-        {busy ? (
-          <LoaderCircle className="composer-voice-spinner" aria-hidden="true" />
-        ) : active ? (
-          <Square aria-hidden="true" />
-        ) : (
-          <Mic aria-hidden="true" />
-        )}
-      </button>
-      <button
-        className={`composer-polish-toggle${polishEnabled ? " is-active" : ""}`}
-        type="button"
-        aria-pressed={polishEnabled}
-        disabled={disabled || active || busy || !polishAvailable}
-        title={
-          polishAvailable
-            ? t("composer.voice.polishHint")
-            : t("composer.voice.polishUnavailable")
-        }
-        onClick={() => {
-          const next = !settings.polish_enabled;
-          polishEnabledRef.current = next;
-          void updateSettings({
-            ...settings,
-            polish_enabled: next,
-          }).catch(() => {
-            polishEnabledRef.current = settings.polish_enabled;
-            setError(t("composer.voice.settingsSaveFailed"));
-            setPhase("error");
-          });
-        }}
-      >
-        <Sparkles aria-hidden="true" />
-        <span>{t("composer.voice.polish")}</span>
-      </button>
-      {status ? (
+    <div className={`composer-voice-input${recording ? " is-recording" : ""}`}>
+      {recording ? (
+        <button
+          className="composer-voice-recording"
+          type="button"
+          aria-label={t("composer.voice.stop")}
+          title={t("composer.voice.stop")}
+          disabled={phase !== "listening"}
+          onClick={() => void stop()}
+        >
+          <span className="composer-voice-waveform" aria-hidden="true">
+            {audioLevels.map((level, index) => (
+              <span
+                className="composer-voice-waveform-bar"
+                key={index}
+                style={{ height: `${Math.round(3 + level * 19)}px` }}
+              />
+            ))}
+          </span>
+        </button>
+      ) : status ? (
         <span
           className={`composer-voice-status${phase === "error" ? " is-error" : ""}`}
           role={phase === "error" ? "alert" : "status"}
@@ -214,9 +233,25 @@ export function ComposerVoiceInput({
           {status}
         </span>
       ) : null}
+      {!recording ? (
+        <button
+          className="composer-voice-button"
+          type="button"
+          disabled={disabled || busy}
+          aria-label={t("composer.voice.start")}
+          title={t("composer.voice.startHint")}
+          onClick={() => void start()}
+        >
+          {busy ? (
+            <LoaderCircle className="composer-voice-spinner" aria-hidden="true" />
+          ) : (
+            <Mic aria-hidden="true" />
+          )}
+        </button>
+      ) : null}
     </div>
   );
-}
+});
 
 function voiceStatusMessage(
   phase: VoicePhase,

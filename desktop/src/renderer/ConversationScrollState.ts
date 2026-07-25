@@ -42,7 +42,12 @@ function cssPixelValue(value: string): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function dockComposerVisualHeight(node: HTMLElement): number {
+/**
+ * Height used by the conversation-adjacent floating chrome. This includes
+ * accessory drawers (such as queued messages) and the visual lift applied to
+ * an expanded composer, not just the input frame itself.
+ */
+export function dockComposerVisualHeight(node: HTMLElement): number {
   const layoutHeight = Math.ceil(node.getBoundingClientRect().height);
   const frame = node.querySelector<HTMLElement>(".composer-frame");
   if (!frame) {

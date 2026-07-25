@@ -195,6 +195,9 @@ export function createSpeechRecognitionService({
 function parseSpeechEvent(line: string): SpeechRecognitionEvent | undefined {
   try {
     const value = JSON.parse(line) as SpeechRecognitionEvent;
+    if (value.type === "level") {
+      return Number.isFinite(value.level) ? value : undefined;
+    }
     if (
       value.type === "state" ||
       value.type === "result" ||

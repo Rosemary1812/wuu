@@ -1132,7 +1132,7 @@
   justify-content: center;
   gap: 0;
   min-width: 0;
-  max-width: 100%;
+  max-width: 80%;
   overflow: hidden;
   padding: 0 12px;
   font-variant-numeric: tabular-nums;
@@ -1164,6 +1164,7 @@
 
 .jump-to-latest-progress-detail {
   display: inline-flex;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 0;
   max-height: 0;
@@ -1186,6 +1187,7 @@
 
 .jump-to-latest-progress-step {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   border-radius: var(--radius-pill);
   background: var(--shell-jump-progress-step-bg);

@@ -2412,10 +2412,10 @@ export function App(): JSX.Element {
         onGuideQueuedMessage={(id) => void guideQueuedMessage(id)}
         onEditQueuedMessage={(id) => void editQueuedMessage(id)}
         onEditGuideMessage={(id) => void editGuideMessage(id)}
-        onSend={() => void sendPrompt()}
+        onSend={(promptOverride) => void sendPrompt("queue", promptOverride)}
         onSteer={
           activeThreadIsRunning && activeThread && activeThreadCanSteer
-            ? () => void sendPrompt("steer")
+            ? (promptOverride) => void sendPrompt("steer", promptOverride)
             : undefined
         }
         onQueue={
@@ -2851,11 +2851,18 @@ export function App(): JSX.Element {
     worktreeForkNonGitReason: t("app.worktreeRequiresGit"),
   });
 
-  async function sendPrompt(runningAction: "queue" | "steer" = "queue"): Promise<void> {
+  async function sendPrompt(
+    runningAction: "queue" | "steer" = "queue",
+    promptOverride?: string,
+  ): Promise<void> {
     if (viewSwitchPending) {
       return;
     }
-    const draftMessage = createComposerMessage(prompt, composerImages, composerFiles);
+    const draftMessage = createComposerMessage(
+      promptOverride ?? prompt,
+      composerImages,
+      composerFiles,
+    );
     const message =
       draftMessage && activeWorkspaceFile
         ? { ...draftMessage, activeDocument: { path: activeWorkspaceFile } }

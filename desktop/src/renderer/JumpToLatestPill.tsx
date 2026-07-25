@@ -6,6 +6,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { observeAutoFollowResizeTargets } from "./AutoFollowScroll";
+import { dockComposerVisualHeight } from "./ConversationScrollState";
 import {
   createWindowResizeSettleScheduler,
   isWindowResizing,
@@ -139,17 +140,17 @@ export function JumpToLatestPill({
       return;
     }
     const containerRect = container.getBoundingClientRect();
-    const visualAnchor =
-      bottomAnchor.querySelector<HTMLElement>(COMPOSER_FRAME_SELECTOR) ?? bottomAnchor;
-    const anchorRect = visualAnchor.getBoundingClientRect();
+    const anchorRect = bottomAnchor.getBoundingClientRect();
+    const visualHeight = dockComposerVisualHeight(bottomAnchor);
     setPosition({
       // Centered on the scroll container's visible width (issue #5 intent).
       left: containerRect.left + containerRect.width / 2,
-      // Sit PILL_BOTTOM_GAP_PX above the composer's top edge, expressed as a
-      // CSS `bottom` (distance from the viewport bottom).
+      // Use the complete dock height so this shares the exact slot used by
+      // the progress pill. In particular, queued-message drawers sit above
+      // the frame and must move this pill up with them.
       bottom: Math.max(
         PILL_BOTTOM_GAP_PX,
-        window.innerHeight - anchorRect.top + PILL_BOTTOM_GAP_PX,
+        window.innerHeight - anchorRect.bottom + visualHeight + PILL_BOTTOM_GAP_PX,
       ),
     });
   }, [containerRef, bottomAnchor]);
