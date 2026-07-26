@@ -71,6 +71,7 @@ CLAUDE.md
 .claude/
 .mavis/
 .opencode/
+.agents/notes/
 
 # Editors
 .vscode/
