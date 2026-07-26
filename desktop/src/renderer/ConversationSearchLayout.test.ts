@@ -40,6 +40,27 @@ describe("conversation search shortcut layout", () => {
   });
 });
 
+describe("conversation result rhythm", () => {
+  it("keeps the title and context in a compact single-row frame", () => {
+    expect(cssRule(".conversation-search-result")).toMatch(/display:\s*grid/);
+    expect(cssRule(".conversation-search-result")).toMatch(
+      /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/,
+    );
+    expect(cssRule(".conversation-search-result-main")).toMatch(
+      /display:\s*grid/,
+    );
+    expect(cssRule(".conversation-search-result-side")).toMatch(
+      /grid-template-columns:\s*minmax\(0,\s*88px\)\s*36px/,
+    );
+    expect(cssRule(".conversation-search-result-context")).toMatch(
+      /text-align:\s*right/,
+    );
+    expect(
+      cssRule(".conversation-search-result-side.shortcuts-only"),
+    ).toMatch(/width:\s*36px/);
+  });
+});
+
 describe("conversation preview rhythm", () => {
   it("uses tighter spacing within a turn than between turns", () => {
     expect(cssRule(".conversation-search-preview-turn-group")).toMatch(
