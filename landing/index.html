@@ -665,44 +665,6 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .mini.v-acc{border-color:var(--accent-soft)}
 .mini.v-acc .m-ico{background:var(--accent);color:#fff}
 
-/* ---------- diff + 审批演示 ---------- */
-.review{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:18px;padding:28px;background:var(--wu-canvas);
-}
-.diff{
-  width:min(620px,100%);background:var(--wu-surface);border:1px solid var(--wu-border);
-  border-radius:10px;overflow:hidden;font-family:var(--mono);font-size:12.5px;
-  box-shadow:0 2px 8px rgba(0,0,0,.05);
-}
-.diff .d-head{
-  display:flex;align-items:center;gap:8px;padding:10px 14px;
-  border-bottom:1px solid var(--wu-border);color:var(--dark-gray);font-size:12px;
-}
-.diff .d-head::before{content:"▸";color:var(--accent)}
-.diff .d-row{display:flex;padding:4px 14px;white-space:pre;color:var(--wu-text)}
-.diff .d-row .ln{width:28px;flex-shrink:0;color:var(--wu-muted);text-align:right;margin-right:14px;user-select:none}
-.diff .d-row.ctx{color:var(--wu-muted)}
-.diff .d-row.del{background:var(--red-soft)}
-.diff .d-row.add{background:var(--green-soft)}
-.diff .d-row.del .code::before{content:"- ";color:var(--red)}
-.diff .d-row.add .code::before{content:"+ ";color:var(--green)}
-.approve{
-  width:min(620px,100%);display:flex;align-items:center;gap:12px;
-  background:var(--wu-surface);border:1px solid var(--wu-border);border-radius:10px;
-  padding:12px 14px;font-family:var(--mono);font-size:12.5px;color:var(--wu-text);
-  box-shadow:0 2px 8px rgba(0,0,0,.05);
-}
-.approve .q{color:var(--dark-gray);font-size:11px;margin-left:auto;font-family:var(--sans)}
-.approve .yn{display:flex;gap:8px}
-.approve .yes,.approve .no{
-  font-family:var(--sans);font-size:12px;font-weight:var(--fw-medium);
-  border-radius:5px;padding:5px 12px;cursor:pointer;
-}
-.approve .yes{background:var(--wu-text);color:#fff;animation:approve-pulse 2.2s ease-in-out infinite}
-.approve .no{border:1px solid var(--wu-border);color:var(--dark-gray)}
-@keyframes approve-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,61,0,.45)}50%{box-shadow:0 0 0 6px rgba(255,61,0,0)}}
-
 /* 结尾 CTA 单元 */
 .closing-cell .inner{align-items:center;text-align:center;justify-content:center}
 .install{
@@ -1032,53 +994,6 @@ body.ready .hero-window-wrap{opacity:1;transform:none}
         <div class="inner">
           <h3>技能与记忆</h3>
           <p>把 workflow 存成技能，把偏好写进记忆——越用越顺手。</p>
-        </div>
-      </div>
-
-      <!-- 04 你审查 -->
-      <div class="cell span2 headline-cell reveal">
-        <div class="tri"></div>
-        <div class="inner">
-          <p class="eyebrow">04 · 你审查</p>
-          <h2>它做事，
-你放行</h2>
-          <p class="desc">逐文件 diff 摊开看，命令执行前要你点头，会话全程可回放——它提议，你点头。</p>
-        </div>
-      </div>
-
-      <div class="cell span2 demo-cell reveal">
-        <div class="window">
-          <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
-          <div class="body">
-            <div class="review">
-              <div class="diff">
-                <div class="d-head">edit_file · src/checkout/discount.ts</div>
-                <div class="d-row ctx"><span class="ln">41</span><span class="code">const total = cart.sum();</span></div>
-                <div class="d-row del"><span class="ln">42</span><span class="code">if (total &gt; 200) {</span></div>
-                <div class="d-row add"><span class="ln">42</span><span class="code">if (total &gt;= 200) {</span></div>
-                <div class="d-row add"><span class="ln">43</span><span class="code">  applyDiscount(30);</span></div>
-                <div class="d-row ctx"><span class="ln">44</span><span class="code">}</span></div>
-              </div>
-              <div class="approve">
-                <span>$ npm test</span>
-                <span class="q">它想跑这条命令</span>
-                <span class="yn"><button class="yes" type="button">允许</button><button class="no" type="button">拒绝</button></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="cell h3-cell reveal">
-        <div class="inner">
-          <h3>逐文件 diff</h3>
-          <p>每一处改动摊开看，接受还是打回，你说了算。</p>
-        </div>
-      </div>
-      <div class="cell h3-cell reveal">
-        <div class="inner">
-          <h3>命令要审批</h3>
-          <p>它提议，你放行——动到你机器的命令，永远先问过你。</p>
         </div>
       </div>
 
