@@ -1242,6 +1242,11 @@ describe("SettingsView About section", () => {
           sessions: 1,
         },
       ],
+      skill_usage: [
+        { name: "review", count: 4 },
+        { name: "docs", count: 2 },
+        { name: "unknown-count", count: Number.NaN },
+      ],
       days: heatmapDates.map((date, index) => ({
         date,
         input_tokens: (index + 1) * 100,
@@ -1268,6 +1273,13 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("12.3M");
     expect(rootText()).toContain("1M");
     expect(rootText()).toContain("1.2k");
+    expect(rootText()).toContain("Skills 使用分析");
+    expect(rootText()).toContain("review");
+    expect(rootText()).toContain("4");
+    expect(rootText()).toContain("unknown-count");
+    expect(rootText()).toContain("—");
+    expect(rootText()).not.toContain("NaN");
+    expect(rootText()).not.toContain("活跃");
     // Compact numbers keep their exact value in a hover tooltip.
     const totalInput = Array.from(
       container.querySelectorAll<HTMLElement>(".settings-usage-stat-value"),

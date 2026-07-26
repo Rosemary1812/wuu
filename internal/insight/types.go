@@ -79,6 +79,17 @@ type TokenUsageRow struct {
 	CacheReadTokens     int
 }
 
+// SkillUsage is one load_skill invocation aggregated across session history.
+type SkillUsage struct {
+	Name  string
+	Count int
+}
+
+type UsageScan struct {
+	TokenRows []TokenUsageRow
+	Skills    []SkillUsage
+}
+
 // The LLM-driven report pipeline types (Facet, AggregatedData,
 // SessionSummary, InsightSection, AtAGlance, Report, ProgressEvent,
 // RunConfig) were removed together with the Run/GenerateHTML pipeline:

@@ -88,6 +88,106 @@ func CollectTokenUsageRows(sessDir string) ([]TokenUsageRow, error) {
 	return rows, nil
 }
 
+// CollectSkillUsage scans persisted assistant tool calls and counts each
+// load_skill invocation. Invalid history records are skipped like token usage.
+func CollectSkillUsage(sessDir string) ([]SkillUsage, error) {
+	sessions, err := sessionstore.List(sessDir, 0)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, sess := range sessions {
+		records, err := sessionstore.LoadHistoryRecords(sessDir, sess.ID, true)
+		if err != nil {
+			continue
+		}
+		for _, rec := range records {
+			if !strings.EqualFold(strings.TrimSpace(rec.Role), "assistant") {
+				continue
+			}
+			var calls []toolCallRec
+			if err := json.Unmarshal(rec.ToolCalls, &calls); err != nil {
+				continue
+			}
+			for _, call := range calls {
+				if strings.TrimSpace(call.Name) != "load_skill" {
+					continue
+				}
+				var args struct{ Name string `json:"name"` }
+				if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+					continue
+				}
+				name := strings.TrimSpace(args.Name)
+				if name != "" {
+					counts[name]++
+				}
+			}
+		}
+	}
+	out := make([]SkillUsage, 0, len(counts))
+	for name, count := range counts {
+		out = append(out, SkillUsage{Name: name, Count: count})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// CollectUsageScan reads each session history once and extracts both token
+// usage rows and load_skill calls for the settings usage view.
+func CollectUsageScan(sessDir string) (UsageScan, error) {
+	sessions, err := sessionstore.List(sessDir, 0)
+	if err != nil {
+		return UsageScan{}, err
+	}
+	var rows []TokenUsageRow
+	counts := make(map[string]int)
+	for _, sess := range sessions {
+		records, err := sessionstore.LoadHistoryRecords(sessDir, sess.ID, true)
+		if err != nil {
+			continue
+		}
+		for _, rec := range records {
+			if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") && strings.TrimSpace(rec.Content) == "token_usage" {
+				rows = append(rows, TokenUsageRow{
+					SessionID: sess.ID, At: rec.At, Provider: rec.Provider, Model: rec.Model,
+					InputTokens: rec.InputTokens, OutputTokens: rec.OutputTokens,
+					CacheCreationTokens: rec.CacheCreationTokens, CacheReadTokens: rec.CacheReadTokens,
+				})
+			}
+			if !strings.EqualFold(strings.TrimSpace(rec.Role), "assistant") {
+				continue
+			}
+			var calls []toolCallRec
+			if err := json.Unmarshal(rec.ToolCalls, &calls); err != nil {
+				continue
+			}
+			for _, call := range calls {
+				if strings.TrimSpace(call.Name) != "load_skill" {
+					continue
+				}
+				var args struct{ Name string `json:"name"` }
+				if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil && strings.TrimSpace(args.Name) != "" {
+					counts[strings.TrimSpace(args.Name)]++
+				}
+			}
+		}
+	}
+	skills := make([]SkillUsage, 0, len(counts))
+	for name, count := range counts {
+		skills = append(skills, SkillUsage{Name: name, Count: count})
+	}
+	sort.Slice(skills, func(i, j int) bool {
+		if skills[i].Count != skills[j].Count { return skills[i].Count > skills[j].Count }
+		return skills[i].Name < skills[j].Name
+	})
+	return UsageScan{TokenRows: rows, Skills: skills}, nil
+}
+
 func scanSessions(sessDir string, sessions []sessionstore.Session, maxSessions int) ([]SessionMeta, error) {
 	metas := make([]SessionMeta, 0, len(sessions))
 	for _, sess := range sessions {
