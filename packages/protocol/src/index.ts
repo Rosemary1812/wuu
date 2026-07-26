@@ -1787,6 +1787,11 @@ export type SettingsUsageDay = {
   agents: number;
 };
 
+export type SkillUsage = {
+  name: string;
+  count: number;
+};
+
 // SettingsUsageResponse is the single source of truth for the desktop
 // usage page. ModelBreakdowns is sorted by total context tokens
 // descending; empty Provider+Model entries are bucketed as "(unknown)"
@@ -1798,6 +1803,7 @@ export type SettingsUsageResponse = {
   generated_at: string;
   metrics: SettingsUsageMetrics;
   model_breakdowns: ModelUsage[];
+  skill_usage: SkillUsage[];
   days: SettingsUsageDay[];
 };
 

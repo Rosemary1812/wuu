@@ -61,6 +61,7 @@ function usage(): SettingsUsageResponse {
       active_days: 0,
     },
     model_breakdowns: [],
+    skill_usage: [],
     days: [],
   };
 }
