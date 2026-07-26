@@ -1,7 +1,6 @@
 import {
   ChevronRight,
   RefreshCw,
-  Search,
   Wrench,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
@@ -11,6 +10,7 @@ import type {
   RuntimeContext,
   SkillSummary,
 } from "../shared/protocol";
+import { CatalogSearchField } from "./CatalogSearchField";
 import { translateCurrent, useI18n } from "./i18n";
 import { Modal } from "./Modal";
 import { RichContent } from "./RichContent";
@@ -157,15 +157,11 @@ export function SkillsCatalog({
           <span>{t("skills.subtitle")}</span>
         </div>
         <div className="skills-catalog-controls">
-          <label className="skills-search">
-            <Search className="icon" />
-            <input
-              type="search"
-              value={filter}
-              placeholder={t("skills.searchPlaceholder")}
-              onChange={(event) => setFilter(event.currentTarget.value)}
-            />
-          </label>
+          <CatalogSearchField
+            value={filter}
+            placeholder={t("skills.searchPlaceholder")}
+            onValueChange={setFilter}
+          />
           <button
             className="icon-button skills-refresh"
             type="button"

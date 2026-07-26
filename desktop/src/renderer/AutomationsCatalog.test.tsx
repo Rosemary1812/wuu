@@ -39,6 +39,7 @@ describe("AutomationsCatalog", () => {
     });
 
     expect(container.querySelector(".automations-detail")).toBeNull();
+    expect(container.querySelector(".catalog-search input[type=\"search\"]")).toBeTruthy();
     const row = container.querySelector<HTMLButtonElement>(".automation-row");
     await act(async () => row?.click());
     expect(container.querySelector(".automations-detail")).toBeTruthy();

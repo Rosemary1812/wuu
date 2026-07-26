@@ -31,8 +31,8 @@
   --browser-error-span-text: #6e2a22;
   --browser-retry-hover-bg: #93190f;
   --browser-loading-dot-bg: #2f98ff;
-  --skills-search-border: #dedfdb;
-  --skills-search-bg: rgba(255, 255, 255, 0.64);
+  --catalog-search-border: #dedfdb;
+  --catalog-search-bg: rgba(255, 255, 255, 0.64);
   --skills-section-border: #ebebe8;
   --skill-row-chevron: #a3a7aa;
   --skill-artwork-border: rgba(17, 19, 21, 0.08);
@@ -2168,8 +2168,7 @@ html.resizing-workspace-terminal-split * {
 .automations-filters { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--surface-3); }
 .automations-filters button { border: 0; border-radius: 9px; background: transparent; color: var(--ink-tertiary); font: inherit; padding: 7px 13px; }
 .automations-filters button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-.automations-search { display: flex; align-items: center; gap: 10px; height: 42px; margin-top: 22px; padding: 0 13px; border: 1px solid var(--line-subtle); border-radius: 13px; color: var(--ink-muted); }
-.automations-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.automations-search { margin-top: 22px; }
 .automations-list { display: grid; gap: 6px; margin-top: 18px; }
 .automation-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-radius: 14px; background: transparent; color: var(--ink); padding: 14px; text-align: left; }
 .automation-row:hover, .automation-row.selected { background: var(--surface-3); }
@@ -2250,26 +2249,26 @@ html.resizing-workspace-terminal-split * {
   gap: 10px;
 }
 
-.skills-search {
+.catalog-search {
   display: flex;
   min-width: 0;
   height: 44px;
   flex: 1 1 auto;
   align-items: center;
   gap: 11px;
-  border: 1px solid var(--skills-search-border);
+  border: 1px solid var(--catalog-search-border);
   border-radius: 14px;
-  background: var(--skills-search-bg);
+  background: var(--catalog-search-bg);
   color: var(--ink-muted);
   padding: 0 14px;
 }
 
-.skills-search svg {
+.catalog-search svg {
   width: 18px;
   height: 18px;
 }
 
-.skills-search input {
+.catalog-search input {
   min-width: 0;
   flex: 1 1 auto;
   border: 0;
@@ -2280,7 +2279,7 @@ html.resizing-workspace-terminal-split * {
   font-weight: var(--weight-regular);
 }
 
-.skills-search input::placeholder {
+.catalog-search input::placeholder {
   color: var(--ink-muted);
 }
 

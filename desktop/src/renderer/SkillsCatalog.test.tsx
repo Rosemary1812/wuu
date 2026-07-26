@@ -52,6 +52,7 @@ describe("SkillsCatalog", () => {
 
     expect(container.textContent).toContain("官方技能");
     expect(container.textContent).toContain("你的技能");
+    expect(container.querySelector(".catalog-search input[type=\"search\"]")).toBeTruthy();
     expect(container.textContent).toContain("Navigate and observe web pages.");
     expect(container.textContent).not.toContain("Use when no safer interface is available.");
     expect(container.querySelector('[data-skill-artwork="official-browser"]')).toBeTruthy();

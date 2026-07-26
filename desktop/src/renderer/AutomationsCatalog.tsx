@@ -1,6 +1,7 @@
-import { Clock3, Pause, Play, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Clock3, Pause, Play, RefreshCw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { AutomationTask, AutomationUpdateParams } from "../shared/protocol";
+import { CatalogSearchField } from "./CatalogSearchField";
 import { translateCurrent, useI18n } from "./i18n";
 
 type Filter = "all" | "active" | "paused";
@@ -79,11 +80,13 @@ export function AutomationsCatalog(): JSX.Element {
             <RefreshCw className="icon" />
           </button>
         </header>
-        <label className="automations-search">
-          <Search className="icon" />
-          <input type="search" value={query} placeholder={t("automations.searchPlaceholder")}
-            onChange={(event) => setQuery(event.currentTarget.value)} />
-        </label>
+        <div className="automations-search">
+          <CatalogSearchField
+            value={query}
+            placeholder={t("automations.searchPlaceholder")}
+            onValueChange={setQuery}
+          />
+        </div>
         {error ? <div className="automations-error">{error}</div> : null}
         <div className="automations-list">
           {loading ? <div className="automations-empty">{t("automations.loading")}</div> : null}
