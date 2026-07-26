@@ -563,7 +563,7 @@ describe("SettingsView provider configuration", () => {
     await act(async () => {
       setInputValue(providerInput, "anthropic-gateway");
       setInputValue(modelInput, "claude-sonnet-4-6[1M]");
-      setInputValue(baseURLInput, "https://tokenhub.zhuanspirit.com/anthropic/");
+      setInputValue(baseURLInput, "https://anthropic-gateway.example.test/");
       setInputValue(authTokenInput, "sk-token");
     });
 
@@ -581,7 +581,7 @@ describe("SettingsView provider configuration", () => {
       "claude-sonnet-4-6[1M]",
       undefined,
       {
-        base_url: "https://tokenhub.zhuanspirit.com/anthropic/",
+        base_url: "https://anthropic-gateway.example.test/",
         auth_token: "sk-token",
         type: "anthropic",
         create_provider: true,

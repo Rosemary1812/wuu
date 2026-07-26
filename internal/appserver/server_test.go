@@ -2645,7 +2645,7 @@ func TestServerConfigModelUpdateCreatesAnthropicProviderWithAuthToken(t *testing
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
-	req := `{"id":"1","method":"config/model/update","params":{"provider":"anthropic-gateway","model":"claude-sonnet-4-6[1M]","base_url":"https://tokenhub.zhuanspirit.com/anthropic/","auth_token":"sk-token","type":"anthropic","create_provider":true}}`
+	req := `{"id":"1","method":"config/model/update","params":{"provider":"anthropic-gateway","model":"claude-sonnet-4-6[1M]","base_url":"https://anthropic-gateway.example.test/","auth_token":"sk-token","type":"anthropic","create_provider":true}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
@@ -2662,7 +2662,7 @@ func TestServerConfigModelUpdateCreatesAnthropicProviderWithAuthToken(t *testing
 		}
 	}
 	if customSummary.Type != "anthropic" ||
-		customSummary.BaseURL != "https://tokenhub.zhuanspirit.com/anthropic/" ||
+		customSummary.BaseURL != "https://anthropic-gateway.example.test/" ||
 		!customSummary.APIKeyConfigured {
 		t.Fatalf("unexpected anthropic provider summary: %+v", result.Providers)
 	}
@@ -2671,7 +2671,7 @@ func TestServerConfigModelUpdateCreatesAnthropicProviderWithAuthToken(t *testing
 		t.Fatalf("read config: %v", err)
 	}
 	if !strings.Contains(string(data), `"type": "anthropic"`) ||
-		!strings.Contains(string(data), `"base_url": "https://tokenhub.zhuanspirit.com/anthropic/"`) ||
+		!strings.Contains(string(data), `"base_url": "https://anthropic-gateway.example.test/"`) ||
 		strings.Contains(string(data), `"auth_token": "sk-token"`) ||
 		strings.Contains(string(data), `"api_key": "sk-token"`) {
 		t.Fatalf("anthropic provider was not persisted safely: %s", data)
