@@ -31,8 +31,6 @@
   --browser-error-span-text: #6e2a22;
   --browser-retry-hover-bg: #93190f;
   --browser-loading-dot-bg: #2f98ff;
-  --catalog-search-border: #dedfdb;
-  --catalog-search-bg: rgba(255, 255, 255, 0.64);
   --skills-section-border: #ebebe8;
   --skill-row-chevron: #a3a7aa;
   --skill-artwork-border: rgba(17, 19, 21, 0.08);
@@ -999,6 +997,34 @@ html.resizing-workspace-file-split * {
   left: 0;
   padding: 0 clamp(20px, 4vw, 72px) 24px;
   pointer-events: none;
+}
+
+.conversation-pane.automation-detail-pane-open .skills-assistant-composer,
+.conversation-pane.automation-detail-pane-open .management-assistant-composer {
+  right: var(--automation-detail-reserved-width);
+}
+
+.automation-detail-pane-divider {
+  position: absolute;
+  z-index: 7;
+  top: 48px;
+  right: calc(var(--automation-detail-reserved-width) - 5px);
+  bottom: 0;
+  width: 1px;
+  background: var(--surface-3);
+  pointer-events: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.conversation-pane:has(.automations-detail-resizer:hover) .automation-detail-pane-divider,
+.conversation-pane:has(.automations-detail-resizer:focus-visible) .automation-detail-pane-divider,
+.conversation-pane:has(.automations-catalog.resizing-detail) .automation-detail-pane-divider {
+  background: var(--review-resizer-hover-bg);
+  box-shadow:
+    -3px 0 0 var(--ink-overlay-4),
+    3px 0 0 var(--ink-overlay-4);
 }
 
 .conversation-pane.skills-assistant-visible .skills-scroll-region {
@@ -2161,16 +2187,17 @@ html.resizing-workspace-terminal-split * {
   grid-template-columns: minmax(0, 1fr);
   min-height: 100%;
 }
-.automations-catalog.detail-open { grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr); }
+.automations-catalog.detail-open { grid-template-columns: minmax(280px, 1fr) 10px var(--automation-detail-pane-width); }
 
 .automations-master { box-sizing: border-box; width: 100%; max-width: 1080px; justify-self: center; padding: 42px clamp(32px, 6vw, 88px) 64px; }
-.automations-catalog.detail-open .automations-master { max-width: none; border-right: 1px solid var(--line-subtle); }
-.automations-filters { display: flex; width: max-content; gap: 4px; margin-top: 18px; padding: 3px; border-radius: 12px; background: var(--surface-3); }
+.automations-catalog.detail-open .automations-master { max-width: none; }
+.automations-detail-resizer { position: relative; width: 10px; min-width: 10px; align-self: stretch; border: 0; outline: 0; background: transparent; cursor: col-resize; touch-action: none; }
+.automations-filters { display: flex; width: max-content; gap: 4px; margin-top: 18px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
 .automations-filters button { border: 0; border-radius: 9px; background: transparent; color: var(--ink-tertiary); font: inherit; padding: 7px 13px; }
-.automations-filters button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.automations-filters button.active { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-soft); }
 .automations-list { display: grid; gap: 6px; margin-top: 18px; }
 .automation-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-radius: 14px; background: transparent; color: var(--ink); padding: 14px; text-align: left; }
-.automation-row:hover, .automation-row.selected { background: var(--surface-3); }
+.automation-row:hover, .automation-row.selected { background: var(--surface-2); }
 .automation-state { display: grid; width: 28px; height: 28px; place-items: center; color: var(--accent); }
 .automation-state svg { width: 18px; height: 18px; }
 .automation-state.paused { color: var(--ink-muted); }
@@ -2184,7 +2211,7 @@ html.resizing-workspace-terminal-split * {
 .automation-detail-actions { display: flex; gap: 6px; }
 .automation-status-label { color: var(--success); font-size: 14px; }.automation-status-label.paused { color: var(--ink-tertiary); }
 .automation-detail-form label { display: grid; gap: 8px; color: var(--ink-secondary); font-size: 13px; font-weight: var(--weight-medium); }
-.automation-detail-form :is(input, textarea, select) { width: 100%; box-sizing: border-box; border: 1px solid var(--line-subtle); border-radius: 12px; outline: 0; background: var(--surface-2); color: var(--ink); font: inherit; padding: 11px 12px; }
+.automation-detail-form :is(input, textarea, select) { width: 100%; box-sizing: border-box; border: 1px solid var(--hairline); border-radius: 12px; outline: 0; background: var(--surface-1); color: var(--ink); font: inherit; padding: 11px 12px; }
 .automation-detail-form textarea { resize: vertical; line-height: 1.5; }
 .automation-detail-form :is(input, textarea, select):focus { border-color: var(--accent); }
 .automation-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -2197,7 +2224,6 @@ html.resizing-workspace-terminal-split * {
 .automations-detail-empty svg { width: 28px; height: 28px; }
 
 @media (max-width: 900px) {
-  .automations-catalog.detail-open { grid-template-columns: minmax(280px, .8fr) minmax(360px, 1.2fr); }
   .automations-master { padding-inline: 18px; }
   .automation-detail-grid { grid-template-columns: 1fr; }
 }
@@ -2255,9 +2281,9 @@ html.resizing-workspace-terminal-split * {
   flex: 1 1 auto;
   align-items: center;
   gap: 11px;
-  border: 1px solid var(--catalog-search-border);
+  border: 1px solid var(--hairline);
   border-radius: 14px;
-  background: var(--catalog-search-bg);
+  background: var(--surface-1);
   color: var(--ink-muted);
   padding: 0 14px;
 }

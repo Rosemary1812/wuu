@@ -174,7 +174,10 @@ import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
-import { AutomationsCatalog } from "./AutomationsCatalog";
+import {
+  AutomationsCatalog,
+  type AutomationDetailPaneLayout,
+} from "./AutomationsCatalog";
 import { skillsAssistantPrompt, userVisibleThreads } from "./SkillsAssistant";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
@@ -398,6 +401,8 @@ export function App(): JSX.Element {
   });
   const [rightPanelManualGlobalized, setRightPanelManualGlobalized] =
     useState(false);
+  const [automationDetailPaneLayout, setAutomationDetailPaneLayout] =
+    useState<AutomationDetailPaneLayout>({ open: false, reservedWidth: 0 });
   const rightPanelAutoGlobalized =
     rightPanelOpen && workspaceRightPanelAutoGlobalized;
   const rightPanelGlobalized =
@@ -4082,7 +4087,16 @@ export function App(): JSX.Element {
           showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT
             ? " skills-assistant-visible"
             : ""
+        }${
+          showingAutomationsCatalog && automationDetailPaneLayout.open
+            ? " automation-detail-pane-open"
+            : ""
         }`}
+        style={showingAutomationsCatalog && automationDetailPaneLayout.open
+          ? {
+              "--automation-detail-reserved-width": `${automationDetailPaneLayout.reservedWidth}px`,
+            } as CSSProperties
+          : undefined}
         ref={conversationPaneRef}
       >
         {ENABLE_GROUP_CHAT && channelsOpen ? (
@@ -4316,7 +4330,7 @@ export function App(): JSX.Element {
                 onTrySkill={trySkillFromCatalog}
               />
             ) : showingAutomationsCatalog ? (
-              <AutomationsCatalog />
+              <AutomationsCatalog onDetailPaneLayoutChange={setAutomationDetailPaneLayout} />
             ) : (
               <>
                 {!activeThreadReadOnly ? (
@@ -4452,6 +4466,10 @@ export function App(): JSX.Element {
             onExitPreview={() => setLaunchPreviewPinned(false)}
           />
         )}
+
+        {showingAutomationsCatalog && automationDetailPaneLayout.open ? (
+          <div className="automation-detail-pane-divider" aria-hidden="true" />
+        ) : null}
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
 

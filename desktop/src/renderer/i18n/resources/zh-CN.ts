@@ -1503,6 +1503,7 @@ export const zhCN = {
   "automations.empty": "暂无自动化",
   "automations.selectTask": "选择一个自动化查看详情",
   "automations.closeDetails": "关闭详情",
+  "automations.resizeDetails": "调整自动化详情栏宽度",
   "automations.localTime": "本地时间",
   "automations.active": "已开启",
   "automations.paused": "已暂停",

@@ -19,6 +19,7 @@ const task: AutomationTask = {
 };
 
 beforeEach(() => {
+  window.localStorage.removeItem("wuu.desktop.automationDetailPaneWidth");
   container = document.createElement("div");
   document.body.appendChild(container);
 });
@@ -32,10 +33,11 @@ afterEach(() => {
 
 describe("AutomationsCatalog", () => {
   it("opens the detail sidebar only after selecting a task", async () => {
+    const onDetailPaneLayoutChange = vi.fn();
     installApi([task]);
     await act(async () => {
       root = createRoot(container);
-      root.render(<AutomationsCatalog />);
+      root.render(<AutomationsCatalog onDetailPaneLayoutChange={onDetailPaneLayoutChange} />);
     });
 
     expect(container.querySelector(".automations-detail")).toBeNull();
@@ -45,6 +47,21 @@ describe("AutomationsCatalog", () => {
     const row = container.querySelector<HTMLButtonElement>(".automation-row");
     await act(async () => row?.click());
     expect(container.querySelector(".automations-detail")).toBeTruthy();
+    expect(container.querySelector('[role="separator"]')).toBeTruthy();
+    expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
+      open: true,
+      reservedWidth: 530,
+    });
+    const separator = container.querySelector<HTMLButtonElement>('[role="separator"]');
+    await act(async () => separator?.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      bubbles: true,
+    })));
+    expect(separator?.getAttribute("aria-valuenow")).toBe("552");
+    expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
+      open: true,
+      reservedWidth: 562,
+    });
     expect(container.querySelector<HTMLInputElement>('input[value="每日简报"]')).toBeTruthy();
 
     const close = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))

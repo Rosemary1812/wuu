@@ -1505,6 +1505,7 @@ export const enUS = {
   "automations.empty": "No automations",
   "automations.selectTask": "Select an automation to view details",
   "automations.closeDetails": "Close details",
+  "automations.resizeDetails": "Resize automation details",
   "automations.localTime": "Local time",
   "automations.active": "Active",
   "automations.paused": "Paused",
