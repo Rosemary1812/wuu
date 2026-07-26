@@ -320,9 +320,6 @@ func (m *Manager) UpdateTask(id string, params UpdateTaskParams) (Task, error) {
 	if params.Prompt != nil {
 		task.Prompt = strings.TrimSpace(*params.Prompt)
 	}
-	if task.Prompt == "" {
-		return Task{}, errors.New("automation prompt is required")
-	}
 	if params.Schedule != nil {
 		task.Cron = strings.TrimSpace(*params.Schedule)
 	}
@@ -355,6 +352,9 @@ func (m *Manager) UpdateTask(id string, params UpdateTaskParams) (Task, error) {
 	}
 	if params.Paused != nil {
 		task.Paused = *params.Paused
+	}
+	if task.Prompt == "" && !task.Paused {
+		return Task{}, errors.New("automation prompt is required")
 	}
 	if task.Title == "" {
 		task.Title = task.Prompt
