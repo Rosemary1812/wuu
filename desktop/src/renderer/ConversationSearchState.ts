@@ -10,7 +10,6 @@ import type {
   Turn,
 } from "../shared/protocol";
 import {
-  mergeListedThreads,
   sameRuntimeContext,
   type AppState,
 } from "./AppState";
@@ -63,13 +62,13 @@ const initialConversationSearch: ConversationSearchState = {
 export function useConversationSearch({
   activeContext,
   getAppState,
-  setAppState,
+  cacheThreads,
   onOpen,
   onSelectThread,
 }: {
   activeContext?: RuntimeContext;
   getAppState: () => AppState;
-  setAppState: (update: (current: AppState) => AppState) => void;
+  cacheThreads: (threads: ThreadSearchResultItem["thread"][]) => void;
   onOpen: () => void;
   onSelectThread: (threadID: string) => void;
 }): {
@@ -286,10 +285,7 @@ export function useConversationSearch({
         return;
       }
       const threads = search.results.map((result) => result.thread);
-      setAppState((current) => ({
-        ...current,
-        threads: mergeListedThreads(current.threads, threads),
-      }));
+      cacheThreads(threads);
       setConversationSearch((current) => ({
         ...current,
         results: search.results,

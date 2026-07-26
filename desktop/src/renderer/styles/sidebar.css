@@ -1622,33 +1622,34 @@
  * title so the truncated text (with its ellipsis) doesn't overlap with
  * the icon. The icon's footprint shifts on hover, so the title's
  * padding-right also shifts:
- *   - Default: icon at right: 12px (14px wide → left edge at right:
- *     26px); padding-right: 28px leaves a 2px gap.
- *   - Hover: icon slides to right: 66px (left edge at right: 80px); the
- *     hover-specific rule below bumps padding-right to 82px (2px gap on
+ *   - Default: icon at right: var(--sidebar-row-pad-x) = 8px (14px
+ *     wide → left edge at right: 22px); padding-right: 24px leaves a
+ *     2px gap.
+ *   - Hover: icon slides to right: 62px (left edge at right: 76px); the
+ *     hover-specific rule below bumps padding-right to 78px (2px gap on
  *     the other side of the icon). The base `.thread-row:hover` rule
- *     in between still applies for non-forked rows (58px, just enough
+ *     in between still applies for non-forked rows (54px, just enough
  *     to clear the action overlay). */
 .thread-row:has(.thread-row-fork-icon) .thread-row-main > .thread-row-title {
-  padding-right: 28px;
+  padding-right: 24px;
 }
 
 .thread-row:hover .thread-row-main > .thread-row-title,
 .thread-row:has(.thread-row-action:focus-visible) .thread-row-main > .thread-row-title {
-  padding-right: 58px;
+  padding-right: 54px;
 }
 
-/* Hover-specific override for forked rows. The icon sits at right: 66px
- * on hover (14px wide → left edge at right: 80px), so the title needs
- * 82px of right padding to leave a 2px gap between the truncated text
+/* Hover-specific override for forked rows. The icon sits at right: 62px
+ * on hover (14px wide → left edge at right: 76px), so the title needs
+ * 78px of right padding to leave a 2px gap between the truncated text
  * and the icon. Nesting `:has(.thread-row-fork-icon)` under `:hover`
  * gives this selector one more class than the plain hover rule above,
  * so it wins without `!important`. The base `padding-right` transition
- * above animates the bump from 28px → 82px as the row enters hover,
- * and 82px → 28px as it leaves. */
+ * above animates the bump from 24px → 78px as the row enters hover,
+ * and 78px → 24px as it leaves. */
 .thread-row:hover:has(.thread-row-fork-icon) .thread-row-main > .thread-row-title,
 .thread-row:has(.thread-row-action:focus-visible):has(.thread-row-fork-icon) .thread-row-main > .thread-row-title {
-  padding-right: 82px;
+  padding-right: 78px;
 }
 
 .thread-row-main > .thread-row-title[data-title-swap] {
@@ -1674,13 +1675,14 @@
  * pin/archive glyphs exactly) and the default lucide-react stroke
  * width, so the three icons share one size and weight.
  *
- * Layout: by default it sits at `right: 12px` — the same offset as the
- * action overlay, but the actions are hidden by default so there's no
- * visual conflict. On hover, the icon slides left to `right: 66px`,
- * stopping 3px left of the pin button. The 3px gap matches the gap the
+ * Layout: by default it sits at `right: var(--sidebar-row-pad-x)` —
+ * the same offset as the action overlay, but the actions are hidden
+ * by default so there's no visual conflict. On hover, the icon
+ * slides left to `right: 62px`, stopping 3px left of the pin button.
+ * The 3px gap matches the gap the
  * pin/archive pair uses internally, so the three controls read as one
  * rhythmic group on the right edge of the row. The title's own
- * `padding-right: 58px` on hover pushes the text leftward, keeping it
+ * `padding-right: 54px` on hover pushes the text leftward, keeping it
  * clear of the icon.
  *
  * `pointer-events: none` keeps the icon from intercepting clicks
@@ -1690,7 +1692,7 @@
  */
 .thread-row-fork-icon {
   position: absolute;
-  right: 12px;
+  right: var(--sidebar-row-pad-x, 8px);
   top: 50%;
   transform: translateY(-50%);
   color: var(--ink-tertiary);
@@ -1704,7 +1706,7 @@
 
 .thread-row:hover .thread-row-fork-icon,
 .thread-row:has(.thread-row-action:focus-visible) .thread-row-fork-icon {
-  right: 66px;
+  right: 62px;
   opacity: 0.95;
 }
 
@@ -1728,14 +1730,14 @@
 }
 
 .thread-row-actions {
-  /* 12px from the right edge instead of 5px. The previous offset put
-   * the pin / archive icons flush against the sidebar's right
-   * padding, which read as "trapped in the corner". 12px gives a
-   * visible gap that matches the inline + button offset on project
-   * rows so the two action surfaces share one breathing rhythm. */
+  /* Anchored to --sidebar-row-pad-x so the archive button's right edge
+   * lands on the same vertical axis as the project header's inline +
+   * button (.project-row-new-thread), which is offset from the row edge
+   * by the same token. The previous hardcoded 12px left the two action
+   * surfaces 4px apart. */
   position: absolute;
   top: 50%;
-  right: 12px;
+  right: var(--sidebar-row-pad-x, 8px);
   z-index: 1;
   display: flex;
   gap: 3px;

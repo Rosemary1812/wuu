@@ -27,6 +27,41 @@ afterEach(() => {
 });
 
 describe("SkillsCatalog", () => {
+  it("separates official and personal skills and gives each a complete artwork", async () => {
+    installSkillList([
+      {
+        name: "browser",
+        description: "Navigate and observe web pages. Use when no safer interface is available.",
+        source: "bundled",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+      {
+        name: "write",
+        description: "Rewrite prose",
+        source: "user",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog />);
+    });
+
+    expect(container.textContent).toContain("官方技能");
+    expect(container.textContent).toContain("你的技能");
+    expect(container.textContent).toContain("Navigate and observe web pages.");
+    expect(container.textContent).not.toContain("Use when no safer interface is available.");
+    expect(container.querySelector('[data-skill-artwork="official-browser"]')).toBeTruthy();
+    const customArtwork = container.querySelector('[data-skill-artwork="custom-skill"]');
+    expect(customArtwork).toBeTruthy();
+    expect(customArtwork?.className).toContain("skill-artwork-palette-");
+    expect(customArtwork?.getAttribute("data-skill-motif")).toBeTruthy();
+    expect(customArtwork?.querySelector(".lucide-wrench")).toBeNull();
+  });
+
   it("lists installed plugins and tags plugin-provided skills", async () => {
     installSkillList([
       {
@@ -70,6 +105,20 @@ describe("SkillsCatalog", () => {
               },
               state: "granted",
             },
+            {
+              id: "plugin:user:community-tools",
+              name: "community-tools",
+              description: "Community-maintained utilities.",
+              kind: "plugin",
+              provenance: {
+                kind: "plugin",
+                source: "community",
+                scope: "user",
+                plugin_id: "community-tools",
+                official: false,
+              },
+              state: "read_only",
+            },
           ]}
         />,
       );
@@ -79,6 +128,7 @@ describe("SkillsCatalog", () => {
     expect(container.textContent).toContain("Control macOS apps through Accessibility.");
     expect(container.textContent).toContain("官方");
     expect(container.textContent).toContain("插件 · cua-mac");
+    expect(container.querySelector('[data-skill-artwork="custom-plugin"]')).toBeTruthy();
     // Non-plugin inventory records (the plugin's MCP server) stay out of the
     // plugin list.
     expect(container.textContent).not.toContain("computer");

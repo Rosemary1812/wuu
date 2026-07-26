@@ -46,6 +46,12 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
   ),
 }));
 
+vi.mock("./WorkspacePdfPreview", () => ({
+  WorkspacePdfPreview: ({ url, title }: { url: string; title: string }) => (
+    <div className="mock-workspace-pdf-preview" data-url={url} data-title={title} />
+  ),
+}));
+
 let container: HTMLDivElement;
 let root: Root | null = null;
 let listWorkspaceDirectory: ReturnType<typeof vi.fn>;
@@ -595,6 +601,32 @@ describe("WorkspaceFileTree", () => {
     expect(image?.getAttribute("alt")).toBe("assets/mascot/wuu-mascot-concept-01.png");
     expect(container.textContent).not.toContain("二进制文件");
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
+  });
+
+  it("uses the themed workspace PDF viewer instead of Chromium's dark iframe", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "docs/spec.pdf",
+      absolute_path: "/repo/docs/spec.pdf",
+      binary: true,
+      text: undefined,
+      renderable_url: "wuu-file://local/encoded-pdf",
+      renderable_kind: "pdf",
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/docs/spec.pdf"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    const preview = container.querySelector<HTMLElement>(".mock-workspace-pdf-preview");
+    expect(preview?.dataset.url).toBe("wuu-file://local/encoded-pdf");
+    expect(preview?.dataset.title).toBe("docs/spec.pdf");
+    expect(container.querySelector("iframe")).toBeNull();
   });
 
   it("opens Markdown files in reading mode by default", async () => {

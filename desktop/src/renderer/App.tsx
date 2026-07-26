@@ -312,6 +312,7 @@ type MainComposerFocusRequest = {
   target: ComposerVariant;
   origin: Element | null;
   interactionVersion: number;
+  matchesDestination?: (state: AppState) => boolean;
 };
 
 export function App(): JSX.Element {
@@ -469,6 +470,7 @@ export function App(): JSX.Element {
     cachedScratchThreads,
     sidebarSectionOrder,
     setSidebarSectionOrder,
+    cacheSidebarThreads,
     updateCachedSidebarThread,
     removeCachedSidebarThread,
     toggleSidebarSectionCollapsed,
@@ -1160,7 +1162,7 @@ export function App(): JSX.Element {
   } = useConversationSearch({
     activeContext: state.activeContext,
     getAppState: () => appStateRef.current,
-    setAppState: setState,
+    cacheThreads: cacheSidebarThreads,
     onOpen: () => {
       setProjectMenuOpen(false);
       setRuntimeMenuOpen(false);
@@ -1791,11 +1793,13 @@ export function App(): JSX.Element {
       target: ComposerVariant,
       origin: Element | null = document.activeElement,
       interactionVersion: number = userInteractionVersionRef.current,
+      matchesDestination?: (state: AppState) => boolean,
     ): MainComposerFocusRequest => {
       const request = {
         target,
         origin,
         interactionVersion,
+        matchesDestination,
       };
       setMainComposerFocusRequest(request);
       return request;
@@ -1816,6 +1820,12 @@ export function App(): JSX.Element {
       return;
     }
     if (
+      mainComposerFocusRequest.matchesDestination &&
+      !mainComposerFocusRequest.matchesDestination(state)
+    ) {
+      return;
+    }
+    if (
       !focusMainComposer(
         mainComposerFocusRequest.target,
         mainComposerFocusRequest.origin,
@@ -1832,7 +1842,7 @@ export function App(): JSX.Element {
     focusMainComposer,
     mainComposerFocusRequest,
     mainConversationDockVisible,
-    state.activeSessionTabID,
+    state,
   ]);
   const handleTurnCollapseComplete = useCallback(() => {
     scheduleStreamScroll();
@@ -2657,22 +2667,16 @@ export function App(): JSX.Element {
       if (succeeded === false) {
         return;
       }
-      window.requestAnimationFrame(() => {
-        const current = appStateRef.current;
-        if (
+      requestMainComposerFocus(
+        "hero",
+        origin,
+        interactionVersion,
+        (current) =>
           !current.thread &&
           !current.secondaryThread &&
           activeSessionTab(current)?.kind === "draft" &&
-          matchesDestination(current)
-        ) {
-          // Queue the focus through the layout effect instead of making a
-          // one-shot attempt in this frame. React may not have committed the
-          // destination hero composer yet, so the request must survive until
-          // that element is mounted. Preserve the interaction version from
-          // the original click so later user input still cancels the handoff.
-          requestMainComposerFocus("hero", origin, interactionVersion);
-        }
-      });
+          matchesDestination(current),
+      );
     });
   }
 

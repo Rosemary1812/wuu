@@ -14,11 +14,9 @@ export function registerRenderableFileScheme(): void {
       privileges: {
         standard: true,
         secure: true,
-        supportFetchAPI: false,
-        // Chromium's built-in PDF viewer fetches the document from a
-        // chrome-extension origin, which counts as cross-origin against this
-        // scheme; without corsEnabled + an allow-origin header the viewer
-        // renders a blank frame (Electron >=39 enforces this).
+        // PDF.js runs in the renderer and loads large documents incrementally
+        // through fetch + byte-range requests.
+        supportFetchAPI: true,
         corsEnabled: true,
         stream: true,
       },

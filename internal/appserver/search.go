@@ -56,13 +56,9 @@ func (s *Server) handleThreadSearch(req Request) error {
 		} else {
 			snippet = threadSearchDefaultSnippet(candidates)
 		}
-		thread, err := s.threadWithChildAgents(source.entry.thread)
-		if err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
 		results = append(results, threadSearchResultEntry{
 			entry:   source.entry,
-			result:  ThreadSearchResultItem{Thread: thread, Snippet: snippet},
+			result:  ThreadSearchResultItem{Thread: source.entry.thread, Snippet: snippet},
 			matches: query != "",
 		})
 		if len(results) >= limit {
@@ -78,7 +74,7 @@ func (s *Server) handleThreadSearch(req Request) error {
 }
 
 func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
-	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
+	sessions, err := session.List(s.rt.SessionDir, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -116,11 +112,9 @@ func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
 			delete(sourcesByID, thread.ID)
 			continue
 		}
-		if thread.CWD == s.rt.RootDir {
-			sourcesByID[thread.ID] = threadSearchSource{
-				entry:   entry,
-				history: history,
-			}
+		sourcesByID[thread.ID] = threadSearchSource{
+			entry:   entry,
+			history: history,
 		}
 	}
 
