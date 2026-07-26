@@ -1239,7 +1239,6 @@ export type Thread = {
 
 export type ThreadStartParams = {
   ephemeral?: boolean;
-  managementSurface?: "skills";
 };
 
 export type ThreadSearchResultItem = {
@@ -2265,7 +2264,6 @@ export type WuuDesktopApi = {
     files?: InputFile[],
     permissionMode?: string,
     activeDocument?: ActiveDocumentContext,
-    requestOnlyContext?: string,
   ) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,

@@ -59,8 +59,6 @@ func (b *bugReproProvider) StreamChat(ctx context.Context, req providers.ChatReq
 // turn_interrupted (not turn_failed).
 func TestCancellationEmitsTurnInterrupted(t *testing.T) {
 	root := t.TempDir()
-	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
-	t.Setenv("WUU_HOME", wuuHome)
 	configPath := filepath.Join(root, ".wuu.json")
 	if err := writeMinimalConfig(configPath); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -76,9 +74,6 @@ func TestCancellationEmitsTurnInterrupted(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("NewLocalAppServerController: %v", err)
-	}
-	if got := controller.(*localAppServerController).rt.SessionDir; got != filepath.Join(wuuHome, "sessions") {
-		t.Fatalf("session dir = %q, want isolated test home %q", got, filepath.Join(wuuHome, "sessions"))
 	}
 	// Swap the StreamRunner's client for our blocking one.
 	if lc, ok := controller.(*localAppServerController); ok {

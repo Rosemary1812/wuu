@@ -2674,38 +2674,6 @@ func TestThreadWorkerWakeAppliesCurrentPermissionBoundary(t *testing.T) {
 	}
 }
 
-func TestConfigureSkillsManagementToolkitUsesDedicatedWritableRoots(t *testing.T) {
-	root := t.TempDir()
-	home := t.TempDir()
-	wuuHome := t.TempDir()
-	kit, err := tools.New(root)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	session := &Session{
-		RootDir:     root,
-		HomeDir:     home,
-		WuuHome:     wuuHome,
-		Permissions: config.ResolvedPermissions{Mode: config.PermissionModeReadOnly},
-	}
-	session.ConfigureSkillsManagementToolkit(kit)
-
-	boundary := kit.Boundary()
-	if !boundary.Enforce || !boundary.AllowMutations {
-		t.Fatalf("skills management boundary = %+v, want confined writable", boundary)
-	}
-	target := filepath.Join(home, ".codex", "skills", "managed", "SKILL.md")
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_file",
-		Arguments: fmt.Sprintf(`{"path":%q,"content":"managed"}`, target),
-	}); err != nil {
-		t.Fatalf("write dedicated Skills root: %v", err)
-	}
-	if data, err := os.ReadFile(target); err != nil || string(data) != "managed" {
-		t.Fatalf("managed Skill = %q, err=%v", data, err)
-	}
-}
-
 func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	root := t.TempDir()
 	kit, err := tools.New(root)

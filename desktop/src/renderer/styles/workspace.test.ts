@@ -54,17 +54,6 @@ describe("conversation message-flow rhythm", () => {
   });
 });
 
-describe("management assistant composer width", () => {
-  it("uses the main message-flow Composer as its only width constraint", () => {
-    expect(workspaceCss).toMatch(
-      /\.management-assistant-composer\s*\{\s*padding-inline:\s*0;/,
-    );
-    expect(cssRuleBody(".workspace-document-turn-dock.fluid")).toMatch(
-      /width:\s*100%;/,
-    );
-  });
-});
-
 describe("workspace right panel chrome", () => {
   it("uses a flat artifact rail that expands cleanly in full-panel mode", () => {
     const panel = cssRuleBody(".workspace-right-panel");

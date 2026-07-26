@@ -1863,7 +1863,6 @@ app.whenReady().then(async () => {
       files?: InputFile[],
       permissionMode?: string,
       activeDocument?: ActiveDocumentContext,
-      requestOnlyContext?: string,
     ) =>
       appServerRequest<{ turn: Turn }>(event, "turn/start", {
         thread_id: threadId,
@@ -1872,7 +1871,6 @@ app.whenReady().then(async () => {
         files: files ?? [],
         ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
         ...(activeDocument === undefined ? {} : { active_document: activeDocument }),
-        ...(requestOnlyContext === undefined ? {} : { request_only_context: requestOnlyContext }),
       }),
   );
   ipcMain.handle(

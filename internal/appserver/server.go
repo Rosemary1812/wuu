@@ -58,7 +58,6 @@ type threadState struct {
 	ModelVariant             string
 	ModelEffort              string
 	PermissionMode           string
-	ManagementSurface        string
 	CWD                      string
 	WorkspaceKind            WorkspaceKind
 	ForkedFromID             string

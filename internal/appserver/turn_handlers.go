@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -171,11 +170,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	// The user turn snapshots the session-level Ultra setting once, at
 	// admission. Mid-turn changes affect only the next user turn.
 	snapshot.Ultra = s.rt.UltraMode()
-	snapshot.RequestContext = append(
-		activeDocumentRequestContext(params.ActiveDocument),
-		managementSurfaceRequestContext(params.RequestOnlyContext)...,
-	)
-	snapshot.RequestContext = append(snapshot.RequestContext, s.managementThreadRequestContext(th)...)
+	snapshot.RequestContext = activeDocumentRequestContext(params.ActiveDocument)
 	var threadRuntime *runtime.ThreadRuntime
 	started, ok, err := s.startThreadUserTurnWithAdmission(
 		ctx,
@@ -809,7 +804,6 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	modelVariant := th.ModelVariant
 	modelEffort := th.ModelEffort
 	permissionMode := th.PermissionMode
-	managementSurface := th.ManagementSurface
 	th.mu.Unlock()
 	if detached.runtime != nil || detached.subscription != nil {
 		releaseDetachedThreadRuntime(detached)
@@ -846,9 +840,6 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		return nil, err
 	}
 	if threadRuntime.Toolkit != nil {
-		if managementSurface == "skills" {
-			s.rt.ConfigureSkillsManagementToolkit(threadRuntime.Toolkit)
-		}
 		// Inject the embedded-browser bridge for every thread here. The bridge
 		// closure must carry this thread's id + workdir so tab operations route
 		// to the desktop views keyed by (workdir, tab_id). Set once at runtime
@@ -1576,47 +1567,6 @@ func activeDocumentRequestContext(document *ActiveDocument) []agent.ContextSegme
 	}})
 }
 
-func managementSurfaceRequestContext(content string) []agent.ContextSegment {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil
-	}
-	return agent.RequestOnlyContextBlocks([]wuucontext.Block{{
-		Kind:    wuucontext.BlockAdditionalContext,
-		Title:   "Management surface context",
-		Source:  "desktop.management_surface",
-		Content: content,
-	}})
-}
-
-func (s *Server) managementThreadRequestContext(th *threadState) []agent.ContextSegment {
-	if s == nil || s.rt == nil || th == nil {
-		return nil
-	}
-	th.mu.Lock()
-	surface := th.ManagementSurface
-	th.mu.Unlock()
-	if surface != "skills" {
-		return nil
-	}
-	var content strings.Builder
-	content.WriteString("You are the dedicated Skills management assistant for this Wuu Skills catalog. Manage Skills as product content, not as an ordinary workspace coding task. Inspect the current catalog and source files before changing them.\n\n")
-	content.WriteString("Your writable authority is intentionally limited to these Skills roots:\n")
-	for _, root := range s.rt.SkillManagementRoots() {
-		fmt.Fprintf(&content, "- %s\n", root)
-	}
-	if home := strings.TrimSpace(s.rt.WuuHome); home != "" {
-		fmt.Fprintf(&content, "\nCreate software-level or user-requested Skills under %s unless the user explicitly targets a project-specific Skill. ", filepath.Join(home, "skills"))
-	}
-	content.WriteString("Bundled .system files are generated from the application binary; customize a bundled Skill by creating a same-name override in a non-.system Skills root instead of editing generated files. Keep each Skill in its own directory with SKILL.md as its entry point.")
-	return agent.RequestOnlyContextBlocks([]wuucontext.Block{{
-		Kind:    wuucontext.BlockAdditionalContext,
-		Title:   "Skills management authority",
-		Source:  "appserver.skills_management",
-		Content: content.String(),
-	}})
-}
-
 func cloneActiveDocument(document *ActiveDocument) *ActiveDocument {
 	if document == nil {
 		return nil
@@ -1707,16 +1657,6 @@ func (s *Server) resolveTurnPermissions(permissionMode *string) (config.Resolved
 }
 
 func (s *Server) resolveThreadTurnPermissions(th *threadState, requested *string) (config.ResolvedPermissions, error) {
-	if th != nil {
-		th.mu.Lock()
-		managementSurface := th.ManagementSurface
-		th.mu.Unlock()
-		if managementSurface == "skills" {
-			// Product management authority is determined by its dedicated roots,
-			// not by the ordinary conversation permission selector.
-			return config.ResolvedPermissions{Mode: config.PermissionModeStandard}, nil
-		}
-	}
 	if s != nil && s.rt != nil && s.rt.PermissionModeExplicit {
 		// A process-scoped explicit override (exec --permission-mode) beats
 		// the thread pin and persisted session metadata: a user asking for
