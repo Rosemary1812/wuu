@@ -461,6 +461,17 @@ export type AutomationTask = {
 };
 
 export type AutomationListResult = { tasks: AutomationTask[] };
+export type AutomationCreateParams = {
+  title: string;
+  prompt: string;
+  schedule: string;
+  timezone?: string;
+  mode?: "new_thread" | "thread_heartbeat";
+  heartbeat_thread_id?: string;
+  recurring: boolean;
+  paused?: boolean;
+};
+export type AutomationCreateResult = { task: AutomationTask };
 export type AutomationUpdateParams = {
   id: string;
   title?: string;
@@ -2111,6 +2122,7 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   readSkillContent: (params: SkillContentParams) => Promise<SkillContentResult>;
   listAutomations: () => Promise<AutomationListResult>;
+  createAutomation: (params: AutomationCreateParams) => Promise<AutomationCreateResult>;
   updateAutomation: (params: AutomationUpdateParams) => Promise<AutomationUpdateResult>;
   removeAutomation: (id: string) => Promise<{ ok: boolean }>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;

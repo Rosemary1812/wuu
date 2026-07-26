@@ -39,6 +39,7 @@ type AddTaskParams struct {
 	CreatorThreadID   string
 	HeartbeatThreadID string
 	Recurring         bool
+	Paused            bool
 	Durable           bool
 }
 
@@ -160,7 +161,7 @@ func (m *Manager) AddTask(params AddTaskParams) (Task, error) {
 		return Task{}, errors.New("automation manager is required")
 	}
 	prompt := strings.TrimSpace(params.Prompt)
-	if prompt == "" {
+	if prompt == "" && !params.Paused {
 		return Task{}, errors.New("automation prompt is required")
 	}
 	schedule := strings.TrimSpace(params.Schedule)
@@ -206,13 +207,14 @@ func (m *Manager) AddTask(params AddTaskParams) (Task, error) {
 		Metadata:          map[string]string{"kind": "prompt"},
 		CreatedAt:         time.Now().UnixMilli(),
 		Recurring:         params.Recurring,
+		Paused:            params.Paused,
 	}
 	if params.Durable {
 		task.Metadata["durability"] = "durable"
 	} else {
 		task.Metadata["durability"] = "session-only"
 	}
-	if task.Title == "" {
+	if task.Title == "" && task.Prompt != "" {
 		task.Title = prompt
 	}
 	next, err := task.NextFireAt()

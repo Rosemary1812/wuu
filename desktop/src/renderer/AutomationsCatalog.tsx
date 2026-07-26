@@ -1,4 +1,4 @@
-import { ChevronRight, CircleAlert, Pause, Play, RefreshCw, Trash2, X } from "lucide-react";
+import { ChevronRight, CircleAlert, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -71,8 +71,10 @@ function initialDetailWidth(): number {
 
 export function AutomationsCatalog({
   onDetailPaneLayoutChange,
+  workspacePath = "",
 }: {
   onDetailPaneLayoutChange?: (layout: AutomationDetailPaneLayout) => void;
+  workspacePath?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const catalogRef = useRef<HTMLElement>(null);
@@ -173,6 +175,25 @@ export function AutomationsCatalog({
     }
   }
 
+  async function create(): Promise<void> {
+    setError("");
+    try {
+      const result = await window.wuu.createAutomation({
+        title: t("automations.newTitle"),
+        prompt: "",
+        schedule: "0 9 * * 1-5",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        mode: "new_thread",
+        recurring: true,
+        paused: true,
+      });
+      setTasks((current) => [result.task, ...current]);
+      setSelectedID(result.task.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : translateCurrent("automations.createFailed"));
+    }
+  }
+
   const showSaveRejectedNotice = useCallback((): void => {
     setSaveNotice({
       id: Date.now(),
@@ -205,6 +226,10 @@ export function AutomationsCatalog({
             <span>{t("automations.subtitle")}</span>
           </div>
           <div className="catalog-page-controls">
+            <button className="settings-button catalog-create" type="button" onClick={() => void create()}>
+              <Plus className="icon" aria-hidden="true" />
+              <span>{t("automations.create")}</span>
+            </button>
             <CatalogSearchField
               value={query}
               placeholder={t("automations.searchPlaceholder")}
@@ -265,7 +290,8 @@ export function AutomationsCatalog({
             onDoubleClick={() => updateDetailWidth(AUTOMATION_DETAIL_DEFAULT_WIDTH)}
           />
           <div className="automations-detail">
-            <AutomationDetail key={selected.id} task={selected} onUpdate={update} onRemove={remove}
+            <AutomationDetail key={selected.id} task={selected} workspacePath={workspacePath}
+              onUpdate={update} onRemove={remove}
               onSaveRejected={showSaveRejectedNotice} onClose={() => setSelectedID("")} />
           </div>
         </>
@@ -486,8 +512,9 @@ function AutomationScheduleEditor({
   );
 }
 
-function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }: {
+function AutomationDetail({ task, workspacePath, onUpdate, onRemove, onSaveRejected, onClose }: {
   task: AutomationTask;
+  workspacePath: string;
   onUpdate: (params: AutomationUpdateParams) => Promise<void>;
   onRemove: (task: AutomationTask) => Promise<void>;
   onSaveRejected: () => void;
@@ -579,7 +606,7 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
           <span>{t("automations.prompt")}</span>
           <textarea
             className="settings-input settings-textarea"
-            rows={7}
+            rows={4}
             value={draft.prompt}
             onChange={(event) => updateDraft({ ...latestDraftRef.current, prompt: event.currentTarget.value })}
             onBlur={() => void persistDraft()}
@@ -588,6 +615,10 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
       </section>
       <section className="automation-detail-section">
         <div className="automation-detail-grid">
+          <div className="automation-workspace-field">
+            <span>{t("automations.workspace")}</span>
+            <strong title={workspacePath}>{workspacePath || t("automations.workspaceUnavailable")}</strong>
+          </div>
           <AutomationScheduleEditor
             schedule={draft.schedule}
             timezone={draft.timezone}

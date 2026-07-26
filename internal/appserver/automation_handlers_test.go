@@ -49,3 +49,26 @@ func TestAutomationListRPC(t *testing.T) {
 		t.Fatalf("edited task = %#v", edited.Task)
 	}
 }
+
+func TestAutomationCreateRPCPersistsPausedWorkspaceDraft(t *testing.T) {
+	stateDir := t.TempDir()
+	manager := automation.NewManager(automation.Config{StateDir: stateDir})
+	defer manager.Stop()
+	var out bytes.Buffer
+	server := New(&runtime.Session{
+		StateDir: stateDir, SessionDir: filepath.Join(stateDir, "sessions"), AutomationManager: manager,
+	}, &out)
+	defer server.Close()
+
+	request := []byte(`{"id":"create","method":"automation/create","params":{"title":"New automation","prompt":"","schedule":"0 9 * * 1-5","timezone":"UTC","mode":"new_thread","recurring":true,"paused":true}}`)
+	if err := server.handleLine(context.Background(), request); err != nil {
+		t.Fatalf("automation/create error = %v", err)
+	}
+	created := remarshal[AutomationCreateResult](t, responseByID(t, parseOutput(t, out.String()), "create")["result"])
+	if created.Task.Title != "New automation" || created.Task.Prompt != "" || !created.Task.Recurring || !created.Task.Paused {
+		t.Fatalf("created task = %#v", created.Task)
+	}
+	if created.Task.Metadata["durability"] != "durable" {
+		t.Fatalf("durability = %q", created.Task.Metadata["durability"])
+	}
+}

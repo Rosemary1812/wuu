@@ -50,6 +50,14 @@ func TestBuildTurnError_InvalidRequestCategory(t *testing.T) {
 	}
 }
 
+func TestBuildTurnError_InternalMessageSequenceIsNotNetwork(t *testing.T) {
+	err := errors.New("stream request failed: invalid message sequence after tool-call history repair: message 2: system message must precede all non-system messages")
+	out := BuildTurnError(err, "openai-codex")
+	if out.Category != "internal" || out.Code != "invalid_message_sequence" {
+		t.Fatalf("turn error = %#v, want internal invalid_message_sequence", out)
+	}
+}
+
 func TestBuildTurnError_TerminalUsageLimit(t *testing.T) {
 	tests := []error{
 		&providers.HTTPError{

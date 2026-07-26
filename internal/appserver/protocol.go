@@ -47,6 +47,7 @@ const (
 	MethodChannelMentionAck    = "channel/human-mention/ack"
 	MethodAutomationList       = "automation/list"
 	MethodAutomationRuns       = "automation/run/list"
+	MethodAutomationCreate     = "automation/create"
 	MethodAutomationUpdate     = "automation/update"
 	MethodAutomationRemove     = "automation/remove"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
@@ -1668,6 +1669,21 @@ type AutomationListResult struct {
 
 type AutomationRunsResult struct {
 	Runs []automation.Run `json:"runs"`
+}
+
+type AutomationCreateParams struct {
+	Title             string          `json:"title"`
+	Prompt            string          `json:"prompt"`
+	Schedule          string          `json:"schedule"`
+	Timezone          string          `json:"timezone,omitempty"`
+	Mode              automation.Mode `json:"mode,omitempty"`
+	HeartbeatThreadID string          `json:"heartbeat_thread_id,omitempty"`
+	Recurring         bool            `json:"recurring"`
+	Paused            bool            `json:"paused,omitempty"`
+}
+
+type AutomationCreateResult struct {
+	Task automation.Task `json:"task"`
 }
 
 type AutomationUpdateParams struct {

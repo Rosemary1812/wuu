@@ -4330,7 +4330,10 @@ export function App(): JSX.Element {
                 onTrySkill={trySkillFromCatalog}
               />
             ) : showingAutomationsCatalog ? (
-              <AutomationsCatalog onDetailPaneLayoutChange={setAutomationDetailPaneLayout} />
+              <AutomationsCatalog
+                workspacePath={state.activeContext?.cwd}
+                onDetailPaneLayoutChange={setAutomationDetailPaneLayout}
+              />
             ) : (
               <>
                 {!activeThreadReadOnly ? (

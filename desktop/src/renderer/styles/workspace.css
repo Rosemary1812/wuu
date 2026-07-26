@@ -2275,7 +2275,7 @@ html.resizing-workspace-terminal-split * {
   height: 7px;
   border-radius: 50%;
   background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 10%, transparent);
+  box-shadow: none;
 }
 
 .automation-state.paused {
@@ -2330,7 +2330,7 @@ html.resizing-workspace-terminal-split * {
   min-width: 0;
   container: automation-detail / inline-size;
   background: var(--paper);
-  padding: 24px clamp(20px, 3vw, 32px) 48px;
+  padding: 34px clamp(20px, 3vw, 32px) 56px;
 }
 
 .automation-detail-form {
@@ -2361,11 +2361,11 @@ html.resizing-workspace-terminal-split * {
 
 .automation-detail-section {
   display: grid;
-  gap: 16px;
+  gap: 20px;
 }
 
 .automation-detail-section + .automation-detail-section {
-  margin-top: 22px;
+  margin-top: 32px;
 }
 
 .automation-detail-form label {
@@ -2378,14 +2378,33 @@ html.resizing-workspace-terminal-split * {
 }
 
 .automation-detail-form textarea.settings-textarea {
-  min-height: 144px;
+  min-height: 96px;
+  max-height: 220px;
   line-height: 1.5;
+  resize: vertical;
 }
 
 .automation-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 12px;
+  gap: 22px 14px;
+}
+
+.automation-workspace-field {
+  display: grid;
+  min-width: 0;
+  grid-column: 1 / -1;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+}
+
+.automation-workspace-field strong {
+  overflow: hidden;
+  color: var(--ink-secondary);
+  font-weight: var(--weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .automation-schedule-editor {
@@ -2399,7 +2418,7 @@ html.resizing-workspace-terminal-split * {
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .automation-schedule-custom {

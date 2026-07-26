@@ -62,6 +62,10 @@ func BuildTurnError(err error, provider string) TurnError {
 			out.Category = "provider"
 		}
 	}
+	if isInternalMessageSequenceError(lowerMessage) {
+		out.Code = "invalid_message_sequence"
+		out.Category = "internal"
+	}
 
 	// 2. If the typed checks did not pick a category, run the agent
 	// classifier (which also walks typed errors and message substrings
@@ -432,4 +436,9 @@ func extractCodeFromMessage(message string) string {
 
 func isResponseCompletedMissingMessage(lower string) bool {
 	return strings.Contains(lower, "before response.completed")
+}
+
+func isInternalMessageSequenceError(lower string) bool {
+	return strings.Contains(lower, "invalid message sequence") ||
+		strings.Contains(lower, "system message must precede all non-system messages")
 }

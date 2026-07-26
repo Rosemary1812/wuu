@@ -155,7 +155,7 @@ func automationRequestContext(task automation.Task, run automation.Run) []agent.
 		strings.TrimSpace(task.Cron), strings.TrimSpace(task.Timezone), strings.TrimSpace(task.Mode),
 	)
 	return agent.RequestOnlyContextMessages([]providers.ChatMessage{{
-		Role: "system", Name: "automation_info", Content: content,
+		Role: "user", Name: "automation_info", Content: content,
 	}})
 }
 

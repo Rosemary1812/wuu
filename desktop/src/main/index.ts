@@ -93,6 +93,7 @@ import type {
   SkillContentParams,
   SkillContentResult,
   SkillListResult,
+  AutomationCreateParams,
   AutomationUpdateParams,
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
@@ -1371,6 +1372,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:automation-list", (event) =>
     appServerRequest(event, "automation/list"),
+  );
+  ipcMain.handle("wuu:automation-create", (event, params: AutomationCreateParams) =>
+    appServerRequest(event, "automation/create", params),
   );
   ipcMain.handle("wuu:automation-update", (event, params: AutomationUpdateParams) =>
     appServerRequest(event, "automation/update", params),

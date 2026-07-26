@@ -808,6 +808,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleAutomationList(req)
 	case MethodAutomationRuns:
 		return s.handleAutomationRuns(req)
+	case MethodAutomationCreate:
+		return s.handleAutomationCreate(req)
 	case MethodAutomationUpdate:
 		return s.handleAutomationUpdate(req)
 	case MethodAutomationRemove:

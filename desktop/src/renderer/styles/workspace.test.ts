@@ -450,3 +450,18 @@ describe("turn file diff panel layout", () => {
     expect(lineContent).toMatch(/word-break:\s*break-word;/);
   });
 });
+
+describe("automation detail rhythm", () => {
+  it("keeps the task prompt compact and bounds manual resizing", () => {
+    const textarea = cssRuleBody(".automation-detail-form textarea.settings-textarea");
+    expect(textarea).toMatch(/min-height:\s*96px;/);
+    expect(textarea).toMatch(/max-height:\s*220px;/);
+    expect(textarea).toMatch(/resize:\s*vertical;/);
+  });
+
+  it("uses a plain status dot without an outer halo", () => {
+    const status = cssRuleBody(".automation-state");
+    expect(status).toMatch(/background:\s*var\(--success\);/);
+    expect(status).toMatch(/box-shadow:\s*none;/);
+  });
+});

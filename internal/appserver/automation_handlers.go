@@ -29,6 +29,26 @@ func (s *Server) handleAutomationRuns(req Request) error {
 	return s.writeResponse(req.ID, AutomationRunsResult{Runs: runs}, nil)
 }
 
+func (s *Server) handleAutomationCreate(req Request) error {
+	if s == nil || s.rt == nil || s.rt.AutomationManager == nil {
+		return s.writeResponse(req.ID, nil, errors.New("automation manager is unavailable"))
+	}
+	var params AutomationCreateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	task, err := s.rt.AutomationManager.AddTask(automation.AddTaskParams{
+		Title: params.Title, Prompt: params.Prompt, Schedule: params.Schedule,
+		Timezone: params.Timezone, Mode: params.Mode,
+		HeartbeatThreadID: params.HeartbeatThreadID,
+		Recurring:         params.Recurring, Paused: params.Paused, Durable: true,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, AutomationCreateResult{Task: task}, nil)
+}
+
 func (s *Server) handleAutomationUpdate(req Request) error {
 	if s == nil || s.rt == nil || s.rt.AutomationManager == nil {
 		return s.writeResponse(req.ID, nil, errors.New("automation manager is unavailable"))

@@ -32,6 +32,34 @@ afterEach(() => {
 });
 
 describe("AutomationsCatalog", () => {
+  it("creates a paused automation in the current workspace", async () => {
+    const created = { ...task, id: "automation-new", title: "新自动化", prompt: "", paused: true };
+    const createAutomation = vi.fn().mockResolvedValue({ task: created });
+    installApi([], vi.fn(), createAutomation);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog workspacePath="/workspaces/example" />);
+    });
+
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("新建自动化"));
+    await act(async () => {
+      createButton?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      title: "新自动化",
+      prompt: "",
+      paused: true,
+      recurring: true,
+    }));
+    expect(container.querySelector(".automation-workspace-field")?.textContent)
+      .toContain("/workspaces/example");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.rows).toBe(4);
+  });
+
   it("separates an hourly interval from its concrete next run", async () => {
     const updateAutomation = vi.fn().mockImplementation(async (params) => ({
       task: {
@@ -252,9 +280,14 @@ async function chooseSelectMenu(trigger: HTMLButtonElement, value: string): Prom
   await act(async () => option?.click());
 }
 
-function installApi(tasks: AutomationTask[], updateAutomation = vi.fn()): void {
+function installApi(
+  tasks: AutomationTask[],
+  updateAutomation = vi.fn(),
+  createAutomation = vi.fn(),
+): void {
   const api: Partial<WuuDesktopApi> = {
     listAutomations: vi.fn().mockResolvedValue({ tasks }),
+    createAutomation,
     updateAutomation,
     removeAutomation: vi.fn().mockResolvedValue({ ok: true }),
   };
