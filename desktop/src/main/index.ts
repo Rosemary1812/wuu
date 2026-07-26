@@ -93,6 +93,7 @@ import type {
   SkillContentParams,
   SkillContentResult,
   SkillListResult,
+  AutomationUpdateParams,
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
@@ -1367,6 +1368,15 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
+  );
+  ipcMain.handle("wuu:automation-list", (event) =>
+    appServerRequest(event, "automation/list"),
+  );
+  ipcMain.handle("wuu:automation-update", (event, params: AutomationUpdateParams) =>
+    appServerRequest(event, "automation/update", params),
+  );
+  ipcMain.handle("wuu:automation-remove", (event, id: string) =>
+    appServerRequest(event, "automation/remove", { id }),
   );
   ipcMain.handle("wuu:skill-content", async (event, params: SkillContentParams): Promise<SkillContentResult> => {
     const name = typeof params?.name === "string" ? params.name : "";

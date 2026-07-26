@@ -1670,8 +1670,15 @@ type AutomationRunsResult struct {
 }
 
 type AutomationUpdateParams struct {
-	ID     string `json:"id"`
-	Paused *bool  `json:"paused"`
+	ID                string           `json:"id"`
+	Title             *string          `json:"title,omitempty"`
+	Prompt            *string          `json:"prompt,omitempty"`
+	Schedule          *string          `json:"schedule,omitempty"`
+	Timezone          *string          `json:"timezone,omitempty"`
+	Mode              *automation.Mode `json:"mode,omitempty"`
+	HeartbeatThreadID *string          `json:"heartbeat_thread_id,omitempty"`
+	Recurring         *bool            `json:"recurring,omitempty"`
+	Paused            *bool            `json:"paused,omitempty"`
 }
 
 type AutomationUpdateResult struct {

@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { Thread } from "../shared/protocol";
 import {
   activeThreadForState,
+  createAutomationsSessionTab,
   createSkillsSessionTab,
   ensureSessionTab,
   initialSplitComposerDrafts,
@@ -43,6 +44,7 @@ export type WorkspaceActionsDeps = {
 };
 
 export type WorkspaceActions = {
+  openAutomationsTab: () => void;
   openSkillsTab: () => void;
   dismissContextCompositionEntry: (id: string) => void;
   dismissInstructionFilesEntry: (id: string) => void;
@@ -69,6 +71,25 @@ export function createWorkspaceActions(
     }
     const tab = createSkillsSessionTab(state.activeContext);
     
+    deps.setSplitComposerDrafts(initialSplitComposerDrafts());
+    deps.setAppState((current) => ({
+      ...persistActiveSessionTabDraft(current, deps.getPrimaryComposerDraft()),
+      secondaryThread: undefined,
+      activePane: "primary",
+      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+      activeSessionTabID: tab.id,
+      allowThreadAutoActivation: false,
+      running: false,
+      status: "ready",
+    }));
+  }
+
+  function openAutomationsTab(): void {
+    const state = deps.getAppState();
+    if (!state.activeContext) {
+      return;
+    }
+    const tab = createAutomationsSessionTab(state.activeContext);
     deps.setSplitComposerDrafts(initialSplitComposerDrafts());
     deps.setAppState((current) => ({
       ...persistActiveSessionTabDraft(current, deps.getPrimaryComposerDraft()),
@@ -206,6 +227,7 @@ export function createWorkspaceActions(
   }
 
   return {
+    openAutomationsTab,
     openSkillsTab,
     dismissContextCompositionEntry,
     dismissInstructionFilesEntry,

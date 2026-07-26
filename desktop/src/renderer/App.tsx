@@ -174,6 +174,7 @@ import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
+import { AutomationsCatalog } from "./AutomationsCatalog";
 import { skillsAssistantPrompt, userVisibleThreads } from "./SkillsAssistant";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
@@ -1657,6 +1658,12 @@ export function App(): JSX.Element {
     !previewingLaunch &&
     currentSessionTab?.kind === "skills",
   );
+  const showingAutomationsCatalog = Boolean(
+    state.initialized &&
+    !previewingLaunch &&
+    currentSessionTab?.kind === "automations",
+  );
+  const showingManagementCatalog = showingSkillsCatalog || showingAutomationsCatalog;
   const skillsAssistantThread = skillsAssistantThreadID
     ? state.threads.find((thread) => thread.id === skillsAssistantThreadID)
     : undefined;
@@ -1665,6 +1672,8 @@ export function App(): JSX.Element {
   );
   const activeTitle = showingSkillsCatalog
     ? t("skills.title")
+    : showingAutomationsCatalog
+      ? t("automations.title")
     : resolveLocalizedText(activeThread?.preview ?? "") ||
       t("tabs.newConversation");
   const popOutWindowTitle =
@@ -1701,7 +1710,7 @@ export function App(): JSX.Element {
     ? contextCompositionEntries.filter((entry) => entry.threadID === activeThreadID)
     : [];
   const emptyConversation =
-    !showingSkillsCatalog &&
+    !showingManagementCatalog &&
     !activePendingNewThreadTurn &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
@@ -1730,7 +1739,7 @@ export function App(): JSX.Element {
     !previewingLaunch &&
     !emptyConversation &&
     !splitConversation &&
-    !showingSkillsCatalog &&
+    !showingManagementCatalog &&
     !rightPanelGlobalized;
 
   useEffect(() => {
@@ -1742,7 +1751,7 @@ export function App(): JSX.Element {
       tab.kind === "diff" &&
       (!activeThreadID ||
         tab.threadID !== activeThreadID ||
-        showingSkillsCatalog ||
+        showingManagementCatalog ||
         emptyConversation);
     if (!workspaceViewTabs.some(isStaleDiffTab)) {
       return;
@@ -1757,7 +1766,7 @@ export function App(): JSX.Element {
     activeThreadID,
     closeWorkspaceViewTabsWhere,
     emptyConversation,
-    showingSkillsCatalog,
+    showingManagementCatalog,
     workspaceActiveViewTabID,
     workspaceViewTabs,
   ]);
@@ -2865,6 +2874,7 @@ export function App(): JSX.Element {
   });
 
   const {
+    openAutomationsTab,
     openSkillsTab,
     dismissContextCompositionEntry,
     dismissInstructionFilesEntry,
@@ -3941,6 +3951,10 @@ export function App(): JSX.Element {
               setChannelsOpen(false);
               openSkillsTab();
             }}
+            onOpenAutomationsTab={() => {
+              setChannelsOpen(false);
+              openAutomationsTab();
+            }}
             groupChatEnabled={ENABLE_GROUP_CHAT}
             channelsOpen={channelsOpen}
             channelMentionCount={channelMentionCount}
@@ -4289,7 +4303,7 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
               splitConversation ? " split-scroll-region" : ""
-            }${showingSkillsCatalog ? " skills-scroll-region" : ""}`}
+            }${showingManagementCatalog ? " skills-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -4300,6 +4314,8 @@ export function App(): JSX.Element {
                 extensionInventory={state.initialized?.extension_inventory}
                 onTrySkill={trySkillFromCatalog}
               />
+            ) : showingAutomationsCatalog ? (
+              <AutomationsCatalog />
             ) : (
               <>
                 {!activeThreadReadOnly ? (

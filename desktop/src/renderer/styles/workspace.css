@@ -2156,6 +2156,54 @@ html.resizing-workspace-terminal-split * {
   background: var(--paper);
 }
 
+.automations-catalog {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 100%;
+}
+.automations-catalog.detail-open { grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr); }
+
+.automations-master { padding: 30px 28px 48px; border-right: 1px solid var(--line-subtle); }
+.automations-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.automations-filters { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--surface-3); }
+.automations-filters button { border: 0; border-radius: 9px; background: transparent; color: var(--ink-tertiary); font: inherit; padding: 7px 13px; }
+.automations-filters button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.automations-search { display: flex; align-items: center; gap: 10px; height: 42px; margin-top: 22px; padding: 0 13px; border: 1px solid var(--line-subtle); border-radius: 13px; color: var(--ink-muted); }
+.automations-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.automations-list { display: grid; gap: 6px; margin-top: 18px; }
+.automation-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-radius: 14px; background: transparent; color: var(--ink); padding: 14px; text-align: left; }
+.automation-row:hover, .automation-row.selected { background: var(--surface-3); }
+.automation-state { display: grid; width: 28px; height: 28px; place-items: center; color: var(--accent); }
+.automation-state svg { width: 18px; height: 18px; }
+.automation-state.paused { color: var(--ink-muted); }
+.automation-row-copy { display: grid; min-width: 0; gap: 5px; }
+.automation-row-copy strong, .automation-row-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-row-copy strong { font-size: 15px; font-weight: var(--weight-medium); }
+.automation-row-copy span { color: var(--ink-tertiary); font-size: 13px; }
+.automations-detail { min-width: 0; padding: 30px clamp(28px, 4vw, 52px) 48px; }
+.automation-detail-form { display: grid; max-width: 680px; gap: 22px; margin: 0 auto; }
+.automation-detail-header { display: flex; align-items: center; justify-content: space-between; }
+.automation-detail-actions { display: flex; gap: 6px; }
+.automation-status-label { color: var(--success); font-size: 14px; }.automation-status-label.paused { color: var(--ink-tertiary); }
+.automation-detail-form label { display: grid; gap: 8px; color: var(--ink-secondary); font-size: 13px; font-weight: var(--weight-medium); }
+.automation-detail-form :is(input, textarea, select) { width: 100%; box-sizing: border-box; border: 1px solid var(--line-subtle); border-radius: 12px; outline: 0; background: var(--surface-2); color: var(--ink); font: inherit; padding: 11px 12px; }
+.automation-detail-form textarea { resize: vertical; line-height: 1.5; }
+.automation-detail-form :is(input, textarea, select):focus { border-color: var(--accent); }
+.automation-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.automation-detail-form .automation-checkbox { display: flex; align-items: center; align-self: end; min-height: 42px; flex-direction: row; }
+.automation-detail-form .automation-checkbox input { width: auto; }
+.automation-detail-form footer { display: flex; justify-content: flex-end; }
+.automations-empty, .automations-error { padding: 28px 12px; color: var(--ink-tertiary); text-align: center; }
+.automations-error { color: var(--danger); }
+.automations-detail-empty { display: grid; min-height: 55vh; place-content: center; justify-items: center; gap: 12px; color: var(--ink-muted); }
+.automations-detail-empty svg { width: 28px; height: 28px; }
+
+@media (max-width: 900px) {
+  .automations-catalog.detail-open { grid-template-columns: minmax(280px, .8fr) minmax(360px, 1.2fr); }
+  .automations-master { padding-inline: 18px; }
+  .automation-detail-grid { grid-template-columns: 1fr; }
+}
+
 .skills-catalog {
   display: grid;
   grid-template-columns: minmax(0, 1080px);

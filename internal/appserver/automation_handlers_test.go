@@ -40,4 +40,12 @@ func TestAutomationListRPC(t *testing.T) {
 	if !updated.Task.Paused {
 		t.Fatalf("updated task = %#v", updated.Task)
 	}
+	out.Reset()
+	if err := server.handleLine(context.Background(), []byte(`{"id":"edit","method":"automation/update","params":{"id":"`+taskID+`","title":"Daily inspect","prompt":"inspect carefully","schedule":"0 9 * * 1-5","timezone":"UTC","mode":"new_thread","recurring":true}}`)); err != nil {
+		t.Fatalf("automation/update fields error = %v", err)
+	}
+	edited := remarshal[AutomationUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "edit")["result"])
+	if edited.Task.Title != "Daily inspect" || edited.Task.Prompt != "inspect carefully" || edited.Task.Cron != "0 9 * * 1-5" || !edited.Task.Recurring {
+		t.Fatalf("edited task = %#v", edited.Task)
+	}
 }

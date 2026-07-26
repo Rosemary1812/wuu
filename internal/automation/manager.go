@@ -42,6 +42,17 @@ type AddTaskParams struct {
 	Durable           bool
 }
 
+type UpdateTaskParams struct {
+	Title             *string
+	Prompt            *string
+	Schedule          *string
+	Timezone          *string
+	Mode              *Mode
+	HeartbeatThreadID *string
+	Recurring         *bool
+	Paused            *bool
+}
+
 type ExecutionResult struct {
 	Status   RunStatus
 	ThreadID string
@@ -279,6 +290,88 @@ func (m *Manager) SetPaused(id string, paused bool) (Task, error) {
 		return withTaskDurability(task, "session-only"), nil
 	}
 	return Task{}, fmt.Errorf("automation task %q not found", id)
+}
+
+func (m *Manager) UpdateTask(id string, params UpdateTaskParams) (Task, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Task{}, errors.New("automation id is required")
+	}
+	tasks, err := m.ListTasks()
+	if err != nil {
+		return Task{}, err
+	}
+	var task Task
+	found := false
+	for _, candidate := range tasks {
+		if candidate.ID == id {
+			task, found = candidate, true
+			break
+		}
+	}
+	if !found {
+		return Task{}, fmt.Errorf("automation %q not found", id)
+	}
+	if params.Title != nil {
+		task.Title = strings.TrimSpace(*params.Title)
+	}
+	if params.Prompt != nil {
+		task.Prompt = strings.TrimSpace(*params.Prompt)
+	}
+	if task.Prompt == "" {
+		return Task{}, errors.New("automation prompt is required")
+	}
+	if params.Schedule != nil {
+		task.Cron = strings.TrimSpace(*params.Schedule)
+	}
+	if _, err := cron.ParseCronExpression(task.Cron); err != nil {
+		return Task{}, fmt.Errorf("invalid automation schedule: %w", err)
+	}
+	if params.Timezone != nil {
+		task.Timezone = strings.TrimSpace(*params.Timezone)
+	}
+	if task.Timezone == "" {
+		task.Timezone = time.Local.String()
+	}
+	if _, err := time.LoadLocation(task.Timezone); err != nil {
+		return Task{}, fmt.Errorf("invalid automation timezone %q: %w", task.Timezone, err)
+	}
+	if params.Mode != nil {
+		task.Mode = string(*params.Mode)
+	}
+	if task.Mode != string(ModeNewThread) && task.Mode != string(ModeThreadHeartbeat) {
+		return Task{}, fmt.Errorf("invalid automation mode %q", task.Mode)
+	}
+	if params.HeartbeatThreadID != nil {
+		task.HeartbeatThreadID = strings.TrimSpace(*params.HeartbeatThreadID)
+	}
+	if task.Mode == string(ModeThreadHeartbeat) && task.HeartbeatThreadID == "" {
+		return Task{}, errors.New("thread heartbeat automation requires a thread id")
+	}
+	if params.Recurring != nil {
+		task.Recurring = *params.Recurring
+	}
+	if params.Paused != nil {
+		task.Paused = *params.Paused
+	}
+	if task.Title == "" {
+		task.Title = task.Prompt
+	}
+	if _, err := task.NextFireAt(); err != nil {
+		return Task{}, fmt.Errorf("automation has no valid future run: %w", err)
+	}
+	if task.Metadata["durability"] == "durable" {
+		if updated, found, err := m.durableStore.Replace(task); err != nil {
+			return Task{}, err
+		} else if found {
+			return withTaskDurability(updated, "durable"), nil
+		}
+	} else if updated, found, err := m.sessionStore.Replace(task); err != nil {
+		return Task{}, err
+	} else if found {
+		return withTaskDurability(updated, "session-only"), nil
+	}
+	return Task{}, fmt.Errorf("automation %q not found", id)
 }
 
 func (m *Manager) Fire(ctx context.Context, task Task) error {
