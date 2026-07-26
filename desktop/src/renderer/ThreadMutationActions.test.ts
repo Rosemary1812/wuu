@@ -181,6 +181,8 @@ describe("createThreadMutationActions", () => {
     const outcome = await harness.actions.archiveThread(summary(base));
     expect(outcome).toEqual({ ok: true });
     expect(api.archiveThread).toHaveBeenCalledWith(base.id, true);
+    expect(harness.removeCachedSidebarThread).toHaveBeenCalledWith(base.id);
+    expect(harness.updateCachedSidebarThread).not.toHaveBeenCalled();
     expect(harness.clearThreadPendingComposerMessages).toHaveBeenCalledWith(
       base.id,
     );
