@@ -2957,9 +2957,15 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		turnAdmissionHooks{afterLease: func(admitted *threadState, _ *providers.ChatMessage) error {
 			var runtimeErr error
 			threadRuntime, runtimeErr = s.ensureThreadRuntimeAfterAdmission(admitted)
-			return runtimeErr
+			if runtimeErr != nil {
+				return runtimeErr
+			}
+			return gateAlreadyDeliveredCompletions(admitted.History, threadRuntime, snapshot.AgentCompletionResultIDs, snapshot.ProcessCompletionIDs)
 		}},
 	)
+	if errors.Is(err, errAgentCompletionAlreadyDelivered) {
+		return true, nil
+	}
 	if err != nil || !ok {
 		return ok, err
 	}
@@ -2990,6 +2996,59 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	}
 	launch.Commit()
 	return true, nil
+}
+
+func gateAlreadyDeliveredCompletions(history []providers.ChatMessage, threadRuntime *runtime.ThreadRuntime, agentResultIDs, processIDs []string) error {
+	agentResultIDs = uniqueSortedCompletionIDs(agentResultIDs)
+	processIDs = uniqueSortedCompletionIDs(processIDs)
+	if len(agentResultIDs) == 0 && len(processIDs) == 0 {
+		return nil
+	}
+	if len(agentResultIDs) > 0 {
+		if threadRuntime == nil || threadRuntime.AgentControl == nil {
+			return errors.Join(errRetryableTurnAdmission, errors.New("agent completion control is unavailable"))
+		}
+		for _, resultID := range agentResultIDs {
+			consumer, err := threadRuntime.AgentControl.AgentResultDeliveryConsumer(resultID)
+			if err != nil {
+				return errors.Join(errRetryableTurnAdmission, err)
+			}
+			if consumer != "" {
+				return errAgentCompletionAlreadyDelivered
+			}
+			if agentCompletionMarkerAnswered(history, resultID) {
+				claimed, consumedBy, err := threadRuntime.AgentControl.ClaimAgentResultDeliveryID(resultID, "auto_completion")
+				if err != nil {
+					return errors.Join(errRetryableTurnAdmission, err)
+				}
+				if !claimed && consumedBy == "" {
+					return errors.Join(errRetryableTurnAdmission, fmt.Errorf("agent result delivery %q is unavailable", resultID))
+				}
+				return errAgentCompletionAlreadyDelivered
+			}
+		}
+	}
+	if len(processIDs) > 0 {
+		if threadRuntime == nil || threadRuntime.ProcessManager == nil {
+			return errors.Join(errRetryableTurnAdmission, errors.New("process completion manager is unavailable"))
+		}
+		for _, processID := range processIDs {
+			pending, err := threadRuntime.ProcessManager.CompletionPending(processID)
+			if err != nil {
+				return errors.Join(errRetryableTurnAdmission, err)
+			}
+			if !pending {
+				return errAgentCompletionAlreadyDelivered
+			}
+			if processCompletionMarkerAnswered(history, processID) {
+				if _, err := threadRuntime.ProcessManager.MarkCompletionDelivered(processID, "history_answer"); err != nil {
+					return errors.Join(errRetryableTurnAdmission, err)
+				}
+				return errAgentCompletionAlreadyDelivered
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) takeNextQueuedUserTurn(threadID string) (queuedTurn, bool) {
@@ -3346,42 +3405,8 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 				if err != nil {
 					return err
 				}
-				for _, resultID := range completionResultIDs {
-					consumer, err := threadRuntime.AgentControl.AgentResultDeliveryConsumer(resultID)
-					if err != nil {
-						return errors.Join(errRetryableTurnAdmission, err)
-					}
-					if consumer != "" {
-						return errAgentCompletionAlreadyDelivered
-					}
-					if agentCompletionMarkerAnswered(admitted.History, resultID) {
-						claimed, consumedBy, err := threadRuntime.AgentControl.ClaimAgentResultDeliveryID(resultID, "auto_completion")
-						if err != nil {
-							return errors.Join(errRetryableTurnAdmission, err)
-						}
-						if !claimed && consumedBy == "" {
-							return errors.Join(errRetryableTurnAdmission, fmt.Errorf("agent result delivery %q is unavailable", resultID))
-						}
-						return errAgentCompletionAlreadyDelivered
-					}
-				}
-				for _, processID := range processCompletionIDs {
-					if threadRuntime.ProcessManager == nil {
-						return errors.Join(errRetryableTurnAdmission, errors.New("process completion manager is unavailable"))
-					}
-					pending, err := threadRuntime.ProcessManager.CompletionPending(processID)
-					if err != nil {
-						return errors.Join(errRetryableTurnAdmission, err)
-					}
-					if !pending {
-						return errAgentCompletionAlreadyDelivered
-					}
-					if processCompletionMarkerAnswered(admitted.History, processID) {
-						if _, err := threadRuntime.ProcessManager.MarkCompletionDelivered(processID, "history_answer"); err != nil {
-							return errors.Join(errRetryableTurnAdmission, err)
-						}
-						return errAgentCompletionAlreadyDelivered
-					}
+				if err := gateAlreadyDeliveredCompletions(admitted.History, threadRuntime, completionResultIDs, processCompletionIDs); err != nil {
+					return err
 				}
 				*admittedMsg = combineAgentCompletionMessages(pending)
 				if clientID := agentCompletionClientID(pending); clientID != "" {
