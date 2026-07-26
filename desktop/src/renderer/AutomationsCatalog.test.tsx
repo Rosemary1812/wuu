@@ -33,7 +33,14 @@ afterEach(() => {
 
 describe("AutomationsCatalog", () => {
   it("separates an hourly interval from its concrete next run", async () => {
-    installApi([{ ...task, cron: "0 * * * *" }]);
+    const updateAutomation = vi.fn().mockImplementation(async (params) => ({
+      task: {
+        ...task,
+        cron: params.schedule ?? "0 * * * *",
+        recurring: params.recurring ?? true,
+      },
+    }));
+    installApi([{ ...task, cron: "0 * * * *" }], updateAutomation);
     await act(async () => {
       root = createRoot(container);
       root.render(<AutomationsCatalog />);
@@ -42,6 +49,41 @@ describe("AutomationsCatalog", () => {
     expect(container.textContent).toContain("每小时");
     expect(container.textContent).toContain("下次");
     expect(container.textContent).not.toContain("第 00 分钟");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".automation-row")?.click());
+    expect(container.querySelector('[aria-label="执行方式"]')?.textContent).toContain("重复执行");
+    expect(container.querySelector('[aria-label="执行分钟"]')?.textContent).toContain(":00");
+    expect(container.querySelector(".automation-schedule-controls select")).toBeNull();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="执行分钟"]')?.click());
+    expect(document.body.querySelectorAll(".minute-clock-tick")).toHaveLength(60);
+    const minute50 = document.body.querySelector<HTMLButtonElement>('[data-minute="50"]');
+    expect(minute50).toBeTruthy();
+    await act(async () => {
+      minute50?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ schedule: "50 * * * *" }));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="执行分钟"]')?.click());
+    const clockFace = document.body.querySelector<HTMLDivElement>('.minute-clock-face[role="slider"]');
+    await act(async () => clockFace?.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      bubbles: true,
+    })));
+    expect(clockFace?.getAttribute("aria-valuenow")).toBe("51");
+    await act(async () => {
+      clockFace?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ schedule: "51 * * * *" }));
+
+    const executionMode = container.querySelector<HTMLButtonElement>('[aria-label="执行方式"]');
+    await chooseSelectMenu(executionMode!, "once");
+    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ recurring: false }));
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it("opens the detail sidebar only after selecting a task", async () => {
@@ -145,8 +187,8 @@ describe("AutomationsCatalog", () => {
     });
     await act(async () => container.querySelector<HTMLButtonElement>(".automation-row")?.click());
 
-    expect(container.querySelector<HTMLSelectElement>(".automation-schedule-controls select")?.value)
-      .toBe("weekdays");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="运行间隔"]')?.textContent)
+      .toContain("工作日");
     expect(container.textContent).toContain("工作日");
     expect(container.textContent).toContain("下次执行");
     expect(container.textContent).not.toContain("Cron 表达式");
@@ -174,11 +216,9 @@ describe("AutomationsCatalog", () => {
     });
     await act(async () => container.querySelector<HTMLButtonElement>(".automation-row")?.click());
 
-    const frequency = container.querySelector<HTMLSelectElement>(".automation-schedule-controls select");
-    expect(frequency?.value).toBe("weekdays");
-    await act(async () => {
-      setSelectValue(frequency!, "custom");
-    });
+    const frequency = container.querySelector<HTMLButtonElement>('[aria-label="运行间隔"]');
+    expect(frequency?.textContent).toContain("工作日");
+    await chooseSelectMenu(frequency!, "custom");
     const schedule = container.querySelector<HTMLInputElement>('input[value="0 8 * * 1-5"]');
     expect(schedule).toBeTruthy();
     await act(async () => {
@@ -202,10 +242,14 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function setSelectValue(select: HTMLSelectElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+async function chooseSelectMenu(trigger: HTMLButtonElement, value: string): Promise<void> {
+  await act(async () => {
+    trigger.click();
+    await Promise.resolve();
+  });
+  const option = document.body.querySelector<HTMLButtonElement>(`.select-menu-item[data-value="${value}"]`);
+  expect(option).toBeTruthy();
+  await act(async () => option?.click());
 }
 
 function installApi(tasks: AutomationTask[], updateAutomation = vi.fn()): void {

@@ -2435,23 +2435,6 @@ html.resizing-workspace-terminal-split * {
   white-space: nowrap;
 }
 
-.automation-detail-form .automation-checkbox {
-  display: flex;
-  min-height: 32px;
-  align-self: end;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink);
-}
-
-.automation-detail-form .automation-checkbox input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--gray-900);
-}
-
 .automations-empty,
 .automations-error {
   padding: 28px 12px;

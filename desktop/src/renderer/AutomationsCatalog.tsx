@@ -21,6 +21,8 @@ import {
 } from "./AutomationSchedule";
 import { CatalogSearchField } from "./CatalogSearchField";
 import { translateCurrent, useI18n } from "./i18n";
+import { MinuteClockPicker } from "./MinuteClockPicker";
+import { SelectMenu } from "./SelectMenu";
 import { TopNotice } from "./TopNotice";
 
 type Filter = "all" | "active" | "paused";
@@ -349,12 +351,16 @@ function automationNextExecutionText(cron: string, timezone: string | undefined,
 function AutomationScheduleEditor({
   schedule,
   timezone,
+  recurring,
   onScheduleChange,
+  onRecurringChange,
   onCommit,
 }: {
   schedule: string;
   timezone: string;
+  recurring: boolean;
   onScheduleChange: (schedule: string, commit: boolean) => void;
+  onRecurringChange: (recurring: boolean) => void;
   onCommit: () => void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -378,45 +384,60 @@ function AutomationScheduleEditor({
     <div className="automation-schedule-editor">
       <div className="automation-schedule-controls">
         <label>
+          <span>{t("automations.executionMode")}</span>
+          <SelectMenu
+            triggerClassName="settings-select-trigger"
+            ariaLabel={t("automations.executionMode")}
+            value={recurring ? "recurring" : "once"}
+            onChange={(value) => onRecurringChange(value === "recurring")}
+            options={[
+              { value: "recurring", label: t("automations.executionMode.recurring") },
+              { value: "once", label: t("automations.executionMode.once") },
+            ]}
+          />
+        </label>
+        <label>
           <span>{t("automations.frequency")}</span>
-          <select
-            className="settings-select"
+          <SelectMenu
+            triggerClassName="settings-select-trigger"
+            ariaLabel={t("automations.frequency")}
             value={kind}
-            onChange={(event) => {
-              const nextKind = event.currentTarget.value as AutomationScheduleKind;
+            onChange={(value) => {
+              const nextKind = value as AutomationScheduleKind;
               setKind(nextKind);
               if (nextKind !== "custom") {
                 onScheduleChange(defaultCronForScheduleKind(nextKind, schedule), true);
               }
             }}
-          >
-            {(["minutes", "hourly", "daily", "weekdays", "weekly", "custom"] as const).map((value) => (
-              <option key={value} value={value}>{t(`automations.frequency.${value}`)}</option>
-            ))}
-          </select>
+            options={(["minutes", "hourly", "daily", "weekdays", "weekly", "custom"] as const).map((value) => ({
+              value,
+              label: t(`automations.frequency.${value}`),
+            }))}
+          />
         </label>
         {kind === "minutes" ? (
           <label>
             <span>{t("automations.interval")}</span>
-            <select className="settings-select" value={editor.interval} onChange={(event) => {
-              updateCommon({ ...editor, kind, interval: Number(event.currentTarget.value) });
-            }}>
-              {[5, 10, 15, 30].map((value) => (
-                <option key={value} value={value}>{t("automations.intervalMinutes", { count: value })}</option>
-              ))}
-            </select>
+            <SelectMenu
+              triggerClassName="settings-select-trigger"
+              ariaLabel={t("automations.interval")}
+              value={String(editor.interval)}
+              onChange={(value) => updateCommon({ ...editor, kind, interval: Number(value) })}
+              options={[5, 10, 15, 30].map((value) => ({
+                value: String(value),
+                label: t("automations.intervalMinutes", { count: value }),
+              }))}
+            />
           </label>
         ) : null}
         {kind === "hourly" ? (
           <label>
-            <span>{t("automations.minuteOfHour")}</span>
-            <select className="settings-select" value={editor.minute} onChange={(event) => {
-              updateCommon({ ...editor, kind, minute: Number(event.currentTarget.value) });
-            }}>
-              {Array.from({ length: 60 }, (_, value) => (
-                <option key={value} value={value}>{String(value).padStart(2, "0")}</option>
-              ))}
-            </select>
+            <span>{t("automations.executionMinute")}</span>
+            <MinuteClockPicker
+              minute={editor.minute}
+              ariaLabel={t("automations.executionMinute")}
+              onChange={(minute) => updateCommon({ ...editor, kind, minute })}
+            />
           </label>
         ) : null}
         {kind === "daily" || kind === "weekdays" || kind === "weekly" ? (
@@ -430,13 +451,16 @@ function AutomationScheduleEditor({
         {kind === "weekly" ? (
           <label>
             <span>{t("automations.weekday")}</span>
-            <select className="settings-select" value={editor.weekday} onChange={(event) => {
-              updateCommon({ ...editor, kind, weekday: Number(event.currentTarget.value) });
-            }}>
-              {Array.from({ length: 7 }, (_, value) => (
-                <option key={value} value={value}>{t(AUTOMATION_WEEKDAY_KEYS[value])}</option>
-              ))}
-            </select>
+            <SelectMenu
+              triggerClassName="settings-select-trigger"
+              ariaLabel={t("automations.weekday")}
+              value={String(editor.weekday)}
+              onChange={(value) => updateCommon({ ...editor, kind, weekday: Number(value) })}
+              options={Array.from({ length: 7 }, (_, value) => ({
+                value: String(value),
+                label: t(AUTOMATION_WEEKDAY_KEYS[value]),
+              }))}
+            />
           </label>
         ) : null}
         {kind === "custom" ? (
@@ -567,10 +591,16 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
           <AutomationScheduleEditor
             schedule={draft.schedule}
             timezone={draft.timezone}
+            recurring={draft.recurring}
             onScheduleChange={(schedule, commit) => {
               const next = { ...latestDraftRef.current, schedule };
               updateDraft(next);
               if (commit) void persistDraft(next);
+            }}
+            onRecurringChange={(recurring) => {
+              const next = { ...latestDraftRef.current, recurring };
+              updateDraft(next);
+              void persistDraft(next);
             }}
             onCommit={() => void persistDraft()}
           />
@@ -582,22 +612,20 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
           </label>
           <label>
             <span>{t("automations.mode")}</span>
-            <select className="settings-select" value={draft.mode} onChange={(event) => {
-              const next = { ...latestDraftRef.current, mode: event.currentTarget.value as AutomationDraft["mode"] };
-              updateDraft(next);
-              void persistDraft(next);
-            }}>
-              <option value="new_thread">{t("automations.mode.newThread")}</option>
-              <option value="thread_heartbeat">{t("automations.mode.heartbeat")}</option>
-            </select>
-          </label>
-          <label className="automation-checkbox">
-            <input type="checkbox" checked={draft.recurring} onChange={(event) => {
-              const next = { ...latestDraftRef.current, recurring: event.currentTarget.checked };
-              updateDraft(next);
-              void persistDraft(next);
-            }} />
-            <span>{t("automations.recurring")}</span>
+            <SelectMenu
+              triggerClassName="settings-select-trigger"
+              ariaLabel={t("automations.mode")}
+              value={draft.mode}
+              onChange={(value) => {
+                const next = { ...latestDraftRef.current, mode: value as AutomationDraft["mode"] };
+                updateDraft(next);
+                void persistDraft(next);
+              }}
+              options={[
+                { value: "new_thread", label: t("automations.mode.newThread") },
+                { value: "thread_heartbeat", label: t("automations.mode.heartbeat") },
+              ]}
+            />
           </label>
         </div>
         {draft.mode === "thread_heartbeat" ? (
