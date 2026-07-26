@@ -2012,6 +2012,7 @@ type SettingsUsageResponse struct {
 	GeneratedAt     string               `json:"generated_at"`
 	Metrics         SettingsUsageMetrics `json:"metrics"`
 	ModelBreakdowns []insight.ModelUsage `json:"model_breakdowns"`
+	SkillUsage      []insight.SkillUsage `json:"skill_usage"`
 	Days            []SettingsUsageDay   `json:"days"`
 }
 

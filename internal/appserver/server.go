@@ -154,6 +154,9 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
+	settingsUsageMu    sync.Mutex
+	settingsUsageCache *settingsUsageCacheEntry
+
 	// clientCalls is the pending table for server-initiated requests over the
 	// negotiated reverse-RPC channel. Keyed by the
 	// "srv-<seq>" id the core mints; each value is a buffered(1) chan that the
