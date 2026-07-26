@@ -696,7 +696,7 @@ footer .giant{
   display:flex;align-items:baseline;justify-content:center;
   font-weight:var(--fw-bold);letter-spacing:-.05em;line-height:.78;
   font-size:clamp(180px,32vw,460px);
-  margin-top:24px;transform:translateY(18%);
+  margin-top:24px;
   color:var(--foreground);opacity:.92;
 }
 footer .giant i{width:.16em;height:.16em;border-radius:50%;background:var(--accent);margin-left:.04em;transform:translateY(-.06em)}
@@ -741,7 +741,6 @@ html:has(body.entry-locked){overflow:hidden}
 /* 视差（CSS 变量避免与既有 transform 冲突） */
 [data-plx]{transform:translate3d(0,var(--plx,0px),0);will-change:transform}
 .plx-img{transform:scale(1.12) translate3d(0,var(--plx,0px),0)}
-footer .giant[data-plx]{transform:translateY(calc(18% + var(--plx,0px)))}
 
 /* 导航悬停：文字克隆滑动 */
 #nav .links a{position:relative;overflow:hidden;display:inline-block}
@@ -1847,7 +1846,6 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
   plxSet(document.querySelector('.hero-window'), -28);
   document.querySelectorAll('.demo-cell .window').forEach(el=> el.dataset.plx = -24);
   document.querySelectorAll('#news .imgwrap img').forEach(el=>{ el.dataset.plx = -36; el.classList.add('plx-img'); });
-  plxSet(document.querySelector('footer .giant'), 80);
 
   if(reduceMotion) return;
   const smooth = document.getElementById('smooth');
@@ -1872,6 +1870,7 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     });
   }
   const plx = [...document.querySelectorAll('[data-plx]')];
+  const giant = document.querySelector('footer .giant');
   (function loop(){
     if(smoothOn){
       cur += (scrollY - cur)*.1;
@@ -1885,6 +1884,11 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
       const r = el.getBoundingClientRect();
       if(r.bottom < -120 || r.top > vh + 120) continue;
       el.style.setProperty('--plx', ((r.top + r.height/2 - vh/2)/vh * el.dataset.plx).toFixed(1) + 'px');
+    }
+    if(giant){
+      /* 按距页底的剩余滚动量升起：滚到最底归零，完整显示 */
+      const rest = Math.max(0, document.documentElement.scrollHeight - vh - (smoothOn ? cur : scrollY));
+      giant.style.transform = `translate3d(0,${Math.min(150, rest*.22).toFixed(1)}px,0)`;
     }
     requestAnimationFrame(loop);
   })();
