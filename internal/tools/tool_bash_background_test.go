@@ -105,6 +105,9 @@ func TestBashUpdateBackgroundScheduleLifecycle(t *testing.T) {
 	if record.RecheckMinutes != 10 || record.NextRecheckAt.IsZero() {
 		t.Fatalf("schedule not persisted: %+v", record)
 	}
+	if !record.TTY {
+		t.Fatalf("background commands should default to an interactive PTY: %+v", record)
+	}
 
 	cancelResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -115,6 +118,41 @@ func TestBashUpdateBackgroundScheduleLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(cancelResp, `"recheck_minutes":0`) {
 		t.Fatalf("cancellation should report recheck_minutes 0: %s", cancelResp)
+	}
+}
+
+func TestBashStartBackgroundAllowsExplicitLogOnlyMode(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	defer func() { _ = manager.CleanupSession() }()
+	kit.SetProcessManager(manager)
+
+	response, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"sleep 60","tty":false}`,
+	})
+	if err != nil {
+		t.Fatalf("start background: %v", err)
+	}
+	var started struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(response), &started); err != nil || started.ID == "" {
+		t.Fatalf("parse start response: %v\n%s", err, response)
+	}
+	record, err := manager.Get(started.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.TTY {
+		t.Fatalf("tty=false should preserve log-only background execution: %+v", record)
 	}
 }
 

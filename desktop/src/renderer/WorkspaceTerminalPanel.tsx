@@ -1,5 +1,5 @@
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal as XtermTerminal, type ITheme } from "@xterm/xterm";
+import { Terminal as XtermTerminal, type ITerminalOptions, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { CheckCircle2, Clock3, Plus, Square, SquareTerminal, Terminal, X, XCircle } from "lucide-react";
 import {
@@ -72,6 +72,26 @@ function workspaceTerminalTheme(theme: AppliedTheme): ITheme {
     red: "#b42318",
     selectionBackground: "#d7e9ff",
     yellow: "#ffc21a",
+  };
+}
+
+function workspaceTerminalOptions({
+  interactive,
+  readOnly = false,
+}: {
+  interactive: boolean;
+  readOnly?: boolean;
+}): ITerminalOptions {
+  return {
+    allowTransparency: false,
+    convertEol: !interactive,
+    cursorBlink: interactive,
+    disableStdin: readOnly,
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: 12,
+    lineHeight: 1.45,
+    scrollback: 10000,
+    theme: workspaceTerminalTheme(currentAppliedTheme()),
   };
 }
 
@@ -605,17 +625,10 @@ function AgentTerminalPane({
     let offset = 0;
     setTerminalError(undefined);
 
-    const terminal = new XtermTerminal({
-      allowTransparency: false,
-      convertEol: !run.tty,
-      cursorBlink: run.execution === "managed" && run.tty,
-      disableStdin: true,
-      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-      fontSize: 12,
-      lineHeight: 1.45,
-      scrollback: 10000,
-      theme: workspaceTerminalTheme(currentAppliedTheme()),
-    });
+    const terminal = new XtermTerminal(workspaceTerminalOptions({
+      interactive: run.execution === "managed" && run.tty,
+      readOnly: true,
+    }));
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
@@ -879,16 +892,7 @@ function UserTerminalPane({
     setTerminalState("starting");
     pendingTerminalEventsRef.current.clear();
 
-    const terminal = new XtermTerminal({
-      allowTransparency: false,
-      convertEol: false,
-      cursorBlink: true,
-      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-      fontSize: 12,
-      lineHeight: 1.45,
-      scrollback: 5000,
-      theme: workspaceTerminalTheme(currentAppliedTheme()),
-    });
+    const terminal = new XtermTerminal(workspaceTerminalOptions({ interactive: true }));
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);

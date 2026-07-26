@@ -556,7 +556,7 @@ func TestStartTTYProvidesTerminalSemantics(t *testing.T) {
 	root := t.TempDir()
 	m, _ := NewManager(root, filepath.Join(root, "state", "runtime"))
 	ttyProc, err := m.Start(context.Background(), StartOptions{
-		Command:   "if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; sleep 1",
+		Command:   "if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; printf 'ENV=%s|%s|%s|%s\\n' \"$TERM\" \"$COLORTERM\" \"$CLICOLOR\" \"$FORCE_COLOR\"; printf '\\033[31mCOLOR_RED\\033[0m\\n'; sleep 1",
 		OwnerKind: OwnerMainAgent,
 		OwnerID:   "main",
 		Lifecycle: LifecycleSession,
@@ -584,6 +584,12 @@ func TestStartTTYProvidesTerminalSemantics(t *testing.T) {
 	}
 	if !ttyOut.Process.TTY || !strings.Contains(ttyOut.Output, "MODE_TTY") {
 		t.Fatalf("expected tty process output, got %+v output=%q", ttyOut.Process, ttyOut.Output)
+	}
+	if !strings.Contains(ttyOut.Output, "ENV=xterm-256color|truecolor|1|1") {
+		t.Fatalf("expected terminal color environment, got %q", ttyOut.Output)
+	}
+	if !strings.Contains(ttyOut.Output, "\x1b[31mCOLOR_RED\x1b[0m") {
+		t.Fatalf("expected raw ANSI color output, got %q", ttyOut.Output)
 	}
 	pipeOffset := int64(0)
 	pipeOut, err := m.ReadOutputSnapshot(context.Background(), pipeProc.ID, OutputReadOptions{OffsetBytes: &pipeOffset, Wait: 2 * time.Second})

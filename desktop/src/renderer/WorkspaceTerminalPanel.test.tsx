@@ -15,7 +15,11 @@ import {
 const { terminalConstructorOptions, terminalDataHandlers, terminalInstances } = vi.hoisted(() => ({
   terminalConstructorOptions: [] as Array<{
     convertEol?: boolean;
+    cursorBlink?: boolean;
     disableStdin?: boolean;
+    fontSize?: number;
+    lineHeight?: number;
+    scrollback?: number;
     theme?: Record<string, string>;
   }>,
   terminalDataHandlers: [] as Array<(data: string) => void>,
@@ -486,6 +490,13 @@ describe("WorkspaceTerminalPanel", () => {
     expect(startTerminalSession).not.toHaveBeenCalled();
     expect(terminalInstances).toHaveLength(1);
     expect(terminalInstances[0]?.options.disableStdin).toBe(false);
+    expect(terminalConstructorOptions[0]).toMatchObject({
+      convertEol: false,
+      cursorBlink: true,
+      fontSize: 12,
+      lineHeight: 1.45,
+      scrollback: 10000,
+    });
 
     act(() => terminalDataHandlers[0]?.("hello\r"));
     expect(writeManagedProcess).toHaveBeenCalledWith("thread-1", "proc-live", "hello\r");
