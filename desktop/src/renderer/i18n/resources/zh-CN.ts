@@ -1555,6 +1555,7 @@ export const zhCN = {
   "automations.timezone": "时区",
   "automations.workspace": "工作区",
   "automations.workspaceUnavailable": "未绑定工作区",
+  "automations.workspaceRequired": "请先选择一个工作区",
   "automations.mode": "运行于",
   "automations.mode.newThread": "新对话",
   "automations.mode.heartbeat": "原对话",

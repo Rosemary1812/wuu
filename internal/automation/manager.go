@@ -38,6 +38,8 @@ type AddTaskParams struct {
 	Mode              Mode
 	CreatorThreadID   string
 	HeartbeatThreadID string
+	WorkspaceID       string
+	WorkspacePath     string
 	Recurring         bool
 	Paused            bool
 	Durable           bool
@@ -204,6 +206,8 @@ func (m *Manager) AddTask(params AddTaskParams) (Task, error) {
 		Mode:              string(mode),
 		CreatorThreadID:   creatorThreadID,
 		HeartbeatThreadID: heartbeatThreadID,
+		WorkspaceID:       strings.TrimSpace(params.WorkspaceID),
+		WorkspacePath:     strings.TrimSpace(params.WorkspacePath),
 		Metadata:          map[string]string{"kind": "prompt"},
 		CreatedAt:         time.Now().UnixMilli(),
 		Recurring:         params.Recurring,

@@ -453,6 +453,8 @@ export type AutomationTask = {
   mode?: "new_thread" | "thread_heartbeat";
   creatorThreadId?: string;
   heartbeatThreadId?: string;
+  workspaceId?: string;
+  workspacePath?: string;
   metadata?: Record<string, string>;
   createdAt: number;
   lastFiredAt?: number;
@@ -468,6 +470,8 @@ export type AutomationCreateParams = {
   timezone?: string;
   mode?: "new_thread" | "thread_heartbeat";
   heartbeat_thread_id?: string;
+  workspace_id?: string;
+  workspace_path?: string;
   recurring: boolean;
   paused?: boolean;
 };

@@ -2219,6 +2219,18 @@ html.resizing-workspace-terminal-split * {
   margin-top: 2px;
 }
 
+.automation-create-controls {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.automation-workspace-trigger {
+  width: min(240px, 24vw);
+  min-width: 150px;
+}
+
 .automations-catalog.detail-open .catalog-page-header {
   gap: 20px;
 }

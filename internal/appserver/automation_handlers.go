@@ -41,7 +41,8 @@ func (s *Server) handleAutomationCreate(req Request) error {
 		Title: params.Title, Prompt: params.Prompt, Schedule: params.Schedule,
 		Timezone: params.Timezone, Mode: params.Mode,
 		HeartbeatThreadID: params.HeartbeatThreadID,
-		Recurring:         params.Recurring, Paused: params.Paused, Durable: true,
+		WorkspaceID:       params.WorkspaceID, WorkspacePath: params.WorkspacePath,
+		Recurring: params.Recurring, Paused: params.Paused, Durable: true,
 	})
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)

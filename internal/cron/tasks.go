@@ -28,6 +28,8 @@ type Task struct {
 	Mode              string            `json:"mode,omitempty"`
 	CreatorThreadID   string            `json:"creatorThreadId,omitempty"`
 	HeartbeatThreadID string            `json:"heartbeatThreadId,omitempty"`
+	WorkspaceID       string            `json:"workspaceId,omitempty"`
+	WorkspacePath     string            `json:"workspacePath,omitempty"`
 	Metadata          map[string]string `json:"metadata,omitempty"`
 	CreatedAt         int64             `json:"createdAt"`
 	LastFiredAt       int64             `json:"lastFiredAt,omitempty"`

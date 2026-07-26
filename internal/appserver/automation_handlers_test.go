@@ -60,13 +60,16 @@ func TestAutomationCreateRPCPersistsPausedWorkspaceDraft(t *testing.T) {
 	}, &out)
 	defer server.Close()
 
-	request := []byte(`{"id":"create","method":"automation/create","params":{"title":"New automation","prompt":"","schedule":"0 9 * * 1-5","timezone":"UTC","mode":"new_thread","recurring":true,"paused":true}}`)
+	request := []byte(`{"id":"create","method":"automation/create","params":{"title":"New automation","prompt":"","schedule":"0 9 * * 1-5","timezone":"UTC","mode":"new_thread","workspace_id":"project-1","workspace_path":"/workspaces/example","recurring":true,"paused":true}}`)
 	if err := server.handleLine(context.Background(), request); err != nil {
 		t.Fatalf("automation/create error = %v", err)
 	}
 	created := remarshal[AutomationCreateResult](t, responseByID(t, parseOutput(t, out.String()), "create")["result"])
 	if created.Task.Title != "New automation" || created.Task.Prompt != "" || !created.Task.Recurring || !created.Task.Paused {
 		t.Fatalf("created task = %#v", created.Task)
+	}
+	if created.Task.WorkspaceID != "project-1" || created.Task.WorkspacePath != "/workspaces/example" {
+		t.Fatalf("workspace = %q, %q", created.Task.WorkspaceID, created.Task.WorkspacePath)
 	}
 	if created.Task.Metadata["durability"] != "durable" {
 		t.Fatalf("durability = %q", created.Task.Metadata["durability"])

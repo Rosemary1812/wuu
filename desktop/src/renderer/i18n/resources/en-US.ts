@@ -1557,6 +1557,7 @@ export const enUS = {
   "automations.timezone": "Timezone",
   "automations.workspace": "Workspace",
   "automations.workspaceUnavailable": "No workspace",
+  "automations.workspaceRequired": "Choose a workspace before creating an automation",
   "automations.mode": "Run in",
   "automations.mode.newThread": "New conversation",
   "automations.mode.heartbeat": "Original conversation",

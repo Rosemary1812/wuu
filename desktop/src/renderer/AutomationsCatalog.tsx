@@ -10,7 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import type { AutomationTask, AutomationUpdateParams } from "../shared/protocol";
+import type { AutomationTask, AutomationUpdateParams, DesktopProject } from "../shared/protocol";
 import {
   cronForAutomationSchedule,
   defaultCronForScheduleKind,
@@ -71,10 +71,12 @@ function initialDetailWidth(): number {
 
 export function AutomationsCatalog({
   onDetailPaneLayoutChange,
-  workspacePath = "",
+  projects = [],
+  activeProjectID = "",
 }: {
   onDetailPaneLayoutChange?: (layout: AutomationDetailPaneLayout) => void;
-  workspacePath?: string;
+  projects?: DesktopProject[];
+  activeProjectID?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const catalogRef = useRef<HTMLElement>(null);
@@ -87,6 +89,12 @@ export function AutomationsCatalog({
   const [saveNotice, setSaveNotice] = useState<{ id: number; message: string } | null>(null);
   const [detailWidth, setDetailWidth] = useState(initialDetailWidth);
   const [resizingDetail, setResizingDetail] = useState(false);
+  const availableProjects = useMemo(() => projects.filter((project) => !project.missing), [projects]);
+  const [newAutomationProjectID, setNewAutomationProjectID] = useState(() => (
+    projects.some((project) => project.id === activeProjectID && !project.missing)
+      ? activeProjectID
+      : projects.find((project) => !project.missing)?.id ?? ""
+  ));
   const resizeStartRef = useRef({ x: 0, width: AUTOMATION_DETAIL_DEFAULT_WIDTH });
 
   async function load(): Promise<void> {
@@ -104,6 +112,14 @@ export function AutomationsCatalog({
   }
 
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    setNewAutomationProjectID((current) => {
+      if (availableProjects.some((project) => project.id === current)) return current;
+      if (availableProjects.some((project) => project.id === activeProjectID)) return activeProjectID;
+      return availableProjects[0]?.id ?? "";
+    });
+  }, [activeProjectID, availableProjects]);
 
   const visibleTasks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -196,6 +212,11 @@ export function AutomationsCatalog({
 
   async function create(): Promise<void> {
     setError("");
+    const project = availableProjects.find((candidate) => candidate.id === newAutomationProjectID);
+    if (!project) {
+      setError(t("automations.workspaceRequired"));
+      return;
+    }
     try {
       const result = await window.wuu.createAutomation({
         title: t("automations.newTitle"),
@@ -203,6 +224,8 @@ export function AutomationsCatalog({
         schedule: "0 9 * * 1-5",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         mode: "new_thread",
+        workspace_id: project.id,
+        workspace_path: project.path,
         recurring: true,
         paused: true,
       });
@@ -245,10 +268,26 @@ export function AutomationsCatalog({
               <strong>{t("automations.title")}</strong>
               <span>{t("automations.subtitle")}</span>
             </div>
-            <button className="settings-button catalog-create" type="button" onClick={() => void create()}>
-              <Plus className="icon" aria-hidden="true" />
-              <span>{t("automations.create")}</span>
-            </button>
+            <div className="automation-create-controls">
+              <SelectMenu
+                value={newAutomationProjectID}
+                onChange={setNewAutomationProjectID}
+                options={availableProjects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                  hint: project.path,
+                }))}
+                placeholder={t("automations.workspaceUnavailable")}
+                ariaLabel={t("automations.workspace")}
+                triggerClassName="settings-select-trigger automation-workspace-trigger"
+                align="right"
+              />
+              <button className="settings-button catalog-create" type="button"
+                disabled={!newAutomationProjectID} onClick={() => void create()}>
+                <Plus className="icon" aria-hidden="true" />
+                <span>{t("automations.create")}</span>
+              </button>
+            </div>
           </div>
           <div className="catalog-page-controls">
             <CatalogSearchField
@@ -311,7 +350,7 @@ export function AutomationsCatalog({
             onDoubleClick={() => updateDetailWidth(AUTOMATION_DETAIL_DEFAULT_WIDTH)}
           />
           <div className="automations-detail">
-            <AutomationDetail key={selected.id} task={selected} workspacePath={workspacePath}
+            <AutomationDetail key={selected.id} task={selected}
               onUpdate={update} onRemove={remove}
               onSaveRejected={showSaveRejectedNotice} onClose={() => setSelectedID("")} />
           </div>
@@ -533,9 +572,8 @@ function AutomationScheduleEditor({
   );
 }
 
-function AutomationDetail({ task, workspacePath, onUpdate, onRemove, onSaveRejected, onClose }: {
+function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }: {
   task: AutomationTask;
-  workspacePath: string;
   onUpdate: (params: AutomationUpdateParams) => Promise<void>;
   onRemove: (task: AutomationTask) => Promise<void>;
   onSaveRejected: () => void;
@@ -638,7 +676,7 @@ function AutomationDetail({ task, workspacePath, onUpdate, onRemove, onSaveRejec
         <div className="automation-detail-grid">
           <div className="automation-workspace-field">
             <span>{t("automations.workspace")}</span>
-            <strong title={workspacePath}>{workspacePath || t("automations.workspaceUnavailable")}</strong>
+            <strong title={task.workspacePath}>{task.workspacePath || t("automations.workspaceUnavailable")}</strong>
           </div>
           <AutomationScheduleEditor
             schedule={draft.schedule}

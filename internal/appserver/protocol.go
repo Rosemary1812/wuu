@@ -1678,6 +1678,8 @@ type AutomationCreateParams struct {
 	Timezone          string          `json:"timezone,omitempty"`
 	Mode              automation.Mode `json:"mode,omitempty"`
 	HeartbeatThreadID string          `json:"heartbeat_thread_id,omitempty"`
+	WorkspaceID       string          `json:"workspace_id,omitempty"`
+	WorkspacePath     string          `json:"workspace_path,omitempty"`
 	Recurring         bool            `json:"recurring"`
 	Paused            bool            `json:"paused,omitempty"`
 }

@@ -4331,7 +4331,8 @@ export function App(): JSX.Element {
               />
             ) : showingAutomationsCatalog ? (
               <AutomationsCatalog
-                workspacePath={state.activeContext?.cwd}
+                projects={state.projects}
+                activeProjectID={state.activeProjectId}
                 onDetailPaneLayoutChange={setAutomationDetailPaneLayout}
               />
             ) : (

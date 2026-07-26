@@ -1375,9 +1375,20 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:automation-list", (event) =>
     appServerRequest(event, "automation/list"),
   );
-  ipcMain.handle("wuu:automation-create", (event, params: AutomationCreateParams) =>
-    appServerRequest(event, "automation/create", params),
-  );
+  ipcMain.handle("wuu:automation-create", (event, params: AutomationCreateParams) => {
+    const workspaceID = typeof params?.workspace_id === "string" ? params.workspace_id.trim() : "";
+    const project = projectManager.list().projects.find((candidate) => (
+      candidate.id === workspaceID && !candidate.missing
+    ));
+    if (!project) {
+      throw new Error("automation workspace must be an available project");
+    }
+    return appServerRequest(event, "automation/create", {
+      ...params,
+      workspace_id: project.id,
+      workspace_path: project.path,
+    });
+  });
   ipcMain.handle("wuu:automation-update", (event, params: AutomationUpdateParams) =>
     appServerRequest(event, "automation/update", params),
   );

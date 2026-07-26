@@ -27,7 +27,7 @@ func (s *Server) ExecuteAutomation(ctx context.Context, task automation.Task, ru
 	var err error
 	switch automation.Mode(task.Mode) {
 	case automation.ModeNewThread, "":
-		th, err = s.createAutomationThread()
+		th, err = s.createAutomationThread(task)
 	case automation.ModeThreadHeartbeat:
 		threadID := strings.TrimSpace(task.HeartbeatThreadID)
 		if threadID == "" {
@@ -71,12 +71,15 @@ func (s *Server) ExecuteAutomation(ctx context.Context, task automation.Task, ru
 	return automation.ExecutionResult{Status: automation.RunStatusQueued, ThreadID: th.ID, QueueID: queueID}, nil
 }
 
-func (s *Server) createAutomationThread() (*threadState, error) {
+func (s *Server) createAutomationThread(task automation.Task) (*threadState, error) {
 	if s.rt == nil || s.rt.StreamRunner == nil {
 		return nil, errors.New("runtime session is required")
 	}
 	id := session.NewID()
 	threadCWD := s.rt.RootDir
+	if workspacePath := strings.TrimSpace(task.WorkspacePath); workspacePath != "" {
+		threadCWD = workspacePath
+	}
 	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 		return nil, err
 	}
@@ -86,7 +89,11 @@ func (s *Server) createAutomationThread() (*threadState, error) {
 	if _, err := session.SetSource(s.rt.SessionDir, id, "automation"); err != nil {
 		return nil, err
 	}
-	if workspaceID := strings.TrimSpace(s.rt.WorkspaceID); workspaceID != "" {
+	workspaceID := strings.TrimSpace(task.WorkspaceID)
+	if workspaceID == "" && strings.TrimSpace(task.WorkspacePath) == "" {
+		workspaceID = strings.TrimSpace(s.rt.WorkspaceID)
+	}
+	if workspaceID != "" {
 		if _, err := session.SetWorkspaceID(s.rt.SessionDir, id, workspaceID); err != nil {
 			return nil, err
 		}
@@ -99,6 +106,9 @@ func (s *Server) createAutomationThread() (*threadState, error) {
 	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
 	th.Source = "automation"
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, threadCWD)
+	if workspaceID != "" {
+		th.WorkspaceKind = WorkspaceKindProject
+	}
 	s.mu.Lock()
 	s.threads[id] = th
 	s.mu.Unlock()

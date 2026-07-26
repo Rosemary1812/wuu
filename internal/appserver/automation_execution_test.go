@@ -117,6 +117,37 @@ func TestAutomationNewThreadRunsAsPersistedAutomationThread(t *testing.T) {
 	}
 }
 
+func TestAutomationNewThreadUsesTaskWorkspace(t *testing.T) {
+	client := &fakeClient{response: providersResponse("done")}
+	rt := newTestRuntime(t, client)
+	rt.StateDir = filepath.Dir(rt.SessionDir)
+	rt.AutomationManager = automation.NewManager(automation.Config{StateDir: rt.StateDir})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(srv.Close)
+
+	workspacePath := t.TempDir()
+	task := automation.Task{
+		ID: "workspace-task", Prompt: "inspect the workspace", Mode: string(automation.ModeNewThread),
+		Cron: "*/5 * * * *", Timezone: "UTC", WorkspaceID: "project-1", WorkspacePath: workspacePath,
+	}
+	if err := rt.AutomationManager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("Fire: %v", err)
+	}
+	runs, err := rt.AutomationManager.ListRuns()
+	if err != nil || len(runs) != 1 || runs[0].ThreadID == "" {
+		t.Fatalf("runs = %#v, %v", runs, err)
+	}
+	waitForTurnCompletedForThread(t, out, runs[0].ThreadID)
+	persisted, ok, err := session.Find(rt.SessionDir, runs[0].ThreadID)
+	if err != nil || !ok {
+		t.Fatalf("persisted thread = %#v, %t, %v", persisted, ok, err)
+	}
+	if persisted.CWD != workspacePath || persisted.WorkspaceID != "project-1" {
+		t.Fatalf("automation workspace = %q, %q", persisted.CWD, persisted.WorkspaceID)
+	}
+}
+
 func TestAutomationHeartbeatQueuesTurnsOnExistingThread(t *testing.T) {
 	firstStarted := make(chan struct{})
 	firstRelease := make(chan struct{})

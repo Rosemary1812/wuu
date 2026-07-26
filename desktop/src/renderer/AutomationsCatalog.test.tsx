@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AutomationTask, WuuDesktopApi } from "../shared/protocol";
+import type { AutomationTask, DesktopProject, WuuDesktopApi } from "../shared/protocol";
 import { AutomationsCatalog } from "./AutomationsCatalog";
 
 let container: HTMLDivElement;
@@ -16,6 +16,14 @@ const task: AutomationTask = {
   mode: "new_thread",
   createdAt: Date.now(),
   recurring: true,
+};
+
+const project: DesktopProject = {
+  id: "project-1",
+  name: "Example",
+  path: "/workspaces/example",
+  created_at: "2026-07-27T00:00:00Z",
+  updated_at: "2026-07-27T00:00:00Z",
 };
 
 beforeEach(() => {
@@ -33,12 +41,20 @@ afterEach(() => {
 
 describe("AutomationsCatalog", () => {
   it("creates a paused automation in the current workspace", async () => {
-    const created = { ...task, id: "automation-new", title: "新自动化", prompt: "", paused: true };
+    const created = {
+      ...task,
+      id: "automation-new",
+      title: "新自动化",
+      prompt: "",
+      paused: true,
+      workspaceId: project.id,
+      workspacePath: project.path,
+    };
     const createAutomation = vi.fn().mockResolvedValue({ task: created });
     installApi([], vi.fn(), createAutomation);
     await act(async () => {
       root = createRoot(container);
-      root.render(<AutomationsCatalog workspacePath="/workspaces/example" />);
+      root.render(<AutomationsCatalog projects={[project]} activeProjectID={project.id} />);
     });
 
     const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
@@ -56,6 +72,8 @@ describe("AutomationsCatalog", () => {
       prompt: "",
       paused: true,
       recurring: true,
+      workspace_id: "project-1",
+      workspace_path: "/workspaces/example",
     }));
     expect(container.querySelector(".automation-workspace-field")?.textContent)
       .toContain("/workspaces/example");
