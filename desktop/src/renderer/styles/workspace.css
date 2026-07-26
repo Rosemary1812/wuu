@@ -2186,10 +2186,11 @@ html.resizing-workspace-terminal-split * {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 100%;
+  overflow-x: hidden;
 }
 
 .automations-catalog.detail-open {
-  grid-template-columns: minmax(280px, 1fr) 10px var(--automation-detail-pane-width);
+  grid-template-columns: minmax(320px, 1fr) 10px var(--automation-detail-pane-width);
 }
 
 .automations-master {
@@ -2203,6 +2204,35 @@ html.resizing-workspace-terminal-split * {
 .automations-catalog.detail-open .automations-master {
   max-width: none;
   padding-inline: clamp(20px, 3vw, 40px);
+}
+
+.automations-heading-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.automations-heading-row .catalog-create {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.automations-catalog.detail-open .catalog-page-header {
+  gap: 20px;
+}
+
+.automations-catalog.detail-open .automations-heading-row {
+  gap: 16px;
+}
+
+.automations-catalog.detail-open .catalog-page-title strong {
+  font-size: 28px;
+}
+
+.automations-catalog.detail-open .catalog-page-title span {
+  font-size: 15px;
 }
 
 .automations-detail-resizer {
@@ -2377,6 +2407,12 @@ html.resizing-workspace-terminal-split * {
   font-weight: var(--weight-regular);
 }
 
+.automation-detail-form .settings-input,
+.automation-detail-form .settings-select-trigger {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
 .automation-detail-form textarea.settings-textarea {
   min-height: 96px;
   max-height: 220px;
@@ -2479,7 +2515,7 @@ html.resizing-workspace-terminal-split * {
   height: 28px;
 }
 
-@container automation-detail (max-width: 440px) {
+@container automation-detail (max-width: 560px) {
   .automation-detail-grid,
   .automation-schedule-controls {
     grid-template-columns: 1fr;

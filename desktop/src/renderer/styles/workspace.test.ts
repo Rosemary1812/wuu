@@ -54,6 +54,25 @@ describe("conversation message-flow rhythm", () => {
   });
 });
 
+describe("automation master-detail layout", () => {
+  it("keeps a usable master column and contains detail controls within their grid cells", () => {
+    expect(cssRuleBody(".automations-catalog.detail-open")).toMatch(
+      /grid-template-columns:\s*minmax\(320px,\s*1fr\)\s+10px\s+var\(--automation-detail-pane-width\);/,
+    );
+    expect(cssRuleBody(".automations-catalog")).toMatch(/overflow-x:\s*hidden;/);
+    expect(cssRuleBody(".automation-detail-form .settings-input,\n.automation-detail-form .settings-select-trigger"))
+      .toMatch(/box-sizing:\s*border-box;/);
+    expect(workspaceCss).toMatch(
+      /@container automation-detail \(max-width:\s*560px\)[\s\S]*?\.automation-detail-grid,[\s\S]*?grid-template-columns:\s*1fr;/,
+    );
+  });
+
+  it("anchors the create action to the heading instead of shrinking the search toolbar", () => {
+    expect(cssRuleBody(".automations-heading-row")).toMatch(/justify-content:\s*space-between;/);
+    expect(cssRuleBody(".automations-heading-row .catalog-create")).toMatch(/flex:\s*0\s+0\s+auto;/);
+  });
+});
+
 describe("workspace right panel chrome", () => {
   it("uses a flat artifact rail that expands cleanly in full-panel mode", () => {
     const panel = cssRuleBody(".workspace-right-panel");

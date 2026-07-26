@@ -47,7 +47,7 @@ const AUTOMATION_DETAIL_WIDTH_KEY = "wuu.desktop.automationDetailPaneWidth";
 const AUTOMATION_DETAIL_DEFAULT_WIDTH = 520;
 const AUTOMATION_DETAIL_MIN_WIDTH = 360;
 const AUTOMATION_DETAIL_MAX_WIDTH = 760;
-const AUTOMATION_MASTER_MIN_WIDTH = 280;
+const AUTOMATION_MASTER_MIN_WIDTH = 320;
 const AUTOMATION_DETAIL_RESIZER_WIDTH = 10;
 const AUTOMATION_DETAIL_WIDTH_STEP = 32;
 
@@ -128,6 +128,25 @@ export function AutomationsCatalog({
       reservedWidth: selectedID ? detailWidth + AUTOMATION_DETAIL_RESIZER_WIDTH : 0,
     });
   }, [detailWidth, onDetailPaneLayoutChange, selectedID]);
+
+  useEffect(() => {
+    const catalog = catalogRef.current;
+    if (!catalog || !selectedID) return;
+    const fitDetailToCatalog = (): void => {
+      setDetailWidth((current) => {
+        const next = clampDetailWidth(current, catalog.clientWidth);
+        if (next !== current) {
+          window.localStorage.setItem(AUTOMATION_DETAIL_WIDTH_KEY, String(next));
+        }
+        return next;
+      });
+    };
+    fitDetailToCatalog();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fitDetailToCatalog);
+    observer.observe(catalog);
+    return () => observer.disconnect();
+  }, [selectedID]);
 
   useEffect(() => {
     if (!resizingDetail) return;
@@ -221,15 +240,17 @@ export function AutomationsCatalog({
     >
       <div className="automations-master">
         <header className="catalog-page-header">
-          <div className="catalog-page-title">
-            <strong>{t("automations.title")}</strong>
-            <span>{t("automations.subtitle")}</span>
-          </div>
-          <div className="catalog-page-controls">
+          <div className="automations-heading-row">
+            <div className="catalog-page-title">
+              <strong>{t("automations.title")}</strong>
+              <span>{t("automations.subtitle")}</span>
+            </div>
             <button className="settings-button catalog-create" type="button" onClick={() => void create()}>
               <Plus className="icon" aria-hidden="true" />
               <span>{t("automations.create")}</span>
             </button>
+          </div>
+          <div className="catalog-page-controls">
             <CatalogSearchField
               value={query}
               placeholder={t("automations.searchPlaceholder")}

@@ -43,6 +43,8 @@ describe("AutomationsCatalog", () => {
 
     const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("新建自动化"));
+    expect(createButton?.closest(".automations-heading-row")).toBeTruthy();
+    expect(createButton?.closest(".catalog-page-controls")).toBeNull();
     await act(async () => {
       createButton?.click();
       await Promise.resolve();
