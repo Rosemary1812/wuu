@@ -447,6 +447,9 @@ export function App(): JSX.Element {
     });
     return () => cancelAnimationFrame(raf);
   }, [workspaceSheetPhase]);
+  // Focused workspace mode always parks the left rail as a drawer. Its
+  // visibility is transient and must not be inferred from the user's normal
+  // docked-sidebar preference.
   const sidebarDrawerMode = sidebarCollapsed || rightPanelGlobalized;
   const {
     sidebarDrawerPhase,
@@ -459,15 +462,13 @@ export function App(): JSX.Element {
     scheduleSidebarDrawerCloseFromPointerLeave,
   } = useSidebarDrawerState({
     appShellRef,
-    sidebarCollapsed,
+    sidebarCollapsed: sidebarDrawerMode,
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
     dockingMotionMs: SIDEBAR_MOTION_MS,
   });
-  const sidebarDrawerVisible =
-    sidebarDrawerPhase === "open" ||
-    (rightPanelGlobalized && !sidebarCollapsed);
+  const sidebarDrawerVisible = sidebarDrawerPhase === "open";
   const {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
@@ -3905,18 +3906,18 @@ export function App(): JSX.Element {
                 className="icon-button side-panel-toggle-button sidebar-toggle-button globalized-sidebar-toggle"
                 type="button"
                 aria-label={t(
-                  sidebarCollapsed
-                    ? "app.expandLeftSidebar"
-                    : "app.collapseLeftSidebar",
+                  sidebarDrawerVisible
+                    ? "app.collapseLeftSidebar"
+                    : "app.expandLeftSidebar",
                 )}
-                aria-pressed={!sidebarCollapsed}
-                onClick={toggleSidebar}
+                aria-pressed={sidebarDrawerVisible}
+                onClick={sidebarDrawerVisible ? closeSidebarDrawer : openSidebarDrawerNow}
                 onPointerEnter={scheduleSidebarDrawerOpen}
                 onPointerLeave={(event) =>
                   scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
                 }
               >
-                <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+                <SidePanelToggleIcon side="left" open={sidebarDrawerVisible} />
               </button>
             </div>
           ) : null}
