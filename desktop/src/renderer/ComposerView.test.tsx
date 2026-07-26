@@ -2523,6 +2523,15 @@ describe("Composer expand button", () => {
     expect(composerCSS).toMatch(
       /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*padding:\s*16px\s+52px\s+8px\s+var\(--composer-text-start\)/,
     );
+    // Hero retains its roomier 16px text inset and moves the button down by
+    // the same 6px. The compact document composer reuses the canonical 10px
+    // inset rather than pulling its placeholder above the button.
+    expect(composerCSS).toMatch(
+      /\.hero-composer-wrap\s+\.composer-expand-button\s*\{[^}]*top:\s*14px/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-stack:not\(\.is-expanded\)\s+\.composer\s+textarea\s*\{[^}]*padding-top:\s*10px/,
+    );
   });
 
   it("centers the expand button on the same vertical axis as the send button", () => {

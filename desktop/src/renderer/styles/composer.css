@@ -1106,6 +1106,12 @@
   padding: 16px 52px 8px var(--composer-text-start);
 }
 
+/* The hero keeps a roomier top inset than the dock composer. Move its
+   expand control by the same amount so both still share one first-row axis. */
+.hero-composer-wrap .composer-expand-button {
+  top: 14px;
+}
+
 .composer-stack.is-expanded .composer textarea {
   flex: 1 1 0;
   height: auto;
@@ -1171,7 +1177,9 @@
 .document-composer-wrap .composer-stack:not(.is-expanded) .composer textarea {
   height: 44px;
   min-height: 44px;
-  padding-top: 6px;
+  /* Match the canonical dock first-row axis: 10px + half of the 24px line
+     height equals the 22px center of the 28px button positioned at top: 8px. */
+  padding-top: 10px;
   padding-bottom: 4px;
 }
 
