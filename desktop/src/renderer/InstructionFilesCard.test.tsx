@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InstructionFilesCard, type InstructionFilesEntry } from "./InstructionFilesCard";
 import { setActiveLocale } from "./i18n";
+import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -13,6 +14,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  unhoverTooltip();
   act(() => {
     root?.unmount();
   });
@@ -86,7 +88,7 @@ describe("InstructionFilesCard", () => {
     expect(container.textContent).toContain("没有加载任何指令文件");
   });
 
-  it("groups files by scope and hides preview until expanded", () => {
+  it("groups files by scope and hides preview until expanded", async () => {
     renderCard({
       id: "e1",
       threadID: "t1",
@@ -117,14 +119,13 @@ describe("InstructionFilesCard", () => {
     expect(container.textContent).toContain("全局");
     expect(container.textContent).toContain("项目");
     // The file name already identifies the file; the full path stays out of
-    // the row text and lives only in the row tooltip.
+    // the row text and lives only in the row's hover tooltip.
     expect(container.textContent).not.toContain("/home/u/.config/wuu/AGENTS.md");
     expect(container.textContent).not.toContain("/repo/AGENTS.md");
     const toggles = Array.from(container.querySelectorAll(".instruction-file-toggle"));
-    expect(toggles.map((toggle) => toggle.getAttribute("title"))).toEqual([
-      "/home/u/.config/wuu/AGENTS.md",
-      "/repo/AGENTS.md",
-    ]);
+    expect(toggles.map((toggle) => toggle.getAttribute("title"))).toEqual([null, null]);
+    expect(await hoverTooltipText(toggles[0])).toBe("/home/u/.config/wuu/AGENTS.md");
+    expect(await hoverTooltipText(toggles[1])).toBe("/repo/AGENTS.md");
     // Content is collapsed by default.
     expect(container.querySelector(".instruction-file-preview")).toBeNull();
 

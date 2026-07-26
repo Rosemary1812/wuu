@@ -906,7 +906,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                           className={`channel-task-card${state === "done" ? " done" : ""}`}
                           type="button"
                           key={task.id}
-                          title={`${room ? `# ${room.name}` : task.room_id} · ${owner}`}
                           data-tooltip={`${room ? `# ${room.name}` : task.room_id} · ${owner}`}
                           onClick={() => {
                             setSelectedRoomID(task.room_id);

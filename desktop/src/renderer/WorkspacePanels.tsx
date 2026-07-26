@@ -62,6 +62,7 @@ import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
 import { translateCurrent, useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 import type { TranslationKey } from "./i18n/resources/zh-CN";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
@@ -886,25 +887,26 @@ function SortableWorkspaceViewTab({
       style={style}
       aria-grabbed={isDragging || undefined}
     >
-      <button
-        ref={setActivatorNodeRef}
-        className="workspace-tool-tab-main"
-        type="button"
-        {...dragAttributes}
-        {...listeners}
-        role="tab"
-        aria-selected={active}
-        aria-label={dirty ? t("workspace.tabUnsaved", { label }) : label}
-        tabIndex={active ? 0 : -1}
-        title={tooltip}
-        disabled={!open}
-        onClick={onSelect}
-        onDoubleClick={onDoubleClick}
-      >
+      <Tooltip content={tooltip} disabled={tooltip === label}>
+        <button
+          ref={setActivatorNodeRef}
+          className="workspace-tool-tab-main"
+          type="button"
+          {...dragAttributes}
+          {...listeners}
+          role="tab"
+          aria-selected={active}
+          aria-label={dirty ? t("workspace.tabUnsaved", { label }) : label}
+          tabIndex={active ? 0 : -1}
+          disabled={!open}
+          onClick={onSelect}
+          onDoubleClick={onDoubleClick}
+        >
         <WorkspaceViewTabIcon tab={tab} className="icon" />
         <span>{label}</span>
         {dirty ? <span className="workspace-tab-dirty-indicator" aria-hidden="true" /> : null}
       </button>
+      </Tooltip>
       <button
         className="workspace-tool-tab-close"
         type="button"

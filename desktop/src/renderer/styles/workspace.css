@@ -990,7 +990,8 @@ html.resizing-workspace-file-split * {
   min-height: 0;
 }
 
-.workspace-document-composer {
+.workspace-document-composer,
+.skills-assistant-composer {
   position: absolute;
   z-index: 8;
   right: 0;
@@ -998,6 +999,10 @@ html.resizing-workspace-file-split * {
   left: 0;
   padding: 0 clamp(20px, 4vw, 72px) 24px;
   pointer-events: none;
+}
+
+.conversation-pane.skills-assistant-visible .skills-scroll-region {
+  padding-bottom: 132px;
 }
 
 .workspace-document-turn-dock {

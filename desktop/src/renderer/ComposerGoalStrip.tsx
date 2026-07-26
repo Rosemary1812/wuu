@@ -24,6 +24,7 @@ import {
 } from "./ComposerFloatingMenu";
 import { Modal } from "./Modal";
 import { formatCurrentNumber, translateCurrent as translate, useI18n } from "./i18n";
+import { TruncatedText } from "./TruncatedText";
 
 const ACTION_CONFIRM_WINDOW_MS = 3000;
 
@@ -281,9 +282,7 @@ export function ComposerGoalStrip({
               <Target className="icon-sm" />
             </span>
             <span className="composer-goal-strip-main">
-              <span className="composer-goal-strip-text" title={displayText}>
-                {displayText}
-              </span>
+              <TruncatedText className="composer-goal-strip-text" text={displayText} />
               {visibleStatus ? (
                 <span className="composer-goal-strip-state">{visibleStatus}</span>
               ) : null}

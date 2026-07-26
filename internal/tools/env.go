@@ -22,8 +22,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/toolctx"
 )
 
-// ReadFileEntry tracks a successful read_file invocation for dedup
-// and must-read-first guards.
+// ReadFileEntry tracks file content known to the session for read deduplication
+// and active-file context freshness.
 type ReadFileEntry struct {
 	MtimeUnix     int64
 	MtimeUnixNano int64
@@ -31,7 +31,7 @@ type ReadFileEntry struct {
 	ContentSHA256 string
 	Offset        int
 	Limit         int
-	BaselineOnly  bool
+	WrittenByTool bool
 }
 
 // readFileState is a thread-safe record of read_file calls.
@@ -397,17 +397,16 @@ func (e *Env) RecordRead(absPath string, entry ReadFileEntry) {
 	e.readState.record(absPath, entry)
 }
 
-// RecordWriteBaseline records the content just written by a mutating file
-// tool. It guards later edits in this agent without claiming that read_file
-// already returned the new full file body to the model.
-func (e *Env) RecordWriteBaseline(absPath string, content []byte) {
+// RecordWriteState records content just written by a mutating file tool without
+// claiming that read_file already returned the new full body to the model.
+func (e *Env) RecordWriteState(absPath string, content []byte) {
 	if e == nil || strings.TrimSpace(absPath) == "" {
 		return
 	}
 	entry := ReadFileEntry{
 		Size:          int64(len(content)),
 		ContentSHA256: sha256Hex(content),
-		BaselineOnly:  true,
+		WrittenByTool: true,
 	}
 	if info, err := os.Stat(absPath); err == nil && !info.IsDir() {
 		entry.MtimeUnix = info.ModTime().Unix()

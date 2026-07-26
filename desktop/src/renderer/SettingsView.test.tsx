@@ -14,6 +14,7 @@ import type {
   WuuDesktopApi
 } from "../shared/protocol";
 import { I18nProvider } from "./i18n";
+import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
 
 type GlobalWindow = typeof window & { wuu: WuuDesktopApi };
 
@@ -29,6 +30,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  unhoverTooltip();
   act(() => {
     root?.unmount();
   });
@@ -1266,10 +1268,14 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("12.3M");
     expect(rootText()).toContain("1M");
     expect(rootText()).toContain("1.2k");
-    expect(container.querySelector('[title="12,345,678"]')).not.toBeNull();
+    // Compact numbers keep their exact value in a hover tooltip.
+    const totalInput = Array.from(
+      container.querySelectorAll<HTMLElement>(".settings-usage-stat-value"),
+    ).find((element) => element.textContent === "12.3M");
+    expect(await hoverTooltipText(totalInput ?? null)).toBe("12,345,678");
     const modelInput = container.querySelector(".settings-usage-number");
     expect(modelInput?.textContent).toBe("1k");
-    expect(modelInput?.getAttribute("title")).toBe("1,000");
+    expect(await hoverTooltipText(modelInput)).toBe("1,000");
     expect(rootText()).toContain("模型使用");
     expect(rootText()).toContain("缓存命中率");
     expect(rootText()).toContain("5%");
@@ -1281,7 +1287,7 @@ describe("SettingsView About section", () => {
     expect(
       heatmapDates.map((date) =>
         heatmap
-          ?.querySelector<HTMLElement>(`[title^="${date}"]`)
+          ?.querySelector<HTMLElement>(`[aria-label^="${date}"]`)
           ?.getAttribute("data-level"),
       ),
     ).toEqual(["1", "2", "3", "4"]);
@@ -1435,7 +1441,7 @@ describe("SettingsView archive page", () => {
     expect(container.textContent).not.toContain("运行 Docker bench");
   });
 
-  it("keeps the full long title in a single ellipsized title element", () => {
+  it("keeps the full long title in a single ellipsized title element", async () => {
     const longTitle = "这是一个非常长的归档会话标题，需要在恢复按钮前截断并显示省略号";
     renderSettings({
       initialized: baseInitialized(),
@@ -1445,7 +1451,11 @@ describe("SettingsView archive page", () => {
 
     const title = container.querySelector<HTMLElement>(".settings-archive-title");
     expect(title?.textContent).toBe(longTitle);
-    expect(title?.getAttribute("title")).toBe(longTitle);
+    // No native title dump: the full text shows in a hover tooltip, and
+    // only once the row actually ellipsizes (jsdom never truncates, so no
+    // tooltip opens here).
+    expect(title?.getAttribute("title")).toBeNull();
+    expect(await hoverTooltipText(title)).toBeNull();
   });
 
   it("keeps archived rows compact and does not render their local paths", () => {

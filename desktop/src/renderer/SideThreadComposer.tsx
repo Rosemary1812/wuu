@@ -1,6 +1,10 @@
 import { useMemo, useRef } from "react";
 import { buildSideThreadSlashCommands } from "./ComposerSlashCommands";
-import { Composer, type CodexModelLoadState } from "./ComposerView";
+import {
+  Composer,
+  type CodexModelLoadState,
+  type ComposerVariant,
+} from "./ComposerView";
 import { useI18n } from "./i18n";
 
 const EMPTY_MODEL_STATE: CodexModelLoadState = {
@@ -12,6 +16,8 @@ const EMPTY_MODEL_STATE: CodexModelLoadState = {
 const noop = () => {};
 
 export type SideThreadComposerProps = {
+  variant?: ComposerVariant;
+  placeholder?: string;
   draft: string;
   running: boolean;
   disabledReason?: string;
@@ -20,13 +26,15 @@ export type SideThreadComposerProps = {
   onChangeDraft: (draft: string) => void;
   onSend: (prompt: string) => void;
   onInterrupt: () => void;
-  onReset: () => void;
+  onReset?: () => void;
 };
 
 // Side chat is another conversation surface, not another editor. Keep the
 // small amount of transport-specific glue here and render the same Composer
 // used by the main conversation.
 export function SideThreadComposer({
+  variant = "dock",
+  placeholder,
   draft,
   running,
   disabledReason,
@@ -49,10 +57,10 @@ export function SideThreadComposer({
 
   return (
     <Composer
-      variant="dock"
+      variant={variant}
       hideRuntimeControls
       textOnly
-      placeholder={t("composer.sideThreadPlaceholder")}
+      placeholder={placeholder ?? t("composer.sideThreadPlaceholder")}
       prompt={visibleDraft}
       setPrompt={onChangeDraft}
       files={[]}
@@ -111,7 +119,7 @@ export function SideThreadComposer({
         }
       }}
       onInterrupt={onInterrupt}
-      slashCommandsOverride={slashCommands}
+      slashCommandsOverride={onReset ? slashCommands : undefined}
       onResetSideThread={onReset}
       queryHistorySessionID={queryHistorySessionID}
       queryHistory={queryHistory}

@@ -45,6 +45,8 @@ import {
   type ComposerSlashDraft
 } from "./ComposerSlashCommands";
 import { translateCurrent as translate, useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
+import { TruncatedText } from "./TruncatedText";
 import {
   WORKSPACE_FILE_DRAG_MIME,
   appendWorkspacePathToPrompt,
@@ -935,36 +937,43 @@ export function Composer({
                     const selected = index === selectedSlashIndex;
                     const optionID = `${slashMenuID}-${command.id}`;
                     return (
-                      <button
-                        className={`slash-command-item${selected ? " selected" : ""}`}
-                        data-command-name={command.name}
-                        id={optionID}
+                      <Tooltip
+                        content={
+                          command.disabledReason || command.kind === "skill"
+                            ? undefined
+                            : command.description
+                        }
                         key={command.id}
-                        role="option"
-                        type="button"
-                        aria-selected={selected}
-                        disabled={Boolean(command.disabledReason)}
-                        title={command.disabledReason ?? command.description}
-                        onMouseEnter={() => {
-                          if (!command.disabledReason) {
-                            setSelectedSlashIndex(index);
-                          }
-                        }}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => applySlashCommand(command, slashDraft)}
                       >
-                        <span className="slash-command-icon" aria-hidden="true">
-                          <SlashCommandIcon command={command} />
-                        </span>
-                        <span className="slash-command-label">
-                          <span className="slash-command-title">
-                            {command.kind === "skill" ? command.description : command.title}
+                        <button
+                          className={`slash-command-item${selected ? " selected" : ""}`}
+                          data-command-name={command.name}
+                          id={optionID}
+                          role="option"
+                          type="button"
+                          aria-selected={selected}
+                          disabled={Boolean(command.disabledReason)}
+                          onMouseEnter={() => {
+                            if (!command.disabledReason) {
+                              setSelectedSlashIndex(index);
+                            }
+                          }}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => applySlashCommand(command, slashDraft)}
+                        >
+                          <span className="slash-command-icon" aria-hidden="true">
+                            <SlashCommandIcon command={command} />
                           </span>
-                        </span>
-                        {command.disabledReason ? (
-                          <span className="slash-command-meta">{command.disabledReason}</span>
-                        ) : null}
-                      </button>
+                          <span className="slash-command-label">
+                            <span className="slash-command-title">
+                              {command.kind === "skill" ? command.description : command.title}
+                            </span>
+                          </span>
+                          {command.disabledReason ? (
+                            <span className="slash-command-meta">{command.disabledReason}</span>
+                          ) : null}
+                        </button>
+                      </Tooltip>
                     );
                   })}
                 </div>
@@ -1126,21 +1135,25 @@ export function Composer({
                   // where the cwd is locked (the backend session.CWD is fixed at
                   // creation) so no cwd control renders at all.
                   <div className="hero-project-pill-anchor composer-project-control" ref={menuRef}>
-                    <button
-                      className="hero-project-pill"
-                      type="button"
-                      title={projectPillTitle}
-                      aria-haspopup="menu"
-                      aria-expanded={menuOpen}
-                      aria-label={t("composer.switchProject", { project: projectPillLabel })}
-                      onClick={onToggleMenu}
+                    <Tooltip
+                      content={projectPillTitle}
+                      disabled={projectPillTitle === projectPillLabel}
                     >
-                      <span className="hero-project-pill-icon" aria-hidden="true">
-                        <ProjectPillIcon />
-                      </span>
-                      <span className="hero-project-pill-text">{projectPillLabel}</span>
-                      <ChevronDown className="hero-project-pill-chevron" aria-hidden="true" />
-                    </button>
+                      <button
+                        className="hero-project-pill"
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        aria-label={t("composer.switchProject", { project: projectPillLabel })}
+                        onClick={onToggleMenu}
+                      >
+                        <span className="hero-project-pill-icon" aria-hidden="true">
+                          <ProjectPillIcon />
+                        </span>
+                        <span className="hero-project-pill-text">{projectPillLabel}</span>
+                        <ChevronDown className="hero-project-pill-chevron" aria-hidden="true" />
+                      </button>
+                    </Tooltip>
                     {menuOpen ? (
                       <FloatingMenuPortal
                         anchorRef={menuRef}
@@ -1242,12 +1255,11 @@ export function Composer({
                   </>
                 )}
                 {statusText ? (
-                  <span className="status-label" title={statusText}>
-                    <span
+                  <span className="status-label">
+                    <TruncatedText
                       className={`status-label-text${statusIsLiveProgress ? " live-progress-chip" : ""}`}
-                    >
-                      {statusText}
-                    </span>
+                      text={statusText}
+                    />
                   </span>
                 ) : null}
                 {ENABLE_VOICE_INPUT ? (
@@ -1325,7 +1337,6 @@ function CollapsedComposerPromptCard({
       <button
         className="composer-collapsed-prompt-main"
         type="button"
-        title={title}
         aria-label={translate("composer.showCollapsedTextNamed", { title })}
         onClick={onReveal}
       >
@@ -1333,7 +1344,7 @@ function CollapsedComposerPromptCard({
           <FileText className="icon" />
         </span>
         <span className="composer-collapsed-prompt-copy">
-          <strong className="composer-collapsed-prompt-title">{title}</strong>
+          <TruncatedText as="strong" className="composer-collapsed-prompt-title" text={title} />
           <span className="composer-collapsed-prompt-action">
             {translate("composer.showInTextBox")}
             <ChevronRight aria-hidden="true" />

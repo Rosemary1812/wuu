@@ -2,6 +2,7 @@ import type { ThreadItemStatus } from "../shared/protocol";
 import type { TurnEventDisplay } from "./TurnEvents";
 import type { UserFacingErrorDisplay, UserFacingErrorTone } from "./UserFacingErrors";
 import { translateCurrent as t } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 export type SystemEventDisplay = {
   label: string;
@@ -23,21 +24,25 @@ export function SystemEventNotice({
     ? `${event.label} — ${event.detail}`
     : event.label;
   return (
-    <aside
-      className={`turn-notice turn-event-notice ${tone}${inProgress ? " is-progress" : ""}${className ? ` ${className}` : ""}`}
-      role={tone === "error" || tone === "auth" ? "alert" : "status"}
-      aria-label={description}
-      aria-live={inProgress ? "polite" : undefined}
-      title={description}
-    >
-      <span className="turn-event-content">
-        <strong
-          className={`turn-event-title${inProgress ? " live-progress-chip" : ""}`}
-        >
-          {event.label}
-        </strong>
-      </span>
-    </aside>
+    // The visible line carries only the label; when a detail exists the
+    // hover tooltip reveals the composed "label — detail" (bounded to the
+    // tooltip length cap), and aria-label carries it for screen readers.
+    <Tooltip content={event.detail ? description : undefined}>
+      <aside
+        className={`turn-notice turn-event-notice ${tone}${inProgress ? " is-progress" : ""}${className ? ` ${className}` : ""}`}
+        role={tone === "error" || tone === "auth" ? "alert" : "status"}
+        aria-label={description}
+        aria-live={inProgress ? "polite" : undefined}
+      >
+        <span className="turn-event-content">
+          <strong
+            className={`turn-event-title${inProgress ? " live-progress-chip" : ""}`}
+          >
+            {event.label}
+          </strong>
+        </span>
+      </aside>
+    </Tooltip>
   );
 }
 

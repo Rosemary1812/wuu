@@ -2046,6 +2046,31 @@
 
 /* Subagent model aliases --------------------------------------------------- */
 
+.settings-alias-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+}
+
+.settings-alias-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.settings-alias-heading .settings-section-title {
+  flex: 0 0 auto;
+}
+
+.settings-alias-heading .settings-section-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-alias-list {
   display: flex;
   flex-direction: column;
@@ -2121,7 +2146,18 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+@container settings-page (max-width: 520px) {
+  .settings-alias-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .settings-alias-actions {
+    flex-wrap: wrap;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

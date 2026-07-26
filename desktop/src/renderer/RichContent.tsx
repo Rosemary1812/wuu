@@ -13,6 +13,7 @@ import {
 } from "./LinkTargets";
 import { MessageCopyButton } from "./MessageActions";
 import { useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 import { currentAppliedTheme, observeAppliedTheme, type AppliedTheme } from "./Theme";
 
 type RichContentProps = {
@@ -929,19 +930,20 @@ function RichFileLink({
   const { t } = useI18n();
   const reference = formatWorkspaceFileTarget(target);
   return (
-    <button
-      type="button"
-      className="rich-link rich-file-link"
-      title={t("rich.openFile", { reference })}
-      onClick={() => onOpenFile(reference)}
-    >
-      <span className="rich-link-content">
-        <span className="rich-link-icon" aria-hidden="true">
-          <FileText className="icon-xs" />
+    <Tooltip content={t("rich.openFile", { reference })}>
+      <button
+        type="button"
+        className="rich-link rich-file-link"
+        onClick={() => onOpenFile(reference)}
+      >
+        <span className="rich-link-content">
+          <span className="rich-link-icon" aria-hidden="true">
+            <FileText className="icon-xs" />
+          </span>
+          <span className="rich-link-label">{display}</span>
         </span>
-        <span className="rich-link-label">{display}</span>
-      </span>
-    </button>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -955,20 +957,21 @@ function RichAnchorLink({
   children: ReactNode;
 }): JSX.Element {
   return (
-    <a
-      className="rich-link rich-anchor-link"
-      href={`#${encodeURIComponent(id)}`}
-      title={title}
-      onClick={(event) => {
-        event.preventDefault();
-        const root = event.currentTarget.closest(".rich-content");
-        const target = Array.from(root?.querySelectorAll<HTMLElement>("[id]") ?? [])
-          .find((element) => element.id === id);
-        target?.scrollIntoView({ block: "start" });
-      }}
-    >
-      <span className="rich-link-label">{children}</span>
-    </a>
+    <Tooltip content={title}>
+      <a
+        className="rich-link rich-anchor-link"
+        href={`#${encodeURIComponent(id)}`}
+        onClick={(event) => {
+          event.preventDefault();
+          const root = event.currentTarget.closest(".rich-content");
+          const target = Array.from(root?.querySelectorAll<HTMLElement>("[id]") ?? [])
+            .find((element) => element.id === id);
+          target?.scrollIntoView({ block: "start" });
+        }}
+      >
+        <span className="rich-link-label">{children}</span>
+      </a>
+    </Tooltip>
   );
 }
 
@@ -991,19 +994,20 @@ function RichWebLink({
     });
   };
   return (
-    <a
-      className="rich-link rich-web-link"
-      href={href}
-      title={title}
-      rel="noopener noreferrer"
-      onAuxClick={openLink}
-      onClick={openLink}
-    >
-      <span className="rich-link-content">
-        <RichWebLinkIcon href={href} />
-        <span className="rich-link-label">{children}</span>
-      </span>
-    </a>
+    <Tooltip content={title}>
+      <a
+        className="rich-link rich-web-link"
+        href={href}
+        rel="noopener noreferrer"
+        onAuxClick={openLink}
+        onClick={openLink}
+      >
+        <span className="rich-link-content">
+          <RichWebLinkIcon href={href} />
+          <span className="rich-link-label">{children}</span>
+        </span>
+      </a>
+    </Tooltip>
   );
 }
 
@@ -1260,20 +1264,24 @@ function RichImage({
     }
   };
   const image = (
-    <img
-      className="rich-image"
-      src={resolvedSource}
-      alt={alt}
-      title={titleText}
-      loading="lazy"
-      role="button"
-      tabIndex={0}
-      aria-label={
-        alt ? t("rich.enlargeNamed", { alt }) : t("rich.enlargeImage")
-      }
-      onClick={handleActivate}
-      onKeyDown={handleKeyDown}
-    />
+    // A visible <figcaption> already carries the caption, so the hover
+    // tooltip only fills the gap when there is no caption: it reveals the
+    // image source path instead of repeating what's on screen.
+    <Tooltip content={caption ? undefined : titleText}>
+      <img
+        className="rich-image"
+        src={resolvedSource}
+        alt={alt}
+        loading="lazy"
+        role="button"
+        tabIndex={0}
+        aria-label={
+          alt ? t("rich.enlargeNamed", { alt }) : t("rich.enlargeImage")
+        }
+        onClick={handleActivate}
+        onKeyDown={handleKeyDown}
+      />
+    </Tooltip>
   );
   if (inline) {
     return <span className="rich-image-block inline">{image}</span>;

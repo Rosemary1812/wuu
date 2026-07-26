@@ -489,7 +489,9 @@ describe("RichContent raw HTML and heading levels", () => {
       const link = singleWebLink();
       expect(link.getAttribute("href")).toBe("https://example.com/a");
       expect(link.textContent).toBe("https://example.com/a");
-      expect(link.parentElement?.textContent).toBe("链接 https://example.com/a。");
+      // The anchor sits inside a `display: contents` tooltip trigger, so
+      // assert against the enclosing paragraph rather than the parent.
+      expect(link.closest("p")?.textContent).toBe("链接 https://example.com/a。");
     });
 
     it("ends a bare URL before a fullwidth comma and keeps the following text out", () => {
@@ -498,7 +500,7 @@ describe("RichContent raw HTML and heading levels", () => {
       const link = singleWebLink();
       expect(link.getAttribute("href")).toBe("https://example.com/a?b=1");
       expect(link.textContent).toBe("https://example.com/a?b=1");
-      expect(link.parentElement?.textContent).toBe("见 https://example.com/a?b=1，谢谢");
+      expect(link.closest("p")?.textContent).toBe("见 https://example.com/a?b=1，谢谢");
     });
 
     it("keeps paired fullwidth parentheses inside the URL", () => {

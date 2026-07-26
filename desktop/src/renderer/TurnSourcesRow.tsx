@@ -6,6 +6,7 @@ import {
 } from "react";
 import type { TurnSource } from "./ToolActivityHelpers";
 import { useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 /**
  * How many host icons we render inside the pill before collapsing the
@@ -77,18 +78,19 @@ export function TurnSourcesRow({
       openSource(source, onOpen);
     };
     return (
-      <button
-        type="button"
-        className="turn-sources-pill turn-sources-pill-single"
-        aria-label={t("sources.openNamed", { name: tooltip })}
-        title={tooltip}
-        onClick={handleClick}
-      >
-        <span className="turn-source-icon-frame">
-          <SourceAvatar source={source} />
-        </span>
-        <span className="turn-sources-label">{label}</span>
-      </button>
+      <Tooltip content={tooltip}>
+        <button
+          type="button"
+          className="turn-sources-pill turn-sources-pill-single"
+          aria-label={t("sources.openNamed", { name: tooltip })}
+          onClick={handleClick}
+        >
+          <span className="turn-source-icon-frame">
+            <SourceAvatar source={source} />
+          </span>
+          <span className="turn-sources-label">{label}</span>
+        </button>
+      </Tooltip>
     );
   }
 
@@ -153,15 +155,16 @@ function SourceIcon({
     openSource(source, onOpen);
   };
   return (
-    <button
-      type="button"
-      className="turn-source-icon"
-      aria-label={t("sources.openNamed", { name: tooltip })}
-      title={tooltip}
-      onClick={handleClick}
-    >
-      <SourceAvatar source={source} />
-    </button>
+    <Tooltip content={tooltip}>
+      <button
+        type="button"
+        className="turn-source-icon"
+        aria-label={t("sources.openNamed", { name: tooltip })}
+        onClick={handleClick}
+      >
+        <SourceAvatar source={source} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -284,21 +287,22 @@ function OverflowList({
         };
         return (
           <li key={source.host} role="none">
-            <button
-              type="button"
-              role="menuitem"
-              className="turn-source-overflow-item"
-              aria-label={t("sources.openNamed", { name: tooltip })}
-              title={tooltip}
-              onClick={handleClick}
-            >
-              <span className="turn-source-overflow-item-title">
-                {source.title ?? source.url}
-              </span>
-              <span className="turn-source-overflow-item-host">
-                {source.host}
-              </span>
-            </button>
+            <Tooltip content={tooltip}>
+              <button
+                type="button"
+                role="menuitem"
+                className="turn-source-overflow-item"
+                aria-label={t("sources.openNamed", { name: tooltip })}
+                onClick={handleClick}
+              >
+                <span className="turn-source-overflow-item-title">
+                  {source.title ?? source.url}
+                </span>
+                <span className="turn-source-overflow-item-host">
+                  {source.host}
+                </span>
+              </button>
+            </Tooltip>
           </li>
         );
       })}

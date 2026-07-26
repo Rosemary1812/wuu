@@ -250,9 +250,30 @@ export function SubagentModelAliases({
 
   return (
     <section className="settings-section" data-testid="settings-subagent-aliases">
-      <header className="settings-section-header">
-        <h2 className="settings-section-title">{t("settings.subagentModelAliases")}</h2>
-        <p className="settings-section-description">{t("settings.subagentModelAliasesHint")}</p>
+      <header className="settings-alias-toolbar">
+        <div className="settings-alias-heading">
+          <h2 className="settings-section-title">{t("settings.subagentModelAliases")}</h2>
+          <p className="settings-section-description">{t("settings.subagentModelAliasesHint")}</p>
+        </div>
+        <div className="settings-alias-actions">
+          <button
+            className="settings-button"
+            type="button"
+            disabled={disabled || saving}
+            onClick={addRow}
+          >
+            {t("subagentAlias.add")}
+          </button>
+          <button
+            className="settings-button settings-button-primary"
+            type="button"
+            disabled={disabled || saving}
+            onClick={() => void handleSave()}
+          >
+            {t("subagentAlias.save")}
+          </button>
+          {saveError ? <span className="settings-error">{saveError}</span> : null}
+        </div>
       </header>
       <div className="settings-card">
         <div className="settings-alias-list">
@@ -340,27 +361,6 @@ export function SubagentModelAliases({
               </div>
             );
           })}
-        </div>
-        <div className="settings-row settings-row-footer">
-          <div className="settings-alias-actions">
-            <button
-              className="settings-button"
-              type="button"
-              disabled={disabled || saving}
-              onClick={addRow}
-            >
-              {t("subagentAlias.add")}
-            </button>
-            <button
-              className="settings-button settings-button-primary"
-              type="button"
-              disabled={disabled || saving}
-              onClick={() => void handleSave()}
-            >
-              {t("subagentAlias.save")}
-            </button>
-            {saveError ? <span className="settings-error">{saveError}</span> : null}
-          </div>
         </div>
       </div>
     </section>

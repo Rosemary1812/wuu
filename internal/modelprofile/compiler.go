@@ -456,7 +456,7 @@ Terminal work is unified under the bash tool.
 func addClaudePrompt(b *surfaceBuilder) {
 	b.surface.SystemFragment = strings.TrimSpace(`
 [Tool surface: anthropic_claude]
-You are running under the Anthropic Claude harness. Your file editing primitives are read_file, edit_file, and write_file. Call read_file first to anchor the old_string in edit_file, and use write_file only for whole-file replacement (e.g. newly created files or generated outputs).
+You are running under the Anthropic Claude harness. Your file editing primitives are read_file, edit_file, and write_file. Use edit_file for precise changes with exact current old_text; if it no longer matches, read the relevant range and retry. Use write_file only for new files or intentional complete rewrites.
 
 Terminal work goes through the bash tool.
 ` + bashTerminalGuidance + sharedTail)
@@ -466,7 +466,7 @@ func addGenericPrompt(b *surfaceBuilder, p Profile) {
 	if p.Family == FamilyLocal || !p.Execution.AllowDirectShell {
 		b.surface.SystemFragment = strings.TrimSpace(`
 [Tool surface: generic (no command execution)]
-You are running under a generic BYOK profile. File work uses read_file, edit_file (with exact old_string match — call read_file first to anchor it), and write_file for whole-file replacement.
+You are running under a generic BYOK profile. Use edit_file for precise changes with exact current old_text; if it no longer matches, read the relevant range and retry. Use write_file only for new files or intentional complete rewrites.
 
 This profile does not expose command execution. If a task requires command-only work, explain that the active model profile cannot run those operations and recommend switching to a profile that allows command execution.
 ` + sharedTail)
@@ -474,7 +474,7 @@ This profile does not expose command execution. If a task requires command-only 
 	}
 	b.surface.SystemFragment = strings.TrimSpace(`
 [Tool surface: generic]
-You are running under a generic BYOK profile. File work uses read_file, edit_file (exact old_string match — call read_file first), and write_file (whole-file replacement).
+You are running under a generic BYOK profile. Use edit_file for precise changes with exact current old_text; if it no longer matches, read the relevant range and retry. Use write_file only for new files or intentional complete rewrites.
 
 Terminal work goes through the bash tool.
 ` + bashTerminalGuidance + sharedTail)

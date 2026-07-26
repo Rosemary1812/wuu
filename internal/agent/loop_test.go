@@ -1420,11 +1420,11 @@ func TestErrorJSONIncludesActionableEnvelope(t *testing.T) {
 		t.Fatalf("boundary error should guide the model: %+v", parsed.NextSuggestions)
 	}
 
-	raw = errorJSON(errors.New(`edit failed: error_kind=stale_file_baseline safe_retry="read_file then retry"`))
+	raw = errorJSON(errors.New(`edit failed: error_kind=anchor_not_found safe_retry="read the target range and retry"`))
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		t.Fatalf("parse safe_retry errorJSON: %v\n%s", err, raw)
 	}
-	if parsed.ErrorKind != "stale_file_baseline" || !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "safe_retry") {
+	if parsed.ErrorKind != "anchor_not_found" || !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "safe_retry") {
 		t.Fatalf("safe_retry error should preserve kind and guidance: %+v", parsed)
 	}
 }

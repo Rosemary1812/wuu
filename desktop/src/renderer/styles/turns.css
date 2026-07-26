@@ -1506,6 +1506,15 @@
   background: var(--stream-cursor-color);
 }
 
+/* Fence-final messages carry no inline cursor slot; the sibling cursor
+ * keeps the settle-stable DOM presence at zero flow height so no blank
+ * paragraph survives under the card after the fade. */
+.stream-cursor-block-tail {
+  display: block;
+  width: 0;
+  height: 0;
+}
+
                                                                          
 .streaming-markdown[data-cursor-state="fading"] .stream-cursor {
   transition: opacity var(--motion-base) var(--ease-out);

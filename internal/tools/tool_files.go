@@ -298,7 +298,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 
 	// Dedup check: same file, same range, same content → return stub.
 	if entry, ok := t.env.GetReadEntry(resolved); ok {
-		if !entry.BaselineOnly && entry.Offset == args.Offset && entry.Limit == limit {
+		if !entry.WrittenByTool && entry.Offset == args.Offset && entry.Limit == limit {
 			unchanged := entry.ContentSHA256 != "" && entry.ContentSHA256 == contentHash
 			if entry.ContentSHA256 == "" {
 				unchanged = readEntryMatchesInfo(entry, info)
@@ -329,7 +329,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		fmt.Fprintf(&buf, "%6d\t%s\n", lineNum, line)
 	}
 
-	// Record read state for dedup and must-read-first.
+	// Record read state for deduplication and active-file context freshness.
 	t.env.RecordRead(resolved, ReadFileEntry{
 		MtimeUnix:     info.ModTime().Unix(),
 		MtimeUnixNano: info.ModTime().UnixNano(),
@@ -932,7 +932,6 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- Prefer edit_file for modifying existing files — it only sends the diff\n" +
 			"- Only use this tool to create new files or for complete rewrites\n" +
-			"- Existing files require a fresh prior read_file result\n" +
 			"- Existing files larger than 32KB require overwrite_policy=\"explicit_user_requested\" or generated-file policy; use the scoped file editing tool exposed in this session for ordinary source edits\n" +
 			"- Set create_only=true when the file must not already exist\n" +
 			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected unless full access is active\n" +
@@ -1003,20 +1002,22 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if err != nil {
 		return "", err
 	}
+	return withFileMutationQueue(resolved, func() (string, error) {
+		return t.executeResolvedWrite(ctx, resolved, args.Path, args.Content, args.CreateOnly, args.OverwritePolicy)
+	})
+}
 
+func (t *WriteFileTool) executeResolvedWrite(ctx context.Context, resolved, displayPath, content string, createOnly bool, overwritePolicy string) (string, error) {
 	oldContent, readErr := os.ReadFile(resolved)
 	fileExists := readErr == nil
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return "", fmt.Errorf("read existing file: %w", readErr)
 	}
-	if args.CreateOnly && fileExists {
-		return "", fmt.Errorf("file already exists: %s", args.Path)
+	if createOnly && fileExists {
+		return "", fmt.Errorf("file already exists: %s", displayPath)
 	}
 	if fileExists {
-		if err := t.validateExistingWrite(resolved, oldContent); err != nil {
-			return "", err
-		}
-		if err := validateWriteFileOverwriteScope(ctx, t.env, resolved, oldContent, args.Content, args.OverwritePolicy); err != nil {
+		if err := validateWriteFileOverwriteScope(ctx, t.env, resolved, oldContent, content, overwritePolicy); err != nil {
 			return "", err
 		}
 	}
@@ -1024,10 +1025,10 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 		return "", fmt.Errorf("create parent directory: %w", err)
 	}
-	if err := os.WriteFile(resolved, []byte(args.Content), 0o644); err != nil {
+	if err := os.WriteFile(resolved, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
-	t.env.RecordWriteBaseline(resolved, []byte(args.Content))
+	t.env.RecordWriteState(resolved, []byte(content))
 	if t.env.OnFileChanged != nil {
 		t.env.OnFileChanged(resolved)
 	}
@@ -1035,22 +1036,22 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	result := map[string]any{
 		"action":             "create",
 		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
-		"written_bytes":      len(args.Content),
-		"new_file_sha":       formatFileSHA(sha256Hex([]byte(args.Content))),
+		"written_bytes":      len(content),
+		"new_file_sha":       formatFileSHA(sha256Hex([]byte(content))),
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 	}
 
 	if fileExists {
 		result["action"] = "overwrite"
 		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
-		result["diff"] = writeFileDiffResult(oldContent, args.Content)
-		if warning := testContractWarning(resolved, string(oldContent), args.Content); warning != "" {
+		result["diff"] = writeFileDiffResult(oldContent, content)
+		if warning := testContractWarning(resolved, string(oldContent), content); warning != "" {
 			result["contract_warning"] = warning
 			result["next_suggestions"] = []string{"address the contract_warning before anything else"}
 		}
 	} else {
-		lineCount := strings.Count(args.Content, "\n")
-		if len(args.Content) > 0 && !strings.HasSuffix(args.Content, "\n") {
+		lineCount := strings.Count(content, "\n")
+		if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 			lineCount++
 		}
 		result["diff"] = DiffResult{NewFile: true, Lines: lineCount}
@@ -1079,27 +1080,6 @@ func countTextLines(content string) int {
 		lines++
 	}
 	return lines
-}
-
-func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte) error {
-	currentSHA := sha256Hex(oldContent)
-	readEntry, ok := t.env.GetReadEntry(resolved)
-	if !ok {
-		return fileBaselineError("missing_file_baseline", "existing file has not been read yet. Use read_file first before overwriting", "write_file")
-	}
-	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file")
-	}
-	if readEntry.ContentSHA256 == "" {
-		info, err := os.Stat(resolved)
-		if err != nil {
-			return fmt.Errorf("stat file: %w", err)
-		}
-		if !readEntryMatchesInfo(readEntry, info) {
-			return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file")
-		}
-	}
-	return nil
 }
 
 func validateWriteFileOverwriteScope(ctx context.Context, env *Env, resolved string, oldContent []byte, newContent, overwritePolicy string) error {
@@ -1315,7 +1295,7 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 		Name: "edit_file",
 		Description: "Performs exact string replacement in a file.\n\n" +
 			"Usage:\n" +
-			"- You must read the file before editing — edits are rejected if the file has not been read\n" +
+			"- Use old_text copied from current file evidence; if it no longer matches, read the relevant range and retry\n" +
 			"- Provide old_text (must match exactly once) and new_text\n" +
 			"- Use replace_all=true to replace every occurrence instead of requiring unique match\n" +
 			"- The edit will FAIL if old_text is not unique — provide more context or use replace_all\n" +
@@ -1399,13 +1379,18 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if err != nil {
 		return "", err
 	}
+	return withFileMutationQueue(resolved, func() (string, error) {
+		return t.executeResolvedEdit(ctx, resolved, args.Path, args.OldText, args.NewText, args.ReplaceAll)
+	})
+}
 
+func (t *EditFileTool) executeResolvedEdit(ctx context.Context, resolved, displayPath, oldText, newText string, replaceAll bool) (string, error) {
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("stat file: %w", err)
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("path is a directory: %s. Use read_file to inspect the file before editing", args.Path)
+		return "", fmt.Errorf("path is a directory: %s", displayPath)
 	}
 
 	content, err := os.ReadFile(resolved)
@@ -1413,39 +1398,36 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		return "", fmt.Errorf("read file: %w", err)
 	}
 	oldSHA := sha256Hex(content)
-	if err := t.validateEditBaseline(resolved, info, oldSHA); err != nil {
-		return "", err
-	}
 
 	text := string(content)
-	count := strings.Count(text, args.OldText)
+	count := strings.Count(text, oldText)
 	if count == 0 {
 		return "", editTextMatchError{
 			Kind:       "old_text_not_found",
-			Expected:   args.OldText,
-			Candidates: closestEditTextCandidates(text, args.OldText, 3),
+			Expected:   oldText,
+			Candidates: closestEditTextCandidates(text, oldText, 3),
 		}
 	}
 
 	var newContent string
-	if args.ReplaceAll {
-		newContent = strings.ReplaceAll(text, args.OldText, args.NewText)
+	if replaceAll {
+		newContent = strings.ReplaceAll(text, oldText, newText)
 	} else {
 		if count > 1 {
 			return "", editTextMatchError{
 				Kind:       "ambiguous_old_text",
-				Expected:   args.OldText,
+				Expected:   oldText,
 				MatchCount: count,
-				Candidates: exactEditTextCandidates(text, args.OldText, 5),
+				Candidates: exactEditTextCandidates(text, oldText, 5),
 			}
 		}
-		newContent = strings.Replace(text, args.OldText, args.NewText, 1)
+		newContent = strings.Replace(text, oldText, newText, 1)
 	}
 
 	if err := os.WriteFile(resolved, []byte(newContent), 0o644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
-	t.env.RecordWriteBaseline(resolved, []byte(newContent))
+	t.env.RecordWriteState(resolved, []byte(newContent))
 	if t.env.OnFileChanged != nil {
 		t.env.OnFileChanged(resolved)
 	}
@@ -1465,23 +1447,6 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		result["next_suggestions"] = []string{"address the contract_warning before anything else", "run targeted validation with command execution if that capability is exposed, otherwise inspect the resulting diff before finishing"}
 	}
 	return mustJSON(result)
-}
-
-func (t *EditFileTool) validateEditBaseline(resolved string, info os.FileInfo, currentSHA string) error {
-	readEntry, ok := t.env.GetReadEntry(resolved)
-	if !ok {
-		return fileBaselineError("missing_file_baseline", "file has not been read yet. Use read_file first before editing", "edit_file")
-	}
-	if readEntry.Size != 0 && readEntry.Size != info.Size() {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file")
-	}
-	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file")
-	}
-	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file")
-	}
-	return nil
 }
 
 type editTextMatchError struct {
@@ -1598,15 +1563,6 @@ func lineNumberForOffset(lineStarts []int, offset int) int {
 		line = i + 1
 	}
 	return line
-}
-
-func fileBaselineError(kind, message, toolName string) error {
-	return fmt.Errorf("%s: error_kind=%s safe_retry=%q model_next_action=%q",
-		message,
-		kind,
-		fmt.Sprintf("Run read_file on the target file and retry %s.", toolName),
-		"Do not retry with stale file content; refresh evidence first.",
-	)
 }
 
 func readEntryMatchesInfo(entry ReadFileEntry, info os.FileInfo) bool {

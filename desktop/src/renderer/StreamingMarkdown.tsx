@@ -61,6 +61,7 @@ type FeatherReveal = {
 
 const DEFAULT_CLASS_NAME = "streaming-markdown rich-content";
 const CURSOR_CLASS_NAME = "stream-cursor";
+const CURSOR_BLOCK_TAIL_CLASS_NAME = "stream-cursor-block-tail";
 const CURSOR_SENTINEL = "";
 const CURSOR_MARKDOWN_BOUNDARY = " ";
 const FEATHER_RETENTION_MS = 110;
@@ -259,8 +260,16 @@ export function StreamingMarkdown({
   // make that delimiter non-right-flanking (for example `。**`), exposing
   // the raw `**` in the rendered message. The text renderer removes this
   // parsing-only boundary before it reaches the DOM.
-  const tailText = showCursor
-    ? `${split.tail}${cursorBoundaryForMarkdown(split.tail)}${CURSOR_SENTINEL}`
+  //
+  // Exception: a tail ending in a closed fence has no inline slot for the
+  // sentinel. Placed on its own line after the closer it parses as a
+  // trailing paragraph, which then survives settle as a permanent blank
+  // block between the card and the action bar. The cursor renders as a
+  // zero-flow-height sibling instead — same settle-stable DOM slot, no
+  // reserved vertical space.
+  const tailEndsWithFence = showCursor && endsWithFenceCloser(split.tail);
+  const tailText = showCursor && !tailEndsWithFence
+    ? `${split.tail}${CURSOR_MARKDOWN_BOUNDARY}${CURSOR_SENTINEL}`
     : split.tail;
 
   /* ------------------------------- Render -------------------------------- */
@@ -290,6 +299,12 @@ export function StreamingMarkdown({
         renderText={cursorTextRenderer}
         renderMermaid={renderMermaid}
       />
+      {tailEndsWithFence ? (
+        <span
+          className={`${CURSOR_CLASS_NAME} ${CURSOR_BLOCK_TAIL_CLASS_NAME}`}
+          aria-hidden="true"
+        />
+      ) : null}
     </div>
   );
 }
@@ -390,10 +405,6 @@ function cursorContainerText(surface: HTMLDivElement | null): string | undefined
 
 export function containsMermaidFence(text: string): boolean {
   return /(^|\n)```[ \t]*mermaid[ \t]*\r?\n/i.test(text);
-}
-
-function cursorBoundaryForMarkdown(text: string): string {
-  return endsWithFenceCloser(text) ? "\n" : CURSOR_MARKDOWN_BOUNDARY;
 }
 
 function endsWithFenceCloser(text: string): boolean {

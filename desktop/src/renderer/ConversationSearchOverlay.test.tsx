@@ -158,6 +158,9 @@ describe("PreviewTurnGroup", () => {
     ]);
     expect(rendered[0].textContent).toContain("Q1");
     expect(rendered[1].textContent).toContain("A1");
+    expect(
+      container.querySelector(".conversation-search-preview-turn-group"),
+    ).not.toBeNull();
   });
 
   it("prefers the final_answer agent_message for the assistant row", () => {

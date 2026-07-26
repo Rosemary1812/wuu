@@ -20,10 +20,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TurnSource } from "./ToolActivityHelpers";
 import { TurnSourcesRow } from "./TurnSourcesRow";
+import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
 
 let mountedRoots: Root[] = [];
 
 afterEach(() => {
+  unhoverTooltip();
   for (const root of mountedRoots) {
     act(() => root.unmount());
   }
@@ -118,7 +120,7 @@ describe("TurnSourcesRow", () => {
     );
   });
 
-  it("renders the whole single-source pill as a button so clicking anywhere opens the URL", () => {
+  it("renders the whole single-source pill as a button so clicking anywhere opens the URL", async () => {
     // Single source case: the icon and the label both belong to the
     // same <button>, so a hover-anywhere / click-anywhere affordance
     // is what makes "来源" actually behave like a source link rather
@@ -150,7 +152,8 @@ describe("TurnSourcesRow", () => {
     expect(pillButton?.getAttribute("aria-label")).toBe(
       "打开 Example article — https://example.com/article",
     );
-    expect(pillButton?.getAttribute("title")).toBe(
+    expect(pillButton?.getAttribute("title")).toBeNull();
+    expect(await hoverTooltipText(pillButton)).toBe(
       "Example article — https://example.com/article",
     );
     act(() => {
@@ -235,7 +238,7 @@ describe("TurnSourcesRow", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("exposes the full URL plus title in aria-label and tooltip when title is present", () => {
+  it("exposes the full URL plus title in aria-label and tooltip when title is present", async () => {
     const container = mountInto(
       <TurnSourcesRow
         sources={[
@@ -253,12 +256,12 @@ describe("TurnSourcesRow", () => {
     expect(pill?.getAttribute("aria-label")).toBe(
       "打开 Claude Opus 4.7 — https://www.anthropic.com/news",
     );
-    expect(pill?.getAttribute("title")).toBe(
+    expect(await hoverTooltipText(pill)).toBe(
       "Claude Opus 4.7 — https://www.anthropic.com/news",
     );
   });
 
-  it("exposes only the URL in aria-label when no title is available", () => {
+  it("exposes only the URL in aria-label when no title is available", async () => {
     const container = mountInto(
       <TurnSourcesRow
         sources={[
@@ -272,7 +275,7 @@ describe("TurnSourcesRow", () => {
     );
     const pill = container.querySelector("button.turn-sources-pill");
     expect(pill?.getAttribute("aria-label")).toBe("打开 https://openai.com/c");
-    expect(pill?.getAttribute("title")).toBe("https://openai.com/c");
+    expect(await hoverTooltipText(pill)).toBe("https://openai.com/c");
   });
 
   it("does not leak the origin field as user-facing text", () => {
@@ -340,7 +343,7 @@ describe("TurnSourcesRow", () => {
       );
     });
 
-    it("opens a popover listing the overflow sources when the badge is clicked", () => {
+    it("opens a popover listing the overflow sources when the badge is clicked", async () => {
       const sources = makeManySources(8);
       const container = mountInto(<TurnSourcesRow sources={sources} />);
       const badge = container.querySelector<HTMLButtonElement>(
@@ -368,7 +371,7 @@ describe("TurnSourcesRow", () => {
       expect(items?.[0].getAttribute("aria-label")).toBe(
         "打开 Page 6 — https://site-6.example.com/page-6",
       );
-      expect(items?.[0].getAttribute("title")).toBe(
+      expect(await hoverTooltipText(items?.[0] ?? null)).toBe(
         "Page 6 — https://site-6.example.com/page-6",
       );
       expect(items?.[1].getAttribute("aria-label")).toBe(

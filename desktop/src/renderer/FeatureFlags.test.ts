@@ -45,4 +45,15 @@ describe("frontend feature flags", () => {
     featureFlags = await import("./FeatureFlags");
     expect(featureFlags.ENABLE_VOICE_INPUT).toBe(true);
   });
+
+  it("keeps the Skills assistant disabled unless explicitly enabled", async () => {
+    vi.stubEnv("VITE_ENABLE_SKILLS_ASSISTANT", "false");
+    let featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_SKILLS_ASSISTANT).toBe(false);
+
+    vi.resetModules();
+    vi.stubEnv("VITE_ENABLE_SKILLS_ASSISTANT", "true");
+    featureFlags = await import("./FeatureFlags");
+    expect(featureFlags.ENABLE_SKILLS_ASSISTANT).toBe(true);
+  });
 });

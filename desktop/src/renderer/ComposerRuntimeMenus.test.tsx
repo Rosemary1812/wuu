@@ -29,7 +29,8 @@ describe("RuntimePicker", () => {
     openMenu: CodexRuntimeMenu,
     initialized: InitializeResult,
     onToggleMenu = vi.fn(),
-    onSelectEffort = vi.fn()
+    onSelectEffort = vi.fn(),
+    onSelectModel = vi.fn()
   ): void {
     act(() => {
       root = createRoot(container);
@@ -42,7 +43,7 @@ describe("RuntimePicker", () => {
           anchorRef={createRef<HTMLDivElement>()}
           running={false}
           onToggleMenu={onToggleMenu}
-          onSelectModel={() => {}}
+          onSelectModel={onSelectModel}
           onSelectEffort={onSelectEffort}
         />
       );
@@ -125,5 +126,37 @@ describe("RuntimePicker", () => {
 
     act(() => high?.click());
     expect(onSelectEffort).toHaveBeenCalledWith("high");
+  });
+
+  it("uses the target model default instead of carrying effort across models", () => {
+    const initialized = runtimeWithEffort();
+    initialized.model = "model-a";
+    initialized.variant = "max";
+    initialized.providers![0].model = "model-a";
+    initialized.providers![0].models = [
+      {
+        id: "model-a",
+        display_name: "Model A",
+        default_effort: "medium",
+        supported_efforts: ["medium", "max"]
+      },
+      {
+        id: "model-b",
+        display_name: "Model B",
+        default_effort: "medium",
+        supported_efforts: ["medium", "max"]
+      }
+    ];
+    const onSelectModel = vi.fn();
+
+    renderPicker("model", initialized, vi.fn(), vi.fn(), onSelectModel);
+
+    const choices = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".codex-model-menu button")
+    );
+    const modelB = choices.find((choice) => choice.textContent?.includes("Model B"));
+    act(() => modelB?.click());
+
+    expect(onSelectModel).toHaveBeenCalledWith("work", "model-b", "medium");
   });
 });

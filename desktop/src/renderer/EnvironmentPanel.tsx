@@ -28,6 +28,7 @@ import { ParticipantChip } from "./ParticipantChip";
 import { type SubagentRowSummary } from "./EnvironmentSideStack";
 import { agentNameForSubagentID } from "./agentNames";
 import { useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
@@ -194,17 +195,18 @@ export function EnvironmentPanel({
           <span>{hasChanges ? t("environment.commitChanges") : ""}</span>
         </button>
 
-        <button
-          className="environment-row"
-          type="button"
-          disabled={prDisabled || running}
-          title={prDisabled ? pullRequestDisabledReason : undefined}
-          onClick={onOpenPullRequest}
-        >
-          <Github className="icon-lg" />
-          <strong>{t(gitStatus?.pr_url ? "environment.viewPR" : "environment.createPR")}</strong>
-          <span>{gitStatus?.pr_url ? t("environment.existingPR") : prDisabled ? pullRequestDisabledReason : t("environment.pushAndCreatePR")}</span>
-        </button>
+        <Tooltip content={prDisabled ? pullRequestDisabledReason : undefined}>
+          <button
+            className="environment-row"
+            type="button"
+            disabled={prDisabled || running}
+            onClick={onOpenPullRequest}
+          >
+            <Github className="icon-lg" />
+            <strong>{t(gitStatus?.pr_url ? "environment.viewPR" : "environment.createPR")}</strong>
+            <span>{gitStatus?.pr_url ? t("environment.existingPR") : prDisabled ? pullRequestDisabledReason : t("environment.pushAndCreatePR")}</span>
+          </button>
+        </Tooltip>
 
         {subagentSessions && subagentSessions.length > 0 ? (
           <EnvironmentSubagents
@@ -294,29 +296,30 @@ function EnvironmentSubagents({
               }${archiveConfirming ? " archive-confirm" : ""}`}
               onMouseLeave={() => onClearArchiveConfirm?.(agent.id)}
             >
-              <button
-                type="button"
-                className="subagent-row-main"
-                onClick={() => onSelect?.(agent)}
-                aria-label={t("environment.openSubtask", {
-                  name: agentLabelFromSummary(agent),
-                })}
-                title={agentTooltipFromSummary(agent)}
-              >
-                <span className="subagent-row-title">
-                  <ParticipantChip
-                    fallbackType=""
-                    fallbackTaskName={agentLabelFromSummary(agent)}
-                    size="sm"
-                  />
-                </span>
-                <span className="subagent-row-status">
-                  {agentStatusLabel(agent.status)}
-                </span>
-                {nestedLabel ? (
-                  <span className="subagent-row-nested">{nestedLabel}</span>
-                ) : null}
-              </button>
+              <Tooltip content={agentTooltipFromSummary(agent)}>
+                <button
+                  type="button"
+                  className="subagent-row-main"
+                  onClick={() => onSelect?.(agent)}
+                  aria-label={t("environment.openSubtask", {
+                    name: agentLabelFromSummary(agent),
+                  })}
+                >
+                  <span className="subagent-row-title">
+                    <ParticipantChip
+                      fallbackType=""
+                      fallbackTaskName={agentLabelFromSummary(agent)}
+                      size="sm"
+                    />
+                  </span>
+                  <span className="subagent-row-status">
+                    {agentStatusLabel(agent.status)}
+                  </span>
+                  {nestedLabel ? (
+                    <span className="subagent-row-nested">{nestedLabel}</span>
+                  ) : null}
+                </button>
+              </Tooltip>
               <div
                 className="subagent-row-actions"
                 aria-label={t("environment.subtaskActions")}

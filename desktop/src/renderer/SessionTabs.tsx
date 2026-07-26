@@ -35,6 +35,7 @@ import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMe
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
 import { translateCurrent as translate, useI18n } from "./i18n";
+import { TruncatedText } from "./TruncatedText";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
@@ -369,8 +370,6 @@ function SortableSessionTab({
     pendingCount === 1 ? "tabs.pendingInputOne" : "tabs.pendingInput",
     { count: pendingCount },
   );
-  const tabTitle =
-    pendingCount > 0 ? `${label} · ${pendingLabel}` : label;
   return (
     <div
       ref={setNodeRef}
@@ -391,12 +390,11 @@ function SortableSessionTab({
         aria-selected={active}
         aria-busy={pendingSwitch}
         tabIndex={active ? 0 : -1}
-        title={tabTitle}
         onClick={onSelect}
         onDoubleClick={onDoubleClick}
       >
         <span className="session-tab-status" aria-hidden="true" />
-        <span className="session-tab-title">{label}</span>
+        <TruncatedText className="session-tab-title" text={label} />
         {pendingCount > 0 ? (
           <span
             className="session-tab-pending-count"

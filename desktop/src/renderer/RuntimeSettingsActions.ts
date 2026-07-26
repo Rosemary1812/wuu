@@ -34,6 +34,7 @@ export type RuntimeSettingsActionsDeps = {
   setBranchMenuOpen: (open: boolean) => void;
   setCodexRuntimeMenu: (update: SetStateAction<CodexRuntimeMenu>) => void;
   clearThreadPendingComposerMessages: (threadID: string) => void;
+  variantByModel: Map<string, string>;
 };
 
 export type RuntimeSettingsActions = {
@@ -81,6 +82,14 @@ type RuntimeSelectionUpdate = {
 export function createRuntimeSettingsActions(
   deps: RuntimeSettingsActionsDeps,
 ): RuntimeSettingsActions {
+  function modelSelectionKey(
+    scope: string,
+    provider: string,
+    model: string,
+  ): string {
+    return JSON.stringify([scope, provider.trim(), model.trim()]);
+  }
+
   // Sends only the fields the caller explicitly changed. The server inherits
   // omitted provider/model/variant/effort/permission from the target thread
   // and leaves the workspace defaults for them untouched, so forwarding
@@ -493,11 +502,31 @@ export function createRuntimeSettingsActions(
     model: string,
     variant?: string,
   ): Promise<void> {
-    if (!deps.getAppState().initialized || deps.getViewContextSwitchPending()) {
+    const state = deps.getAppState();
+    if (!state.initialized || deps.getViewContextSwitchPending()) {
       return;
     }
+    const targetThread = activeThreadForState(state);
+    const currentProvider =
+      targetThread?.model_provider ?? state.initialized.provider;
+    const currentModel = targetThread?.model ?? state.initialized.model;
+    const currentVariant =
+      targetThread?.model_variant ??
+      targetThread?.model_effort ??
+      state.initialized.variant ??
+      state.initialized.effort ??
+      "";
+    const selectionScope = targetThread?.id ?? "workspace";
+    deps.variantByModel.set(
+      modelSelectionKey(selectionScope, currentProvider, currentModel),
+      currentVariant,
+    );
+    const targetKey = modelSelectionKey(selectionScope, provider, model);
+    const nextVariant = deps.variantByModel.has(targetKey)
+      ? deps.variantByModel.get(targetKey)
+      : variant;
     try {
-      await sendRuntimeSelection({ provider, model, variant });
+      await sendRuntimeSelection({ provider, model, variant: nextVariant });
     } catch {
       // Failure already surfaced through the status line.
     }

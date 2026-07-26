@@ -16,6 +16,7 @@ import {
   workspaceToolViewTab,
   type WorkspaceViewTab,
 } from "./WorkspaceViewTabs";
+import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
 
 // Renders the cwd it received so tests can assert which context prop
 // (activeContext vs workspaceContext) actually reached the terminal panel,
@@ -127,6 +128,7 @@ function fileResource(tabID: string): HTMLElement | undefined {
 }
 
 afterEach(() => {
+  unhoverTooltip();
   unmount();
   document.documentElement.classList.remove("resizing-workspace-file-split");
   vi.unstubAllGlobals();
@@ -333,7 +335,7 @@ describe("WorkspaceRightPanel", () => {
     const panel = container?.querySelector<HTMLElement>(".workspace-right-panel.detail.files");
     expect(panel).toBeTruthy();
     expect(panel?.querySelector(".workspace-tool-tab.active")?.textContent).toContain("App.tsx");
-    expect(panel?.querySelector(".workspace-tool-tab-main")?.getAttribute("title")).toBe("src/App.tsx");
+    expect(await hoverTooltipText(panel?.querySelector(".workspace-tool-tab-main") ?? null)).toBe("src/App.tsx");
     expect(panel?.querySelector(".workspace-files-content-header")).toBeNull();
     expect(panel?.querySelector(".workspace-file-resource.active .workspace-file-preview")).toBeTruthy();
     const content = panel?.querySelector(".workspace-files-content");
@@ -746,7 +748,7 @@ describe("WorkspaceRightPanel", () => {
     expect(onCloseTab).toHaveBeenCalledWith(fileTab.id);
   });
 
-  it("renders a diff tab as a unified, closable right panel tab (folded into the tab strip)", () => {
+  it("renders a diff tab as a unified, closable right panel tab (folded into the tab strip)", async () => {
     const onCloseTab = vi.fn();
     const diffTab = workspaceDiffViewTab({
       threadID: "thread-1",
@@ -773,7 +775,8 @@ describe("WorkspaceRightPanel", () => {
     // there's more than one tab) is reorderable just like a tool tab.
     const tabButton = panel?.querySelector<HTMLButtonElement>(".workspace-tool-tab-main");
     expect(tabButton?.textContent).toContain("a.txt");
-    expect(tabButton?.getAttribute("title")).toBe("/tmp/a.txt");
+    expect(tabButton?.getAttribute("title")).toBeNull();
+    expect(await hoverTooltipText(tabButton ?? null)).toBe("/tmp/a.txt");
 
     act(() => {
       panel?.querySelector<HTMLButtonElement>(".turn-file-diff-close")?.click();

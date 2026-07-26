@@ -2,6 +2,7 @@ import { ChevronRight, FileText, Info, X } from "lucide-react";
 import { useState } from "react";
 import type { InstructionFile, InstructionsListResult } from "../shared/protocol";
 import { formatCurrentNumber, translateCurrent as t, useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 // InstructionFilesEntry mirrors ContextCompositionEntry: App owns the fetch
 // and drops the result here. Keeping the card presentational makes it trivial
@@ -83,18 +84,19 @@ function InstructionFileRow({ file }: { file: InstructionFile }): JSX.Element {
     <div className={`instruction-file-row${expanded ? " expanded" : ""}`}>
       {/* 完整路径只保留在悬停提示里：行内的文件名已经标识了文件，路径
         * 文本会把同一语义写第二遍。 */}
-      <button
-        className="instruction-file-toggle"
-        type="button"
-        aria-expanded={expanded}
-        title={file.path}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <ChevronRight className="icon instruction-file-chevron" />
-        <FileText className="icon instruction-file-icon" />
-        <span className="instruction-file-name">{file.name}</span>
-        <span className="instruction-file-size">{formatBytes(file.bytes)}</span>
-      </button>
+      <Tooltip content={file.path}>
+        <button
+          className="instruction-file-toggle"
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronRight className="icon instruction-file-chevron" />
+          <FileText className="icon instruction-file-icon" />
+          <span className="instruction-file-name">{file.name}</span>
+          <span className="instruction-file-size">{formatBytes(file.bytes)}</span>
+        </button>
+      </Tooltip>
       {expanded ? (
         <pre className="instruction-file-preview">
           {content.length > 0 ? content : t("instructions.fileEmpty")}

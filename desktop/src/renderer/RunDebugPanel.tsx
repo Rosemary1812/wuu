@@ -20,6 +20,7 @@ import {
   type AppState,
 } from "./AppState";
 import { runtimeViewForConversation } from "./SessionRuntimeState";
+import { Tooltip } from "./Tooltip";
 import {
   streamTextKey,
   streamTextStore,
@@ -304,9 +305,11 @@ function RunDebugItem({
           label={t("runDebug.field.result")}
         />
         {item.error ? (
-          <span className="error" title={item.error}>
-            {t("runDebug.field.error")}: {shortDebugError(item.error)}
-          </span>
+          <Tooltip content={item.error}>
+            <span className="error">
+              {t("runDebug.field.error")}: {shortDebugError(item.error)}
+            </span>
+          </Tooltip>
         ) : null}
       </div>
     </div>
