@@ -62,11 +62,20 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	}
 
 	var createdRoom ChannelRoomCreateResult
+	const roomAvatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 	callChannelRPC(t, server, out, MethodChannelRoomCreate, ChannelRoomCreateParams{
-		Name: "Review", AgentIDs: []string{createdAgent.Agent.ID},
+		Name: "Review", AvatarImage: roomAvatar, AgentIDs: []string{createdAgent.Agent.ID},
 	}, &createdRoom)
-	if len(createdRoom.Room.Members) != 2 {
+	if len(createdRoom.Room.Members) != 2 || createdRoom.Room.AvatarImage != roomAvatar {
 		t.Fatalf("created room members = %#v", createdRoom.Room.Members)
+	}
+	var updatedRoom ChannelRoomUpdateResult
+	emptyAvatar := ""
+	callChannelRPC(t, server, out, MethodChannelRoomUpdate, ChannelRoomUpdateParams{
+		RoomID: createdRoom.Room.ID, AvatarImage: &emptyAvatar,
+	}, &updatedRoom)
+	if updatedRoom.Room.AvatarImage != "" {
+		t.Fatalf("updated room avatar = %q", updatedRoom.Room.AvatarImage)
 	}
 
 	var sent ChannelMessageSendResult
@@ -420,9 +429,10 @@ func TestChannelRoomUpdateAndDeleteRPCs(t *testing.T) {
 	}, &createdRoom)
 
 	var updated ChannelRoomUpdateResult
+	updatedName := "  Delivery  "
 	callChannelRPC(t, server, out, MethodChannelRoomUpdate, ChannelRoomUpdateParams{
 		RoomID: createdRoom.Room.ID,
-		Name:   "  Delivery  ",
+		Name:   &updatedName,
 	}, &updated)
 	if updated.Room.ID != createdRoom.Room.ID || updated.Room.Name != "Delivery" || len(updated.Room.Members) != 2 {
 		t.Fatalf("updated room = %#v", updated.Room)

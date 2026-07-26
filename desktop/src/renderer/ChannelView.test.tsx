@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChannelRoom, NamedAgent, WuuDesktopApi } from "../shared/protocol";
 import { graphDensityScale } from "./AgentRelationshipGraph";
+import { groupAvatarRowSizes } from "./ChannelGroupAvatar";
 import { ChannelView } from "./ChannelView";
 
 let container: HTMLDivElement;
@@ -65,6 +66,7 @@ function createApi(): Partial<WuuDesktopApi> {
     startNamedAgent: vi.fn(async () => ({ agent: agents[0] })),
     listChannelRooms: vi.fn(async () => ({ rooms })),
     createChannelRoom: vi.fn(async (params) => ({ room: { ...rooms[1], name: params.name } })),
+    updateChannelRoom: vi.fn(async (params) => ({ room: { ...rooms[0], avatar_image: params.avatar_image } })),
     deleteChannelRoom: vi.fn(async () => ({ deleted: true })),
     listChannelMessages: vi.fn(async ({ room_id }) => ({
       messages: room_id === "room-1"
@@ -195,6 +197,12 @@ afterEach(() => {
 });
 
 describe("ChannelView", () => {
+  it("uses WeChat-style centered rows for one through nine members", () => {
+    expect(Array.from({ length: 10 }, (_, index) => groupAvatarRowSizes(index))).toEqual([
+      [1], [1], [2], [1, 2], [2, 2], [2, 3], [3, 3], [1, 3, 3], [2, 3, 3], [3, 3, 3],
+    ]);
+  });
+
   it("scales graph nodes down within a bounded range as the graph grows", () => {
     expect(graphDensityScale(2)).toBe(1.35);
     expect(graphDensityScale(12)).toBeLessThan(graphDensityScale(4));
@@ -232,7 +240,10 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-agent-status-dot.thinking")).not.toBeNull();
     expect(container.querySelector(".channel-agent-status-card")?.textContent).toBe("处理中");
     expect(container.querySelector(".channel-agent-status-card strong")).toBeNull();
-    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-row"))
+    const firstRoomRow = container.querySelector(".channel-room-row");
+    expect(firstRoomRow?.textContent).toContain("2 位成员");
+    expect(firstRoomRow?.querySelectorAll(".channel-group-avatar-cell")).toHaveLength(2);
+    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
       .find((button) => button.textContent?.includes("research"));
     act(() => research?.click());
     await settle();

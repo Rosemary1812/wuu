@@ -94,6 +94,27 @@ func createTestRoom(t *testing.T, service *Service, agents ...AgentCredential) R
 	return room
 }
 
+func TestRoomAvatarPersistsOnlyCustomImage(t *testing.T) {
+	service := openTestService(t, nil)
+	const avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	room, err := service.CreateRoom(context.Background(), CreateRoomParams{
+		Kind: RoomChannel, Name: "avatars", AvatarImage: avatar, CreatedBy: "human-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+	if room.AvatarImage != avatar {
+		t.Fatalf("created room avatar = %q", room.AvatarImage)
+	}
+	updated, err := service.UpdateRoomAvatar(context.Background(), room.ID, "")
+	if err != nil {
+		t.Fatalf("UpdateRoomAvatar() error = %v", err)
+	}
+	if updated.AvatarImage != "" {
+		t.Fatalf("cleared room avatar = %q", updated.AvatarImage)
+	}
+}
+
 func TestOpenCreatesIndependentChannelsSchema(t *testing.T) {
 	service := openTestService(t, nil)
 	rows, err := service.db.Query(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)

@@ -509,6 +509,7 @@ export type ChannelRoom = {
   id: string;
   kind: "channel" | "dm";
   name: string;
+  avatar_image?: string;
   created_by: string;
   created_at: string;
   members: ChannelRoomMember[];
@@ -551,9 +552,12 @@ export type ChannelAgentStartResult = { agent: NamedAgent };
 export type ChannelRoomListResult = { rooms: ChannelRoom[] };
 export type ChannelRoomCreateParams = {
   name: string;
+  avatar_image?: string;
   agent_ids?: string[];
 };
 export type ChannelRoomCreateResult = { room: ChannelRoom };
+export type ChannelRoomUpdateParams = { room_id: string; name?: string; avatar_image?: string };
+export type ChannelRoomUpdateResult = { room: ChannelRoom };
 export type ChannelRoomDeleteParams = { room_id: string };
 export type ChannelRoomDeleteResult = { deleted: boolean };
 export type ChannelMessageListParams = {
@@ -2133,6 +2137,7 @@ export type WuuDesktopApi = {
   startNamedAgent: (params: ChannelAgentStartParams) => Promise<ChannelAgentStartResult>;
   listChannelRooms: () => Promise<ChannelRoomListResult>;
   createChannelRoom: (params: ChannelRoomCreateParams) => Promise<ChannelRoomCreateResult>;
+  updateChannelRoom: (params: ChannelRoomUpdateParams) => Promise<ChannelRoomUpdateResult>;
   deleteChannelRoom: (params: ChannelRoomDeleteParams) => Promise<ChannelRoomDeleteResult>;
   listChannelMessages: (params: ChannelMessageListParams) => Promise<ChannelMessageListResult>;
   sendChannelMessage: (params: ChannelMessageSendParams) => Promise<ChannelMessageSendResult>;

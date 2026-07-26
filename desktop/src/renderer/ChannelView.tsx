@@ -1,10 +1,11 @@
-import { Bot, ClipboardList, Hash, ImagePlus, MessageCircle, Pencil, Plus, Reply, Trash2, X } from "lucide-react";
+import { Bot, ClipboardList, ImagePlus, MessageCircle, Pencil, Plus, Reply, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
 import { AUTO_FOLLOW_BOTTOM_THRESHOLD_PX, useAutoFollowScrollContainer } from "./AutoFollowScroll";
 import { ChannelComposer } from "./ChannelComposer";
+import { ChannelGroupAvatar } from "./ChannelGroupAvatar";
 import { buildComposerAttachments } from "./ComposerDraftState";
 import { ComposerAttachmentStrip } from "./ComposerInputSections";
 import {
@@ -35,7 +36,7 @@ const AGENT_AVATAR_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
 const AGENT_AVATAR_SIZE = 256;
 const AGENT_AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
-async function agentAvatarImageFromFile(file: File): Promise<string> {
+async function squareAvatarImageFromFile(file: File): Promise<string> {
   if (!AGENT_AVATAR_TYPES.has(file.type) || file.size === 0 || file.size > AGENT_AVATAR_SOURCE_MAX_BYTES) throw new Error("invalid-avatar-image");
   const bitmap = await createImageBitmap(file);
   try {
@@ -125,6 +126,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [editingAgentID, setEditingAgentID] = useState("");
   const [roomName, setRoomName] = useState("");
   const [roomAgentIDs, setRoomAgentIDs] = useState<string[]>([]);
+  const [roomAvatarImage, setRoomAvatarImage] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
@@ -132,6 +134,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const composerFooterRef = useRef<HTMLDivElement | null>(null);
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
+  const roomAvatarInputRef = useRef<HTMLInputElement | null>(null);
+  const roomAvatarTargetRef = useRef<string>("");
   const knownMessageIDsRef = useRef<Set<string>>(new Set());
   const sendingTimersRef = useRef<Map<string, number>>(new Map());
   const splitResizeStartRef = useRef({ x: 0, width: CHANNEL_SPLIT_DEFAULT_WIDTH });
@@ -437,10 +441,12 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     try {
       const result = await window.wuu.createChannelRoom({
         name,
+        avatar_image: roomAvatarImage || undefined,
         agent_ids: roomAgentIDs,
       });
       setRoomName("");
       setRoomAgentIDs([]);
+      setRoomAvatarImage("");
       setSetupPanel(null);
       await refreshRoomsAndAgents();
       setSelectedRoomID(result.room.id);
@@ -594,6 +600,28 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     );
   }
 
+  function chooseRoomAvatar(roomID: string): void {
+    roomAvatarTargetRef.current = roomID;
+    roomAvatarInputRef.current?.click();
+  }
+
+  async function updateRoomAvatarFromFile(file: File): Promise<void> {
+    if (!window.wuu) return;
+    setError("");
+    try {
+      const avatarImage = await squareAvatarImageFromFile(file);
+      const roomID = roomAvatarTargetRef.current;
+      if (!roomID) {
+        setRoomAvatarImage(avatarImage);
+        return;
+      }
+      const result = await window.wuu.updateChannelRoom({ room_id: roomID, avatar_image: avatarImage });
+      setRooms((current) => current.map((room) => room.id === result.room.id ? result.room : room));
+    } catch {
+      setError(t("channels.invalidAvatarImage"));
+    }
+  }
+
   return (
     <section
       className={`channel-view channel-mode-${section}${resizingSplit ? " resizing-channel-split" : ""}`}
@@ -611,16 +639,34 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         </div>
         <div className="channel-room-list">
           {rooms.map((room) => (
-            <button
-              className={`channel-room-row${room.id === selectedRoomID ? " active" : ""}`}
-              type="button"
-              key={room.id}
-              onClick={() => setSelectedRoomID(room.id)}
-            >
-              <Hash className="icon" />
-              <span>{room.name}</span>
-            </button>
+            <div className={`channel-room-row${room.id === selectedRoomID ? " active" : ""}`} key={room.id}>
+              <button
+                className="channel-room-avatar-button"
+                type="button"
+                aria-label={t("channels.changeGroupAvatar", { name: room.name })}
+                onClick={() => chooseRoomAvatar(room.id)}
+              >
+                <ChannelGroupAvatar room={room} agents={agents} />
+                <span className="channel-room-avatar-edit"><Pencil className="icon" /></span>
+              </button>
+              <button className="channel-room-select" type="button" onClick={() => setSelectedRoomID(room.id)}>
+                <span className="channel-room-name">{room.name}</span>
+                <span className="channel-room-members">{t("channels.memberCount", { count: room.members.length })}</span>
+              </button>
+            </div>
           ))}
+          <input
+            ref={roomAvatarInputRef}
+            className="channel-avatar-file-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              if (!file) return;
+              void updateRoomAvatarFromFile(file).finally(() => { input.value = ""; });
+            }}
+          />
           {!loading && rooms.length === 0 ? (
             <button className="channel-empty-action" type="button" onClick={() => setSetupPanel("room")}>
               {t("channels.newRoom")}
@@ -983,7 +1029,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   const file = input.files?.[0];
                   if (!file) return;
                   setError("");
-                  void agentAvatarImageFromFile(file)
+                  void squareAvatarImageFromFile(file)
                     .then(setAgentAvatarImage)
                     .catch(() => setError(t("channels.invalidAvatarImage")))
                     .finally(() => { input.value = ""; });
@@ -1002,18 +1048,44 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         title={roomName}
         onTitleChange={setRoomName}
         onSubmit={() => void submitRoom()}
-        onClose={() => setSetupPanel(null)}
+        onClose={() => { setSetupPanel(null); setRoomAvatarImage(""); }}
         dialogTitle={t("channels.newRoom")}
         dialogTitleId="channel-room-dialog-title"
         fieldLabel={t("channels.name")}
         fieldAriaLabel={t("channels.name")}
         placeholder={t("channels.newRoom")}
-        icon={Hash}
+        icon={MessageCircle}
         submitLabel={t("channels.create")}
         cancelLabel={t("channels.cancel")}
         submitDisabled={!roomName.trim()}
         content={<div className="channel-setup-form">
           <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.name")}</span><input className="sidebar-name-dialog-input" value={roomName} onChange={(event) => setRoomName(event.currentTarget.value)} autoFocus /></label>
+          <fieldset className="channel-room-avatar-picker">
+            <legend>{t("channels.groupAvatar")}</legend>
+            <button
+              className="channel-room-avatar-preview"
+              type="button"
+              aria-label={t("channels.customGroupAvatar")}
+              onClick={() => chooseRoomAvatar("")}
+            >
+              <ChannelGroupAvatar
+                room={{
+                  id: "new-room",
+                  kind: "channel",
+                  name: roomName,
+                  avatar_image: roomAvatarImage || undefined,
+                  created_by: "local-user",
+                  created_at: "",
+                  members: [
+                    { room_id: "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
+                    ...roomAgentIDs.map((agentID) => ({ room_id: "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
+                  ],
+                }}
+                agents={agents}
+              />
+              <span><ImagePlus className="icon" />{t("channels.customGroupAvatar")}</span>
+            </button>
+          </fieldset>
           <fieldset><legend>{t("channels.agents")}</legend>{agents.map((agent) => <label className="channel-checkbox-row" key={agent.id}><input type="checkbox" checked={roomAgentIDs.includes(agent.id)} onChange={() => toggleRoomAgent(agent.id)} /><span>{agent.name}</span></label>)}</fieldset>
         </div>}
       />
