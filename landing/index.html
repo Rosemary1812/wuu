@@ -1435,7 +1435,8 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 
   /* --- 像素 w：4 段中心线 + 距离场采样出 19×19 位图，(9,9) 为种子 --- */
   const N = 19, SEED = 9*N + 9;
-  const SPINE = [[1.3,3.6],[5,13.9],[9,8],[13,13.9],[16.7,3.6]];
+  /* 中心线经质心校准：字形质心 ≈ (9,9)，与种子/缩放不动点重合，任何缩放级别构图都居中 */
+  const SPINE = [[1.8,3.96],[5.5,14.26],[9.5,8.36],[13.5,14.26],[17.2,3.96]];
   const segDist = (px,py,ax,ay,bx,by)=>{
     const dx=bx-ax, dy=by-ay;
     const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy)));
@@ -1529,8 +1530,8 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     W = holder.clientWidth; H = holder.clientHeight;
     canvas.width = Math.round(W*dpr); canvas.height = Math.round(H*dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);
-    BASE = Math.min(W/9.5, H/10);
-    AX = W/2 + BASE*.5; AY = H/2 + BASE;   /* 锚点=种子格；补偿字形质心偏移 */
+    BASE = Math.min(W/12, H/12.5);
+    AX = W/2; AY = H/2;
   }
   const T = Math.log(N/.78);           /* 每代缩放比：一格 = 上一代整体 */
   const TICK = 300, MAXA = 36;
@@ -1733,14 +1734,14 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     unit = BASE*Math.exp(gen*T - F);
     step(sim, now);
     verify(sim, now);
-    if(sim.doneAt && now-sim.doneAt >= 650){
+    if(sim.doneAt && now-sim.doneAt >= 900){
       sim = newSim(now); addAgent(sim, SEED, now, true); gen++;
       unit = BASE*Math.exp(gen*T - F);
     }
     /* 镜头弹簧：填充中轻微预缩，建成后整代退一格 */
     const target = (gen + (sim.doneAt ? 1 : -.04 + .34*sim.cells.size/TOTAL)) * T;
     const steps = Math.max(1, Math.ceil(dt/12)), h = dt/steps;
-    for(let i=0; i<steps; i++){ R += (8.1e-7*(target-F) - 1.53e-3*R)*h; F += R*h; }
+    for(let i=0; i<steps; i++){ R += (1.15e-6*(target-F) - 1.82e-3*R)*h; F += R*h; }
     draw(now);
     raf = requestAnimationFrame(frame);
   }
