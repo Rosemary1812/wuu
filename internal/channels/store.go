@@ -923,6 +923,25 @@ func (s *Service) ListRooms(ctx context.Context) ([]Room, error) {
 	return rooms, nil
 }
 
+func (s *Service) UpdateRoom(ctx context.Context, params UpdateRoomParams) (Room, error) {
+	id := strings.TrimSpace(params.RoomID)
+	if id == "" {
+		return Room{}, errors.New("room id is required")
+	}
+	name := strings.TrimSpace(params.Name)
+	if name == "" {
+		return Room{}, errors.New("room name is required")
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE rooms SET name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return Room{}, fmt.Errorf("update room: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return Room{}, ErrNotFound
+	}
+	return s.GetRoom(ctx, id)
+}
+
 func (s *Service) EnsureBootstrap(ctx context.Context, humanID string) (BootstrapResult, error) {
 	s.bootstrapMu.Lock()
 	defer s.bootstrapMu.Unlock()

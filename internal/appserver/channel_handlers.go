@@ -168,6 +168,21 @@ func (s *Server) handleChannelRoomCreate(ctx context.Context, req Request) error
 	return s.writeResponse(req.ID, ChannelRoomCreateResult{Room: room}, err)
 }
 
+func (s *Server) handleChannelRoomUpdate(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelRoomUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	room, err := s.channelService.UpdateRoom(ctx, channels.UpdateRoomParams{
+		RoomID: params.RoomID,
+		Name:   params.Name,
+	})
+	return s.writeResponse(req.ID, ChannelRoomUpdateResult{Room: room}, err)
+}
+
 func (s *Server) handleChannelRoomDelete(ctx context.Context, req Request) error {
 	if s == nil || s.channelService == nil {
 		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))

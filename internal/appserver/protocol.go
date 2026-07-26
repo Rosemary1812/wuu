@@ -37,6 +37,7 @@ const (
 	MethodChannelAgentStart    = "channel/agent/start"
 	MethodChannelRoomList      = "channel/room/list"
 	MethodChannelRoomCreate    = "channel/room/create"
+	MethodChannelRoomUpdate    = "channel/room/update"
 	MethodChannelRoomDelete    = "channel/room/delete"
 	MethodChannelMessageList   = "channel/message/list"
 	MethodChannelMessageSend   = "channel/message/send"
@@ -2069,6 +2070,15 @@ type ChannelRoomCreateParams struct {
 }
 
 type ChannelRoomCreateResult struct {
+	Room channels.Room `json:"room"`
+}
+
+type ChannelRoomUpdateParams struct {
+	RoomID string `json:"room_id"`
+	Name   string `json:"name"`
+}
+
+type ChannelRoomUpdateResult struct {
 	Room channels.Room `json:"room"`
 }
 

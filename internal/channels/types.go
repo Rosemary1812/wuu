@@ -122,6 +122,11 @@ type CreateRoomParams struct {
 	Members   []RoomMember
 }
 
+type UpdateRoomParams struct {
+	RoomID string
+	Name   string
+}
+
 type Message struct {
 	ID         string         `json:"id"`
 	RoomID     string         `json:"room_id"`

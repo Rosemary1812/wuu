@@ -234,6 +234,89 @@ func TestRoomMembershipAndDMConstraints(t *testing.T) {
 	}
 }
 
+func TestUpdateRoomPersistsTrimmedNameAndValidatesInput(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	room := createTestRoom(t, service)
+
+	updated, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Name: "  Delivery  "})
+	if err != nil {
+		t.Fatalf("UpdateRoom() error = %v", err)
+	}
+	if updated.Name != "Delivery" || updated.ID != room.ID || len(updated.Members) != len(room.Members) {
+		t.Fatalf("updated room = %#v", updated)
+	}
+	loaded, err := service.GetRoom(ctx, room.ID)
+	if err != nil {
+		t.Fatalf("GetRoom() error = %v", err)
+	}
+	if loaded.Name != "Delivery" {
+		t.Fatalf("persisted room name = %q, want Delivery", loaded.Name)
+	}
+
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Name: " \t\n "}); err == nil {
+		t.Fatal("UpdateRoom(empty name) succeeded")
+	}
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: "room-missing", Name: "Missing"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateRoom(missing room) error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDeleteRoomCascadesRoomDataAndPreservesNamedAgent(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	agent := createTestAgent(t, service, "Alpha")
+	room := createTestRoom(t, service, agent)
+	message, err := service.SendHuman(ctx, HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "@Alpha review this",
+	})
+	if err != nil {
+		t.Fatalf("SendHuman() error = %v", err)
+	}
+	now := toMillis(service.now())
+	if _, err := service.db.ExecContext(ctx, `
+		INSERT INTO drafts (id, agent_id, room_id, body, basis_seq, hold_count, state, created_at, updated_at)
+		VALUES ('draft-delete-test', ?, ?, 'draft', ?, 1, 'held', ?, ?)`,
+		agent.Agent.ID, room.ID, message.Message.Seq, now, now); err != nil {
+		t.Fatalf("insert draft: %v", err)
+	}
+	if _, err := service.db.ExecContext(ctx, `
+		INSERT INTO reminders (id, agent_id, fire_at, note, room_id, state, created_at)
+		VALUES ('reminder-delete-test', ?, ?, 'follow up', ?, 'pending', ?)`,
+		agent.Agent.ID, now+60000, room.ID, now); err != nil {
+		t.Fatalf("insert reminder: %v", err)
+	}
+
+	for _, table := range []string{"room_members", "room_messages", "room_cursors", "inbox_items", "drafts", "reminders"} {
+		var count int
+		if err := service.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE room_id = ?", room.ID).Scan(&count); err != nil {
+			t.Fatalf("count %s before delete: %v", table, err)
+		}
+		if count == 0 {
+			t.Fatalf("%s has no room-associated fixture before delete", table)
+		}
+	}
+
+	if err := service.DeleteRoom(ctx, room.ID); err != nil {
+		t.Fatalf("DeleteRoom() error = %v", err)
+	}
+	if _, err := service.GetRoom(ctx, room.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRoom(deleted) error = %v, want ErrNotFound", err)
+	}
+	for _, table := range []string{"room_members", "room_messages", "room_cursors", "inbox_items", "drafts", "reminders"} {
+		var count int
+		if err := service.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE room_id = ?", room.ID).Scan(&count); err != nil {
+			t.Fatalf("count %s after delete: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s room-associated rows after delete = %d, want 0", table, count)
+		}
+	}
+	if kept, err := service.GetNamedAgent(ctx, agent.Agent.ID); err != nil || kept.ID != agent.Agent.ID {
+		t.Fatalf("named agent after room delete = %#v, err = %v", kept, err)
+	}
+}
+
 func TestBootstrapCreatesDeletableAndyAndGeneralOnlyOnce(t *testing.T) {
 	ctx := context.Background()
 	service := openTestService(t, nil)
