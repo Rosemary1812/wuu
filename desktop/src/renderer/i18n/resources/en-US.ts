@@ -1494,6 +1494,7 @@ export const enUS = {
   "skills.contentUnavailable": "Skill content unavailable",
   "skills.contentFallback": "Could not read the full Skill file. Showing the summary instead.",
   "automations.title": "Automations",
+  "automations.subtitle": "Let Wuu run tasks automatically on a schedule",
   "automations.filterLabel": "Filter automations",
   "automations.filter.all": "All",
   "automations.filter.active": "Active",

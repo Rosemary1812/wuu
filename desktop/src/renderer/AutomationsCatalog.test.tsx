@@ -39,6 +39,8 @@ describe("AutomationsCatalog", () => {
     });
 
     expect(container.querySelector(".automations-detail")).toBeNull();
+    expect(container.querySelector(".catalog-page-header")).toBeTruthy();
+    expect(container.textContent).toContain("让 Wuu 按计划自动执行任务");
     expect(container.querySelector(".catalog-search input[type=\"search\"]")).toBeTruthy();
     const row = container.querySelector<HTMLButtonElement>(".automation-row");
     await act(async () => row?.click());

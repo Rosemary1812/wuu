@@ -2163,12 +2163,11 @@ html.resizing-workspace-terminal-split * {
 }
 .automations-catalog.detail-open { grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr); }
 
-.automations-master { padding: 30px 28px 48px; border-right: 1px solid var(--line-subtle); }
-.automations-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.automations-filters { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--surface-3); }
+.automations-master { box-sizing: border-box; width: 100%; max-width: 1080px; justify-self: center; padding: 42px clamp(32px, 6vw, 88px) 64px; }
+.automations-catalog.detail-open .automations-master { max-width: none; border-right: 1px solid var(--line-subtle); }
+.automations-filters { display: flex; width: max-content; gap: 4px; margin-top: 18px; padding: 3px; border-radius: 12px; background: var(--surface-3); }
 .automations-filters button { border: 0; border-radius: 9px; background: transparent; color: var(--ink-tertiary); font: inherit; padding: 7px 13px; }
 .automations-filters button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-.automations-search { margin-top: 22px; }
 .automations-list { display: grid; gap: 6px; margin-top: 18px; }
 .automation-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-radius: 14px; background: transparent; color: var(--ink); padding: 14px; text-align: left; }
 .automation-row:hover, .automation-row.selected { background: var(--surface-3); }
@@ -2212,28 +2211,28 @@ html.resizing-workspace-terminal-split * {
   padding: 42px clamp(32px, 6vw, 88px) 64px;
 }
 
-.skills-catalog-header {
+.catalog-page-header {
   display: grid;
   min-width: 0;
   gap: 26px;
   padding-bottom: 2px;
 }
 
-.skills-catalog-title {
+.catalog-page-title {
   display: grid;
   min-width: 0;
   gap: 8px;
   color: var(--ink);
 }
 
-.skills-catalog-title strong {
+.catalog-page-title strong {
   font-size: 32px;
   font-weight: var(--weight-medium);
   letter-spacing: -0.035em;
   line-height: 1.15;
 }
 
-.skills-catalog-title span {
+.catalog-page-title span {
   color: var(--ink-tertiary);
   font-size: 17px;
   font-weight: var(--weight-regular);
@@ -2241,7 +2240,7 @@ html.resizing-workspace-terminal-split * {
   line-height: 1.4;
 }
 
-.skills-catalog-controls {
+.catalog-page-controls {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -2283,7 +2282,7 @@ html.resizing-workspace-terminal-split * {
   color: var(--ink-muted);
 }
 
-.skills-refresh {
+.catalog-refresh {
   width: 44px;
   height: 44px;
   flex: 0 0 auto;

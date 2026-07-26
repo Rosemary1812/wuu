@@ -151,19 +151,19 @@ export function SkillsCatalog({
 
   return (
     <section className="skills-catalog" aria-label={t("skills.catalogLabel")}>
-      <header className="skills-catalog-header">
-        <div className="skills-catalog-title">
+      <header className="catalog-page-header">
+        <div className="catalog-page-title">
           <strong>{t("skills.title")}</strong>
           <span>{t("skills.subtitle")}</span>
         </div>
-        <div className="skills-catalog-controls">
+        <div className="catalog-page-controls">
           <CatalogSearchField
             value={filter}
             placeholder={t("skills.searchPlaceholder")}
             onValueChange={setFilter}
           />
           <button
-            className="icon-button skills-refresh"
+            className="icon-button catalog-refresh"
             type="button"
             aria-label={t("skills.refresh")}
             onClick={() => void refreshSkills()}

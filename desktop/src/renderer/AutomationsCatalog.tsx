@@ -67,25 +67,34 @@ export function AutomationsCatalog(): JSX.Element {
   return (
     <section className={`automations-catalog${selected ? " detail-open" : ""}`} aria-label={t("automations.title")}>
       <div className="automations-master">
-        <header className="automations-toolbar">
-          <div className="automations-filters" role="tablist" aria-label={t("automations.filterLabel")}>
-            {(["all", "active", "paused"] as const).map((value) => (
-              <button key={value} className={filter === value ? "active" : ""} type="button"
-                role="tab" aria-selected={filter === value} onClick={() => setFilter(value)}>
-                {t(`automations.filter.${value}`)}
-              </button>
-            ))}
+        <header className="catalog-page-header">
+          <div className="catalog-page-title">
+            <strong>{t("automations.title")}</strong>
+            <span>{t("automations.subtitle")}</span>
           </div>
-          <button className="icon-button" type="button" aria-label={t("automations.refresh")} onClick={() => void load()}>
-            <RefreshCw className="icon" />
-          </button>
+          <div className="catalog-page-controls">
+            <CatalogSearchField
+              value={query}
+              placeholder={t("automations.searchPlaceholder")}
+              onValueChange={setQuery}
+            />
+            <button
+              className="icon-button catalog-refresh"
+              type="button"
+              aria-label={t("automations.refresh")}
+              onClick={() => void load()}
+            >
+              <RefreshCw className="icon" />
+            </button>
+          </div>
         </header>
-        <div className="automations-search">
-          <CatalogSearchField
-            value={query}
-            placeholder={t("automations.searchPlaceholder")}
-            onValueChange={setQuery}
-          />
+        <div className="automations-filters" role="tablist" aria-label={t("automations.filterLabel")}>
+          {(["all", "active", "paused"] as const).map((value) => (
+            <button key={value} className={filter === value ? "active" : ""} type="button"
+              role="tab" aria-selected={filter === value} onClick={() => setFilter(value)}>
+              {t(`automations.filter.${value}`)}
+            </button>
+          ))}
         </div>
         {error ? <div className="automations-error">{error}</div> : null}
         <div className="automations-list">

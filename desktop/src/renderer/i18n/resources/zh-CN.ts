@@ -1492,6 +1492,7 @@ export const zhCN = {
   "skills.contentUnavailable": "无法加载 Skill 内容",
   "skills.contentFallback": "无法读取完整 Skill 文件，暂时展示摘要内容。",
   "automations.title": "自动化",
+  "automations.subtitle": "让 Wuu 按计划自动执行任务",
   "automations.filterLabel": "筛选自动化",
   "automations.filter.all": "全部",
   "automations.filter.active": "已开启",
