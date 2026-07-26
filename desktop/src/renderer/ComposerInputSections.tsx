@@ -431,6 +431,7 @@ export function ComposerQueueStrip({
           <Tooltip
             content={latestMessage ? queuedMessageFullPreview(latestMessage) : undefined}
             disabled={
+              expanded ||
               !latestMessage ||
               queuedMessageFullPreview(latestMessage) === queuedMessagePreview(latestMessage)
             }
@@ -440,7 +441,13 @@ export function ComposerQueueStrip({
               role="status"
               aria-live="polite"
             >
-              {latestMessage ? queuedMessagePreview(latestMessage) : ""}
+              {expanded
+                ? hasHeldMessages
+                  ? t("composer.heldNotice")
+                  : t("composer.pendingMessages")
+                : latestMessage
+                  ? queuedMessagePreview(latestMessage)
+                  : ""}
             </span>
           </Tooltip>
         </button>
@@ -462,9 +469,6 @@ export function ComposerQueueStrip({
       </div>
       {expanded ? (
         <div className="composer-pending-details" id={detailsID}>
-          {hasHeldMessages ? (
-            <div className="composer-held-notice">{t("composer.heldNotice")}</div>
-          ) : null}
           <ol className="composer-queue-list" aria-label={t("composer.pendingMessages")}>
             {rows.map((row, index) => (
               <ComposerQueueItem

@@ -1846,7 +1846,7 @@ describe("Composer queue strip", () => {
     expect(container.querySelector(".composer-goal-strip-state")?.textContent).toBe("已暂停");
     expect(container.querySelector(".composer-pending-title")).toBeNull();
     expect(container.querySelector(".composer-pending-drawer")?.classList.contains("is-held")).toBe(false);
-    expect(container.querySelector(".composer-held-notice")).toBeNull();
+    expect(container.querySelector(".composer-pending-preview")?.textContent).toBe("仍是普通 Queue");
   });
 
   it("renders queued and guide messages in combined sequential order", () => {
@@ -1917,7 +1917,7 @@ describe("Composer queue strip", () => {
       onGuideQueuedMessage,
     });
 
-    expect(container.querySelector(".composer-held-notice")?.textContent).toBe(
+    expect(container.querySelector(".composer-pending-preview")?.textContent).toBe(
       "当前回复已中断；这些 Steer 和 Queue 不会自动执行。",
     );
     expect(container.querySelector(".composer-pending-title")).toBeNull();
