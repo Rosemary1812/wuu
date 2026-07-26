@@ -2308,7 +2308,7 @@ describe("Composer expand button", () => {
       /\.composer-goal-strip:has\(\+ \.composer-pending-drawer\)\s*\{[^}]*width:\s*calc\(100% - 48px\)/,
     );
     expect(composerCSS).toMatch(
-      /\.dock-composer-wrap::before\s*\{[^}]*background:\s*transparent/,
+      /\.dock-composer-wrap:has\(\.composer-accessory-drawer\)::before\s*\{[^}]*background:\s*transparent/,
     );
     expect(composerCSS).toMatch(
       /\.document-composer-wrap\s+\.composer-frame-shell\s*\{[^}]*z-index:\s*10/,

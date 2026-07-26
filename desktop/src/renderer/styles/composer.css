@@ -47,9 +47,13 @@
   position: absolute;
   inset: 0 var(--conversation-scrollbar-gutter) 0 0;
   z-index: 0;
-  background: transparent;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--paper) 24px, var(--paper) 100%);
   content: "";
   pointer-events: none;
+}
+
+.dock-composer-wrap:has(.composer-accessory-drawer)::before {
+  background: transparent;
 }
 
 .dock-composer-wrap .composer-stack {
