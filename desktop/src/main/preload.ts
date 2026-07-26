@@ -426,8 +426,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:file-show-menu", path),
   openExternal: (url: string) =>
     ipcRenderer.invoke("wuu:open-external", url),
-  startTurn: (threadId: string, prompt: string, images, files, permissionMode, activeDocument) =>
-    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files, permissionMode, activeDocument),
+  startTurn: (threadId: string, prompt: string, images, files, permissionMode, activeDocument, requestOnlyContext) =>
+    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files, permissionMode, activeDocument, requestOnlyContext),
   queueTurn: (threadId: string, prompt: string, images, clientId, files, permissionMode, activeDocument) =>
     ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId, files, permissionMode, activeDocument),
   updateQueuedTurn: (threadId: string, queueId: string, prompt: string, images, files) =>

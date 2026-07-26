@@ -2,11 +2,13 @@ package appserver
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 )
 
 func TestActiveDocumentRequestContext(t *testing.T) {
@@ -34,6 +36,52 @@ func TestActiveDocumentRequestContext(t *testing.T) {
 	}
 	if !strings.Contains(block.Content, `"docs/plan.md"`) {
 		t.Fatalf("block content %q does not identify the active document", block.Content)
+	}
+}
+
+func TestManagementSurfaceRequestContextIsHiddenAndRequestOnly(t *testing.T) {
+	if got := managementSurfaceRequestContext("  "); got != nil {
+		t.Fatalf("blank management context = %#v, want nil", got)
+	}
+	segments := managementSurfaceRequestContext(`{"surface":"automations_catalog"}`)
+	if len(segments) != 1 {
+		t.Fatalf("segments = %d, want 1", len(segments))
+	}
+	segment := segments[0]
+	if segment.Lifecycle != agent.ContextSegmentRequestOnly || segment.Durable || segment.VisibleInUI {
+		t.Fatalf("management context lifecycle = %+v, want hidden request-only", segment)
+	}
+	block := segment.Blocks[0]
+	if block.Kind != wuucontext.BlockAdditionalContext || block.Source != "desktop.management_surface" {
+		t.Fatalf("block identity = %+v", block)
+	}
+	if !strings.Contains(block.Content, "automations_catalog") {
+		t.Fatalf("block content = %q", block.Content)
+	}
+}
+
+func TestSkillsManagementThreadContextNamesDedicatedWritableRoots(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	wuuHome := t.TempDir()
+	srv := &Server{rt: &runtime.Session{RootDir: root, HomeDir: home, WuuHome: wuuHome}}
+	segments := srv.managementThreadRequestContext(&threadState{ManagementSurface: "skills"})
+	if len(segments) != 1 {
+		t.Fatalf("segments = %d, want 1", len(segments))
+	}
+	segment := segments[0]
+	if segment.Lifecycle != agent.ContextSegmentRequestOnly || segment.Durable || segment.VisibleInUI {
+		t.Fatalf("skills authority lifecycle = %+v, want hidden request-only", segment)
+	}
+	content := segment.Blocks[0].Content
+	for _, want := range []string{
+		filepath.Join(wuuHome, "skills"),
+		filepath.Join(home, ".codex", "skills"),
+		"same-name override",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("skills authority context %q does not contain %q", content, want)
+		}
 	}
 }
 

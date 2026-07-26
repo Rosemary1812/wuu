@@ -8,6 +8,7 @@ import { useI18n } from "./i18n";
 interface WorkspaceDocumentTurnDockProps {
   children: ReactNode;
   cwd?: string;
+  fluid?: boolean;
   onOpenFile?: (path: string) => void;
   turns: Turn[];
 }
@@ -46,6 +47,7 @@ function latestResultTurn(turns: Turn[]): Turn | undefined {
 export function WorkspaceDocumentTurnDock({
   children,
   cwd,
+  fluid = false,
   onOpenFile,
   turns,
 }: WorkspaceDocumentTurnDockProps): JSX.Element {
@@ -82,7 +84,9 @@ export function WorkspaceDocumentTurnDock({
   if (!turn || finalAnswers.length === 0) {
     return (
       <WorkspaceDocumentDrawerContext.Provider value={drawerContext}>
-        <div className="workspace-document-turn-dock">{children}</div>
+        <div className={`workspace-document-turn-dock${fluid ? " fluid" : ""}`}>
+          {children}
+        </div>
       </WorkspaceDocumentDrawerContext.Provider>
     );
   }
@@ -94,7 +98,7 @@ export function WorkspaceDocumentTurnDock({
 
   return (
     <WorkspaceDocumentDrawerContext.Provider value={drawerContext}>
-      <div className="workspace-document-turn-dock">
+      <div className={`workspace-document-turn-dock${fluid ? " fluid" : ""}`}>
         <section
           className={`workspace-document-turn-drawer${expanded ? " expanded" : ""}`}
           data-testid="workspace-document-turn-drawer"

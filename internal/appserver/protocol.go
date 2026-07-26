@@ -911,7 +911,8 @@ type ProviderModelVariantSummary struct {
 }
 
 type ThreadStartParams struct {
-	Ephemeral bool `json:"ephemeral,omitempty"`
+	Ephemeral         bool   `json:"ephemeral,omitempty"`
+	ManagementSurface string `json:"managementSurface,omitempty"`
 }
 
 type ThreadStartResult struct {
@@ -1305,12 +1306,13 @@ type MemoryReadResult struct {
 }
 
 type TurnStartParams struct {
-	ThreadID       string           `json:"thread_id"`
-	Prompt         string           `json:"prompt"`
-	Images         []TurnStartImage `json:"images,omitempty"`
-	Files          []TurnStartFile  `json:"files,omitempty"`
-	PermissionMode *string          `json:"permission_mode,omitempty"`
-	ActiveDocument *ActiveDocument  `json:"active_document,omitempty"`
+	ThreadID           string           `json:"thread_id"`
+	Prompt             string           `json:"prompt"`
+	Images             []TurnStartImage `json:"images,omitempty"`
+	Files              []TurnStartFile  `json:"files,omitempty"`
+	PermissionMode     *string          `json:"permission_mode,omitempty"`
+	ActiveDocument     *ActiveDocument  `json:"active_document,omitempty"`
+	RequestOnlyContext string           `json:"request_only_context,omitempty"`
 }
 
 type ActiveDocument struct {

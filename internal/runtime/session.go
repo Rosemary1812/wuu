@@ -2051,6 +2051,63 @@ func ConfigureToolkitPermissions(kit *tools.Toolkit, permissions config.Resolved
 	kit.SetBoundary(BoundaryForMode(permissions.Mode))
 }
 
+// SkillManagementRoots returns every directory in which the Skills catalog
+// discovers mutable user or project Skills. Bundled Skills live below
+// <WuuHome>/skills/.system, which is covered by the Wuu Skills root.
+func (s *Session) SkillManagementRoots() []string {
+	if s == nil {
+		return nil
+	}
+	roots := make([]string, 0)
+	for _, source := range skillProjectDirs(s.RootDir) {
+		roots = append(roots, source.Path)
+	}
+	if home := skillUserHome(s.HomeDir); home != "" {
+		roots = append(roots,
+			filepath.Join(home, ".codex", "skills"),
+			filepath.Join(home, ".claude", "skills"),
+			filepath.Join(home, ".agents", "skills"),
+			filepath.Join(home, ".config", "opencode", "skills"),
+		)
+	}
+	if home := strings.TrimSpace(s.WuuHome); home != "" {
+		roots = append(roots, filepath.Join(home, "skills"))
+	}
+	return uniqueCleanPaths(roots)
+}
+
+func uniqueCleanPaths(paths []string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			path = filepath.Clean(abs)
+		} else {
+			path = filepath.Clean(path)
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		out = append(out, path)
+	}
+	return out
+}
+
+// ConfigureSkillsManagementToolkit installs a dedicated, writable-but-scoped
+// authority boundary instead of inheriting the ordinary conversation mode.
+func (s *Session) ConfigureSkillsManagementToolkit(kit *tools.Toolkit) {
+	if kit == nil {
+		return
+	}
+	kit.SetBoundary(tools.StandardBoundary())
+	kit.SetFileScopeRoots(s.SkillManagementRoots())
+}
+
 // workerWakeAuthority builds the wake-time authority refresher for workers
 // cloned from the given parent toolkit. Waking a dormant worker is a new
 // execution admission, so the woken worker re-copies the parent's CURRENT

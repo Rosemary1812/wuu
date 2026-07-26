@@ -3656,6 +3656,28 @@ func TestServerThreadStartEphemeralDoesNotPersistSession(t *testing.T) {
 	}
 }
 
+func TestServerSkillsManagementThreadUsesDedicatedStandardAuthority(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	rt.PermissionModeExplicit = true
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start","params":{"ephemeral":true,"managementSurface":"skills"}}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	result := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	th := srv.thread(result.Thread.ID)
+	if th == nil || th.ManagementSurface != "skills" || th.PermissionMode != config.PermissionModeStandard {
+		t.Fatalf("skills management thread = %+v, want dedicated standard authority", th)
+	}
+	requestedReadOnly := config.PermissionModeReadOnly
+	permissions, err := srv.resolveThreadTurnPermissions(th, &requestedReadOnly)
+	if err != nil || permissions.Mode != config.PermissionModeStandard {
+		t.Fatalf("skills management permissions = %+v, err=%v; want standard independent of ordinary mode", permissions, err)
+	}
+}
+
 func TestServerThreadStartPersistsInitialModelSelection(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StreamRunner.Variant = "high"

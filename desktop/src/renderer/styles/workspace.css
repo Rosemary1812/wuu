@@ -989,7 +989,7 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-document-composer,
-.skills-assistant-composer {
+.management-assistant-composer {
   position: absolute;
   z-index: 8;
   right: 0;
@@ -999,7 +999,10 @@ html.resizing-workspace-file-split * {
   pointer-events: none;
 }
 
-.conversation-pane.automation-detail-pane-open .skills-assistant-composer,
+.management-assistant-composer {
+  padding-inline: 0;
+}
+
 .conversation-pane.automation-detail-pane-open .management-assistant-composer {
   right: var(--automation-detail-reserved-width);
 }
@@ -1027,7 +1030,7 @@ html.resizing-workspace-file-split * {
     3px 0 0 var(--ink-overlay-4);
 }
 
-.conversation-pane.skills-assistant-visible .skills-scroll-region {
+.conversation-pane.management-assistant-visible .skills-scroll-region {
   padding-bottom: 132px;
 }
 
@@ -1036,6 +1039,12 @@ html.resizing-workspace-file-split * {
   width: min(100%, var(--session-composer-width));
   margin: 0 auto;
   pointer-events: none;
+}
+
+/* Management surfaces use the same final Composer box width as the main
+   message flow. The Composer stack remains the only session-width constraint. */
+.workspace-document-turn-dock.fluid {
+  width: 100%;
 }
 
 .workspace-document-turn-drawer {

@@ -45,6 +45,15 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	managementSurface := strings.TrimSpace(params.ManagementSurface)
+	if managementSurface != "" {
+		if !params.Ephemeral {
+			return s.writeResponse(req.ID, nil, errors.New("management threads must be ephemeral"))
+		}
+		if managementSurface != "skills" {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("unsupported management surface %q", managementSurface))
+		}
+	}
 	id := session.NewID()
 	persistHistory := !params.Ephemeral
 	threadCWD := s.rt.RootDir
@@ -75,6 +84,13 @@ func (s *Server) handleThreadStart(req Request) error {
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, persistHistory, time.Now().UTC())
 	th.Source = threadSource
 	applyThreadRuntimeSelection(th, s.currentSessionRuntimeSelection())
+	if managementSurface == "skills" {
+		// Skills management is a product-owned authority surface. It is writable
+		// inside the dedicated Skills roots regardless of the ordinary composer
+		// mode, but remains path-confined rather than becoming unconfined.
+		th.PermissionMode = config.PermissionModeStandard
+		th.ManagementSurface = managementSurface
+	}
 	th.WorkspaceKind = workspaceKind
 	th.Ephemeral = params.Ephemeral
 

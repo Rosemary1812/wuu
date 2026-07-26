@@ -178,7 +178,15 @@ import {
   AutomationsCatalog,
   type AutomationDetailPaneLayout,
 } from "./AutomationsCatalog";
-import { skillsAssistantPrompt, userVisibleThreads } from "./SkillsAssistant";
+import {
+  EMPTY_MANAGEMENT_ASSISTANT_SESSION,
+  managementAssistantRequestContext,
+  managementAssistantThreadStartParams,
+  type ManagementAssistantSession,
+  type ManagementAssistantSurface,
+  retainOpenManagementAssistantSessions,
+  userVisibleThreads,
+} from "./SkillsAssistant";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
 import { useSideThreadController } from "./SideThreadController";
@@ -810,22 +818,44 @@ export function App(): JSX.Element {
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const draftSessionTabCounterRef = useRef(0);
   const currentSessionTab = activeSessionTab(state);
-  const [skillsAssistantDraft, setSkillsAssistantDraft] = useState("");
-  const [skillsAssistantThreadID, setSkillsAssistantThreadID] = useState<string>();
-  const [skillsAssistantStatus, setSkillsAssistantStatus] = useState("");
-  const previousSkillsTabIDRef = useRef<string | undefined>(undefined);
-  const currentSkillsTabID =
-    currentSessionTab?.kind === "skills" ? currentSessionTab.id : undefined;
+  const [managementAssistantSessions, setManagementAssistantSessions] = useState<
+    Record<string, ManagementAssistantSession>
+  >({});
+  const currentManagementTab =
+    currentSessionTab?.kind === "skills" || currentSessionTab?.kind === "automations"
+      ? { id: currentSessionTab.id, surface: currentSessionTab.kind }
+      : undefined;
+  const currentManagementAssistantSession = currentManagementTab
+    ? managementAssistantSessions[currentManagementTab.id] ??
+      EMPTY_MANAGEMENT_ASSISTANT_SESSION
+    : EMPTY_MANAGEMENT_ASSISTANT_SESSION;
 
   useEffect(() => {
-    if (previousSkillsTabIDRef.current === currentSkillsTabID) {
+    const openManagementTabIDs = new Set(
+      state.sessionTabs
+        .filter((tab) => tab.kind === "skills" || tab.kind === "automations")
+        .map((tab) => tab.id),
+    );
+    setManagementAssistantSessions((current) =>
+      retainOpenManagementAssistantSessions(current, openManagementTabIDs),
+    );
+  }, [state.sessionTabs]);
+
+  function updateManagementAssistantSession(
+    tabID: string,
+    patch: Partial<ManagementAssistantSession>,
+  ): void {
+    if (!appStateRef.current.sessionTabs.some((tab) => tab.id === tabID)) {
       return;
     }
-    previousSkillsTabIDRef.current = currentSkillsTabID;
-    setSkillsAssistantDraft("");
-    setSkillsAssistantThreadID(undefined);
-    setSkillsAssistantStatus("");
-  }, [currentSkillsTabID]);
+    setManagementAssistantSessions((current) => ({
+      ...current,
+      [tabID]: {
+        ...(current[tabID] ?? EMPTY_MANAGEMENT_ASSISTANT_SESSION),
+        ...patch,
+      },
+    }));
+  }
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
@@ -1670,8 +1700,10 @@ export function App(): JSX.Element {
     currentSessionTab?.kind === "automations",
   );
   const showingManagementCatalog = showingSkillsCatalog || showingAutomationsCatalog;
-  const skillsAssistantThread = skillsAssistantThreadID
-    ? state.threads.find((thread) => thread.id === skillsAssistantThreadID)
+  const skillsAssistantThread = currentManagementAssistantSession.threadID
+    ? state.threads.find(
+        (thread) => thread.id === currentManagementAssistantSession.threadID,
+      )
     : undefined;
   const skillsAssistantRunning = Boolean(
     skillsAssistantThread && isThreadRunning(skillsAssistantThread),
@@ -2748,19 +2780,31 @@ export function App(): JSX.Element {
     });
   }
 
-  async function sendSkillsAssistantPrompt(query: string): Promise<void> {
+  async function sendManagementAssistantPrompt(
+    query: string,
+    surface: ManagementAssistantSurface,
+    tabID: string,
+  ): Promise<void> {
     const currentState = appStateRef.current;
     const context = currentState.activeContext;
     if (!context || !currentState.initialized) {
       return;
     }
-    setSkillsAssistantDraft("");
-    let thread = skillsAssistantThreadID
-      ? currentState.threads.find((candidate) => candidate.id === skillsAssistantThreadID)
+    updateManagementAssistantSession(tabID, { draft: "" });
+    let thread = managementAssistantSessions[tabID]?.threadID
+      ? currentState.threads.find(
+          (candidate) => candidate.id === managementAssistantSessions[tabID]?.threadID,
+        )
       : undefined;
     try {
       if (!thread) {
-        setSkillsAssistantStatus(t("skills.assistantStarting"));
+        updateManagementAssistantSession(tabID, {
+          status: t(
+            surface === "skills"
+              ? "skills.assistantStarting"
+              : "automations.assistantStarting",
+          ),
+        });
         appStateRef.current = {
           ...currentState,
           allowThreadAutoActivation: false,
@@ -2770,10 +2814,10 @@ export function App(): JSX.Element {
           allowThreadAutoActivation: false,
         }));
         thread = requireThread(
-          await window.wuu.startThread({ ephemeral: true }),
+          await window.wuu.startThread(managementAssistantThreadStartParams(surface)),
           "thread/start did not return an ephemeral thread",
         );
-        setSkillsAssistantThreadID(thread.id);
+        updateManagementAssistantSession(tabID, { threadID: thread.id, status: "" });
         appStateRef.current = {
           ...appStateRef.current,
           threads: upsertThread(appStateRef.current.threads, thread),
@@ -2783,33 +2827,38 @@ export function App(): JSX.Element {
           threads: upsertThread(current.threads, thread),
         }));
       }
-      setSkillsAssistantStatus("");
-      const message = createComposerMessage(
-        skillsAssistantPrompt(query, context),
-        [],
-        [],
-      );
-      if (!message || !(await sendComposerMessageToThread(message, thread))) {
-        setSkillsAssistantDraft(query);
+      const message = createComposerMessage(query, [], []);
+      if (
+        !message ||
+        !(await sendComposerMessageToThread(
+          message,
+          thread,
+          managementAssistantRequestContext(surface, context),
+        ))
+      ) {
+        updateManagementAssistantSession(tabID, { draft: query });
       }
     } catch (error) {
-      setSkillsAssistantStatus("");
-      setSkillsAssistantDraft(query);
+      updateManagementAssistantSession(tabID, { draft: query, status: "" });
       setState((current) => ({
         ...current,
         status:
           error instanceof Error
             ? error.message
-            : t("skills.assistantStartFailed"),
+            : t(
+                surface === "skills"
+                  ? "skills.assistantStartFailed"
+                  : "automations.assistantStartFailed",
+              ),
       }));
     }
   }
 
-  async function interruptSkillsAssistant(): Promise<void> {
-    if (!skillsAssistantThreadID) {
+  async function interruptSkillsAssistant(threadID?: string): Promise<void> {
+    if (!threadID) {
       return;
     }
-    await window.wuu.interruptTurn(skillsAssistantThreadID);
+    await window.wuu.interruptTurn(threadID);
   }
 
   function startNewThreadForProjectWithComposerFocus(id: string): void {
@@ -3676,6 +3725,7 @@ export function App(): JSX.Element {
   async function sendComposerMessageToThread(
     message: QueuedComposerMessage,
     targetThread: Thread,
+    requestOnlyContext?: string,
   ): Promise<boolean> {
     const currentState = appStateRef.current;
     const text = message.text.trim();
@@ -3742,6 +3792,7 @@ export function App(): JSX.Element {
         files,
         targetThread.permission_mode || currentState.initialized.permissions?.mode,
         message.activeDocument,
+        requestOnlyContext,
       );
       setState((current) =>
         updateThreadByID(
@@ -4084,8 +4135,8 @@ export function App(): JSX.Element {
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
         }${
-          showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT
-            ? " skills-assistant-visible"
+          showingManagementCatalog && ENABLE_SKILLS_ASSISTANT
+            ? " management-assistant-visible"
             : ""
         }${
           showingAutomationsCatalog && automationDetailPaneLayout.open
@@ -4476,27 +4527,42 @@ export function App(): JSX.Element {
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
 
-        {showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT ? (
-          <div className="skills-assistant-composer" data-testid="skills-assistant-composer">
+        {showingManagementCatalog && ENABLE_SKILLS_ASSISTANT && currentManagementTab ? (
+          <div className="management-assistant-composer" data-testid="management-assistant-composer">
             <WorkspaceDocumentTurnDock
-              key={skillsAssistantThreadID ?? currentSkillsTabID}
+              key={currentManagementAssistantSession.threadID ?? currentManagementTab.id}
               cwd={state.activeContext?.cwd}
+              fluid
               onOpenFile={openWorkspaceFile}
               turns={skillsAssistantThread?.turns ?? []}
             >
               <SideThreadComposer
                 variant="document"
-                placeholder={t("skills.assistantPlaceholder")}
-                draft={skillsAssistantDraft}
+                placeholder={t(
+                  currentManagementTab.surface === "skills"
+                    ? "skills.assistantPlaceholder"
+                    : "automations.assistantPlaceholder",
+                )}
+                draft={currentManagementAssistantSession.draft}
                 running={skillsAssistantRunning}
-                disabledReason={skillsAssistantStatus || undefined}
+                disabledReason={currentManagementAssistantSession.status || undefined}
                 queryHistorySessionID={
-                  skillsAssistantThreadID ?? currentSkillsTabID ?? "skills"
+                  currentManagementAssistantSession.threadID ?? currentManagementTab.id
                 }
                 queryHistory={[]}
-                onChangeDraft={setSkillsAssistantDraft}
-                onSend={(query) => void sendSkillsAssistantPrompt(query)}
-                onInterrupt={() => void interruptSkillsAssistant()}
+                onChangeDraft={(draft) =>
+                  updateManagementAssistantSession(currentManagementTab.id, { draft })
+                }
+                onSend={(query) =>
+                  void sendManagementAssistantPrompt(
+                    query,
+                    currentManagementTab.surface,
+                    currentManagementTab.id,
+                  )
+                }
+                onInterrupt={() =>
+                  void interruptSkillsAssistant(currentManagementAssistantSession.threadID)
+                }
               />
             </WorkspaceDocumentTurnDock>
           </div>
