@@ -267,7 +267,7 @@ func TestToolkit_ReadFileAllowsSessionArtifactRefs(t *testing.T) {
 	}
 }
 
-func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
+func TestToolkit_WriteFileOverwritesExistingFilesWithoutPriorRead(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -275,47 +275,12 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "old\n")
 
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_file",
-		Arguments: `{"path":"a.txt","content":"new\n"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "read_file") {
-		t.Fatalf("expected existing-file guard, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "error_kind=missing_file_baseline") || !strings.Contains(err.Error(), "safe_retry=") {
-		t.Fatalf("expected structured baseline guidance, got: %v", err)
-	}
-
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_file",
-		Arguments: `{"path":"a.txt"}`,
-	}); err != nil {
-		t.Fatalf("read_file: %v", err)
-	}
-
-	// The read ledger is the only guard: an out-of-band change after the
-	// read must refuse the overwrite as stale.
-	mustWriteFile(t, filepath.Join(root, "a.txt"), "changed elsewhere\n")
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_file",
-		Arguments: `{"path":"a.txt","content":"new\n"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=stale_file_baseline") {
-		t.Fatalf("expected stale-baseline refusal after external change, got: %v", err)
-	}
-
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_file",
-		Arguments: `{"path":"a.txt"}`,
-	}); err != nil {
-		t.Fatalf("re-read after external change: %v", err)
-	}
 	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
 		Arguments: `{"path":"a.txt","content":"new\n"}`,
 	})
 	if err != nil {
-		t.Fatalf("write_file after fresh read: %v", err)
+		t.Fatalf("write_file without prior read: %v", err)
 	}
 	var writeParsed struct {
 		WorkspaceRevision string `json:"workspace_revision"`
@@ -331,10 +296,10 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 		Name:      "write_file",
 		Arguments: `{"path":"a.txt","content":"newer\n"}`,
 	}); err != nil {
-		t.Fatalf("write_file should refresh baseline after successful overwrite: %v", err)
+		t.Fatalf("consecutive intentional overwrite: %v", err)
 	}
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "newer\n" {
-		t.Fatalf("unexpected content after baseline-refresh overwrite: %q", got)
+		t.Fatalf("unexpected content after consecutive overwrite: %q", got)
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -343,25 +308,6 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected create_only to reject existing file, got: %v", err)
-	}
-
-	mustWriteFile(t, filepath.Join(root, "b.txt"), "first\n")
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_file",
-		Arguments: `{"path":"b.txt"}`,
-	}); err != nil {
-		t.Fatalf("read b.txt: %v", err)
-	}
-	mustWriteFile(t, filepath.Join(root, "b.txt"), "external\n")
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_file",
-		Arguments: `{"path":"b.txt","content":"agent\n"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "changed since last read") {
-		t.Fatalf("expected stale read rejection, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "error_kind=stale_file_baseline") || !strings.Contains(err.Error(), "model_next_action=") {
-		t.Fatalf("expected structured stale baseline guidance, got: %v", err)
 	}
 
 	largeContent := strings.Repeat("large existing file line\n", 1800)
@@ -794,7 +740,7 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 	}
 }
 
-func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
+func TestToolkit_EditFileUsesCurrentContentAfterEarlierRead(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -828,32 +774,8 @@ func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 		Name:      "edit_file",
 		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO"}`,
 	})
-	if err == nil {
-		t.Fatal("expected stale-read rejection")
-	}
-	if !strings.Contains(err.Error(), "changed since last read") {
-		t.Fatalf("expected stale-read guidance, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "error_kind=stale_file_baseline") || !strings.Contains(err.Error(), "safe_retry=") {
-		t.Fatalf("expected structured stale-read guidance, got: %v", err)
-	}
-
-	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_file",
-		Arguments: `{"path":"a.txt"}`,
-	})
 	if err != nil {
-		t.Fatalf("read_file after stale rejection: %v", err)
-	}
-	if !strings.Contains(readResp, "bravo") || strings.Contains(readResp, `"unchanged":true`) {
-		t.Fatalf("expected fresh read after external edit, got: %s", readResp)
-	}
-
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "edit_file",
-		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO"}`,
-	}); err != nil {
-		t.Fatalf("edit_file after fresh read: %v", err)
+		t.Fatalf("edit_file should match current content at execution time: %v", err)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
@@ -864,7 +786,7 @@ func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	}
 }
 
-func TestToolkit_EditFileRequiresPriorRead(t *testing.T) {
+func TestToolkit_EditFileDoesNotRequirePriorRead(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -872,29 +794,12 @@ func TestToolkit_EditFileRequiresPriorRead(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "alpha\n")
 
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "edit_file",
-		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "read_file") {
-		t.Fatalf("expected edit_file to require a prior read, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "error_kind=missing_file_baseline") || !strings.Contains(err.Error(), "model_next_action=") {
-		t.Fatalf("expected structured edit baseline guidance, got: %v", err)
-	}
-
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_file",
-		Arguments: `{"path":"a.txt"}`,
-	}); err != nil {
-		t.Fatalf("read_file: %v", err)
-	}
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
 		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo"}`,
 	})
 	if err != nil {
-		t.Fatalf("edit_file after read: %v", err)
+		t.Fatalf("edit_file without prior read: %v", err)
 	}
 	var parsed struct {
 		WorkspaceRevision string   `json:"workspace_revision"`
@@ -921,10 +826,10 @@ func TestToolkit_EditFileRequiresPriorRead(t *testing.T) {
 		Name:      "edit_file",
 		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"charlie"}`,
 	}); err != nil {
-		t.Fatalf("edit_file should refresh baseline after successful edit: %v", err)
+		t.Fatalf("consecutive exact edit: %v", err)
 	}
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "charlie\n" {
-		t.Fatalf("unexpected content after baseline-refresh edit: %q", got)
+		t.Fatalf("unexpected content after consecutive edit: %q", got)
 	}
 
 }
@@ -1326,8 +1231,8 @@ func TestToolkit_ApplyPatchUsesCurrentAnchorsWithoutReadBaseline(t *testing.T) {
 		t.Fatalf("resolve a.txt: %v", err)
 	}
 	entry, ok := kit.env.GetReadEntry(resolvedA)
-	if !ok || !entry.BaselineOnly || entry.ContentSHA256 != sha256Hex([]byte("bravo\n")) {
-		t.Fatalf("apply_patch should refresh write baseline, got ok=%t entry=%+v", ok, entry)
+	if !ok || !entry.WrittenByTool || entry.ContentSHA256 != sha256Hex([]byte("bravo\n")) {
+		t.Fatalf("apply_patch should record current written content, got ok=%t entry=%+v", ok, entry)
 	}
 }
 
@@ -4141,7 +4046,7 @@ func TestToolkit_ActiveFilesContextBlockDefaultsCompact(t *testing.T) {
 		"files: current=0 baseline=0 stale=5",
 		"path=dir/1.txt status=possibly_stale",
 		"path=dir/5.txt status=possibly_stale",
-		"action: read flagged files again before editing",
+		"action: read flagged files when their current content is needed",
 	} {
 		if !strings.Contains(stale.Content, want) {
 			t.Fatalf("compact active files missing %q:\n%s", want, stale.Content)

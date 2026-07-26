@@ -260,7 +260,7 @@ func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 	if omitted := len(paths) - len(listed); omitted > 0 {
 		fmt.Fprintf(&b, "omitted_files: %d\n", omitted)
 	}
-	b.WriteString("note: file bodies are omitted; use the previous read_file result as evidence only while status=current. status=current_baseline means this agent wrote the current content but should call read_file if it needs the body. Otherwise read_file again.\n")
+	b.WriteString("note: file bodies are omitted; use previous read_file content as evidence only while status=current. status=current_after_write means a tool wrote the current content but the body is not present here. Read the relevant range whenever current content is needed.\n")
 
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockActiveFiles,
@@ -281,7 +281,7 @@ func (t *Toolkit) compactActiveFilesContext(paths []string, entries map[string]R
 		case "current":
 			current++
 			continue
-		case "current_baseline":
+		case "current_after_write":
 			baseline++
 		case "possibly_stale":
 			stale++
@@ -294,7 +294,7 @@ func (t *Toolkit) compactActiveFilesContext(paths []string, entries map[string]R
 	fmt.Fprintf(&b, "files: current=%d baseline=%d stale=%d\n", current, baseline, stale)
 	b.WriteString(flagged.String())
 	if baseline+stale > 0 {
-		b.WriteString("action: read flagged files again before editing.\n")
+		b.WriteString("action: read flagged files when their current content is needed.\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -303,8 +303,8 @@ func activeFileContextStatus(absPath string, entry ReadFileEntry) string {
 	if info, err := os.Stat(absPath); err != nil || info.IsDir() || !readEntryMatchesInfo(entry, info) {
 		return "possibly_stale"
 	}
-	if entry.BaselineOnly {
-		return "current_baseline"
+	if entry.WrittenByTool {
+		return "current_after_write"
 	}
 	return "current"
 }

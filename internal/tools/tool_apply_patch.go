@@ -643,7 +643,7 @@ func (t *ApplyPatchTool) commitPatchPlans(plans []applyPatchHunkPlan) error {
 func (t *ApplyPatchTool) recordPatchPlanBaselines(plans []applyPatchHunkPlan) {
 	for _, plan := range plans {
 		if plan.WriteTarget {
-			t.env.RecordWriteBaseline(plan.TargetAbs, plan.Content)
+			t.env.RecordWriteState(plan.TargetAbs, plan.Content)
 		}
 		if plan.RemoveSource || plan.DeleteSource {
 			t.env.ForgetRead(plan.SourceAbs)

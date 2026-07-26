@@ -281,6 +281,12 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	if !contains(s.SystemFragment, "read_file") || !contains(s.SystemFragment, "edit_file") {
 		t.Fatalf("Claude prompt must reference read_file + edit_file; got: %s", s.SystemFragment)
 	}
+	if !contains(s.SystemFragment, "exact current old_text") || !contains(s.SystemFragment, "intentional complete rewrites") {
+		t.Fatalf("Claude prompt must define current-anchor edits and intentional full rewrites; got: %s", s.SystemFragment)
+	}
+	if contains(s.SystemFragment, "Call read_file first") {
+		t.Fatalf("Claude prompt must not require a prior read for every edit; got: %s", s.SystemFragment)
+	}
 	if !contains(s.SystemFragment, "bash") {
 		t.Fatalf("Claude prompt must reference bash; got: %s", s.SystemFragment)
 	}
@@ -312,6 +318,9 @@ func TestGenericSurfaceForOpenAISHapedBYOK(t *testing.T) {
 		}
 		if _, has := s.Tools["git"]; has {
 			t.Fatalf("%s/%s: generic surface must not advertise git as a default tool", tt.provider, tt.model)
+		}
+		if !contains(s.SystemFragment, "exact current old_text") || contains(s.SystemFragment, "call read_file first") {
+			t.Fatalf("%s/%s: generic prompt must use current anchors without a mandatory prior read; got: %s", tt.provider, tt.model, s.SystemFragment)
 		}
 	}
 }
