@@ -13,6 +13,7 @@ import {
 } from "./ComposerView";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WORKSPACE_FILE_DRAG_MIME, type QueuedComposerMessage } from "./ComposerMessages";
+import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
 import type {
   DesktopProject,
   ComposerGoalSummary,
@@ -49,6 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  unhoverTooltip();
   act(() => {
     root?.unmount();
   });
@@ -1149,7 +1151,7 @@ describe("Composer send control", () => {
     expect(container.querySelector(".composer-plus-button")).not.toBeNull();
   });
 
-  it("uses the active project name in the hero project selector", () => {
+  it("uses the active project name in the hero project selector", async () => {
     renderComposer({
       variant: "hero",
       activeContext: { kind: "project", project_id: "project-1", cwd: "/repo/wuu" },
@@ -1165,7 +1167,8 @@ describe("Composer send control", () => {
     const selector = container.querySelector<HTMLButtonElement>(".hero-project-pill");
     expect(selector).not.toBeNull();
     expect(selector?.textContent).toContain("wuu");
-    expect(selector?.getAttribute("title")).toBe("/repo/wuu");
+    expect(selector?.getAttribute("title")).toBeNull();
+    expect(await hoverTooltipText(selector)).toBe("/repo/wuu");
   });
 
   it("labels the hero pill 对话 for the no-project workspace", () => {
@@ -2305,7 +2308,7 @@ describe("Composer expand button", () => {
       /\.composer-goal-strip:has\(\+ \.composer-pending-drawer\)\s*\{[^}]*width:\s*calc\(100% - 48px\)/,
     );
     expect(composerCSS).toMatch(
-      /\.dock-composer-wrap:has\(\.composer-accessory-drawer\)::before\s*\{[^}]*background:\s*transparent/,
+      /\.dock-composer-wrap::before\s*\{[^}]*background:\s*transparent/,
     );
     expect(composerCSS).toMatch(
       /\.document-composer-wrap\s+\.composer-frame-shell\s*\{[^}]*z-index:\s*10/,

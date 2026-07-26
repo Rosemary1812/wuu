@@ -408,6 +408,16 @@ export function mergeGuideMessages(messages: QueuedComposerMessage[]): QueuedCom
 }
 
 export function queuedMessagePreview(message: QueuedComposerMessage): string {
+  return trimMiddle(queuedMessageFullPreview(message), 48);
+}
+
+/**
+ * The untrimmed single-line form of a queued message (text plus image/file
+ * annotations). This is the hover-reveal companion to the 48-char inline
+ * preview: when the two differ, the queue UI offers the full text via
+ * tooltip instead of pretending the preview says everything.
+ */
+export function queuedMessageFullPreview(message: QueuedComposerMessage): string {
   const text = message.text.trim().replace(/\s+/g, " ");
   const imageText = message.images.length > 0
     ? translateCurrent(message.images.length === 1 ? "composer.preview.imageOne" : "composer.preview.images", { count: formatCurrentNumber(message.images.length) })
@@ -415,8 +425,7 @@ export function queuedMessagePreview(message: QueuedComposerMessage): string {
   const fileText = message.files.length > 0
     ? translateCurrent(message.files.length === 1 ? "composer.preview.fileOne" : "composer.preview.files", { count: formatCurrentNumber(message.files.length) })
     : "";
-  const preview = [text, imageText, fileText].filter(Boolean).join(" · ");
-  return trimMiddle(preview || translateCurrent("composer.preview.empty"), 48);
+  return [text, imageText, fileText].filter(Boolean).join(" · ") || translateCurrent("composer.preview.empty");
 }
 
 function trimMiddle(value: string, maxLength: number): string {

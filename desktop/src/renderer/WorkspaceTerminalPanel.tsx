@@ -28,6 +28,7 @@ import {
 import { WorkspacePanelEmpty } from "./WorkspaceFiles";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { translateCurrent, useI18n } from "./i18n";
+import { TruncatedText } from "./TruncatedText";
 
 const WORKSPACE_TERMINAL_PENDING_EVENT_IDS = 12;
 const WORKSPACE_TERMINAL_PENDING_EVENTS_PER_ID = 256;
@@ -397,12 +398,11 @@ export function WorkspaceTerminalPanel({
                 className={`workspace-terminal-resource workspace-terminal-run${userTerminals.length === 0 ? " first" : ""}${selected ? " active" : ""}`}
                 type="button"
                 key={run.toolCallID}
-                title={run.command}
                 onClick={() => setSelectedResourceID(run.toolCallID)}
               >
                 <RunStatusIcon run={run} process={process} />
                 <span className="workspace-terminal-resource-copy">
-                  <span className="workspace-terminal-resource-name">{run.command}</span>
+                  <TruncatedText className="workspace-terminal-resource-name" text={run.command} />
                 </span>
               </button>
             );
@@ -767,7 +767,7 @@ function AgentTerminalPane({
   return (
     <article className="workspace-agent-terminal" data-tool-call-id={run.toolCallID}>
       <header className="workspace-agent-terminal-toolbar">
-        <div className="workspace-agent-terminal-command" title={run.command}>{run.command}</div>
+        <TruncatedText as="div" className="workspace-agent-terminal-command" text={run.command} />
         <div className="workspace-agent-terminal-actions">
           <button
             className="workspace-agent-terminal-new"

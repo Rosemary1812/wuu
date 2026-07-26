@@ -17,6 +17,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 import { setActiveLocale } from "./i18n";
+import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
 
 beforeAll(() => {
   // jsdom does not lay out real heights. Stub getBoundingClientRect so
@@ -43,6 +44,7 @@ let container: HTMLDivElement | null = null;
 
 afterEach(() => {
   setActiveLocale("zh-CN");
+  unhoverTooltip();
   if (root) {
     act(() => {
       root?.unmount();
@@ -66,7 +68,7 @@ function mount(element: ReactElement): HTMLDivElement {
 }
 
 describe("ContextCompactionNotice", () => {
-  it("localizes recognized compaction events", () => {
+  it("localizes recognized compaction events", async () => {
     setActiveLocale("en-US");
     const host = mount(
       <ContextCompactionNotice
@@ -76,7 +78,7 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe("Context compacted");
-    expect(host.querySelector("aside")?.getAttribute("title")).toContain("18 messages became 5");
+    expect(await hoverTooltipText(host.querySelector("aside"))).toContain("18 messages became 5");
   });
   it("renders the in_progress host with the shimmer-ready label when status is in_progress", () => {
     const host = mount(<ContextCompactionNotice status="in_progress" />);
@@ -111,7 +113,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".live-progress-chip")).not.toBeNull();
   });
 
-  it("renders the established icon + copy layout when status is completed", () => {
+  it("renders the established icon + copy layout when status is completed", async () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -126,11 +128,12 @@ describe("ContextCompactionNotice", () => {
     const title = host.querySelector(".turn-event-title");
     expect(title?.textContent).toBe("上下文已压缩");
 
-    expect(aside?.getAttribute("title")).toContain("18 条消息整理为 5 条");
+    expect(aside?.getAttribute("title")).toBeNull();
+    expect(await hoverTooltipText(aside)).toContain("18 条消息整理为 5 条");
     expect(host.querySelector(".turn-notice-icon")).toBeNull();
   });
 
-  it("labels manual compact completion as success", () => {
+  it("labels manual compact completion as success", async () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -142,12 +145,12 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "压缩成功",
     );
-    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
+    expect(await hoverTooltipText(host.querySelector("aside"))).toContain(
       "18 条消息整理为 5 条",
     );
   });
 
-  it("labels failed manual compact status as failed", () => {
+  it("labels failed manual compact status as failed", async () => {
     const host = mount(
       <ContextCompactionNotice
         status="failed"
@@ -159,7 +162,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "压缩失败",
     );
-    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
+    expect(await hoverTooltipText(host.querySelector("aside"))).toContain(
       "当前对话仍保留原上下文",
     );
   });
@@ -186,7 +189,7 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
-  it("labels HelpMe compaction as merged recovery result", () => {
+  it("labels HelpMe compaction as merged recovery result", async () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -198,12 +201,12 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "已合并求助结果",
     );
-    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
+    expect(await hoverTooltipText(host.querySelector("aside"))).toContain(
       "HelpMe 恢复结果",
     );
   });
 
-  it("does not present failed proactive compaction as a successful compact", () => {
+  it("does not present failed proactive compaction as a successful compact", async () => {
     const failedCompactText =
       "Context compaction failed; continuing without compacting history.";
     const host = mount(
@@ -216,7 +219,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "压缩失败",
     );
-    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
+    expect(await hoverTooltipText(host.querySelector("aside"))).toContain(
       "当前对话仍保留原上下文",
     );
     expect(host.textContent).not.toContain("上下文已压缩");
@@ -224,7 +227,7 @@ describe("ContextCompactionNotice", () => {
 });
 
 describe("TurnNotice compact chip", () => {
-  it("renders the title as the only visible label and moves the full detail into a hover tooltip", () => {
+  it("renders the title as the only visible label and moves the full detail into a hover tooltip", async () => {
     const display = userFacingErrorForMessage("connection reset by peer", "turn");
     const host = mount(<TurnNotice display={display} />);
     const aside = host.querySelector("aside.turn-event-notice");
@@ -233,23 +236,25 @@ describe("TurnNotice compact chip", () => {
     expect(aside?.classList.contains(display.tone)).toBe(true);
     // The title element shows only the short title (single-line).
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(display.title);
-    // The full detail is reachable via the host's `title` attribute and
-    // mirrored on `aria-label` for assistive tech.
-    expect(aside?.getAttribute("title")).toContain(display.title);
-    expect(aside?.getAttribute("title")).toContain(display.detail);
+    // The full detail is reachable via a hover tooltip (no native `title`
+    // dump) and mirrored on `aria-label` for assistive tech.
+    expect(aside?.getAttribute("title")).toBeNull();
+    const tooltip = await hoverTooltipText(aside);
+    expect(tooltip).toContain(display.title);
+    expect(tooltip).toContain(display.detail);
     expect(aside?.getAttribute("aria-label")).toContain(display.title);
     expect(aside?.getAttribute("aria-label")).toContain(display.detail);
     expect(host.querySelectorAll("button, a")).toHaveLength(0);
     expect(host.querySelectorAll(".turn-event-title")).toHaveLength(1);
   });
 
-  it("renders cancellation as a read-only event", () => {
+  it("renders cancellation as a read-only event", async () => {
     const display = userFacingErrorForMessage("context canceled", "turn");
     const host = mount(<TurnNotice display={display} />);
     expect(host.querySelectorAll("button, a")).toHaveLength(0);
     // The host still carries the hover text and title element.
     const aside = host.querySelector("aside.turn-event-notice");
-    expect(aside?.getAttribute("title")).toContain(display.title);
+    expect(await hoverTooltipText(aside)).toContain(display.title);
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(display.title);
   });
 

@@ -7,6 +7,7 @@ import {
 } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 type FileEdit = {
   path: string;
@@ -341,9 +342,11 @@ export function TurnEditSummaryCard({
           const rowContent = (
             <>
               <span className="turn-edit-summary-file">
-                <span className="turn-edit-summary-name" title={edit.path}>
-                  {fileDisplayName(edit.path)}
-                </span>
+                <Tooltip content={edit.path}>
+                  <span className="turn-edit-summary-name">
+                    {fileDisplayName(edit.path)}
+                  </span>
+                </Tooltip>
               </span>
               <span className="turn-edit-summary-stats">
                 {edit.additions > 0 ? (

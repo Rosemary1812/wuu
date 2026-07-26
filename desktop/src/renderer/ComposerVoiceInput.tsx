@@ -6,6 +6,7 @@ import type {
 } from "../shared/protocol";
 import { useI18n } from "./i18n";
 import type { TranslationKey } from "./i18n/resources/zh-CN";
+import { TruncatedText } from "./TruncatedText";
 import { useVoiceInputSettings } from "./VoiceInputSettingsState";
 
 const VOICE_WAVEFORM_BAR_COUNT = 56;
@@ -225,13 +226,11 @@ export const ComposerVoiceInput = forwardRef<ComposerVoiceInputHandle, {
           </span>
         </button>
       ) : status ? (
-        <span
+        <TruncatedText
           className={`composer-voice-status${phase === "error" ? " is-error" : ""}`}
           role={phase === "error" ? "alert" : "status"}
-          title={status}
-        >
-          {status}
-        </span>
+          text={status}
+        />
       ) : null}
       {!recording ? (
         <button

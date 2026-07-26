@@ -1,6 +1,7 @@
 import { Info, X } from "lucide-react";
 import type { ContextCompositionCategory, ThreadContextCompositionResult } from "../shared/protocol";
 import { formatCurrentNumber, translateCurrent as t, useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 export type ContextCompositionEntry = {
   id: string;
@@ -56,10 +57,8 @@ export function ContextCompositionCard({
             <div className="context-composition-gauge">
               {/* 占用/上限的语义由数字和量表承载，版面上不再用文字复述；
                 * 完整说明只保留在悬停提示里。 */}
-              <div
-                className="context-composition-headline"
-                title={t("contextCard.occupancyTitle")}
-              >
+              <Tooltip content={t("contextCard.occupancyTitle")}>
+                <div className="context-composition-headline">
                 <strong>
                   {formatTokens(retainedTokens)}
                   {contextWindow > 0 ? (
@@ -74,19 +73,23 @@ export function ContextCompositionCard({
                 {headlinePercent ? (
                   <span className="context-composition-headline-percent">{headlinePercent}</span>
                 ) : null}
-              </div>
+                </div>
+              </Tooltip>
 
               <div
                 className="context-composition-bar"
                 aria-label={t("contextCard.compositionBar")}
               >
                 {contributing.map((category) => (
-                  <span
-                    className={`context-composition-segment tone-${category.tone ?? "default"}`}
+                  <Tooltip
+                    content={`${category.label}: ${formatTokens(category.tokens ?? 0)}`}
                     key={category.id}
-                    style={{ width: `${segmentWidth(category.tokens ?? 0, barTokens)}%` }}
-                    title={`${category.label}: ${formatTokens(category.tokens ?? 0)}`}
-                  />
+                  >
+                    <span
+                      className={`context-composition-segment tone-${category.tone ?? "default"}`}
+                      style={{ width: `${segmentWidth(category.tokens ?? 0, barTokens)}%` }}
+                    />
+                  </Tooltip>
                 ))}
               </div>
 

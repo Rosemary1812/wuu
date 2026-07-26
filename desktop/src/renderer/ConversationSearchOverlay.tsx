@@ -18,6 +18,8 @@ import {
 } from "./AppState";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
+import { TruncatedText } from "./TruncatedText";
 
 export function ConversationSearchOverlay({
   state,
@@ -258,9 +260,7 @@ function ConversationSearchPreview({
       ) : (
         <>
           <header className="conversation-search-preview-header">
-            <h2 className="conversation-search-preview-title" title={title}>
-              {title}
-            </h2>
+            <TruncatedText as="h2" className="conversation-search-preview-title" text={title} />
             <div className="conversation-search-preview-meta">
               <span className="conversation-search-preview-context">
                 {contextLabel}
@@ -349,19 +349,20 @@ function PreviewRow({
   const oneLineText = oneLinePreviewText(text, query);
   // The row's chrome (right-aligned bubble for user, flush-left plain
   // text for assistant) lives in CSS so this component stays a pure
-  // function of (role, text, query). `title` exposes the full
-  // untruncated text so users can still read longer rows via tooltip
-  // when the inline ellipsis hides the match context.
+  // function of (role, text, query). When the inline one-line preview
+  // drops match context, the hover tooltip reveals the full text —
+  // bounded to the tooltip cap — but only while the two actually differ.
   return (
-    <article
-      className={`conversation-search-preview-turn role-${role}`}
-      data-role={role}
-      title={text || undefined}
-    >
-      <span className="conversation-search-preview-text">
-        {oneLineText}
-      </span>
-    </article>
+    <Tooltip content={text} disabled={oneLineText === text}>
+      <article
+        className={`conversation-search-preview-turn role-${role}`}
+        data-role={role}
+      >
+        <span className="conversation-search-preview-text">
+          {oneLineText}
+        </span>
+      </article>
+    </Tooltip>
   );
 }
 

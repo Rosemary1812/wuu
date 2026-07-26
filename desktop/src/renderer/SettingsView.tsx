@@ -71,6 +71,8 @@ import { SettingsRemotePage } from "./SettingsRemotePage";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 import { LanguagePreferenceControl } from "./LanguagePreferenceSection";
 import { formatCurrentNumber, useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
+import { TruncatedText } from "./TruncatedText";
 import { SubagentModelAliases } from "./SubagentModelAliases";
 import { VoiceInputSettingsSection } from "./VoiceInputSettingsSection";
 
@@ -2374,7 +2376,7 @@ function SettingsArchivePage({
                   return (
                     <div className="settings-archive-row" key={thread.id}>
                       <div className="settings-archive-row-copy">
-                        <span className="settings-archive-title" title={title}>{title}</span>
+                        <TruncatedText className="settings-archive-title" text={title} />
                         <time className="settings-archive-time" dateTime={thread.updated_at}>
                           {formatArchiveTime(thread.updated_at, formatDate)}
                         </time>
@@ -2540,14 +2542,14 @@ function SettingsUsagePage({
           } as CSSProperties}
         >
           {heatmap.map((day) => (
-            <span
-              className="settings-usage-heatmap-cell"
-              data-level={day.level}
-              key={day.date}
-              role="gridcell"
-              title={formatHeatmapTitle(day, t, formatNumber)}
-              aria-label={formatHeatmapTitle(day, t, formatNumber)}
-            />
+            <Tooltip content={formatHeatmapTitle(day, t, formatNumber)} key={day.date}>
+              <span
+                className="settings-usage-heatmap-cell"
+                data-level={day.level}
+                role="gridcell"
+                aria-label={formatHeatmapTitle(day, t, formatNumber)}
+              />
+            </Tooltip>
           ))}
         </div>
         <div className="settings-heatmap-legend" aria-hidden="true">
@@ -2585,14 +2587,18 @@ function SettingsUsagePage({
                         </div>
                       </td>
                       <td className="settings-usage-num">
-                        <span className="settings-usage-number" title={formatNumber(b.input_tokens)}>
-                          {formatCompactUsageNumber(b.input_tokens, locale)}
-                        </span>
+                        <Tooltip content={formatNumber(b.input_tokens)}>
+                          <span className="settings-usage-number">
+                            {formatCompactUsageNumber(b.input_tokens, locale)}
+                          </span>
+                        </Tooltip>
                       </td>
                       <td className="settings-usage-num">
-                        <span className="settings-usage-number" title={formatNumber(b.output_tokens)}>
-                          {formatCompactUsageNumber(b.output_tokens, locale)}
-                        </span>
+                        <Tooltip content={formatNumber(b.output_tokens)}>
+                          <span className="settings-usage-number">
+                            {formatCompactUsageNumber(b.output_tokens, locale)}
+                          </span>
+                        </Tooltip>
                       </td>
                       <td className="settings-usage-num">
                         <span className="settings-usage-number">{formatPercent(rate)}</span>
@@ -2616,7 +2622,9 @@ function SettingsUsagePage({
 function UsageStat({ label, value, title }: { label: string; value: string; title?: string }): JSX.Element {
   return (
     <div className="settings-usage-stat">
-      <span className="settings-usage-stat-value" title={title}>{value}</span>
+      <Tooltip content={title}>
+        <span className="settings-usage-stat-value">{value}</span>
+      </Tooltip>
       <span className="settings-usage-stat-label">{label}</span>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { ParticipantSummary } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { participantRoleLabel } from "./ParticipantLabels";
+import { TruncatedText } from "./TruncatedText";
 
 export type ParticipantChipProps = {
   /**
@@ -45,7 +46,7 @@ export function ParticipantChip({
   const avatarImage = participant?.avatar_image?.trim() ?? "";
   const className = `participant-chip${size === "sm" ? " participant-chip--sm" : ""}`;
   return (
-    <span className={className} title={role ? `${name} · ${role}` : name}>
+    <span className={className}>
       <span className="participant-chip-avatar" aria-hidden="true">
         {avatarImage ? (
           <img src={avatarImage} alt="" />
@@ -53,7 +54,7 @@ export function ParticipantChip({
           <DefaultAvatarMark seed={participant?.id || name} kind={participant?.kind} />
         )}
       </span>
-      <span className="participant-chip-name">{name}</span>
+      <TruncatedText className="participant-chip-name" text={name} />
       {role ? (
         <>
           <span className="participant-chip-separator" aria-hidden="true">

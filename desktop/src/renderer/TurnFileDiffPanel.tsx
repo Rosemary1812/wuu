@@ -5,6 +5,7 @@ import { RichContent } from "./RichContent";
 import { ToolDiffContent } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { translateCurrent, useI18n } from "./i18n";
+import { TruncatedText } from "./TruncatedText";
 
 type ArtifactView = "changes" | "reading" | "source" | "current";
 
@@ -163,9 +164,7 @@ export function TurnFileDiffPanel({
       <div className="turn-file-diff-header">
         <div className="turn-file-diff-heading">
           <span className="turn-file-diff-kicker">{t("turnDiff.kicker")}</span>
-          <strong className="turn-file-diff-path" title={selection.path}>
-            {selection.path}
-          </strong>
+          <TruncatedText as="strong" className="turn-file-diff-path" text={selection.path} />
           <span className="turn-file-diff-meta">
             <span>{actionLabel(selection)}</span>
             {selection.additions > 0 ? (

@@ -1,0 +1,51 @@
+/*
+ * Tooltip layer.
+ *
+ * The trigger wrapper contributes no box to the layout (`display:
+ * contents`), so wrapping a control never shifts flex/grid geometry; the
+ * layer itself is portaled to <body> and positioned in fixed coordinates
+ * by the Tooltip component.
+ */
+
+.tooltip-trigger {
+  display: contents;
+}
+
+.tooltip-layer {
+  position: fixed;
+  /* Above every app surface, including the image preview band
+     (~2.147483e9): a tooltip is the topmost transient layer. */
+  z-index: 2147483500;
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--surface-3);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.4;
+  /* Preserve intentional line breaks in source text (errors, commands);
+     everything else wraps inside the max-width. */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: tooltip-layer-in 120ms ease-out;
+}
+
+@keyframes tooltip-layer-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-layer {
+    animation: none;
+  }
+}

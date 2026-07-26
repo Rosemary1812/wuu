@@ -67,6 +67,7 @@ import {
   variantLabel
 } from "./RuntimeHelpers";
 import { translateCurrent as translate, useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
 
 type ChipTone = "neutral" | "danger";
 
@@ -568,25 +569,25 @@ export function ComposerPlusButton({
             </button>
             <div className="composer-plus-menu-section" role="presentation">{t("composer.plusSectionCommands")}</div>
             {commands.map((command) => (
-              <button
-                key={command.id}
-                role="menuitem"
-                type="button"
-                disabled={Boolean(command.disabledReason)}
-                title={command.disabledReason ?? command.description}
-                onClick={() => {
-                  setOpen(false);
-                  onSelectCommand(command);
-                }}
-              >
-                <SlashCommandIcon command={command} />
-                <span className="composer-plus-menu-item-title">
-                  {command.kind === "skill" ? command.description : command.title}
-                </span>
-                <span className="composer-plus-menu-item-desc">
-                  {command.kind === "skill" ? command.title : command.description}
-                </span>
-              </button>
+              <Tooltip content={command.disabledReason} key={command.id}>
+                <button
+                  role="menuitem"
+                  type="button"
+                  disabled={Boolean(command.disabledReason)}
+                  onClick={() => {
+                    setOpen(false);
+                    onSelectCommand(command);
+                  }}
+                >
+                  <SlashCommandIcon command={command} />
+                  <span className="composer-plus-menu-item-title">
+                    {command.kind === "skill" ? command.description : command.title}
+                  </span>
+                  <span className="composer-plus-menu-item-desc">
+                    {command.kind === "skill" ? command.title : command.description}
+                  </span>
+                </button>
+              </Tooltip>
             ))}
           </div>
         </FloatingMenuPortal>

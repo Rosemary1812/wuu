@@ -19,6 +19,7 @@ import {
   appendWorkspacePathToPrompt,
   clipboardAttachmentFiles,
   imageSource,
+  queuedMessageFullPreview,
   queuedMessagePreview,
   type ComposerFile,
   type ComposerImage,
@@ -27,6 +28,8 @@ import {
 import { useComposerQueryHistory } from "./ComposerQueryHistory";
 import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerTypes";
 import { useI18n } from "./i18n";
+import { Tooltip } from "./Tooltip";
+import { TruncatedText } from "./TruncatedText";
 
 export function ComposerAttachmentStrip({
   files,
@@ -297,12 +300,11 @@ export function SplitPaneComposer({
             <Paperclip aria-hidden="true" />
           </button>
           {statusText ? (
-            <span className="split-composer-status" title={statusText}>
-              <span
+            <span className="split-composer-status">
+              <TruncatedText
                 className={`split-composer-status-text${statusIsLiveProgress ? " live-progress-chip" : ""}`}
-              >
-                {statusText}
-              </span>
+                text={statusText}
+              />
             </span>
           ) : (
             <span />
@@ -426,14 +428,21 @@ export function ComposerQueueStrip({
           <span className="composer-pending-icon" aria-hidden="true">
             <ListTodo className="icon-sm" />
           </span>
-          <span
-            className="composer-pending-preview"
-            role="status"
-            aria-live="polite"
-            title={latestMessage?.text}
+          <Tooltip
+            content={latestMessage ? queuedMessageFullPreview(latestMessage) : undefined}
+            disabled={
+              !latestMessage ||
+              queuedMessageFullPreview(latestMessage) === queuedMessagePreview(latestMessage)
+            }
           >
-            {latestMessage ? queuedMessagePreview(latestMessage) : ""}
-          </span>
+            <span
+              className="composer-pending-preview"
+              role="status"
+              aria-live="polite"
+            >
+              {latestMessage ? queuedMessagePreview(latestMessage) : ""}
+            </span>
+          </Tooltip>
         </button>
         <button
           type="button"
@@ -514,15 +523,19 @@ function ComposerQueueItem({
       <span className="composer-queue-index" aria-hidden="true">
         {position}
       </span>
-      <button
-        type="button"
-        className="composer-queue-preview"
-        aria-label={editContentLabel}
-        title={message.text}
-        onClick={onEdit}
+      <Tooltip
+        content={queuedMessageFullPreview(message)}
+        disabled={queuedMessageFullPreview(message) === queuedMessagePreview(message)}
       >
-        {queuedMessagePreview(message)}
-      </button>
+        <button
+          type="button"
+          className="composer-queue-preview"
+          aria-label={editContentLabel}
+          onClick={onEdit}
+        >
+          {queuedMessagePreview(message)}
+        </button>
+      </Tooltip>
       <div className="composer-queue-actions composer-input-header-actions">
         <button
           type="button"

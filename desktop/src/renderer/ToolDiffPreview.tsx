@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ThreadItem } from "../shared/protocol";
 import { useI18n } from "./i18n";
+import { TruncatedText } from "./TruncatedText";
 
 function useTriggerPosition() {
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -254,9 +255,7 @@ function DiffHunkView({ hunk }: { hunk: DiffHunk }): JSX.Element {
         <span className="tool-diff-line-number tool-diff-line-number-new">
           {newNumber ?? ""}
         </span>
-        <span className="tool-diff-line-content" title={line.content}>
-          {line.content || " "}
-        </span>
+        <TruncatedText className="tool-diff-line-content" text={line.content || " "} />
       </div>
     );
   });
