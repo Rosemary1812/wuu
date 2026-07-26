@@ -597,37 +597,11 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .demo-cell{padding:30px}
 .demo-cell .window{width:100%;aspect-ratio:var(--window-aspect);box-shadow:rgba(0,0,0,.12) 0 4px 10px,rgba(0,0,0,.12) 0 2px 4px -1px,rgba(0,0,0,.12) 0 0 4px -1px}
 
-/* ---------- 多智能体 fan-out 演示 ---------- */
-.fanout{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:0;padding:32px;background:var(--wu-canvas);
-}
-.fo-card{
-  background:var(--wu-surface);border:1px solid var(--wu-border);border-radius:10px;
-  padding:12px 16px;display:flex;align-items:center;gap:10px;
-  font-size:14px;color:var(--wu-text);
-  box-shadow:0 2px 8px rgba(0,0,0,.05);
-  transition:border-color .4s ease,box-shadow .4s ease;
-}
-.fo-card .who{font-family:var(--mono);font-size:11px;color:var(--wu-muted)}
-.fo-card.parent{font-weight:var(--fw-semibold);padding:14px 20px}
-.fo-card.parent .who{color:var(--accent)}
-.fo-line{width:1px;height:26px;background:var(--gray-300)}
-.fo-branch{display:flex;gap:16px;position:relative;padding-top:26px}
-.fo-branch::before{
-  content:"";position:absolute;top:0;left:12.5%;right:12.5%;height:1px;background:var(--gray-300);
-}
-.fo-branch .fo-card{flex-direction:column;align-items:flex-start;gap:6px;min-width:150px;position:relative}
-.fo-branch .fo-card::before{
-  content:"";position:absolute;top:-26px;left:50%;width:1px;height:26px;background:var(--gray-300);
-}
-.fo-status{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--wu-muted)}
-.fo-status i{width:7px;height:7px;border-radius:50%;background:var(--gray-300)}
-.fo-card[data-st="done"] .fo-status i{background:var(--green)}
-.fo-card[data-st="run"]{border-color:var(--accent-soft);box-shadow:0 6px 20px rgba(255,61,0,.16)}
-.fo-card[data-st="run"] .fo-status i{background:var(--accent);animation:pulse 1.4s ease-in-out infinite}
-.fo-card[data-st="run"] .fo-status{color:var(--accent-ink)}
-@media (max-width:599px){.fo-branch{flex-direction:column;gap:12px}.fo-branch .fo-card::before{display:none}}
+/* ---------- 02 自我生长：像素 w 生命场 ---------- */
+.life-cell{align-items:stretch}
+.lifefield{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;cursor:crosshair}
+.lifefield canvas{position:absolute;inset:0;width:100%;height:100%}
+@media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
 /* ---------- 形态六宫格 ---------- */
 .variants{
@@ -892,7 +866,7 @@ body.ready .hero-window-wrap{opacity:1;transform:none}
       <div class="cell span2 headline-cell reveal">
         <div class="tri"></div>
         <div class="inner">
-          <p class="eyebrow">01 · 工程循环</p>
+          <p class="eyebrow">工程循环</p>
           <h2>交代一句话，
 它把任务做到底</h2>
           <p class="desc">改一行文案也好，跨仓库重构也好——它拆步骤、读代码、改代码、跑测试，红了自己换个方案接着跑。</p>
@@ -923,44 +897,33 @@ body.ready .hero-window-wrap{opacity:1;transform:none}
         </div>
       </div>
 
-      <!-- 02 多智能体 -->
+      <!-- 02 自我生长 -->
       <div class="cell span2 headline-cell reveal">
         <div class="tri"></div>
         <div class="inner">
-          <p class="eyebrow">02 · 多智能体</p>
-          <h2>一句话派出一队，
-各自住进工作树</h2>
-          <p class="desc">主代理拆活、派活，子代理在独立的 git worktree 里并行开工，互不踩踏——做完了，排队等你验收。</p>
+          <p class="eyebrow">自我生长</p>
+          <h2>它构建项目，
+也构建自己</h2>
+          <p class="desc">面对复杂任务，wuu 会分化出多个智能体，各自探索、构建和验证。有效的方法被汇聚回来，成为下一次行动的起点。</p>
         </div>
       </div>
 
-      <div class="cell span2 demo-cell reveal">
-        <div class="window">
-          <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
-          <div class="body">
-            <div class="fanout" id="fanout">
-              <div class="fo-card parent"><span class="who">主代理</span>给 landing 换一套字体</div>
-              <div class="fo-line"></div>
-              <div class="fo-branch">
-                <div class="fo-card" data-st="done"><b>调研开源字库</b><span class="fo-status"><i></i>完成 · 4 个候选</span></div>
-                <div class="fo-card" data-st="run"><b>改写样式表</b><span class="fo-status"><i></i>运行中 · 12 个文件</span></div>
-                <div class="fo-card" data-st="wait"><b>跑视觉回归</b><span class="fo-status"><i></i>排队</span></div>
-              </div>
-            </div>
-          </div>
+      <div class="cell span2 life-cell reveal">
+        <div class="lifefield" id="lifefield">
+          <canvas id="lifefield-canvas" aria-hidden="true"></canvas>
         </div>
       </div>
 
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>工作树隔离</h3>
-          <p>每个任务一个独立 worktree，主干的代码它一根手指头都不碰。</p>
+          <h3>分头探索</h3>
+          <p>不同方向同时展开。有人读代码，有人寻找方案，有人动手验证。</p>
         </div>
       </div>
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>并行不打架</h3>
-          <p>几个子代理同时跑，各改各的副本，合回来还是干净的 git 历史。</p>
+          <h3>越做越完整</h3>
+          <p>过程中的发现、经验和新能力不会散落，而会重新汇入 wuu。</p>
         </div>
       </div>
 
@@ -968,7 +931,7 @@ body.ready .hero-window-wrap{opacity:1;transform:none}
       <div class="cell span2 headline-cell reveal" id="ch-forms">
         <div class="tri"></div>
         <div class="inner">
-          <p class="eyebrow">03 · 随处开工</p>
+          <p class="eyebrow">随处开工</p>
           <h2>终端、桌面、定时任务，
 它在哪儿都醒着</h2>
           <p class="desc">挂一个 cron，它每天按时自己醒来巡检；技能和记忆攒得越多，它干活越像你。</p>
@@ -1001,7 +964,7 @@ body.ready .hero-window-wrap{opacity:1;transform:none}
       <div class="cell span2 headline-cell closing-cell reveal" id="install">
         <div class="tri"></div>
         <div class="inner">
-          <p class="eyebrow">05 · 开源</p>
+          <p class="eyebrow">开源</p>
           <h2>MIT 协议，
 连引擎都摊开</h2>
           <p class="desc">引擎是 Go，桌面是 Electron——它的本事你可以拆开看、接着改。一行命令，先把它装回家。</p>
@@ -1415,34 +1378,358 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 });
 
 /* ============================================================
-   多智能体：状态轮换
+   02 自我生长：像素 w 生命场
+   元胞自动机生长 + 验证波 + 递归缩放（每一代建成的 w
+   缩小后恰好成为下一代 w 的种子格；agent 本身是微缩的 w）
    ============================================================ */
 (function(){
-  if(reduceMotion) return;
-  const cards = [...document.querySelectorAll('#fanout .fo-branch .fo-card')];
-  if(cards.length < 3) return;
-  const STATES = ['done','run','wait'];
-  let offset = 0, timer = null;
-  const LABELS = {
-    done:['完成 · 4 个候选','完成 · 12 个文件','完成 · 0 回归'],
-    run:['运行中 · 调研字库','运行中 · 12 个文件','运行中 · 视觉回归'],
-    wait:['排队','排队','排队'],
+  const holder = document.getElementById('lifefield');
+  const canvas = document.getElementById('lifefield-canvas');
+  if(!holder || !canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  /* --- 像素 w：4 段中心线 + 距离场采样出 19×19 位图，(9,9) 为种子 --- */
+  const N = 19, SEED = 9*N + 9;
+  const SPINE = [[1.3,3.6],[5,13.9],[9,8],[13,13.9],[16.7,3.6]];
+  const segDist = (px,py,ax,ay,bx,by)=>{
+    const dx=bx-ax, dy=by-ay;
+    const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy)));
+    return Math.hypot(px-ax-t*dx, py-ay-t*dy);
   };
-  const step = ()=>{
-    offset = (offset + 1) % 3;
-    cards.forEach((c,i)=>{
-      const st = STATES[(i + offset) % 3];
-      c.dataset.st = st;
-      c.querySelector('.fo-status').innerHTML = `<i></i>${LABELS[st][i]}`;
-    });
-    timer = setTimeout(step, 2400);
+  const inGlyph = new Set();
+  for(let gy=0; gy<N; gy++) for(let gx=0; gx<N; gx++){
+    let hit = 0;
+    for(let sy=0; sy<4; sy++) for(let sx=0; sx<4; sx++){
+      const px=gx+(sx+.5)/4, py=gy+(sy+.5)/4;
+      let d = 1e9;
+      for(let s=0; s<4; s++) d = Math.min(d, segDist(px,py,SPINE[s][0],SPINE[s][1],SPINE[s+1][0],SPINE[s+1][1]));
+      if(d <= 1.55) hit++;
+    }
+    if(hit >= 8) inGlyph.add(gy*N+gx);
+  }
+  const nbr = new Map();
+  for(const idx of inGlyph){
+    const gx=idx%N, gy=(idx/N)|0, a=[];
+    if(gx<N-1 && inGlyph.has(idx+1)) a.push(idx+1);
+    if(gx>0   && inGlyph.has(idx-1)) a.push(idx-1);
+    if(gy<N-1 && inGlyph.has(idx+N)) a.push(idx+N);
+    if(gy>0   && inGlyph.has(idx-N)) a.push(idx-N);
+    nbr.set(idx, a);
+  }
+  /* 自种子的 BFS 深度：验证波与沉淀涟漪的次序 */
+  const depth = new Map([[SEED,0]]);
+  let maxDepth = 0;
+  { const q=[SEED];
+    while(q.length){
+      const i=q.shift();
+      for(const nb of nbr.get(i)) if(!depth.has(nb)){ depth.set(nb, depth.get(i)+1); maxDepth=Math.max(maxDepth,depth.get(nb)); q.push(nb); }
+    } }
+  const TOTAL = depth.size;
+
+  const CHARS = 'wuu{}[]<>/*+=:.';
+  const charOf = (gx,gy)=> CHARS[(gx*17+gy*31)%CHARS.length];
+
+  function mulberry(seed){
+    let a = seed|0;
+    return ()=>{
+      a = (a + 0x6D2B79F5)|0;
+      let t = Math.imul(a ^ (a>>>15), 1|a);
+      t = (t + Math.imul(t ^ (t>>>7), 61|t)) ^ t;
+      return ((t ^ (t>>>14))>>>0) / 4294967296;
+    };
+  }
+  let rng = mulberry(0x5EED);
+
+  /* --- 配色（跟随页面明暗） --- */
+  const PAL = {
+    light:{bg:'#fcfcf9', dot:'#8f8c80', ink:[34,34,34],    accent:[255,61,0],  green:'#0a6b34', red:'#a82525'},
+    dark: {bg:'#101010', dot:'#4a4a46', ink:[230,228,214], accent:[255,105,56], green:'#4cb782', red:'#e05d5d'},
   };
-  new IntersectionObserver(es=>{
-    es.forEach(e=>{
-      if(e.isIntersecting && !timer) timer = setTimeout(step, 2400);
-      else if(!e.isIntersecting && timer){ clearTimeout(timer); timer = null; }
-    });
-  },{threshold:.2}).observe(document.getElementById('fanout'));
+  const darkMq = matchMedia('(prefers-color-scheme: dark)');
+  const pal = ()=> darkMq.matches ? PAL.dark : PAL.light;
+
+  /* --- 全 w 精灵图（agent 与代际交接用），逐半降采样 mip --- */
+  const spriteCache = {};
+  function sprites(){
+    const key = darkMq.matches ? 'dark' : 'light';
+    if(spriteCache[key]) return spriteCache[key];
+    const p = PAL[key];
+    const base = document.createElement('canvas');
+    base.width = base.height = 608;
+    const c = base.getContext('2d');
+    const u = 608/N, q = u*.78, o = (u-q)/2;
+    for(const idx of inGlyph){
+      const gx=idx%N, gy=(idx/N)|0;
+      c.fillStyle = idx===SEED ? `rgb(${p.accent})` : `rgb(${p.ink})`;
+      c.beginPath(); c.roundRect(gx*u+o, gy*u+o, q, q, q*.3); c.fill();
+    }
+    const mips=[base];
+    let cur=base;
+    while(cur.width > 38){
+      const s = Math.max(19, cur.width>>1), m = document.createElement('canvas');
+      m.width = m.height = s;
+      const mc = m.getContext('2d');
+      mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = 'high';
+      mc.drawImage(cur, 0, 0, s, s);
+      mips.push(m); cur=m;
+    }
+    return spriteCache[key] = mips;
+  }
+  const mip = size=>{ const m=sprites(); for(let i=m.length-1;i>=0;i--) if(m[i].width>=size) return m[i]; return m[0]; };
+
+  /* --- 布局与镜头 --- */
+  let W=0,H=0,AX=0,AY=0,BASE=0;
+  function layout(){
+    const dpr = Math.min(2, devicePixelRatio||1);
+    W = holder.clientWidth; H = holder.clientHeight;
+    canvas.width = Math.round(W*dpr); canvas.height = Math.round(H*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    BASE = Math.min(W/9.5, H/10);
+    AX = W/2 + BASE*.5; AY = H/2 + BASE;   /* 锚点=种子格；补偿字形质心偏移 */
+  }
+  const T = Math.log(N/.78);           /* 每代缩放比：一格 = 上一代整体 */
+  const TICK = 300, MAXA = 36;
+  let sim=null, gen=0, F=0, R=0, unit=0;
+  let running=false, lastFrame=0, raf=0;
+  const deaths=[], pulses=[];
+  const ptr = {x:0,y:0,on:false};
+
+  const cellXY = idx=> [AX + unit*((idx%N)-9), AY + unit*(((idx/N)|0)-9)];
+
+  function newSim(now){
+    return {lastTick:now, ticks:0, cells:new Map(), agents:[], fillDoneAt:0, verify:null, doneAt:0};
+  }
+  const addAgent = (s,idx,now,mature)=> s.agents.push({idx,prev:idx,since:now,bornAt:mature?-1e12:now,dieAt:0});
+
+  /* --- 生长自动机：占领→择路→死亡→前沿增员 --- */
+  function step(s, now){
+    if(s.doneAt) return;
+    while(now - s.lastTick >= TICK){
+      s.lastTick += TICK; s.ticks++;
+      const t = s.lastTick;
+      const held = new Set(s.agents.filter(a=>!a.dieAt).map(a=>a.idx));
+      const keep = [];
+      for(const a of s.agents){
+        if(a.dieAt){ if(t-a.dieAt<350) keep.push(a); continue; }
+        if(!s.cells.has(a.idx)) s.cells.set(a.idx, t);
+        const free = nbr.get(a.idx).filter(i=>!s.cells.has(i) && !held.has(i));
+        if(!free.length){
+          a.dieAt = t; keep.push(a);
+          if(!s.fillDoneAt && s.cells.size < TOTAL-2) deaths.push({idx:a.idx, at:t});
+          continue;
+        }
+        let choice = free[0], best = -1e9;
+        for(const i of free){
+          let sc = rng();
+          if(ptr.on){                     /* 感知指针：择路避让 */
+            const [cx,cy] = cellXY(i);
+            const d = Math.hypot(cx-ptr.x, cy-ptr.y);
+            if(d < 140) sc += (d/140)*1.1;
+          }
+          if(sc > best){ best = sc; choice = i; }
+        }
+        a.prev=a.idx; a.idx=choice; a.since=t; held.add(choice); keep.push(a);
+      }
+      s.agents = keep;
+      if(s.fillDoneAt) continue;         /* 验证期只处理返场补建的 agent */
+      const alive = s.agents.filter(a=>!a.dieAt).length;
+      const frontier = [], seen = new Set();
+      for(const idx of s.cells.keys()) for(const nb of nbr.get(idx))
+        if(!s.cells.has(nb) && !seen.has(nb) && !held.has(nb)){ seen.add(nb); frontier.push(nb); }
+      if(!frontier.length && !alive){ s.fillDoneAt = t; break; }
+      const r = 4.5/(1+.3*Math.min(gen,6));
+      const quota = Math.min(MAXA, Math.max(1, Math.floor((s.ticks/r)**2)));
+      let n = alive;
+      while(n < quota && frontier.length){
+        const j = (rng()*frontier.length)|0;
+        const idx = frontier[j]; frontier[j]=frontier[frontier.length-1]; frontier.pop();
+        addAgent(s, idx, t, false); n++;
+      }
+      if(alive >= 2 && rng() < .3){       /* 偶发：两只 agent 间的信息脉冲 */
+        const live = s.agents.filter(a=>!a.dieAt);
+        const a = live[(rng()*live.length)|0], b = live[(rng()*live.length)|0];
+        if(a !== b) pulses.push({a:a.idx, b:b.idx, at:t});
+      }
+    }
+  }
+
+  /* --- 验证波：绿扫全场，随机两格失败→熄灭→就地补建 --- */
+  function verify(s, now){
+    if(!s.fillDoneAt || s.doneAt) return;
+    if(!s.verify){
+      if(now - s.fillDoneAt < 250) return;
+      const pool = [...inGlyph].filter(i=>i!==SEED);
+      const fails = new Set();
+      while(fails.size < 2) fails.add(pool[(rng()*pool.length)|0]);
+      s.verify = {at:now, fails, checked:new Map()};
+    }
+    const v = s.verify;
+    const prog = Math.min(1, (now-v.at)/950);
+    for(const idx of inGlyph){
+      if(v.checked.has(idx)) continue;
+      if(depth.get(idx)/maxDepth <= prog){
+        v.checked.set(idx, now);
+        if(v.fails.has(idx)){
+          s.cells.delete(idx);
+          deaths.push({idx, at:now, fail:true});
+          addAgent(s, idx, now+120, false);
+        }
+      }
+    }
+    if(prog >= 1 && s.cells.size >= TOTAL){
+      let ok = true;
+      for(const idx of v.fails){ const at=s.cells.get(idx); if(!at || now-at < 900) ok=false; }
+      if(ok) s.doneAt = now;
+    }
+  }
+
+  /* --- 绘制 --- */
+  function dotGrid(sp, p){
+    if(sp < 2 || (W/sp+2)*(H/sp+2) > 12000) return;
+    const k = Math.max(0, Math.min(1, (sp-2)/7));
+    const a = (0.45 + 0.45*Math.min(1, sp/90)) * k * .5;
+    if(a < .01) return;
+    const ox=((AX%sp)+sp)%sp, oy=((AY%sp)+sp)%sp;
+    ctx.fillStyle = p.dot; ctx.globalAlpha = a;
+    for(let y=oy; y<=H; y+=sp) for(let x=ox; x<=W; x+=sp) ctx.fillRect(x-1,y-1,2,2);
+    ctx.globalAlpha = 1;
+  }
+  function draw(now){
+    const p = pal();
+    ctx.fillStyle = p.bg; ctx.fillRect(0,0,W,H);
+    dotGrid(unit, p); dotGrid(unit*.78/N, p);
+    const q = unit*.78;
+    const sed0 = sim.doneAt ? now-sim.doneAt : -1;
+
+    if(unit >= 1.1){
+      ctx.font = `600 ${Math.max(4, q*.8)|0}px "SF Mono",Menlo,monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      for(const [idx, at] of sim.cells){
+        const gx=idx%N, gy=(idx/N)|0;
+        const x=AX+unit*(gx-9), y=AY+unit*(gy-9);
+        if(x<-q || x>W+q || y<-q || y>H+q) continue;
+        const age = now-at, isSeed = idx===SEED;
+        const sed = sed0<0 ? 0 : Math.max(0, Math.min(1, (sed0 - depth.get(idx)*20)/420));
+        let mix = isSeed ? 0 : Math.max(0, Math.min(1, (age-500)/1600));
+        if(ptr.on && !isSeed){            /* 指针靠近：字符泛朱红 */
+          const pd = Math.hypot(x-ptr.x, y-ptr.y);
+          if(pd < 120) mix *= Math.max(0, (pd-24)/96);
+        }
+        const A=p.accent, I=p.ink;
+        const col = `rgb(${A[0]+(I[0]-A[0])*mix|0},${A[1]+(I[1]-A[1])*mix|0},${A[2]+(I[2]-A[2])*mix|0})`;
+        if(sed < 1){
+          ctx.globalAlpha = (age<160 ? age/160 : 1) * (1-sed) * .92;
+          ctx.fillStyle = col;
+          const ch = age<520 ? CHARS[((gx*7+gy*13)+(now/70|0))%CHARS.length] : charOf(gx,gy);
+          ctx.fillText(ch, x, y+q*.04);
+        }
+        if(sed > 0){
+          ctx.globalAlpha = sed;
+          ctx.fillStyle = isSeed ? `rgb(${A})` : `rgb(${I})`;
+          ctx.beginPath(); ctx.roundRect(x-q/2, y-q/2, q, q, q*.3); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        const v = sim.verify;
+        if(v){                            /* 验证通过：绿框一闪即熄 */
+          const chk = v.checked.get(idx);
+          const tick = v.fails.has(idx) ? (sim.doneAt||0) : chk;
+          if(tick && now-tick < 300){
+            ctx.globalAlpha = (1-(now-tick)/300)*.85;
+            ctx.strokeStyle = p.green; ctx.lineWidth = Math.max(1, unit*.07);
+            ctx.beginPath(); ctx.roundRect(x-q/2, y-q/2, q, q, q*.3); ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+    }
+    /* 失败/死亡：红色断裂，短暂出现 */
+    for(let i=deaths.length-1; i>=0; i--){
+      const d = deaths[i], k = (now-d.at)/380;
+      if(k >= 1){ deaths.splice(i,1); continue; }
+      const [x,y] = cellXY(d.idx);
+      ctx.globalAlpha = (1-k)*(d.fail ? .8 : .22);
+      ctx.strokeStyle = p.red; ctx.lineWidth = Math.max(1, unit*.07);
+      ctx.beginPath(); ctx.roundRect(x-q/2, y-q/2, q, q, q*.3); ctx.stroke();
+      if(d.fail){
+        ctx.beginPath();
+        ctx.moveTo(x-q*.24, y-q*.24); ctx.lineTo(x+q*.24, y+q*.24);
+        ctx.moveTo(x+q*.24, y-q*.24); ctx.lineTo(x-q*.24, y+q*.24);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    /* agent 间脉冲 */
+    for(let i=pulses.length-1; i>=0; i--){
+      const u = pulses[i], k = (now-u.at)/320;
+      if(k >= 1){ pulses.splice(i,1); continue; }
+      const [x1,y1]=cellXY(u.a), [x2,y2]=cellXY(u.b);
+      ctx.globalAlpha = (1-k)*.28;
+      ctx.strokeStyle = `rgb(${p.accent})`; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    /* agent：每一只都是一个微缩的 w */
+    for(const a of sim.agents){
+      const k = Math.min(1, (now-a.since)/TICK), e = 1-(1-k)*(1-k);
+      const [x1,y1]=cellXY(a.prev), [x2,y2]=cellXY(a.idx);
+      const sc = a.dieAt
+        ? (1-Math.min(1,(now-a.dieAt)/350))**2
+        : 1-(1-Math.min(1,(now-a.bornAt)/350))**3;
+      if(sc <= 0) continue;
+      const s = q*sc;
+      if(s < 2) continue;
+      ctx.drawImage(mip(s*2), x1+(x2-x1)*e - s/2, y1+(y2-y1)*e - s/2, s, s);
+    }
+  }
+
+  function frame(now){
+    if(!running) return;
+    const dt = Math.min(50, now-lastFrame); lastFrame = now;
+    unit = BASE*Math.exp(gen*T - F);
+    step(sim, now);
+    verify(sim, now);
+    if(sim.doneAt && now-sim.doneAt >= 650){
+      sim = newSim(now); addAgent(sim, SEED, now, true); gen++;
+      unit = BASE*Math.exp(gen*T - F);
+    }
+    /* 镜头弹簧：填充中轻微预缩，建成后整代退一格 */
+    const target = (gen + (sim.doneAt ? 1 : -.04 + .34*sim.cells.size/TOTAL)) * T;
+    const steps = Math.max(1, Math.ceil(dt/12)), h = dt/steps;
+    for(let i=0; i<steps; i++){ R += (8.1e-7*(target-F) - 1.53e-3*R)*h; F += R*h; }
+    draw(now);
+    raf = requestAnimationFrame(frame);
+  }
+
+  function drawStatic(){
+    const now = performance.now();
+    sim = newSim(now-4000);
+    for(const idx of inGlyph) sim.cells.set(idx, now-4000);
+    unit = BASE*Math.exp(-.3*T);         /* 对齐动画建成态的静止缩放 */
+    draw(now);
+  }
+
+  holder.addEventListener('pointermove', e=>{
+    const r = holder.getBoundingClientRect();
+    ptr.x = e.clientX-r.left; ptr.y = e.clientY-r.top; ptr.on = true;
+  }, {passive:true});
+  holder.addEventListener('pointerleave', ()=> ptr.on = false);
+
+  layout();
+  new ResizeObserver(()=>{ layout(); if(reduceMotion) drawStatic(); }).observe(holder);
+  if(reduceMotion){ drawStatic(); return; }
+
+  new IntersectionObserver(([e])=>{
+    if(e.isIntersecting && !running){
+      running = true;
+      const now = performance.now();
+      if(!sim){ sim = newSim(now); addAgent(sim, SEED, now, false); F = -.04*T; R = 0; }
+      else sim.lastTick = now;
+      lastFrame = now;
+      raf = requestAnimationFrame(frame);
+    }else if(!e.isIntersecting && running){
+      running = false; cancelAnimationFrame(raf);
+    }
+  }, {threshold:.15}).observe(holder);
 })();
 
 /* ============================================================
