@@ -325,6 +325,8 @@ func ResolveAPIKeyWithHome(provider config.ProviderConfig, providerName, home st
 		if store, err := authstorage.ForHome(home); err == nil {
 			if credentials, err := store.Get(providerName); err == nil && strings.TrimSpace(credentials.APIKey) != "" {
 				return strings.TrimSpace(credentials.APIKey), nil
+			} else if err == nil && shouldTreatStoredAuthTokenAsAPIKey(provider, providerName) && strings.TrimSpace(credentials.AuthToken) != "" {
+				return strings.TrimSpace(credentials.AuthToken), nil
 			}
 		}
 	}
@@ -366,11 +368,22 @@ func resolveAuthToken(provider config.ProviderConfig, providerName string) strin
 	if providerName != "" {
 		if store, err := authstorage.ForHome(os.Getenv("HOME")); err == nil {
 			if credentials, err := store.Get(providerName); err == nil && strings.TrimSpace(credentials.AuthToken) != "" {
+				if shouldTreatStoredAuthTokenAsAPIKey(provider, providerName) {
+					return ""
+				}
 				return strings.TrimSpace(credentials.AuthToken)
 			}
 		}
 	}
 	return ""
+}
+
+func shouldTreatStoredAuthTokenAsAPIKey(provider config.ProviderConfig, providerName string) bool {
+	name := strings.ToLower(strings.TrimSpace(providerName))
+	baseURL := strings.ToLower(strings.TrimSpace(provider.BaseURL))
+	return strings.Contains(name, "minimax") ||
+		strings.Contains(baseURL, "minimax.io") ||
+		strings.Contains(baseURL, "minimaxi.com")
 }
 
 func defaultAPIKeyEnv(providerType string) string {

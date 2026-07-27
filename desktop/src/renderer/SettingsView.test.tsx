@@ -517,7 +517,7 @@ describe("SettingsView provider configuration", () => {
     expect(onRemoveProvider).not.toHaveBeenCalled();
   });
 
-  it("submits a new Anthropic-compatible provider with bearer token auth", async () => {
+  it("submits a new Anthropic-compatible provider with API key auth", async () => {
     installBuildInfoStub({
       core: undefined,
       desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
@@ -559,12 +559,12 @@ describe("SettingsView provider configuration", () => {
     });
 
     const inputs = Array.from(container.querySelectorAll("input"));
-    const [providerInput, modelInput, baseURLInput, authTokenInput] = inputs;
+    const [providerInput, modelInput, baseURLInput, apiKeyInput] = inputs;
     await act(async () => {
       setInputValue(providerInput, "anthropic-gateway");
       setInputValue(modelInput, "claude-sonnet-4-6[1M]");
       setInputValue(baseURLInput, "https://anthropic-gateway.example.test/");
-      setInputValue(authTokenInput, "sk-token");
+      setInputValue(apiKeyInput, "sk-token");
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
@@ -582,7 +582,7 @@ describe("SettingsView provider configuration", () => {
       undefined,
       {
         base_url: "https://anthropic-gateway.example.test/",
-        auth_token: "sk-token",
+        api_key: "sk-token",
         type: "anthropic",
         create_provider: true,
       },

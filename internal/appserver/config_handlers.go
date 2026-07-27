@@ -973,7 +973,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, model)
 	_, previousRuleProviderCfg := modelcatalog.EnrichProvider(resolvedName, previousProviderCfg, previousModel)
-	modelHeadersChanged := !reflect.DeepEqual(previousRuleProviderCfg.Headers, ruleProviderCfg.Headers)
+	providerClientChanged := providerClientConfigChanged(previousRuleProviderCfg, ruleProviderCfg)
 	// Variant/effort params validate against the effective model they will
 	// pin, not the workspace model: rejecting an effort change on a thread
 	// pinned to a different model against the workspace model would break
@@ -1012,7 +1012,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 
 	var client providers.StreamClient
-	if resolvedName != s.rt.ProviderName || connectionChanged || modelHeadersChanged {
+	if resolvedName != s.rt.ProviderName || connectionChanged || providerClientChanged {
 		client, err = providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
@@ -1087,7 +1087,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 		s.rt.TitleClient = titleClient
 	}
-	if s.rt.Toolkit != nil && (!roleSelections.Worker.Inherited || connectionChanged || modelHeadersChanged || resolvedName != previousRuntimeProvider) {
+	if s.rt.Toolkit != nil && (!roleSelections.Worker.Inherited || connectionChanged || providerClientChanged || resolvedName != previousRuntimeProvider) {
 		workerClient, workerErr := providerfactory.BuildStreamClient(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider)
 		if workerErr != nil {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("build worker client: %w", workerErr))
@@ -1220,6 +1220,26 @@ func isUltraOnlyModelUpdate(params ConfigModelUpdateParams) bool {
 		params.AuthToken == nil &&
 		params.Type == nil &&
 		!params.CreateProvider
+}
+
+func providerClientConfigChanged(previous, next config.ProviderConfig) bool {
+	return strings.TrimSpace(previous.Type) != strings.TrimSpace(next.Type) ||
+		strings.TrimSpace(previous.BaseURL) != strings.TrimSpace(next.BaseURL) ||
+		strings.TrimSpace(previous.API) != strings.TrimSpace(next.API) ||
+		strings.TrimSpace(previous.NPM) != strings.TrimSpace(next.NPM) ||
+		strings.TrimSpace(previous.WireAPI) != strings.TrimSpace(next.WireAPI) ||
+		strings.TrimSpace(previous.APIKey) != strings.TrimSpace(next.APIKey) ||
+		strings.TrimSpace(previous.APIKeyEnv) != strings.TrimSpace(next.APIKeyEnv) ||
+		strings.TrimSpace(previous.AuthToken) != strings.TrimSpace(next.AuthToken) ||
+		strings.TrimSpace(previous.AuthTokenEnv) != strings.TrimSpace(next.AuthTokenEnv) ||
+		previous.ReuseCodexCredentials != next.ReuseCodexCredentials ||
+		previous.StreamConnectTimeoutMS != next.StreamConnectTimeoutMS ||
+		previous.StreamHeaderTimeoutMS != next.StreamHeaderTimeoutMS ||
+		previous.StreamIdleTimeoutMS != next.StreamIdleTimeoutMS ||
+		strings.TrimSpace(previous.StreamTransport) != strings.TrimSpace(next.StreamTransport) ||
+		previous.CacheCreationInputTokensOmitted != next.CacheCreationInputTokensOmitted ||
+		previous.InputTokensIncludeCacheRead != next.InputTokensIncludeCacheRead ||
+		!reflect.DeepEqual(previous.Headers, next.Headers)
 }
 
 func (s *Server) currentConfigModelUpdateResult() ConfigModelUpdateResult {

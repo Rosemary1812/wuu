@@ -1184,6 +1184,25 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
+func TestProviderClientConfigChangedDetectsAuthAndEndpointChanges(t *testing.T) {
+	base := config.ProviderConfig{
+		Type:      "openai-compatible",
+		BaseURL:   "https://api.deepseek.example/v1",
+		APIKeyEnv: "DEEPSEEK_API_KEY",
+		Headers:   map[string]string{"X-Test": "same"},
+	}
+	next := base
+	next.Type = "anthropic"
+	next.BaseURL = "https://api.minimax.example/anthropic/v1"
+	next.APIKeyEnv = "MINIMAX_API_KEY"
+	if !providerClientConfigChanged(base, next) {
+		t.Fatal("expected provider client config change for endpoint/wire/auth env switch")
+	}
+	if providerClientConfigChanged(base, base) {
+		t.Fatal("identical provider client config should not require a rebuild")
+	}
+}
+
 func TestCachedThreadRestoresPersistedModelSelection(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
