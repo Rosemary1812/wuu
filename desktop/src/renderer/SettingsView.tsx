@@ -431,11 +431,7 @@ export function SettingsView({
     const connection: RuntimeConnectionUpdate = {
       base_url: baseURLDraft.trim() || selectedProvider?.base_url || ""
     };
-    if (isAnthropicProviderType(selectedProvider?.type)) {
-      connection.auth_token = apiKey;
-    } else {
-      connection.api_key = apiKey;
-    }
+    connection.api_key = apiKey;
     setError("");
     try {
       await onSave(providerDraft, modelDraft, undefined, connection, variantDraft);
@@ -457,11 +453,7 @@ export function SettingsView({
         type: providerTypeDraft,
         create_provider: true
       };
-      if (isAnthropicProviderType(providerTypeDraft)) {
-        connection.auth_token = apiKeyDraft.trim();
-      } else {
-        connection.api_key = apiKeyDraft.trim();
-      }
+      connection.api_key = apiKeyDraft.trim();
       await onSave(providerDraft, modelDraft, undefined, connection, variantDraft);
       setAddingProvider(false);
       setAPIKeyDraft("");
@@ -1129,10 +1121,7 @@ function SettingsProvidersPage({
 }): JSX.Element {
   const { t } = useI18n();
   const reasoningMode = providerModelReasoningMode(selectedProvider, modelDraft);
-  const authFieldUsesToken = isAnthropicProviderType(addingProvider ? providerTypeDraft : selectedProvider?.type);
-  const authFieldLabel = authFieldUsesToken
-    ? t("provider.authToken")
-    : t("provider.apiKey");
+  const authFieldLabel = t("provider.apiKey");
   // Text fields commit on blur, or on Enter — except while creating a
   // provider, where Enter submits the create transaction instead.
   const commitOnEnter =
