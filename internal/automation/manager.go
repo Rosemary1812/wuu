@@ -259,7 +259,10 @@ func (m *Manager) ListTasks() ([]Task, error) {
 	for index := range sessionOnly {
 		sessionOnly[index] = withTaskDurability(sessionOnly[index], "session-only")
 	}
-	return append(durable, sessionOnly...), nil
+	merged := make([]Task, 0, len(durable)+len(sessionOnly))
+	merged = append(merged, durable...)
+	merged = append(merged, sessionOnly...)
+	return merged, nil
 }
 
 func (m *Manager) RemoveTask(id string) error {
