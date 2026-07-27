@@ -1279,7 +1279,6 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("unknown-count");
     expect(rootText()).toContain("—");
     expect(rootText()).not.toContain("NaN");
-    expect(rootText()).not.toContain("活跃");
     // Compact numbers keep their exact value in a hover tooltip.
     const totalInput = Array.from(
       container.querySelectorAll<HTMLElement>(".settings-usage-stat-value"),

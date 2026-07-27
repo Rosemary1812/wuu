@@ -113,7 +113,9 @@ func CollectSkillUsage(sessDir string) ([]SkillUsage, error) {
 				if strings.TrimSpace(call.Name) != "load_skill" {
 					continue
 				}
-				var args struct{ Name string `json:"name"` }
+				var args struct {
+					Name string `json:"name"`
+				}
 				if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 					continue
 				}
@@ -170,7 +172,9 @@ func CollectUsageScan(sessDir string) (UsageScan, error) {
 				if strings.TrimSpace(call.Name) != "load_skill" {
 					continue
 				}
-				var args struct{ Name string `json:"name"` }
+				var args struct {
+					Name string `json:"name"`
+				}
 				if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil && strings.TrimSpace(args.Name) != "" {
 					counts[strings.TrimSpace(args.Name)]++
 				}
@@ -182,7 +186,9 @@ func CollectUsageScan(sessDir string) (UsageScan, error) {
 		skills = append(skills, SkillUsage{Name: name, Count: count})
 	}
 	sort.Slice(skills, func(i, j int) bool {
-		if skills[i].Count != skills[j].Count { return skills[i].Count > skills[j].Count }
+		if skills[i].Count != skills[j].Count {
+			return skills[i].Count > skills[j].Count
+		}
 		return skills[i].Name < skills[j].Name
 	})
 	return UsageScan{TokenRows: rows, Skills: skills}, nil
