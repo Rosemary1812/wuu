@@ -280,10 +280,13 @@ describe("workspace file tabs", () => {
     await flushAsync();
 
     expect(shell?.classList.contains("right-panel-animating")).toBe(true);
-    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(false);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
-    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
+    expect(
+      container.querySelector('.globalized-sidebar-toggle[aria-label="展开左侧栏"]'),
+    ).not.toBeNull();
     expect(container.querySelector('[data-testid="workspace-document-composer"]')).not.toBeNull();
     expect(container.querySelectorAll("[data-main-conversation-composer]")).toHaveLength(1);
     expect(
@@ -446,7 +449,7 @@ describe("workspace file tabs", () => {
       vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
     });
     expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
-    expect(sidebarToggle?.getAttribute("aria-pressed")).toBe("false");
+    expect(sidebarToggle?.getAttribute("aria-pressed")).toBe("true");
 
     await act(async () => {
       container

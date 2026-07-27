@@ -61,6 +61,7 @@ function usage(): SettingsUsageResponse {
       active_days: 0,
     },
     model_breakdowns: [],
+    skill_usage: [],
     days: [],
   };
 }
@@ -153,6 +154,18 @@ describe("useSettingsRuntimeState", () => {
     await hook.rerender(false);
 
     expect(hook.get().settingsUsage).toBeUndefined();
+  });
+
+  it("keeps the app usable when a stale preload does not expose settings usage", async () => {
+    installWuuStub({
+      listCodexPets: vi.fn().mockResolvedValue(snapshot(false)),
+      updateCodexPetSettings: vi.fn().mockResolvedValue(snapshot(false)),
+    });
+
+    const hook = await renderSettingsRuntimeState(true);
+
+    expect(hook.get().settingsUsage).toBeUndefined();
+    expect(hook.get().codexPetsLoading).toBe(false);
   });
 
   it("surfaces the existing stale-preload error when Codex Pets APIs are missing", async () => {

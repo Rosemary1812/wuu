@@ -28,6 +28,8 @@ type Task struct {
 	Mode              string            `json:"mode,omitempty"`
 	CreatorThreadID   string            `json:"creatorThreadId,omitempty"`
 	HeartbeatThreadID string            `json:"heartbeatThreadId,omitempty"`
+	WorkspaceID       string            `json:"workspaceId,omitempty"`
+	WorkspacePath     string            `json:"workspacePath,omitempty"`
 	Metadata          map[string]string `json:"metadata,omitempty"`
 	CreatedAt         int64             `json:"createdAt"`
 	LastFiredAt       int64             `json:"lastFiredAt,omitempty"`
@@ -193,6 +195,24 @@ func (s *TaskStore) SetPaused(id string, paused bool) (Task, bool, error) {
 	return updated, found, err
 }
 
+func (s *TaskStore) Replace(task Task) (Task, bool, error) {
+	var updated Task
+	found := false
+	err := s.updateIfChanged(func(tasks []Task) ([]Task, bool, error) {
+		for index := range tasks {
+			if tasks[index].ID != task.ID {
+				continue
+			}
+			found = true
+			updated = task
+			tasks[index] = task
+			return tasks, true, nil
+		}
+		return tasks, false, nil
+	})
+	return updated, found, err
+}
+
 // ClaimForDispatch atomically consumes one due task occurrence if the stored
 // task still matches the scheduler snapshot. Recurring tasks advance their
 // LastFiredAt timestamp; one-shot tasks are removed. A successful claim is an
@@ -340,6 +360,22 @@ func (s *SessionTaskStore) SetPaused(id string, paused bool) (Task, bool, error)
 		tasks[index].Paused = paused
 		sessionTaskState.tasks[s.namespace] = tasks
 		return tasks[index], true, nil
+	}
+	return Task{}, false, nil
+}
+
+func (s *SessionTaskStore) Replace(task Task) (Task, bool, error) {
+	sessionTaskState.mu.Lock()
+	defer sessionTaskState.mu.Unlock()
+
+	tasks := sessionTaskState.tasks[s.namespace]
+	for index := range tasks {
+		if tasks[index].ID != task.ID {
+			continue
+		}
+		tasks[index] = task
+		sessionTaskState.tasks[s.namespace] = tasks
+		return task, true, nil
 	}
 	return Task{}, false, nil
 }

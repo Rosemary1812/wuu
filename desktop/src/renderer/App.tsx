@@ -174,6 +174,10 @@ import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
+import {
+  AutomationsCatalog,
+  type AutomationDetailPaneLayout,
+} from "./AutomationsCatalog";
 import { skillsAssistantPrompt, userVisibleThreads } from "./SkillsAssistant";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useBrowserVisibility } from "./BrowserVisibility";
@@ -397,6 +401,8 @@ export function App(): JSX.Element {
   });
   const [rightPanelManualGlobalized, setRightPanelManualGlobalized] =
     useState(false);
+  const [automationDetailPaneLayout, setAutomationDetailPaneLayout] =
+    useState<AutomationDetailPaneLayout>({ open: false, reservedWidth: 0 });
   const rightPanelAutoGlobalized =
     rightPanelOpen && workspaceRightPanelAutoGlobalized;
   const rightPanelGlobalized =
@@ -446,6 +452,9 @@ export function App(): JSX.Element {
     });
     return () => cancelAnimationFrame(raf);
   }, [workspaceSheetPhase]);
+  // Focused workspace mode always parks the left rail as a drawer. Its
+  // visibility is transient and must not be inferred from the user's normal
+  // docked-sidebar preference.
   const sidebarDrawerMode = sidebarCollapsed || rightPanelGlobalized;
   const {
     sidebarDrawerPhase,
@@ -458,15 +467,13 @@ export function App(): JSX.Element {
     scheduleSidebarDrawerCloseFromPointerLeave,
   } = useSidebarDrawerState({
     appShellRef,
-    sidebarCollapsed,
+    sidebarCollapsed: sidebarDrawerMode,
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
     dockingMotionMs: SIDEBAR_MOTION_MS,
   });
-  const sidebarDrawerVisible =
-    sidebarDrawerPhase === "open" ||
-    (rightPanelGlobalized && !sidebarCollapsed);
+  const sidebarDrawerVisible = sidebarDrawerPhase === "open";
   const {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
@@ -1657,6 +1664,12 @@ export function App(): JSX.Element {
     !previewingLaunch &&
     currentSessionTab?.kind === "skills",
   );
+  const showingAutomationsCatalog = Boolean(
+    state.initialized &&
+    !previewingLaunch &&
+    currentSessionTab?.kind === "automations",
+  );
+  const showingManagementCatalog = showingSkillsCatalog || showingAutomationsCatalog;
   const skillsAssistantThread = skillsAssistantThreadID
     ? state.threads.find((thread) => thread.id === skillsAssistantThreadID)
     : undefined;
@@ -1665,6 +1678,8 @@ export function App(): JSX.Element {
   );
   const activeTitle = showingSkillsCatalog
     ? t("skills.title")
+    : showingAutomationsCatalog
+      ? t("automations.title")
     : resolveLocalizedText(activeThread?.preview ?? "") ||
       t("tabs.newConversation");
   const popOutWindowTitle =
@@ -1701,7 +1716,7 @@ export function App(): JSX.Element {
     ? contextCompositionEntries.filter((entry) => entry.threadID === activeThreadID)
     : [];
   const emptyConversation =
-    !showingSkillsCatalog &&
+    !showingManagementCatalog &&
     !activePendingNewThreadTurn &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
@@ -1730,7 +1745,7 @@ export function App(): JSX.Element {
     !previewingLaunch &&
     !emptyConversation &&
     !splitConversation &&
-    !showingSkillsCatalog &&
+    !showingManagementCatalog &&
     !rightPanelGlobalized;
 
   useEffect(() => {
@@ -1742,7 +1757,7 @@ export function App(): JSX.Element {
       tab.kind === "diff" &&
       (!activeThreadID ||
         tab.threadID !== activeThreadID ||
-        showingSkillsCatalog ||
+        showingManagementCatalog ||
         emptyConversation);
     if (!workspaceViewTabs.some(isStaleDiffTab)) {
       return;
@@ -1757,7 +1772,7 @@ export function App(): JSX.Element {
     activeThreadID,
     closeWorkspaceViewTabsWhere,
     emptyConversation,
-    showingSkillsCatalog,
+    showingManagementCatalog,
     workspaceActiveViewTabID,
     workspaceViewTabs,
   ]);
@@ -2865,6 +2880,7 @@ export function App(): JSX.Element {
   });
 
   const {
+    openAutomationsTab,
     openSkillsTab,
     dismissContextCompositionEntry,
     dismissInstructionFilesEntry,
@@ -3895,18 +3911,18 @@ export function App(): JSX.Element {
                 className="icon-button side-panel-toggle-button sidebar-toggle-button globalized-sidebar-toggle"
                 type="button"
                 aria-label={t(
-                  sidebarCollapsed
-                    ? "app.expandLeftSidebar"
-                    : "app.collapseLeftSidebar",
+                  sidebarDrawerVisible
+                    ? "app.collapseLeftSidebar"
+                    : "app.expandLeftSidebar",
                 )}
-                aria-pressed={!sidebarCollapsed}
-                onClick={toggleSidebar}
+                aria-pressed={sidebarDrawerVisible}
+                onClick={sidebarDrawerVisible ? closeSidebarDrawer : openSidebarDrawerNow}
                 onPointerEnter={scheduleSidebarDrawerOpen}
                 onPointerLeave={(event) =>
                   scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
                 }
               >
-                <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+                <SidePanelToggleIcon side="left" open={sidebarDrawerVisible} />
               </button>
             </div>
           ) : null}
@@ -3940,6 +3956,10 @@ export function App(): JSX.Element {
             onOpenSkillsTab={() => {
               setChannelsOpen(false);
               openSkillsTab();
+            }}
+            onOpenAutomationsTab={() => {
+              setChannelsOpen(false);
+              openAutomationsTab();
             }}
             groupChatEnabled={ENABLE_GROUP_CHAT}
             channelsOpen={channelsOpen}
@@ -4067,7 +4087,16 @@ export function App(): JSX.Element {
           showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT
             ? " skills-assistant-visible"
             : ""
+        }${
+          showingAutomationsCatalog && automationDetailPaneLayout.open
+            ? " automation-detail-pane-open"
+            : ""
         }`}
+        style={showingAutomationsCatalog && automationDetailPaneLayout.open
+          ? {
+              "--automation-detail-reserved-width": `${automationDetailPaneLayout.reservedWidth}px`,
+            } as CSSProperties
+          : undefined}
         ref={conversationPaneRef}
       >
         {ENABLE_GROUP_CHAT && channelsOpen ? (
@@ -4289,7 +4318,7 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
               splitConversation ? " split-scroll-region" : ""
-            }${showingSkillsCatalog ? " skills-scroll-region" : ""}`}
+            }${showingManagementCatalog ? " skills-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -4299,6 +4328,12 @@ export function App(): JSX.Element {
                 activeContext={state.activeContext}
                 extensionInventory={state.initialized?.extension_inventory}
                 onTrySkill={trySkillFromCatalog}
+              />
+            ) : showingAutomationsCatalog ? (
+              <AutomationsCatalog
+                projects={state.projects}
+                activeProjectID={state.activeProjectId}
+                onDetailPaneLayoutChange={setAutomationDetailPaneLayout}
               />
             ) : (
               <>
@@ -4435,6 +4470,10 @@ export function App(): JSX.Element {
             onExitPreview={() => setLaunchPreviewPinned(false)}
           />
         )}
+
+        {showingAutomationsCatalog && automationDetailPaneLayout.open ? (
+          <div className="automation-detail-pane-divider" aria-hidden="true" />
+        ) : null}
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
 

@@ -159,6 +159,7 @@ func (s *Service) migrate() error {
 			id TEXT PRIMARY KEY,
 			kind TEXT NOT NULL CHECK (kind IN ('channel', 'dm')),
 			name TEXT NOT NULL,
+			avatar_image TEXT NOT NULL DEFAULT '',
 			created_by TEXT NOT NULL,
 			created_at INTEGER NOT NULL
 		)`,
@@ -326,6 +327,7 @@ func (s *Service) ensureLegacyColumns() error {
 		{table: "reminders", name: "created_at", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "named_agents", name: "avatar_key", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "named_agents", name: "avatar_image", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "rooms", name: "avatar_image", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, column := range columns {
 		exists, err := s.tableHasColumn(column.table, column.name)
@@ -793,6 +795,10 @@ func (s *Service) CreateRoom(ctx context.Context, params CreateRoomParams) (Room
 	if createdBy == "" {
 		return Room{}, errors.New("room creator is required")
 	}
+	avatarImage, err := normalizeAvatarImage(params.AvatarImage, "room avatar")
+	if err != nil {
+		return Room{}, err
+	}
 	members, err := normalizeMembers(params.Members, createdBy)
 	if err != nil {
 		return Room{}, err
@@ -805,7 +811,7 @@ func (s *Service) CreateRoom(ctx context.Context, params CreateRoomParams) (Room
 		return Room{}, err
 	}
 	now := fromMillis(toMillis(s.now()))
-	room := Room{ID: id, Kind: params.Kind, Name: name, CreatedBy: createdBy, CreatedAt: now}
+	room := Room{ID: id, Kind: params.Kind, Name: name, AvatarImage: avatarImage, CreatedBy: createdBy, CreatedAt: now}
 	for index := range members {
 		members[index].RoomID = id
 		members[index].JoinedAt = now
@@ -820,8 +826,8 @@ func (s *Service) CreateRoom(ctx context.Context, params CreateRoomParams) (Room
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO rooms (id, kind, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)`,
-		room.ID, room.Kind, room.Name, room.CreatedBy, toMillis(room.CreatedAt)); err != nil {
+		INSERT INTO rooms (id, kind, name, avatar_image, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		room.ID, room.Kind, room.Name, room.AvatarImage, room.CreatedBy, toMillis(room.CreatedAt)); err != nil {
 		return Room{}, fmt.Errorf("insert room: %w", err)
 	}
 	for _, member := range room.Members {
@@ -860,8 +866,8 @@ func (s *Service) GetRoom(ctx context.Context, id string) (Room, error) {
 	var room Room
 	var createdAt int64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, kind, name, created_by, created_at FROM rooms WHERE id = ?`, id,
-	).Scan(&room.ID, &room.Kind, &room.Name, &room.CreatedBy, &createdAt)
+		SELECT id, kind, name, avatar_image, created_by, created_at FROM rooms WHERE id = ?`, id,
+	).Scan(&room.ID, &room.Kind, &room.Name, &room.AvatarImage, &room.CreatedBy, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Room{}, fmt.Errorf("%w: room %q", ErrNotFound, id)
 	}
@@ -890,6 +896,25 @@ func (s *Service) GetRoom(ctx context.Context, id string) (Room, error) {
 		return Room{}, fmt.Errorf("list room members: %w", err)
 	}
 	return room, nil
+}
+
+func (s *Service) UpdateRoomAvatar(ctx context.Context, id, avatarImage string) (Room, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Room{}, errors.New("room id is required")
+	}
+	normalized, err := normalizeAvatarImage(avatarImage, "room avatar")
+	if err != nil {
+		return Room{}, err
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE rooms SET avatar_image = ? WHERE id = ?`, normalized, id)
+	if err != nil {
+		return Room{}, fmt.Errorf("update room avatar: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return Room{}, ErrNotFound
+	}
+	return s.GetRoom(ctx, id)
 }
 
 func (s *Service) ListRooms(ctx context.Context) ([]Room, error) {
@@ -921,6 +946,25 @@ func (s *Service) ListRooms(ctx context.Context) ([]Room, error) {
 		rooms = append(rooms, room)
 	}
 	return rooms, nil
+}
+
+func (s *Service) UpdateRoom(ctx context.Context, params UpdateRoomParams) (Room, error) {
+	id := strings.TrimSpace(params.RoomID)
+	if id == "" {
+		return Room{}, errors.New("room id is required")
+	}
+	name := strings.TrimSpace(params.Name)
+	if name == "" {
+		return Room{}, errors.New("room name is required")
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE rooms SET name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return Room{}, fmt.Errorf("update room: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return Room{}, ErrNotFound
+	}
+	return s.GetRoom(ctx, id)
 }
 
 func (s *Service) EnsureBootstrap(ctx context.Context, humanID string) (BootstrapResult, error) {
@@ -1104,29 +1148,33 @@ func normalizeNamedAgentAvatarKey(value string) (string, error) {
 }
 
 func normalizeNamedAgentAvatarImage(value string) (string, error) {
+	return normalizeAvatarImage(value, "named agent avatar")
+}
+
+func normalizeAvatarImage(value, label string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", nil
 	}
 	header, encoded, ok := strings.Cut(value, ",")
 	if !ok || (header != "data:image/png;base64" && header != "data:image/jpeg;base64" && header != "data:image/webp;base64") {
-		return "", errors.New("named agent avatar image must be PNG, JPEG, or WebP")
+		return "", fmt.Errorf("%s image must be PNG, JPEG, or WebP", label)
 	}
 	if len(encoded) > base64.StdEncoding.EncodedLen(maxAgentAvatarBytes) {
-		return "", fmt.Errorf("named agent avatar image exceeds %d bytes", maxAgentAvatarBytes)
+		return "", fmt.Errorf("%s image exceeds %d bytes", label, maxAgentAvatarBytes)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return "", errors.New("named agent avatar image is not valid base64 data")
+		return "", fmt.Errorf("%s image is not valid base64 data", label)
 	}
 	if len(decoded) == 0 || len(decoded) > maxAgentAvatarBytes {
-		return "", fmt.Errorf("named agent avatar image must be between 1 and %d bytes", maxAgentAvatarBytes)
+		return "", fmt.Errorf("%s image must be between 1 and %d bytes", label, maxAgentAvatarBytes)
 	}
 	validImage := (header == "data:image/png;base64" && bytes.HasPrefix(decoded, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})) ||
 		(header == "data:image/jpeg;base64" && bytes.HasPrefix(decoded, []byte{0xff, 0xd8, 0xff})) ||
 		(header == "data:image/webp;base64" && len(decoded) >= 12 && string(decoded[:4]) == "RIFF" && string(decoded[8:12]) == "WEBP")
 	if !validImage {
-		return "", errors.New("named agent avatar image data does not match its media type")
+		return "", fmt.Errorf("%s image data does not match its media type", label)
 	}
 	return value, nil
 }

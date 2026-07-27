@@ -297,6 +297,9 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		m.publish(Event{Type: EventFailed, Process: *p})
 		return p, err
 	}
+	if opt.TTY {
+		cmd.Env = terminalCommandEnv(cmd.Env)
+	}
 	var stdin io.WriteCloser
 	var ptyFile *os.File
 	if opt.TTY {
@@ -441,6 +444,29 @@ func managedCommand(command, cwd, commandPrefix string) (*exec.Cmd, error) {
 	cmd.Dir = cwd
 	cmd.Env = shellpath.CommandEnv(os.Environ())
 	return cmd, nil
+}
+
+func terminalCommandEnv(env []string) []string {
+	terminalValues := map[string]string{
+		"CLICOLOR":    "1",
+		"COLORTERM":   "truecolor",
+		"FORCE_COLOR": "1",
+		"TERM":        "xterm-256color",
+	}
+	result := make([]string, 0, len(env)+len(terminalValues))
+	for _, entry := range env {
+		name, _, found := strings.Cut(entry, "=")
+		if found {
+			if _, terminalVariable := terminalValues[strings.ToUpper(name)]; terminalVariable {
+				continue
+			}
+		}
+		result = append(result, entry)
+	}
+	for _, name := range []string{"CLICOLOR", "COLORTERM", "FORCE_COLOR", "TERM"} {
+		result = append(result, name+"="+terminalValues[name])
+	}
+	return result
 }
 
 func (m *Manager) wait(id string, cmd *exec.Cmd, logf *os.File) {

@@ -91,7 +91,7 @@ export function createSessionTabActions(
       tab.context,
       currentState.activeContext,
     );
-    if (tab.kind === "skills") {
+    if (tab.kind === "skills" || tab.kind === "automations") {
       const outgoingDraft = deps.getPrimaryComposerDraft();
       const requestID = sameContext
         ? undefined
@@ -299,7 +299,7 @@ export function createSessionTabActions(
       activeSessionTabID: fallbackTab.id,
     }));
     
-    if (fallbackTab.kind === "skills") {
+    if (fallbackTab.kind === "skills" || fallbackTab.kind === "automations") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
         currentState.activeContext,

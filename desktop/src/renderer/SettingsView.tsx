@@ -2443,7 +2443,16 @@ function SettingsUsagePage({
   usage: SettingsUsageResponse | undefined;
 }): JSX.Element {
   const { locale, t, formatNumber } = useI18n();
+  const formatUsageValue = (value: number, options?: Intl.NumberFormatOptions): string =>
+    Number.isFinite(value) ? formatNumber(value, options) : "—";
   const heatmap = usage ? buildUsageHeatmap(usage.days) : [];
+  const skillUsage = (usage?.skill_usage ?? []).filter(
+    (skill) => skill && typeof skill.name === "string" && skill.name.trim(),
+  );
+  const maxSkillCount = skillUsage.reduce((max, skill) => {
+    const count = Number.isFinite(skill.count) ? Math.max(0, skill.count) : 0;
+    return Math.max(max, count);
+  }, 0);
   const heatmapCols = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
 
   // Keep grid height = 7 × cell-size so cells stay square as panel resizes
@@ -2489,6 +2498,13 @@ function SettingsUsagePage({
       }
     }
   }
+  if (!usage) {
+    return (
+      <div className="settings-usage-page settings-usage-loading" data-testid="settings-usage" aria-busy="true">
+        <SettingsUsageSkeleton />
+      </div>
+    );
+  }
   return (
     <div className="settings-usage-page" data-testid="settings-usage">
       {usage && (
@@ -2496,17 +2512,17 @@ function SettingsUsagePage({
           <UsageStat
             label={t("settings.usageInput")}
             value={formatCompactUsageNumber(usage.metrics.input_tokens, locale)}
-            title={formatNumber(usage.metrics.input_tokens)}
+            title={formatUsageValue(usage.metrics.input_tokens)}
           />
           <UsageStat
             label={t("settings.usageContext")}
             value={formatCompactUsageNumber(usage.metrics.context_tokens, locale)}
-            title={formatNumber(usage.metrics.context_tokens)}
+            title={formatUsageValue(usage.metrics.context_tokens)}
           />
           <UsageStat
             label={t("settings.usageOutput")}
             value={formatCompactUsageNumber(usage.metrics.output_tokens, locale)}
-            title={formatNumber(usage.metrics.output_tokens)}
+            title={formatUsageValue(usage.metrics.output_tokens)}
           />
           <UsageStat label={t("settings.cacheHitRate")} value={formatPercent(usage.metrics.cache_hit_rate)} />
           <UsageStat label={t("settings.activeDays")} value={t("settings.dayCount", { count: formatNumber(usage.metrics.active_days) })} />
@@ -2542,12 +2558,12 @@ function SettingsUsagePage({
           } as CSSProperties}
         >
           {heatmap.map((day) => (
-            <Tooltip content={formatHeatmapTitle(day, t, formatNumber)} key={day.date}>
+            <Tooltip content={formatHeatmapTitle(day, t, formatUsageValue)} key={day.date}>
               <span
                 className="settings-usage-heatmap-cell"
                 data-level={day.level}
                 role="gridcell"
-                aria-label={formatHeatmapTitle(day, t, formatNumber)}
+                aria-label={formatHeatmapTitle(day, t, formatUsageValue)}
               />
             </Tooltip>
           ))}
@@ -2561,8 +2577,41 @@ function SettingsUsagePage({
         </div>
       </div>
 
-      {usage ? (
-        usage.model_breakdowns.length > 0 ? (
+      <section className="settings-skill-usage" aria-labelledby="settings-skill-usage-title">
+        <div className="settings-skill-usage-header">
+          <div>
+            <h2 id="settings-skill-usage-title" className="settings-usage-table-title">
+              {t("settings.skillUsage")}
+            </h2>
+            <p className="settings-skill-usage-subtitle">{t("settings.skillUsageHint")}</p>
+          </div>
+          <span className="settings-skill-usage-count">{t("settings.skillUsageCount")}</span>
+        </div>
+        {skillUsage.length ? (
+          <div className="settings-skill-usage-list">
+            {skillUsage.slice(0, 8).map((skill, index) => {
+              const count = Number.isFinite(skill.count) ? Math.max(0, skill.count) : undefined;
+              const width = count !== undefined && maxSkillCount > 0 ? Math.max(6, (count / maxSkillCount) * 100) : 0;
+              return (
+                <div className="settings-skill-usage-row" key={skill.name}>
+                  <div className="settings-skill-usage-label">
+                    <span className="settings-skill-usage-rank">{String(index + 1).padStart(2, "0")}</span>
+                    <strong>{skill.name}</strong>
+                  </div>
+                  <div className="settings-skill-usage-bar" aria-hidden="true">
+                    <span style={{ width: `${width}%` }} />
+                  </div>
+                  <span className="settings-skill-usage-value">{formatUsageNumber(count, formatNumber)}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="settings-skill-usage-empty">{t("settings.noSkillUsage")}</div>
+        )}
+      </section>
+
+      {usage.model_breakdowns.length > 0 ? (
           <div className="settings-card settings-usage-table-wrap">
             <h2 className="settings-usage-table-title">{t("settings.modelUsage")}</h2>
             <table className="settings-usage-table">
@@ -2587,14 +2636,14 @@ function SettingsUsagePage({
                         </div>
                       </td>
                       <td className="settings-usage-num">
-                        <Tooltip content={formatNumber(b.input_tokens)}>
+                        <Tooltip content={formatUsageValue(b.input_tokens)}>
                           <span className="settings-usage-number">
                             {formatCompactUsageNumber(b.input_tokens, locale)}
                           </span>
                         </Tooltip>
                       </td>
                       <td className="settings-usage-num">
-                        <Tooltip content={formatNumber(b.output_tokens)}>
+                        <Tooltip content={formatUsageValue(b.output_tokens)}>
                           <span className="settings-usage-number">
                             {formatCompactUsageNumber(b.output_tokens, locale)}
                           </span>
@@ -2611,11 +2660,28 @@ function SettingsUsagePage({
           </div>
         ) : (
           <div className="settings-empty">{t("settings.noUsage")}</div>
-        )
-      ) : (
-        <div className="settings-empty">{t("settings.loading")}</div>
-      )}
+        )}
     </div>
+  );
+}
+
+function SettingsUsageSkeleton(): JSX.Element {
+  return (
+    <>
+      <div className="settings-usage-skeleton-stats" aria-hidden="true">
+        {[0, 1, 2, 3].map((item) => <span className="settings-usage-skeleton-line" key={item} />)}
+      </div>
+      <div className="settings-usage-skeleton-heatmap" aria-hidden="true">
+        <span className="settings-usage-skeleton-line settings-usage-skeleton-heading" />
+        <div className="settings-usage-skeleton-grid">
+          {Array.from({ length: 28 }, (_, index) => <i key={index} />)}
+        </div>
+      </div>
+      <div className="settings-usage-skeleton-list" aria-hidden="true">
+        <span className="settings-usage-skeleton-line settings-usage-skeleton-heading" />
+        {[0, 1, 2, 3].map((item) => <span className="settings-usage-skeleton-row" key={item} />)}
+      </div>
+    </>
   );
 }
 
@@ -2631,6 +2697,9 @@ function UsageStat({ label, value, title }: { label: string; value: string; titl
 }
 
 function formatCompactUsageNumber(value: number, locale: string): string {
+  if (!Number.isFinite(value)) {
+    return "—";
+  }
   const units = [
     { threshold: 1_000, suffix: "k" },
     { threshold: 1_000_000, suffix: "M" },
@@ -2653,6 +2722,10 @@ function formatCompactUsageNumber(value: number, locale: string): string {
   }
 
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(scaled)}${units[unitIndex].suffix}`;
+}
+
+function formatUsageNumber(value: number | undefined, formatNumber: (value: number) => string): string {
+  return value === undefined || !Number.isFinite(value) ? "—" : formatNumber(value);
 }
 
 

@@ -49,6 +49,8 @@ import type {
   ChannelMessageSendResult,
   ChannelRoomCreateParams,
   ChannelRoomCreateResult,
+  ChannelRoomUpdateParams,
+  ChannelRoomUpdateResult,
   ChannelRoomDeleteParams,
   ChannelRoomDeleteResult,
   ChannelRoomListResult,
@@ -93,6 +95,8 @@ import type {
   SkillContentParams,
   SkillContentResult,
   SkillListResult,
+  AutomationCreateParams,
+  AutomationUpdateParams,
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
@@ -1368,6 +1372,29 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
+  ipcMain.handle("wuu:automation-list", (event) =>
+    appServerRequest(event, "automation/list"),
+  );
+  ipcMain.handle("wuu:automation-create", (event, params: AutomationCreateParams) => {
+    const workspaceID = typeof params?.workspace_id === "string" ? params.workspace_id.trim() : "";
+    const project = projectManager.list().projects.find((candidate) => (
+      candidate.id === workspaceID && !candidate.missing
+    ));
+    if (!project) {
+      throw new Error("automation workspace must be an available project");
+    }
+    return appServerRequest(event, "automation/create", {
+      ...params,
+      workspace_id: project.id,
+      workspace_path: project.path,
+    });
+  });
+  ipcMain.handle("wuu:automation-update", (event, params: AutomationUpdateParams) =>
+    appServerRequest(event, "automation/update", params),
+  );
+  ipcMain.handle("wuu:automation-remove", (event, id: string) =>
+    appServerRequest(event, "automation/remove", { id }),
+  );
   ipcMain.handle("wuu:skill-content", async (event, params: SkillContentParams): Promise<SkillContentResult> => {
     const name = typeof params?.name === "string" ? params.name : "";
     const source = typeof params?.source === "string" ? params.source : "";
@@ -1408,6 +1435,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:channel-room-create", (event, params: ChannelRoomCreateParams) =>
     appServerRequest<ChannelRoomCreateResult>(event, "channel/room/create", params),
+  );
+  ipcMain.handle("wuu:channel-room-update", (event, params: ChannelRoomUpdateParams) =>
+    appServerRequest<ChannelRoomUpdateResult>(event, "channel/room/update", params),
   );
   ipcMain.handle("wuu:channel-room-delete", (event, params: ChannelRoomDeleteParams) =>
     appServerRequest<ChannelRoomDeleteResult>(event, "channel/room/delete", params),

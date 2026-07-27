@@ -163,9 +163,35 @@ func (s *Server) handleChannelRoomCreate(ctx context.Context, req Request) error
 		members = append(members, channels.RoomMember{MemberType: channels.MemberAgent, MemberID: agentID})
 	}
 	room, err := s.channelService.CreateRoom(ctx, channels.CreateRoomParams{
-		Name: params.Name, Kind: channels.RoomChannel, CreatedBy: localChannelHumanID, Members: members,
+		Name: params.Name, AvatarImage: params.AvatarImage, Kind: channels.RoomChannel, CreatedBy: localChannelHumanID, Members: members,
 	})
 	return s.writeResponse(req.ID, ChannelRoomCreateResult{Room: room}, err)
+}
+
+func (s *Server) handleChannelRoomUpdate(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelRoomUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	var (
+		room channels.Room
+		err  error
+	)
+	switch {
+	case params.Name != nil && params.AvatarImage == nil:
+		room, err = s.channelService.UpdateRoom(ctx, channels.UpdateRoomParams{
+			RoomID: params.RoomID,
+			Name:   *params.Name,
+		})
+	case params.Name == nil && params.AvatarImage != nil:
+		room, err = s.channelService.UpdateRoomAvatar(ctx, params.RoomID, *params.AvatarImage)
+	default:
+		err = errors.New("room update requires exactly one of name or avatar_image")
+	}
+	return s.writeResponse(req.ID, ChannelRoomUpdateResult{Room: room}, err)
 }
 
 func (s *Server) handleChannelRoomDelete(ctx context.Context, req Request) error {

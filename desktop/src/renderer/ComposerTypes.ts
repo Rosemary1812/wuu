@@ -20,6 +20,7 @@ export type FloatingMenuOwner =
   | "composer-plus"
   | "codex-runtime"
   | "composer-query-history"
+  | "minute-clock"
   | "select-menu";
 export type FloatingMenuPlacement = "above" | "below" | "middle";
 export type FloatingMenuAlign = "left" | "right";

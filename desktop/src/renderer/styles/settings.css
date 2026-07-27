@@ -1163,6 +1163,147 @@
   font-size: var(--font-sm);
 }
 
+.settings-usage-loading {
+  gap: 32px;
+}
+
+.settings-usage-skeleton-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-usage-skeleton-line,
+.settings-usage-skeleton-row {
+  display: block;
+  height: 42px;
+  background: var(--surface-2);
+  animation: settings-usage-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.settings-usage-skeleton-heatmap,
+.settings-usage-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-usage-skeleton-heading {
+  width: 112px;
+  height: 12px;
+}
+
+.settings-usage-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.settings-usage-skeleton-grid i {
+  aspect-ratio: 1;
+  display: block;
+  background: var(--surface-2);
+  animation: settings-usage-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.settings-usage-skeleton-row {
+  height: 14px;
+  width: 100%;
+}
+
+@keyframes settings-usage-skeleton-pulse {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+.settings-skill-usage {
+  min-width: 0;
+  border-top: 1px solid var(--hairline-soft);
+  padding-top: 24px;
+}
+
+.settings-skill-usage-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.settings-skill-usage-subtitle {
+  margin: 5px 0 0;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+}
+
+.settings-skill-usage-count {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  padding-top: 3px;
+}
+
+.settings-skill-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.settings-skill-usage-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(100px, 1.6fr) 52px;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-skill-usage-label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.settings-skill-usage-label strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-skill-usage-rank {
+  color: var(--ink-faint);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-skill-usage-bar {
+  height: 5px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.settings-skill-usage-bar span {
+  display: block;
+  height: 100%;
+  background: #e8a23a;
+  transition: width 180ms ease;
+}
+
+.settings-skill-usage-value {
+  color: var(--ink-soft);
+  font-size: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.settings-skill-usage-empty {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  padding: 6px 0 2px;
+}
+
 /* Heatmap grid: flat on the canvas, no panel — the cells, their month
  * labels, and the legend carry themselves. */
 .settings-heatmap-panel {

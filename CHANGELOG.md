@@ -8,6 +8,11 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Git attribution in Windows Git Bash shells when Git resolves without an
+  `.exe` suffix.
+
 ## [0.12.2] - 2026-07-25
 
 ### Added

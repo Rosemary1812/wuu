@@ -27,8 +27,23 @@ func TestAutomationRequestContextIsHiddenAndRequestOnly(t *testing.T) {
 	if segment.Lifecycle != agent.ContextSegmentRequestOnly || segment.Durable || segment.VisibleInUI {
 		t.Fatalf("automation context must be hidden and request-only: %#v", segment)
 	}
-	if len(segment.Messages) != 1 || segment.Messages[0].Role != "system" || !strings.Contains(segment.Messages[0].Content, "task_id: task-1") || !strings.Contains(segment.Messages[0].Content, "run_id: run-1") {
+	if len(segment.Messages) != 1 || segment.Messages[0].Role != "user" || !strings.Contains(segment.Messages[0].Content, "task_id: task-1") || !strings.Contains(segment.Messages[0].Content, "run_id: run-1") {
 		t.Fatalf("automation context message = %#v", segment.Messages)
+	}
+}
+
+func TestAutomationRequestContextKeepsProviderMessageOrderValid(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "scheduled task"},
+	}
+	segments := automationRequestContext(
+		automation.Task{ID: "task-1", Cron: "*/5 * * * *", Timezone: "UTC", Mode: string(automation.ModeNewThread)},
+		automation.Run{ID: "run-1", TriggeredAt: time.Date(2026, 7, 16, 7, 0, 0, 0, time.UTC)},
+	)
+	messages := append(append([]providers.ChatMessage(nil), history...), segments[0].Messages...)
+	if err := providers.ValidateToolCallHistory(messages); err != nil {
+		t.Fatalf("automation provider message sequence = %#v: %v", messages, err)
 	}
 }
 
@@ -54,6 +69,12 @@ func TestAutomationNewThreadRunsAsPersistedAutomationThread(t *testing.T) {
 	}
 	threadID := runs[0].ThreadID
 	waitForTurnCompletedForThread(t, out, threadID)
+	client.mu.Lock()
+	requestMessages := append([]providers.ChatMessage(nil), client.requests[0].Messages...)
+	client.mu.Unlock()
+	if err := providers.ValidateToolCallHistory(requestMessages); err != nil {
+		t.Fatalf("automation provider request message sequence = %#v: %v", requestMessages, err)
+	}
 
 	persisted, ok, err := session.Find(rt.SessionDir, threadID)
 	if err != nil || !ok || persisted.Source != "automation" {
@@ -82,7 +103,7 @@ func TestAutomationNewThreadRunsAsPersistedAutomationThread(t *testing.T) {
 	var foundHiddenContext bool
 	for _, request := range requests {
 		for _, message := range request.Messages {
-			if message.Hidden && message.Role == "system" && strings.Contains(message.Content, "task_id: "+task.ID) {
+			if message.Hidden && message.Role == "user" && strings.Contains(message.Content, "task_id: "+task.ID) {
 				foundHiddenContext = true
 			}
 		}
@@ -93,6 +114,37 @@ func TestAutomationNewThreadRunsAsPersistedAutomationThread(t *testing.T) {
 	runs, err = rt.AutomationManager.ListRuns()
 	if err != nil || len(runs) != 1 || runs[0].Status != automation.RunStatusCompleted || runs[0].TurnID == "" {
 		t.Fatalf("completed runs = %#v, %v", runs, err)
+	}
+}
+
+func TestAutomationNewThreadUsesTaskWorkspace(t *testing.T) {
+	client := &fakeClient{response: providersResponse("done")}
+	rt := newTestRuntime(t, client)
+	rt.StateDir = filepath.Dir(rt.SessionDir)
+	rt.AutomationManager = automation.NewManager(automation.Config{StateDir: rt.StateDir})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(srv.Close)
+
+	workspacePath := t.TempDir()
+	task := automation.Task{
+		ID: "workspace-task", Prompt: "inspect the workspace", Mode: string(automation.ModeNewThread),
+		Cron: "*/5 * * * *", Timezone: "UTC", WorkspaceID: "project-1", WorkspacePath: workspacePath,
+	}
+	if err := rt.AutomationManager.Fire(context.Background(), task); err != nil {
+		t.Fatalf("Fire: %v", err)
+	}
+	runs, err := rt.AutomationManager.ListRuns()
+	if err != nil || len(runs) != 1 || runs[0].ThreadID == "" {
+		t.Fatalf("runs = %#v, %v", runs, err)
+	}
+	waitForTurnCompletedForThread(t, out, runs[0].ThreadID)
+	persisted, ok, err := session.Find(rt.SessionDir, runs[0].ThreadID)
+	if err != nil || !ok {
+		t.Fatalf("persisted thread = %#v, %t, %v", persisted, ok, err)
+	}
+	if persisted.CWD != workspacePath || persisted.WorkspaceID != "project-1" {
+		t.Fatalf("automation workspace = %q, %q", persisted.CWD, persisted.WorkspaceID)
 	}
 }
 

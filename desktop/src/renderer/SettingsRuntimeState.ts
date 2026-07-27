@@ -90,8 +90,13 @@ export function useSettingsRuntimeState({
       setSettingsUsage(undefined);
       return;
     }
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.getSettingsUsage !== "function") {
+      setSettingsUsage(undefined);
+      return;
+    }
     let cancelled = false;
-    void window.wuu
+    void api
       .getSettingsUsage()
       .then((response) => {
         if (cancelled) {

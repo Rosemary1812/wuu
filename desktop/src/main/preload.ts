@@ -9,6 +9,7 @@ import {
   type ChannelMessageListParams,
   type ChannelMessageSendParams,
   type ChannelRoomCreateParams,
+  type ChannelRoomUpdateParams,
   type ChannelRoomDeleteParams,
   type ChannelTaskCreateParams,
   type ChannelTaskUpdateParams,
@@ -245,6 +246,10 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   readSkillContent: (params) => ipcRenderer.invoke("wuu:skill-content", params),
+  listAutomations: () => ipcRenderer.invoke("wuu:automation-list"),
+  createAutomation: (params) => ipcRenderer.invoke("wuu:automation-create", params),
+  updateAutomation: (params) => ipcRenderer.invoke("wuu:automation-update", params),
+  removeAutomation: (id: string) => ipcRenderer.invoke("wuu:automation-remove", id),
   listNamedAgents: () => ipcRenderer.invoke("wuu:channel-agent-list"),
   bootstrapChannels: () => ipcRenderer.invoke("wuu:channel-bootstrap"),
   createNamedAgent: (params: ChannelAgentCreateParams) =>
@@ -258,6 +263,8 @@ const api: WuuDesktopApi = {
   listChannelRooms: () => ipcRenderer.invoke("wuu:channel-room-list"),
   createChannelRoom: (params: ChannelRoomCreateParams) =>
     ipcRenderer.invoke("wuu:channel-room-create", params),
+  updateChannelRoom: (params: ChannelRoomUpdateParams) =>
+    ipcRenderer.invoke("wuu:channel-room-update", params),
   deleteChannelRoom: (params: ChannelRoomDeleteParams) =>
     ipcRenderer.invoke("wuu:channel-room-delete", params),
   listChannelMessages: (params: ChannelMessageListParams) =>

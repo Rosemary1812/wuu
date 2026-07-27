@@ -1374,23 +1374,30 @@ describe("Composer send control", () => {
     );
   });
 
-  it("declares composer-width collapse rules for the least important controls first", () => {
+  it("collapses read-only composer indicators before functional controls", () => {
     expect(composerCSS).toContain("container: composer-toolbar / inline-size");
 
     const speedLabelCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 680px)");
     const permissionLabelCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 620px)");
     const gaugeCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 560px)");
-    const runtimeCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 500px)");
     const projectCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 360px)");
 
     expect(speedLabelCollapse).toBeGreaterThan(-1);
     expect(permissionLabelCollapse).toBeGreaterThan(speedLabelCollapse);
     expect(gaugeCollapse).toBeGreaterThan(permissionLabelCollapse);
-    expect(runtimeCollapse).toBeGreaterThan(gaugeCollapse);
-    expect(projectCollapse).toBeGreaterThan(runtimeCollapse);
+    expect(projectCollapse).toBeGreaterThan(gaugeCollapse);
     expect(responsiveDesignCSS).toContain(".composer-token-gauge-label");
-    expect(responsiveDesignCSS).toContain(".codex-runtime-anchor");
     expect(responsiveDesignCSS).toContain(".composer-project-control");
+    expect(responsiveDesignCSS).not.toMatch(
+      /@container composer-toolbar[^{}]*{[^}]*\.codex-runtime-anchor[^}]*display:\s*none/s,
+    );
+    expect(responsiveDesignCSS).not.toMatch(
+      /@container composer-toolbar[^{}]*{[^}]*(?:\.provider-pill|\.model-label)[^}]*display:\s*none/s,
+    );
+    expect(workspaceCSS).toMatch(/\.codex-runtime-anchor\s*{[^}]*flex:\s*0 0 auto;/);
+    expect(responsiveDesignCSS).toMatch(
+      /@media \(max-width: 1120px\)[\s\S]*?\.codex-runtime-anchor\s*{[^}]*flex:\s*0 0 124px;/,
+    );
   });
 
   it("inserts a selected skill slash command into the composer", async () => {
@@ -1846,7 +1853,7 @@ describe("Composer queue strip", () => {
     expect(container.querySelector(".composer-goal-strip-state")?.textContent).toBe("已暂停");
     expect(container.querySelector(".composer-pending-title")).toBeNull();
     expect(container.querySelector(".composer-pending-drawer")?.classList.contains("is-held")).toBe(false);
-    expect(container.querySelector(".composer-held-notice")).toBeNull();
+    expect(container.querySelector(".composer-pending-preview")?.textContent).toBe("仍是普通 Queue");
   });
 
   it("renders queued and guide messages in combined sequential order", () => {
@@ -1917,7 +1924,7 @@ describe("Composer queue strip", () => {
       onGuideQueuedMessage,
     });
 
-    expect(container.querySelector(".composer-held-notice")?.textContent).toBe(
+    expect(container.querySelector(".composer-pending-preview")?.textContent).toBe(
       "当前回复已中断；这些 Steer 和 Queue 不会自动执行。",
     );
     expect(container.querySelector(".composer-pending-title")).toBeNull();
@@ -2515,6 +2522,15 @@ describe("Composer expand button", () => {
     );
     expect(composerCSS).toMatch(
       /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*padding:\s*16px\s+52px\s+8px\s+var\(--composer-text-start\)/,
+    );
+    // Hero retains its roomier 16px text inset and moves the button down by
+    // the same 6px. The compact document composer reuses the canonical 10px
+    // inset rather than pulling its placeholder above the button.
+    expect(composerCSS).toMatch(
+      /\.hero-composer-wrap\s+\.composer-expand-button\s*\{[^}]*top:\s*14px/,
+    );
+    expect(composerCSS).toMatch(
+      /\.document-composer-wrap\s+\.composer-stack:not\(\.is-expanded\)\s+\.composer\s+textarea\s*\{[^}]*padding-top:\s*10px/,
     );
   });
 

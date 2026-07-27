@@ -243,7 +243,12 @@ export function createThreadMutationActions(
     }
     try {
       const result = await window.wuu.archiveThread(thread.id, true);
-      deps.updateCachedSidebarThread(result.thread);
+      // Archived conversations remain in AppState for Settings → Archive, but
+      // the project sidebar cache only represents visible conversations. An
+      // archived response cannot be upserted through cacheSidebarThreads
+      // because that helper filters it out and leaves the stale pre-archive
+      // snapshot behind.
+      deps.removeCachedSidebarThread(result.thread.id);
       deps.setAppState((current) => {
         const nextTabs = removeSessionTab(
           current.sessionTabs,

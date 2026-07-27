@@ -444,6 +444,51 @@ export type SkillContentResult = {
   content: string;
 };
 
+export type AutomationTask = {
+  id: string;
+  title?: string;
+  cron: string;
+  timezone?: string;
+  prompt?: string;
+  mode?: "new_thread" | "thread_heartbeat";
+  creatorThreadId?: string;
+  heartbeatThreadId?: string;
+  workspaceId?: string;
+  workspacePath?: string;
+  metadata?: Record<string, string>;
+  createdAt: number;
+  lastFiredAt?: number;
+  recurring: boolean;
+  paused?: boolean;
+};
+
+export type AutomationListResult = { tasks: AutomationTask[] };
+export type AutomationCreateParams = {
+  title: string;
+  prompt: string;
+  schedule: string;
+  timezone?: string;
+  mode?: "new_thread" | "thread_heartbeat";
+  heartbeat_thread_id?: string;
+  workspace_id?: string;
+  workspace_path?: string;
+  recurring: boolean;
+  paused?: boolean;
+};
+export type AutomationCreateResult = { task: AutomationTask };
+export type AutomationUpdateParams = {
+  id: string;
+  title?: string;
+  prompt?: string;
+  schedule?: string;
+  timezone?: string;
+  mode?: "new_thread" | "thread_heartbeat";
+  heartbeat_thread_id?: string;
+  recurring?: boolean;
+  paused?: boolean;
+};
+export type AutomationUpdateResult = { task: AutomationTask };
+
 export type NamedAgent = {
   id: string;
   name: string;
@@ -468,6 +513,7 @@ export type ChannelRoom = {
   id: string;
   kind: "channel" | "dm";
   name: string;
+  avatar_image?: string;
   created_by: string;
   created_at: string;
   members: ChannelRoomMember[];
@@ -510,9 +556,12 @@ export type ChannelAgentStartResult = { agent: NamedAgent };
 export type ChannelRoomListResult = { rooms: ChannelRoom[] };
 export type ChannelRoomCreateParams = {
   name: string;
+  avatar_image?: string;
   agent_ids?: string[];
 };
 export type ChannelRoomCreateResult = { room: ChannelRoom };
+export type ChannelRoomUpdateParams = { room_id: string; name?: string; avatar_image?: string };
+export type ChannelRoomUpdateResult = { room: ChannelRoom };
 export type ChannelRoomDeleteParams = { room_id: string };
 export type ChannelRoomDeleteResult = { deleted: boolean };
 export type ChannelMessageListParams = {
@@ -1742,6 +1791,11 @@ export type SettingsUsageDay = {
   agents: number;
 };
 
+export type SkillUsage = {
+  name: string;
+  count: number;
+};
+
 // SettingsUsageResponse is the single source of truth for the desktop
 // usage page. ModelBreakdowns is sorted by total context tokens
 // descending; empty Provider+Model entries are bucketed as "(unknown)"
@@ -1753,6 +1807,7 @@ export type SettingsUsageResponse = {
   generated_at: string;
   metrics: SettingsUsageMetrics;
   model_breakdowns: ModelUsage[];
+  skill_usage: SkillUsage[];
   days: SettingsUsageDay[];
 };
 
@@ -2080,6 +2135,10 @@ export type WuuDesktopApi = {
   stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
   readSkillContent: (params: SkillContentParams) => Promise<SkillContentResult>;
+  listAutomations: () => Promise<AutomationListResult>;
+  createAutomation: (params: AutomationCreateParams) => Promise<AutomationCreateResult>;
+  updateAutomation: (params: AutomationUpdateParams) => Promise<AutomationUpdateResult>;
+  removeAutomation: (id: string) => Promise<{ ok: boolean }>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
   bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;
@@ -2088,6 +2147,7 @@ export type WuuDesktopApi = {
   startNamedAgent: (params: ChannelAgentStartParams) => Promise<ChannelAgentStartResult>;
   listChannelRooms: () => Promise<ChannelRoomListResult>;
   createChannelRoom: (params: ChannelRoomCreateParams) => Promise<ChannelRoomCreateResult>;
+  updateChannelRoom: (params: ChannelRoomUpdateParams) => Promise<ChannelRoomUpdateResult>;
   deleteChannelRoom: (params: ChannelRoomDeleteParams) => Promise<ChannelRoomDeleteResult>;
   listChannelMessages: (params: ChannelMessageListParams) => Promise<ChannelMessageListResult>;
   sendChannelMessage: (params: ChannelMessageSendParams) => Promise<ChannelMessageSendResult>;

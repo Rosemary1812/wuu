@@ -16,7 +16,7 @@ import (
 
 func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 	def := NewBashTool(&Env{}).Definition()
-	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background", "starts a new turn", "end the turn", "recheck_minutes", "update_background", "timeout it keeps running"} {
+	for _, want := range []string{"action=start_background", "interactive pseudo-terminal by default", "tty=false", "action=write_background", "action=read_background", "starts a new turn", "end the turn", "recheck_minutes", "update_background", "timeout it keeps running"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("bash description must teach %q interactive flow: %q", want, def.Description)
 		}
@@ -30,7 +30,7 @@ func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 		t.Fatalf("bash command schema has unexpected type: %T", properties["command"])
 	}
 	commandDescription, _ := command["description"].(string)
-	if !strings.Contains(commandDescription, "action=run must be non-interactive") || !strings.Contains(commandDescription, "tty=true") {
+	if !strings.Contains(commandDescription, "action=run must be non-interactive") || !strings.Contains(commandDescription, "action=start_background is interactive by default") {
 		t.Fatalf("bash command description does not distinguish run from interactive background use: %q", commandDescription)
 	}
 	wait, ok := properties["wait_ms"].(map[string]any)

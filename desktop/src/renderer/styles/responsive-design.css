@@ -87,7 +87,7 @@
 
   .codex-runtime-anchor {
     max-width: 136px;
-    flex: 0 1 124px;
+    flex: 0 0 124px;
   }
 }
 
@@ -168,14 +168,6 @@
 @container composer-toolbar (max-width: 560px) {
   .composer-context-meter,
   .composer-token-gauge {
-    display: none;
-  }
-}
-
-@container composer-toolbar (max-width: 500px) {
-  .codex-runtime-anchor,
-  .composer-bar-right .provider-pill,
-  .composer-bar-right .model-label {
     display: none;
   }
 }

@@ -154,6 +154,9 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
+	settingsUsageMu    sync.Mutex
+	settingsUsageCache *settingsUsageCacheEntry
+
 	// clientCalls is the pending table for server-initiated requests over the
 	// negotiated reverse-RPC channel. Keyed by the
 	// "srv-<seq>" id the core mints; each value is a buffered(1) chan that the
@@ -785,6 +788,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleChannelRoomList(ctx, req)
 	case MethodChannelRoomCreate:
 		return s.handleChannelRoomCreate(ctx, req)
+	case MethodChannelRoomUpdate:
+		return s.handleChannelRoomUpdate(ctx, req)
 	case MethodChannelRoomDelete:
 		return s.handleChannelRoomDelete(ctx, req)
 	case MethodChannelMessageList:
@@ -803,6 +808,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleAutomationList(req)
 	case MethodAutomationRuns:
 		return s.handleAutomationRuns(req)
+	case MethodAutomationCreate:
+		return s.handleAutomationCreate(req)
 	case MethodAutomationUpdate:
 		return s.handleAutomationUpdate(req)
 	case MethodAutomationRemove:

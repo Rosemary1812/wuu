@@ -323,6 +323,12 @@ export function useSidebarDrawerState({
     sidebarWasCollapsedRef.current = sidebarCollapsed;
 
     if (sidebarCollapsed) {
+      if (!sidebarWasCollapsed) {
+        cancelSidebarDrawerOpen();
+        clearSidebarDrawerCloseTimer();
+        setSidebarDrawerPhase("closed");
+        return;
+      }
       if (sidebarDrawerPhase === "docking") {
         clearSidebarDrawerCloseTimer();
         setSidebarDrawerPhase("closed");

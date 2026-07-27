@@ -103,6 +103,7 @@ function renderSidebar({
         debugFixturesVisible={false}
         sectionOrder={sectionOrder}
         onStartNewThread={() => {}}
+        onOpenAutomationsTab={() => {}}
         onOpenSkillsTab={() => {}}
         groupChatEnabled={groupChatEnabled}
         channelMentionCount={channelMentionCount}

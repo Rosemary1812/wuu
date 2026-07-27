@@ -101,6 +101,12 @@ type SessionTab =
       kind: "skills";
       context: RuntimeContext;
       title: string;
+    }
+  | {
+      id: string;
+      kind: "automations";
+      context: RuntimeContext;
+      title: string;
     };
 
 type AppState = {
@@ -1789,6 +1795,15 @@ function createSkillsSessionTab(context: RuntimeContext): SessionTab {
   };
 }
 
+function createAutomationsSessionTab(context: RuntimeContext): SessionTab {
+  return {
+    id: `automations:${runtimeContextKey(context)}`,
+    kind: "automations",
+    context,
+    title: "automations",
+  };
+}
+
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
 }
@@ -2059,7 +2074,7 @@ function sessionTabDraftForThreadID(
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
-  if (tab.kind === "skills") {
+  if (tab.kind === "skills" || tab.kind === "automations") {
     return emptyComposerDraft();
   }
   return {
@@ -2109,6 +2124,9 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   }
   if (tab.kind === "skills") {
     return t("skills.title");
+  }
+  if (tab.kind === "automations") {
+    return t("automations.title");
   }
   return threadDisplayTitle(
     threadForTab(state, tab.threadID),
@@ -3097,6 +3115,7 @@ export {
   conversationPaneThreadsByID,
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
+  createAutomationsSessionTab,
   createDraftSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,

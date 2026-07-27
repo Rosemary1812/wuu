@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,11 +62,20 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	}
 
 	var createdRoom ChannelRoomCreateResult
+	const roomAvatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 	callChannelRPC(t, server, out, MethodChannelRoomCreate, ChannelRoomCreateParams{
-		Name: "Review", AgentIDs: []string{createdAgent.Agent.ID},
+		Name: "Review", AvatarImage: roomAvatar, AgentIDs: []string{createdAgent.Agent.ID},
 	}, &createdRoom)
-	if len(createdRoom.Room.Members) != 2 {
+	if len(createdRoom.Room.Members) != 2 || createdRoom.Room.AvatarImage != roomAvatar {
 		t.Fatalf("created room members = %#v", createdRoom.Room.Members)
+	}
+	var updatedRoom ChannelRoomUpdateResult
+	emptyAvatar := ""
+	callChannelRPC(t, server, out, MethodChannelRoomUpdate, ChannelRoomUpdateParams{
+		RoomID: createdRoom.Room.ID, AvatarImage: &emptyAvatar,
+	}, &updatedRoom)
+	if updatedRoom.Room.AvatarImage != "" {
+		t.Fatalf("updated room avatar = %q", updatedRoom.Room.AvatarImage)
 	}
 
 	var sent ChannelMessageSendResult
@@ -401,6 +411,47 @@ func TestNamedAgentSequentialWakesPersistDistinctUserTurns(t *testing.T) {
 	}
 	if len(wakeIDs) != 2 || wakeIDs[0] == wakeIDs[1] {
 		t.Fatalf("persisted named agent wake IDs = %#v, want two unique turns", wakeIDs)
+	}
+}
+
+func TestChannelRoomUpdateAndDeleteRPCs(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+
+	var createdAgent ChannelAgentCreateResult
+	callChannelRPC(t, server, out, MethodChannelAgentCreate, ChannelAgentCreateParams{Name: "Alpha"}, &createdAgent)
+	var createdRoom ChannelRoomCreateResult
+	callChannelRPC(t, server, out, MethodChannelRoomCreate, ChannelRoomCreateParams{
+		Name: "Review", AgentIDs: []string{createdAgent.Agent.ID},
+	}, &createdRoom)
+
+	var updated ChannelRoomUpdateResult
+	updatedName := "  Delivery  "
+	callChannelRPC(t, server, out, MethodChannelRoomUpdate, ChannelRoomUpdateParams{
+		RoomID: createdRoom.Room.ID,
+		Name:   &updatedName,
+	}, &updated)
+	if updated.Room.ID != createdRoom.Room.ID || updated.Room.Name != "Delivery" || len(updated.Room.Members) != 2 {
+		t.Fatalf("updated room = %#v", updated.Room)
+	}
+	loaded, err := server.channelService.GetRoom(context.Background(), createdRoom.Room.ID)
+	if err != nil || loaded.Name != "Delivery" {
+		t.Fatalf("persisted room = %#v, err = %v", loaded, err)
+	}
+
+	var deleted ChannelRoomDeleteResult
+	callChannelRPC(t, server, out, MethodChannelRoomDelete, ChannelRoomDeleteParams{RoomID: createdRoom.Room.ID}, &deleted)
+	if !deleted.Deleted {
+		t.Fatal("delete RPC returned deleted=false")
+	}
+	if _, err := server.channelService.GetRoom(context.Background(), createdRoom.Room.ID); !errors.Is(err, channels.ErrNotFound) {
+		t.Fatalf("GetRoom(deleted) error = %v, want ErrNotFound", err)
+	}
+	if kept, err := server.channelService.GetNamedAgent(context.Background(), createdAgent.Agent.ID); err != nil || kept.ID != createdAgent.Agent.ID {
+		t.Fatalf("named agent after delete RPC = %#v, err = %v", kept, err)
 	}
 }
 

@@ -107,19 +107,26 @@ type RoomMember struct {
 }
 
 type Room struct {
-	ID        string       `json:"id"`
-	Kind      RoomKind     `json:"kind"`
-	Name      string       `json:"name"`
-	CreatedBy string       `json:"created_by"`
-	CreatedAt time.Time    `json:"created_at"`
-	Members   []RoomMember `json:"members"`
+	ID          string       `json:"id"`
+	Kind        RoomKind     `json:"kind"`
+	Name        string       `json:"name"`
+	AvatarImage string       `json:"avatar_image,omitempty"`
+	CreatedBy   string       `json:"created_by"`
+	CreatedAt   time.Time    `json:"created_at"`
+	Members     []RoomMember `json:"members"`
 }
 
 type CreateRoomParams struct {
-	Kind      RoomKind
-	Name      string
-	CreatedBy string
-	Members   []RoomMember
+	Kind        RoomKind
+	Name        string
+	AvatarImage string
+	CreatedBy   string
+	Members     []RoomMember
+}
+
+type UpdateRoomParams struct {
+	RoomID string
+	Name   string
 }
 
 type Message struct {

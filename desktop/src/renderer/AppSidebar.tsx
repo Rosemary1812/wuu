@@ -1,4 +1,5 @@
 import {
+  AlarmClock,
   Archive,
   ChevronRight,
   Clock,
@@ -265,6 +266,7 @@ export function AppSidebar({
   debugFixturesVisible,
   sectionOrder,
   onStartNewThread,
+  onOpenAutomationsTab,
   onOpenSkillsTab,
   groupChatEnabled = false,
   channelsOpen,
@@ -318,6 +320,7 @@ export function AppSidebar({
   // SCRATCH_PSEUDO_PROJECT_ID or a real project id.
   sectionOrder: string[];
   onStartNewThread: () => void;
+  onOpenAutomationsTab: () => void;
   onOpenSkillsTab: () => void;
   groupChatEnabled?: boolean;
   channelsOpen?: boolean;
@@ -471,6 +474,14 @@ export function AppSidebar({
           >
             <Search className="icon-lg" />
             <span>{t("sidebar.searchConversations")}</span>
+          </button>
+          <button
+            className="nav-item"
+            onClick={onOpenAutomationsTab}
+            disabled={!hasRuntimeContext}
+          >
+            <AlarmClock className="icon-lg" />
+            <span>{t("automations.title")}</span>
           </button>
           <button
             className="nav-item"

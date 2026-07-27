@@ -37,6 +37,7 @@ const (
 	MethodChannelAgentStart    = "channel/agent/start"
 	MethodChannelRoomList      = "channel/room/list"
 	MethodChannelRoomCreate    = "channel/room/create"
+	MethodChannelRoomUpdate    = "channel/room/update"
 	MethodChannelRoomDelete    = "channel/room/delete"
 	MethodChannelMessageList   = "channel/message/list"
 	MethodChannelMessageSend   = "channel/message/send"
@@ -46,6 +47,7 @@ const (
 	MethodChannelMentionAck    = "channel/human-mention/ack"
 	MethodAutomationList       = "automation/list"
 	MethodAutomationRuns       = "automation/run/list"
+	MethodAutomationCreate     = "automation/create"
 	MethodAutomationUpdate     = "automation/update"
 	MethodAutomationRemove     = "automation/remove"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
@@ -1669,9 +1671,33 @@ type AutomationRunsResult struct {
 	Runs []automation.Run `json:"runs"`
 }
 
+type AutomationCreateParams struct {
+	Title             string          `json:"title"`
+	Prompt            string          `json:"prompt"`
+	Schedule          string          `json:"schedule"`
+	Timezone          string          `json:"timezone,omitempty"`
+	Mode              automation.Mode `json:"mode,omitempty"`
+	HeartbeatThreadID string          `json:"heartbeat_thread_id,omitempty"`
+	WorkspaceID       string          `json:"workspace_id,omitempty"`
+	WorkspacePath     string          `json:"workspace_path,omitempty"`
+	Recurring         bool            `json:"recurring"`
+	Paused            bool            `json:"paused,omitempty"`
+}
+
+type AutomationCreateResult struct {
+	Task automation.Task `json:"task"`
+}
+
 type AutomationUpdateParams struct {
-	ID     string `json:"id"`
-	Paused *bool  `json:"paused"`
+	ID                string           `json:"id"`
+	Title             *string          `json:"title,omitempty"`
+	Prompt            *string          `json:"prompt,omitempty"`
+	Schedule          *string          `json:"schedule,omitempty"`
+	Timezone          *string          `json:"timezone,omitempty"`
+	Mode              *automation.Mode `json:"mode,omitempty"`
+	HeartbeatThreadID *string          `json:"heartbeat_thread_id,omitempty"`
+	Recurring         *bool            `json:"recurring,omitempty"`
+	Paused            *bool            `json:"paused,omitempty"`
 }
 
 type AutomationUpdateResult struct {
@@ -2004,6 +2030,7 @@ type SettingsUsageResponse struct {
 	GeneratedAt     string               `json:"generated_at"`
 	Metrics         SettingsUsageMetrics `json:"metrics"`
 	ModelBreakdowns []insight.ModelUsage `json:"model_breakdowns"`
+	SkillUsage      []insight.SkillUsage `json:"skill_usage"`
 	Days            []SettingsUsageDay   `json:"days"`
 }
 
@@ -2057,11 +2084,22 @@ type ChannelRoomListResult struct {
 }
 
 type ChannelRoomCreateParams struct {
-	Name     string   `json:"name"`
-	AgentIDs []string `json:"agent_ids,omitempty"`
+	Name        string   `json:"name"`
+	AvatarImage string   `json:"avatar_image,omitempty"`
+	AgentIDs    []string `json:"agent_ids,omitempty"`
 }
 
 type ChannelRoomCreateResult struct {
+	Room channels.Room `json:"room"`
+}
+
+type ChannelRoomUpdateParams struct {
+	RoomID      string  `json:"room_id"`
+	Name        *string `json:"name,omitempty"`
+	AvatarImage *string `json:"avatar_image,omitempty"`
+}
+
+type ChannelRoomUpdateResult struct {
 	Room channels.Room `json:"room"`
 }
 

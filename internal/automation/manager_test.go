@@ -66,6 +66,36 @@ func TestManagerRejectsHeartbeatWithoutThread(t *testing.T) {
 	}
 }
 
+func TestManagerAllowsEditingPausedDraftWithoutPrompt(t *testing.T) {
+	manager := NewManager(Config{StateDir: t.TempDir()})
+	task, err := manager.AddTask(AddTaskParams{
+		Title:     "New automation",
+		Schedule:  "0 9 * * 1-5",
+		Timezone:  "UTC",
+		Mode:      ModeNewThread,
+		Recurring: true,
+		Paused:    true,
+		Durable:   true,
+	})
+	if err != nil {
+		t.Fatalf("AddTask() paused draft error = %v", err)
+	}
+
+	schedule := "0 12 * * 1-5"
+	updated, err := manager.UpdateTask(task.ID, UpdateTaskParams{Schedule: &schedule})
+	if err != nil {
+		t.Fatalf("UpdateTask() paused draft error = %v", err)
+	}
+	if updated.Cron != schedule || updated.Prompt != "" || !updated.Paused {
+		t.Fatalf("updated paused draft = %#v", updated)
+	}
+
+	paused := false
+	if _, err := manager.UpdateTask(task.ID, UpdateTaskParams{Paused: &paused}); err == nil {
+		t.Fatal("UpdateTask() enabled empty draft error = nil")
+	}
+}
+
 func TestManagerRecordsAdmissionAndCompletion(t *testing.T) {
 	manager := NewManager(Config{StateDir: t.TempDir()})
 	manager.executor = &recordingExecutor{result: ExecutionResult{

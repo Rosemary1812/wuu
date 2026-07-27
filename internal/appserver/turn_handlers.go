@@ -4098,6 +4098,11 @@ func (s *Server) persistFailedTurnResultLocked(th *threadState, res agent.LoopRe
 	}, res.ContextTokens)
 }
 
+type settingsUsageCacheEntry struct {
+	response  SettingsUsageResponse
+	expiresAt time.Time
+}
+
 // handleSettingsUsage returns the aggregated token usage snapshot for
 // the desktop settings page. The snapshot always covers the full
 // token_usage trail — every row, including zero-At legacy imports, so
@@ -4106,21 +4111,32 @@ func (s *Server) persistFailedTurnResultLocked(th *threadState, res agent.LoopRe
 func (s *Server) handleSettingsUsage(req Request) error {
 	sessDir := s.rt.SessionDir
 	now := time.Now().UTC()
-
-	rows, err := insight.CollectTokenUsageRows(sessDir)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("collect usage rows: %w", err))
+	s.settingsUsageMu.Lock()
+	defer s.settingsUsageMu.Unlock()
+	if cached := s.settingsUsageCache; cached != nil && now.Before(cached.expiresAt) {
+		return s.writeResponse(req.ID, cached.response, nil)
 	}
+
+	scan, err := insight.CollectUsageScan(sessDir)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("collect usage: %w", err))
+	}
+	rows := scan.TokenRows
 
 	metrics, days := aggregateUsageRows(rows)
 
-	return s.writeResponse(req.ID, SettingsUsageResponse{
+	response := SettingsUsageResponse{
 		TotalSessions:   countUsageSessions(rows),
 		GeneratedAt:     now.Format(time.RFC3339Nano),
 		Metrics:         metrics,
 		ModelBreakdowns: buildUsageModelBreakdowns(rows),
+		SkillUsage:      scan.Skills,
 		Days:            days,
-	}, nil)
+	}
+	// Usage analytics is an approximate convenience view, not a live meter.
+	// Keep the full-history scan out of the normal interaction path for two hours.
+	s.settingsUsageCache = &settingsUsageCacheEntry{response: response, expiresAt: now.Add(2 * time.Hour)}
+	return s.writeResponse(req.ID, response, nil)
 }
 
 // countUsageSessions returns the number of distinct session IDs present

@@ -3,6 +3,8 @@ package appserver
 import (
 	"errors"
 	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/automation"
 )
 
 func (s *Server) handleAutomationList(req Request) error {
@@ -27,6 +29,27 @@ func (s *Server) handleAutomationRuns(req Request) error {
 	return s.writeResponse(req.ID, AutomationRunsResult{Runs: runs}, nil)
 }
 
+func (s *Server) handleAutomationCreate(req Request) error {
+	if s == nil || s.rt == nil || s.rt.AutomationManager == nil {
+		return s.writeResponse(req.ID, nil, errors.New("automation manager is unavailable"))
+	}
+	var params AutomationCreateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	task, err := s.rt.AutomationManager.AddTask(automation.AddTaskParams{
+		Title: params.Title, Prompt: params.Prompt, Schedule: params.Schedule,
+		Timezone: params.Timezone, Mode: params.Mode,
+		HeartbeatThreadID: params.HeartbeatThreadID,
+		WorkspaceID:       params.WorkspaceID, WorkspacePath: params.WorkspacePath,
+		Recurring: params.Recurring, Paused: params.Paused, Durable: true,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, AutomationCreateResult{Task: task}, nil)
+}
+
 func (s *Server) handleAutomationUpdate(req Request) error {
 	if s == nil || s.rt == nil || s.rt.AutomationManager == nil {
 		return s.writeResponse(req.ID, nil, errors.New("automation manager is unavailable"))
@@ -36,10 +59,15 @@ func (s *Server) handleAutomationUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	params.ID = strings.TrimSpace(params.ID)
-	if params.ID == "" || params.Paused == nil {
-		return s.writeResponse(req.ID, nil, errors.New("id and paused are required"))
+	if params.ID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("id is required"))
 	}
-	task, err := s.rt.AutomationManager.SetPaused(params.ID, *params.Paused)
+	task, err := s.rt.AutomationManager.UpdateTask(params.ID, automation.UpdateTaskParams{
+		Title: params.Title, Prompt: params.Prompt, Schedule: params.Schedule,
+		Timezone: params.Timezone, Mode: params.Mode,
+		HeartbeatThreadID: params.HeartbeatThreadID,
+		Recurring:         params.Recurring, Paused: params.Paused,
+	})
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}

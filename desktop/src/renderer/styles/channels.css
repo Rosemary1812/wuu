@@ -1267,3 +1267,160 @@
   color: var(--text-primary);
   font-size: 13px;
 }
+
+.channel-room-row {
+  min-width: 0;
+}
+
+.channel-room-avatar-button,
+.channel-room-select {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.channel-room-avatar-button {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  overflow: visible;
+  border-radius: 8px;
+}
+
+.channel-room-select {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.channel-room-name,
+.channel-room-members {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-room-name {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.channel-room-members {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.channel-group-avatar-grid,
+.channel-group-avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+}
+
+.channel-group-avatar-image {
+  object-fit: cover;
+}
+
+.channel-group-avatar-grid {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 2px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.channel-group-avatar-row {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.channel-group-avatar-cell {
+  width: calc((100% - (var(--channel-group-columns) - 1) * 1px) / var(--channel-group-columns));
+  min-width: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.channel-group-avatar-cell .agent-avatar-mark,
+.channel-group-avatar-cell .default-avatar,
+.channel-group-avatar-cell .default-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.channel-room-avatar-edit {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bg-primary);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.channel-room-avatar-edit .icon {
+  width: 8px;
+  height: 8px;
+}
+
+.channel-room-avatar-button:hover .channel-room-avatar-edit,
+.channel-room-avatar-button:focus-visible .channel-room-avatar-edit {
+  opacity: 1;
+}
+
+.channel-room-avatar-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.channel-room-avatar-preview {
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.channel-room-avatar-preview > .channel-group-avatar-grid,
+.channel-room-avatar-preview > .channel-group-avatar-image {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 10px;
+}
+
+.channel-room-avatar-preview > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}

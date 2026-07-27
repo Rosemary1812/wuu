@@ -31,8 +31,6 @@
   --browser-error-span-text: #6e2a22;
   --browser-retry-hover-bg: #93190f;
   --browser-loading-dot-bg: #2f98ff;
-  --skills-search-border: #dedfdb;
-  --skills-search-bg: rgba(255, 255, 255, 0.64);
   --skills-section-border: #ebebe8;
   --skill-row-chevron: #a3a7aa;
   --skill-artwork-border: rgba(17, 19, 21, 0.08);
@@ -999,6 +997,34 @@ html.resizing-workspace-file-split * {
   left: 0;
   padding: 0 clamp(20px, 4vw, 72px) 24px;
   pointer-events: none;
+}
+
+.conversation-pane.automation-detail-pane-open .skills-assistant-composer,
+.conversation-pane.automation-detail-pane-open .management-assistant-composer {
+  right: var(--automation-detail-reserved-width);
+}
+
+.automation-detail-pane-divider {
+  position: absolute;
+  z-index: 7;
+  top: 48px;
+  right: calc(var(--automation-detail-reserved-width) - 5px);
+  bottom: 0;
+  width: 1px;
+  background: var(--surface-3);
+  pointer-events: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.conversation-pane:has(.automations-detail-resizer:hover) .automation-detail-pane-divider,
+.conversation-pane:has(.automations-detail-resizer:focus-visible) .automation-detail-pane-divider,
+.conversation-pane:has(.automations-catalog.resizing-detail) .automation-detail-pane-divider {
+  background: var(--review-resizer-hover-bg);
+  box-shadow:
+    -3px 0 0 var(--ink-overlay-4),
+    3px 0 0 var(--ink-overlay-4);
 }
 
 .conversation-pane.skills-assistant-visible .skills-scroll-region {
@@ -2156,6 +2182,362 @@ html.resizing-workspace-terminal-split * {
   background: var(--paper);
 }
 
+.automations-catalog {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+.automations-catalog.detail-open {
+  grid-template-columns: minmax(320px, 1fr) 10px var(--automation-detail-pane-width);
+}
+
+.automations-master {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1080px;
+  justify-self: center;
+  padding: 42px clamp(32px, 6vw, 88px) 64px;
+}
+
+.automations-catalog.detail-open .automations-master {
+  max-width: none;
+  padding-inline: clamp(20px, 3vw, 40px);
+}
+
+.automations-heading-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.automations-heading-row .catalog-create {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.automation-create-controls {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.automation-workspace-trigger {
+  width: min(240px, 24vw);
+  min-width: 150px;
+}
+
+.automations-catalog.detail-open .catalog-page-header {
+  gap: 20px;
+}
+
+.automations-catalog.detail-open .automations-heading-row {
+  gap: 16px;
+}
+
+.automations-catalog.detail-open .catalog-page-title strong {
+  font-size: 28px;
+}
+
+.automations-catalog.detail-open .catalog-page-title span {
+  font-size: 15px;
+}
+
+.automations-detail-resizer {
+  position: relative;
+  width: 10px;
+  min-width: 10px;
+  align-self: stretch;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.automations-filters {
+  display: flex;
+  width: max-content;
+  gap: 2px;
+  margin-top: 20px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.automations-filters button {
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-tertiary);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  padding: 0 10px;
+}
+
+.automations-filters button.active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 3px var(--ink-overlay-8);
+}
+
+.automations-list {
+  display: grid;
+  gap: 2px;
+  margin-top: 14px;
+}
+
+.automation-row {
+  display: grid;
+  width: 100%;
+  min-height: 64px;
+  grid-template-columns: 8px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  padding: 8px;
+  text-align: left;
+}
+
+.automation-row:hover,
+.automation-row.selected {
+  background: var(--surface-2);
+}
+
+.automation-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: none;
+}
+
+.automation-state.paused {
+  background: var(--ink-muted);
+  box-shadow: none;
+}
+
+.automation-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.automation-row-copy strong,
+.automation-row-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-row-copy strong {
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.01em;
+}
+
+.automation-row-copy span {
+  color: var(--ink-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.automation-row-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-muted);
+  opacity: 0;
+  transform: translateX(-2px);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.automation-row:hover .automation-row-chevron,
+.automation-row:focus-visible .automation-row-chevron,
+.automation-row.selected .automation-row-chevron {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.automations-detail {
+  min-width: 0;
+  container: automation-detail / inline-size;
+  background: var(--paper);
+  padding: 34px clamp(20px, 3vw, 32px) 56px;
+}
+
+.automation-detail-form {
+  display: grid;
+  max-width: 600px;
+  gap: 0;
+  margin: 0 auto;
+}
+
+.automation-detail-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.automation-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.automation-detail-actions .icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+.automation-detail-section {
+  display: grid;
+  gap: 20px;
+}
+
+.automation-detail-section + .automation-detail-section {
+  margin-top: 32px;
+}
+
+.automation-detail-form label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-regular);
+}
+
+.automation-detail-form .settings-input,
+.automation-detail-form .settings-select-trigger {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.automation-detail-form textarea.settings-textarea {
+  min-height: 96px;
+  max-height: 220px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.automation-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 14px;
+}
+
+.automation-workspace-field {
+  display: grid;
+  min-width: 0;
+  grid-column: 1 / -1;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+}
+
+.automation-workspace-field strong {
+  overflow: hidden;
+  color: var(--ink-secondary);
+  font-weight: var(--weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-schedule-editor {
+  display: grid;
+  min-width: 0;
+  grid-column: 1 / -1;
+  gap: 7px;
+}
+
+.automation-schedule-controls {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.automation-schedule-custom {
+  grid-column: 1 / -1;
+}
+
+.automation-schedule-summary {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px 18px;
+  font-size: var(--font-sm);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.automation-schedule-summary > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.automation-schedule-summary dt {
+  color: var(--ink-tertiary);
+}
+
+.automation-schedule-summary dd {
+  overflow: hidden;
+  color: var(--ink-secondary);
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automations-empty,
+.automations-error {
+  padding: 28px 12px;
+  color: var(--ink-tertiary);
+  text-align: center;
+}
+
+.automations-error {
+  color: var(--danger);
+}
+
+.automations-detail-empty {
+  display: grid;
+  min-height: 55vh;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--ink-muted);
+}
+
+.automations-detail-empty svg {
+  width: 28px;
+  height: 28px;
+}
+
+@container automation-detail (max-width: 560px) {
+  .automation-detail-grid,
+  .automation-schedule-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .automations-master { padding-inline: 18px; }
+}
+
 .skills-catalog {
   display: grid;
   grid-template-columns: minmax(0, 1080px);
@@ -2165,28 +2547,28 @@ html.resizing-workspace-terminal-split * {
   padding: 42px clamp(32px, 6vw, 88px) 64px;
 }
 
-.skills-catalog-header {
+.catalog-page-header {
   display: grid;
   min-width: 0;
   gap: 26px;
   padding-bottom: 2px;
 }
 
-.skills-catalog-title {
+.catalog-page-title {
   display: grid;
   min-width: 0;
   gap: 8px;
   color: var(--ink);
 }
 
-.skills-catalog-title strong {
+.catalog-page-title strong {
   font-size: 32px;
   font-weight: var(--weight-medium);
   letter-spacing: -0.035em;
   line-height: 1.15;
 }
 
-.skills-catalog-title span {
+.catalog-page-title span {
   color: var(--ink-tertiary);
   font-size: 17px;
   font-weight: var(--weight-regular);
@@ -2194,7 +2576,7 @@ html.resizing-workspace-terminal-split * {
   line-height: 1.4;
 }
 
-.skills-catalog-controls {
+.catalog-page-controls {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -2202,26 +2584,26 @@ html.resizing-workspace-terminal-split * {
   gap: 10px;
 }
 
-.skills-search {
+.catalog-search {
   display: flex;
   min-width: 0;
   height: 44px;
   flex: 1 1 auto;
   align-items: center;
   gap: 11px;
-  border: 1px solid var(--skills-search-border);
+  border: 1px solid var(--hairline);
   border-radius: 14px;
-  background: var(--skills-search-bg);
+  background: var(--surface-1);
   color: var(--ink-muted);
   padding: 0 14px;
 }
 
-.skills-search svg {
+.catalog-search svg {
   width: 18px;
   height: 18px;
 }
 
-.skills-search input {
+.catalog-search input {
   min-width: 0;
   flex: 1 1 auto;
   border: 0;
@@ -2232,11 +2614,11 @@ html.resizing-workspace-terminal-split * {
   font-weight: var(--weight-regular);
 }
 
-.skills-search input::placeholder {
+.catalog-search input::placeholder {
   color: var(--ink-muted);
 }
 
-.skills-refresh {
+.catalog-refresh {
   width: 44px;
   height: 44px;
   flex: 0 0 auto;
@@ -3833,7 +4215,7 @@ html.resizing-workspace-terminal-split * {
   display: inline-flex;
   min-width: 0;
   max-width: 180px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   gap: 2px;
 }

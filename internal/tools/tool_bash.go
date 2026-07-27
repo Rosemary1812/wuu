@@ -118,7 +118,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
 		Description: "Run bash operations in the workspace. Use for terminal work: tests, lint, builds, git, package managers, scripts, docker, and managed background processes.\n\n" +
-			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. If a run command hits its timeout it keeps running as a managed background process instead of being killed, with its output so far attached. For terminal prompts, confirmations, or REPLs, use action=start_background with tty=true, then action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. cwd defaults to the workspace root. Shell state does not persist between run calls.\n\n" +
+			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. If a run command hits its timeout it keeps running as a managed background process instead of being killed, with its output so far attached. action=start_background uses an interactive pseudo-terminal by default so long-lived commands can be taken over from a terminal UI; set tty=false only for log-only automation that must run without terminal semantics. Use action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. cwd defaults to the workspace root. Shell state does not persist between run calls.\n\n" +
 			"Wake-ups always come to you — polling is never the only way to learn an outcome: a naturally exiting background process starts a new turn with its status and output tail, and a process started with recheck_minutes additionally wakes you with a progress snapshot on that schedule (the schedule is cancelled automatically on completion). Observation on demand: read_background without wait_ms is a non-blocking snapshot and is always fine; with wait_ms it becomes a bounded event-driven wait that returns early when new output arrives or the process exits (at most one return per call). Rules for waits: do not wait on a process you just launched this turn when its result gates your next step — run that work with action=run instead; if a wait times out with the process still running, do not immediately wait again on the same process — continue other work or end the turn; never chain waits just to keep a turn open. For long silent tasks (downloads, backups), set recheck_minutes on start_background or later via action=update_background so progress finds you on a schedule.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -130,7 +130,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"command": map[string]any{
 					"type":        "string",
-					"description": "Shell command to execute or start in the background. action=run must be non-interactive and must not rely on editors, pagers, or terminal prompts. For interactive commands, use action=start_background with tty=true. Do not background with '&'.",
+					"description": "Shell command to execute or start in the background. action=run must be non-interactive and must not rely on editors, pagers, or terminal prompts. action=start_background is interactive by default; set tty=false only for log-only automation. Do not background with '&'.",
 				},
 				"timeout_seconds": map[string]any{
 					"type":        "integer",
@@ -161,7 +161,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"tty": map[string]any{
 					"type":        "boolean",
-					"description": "Run action=start_background in a pseudo-terminal. Use for prompts, confirmations, and REPLs that require terminal input.",
+					"description": "Run action=start_background in a pseudo-terminal. Defaults to true so live commands preserve terminal colors and interaction; set false only for log-only automation.",
 				},
 				"wait_ms": map[string]any{
 					"type":        "integer",
@@ -229,7 +229,7 @@ type bashArgs struct {
 	OwnerID        string `json:"owner_id"`
 	Lifecycle      string `json:"lifecycle"`
 	CompletionMode string `json:"completion_mode"`
-	TTY            bool   `json:"tty"`
+	TTY            *bool  `json:"tty"`
 	WaitMS         int    `json:"wait_ms"`
 	MaxBytes       int    `json:"max_bytes"`
 	OffsetBytes    *int64 `json:"offset_bytes"`
@@ -417,7 +417,11 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if err != nil {
 		return "", err
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CommandPrefix: commandPrefix, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections(), RecheckMinutes: args.RecheckMinutes})
+	tty := true
+	if args.TTY != nil {
+		tty = *args.TTY
+	}
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CommandPrefix: commandPrefix, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: tty, AllowOutsideWorkspace: t.env.BypassToolHardProtections(), RecheckMinutes: args.RecheckMinutes})
 	response := startProcessResponse{}
 	if p != nil {
 		response.Process = redactProcess(t.env, *p)

@@ -137,20 +137,22 @@ export function ConversationSearchOverlay({
                       </span>
                     ) : null}
                   </span>
-                  <span className="conversation-search-result-side">
+                  <span
+                    className={`conversation-search-result-side${showResultContexts ? "" : " shortcuts-only"}`}
+                  >
                     {showResultContexts ? (
                       <span className="conversation-search-result-context">
                         {resultContextLabels[resultIndex]}
                       </span>
                     ) : null}
-                    <span className="conversation-search-result-meta">
-                      {conversationSearchThreadMeta(thread)}
+                    <span
+                      className={`conversation-search-result-shortcut${resultIndex < 9 ? "" : " empty"}`}
+                      aria-hidden={resultIndex >= 9 ? true : undefined}
+                    >
+                      {resultIndex < 9
+                        ? primaryShortcutLabel(resultIndex + 1)
+                        : ""}
                     </span>
-                    {resultIndex < 9 ? (
-                      <span className="conversation-search-result-shortcut">
-                        {primaryShortcutLabel(resultIndex + 1)}
-                      </span>
-                    ) : null}
                   </span>
                 </button>
               );
