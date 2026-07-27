@@ -80,6 +80,30 @@ describe("AutomationsCatalog", () => {
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.rows).toBe(4);
   });
 
+  it("does not white-screen when listAutomations returns tasks: null", async () => {
+    installApi([], vi.fn(), vi.fn(), { tasks: null });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog projects={[project]} activeProjectID={project.id} />);
+    });
+
+    expect(container.querySelector(".catalog-page-header")).toBeTruthy();
+    expect(container.textContent).toContain("暂无自动化");
+    expect(container.querySelector(".automation-row")).toBeNull();
+  });
+
+  it("does not white-screen when listAutomations omits the tasks field", async () => {
+    installApi([], vi.fn(), vi.fn(), { tasks: undefined });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog projects={[project]} activeProjectID={project.id} />);
+    });
+
+    expect(container.querySelector(".catalog-page-header")).toBeTruthy();
+    expect(container.textContent).toContain("暂无自动化");
+    expect(container.querySelector(".automation-row")).toBeNull();
+  });
+
   it("separates an hourly interval from its concrete next run", async () => {
     const updateAutomation = vi.fn().mockImplementation(async (params) => ({
       task: {
@@ -304,9 +328,10 @@ function installApi(
   tasks: AutomationTask[],
   updateAutomation = vi.fn(),
   createAutomation = vi.fn(),
+  listResult?: { tasks: AutomationTask[] | null | undefined },
 ): void {
   const api: Partial<WuuDesktopApi> = {
-    listAutomations: vi.fn().mockResolvedValue({ tasks }),
+    listAutomations: vi.fn().mockResolvedValue(listResult ?? { tasks }),
     createAutomation,
     updateAutomation,
     removeAutomation: vi.fn().mockResolvedValue({ ok: true }),

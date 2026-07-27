@@ -102,8 +102,9 @@ export function AutomationsCatalog({
     setError("");
     try {
       const result = await window.wuu.listAutomations();
-      setTasks(result.tasks ?? []);
-      setSelectedID((current) => result.tasks.some((task) => task.id === current) ? current : "");
+      const tasks = result.tasks ?? [];
+      setTasks(tasks);
+      setSelectedID((current) => (tasks.some((task) => task.id === current) ? current : ""));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : translateCurrent("automations.loadFailed"));
     } finally {
