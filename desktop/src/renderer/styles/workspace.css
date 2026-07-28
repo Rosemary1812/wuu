@@ -2160,23 +2160,31 @@ html.resizing-workspace-terminal-split * {
 }
 
 .automations-scroll-region .scroll-region-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
+  container: automation-catalog-layout / inline-size;
 }
 
 .automations-catalog {
   display: grid;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   min-height: 100%;
   overflow-x: hidden;
 }
 
 .automations-catalog.detail-open {
-  grid-template-columns: minmax(320px, 1fr) 10px var(--automation-detail-pane-width);
+  grid-template-columns: minmax(340px, 1fr) 10px var(--automation-detail-pane-width);
 }
 
 .automations-master {
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   max-width: 1080px;
   justify-self: center;
   padding: 42px clamp(32px, 6vw, 88px) 64px;
@@ -2184,7 +2192,7 @@ html.resizing-workspace-terminal-split * {
 
 .automations-catalog.detail-open .automations-master {
   max-width: none;
-  padding-inline: clamp(20px, 3vw, 40px);
+  padding: 34px clamp(20px, 3vw, 32px) 56px;
 }
 
 .automations-heading-row {
@@ -2220,7 +2228,18 @@ html.resizing-workspace-terminal-split * {
 }
 
 .automations-catalog.detail-open .catalog-page-title span {
-  font-size: 15px;
+  display: none;
+}
+
+.automations-catalog.detail-open .catalog-create {
+  width: 36px;
+  min-width: 36px;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.automations-catalog.detail-open .catalog-create span {
+  display: none;
 }
 
 .automations-detail-resizer {
@@ -2530,10 +2549,25 @@ html.resizing-workspace-terminal-split * {
   height: 28px;
 }
 
-@container automation-detail (max-width: 560px) {
+@container automation-detail (max-width: 460px) {
   .automation-detail-grid,
   .automation-schedule-controls {
     grid-template-columns: 1fr;
+  }
+}
+
+@container automation-catalog-layout (max-width: 840px) {
+  .automations-catalog.detail-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .automations-catalog.detail-open .automations-master,
+  .automations-catalog.detail-open .automations-detail-resizer {
+    display: none;
+  }
+
+  .automations-detail {
+    padding-inline: clamp(20px, 6vw, 48px);
   }
 }
 

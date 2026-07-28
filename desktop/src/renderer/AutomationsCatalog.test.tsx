@@ -287,26 +287,26 @@ describe("AutomationsCatalog", () => {
     expect(container.querySelectorAll(".automation-detail-form .settings-input").length).toBeGreaterThan(1);
     expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
       open: true,
-      reservedWidth: 530,
+      reservedWidth: 570,
     });
     const separator = container.querySelector<HTMLButtonElement>('[role="separator"]');
     await act(async () => separator?.dispatchEvent(new KeyboardEvent("keydown", {
       key: "ArrowLeft",
       bubbles: true,
     })));
-    expect(separator?.getAttribute("aria-valuenow")).toBe("552");
+    expect(separator?.getAttribute("aria-valuenow")).toBe("592");
     expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
       open: true,
-      reservedWidth: 562,
+      reservedWidth: 602,
     });
     await act(async () => separator?.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Home",
       bubbles: true,
     })));
-    expect(separator?.getAttribute("aria-valuenow")).toBe("360");
+    expect(separator?.getAttribute("aria-valuenow")).toBe("480");
     expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
       open: true,
-      reservedWidth: 370,
+      reservedWidth: 490,
     });
     expect(container.querySelector<HTMLInputElement>('input[value="每日简报"]')).toBeTruthy();
 

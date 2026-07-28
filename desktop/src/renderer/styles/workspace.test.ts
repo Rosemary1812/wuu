@@ -57,8 +57,10 @@ describe("conversation message-flow rhythm", () => {
 describe("automation master-detail layout", () => {
   it("keeps the detail track and its safe padding inside the available width", () => {
     expect(cssRuleBody(".automations-catalog.detail-open")).toMatch(
-      /grid-template-columns:\s*minmax\(320px,\s*1fr\)\s+10px\s+var\(--automation-detail-pane-width\);/,
+      /grid-template-columns:\s*minmax\(340px,\s*1fr\)\s+10px\s+var\(--automation-detail-pane-width\);/,
     );
+    expect(cssRuleBody(".automations-catalog")).toMatch(/width:\s*100%;/);
+    expect(cssRuleBody(".automations-catalog")).toMatch(/min-width:\s*0;/);
     expect(cssRuleBody(".automations-catalog")).toMatch(/overflow-x:\s*hidden;/);
     expect(cssRuleBody(".automations-detail")).toMatch(
       /padding:\s*34px\s+clamp\(20px,\s*3vw,\s*32px\)\s+56px;/,
@@ -66,7 +68,13 @@ describe("automation master-detail layout", () => {
     expect(cssRuleBody(".automation-detail-form .settings-input,\n.automation-detail-form .settings-select-trigger"))
       .toMatch(/box-sizing:\s*border-box;/);
     expect(workspaceCss).toMatch(
-      /@container automation-detail \(max-width:\s*560px\)[\s\S]*?\.automation-detail-grid,[\s\S]*?grid-template-columns:\s*1fr;/,
+      /@container automation-detail \(max-width:\s*460px\)[\s\S]*?\.automation-detail-grid,[\s\S]*?grid-template-columns:\s*1fr;/,
+    );
+    expect(workspaceCss).toMatch(
+      /@container automation-catalog-layout \(max-width:\s*840px\)[\s\S]*?\.automations-catalog\.detail-open[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+    expect(workspaceCss).toMatch(
+      /@container automation-catalog-layout \(max-width:\s*840px\)[\s\S]*?\.automations-catalog\.detail-open \.automations-master,[\s\S]*?display:\s*none;/,
     );
   });
 
@@ -86,6 +94,7 @@ describe("automation master-detail layout", () => {
     expect(indicator).toMatch(/inset:\s*0\s+auto\s+0\s+50%;/);
     expect(indicator).toMatch(/width:\s*1px;/);
     expect(scrollContent).toMatch(/min-height:\s*100%;/);
+    expect(scrollContent).toMatch(/container:\s*automation-catalog-layout\s*\/\s*inline-size;/);
     expect(workspaceCss).toMatch(
       /\.automations-detail-resizer:hover::before,[\s\S]*?background:\s*var\(--review-resizer-hover-bg\);/,
     );

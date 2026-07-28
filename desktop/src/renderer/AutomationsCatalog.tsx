@@ -44,10 +44,10 @@ export type AutomationDetailPaneLayout = {
 };
 
 const AUTOMATION_DETAIL_WIDTH_KEY = "wuu.desktop.automationDetailPaneWidth";
-const AUTOMATION_DETAIL_DEFAULT_WIDTH = 520;
-const AUTOMATION_DETAIL_MIN_WIDTH = 360;
+const AUTOMATION_DETAIL_DEFAULT_WIDTH = 560;
+const AUTOMATION_DETAIL_MIN_WIDTH = 480;
 const AUTOMATION_DETAIL_MAX_WIDTH = 760;
-const AUTOMATION_MASTER_MIN_WIDTH = 320;
+const AUTOMATION_MASTER_MIN_WIDTH = 340;
 const AUTOMATION_DETAIL_RESIZER_WIDTH = 10;
 const AUTOMATION_DETAIL_WIDTH_STEP = 32;
 
@@ -289,6 +289,7 @@ export function AutomationsCatalog({
             </div>
             <div className="automation-create-controls">
               <button className="settings-button catalog-create" type="button"
+                aria-label={t("automations.create")}
                 disabled={availableProjects.length === 0} onClick={startCreate}>
                 <Plus className="icon" aria-hidden="true" />
                 <span>{t("automations.create")}</span>
