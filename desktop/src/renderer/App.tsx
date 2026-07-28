@@ -163,7 +163,7 @@ import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
 import {
   ENABLE_GROUP_CHAT,
-  ENABLE_SKILLS_ASSISTANT,
+  ENABLE_MANAGEMENT_ASSISTANT,
   ENABLE_ULTRA_MODE,
 } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
@@ -4084,7 +4084,7 @@ export function App(): JSX.Element {
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
         }${
-          showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT
+          showingSkillsCatalog && ENABLE_MANAGEMENT_ASSISTANT
             ? " skills-assistant-visible"
             : ""
         }${
@@ -4474,7 +4474,7 @@ export function App(): JSX.Element {
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
 
-        {showingSkillsCatalog && ENABLE_SKILLS_ASSISTANT ? (
+        {showingSkillsCatalog && ENABLE_MANAGEMENT_ASSISTANT ? (
           <div className="skills-assistant-composer" data-testid="skills-assistant-composer">
             <WorkspaceDocumentTurnDock
               key={skillsAssistantThreadID ?? currentSkillsTabID}
