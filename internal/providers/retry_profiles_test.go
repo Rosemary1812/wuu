@@ -11,8 +11,8 @@ func TestRetryConfigForProfile(t *testing.T) {
 		profile    InferenceWorkloadProfile
 		maxRetries int
 	}{
-		{name: "interactive", profile: InferenceProfileInteractive, maxRetries: 5},
-		{name: "background agent", profile: InferenceProfileBackgroundAgent, maxRetries: 5},
+		{name: "interactive", profile: InferenceProfileInteractive, maxRetries: 10},
+		{name: "background agent", profile: InferenceProfileBackgroundAgent, maxRetries: 10},
 		{name: "continuation critical", profile: InferenceProfileContinuationCritical, maxRetries: 3},
 		{name: "best effort", profile: InferenceProfileBestEffort, maxRetries: 3},
 		{name: "unknown fails closed", profile: "new-unregistered-workload", maxRetries: 0},
@@ -24,5 +24,18 @@ func TestRetryConfigForProfile(t *testing.T) {
 				t.Fatalf("config = %+v, want max retries %d and 1s..1m backoff", got, test.maxRetries)
 			}
 		})
+	}
+}
+
+func TestWorkflowBudgetSpecTracksInteractiveRetryAllowance(t *testing.T) {
+	spec := WorkflowBudgetSpecForProfile(InferenceProfileInteractive)
+	if spec.MaxSamePayloadReplays != LimitedBudget(10) {
+		t.Fatalf("same-payload replay budget = %+v, want 10", spec.MaxSamePayloadReplays)
+	}
+	if spec.MaxRecoveryWaitMillis != LimitedBudget(uint64((10*time.Minute)/time.Millisecond)) {
+		t.Fatalf("recovery wait budget = %+v, want 10 minutes", spec.MaxRecoveryWaitMillis)
+	}
+	if spec.MaxUnknownBillableSubmissions != LimitedBudget(11) {
+		t.Fatalf("unknown billable submission budget = %+v, want 11", spec.MaxUnknownBillableSubmissions)
 	}
 }
