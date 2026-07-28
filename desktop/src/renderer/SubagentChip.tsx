@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { translateCurrent } from "./i18n";
 import type { SubagentChipDisplay } from "./AgentHandoff";
 
@@ -13,7 +14,7 @@ export function SubagentChip({
 }): JSX.Element {
   return (
     <span
-      className="subagent-chip"
+      className={`subagent-chip${display.outcome === "failed" ? " subagent-chip-failed" : ""}`}
       role="status"
       aria-label={display.label}
     >
@@ -32,7 +33,14 @@ export function SubagentChipList({
   return (
     <span className="subagent-chip-list">
       {grouped.map((display, index) => (
-        <SubagentChip key={`${index}-${display.label}`} display={display} />
+        <Fragment key={`${index}-${display.label}`}>
+          {index > 0 ? (
+            <span className="subagent-chip-separator" aria-hidden>
+              ·
+            </span>
+          ) : null}
+          <SubagentChip display={display} />
+        </Fragment>
       ))}
     </span>
   );

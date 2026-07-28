@@ -94,35 +94,48 @@ export function buildAssistantTurnDisplay(
   const isInProgress = turn.status === "in_progress";
   const turnHasReasoning = turn.items.some((item) => item.type === "reasoning");
   let firstTextItemRendered = false;
-  let pendingChips: SubagentChipDisplay[] = [];
+  let collectedChips: SubagentChipDisplay[] = [];
+  // Turn-level chip anchor: every subagent notification in a turn surfaces
+  // as ONE chip group at the spot where the first notification landed.
+  // Readers get a single stable landmark per turn instead of chips
+  // scattered across whatever entries happened to be adjacent.
+  let chipAnchor: { entry: TurnEntry; side: "before" | "after" } | undefined;
+  let anchorPendingBefore = false;
+
+  function isChipHostEntry(entry: TurnEntry): boolean {
+    return (
+      entry.kind === "activity" ||
+      entry.kind === "commentary" ||
+      entry.kind === "answer"
+    );
+  }
 
   function appendEntry(entry: TurnEntry): void {
-    if (pendingChips.length > 0) {
+    // A notification that arrived before any hostable entry waits for the
+    // next text or activity entry; reasoning folds never host chips — a
+    // chip glued to "查看思考过程" reads as part of that control.
+    if (anchorPendingBefore && !chipAnchor) {
       if (entry.kind === "activity") {
-        entry.subagentChipsAfter = pendingChips;
-      } else {
-        entry.subagentChipsBefore = pendingChips;
+        chipAnchor = { entry, side: "after" };
+        anchorPendingBefore = false;
+      } else if (entry.kind === "commentary" || entry.kind === "answer") {
+        chipAnchor = { entry, side: "before" };
+        anchorPendingBefore = false;
       }
-      pendingChips = [];
     }
     entries.push(entry);
   }
 
   function appendChips(chips: SubagentChipDisplay[]): void {
-    const previous = entries.at(-1);
-    if (
-      previous &&
-      (previous.kind === "activity" ||
-        previous.kind === "commentary" ||
-        previous.kind === "answer")
-    ) {
-      previous.subagentChipsAfter = [
-        ...(previous.subagentChipsAfter ?? []),
-        ...chips,
-      ];
-      return;
+    if (!chipAnchor && !anchorPendingBefore) {
+      const previous = entries.at(-1);
+      if (previous && isChipHostEntry(previous)) {
+        chipAnchor = { entry: previous, side: "after" };
+      } else {
+        anchorPendingBefore = true;
+      }
     }
-    pendingChips.push(...chips);
+    collectedChips.push(...chips);
   }
 
   function isProcessItemLive(item: ThreadItem): boolean {
@@ -245,14 +258,16 @@ export function buildAssistantTurnDisplay(
     });
   }
 
-  if (pendingChips.length > 0) {
-    const previous = entries.at(-1);
-    if (previous) {
-      previous.subagentChipsAfter = [
-        ...(previous.subagentChipsAfter ?? []),
-        ...pendingChips,
-      ];
+  if (collectedChips.length > 0) {
+    if (chipAnchor) {
+      if (chipAnchor.side === "before") {
+        chipAnchor.entry.subagentChipsBefore = collectedChips;
+      } else {
+        chipAnchor.entry.subagentChipsAfter = collectedChips;
+      }
     } else {
+      // Only reasoning/process entries (or nothing at all) preceded the
+      // notifications: the chips get a bare row of their own.
       appendEntry({
         key: `${turn.id}-subagent-chips`,
         item: {
@@ -264,10 +279,9 @@ export function buildAssistantTurnDisplay(
         settled: true,
         streaming: false,
         kind: "subagent_chips",
-        subagentChipsAfter: pendingChips,
+        subagentChipsAfter: collectedChips,
       });
     }
-    pendingChips = [];
   }
 
   // Chips must never sit between two text entries: consecutive
@@ -408,6 +422,12 @@ function groupProcessEntries(entries: TurnEntry[]): TurnEntry[] {
 }
 
 function isProcessGroupCandidate(entry: TurnEntry): boolean {
+  // The bare chip row only borrows a reasoning-shaped item to satisfy the
+  // ThreadItem type; it must never dissolve into a process group, or the
+  // chips would end up glued into the tool/reasoning chrome again.
+  if (entry.kind === "subagent_chips") {
+    return false;
+  }
   if (entry.position !== "process") {
     return false;
   }
