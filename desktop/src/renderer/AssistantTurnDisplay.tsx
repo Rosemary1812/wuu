@@ -155,6 +155,8 @@ export function buildAssistantTurnDisplay(
 
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
+    if (seenItemIDs.has(item.id)) continue;
+    seenItemIDs.add(item.id);
     if (item.type === "user_message") {
       const chip = isAgentHandoffItem(item)
         ? agentHandoffChipDisplayItem(item)
@@ -165,8 +167,6 @@ export function buildAssistantTurnDisplay(
       }
       continue;
     }
-    if (seenItemIDs.has(item.id)) continue;
-    seenItemIDs.add(item.id);
 
     sawAssistantWork = true;
 

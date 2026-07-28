@@ -111,7 +111,7 @@ export function ThreadItemView({
       if (handoff) {
         return (
           <span
-            className={`subagent-chip${handoff.shimmer ? " subagent-chip-shimmer" : ""}`}
+            className="subagent-chip"
             role="status"
             aria-label={handoff.label}
           >

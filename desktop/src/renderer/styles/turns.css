@@ -613,20 +613,11 @@
   vertical-align: middle;
 }
 
-.subagent-chip-shimmer::after {
-  position: absolute;
-  inset: 0;
-  width: 38%;
-  background: linear-gradient(105deg, transparent, var(--ink-overlay-12), transparent);
-  content: "";
-  transform: translateX(-180%);
-  animation: subagent-chip-shimmer 700ms var(--ease-out) 1;
-}
-
-@keyframes subagent-chip-shimmer {
-  to {
-    transform: translateX(420%);
-  }
+.subagent-chip-list {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .message-copy-button {

@@ -432,7 +432,10 @@ function EntryRenderer({
   onOpenRuns?: () => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
-  const withSubagentChips = (content: JSX.Element | null): JSX.Element | null => {
+  const withSubagentChips = (
+    content: JSX.Element | null,
+    includeAfter = true,
+  ): JSX.Element | null => {
     if (!content) return null;
     const before = entry.subagentChipsBefore ?? [];
     const after =
@@ -446,19 +449,27 @@ function EntryRenderer({
           <SubagentChip key={`before-${index}-${chip.label}`} display={chip} />
         ))}
         {content}
-        {after.map((chip, index) => (
+        {includeAfter ? after.map((chip, index) => (
           <SubagentChip key={`after-${index}-${chip.label}`} display={chip} />
-        ))}
+        )) : null}
       </div>
     );
   };
   if (kind === "activity" || kind === "process_group") {
+    const trailingChips = (entry.subagentChipsAfter ?? []).length > 0 ? (
+      <span className="subagent-chip-list">
+        {(entry.subagentChipsAfter ?? []).map((chip, index) => (
+          <SubagentChip key={`after-${index}-${chip.label}`} display={chip} />
+        ))}
+      </span>
+    ) : undefined;
     return withSubagentChips(
       (
       <ProcessSurface
         processItems={entry.items ?? [item]}
         streaming={streaming}
         active={activeGray}
+        trailingContent={trailingChips}
         renderReasoningItem={(processItem, isStreaming) => (
           <ThreadItemView
             turnID={turn.id}
@@ -473,6 +484,7 @@ function EntryRenderer({
         )}
       />
       ),
+      false,
     );
   }
   if (item.type === "reasoning") {

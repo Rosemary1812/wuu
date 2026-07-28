@@ -7,7 +7,7 @@ export function SubagentChip({
 }): JSX.Element {
   return (
     <span
-      className={`subagent-chip${display.shimmer ? " subagent-chip-shimmer" : ""}`}
+      className="subagent-chip"
       role="status"
       aria-label={display.label}
     >
