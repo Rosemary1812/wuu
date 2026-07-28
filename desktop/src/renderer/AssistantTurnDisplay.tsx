@@ -1,5 +1,10 @@
 import { type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
+import {
+  agentHandoffChipDisplayItem,
+  isAgentHandoffItem,
+  type SubagentChipDisplay,
+} from "./AgentHandoff";
 import { streamFieldValue } from "./ThreadItemText";
 import { readableToolActivityCommand } from "./ToolActivityHelpers";
 import { isCancellationMessage } from "./UserFacingErrors";
@@ -35,6 +40,8 @@ export type TurnEntry = {
   streaming: boolean;
   kind: TurnEntryKind;
   count?: number;
+  subagentChipsBefore?: SubagentChipDisplay[];
+  subagentChipsAfter?: SubagentChipDisplay[];
 };
 
 export type TurnEntryKind =
@@ -83,6 +90,36 @@ export function buildAssistantTurnDisplay(
   const isInProgress = turn.status === "in_progress";
   const turnHasReasoning = turn.items.some((item) => item.type === "reasoning");
   let firstTextItemRendered = false;
+  let pendingChips: SubagentChipDisplay[] = [];
+
+  function appendEntry(entry: TurnEntry): void {
+    if (pendingChips.length > 0) {
+      if (entry.kind === "activity") {
+        entry.subagentChipsAfter = pendingChips;
+      } else {
+        entry.subagentChipsBefore = pendingChips;
+      }
+      pendingChips = [];
+    }
+    entries.push(entry);
+  }
+
+  function appendChip(chip: SubagentChipDisplay): void {
+    const previous = entries.at(-1);
+    if (
+      previous &&
+      (previous.kind === "activity" ||
+        previous.kind === "commentary" ||
+        previous.kind === "answer")
+    ) {
+      previous.subagentChipsAfter = [
+        ...(previous.subagentChipsAfter ?? []),
+        chip,
+      ];
+      return;
+    }
+    pendingChips.push(chip);
+  }
 
   function isProcessItemLive(item: ThreadItem): boolean {
     return isInProgress && item.status === "in_progress";
@@ -118,7 +155,16 @@ export function buildAssistantTurnDisplay(
 
   for (let index = 0; index < turn.items.length; index++) {
     const item = turn.items[index];
-    if (item.type === "user_message") continue;
+    if (item.type === "user_message") {
+      const chip = isAgentHandoffItem(item)
+        ? agentHandoffChipDisplayItem(item)
+        : undefined;
+      if (chip) {
+        sawAssistantWork = true;
+        appendChip(chip);
+      }
+      continue;
+    }
     if (seenItemIDs.has(item.id)) continue;
     seenItemIDs.add(item.id);
 
@@ -140,7 +186,7 @@ export function buildAssistantTurnDisplay(
       if (!rendered) continue;
       const position = entryPosition(item);
       if (position === "answer") hasAnswer = true;
-      entries.push({
+      appendEntry({
         key: item.id,
         item,
         position,
@@ -163,7 +209,7 @@ export function buildAssistantTurnDisplay(
         nextIndex++;
       }
       const allSettled = group.every((g) => g.status !== "in_progress");
-      entries.push({
+      appendEntry({
         key: `${item.id}-activity`,
         item,
         items: group,
@@ -185,7 +231,7 @@ export function buildAssistantTurnDisplay(
     const streaming = isProcessItemLive(item);
     const rendered = renderThreadItem(item, streaming);
     if (!rendered) continue;
-    entries.push({
+    appendEntry({
       key: item.id,
       item,
       position: "process",
@@ -193,6 +239,31 @@ export function buildAssistantTurnDisplay(
       streaming,
       kind: entryKind(item),
     });
+  }
+
+  if (pendingChips.length > 0) {
+    const previous = entries.at(-1);
+    if (previous) {
+      previous.subagentChipsAfter = [
+        ...(previous.subagentChipsAfter ?? []),
+        ...pendingChips,
+      ];
+    } else {
+      appendEntry({
+        key: `${turn.id}-subagent-chips`,
+        item: {
+          id: `${turn.id}-subagent-chips`,
+          type: "reasoning",
+          status: "completed",
+        },
+        position: "process",
+        settled: true,
+        streaming: false,
+        kind: "process",
+        subagentChipsAfter: pendingChips,
+      });
+    }
+    pendingChips = [];
   }
 
   // For an in_progress turn we always return a display so TurnView keeps
@@ -283,6 +354,12 @@ function groupProcessEntries(entries: TurnEntry[]): TurnEntry[] {
       streaming: pending.some((entry) => entry.streaming),
       kind: "process_group",
       count: items.length,
+      subagentChipsBefore: pending.flatMap(
+        (entry) => entry.subagentChipsBefore ?? [],
+      ),
+      subagentChipsAfter: pending.flatMap(
+        (entry) => entry.subagentChipsAfter ?? [],
+      ),
     });
     pending = [];
   };

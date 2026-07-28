@@ -294,7 +294,7 @@ describe("ThreadItemView", () => {
     expect(streamTextStore.has(key)).toBe(false);
   });
 
-  it("renders a subagent completion handoff with the shared system event divider", () => {
+  it("renders a subagent completion handoff as an inline chip", () => {
     render({
       item: {
         id: "handoff-1",
@@ -310,11 +310,9 @@ describe("ThreadItemView", () => {
       streaming: false,
     });
 
-    const divider = container?.querySelector(".agent-handoff-divider");
-    expect(divider?.classList.contains("turn-event-notice")).toBe(true);
-    expect(divider?.querySelector(".turn-event-title")?.textContent).toBe(
-      "subagent 完成了任务",
-    );
+    const chip = container?.querySelector(".subagent-chip");
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toBe("subagent 完成了");
   });
 
 });

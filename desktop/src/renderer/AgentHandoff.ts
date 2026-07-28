@@ -4,6 +4,11 @@ export type AgentHandoffDisplay = {
   label: string;
 };
 
+export type SubagentChipDisplay = {
+  label: string;
+  shimmer: boolean;
+};
+
 type AgentHandoffEnvelope = {
   content?: unknown;
   trigger_turn?: unknown;
@@ -95,6 +100,25 @@ export function agentHandoffDisplayItem(
   return agentHandoffDisplay(item.text);
 }
 
+export function agentHandoffChipDisplayItem(
+  item: HandoffItem | undefined,
+): SubagentChipDisplay | undefined {
+  if (!item || !isAgentHandoffItem(item)) {
+    return undefined;
+  }
+  const handoff = parseAgentHandoff(item.text);
+  if (!handoff) {
+    return item.name === AGENT_NOTIFICATION_NAME
+      ? { label: handoffGenericLabel(), shimmer: true }
+      : undefined;
+  }
+  const name = handoffName(handoff.payload);
+  return {
+    label: `${name} ${handoffChipStatusLabel(stringValue(handoff.payload.status?.status))}`.trim(),
+    shimmer: true,
+  };
+}
+
 function parseAgentHandoff(
   text: string | undefined,
 ): { payload: AgentNotificationPayload; triggerTurn: boolean } | undefined {
@@ -146,6 +170,33 @@ function handoffStatusLabel(status: string): string {
     default:
       return handoffGenericLabel();
   }
+}
+
+function handoffChipStatusLabel(status: string): string {
+  switch (status) {
+    case "completed":
+      return "完成了";
+    case "failed":
+      return "失败了";
+    case "cancelled":
+      return "已取消";
+    case "running":
+      return "执行中";
+    case "pending":
+    case "queued":
+      return "等待中";
+    default:
+      return "已更新";
+  }
+}
+
+function handoffName(payload: AgentNotificationPayload): string {
+  const taskName = stringValue(payload.status?.task_name);
+  if (taskName) {
+    return taskName;
+  }
+  const segments = stringValue(payload.agent_path).split("/").filter(Boolean);
+  return segments.at(-1) ?? "subagent";
 }
 
 function stringValue(value: unknown): string {
