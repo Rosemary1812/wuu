@@ -70,3 +70,24 @@ describe("channel agent status", () => {
     expect(channelsCss).not.toContain("channel-agent-status-pulse");
   });
 });
+
+describe("channel task board spacing", () => {
+  it("uses a compact two-line card rhythm without hidden metadata", () => {
+    const board = ruleFor(".channel-task-board");
+    const heading = ruleFor(".channel-task-column-heading");
+    const items = ruleFor(".channel-task-column-items");
+    const card = ruleFor(".channel-task-card");
+    const meta = ruleFor(".channel-task-card-meta");
+
+    expect(board).toMatch(/gap:\s*16px/);
+    expect(board).toMatch(/padding-top:\s*20px/);
+    expect(heading).toMatch(/min-height:\s*36px/);
+    expect(items).toMatch(/gap:\s*4px/);
+    expect(card).toMatch(/gap:\s*4px/);
+    expect(card).toMatch(/min-height:\s*0/);
+    expect(card).toMatch(/padding:\s*10px 12px 11px/);
+    expect(meta).not.toMatch(/position:\s*absolute/);
+    expect(meta).not.toMatch(/clip:/);
+    expect(channelsCss).not.toContain(".channel-task-card:hover::after");
+  });
+});

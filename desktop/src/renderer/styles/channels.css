@@ -1,8 +1,9 @@
 .channel-task-board {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
+  padding-top: 20px;
 }
 
 .channel-task-column {
@@ -18,7 +19,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 42px;
+  min-height: 36px;
   color: var(--text-primary);
   font-size: 12px;
 }
@@ -31,16 +32,15 @@
 .channel-task-column-items {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 4px;
 }
 
 .channel-task-card {
-  position: relative;
   display: grid;
-  gap: 7px;
+  gap: 4px;
   width: 100%;
-  min-height: 84px;
-  padding: 13px 12px;
+  min-height: 0;
+  padding: 10px 12px 11px;
   border: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;
@@ -49,41 +49,20 @@
 }
 
 .channel-task-card:hover { background: var(--ink-overlay-4); }
-.channel-task-card:hover::after {
-  position: absolute;
-  z-index: 2;
-  top: calc(100% - 2px);
-  left: 12px;
-  max-width: min(280px, calc(100vw - 32px));
-  padding: 7px 9px;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-lg);
-  color: var(--text-secondary);
-  content: attr(data-tooltip);
+.channel-task-card strong,
+.channel-task-card span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channel-task-card strong { line-height: 1.4; }
+.channel-task-card-meta {
+  color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.35;
-  white-space: normal;
-  pointer-events: none;
-}
-.channel-task-card strong,
-.channel-task-card span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.channel-task-card span { color: var(--text-secondary); font-size: 12px; }
-.channel-task-card-meta {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }
 .channel-task-card.done { opacity: 0.58; }
-.channel-task-column-empty { padding: 14px 0; color: var(--text-tertiary); }
+.channel-task-column-empty { padding: 12px 0; color: var(--text-tertiary); }
 
 @media (max-width: 760px) {
-  .channel-task-board { grid-template-columns: 1fr; gap: 22px; }
+  .channel-task-board { grid-template-columns: 1fr; gap: 20px; }
 }
 .channel-view {
   --channel-directory-row-height: 46px;
