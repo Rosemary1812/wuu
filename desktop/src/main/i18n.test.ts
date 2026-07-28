@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  MAIN_TRANSLATION_RESOURCES,
   mainTranslate,
   resolveMainLocale,
   setMainLocale,
 } from "./i18n";
+import { assertCatalogContract } from "../renderer/i18n/catalogContract";
 
 afterEach(() => setMainLocale("zh-CN"));
 
 describe("main process i18n", () => {
+  it("keeps native catalogs structurally aligned", () => {
+    expect(() => assertCatalogContract(MAIN_TRANSLATION_RESOURCES)).not.toThrow();
+  });
+
   it("resolves explicit and system language preferences", () => {
     expect(resolveMainLocale("zh-CN", "en-GB")).toBe("zh-CN");
     expect(resolveMainLocale("en-US", "zh-Hans-CN")).toBe("en-US");

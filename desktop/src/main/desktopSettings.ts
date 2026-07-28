@@ -11,13 +11,13 @@ import {
   CODEX_PET_SIZE_DEFAULT,
   CODEX_PET_SIZE_OPTIONS,
   MESSAGE_FLOW_FONT_SIZE_RANGE,
+  isLanguagePreference,
   type CodexPetSettings,
   type CodexPetSize,
   type MessageFlowFontSize,
   type LanguagePreference,
   type ThemePreference,
   type VoiceInputSettings,
-  type VoiceInputLanguage,
 } from "../shared/protocol";
 import type { WindowBounds } from "./windowState";
 
@@ -66,9 +66,6 @@ export type DesktopSettings = {
 };
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
-const LANGUAGE_PREFERENCES: readonly LanguagePreference[] = ["system", "zh-CN", "en-US"];
-const VOICE_INPUT_LANGUAGES: readonly VoiceInputLanguage[] = ["system", "zh-CN", "en-US"];
-
 export function desktopSettingsPath(): string {
   return join(wuuHomePath(), "desktop-settings.json");
 }
@@ -84,8 +81,8 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     if (THEME_PREFERENCES.includes(record.theme as ThemePreference)) {
       settings.theme = record.theme as ThemePreference;
     }
-    if (LANGUAGE_PREFERENCES.includes(record.language as LanguagePreference)) {
-      settings.language = record.language as LanguagePreference;
+    if (isLanguagePreference(record.language)) {
+      settings.language = record.language;
     }
     if (
       typeof record.voice_input === "object" &&
@@ -95,10 +92,8 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
       const voiceInput = record.voice_input as Record<string, unknown>;
       settings.voice_input = {
         polish_enabled: voiceInput.polish_enabled === true,
-        language: VOICE_INPUT_LANGUAGES.includes(
-          voiceInput.language as VoiceInputLanguage,
-        )
-          ? (voiceInput.language as VoiceInputLanguage)
+        language: isLanguagePreference(voiceInput.language)
+          ? voiceInput.language
           : "system",
       };
     }
@@ -198,7 +193,7 @@ export function setVoiceInputSettings(
   filePath?: string,
 ): void {
   const settings = readDesktopSettings(filePath);
-  const language = VOICE_INPUT_LANGUAGES.includes(voiceInput.language)
+  const language = isLanguagePreference(voiceInput.language)
     ? voiceInput.language
     : "system";
   writeDesktopSettings(

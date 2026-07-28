@@ -1859,8 +1859,34 @@ export const MESSAGE_FLOW_FONT_SIZE_RANGE = {
 } as const;
 
 export type ThemePreference = "system" | "light" | "dark";
-export type LanguagePreference = "system" | "zh-CN" | "en-US";
-export type AppLocale = Exclude<LanguagePreference, "system">;
+
+// Keep the supported locale registry executable as well as typed. Every shell
+// validates persisted settings and IPC payloads with these guards, so adding a
+// locale has one protocol-level entry point instead of duplicated string lists.
+export const APP_LOCALES = ["zh-CN", "en-US"] as const;
+export type AppLocale = (typeof APP_LOCALES)[number];
+export const LANGUAGE_PREFERENCES = ["system", ...APP_LOCALES] as const;
+export type LanguagePreference = (typeof LANGUAGE_PREFERENCES)[number];
+
+export function isAppLocale(value: unknown): value is AppLocale {
+  return typeof value === "string" && APP_LOCALES.some((locale) => locale === value);
+}
+
+export function isLanguagePreference(value: unknown): value is LanguagePreference {
+  return (
+    typeof value === "string" &&
+    LANGUAGE_PREFERENCES.some((preference) => preference === value)
+  );
+}
+
+export function resolveAppLocale(
+  preference: LanguagePreference,
+  systemLocale: string,
+): AppLocale {
+  if (preference !== "system") return preference;
+  return systemLocale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+}
+
 export type VoiceInputLanguage = "system" | AppLocale;
 export type VoicePermissionStatus =
   | "granted"

@@ -97,7 +97,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
 }): JSX.Element {
-  const { t } = useI18n();
+  const { formatDate, t } = useI18n();
   const [agents, setAgents] = useState<NamedAgent[]>([]);
   const [rooms, setRooms] = useState<ChannelRoom[]>([]);
   const [selectedRoomID, setSelectedRoomID] = useState("");
@@ -777,7 +777,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   <div className="channel-message-meta">
                     <strong>{author}</strong>
                     <time dateTime={message.created_at}>
-                      {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
                     </time>
                   </div>
                   {message.body ? (
@@ -854,7 +854,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       <div className="channel-message-meta">
                         <strong>{author}</strong>
                         <time dateTime={message.created_at}>
-                          {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
                         </time>
                       </div>
                       {repliedMessage && repliedMessage.id !== activeThreadRoot.id ? (
