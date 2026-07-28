@@ -24,6 +24,10 @@ export interface SidebarNameDialogProps {
   cancelLabel: string;
   content?: ReactNode;
   submitDisabled?: boolean;
+  destructiveAction?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 // Shared floating name dialog for the sidebar flows that need a single text
@@ -45,6 +49,7 @@ export function SidebarNameDialog({
   cancelLabel,
   content,
   submitDisabled,
+  destructiveAction,
 }: SidebarNameDialogProps): ReactElement | null {
   useEffect(() => {
     if (!open) {
@@ -111,6 +116,12 @@ export function SidebarNameDialog({
           />
         </label>}
         <div className="sidebar-name-dialog-actions">
+          {destructiveAction ? (
+            <button className="sidebar-name-dialog-destructive" type="button" onClick={destructiveAction.onClick}>
+              {destructiveAction.label}
+            </button>
+          ) : null}
+          {destructiveAction ? <span className="sidebar-name-dialog-action-spacer" aria-hidden="true" /> : null}
           <button type="button" onClick={onClose}>
             {cancelLabel}
           </button>

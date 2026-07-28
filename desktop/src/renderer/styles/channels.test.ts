@@ -9,22 +9,26 @@ function ruleFor(selector: string): string {
 }
 
 describe("channel directory alignment", () => {
-  it("uses the shared directory metrics for rooms and agents", () => {
-    const roomList = ruleFor(".channel-room-list");
-    const roomRows = ruleFor(".channel-room-row,\n.channel-agent-button");
-    const agentList = ruleFor(".channel-agent-directory-list");
-    const agentRow = ruleFor(".channel-agent-directory-row");
+  it("uses one directory structure for rooms and agents", () => {
+    const directoryLists = ruleFor(".channel-room-list,\n.channel-agent-directory-list");
+    const directoryRow = ruleFor(".channel-directory-row");
+    const directoryIdentity = ruleFor(".channel-directory-identity");
+    const directorySettings = ruleFor(".channel-directory-settings");
+    const agentWorkspace = ruleFor(".channel-agent-workspace");
     const agentIdentity = ruleFor(".channel-agent-directory-identity");
 
-    expect(roomList).toMatch(/padding:\s*var\(--channel-directory-list-padding\)/);
-    expect(agentList).toMatch(/padding:\s*var\(--channel-directory-list-padding\)/);
-    expect(roomRows).toMatch(/height:\s*var\(--channel-directory-row-height\)/);
-    expect(roomRows).toMatch(/gap:\s*var\(--channel-directory-row-gap\)/);
-    expect(roomRows).toMatch(/padding:\s*var\(--channel-directory-row-padding\)/);
-    expect(agentRow).toMatch(/height:\s*var\(--channel-directory-row-height\)/);
-    expect(agentRow).toMatch(/border-radius:\s*var\(--channel-directory-row-radius\)/);
-    expect(agentIdentity).toMatch(/gap:\s*var\(--channel-directory-row-gap\)/);
-    expect(agentIdentity).toMatch(/padding:\s*var\(--channel-directory-row-padding\)/);
+    expect(directoryLists).toMatch(/padding:\s*var\(--channel-directory-list-padding\)/);
+    expect(directoryLists).toMatch(/gap:\s*3px/);
+    expect(directoryRow).toMatch(/height:\s*var\(--channel-directory-row-height\)/);
+    expect(directoryRow).toMatch(/grid-template-columns:\s*34px minmax\(0, 1fr\) 28px/);
+    expect(directoryRow).toMatch(/gap:\s*var\(--channel-directory-row-gap\)/);
+    expect(directoryRow).toMatch(/padding:\s*var\(--channel-directory-row-padding\)/);
+    expect(directoryRow).toMatch(/border-radius:\s*var\(--channel-directory-row-radius\)/);
+    expect(directoryIdentity).toMatch(/min-width:\s*0/);
+    expect(directorySettings).toMatch(/width:\s*28px/);
+    expect(agentWorkspace).toMatch(/display:\s*contents/);
+    expect(agentIdentity).not.toMatch(/grid-template-columns/);
+    expect(channelsCss).not.toContain("channel-agent-directory-actions");
   });
 });
 

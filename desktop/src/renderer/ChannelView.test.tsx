@@ -194,6 +194,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   container.remove();
+  vi.restoreAllMocks();
 });
 
 describe("ChannelView", () => {
@@ -394,12 +395,21 @@ describe("ChannelView", () => {
 
     expect(separator?.getAttribute("aria-valuenow")).toBe("224");
     expect(window.localStorage.getItem("wuu.channels.splitPaneWidth")).toBe("224");
+    expect(container.querySelector<HTMLElement>(".channel-view")?.style.gridTemplateColumns).toBe("224px minmax(0, 1fr)");
 
     act(() => root?.render(<ChannelView section="agents" />));
     await settle();
     const agentSeparator = container.querySelector<HTMLButtonElement>(".channel-split-resizer");
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("224");
-    expect(container.querySelector<HTMLElement>(".channel-agent-workspace")?.style.gridTemplateColumns).toContain("224px");
+    expect(container.querySelector<HTMLElement>(".channel-view")?.style.gridTemplateColumns).toBe("224px minmax(0, 1fr)");
+    expect(container.querySelector<HTMLElement>(".channel-agent-workspace")?.style.gridTemplateColumns).toBe("");
+    const agentRow = container.querySelector(".channel-agent-directory-row");
+    expect(agentRow?.classList.contains("channel-directory-row")).toBe(true);
+    expect(agentRow?.children).toHaveLength(3);
+    expect(agentRow?.querySelector(".channel-directory-avatar")).not.toBeNull();
+    expect(agentRow?.querySelector(".channel-directory-identity")?.textContent).toContain("Alpha");
+    expect(agentRow?.querySelectorAll(".channel-directory-settings")).toHaveLength(1);
+    expect(agentRow?.querySelector(".channel-agent-directory-actions")).toBeNull();
 
     act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("156");
@@ -428,8 +438,9 @@ describe("ChannelView", () => {
     await settle();
 
     expect(container.querySelector(".channel-conversation")).toBeNull();
-    expect(container.querySelector(".channel-list-pane")).toBeNull();
-    expect(container.querySelector(".channel-agent-directory")?.textContent).toContain("Alpha");
+    const agentDirectory = container.querySelector(".channel-agent-directory");
+    expect(agentDirectory?.classList.contains("channel-list-pane")).toBe(true);
+    expect(agentDirectory?.textContent).toContain("Alpha");
     expect(container.querySelector(".channel-agent-directory .agent-avatar-image")).not.toBeNull();
     expect(container.querySelector('svg[aria-label="关系图谱"]')).not.toBeNull();
     expect(container.querySelectorAll(".channel-agent-graph-links line.relationship")).toHaveLength(1);
@@ -462,6 +473,25 @@ describe("ChannelView", () => {
     });
   });
 
+  it("keeps agent deletion inside the shared settings dialog", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="agents" />));
+    await settle();
+
+    const settingsButton = container.querySelector<HTMLButtonElement>('.channel-agent-directory-row button[aria-label="编辑 Agent"]');
+    act(() => settingsButton?.click());
+    expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("编辑 Agent");
+    expect(container.querySelector('button[aria-label="删除 Agent"]')).toBeNull();
+
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const deleteButton = document.querySelector<HTMLButtonElement>(".sidebar-name-dialog-destructive");
+    await act(async () => deleteButton?.click());
+    expect(confirmDelete).toHaveBeenCalledWith("删除“Alpha”？该 Agent 将从所有频道移除，其保存的状态也会被删除。");
+    expect(api.deleteNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
+  });
+
   it("creates only a channel with selected agents", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
@@ -484,6 +514,39 @@ describe("ChannelView", () => {
       name: "review",
       agent_ids: ["agent-1"],
     });
+  });
+
+  it("manages channel members and deletes a channel from channel settings", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const manageResearch = container.querySelector<HTMLButtonElement>('button[aria-label="管理 research"]');
+    expect(manageResearch).not.toBeNull();
+    act(() => manageResearch?.click());
+    expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("频道设置");
+    const memberCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('.channel-setup-form input[type="checkbox"]'));
+    expect(memberCheckboxes).toHaveLength(2);
+    expect(memberCheckboxes.every((checkbox) => !checkbox.checked)).toBe(true);
+    act(() => memberCheckboxes[0]?.click());
+    const settingsForm = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
+    await act(async () => settingsForm?.requestSubmit());
+
+    expect(api.updateChannelRoom).toHaveBeenCalledWith({
+      room_id: "room-2",
+      name: "research",
+      agent_ids: ["agent-1"],
+    });
+
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+    act(() => manageResearch?.click());
+    const deleteButton = document.querySelector<HTMLButtonElement>(".sidebar-name-dialog-destructive");
+    expect(deleteButton?.textContent).toBe("删除频道");
+    await act(async () => deleteButton?.click());
+    expect(confirmDelete).toHaveBeenCalledWith("删除“research”？频道及其中的消息将被永久删除。");
+    expect(api.deleteChannelRoom).toHaveBeenCalledWith({ room_id: "room-2" });
   });
 
   it("creates a task for a named agent", async () => {

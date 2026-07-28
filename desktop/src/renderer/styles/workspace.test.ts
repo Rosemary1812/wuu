@@ -55,11 +55,14 @@ describe("conversation message-flow rhythm", () => {
 });
 
 describe("automation master-detail layout", () => {
-  it("keeps a usable master column and contains detail controls within their grid cells", () => {
+  it("keeps the detail track and its safe padding inside the available width", () => {
     expect(cssRuleBody(".automations-catalog.detail-open")).toMatch(
       /grid-template-columns:\s*minmax\(320px,\s*1fr\)\s+10px\s+var\(--automation-detail-pane-width\);/,
     );
     expect(cssRuleBody(".automations-catalog")).toMatch(/overflow-x:\s*hidden;/);
+    expect(cssRuleBody(".automations-detail")).toMatch(
+      /padding:\s*34px\s+clamp\(20px,\s*3vw,\s*32px\)\s+56px;/,
+    );
     expect(cssRuleBody(".automation-detail-form .settings-input,\n.automation-detail-form .settings-select-trigger"))
       .toMatch(/box-sizing:\s*border-box;/);
     expect(workspaceCss).toMatch(
@@ -70,6 +73,23 @@ describe("automation master-detail layout", () => {
   it("anchors the create action to the heading instead of shrinking the search toolbar", () => {
     expect(cssRuleBody(".automations-heading-row")).toMatch(/justify-content:\s*space-between;/);
     expect(cssRuleBody(".automations-heading-row .catalog-create")).toMatch(/flex:\s*0\s+0\s+auto;/);
+  });
+
+  it("keeps divider feedback on the resizer's own hit target", () => {
+    const resizer = cssRuleBody(".automations-detail-resizer");
+    const indicator = cssRuleBody(".automations-detail-resizer::before");
+    const scrollContent = cssRuleBody(".automations-scroll-region .scroll-region-content");
+
+    expect(resizer).toMatch(/width:\s*10px;/);
+    expect(resizer).toMatch(/box-sizing:\s*border-box;/);
+    expect(resizer).toMatch(/padding:\s*0;/);
+    expect(indicator).toMatch(/inset:\s*0\s+auto\s+0\s+50%;/);
+    expect(indicator).toMatch(/width:\s*1px;/);
+    expect(scrollContent).toMatch(/min-height:\s*100%;/);
+    expect(workspaceCss).toMatch(
+      /\.automations-detail-resizer:hover::before,[\s\S]*?background:\s*var\(--review-resizer-hover-bg\);/,
+    );
+    expect(workspaceCss).not.toContain(".automation-detail-pane-divider");
   });
 });
 

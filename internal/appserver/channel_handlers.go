@@ -176,20 +176,29 @@ func (s *Server) handleChannelRoomUpdate(ctx context.Context, req Request) error
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	var (
-		room channels.Room
-		err  error
-	)
+	var room channels.Room
+	var err error
 	switch {
-	case params.Name != nil && params.AvatarImage == nil:
-		room, err = s.channelService.UpdateRoom(ctx, channels.UpdateRoomParams{
-			RoomID: params.RoomID,
-			Name:   *params.Name,
-		})
-	case params.Name == nil && params.AvatarImage != nil:
+	case params.AvatarImage != nil && (params.Name != nil || params.AgentIDs != nil):
+		err = errors.New("room avatar cannot be updated with other fields")
+	case params.AvatarImage != nil:
 		room, err = s.channelService.UpdateRoomAvatar(ctx, params.RoomID, *params.AvatarImage)
+	case params.Name != nil || params.AgentIDs != nil:
+		var members *[]channels.RoomMember
+		if params.AgentIDs != nil {
+			value := make([]channels.RoomMember, 0, len(*params.AgentIDs))
+			for _, agentID := range *params.AgentIDs {
+				value = append(value, channels.RoomMember{MemberType: channels.MemberAgent, MemberID: agentID})
+			}
+			members = &value
+		}
+		room, err = s.channelService.UpdateRoom(ctx, channels.UpdateRoomParams{
+			RoomID:  params.RoomID,
+			Name:    params.Name,
+			Members: members,
+		})
 	default:
-		err = errors.New("room update requires exactly one of name or avatar_image")
+		err = errors.New("room update requires name, avatar_image, or agent_ids")
 	}
 	return s.writeResponse(req.ID, ChannelRoomUpdateResult{Room: room}, err)
 }

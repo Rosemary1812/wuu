@@ -113,7 +113,6 @@
   background: var(--bg-primary);
 }
 
-.channel-mode-agents,
 .channel-mode-tasks {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -808,10 +807,7 @@
 }
 
 .channel-agent-workspace {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  background: var(--bg-primary);
+  display: contents;
 }
 
 .channel-agent-directory {
@@ -827,34 +823,14 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: var(--channel-directory-list-padding);
 }
 
 .channel-agent-directory-row {
   min-width: 0;
-  height: var(--channel-directory-row-height);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  border-radius: var(--channel-directory-row-radius);
-}
-
-.channel-agent-directory-row:hover {
-  background: var(--ink-overlay-4);
 }
 
 .channel-agent-directory-identity {
-  min-width: 0;
   height: 100%;
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--channel-directory-row-gap);
-  border: 0;
-  padding: var(--channel-directory-row-padding);
-  background: transparent;
-  color: var(--text-primary);
-  text-align: left;
 }
 
 .channel-agent-directory-identity > span:last-child {
@@ -873,17 +849,6 @@
 .channel-agent-directory-identity small {
   color: var(--text-tertiary);
   font-size: 11px;
-}
-
-.channel-agent-directory-actions {
-  display: flex;
-  padding-right: 4px;
-  opacity: 0;
-}
-
-.channel-agent-directory-row:hover .channel-agent-directory-actions,
-.channel-agent-directory-actions:focus-within {
-  opacity: 1;
 }
 
 .channel-agent-graph-pane {
@@ -1268,8 +1233,57 @@
   font-size: 13px;
 }
 
-.channel-room-row {
+.channel-room-list,
+.channel-agent-directory-list {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  padding: var(--channel-directory-list-padding);
+}
+
+.channel-directory-row {
   min-width: 0;
+  height: var(--channel-directory-row-height);
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: var(--channel-directory-row-gap);
+  padding: var(--channel-directory-row-padding);
+  border-radius: var(--channel-directory-row-radius);
+}
+
+.channel-directory-row:hover,
+.channel-directory-row.active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.channel-directory-avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+
+.channel-directory-identity {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.channel-directory-settings {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  opacity: 0.45;
+}
+
+.channel-directory-row:hover .channel-directory-settings,
+.channel-directory-row:focus-within .channel-directory-settings {
+  opacity: 1;
 }
 
 .channel-room-avatar-button,
@@ -1283,9 +1297,6 @@
 
 .channel-room-avatar-button {
   position: relative;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
   overflow: visible;
   border-radius: 8px;
 }

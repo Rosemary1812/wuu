@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 describe("AutomationsCatalog", () => {
-  it("creates a paused automation in the current workspace", async () => {
+  it("creates a paused automation from a workspace-bound draft", async () => {
     const created = {
       ...task,
       id: "automation-new",
@@ -51,10 +51,17 @@ describe("AutomationsCatalog", () => {
       workspacePath: project.path,
     };
     const createAutomation = vi.fn().mockResolvedValue({ task: created });
-    installApi([], vi.fn(), createAutomation);
+    const updateAutomation = vi.fn().mockImplementation(async (params) => ({
+      task: {
+        ...created,
+        workspaceId: params.workspace_id,
+        workspacePath: params.workspace_path,
+      },
+    }));
+    installApi([], updateAutomation, createAutomation);
     await act(async () => {
       root = createRoot(container);
-      root.render(<AutomationsCatalog projects={[project]} activeProjectID={project.id} />);
+      root.render(<AutomationsCatalog projects={[project]} />);
     });
 
     const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
@@ -86,8 +93,6 @@ describe("AutomationsCatalog", () => {
       prompt: "",
       paused: true,
       recurring: true,
-      workspace_id: "project-1",
-      workspace_path: "/workspaces/example",
     }));
     // After creation the workspace locks to static text.
     expect(container.querySelector(".automation-workspace-field")?.textContent)
@@ -293,6 +298,15 @@ describe("AutomationsCatalog", () => {
     expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
       open: true,
       reservedWidth: 562,
+    });
+    await act(async () => separator?.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Home",
+      bubbles: true,
+    })));
+    expect(separator?.getAttribute("aria-valuenow")).toBe("360");
+    expect(onDetailPaneLayoutChange).toHaveBeenLastCalledWith({
+      open: true,
+      reservedWidth: 370,
     });
     expect(container.querySelector<HTMLInputElement>('input[value="每日简报"]')).toBeTruthy();
 

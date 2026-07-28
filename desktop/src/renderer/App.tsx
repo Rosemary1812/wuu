@@ -4318,7 +4318,9 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
               splitConversation ? " split-scroll-region" : ""
-            }${showingManagementCatalog ? " skills-scroll-region" : ""}`}
+            }${showingManagementCatalog ? " skills-scroll-region" : ""}${
+              showingAutomationsCatalog ? " automations-scroll-region" : ""
+            }`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -4332,7 +4334,6 @@ export function App(): JSX.Element {
             ) : showingAutomationsCatalog ? (
               <AutomationsCatalog
                 projects={state.projects}
-                activeProjectID={state.activeProjectId}
                 onDetailPaneLayoutChange={setAutomationDetailPaneLayout}
               />
             ) : (
@@ -4470,10 +4471,6 @@ export function App(): JSX.Element {
             onExitPreview={() => setLaunchPreviewPinned(false)}
           />
         )}
-
-        {showingAutomationsCatalog && automationDetailPaneLayout.open ? (
-          <div className="automation-detail-pane-divider" aria-hidden="true" />
-        ) : null}
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
 

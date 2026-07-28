@@ -2094,9 +2094,10 @@ type ChannelRoomCreateResult struct {
 }
 
 type ChannelRoomUpdateParams struct {
-	RoomID      string  `json:"room_id"`
-	Name        *string `json:"name,omitempty"`
-	AvatarImage *string `json:"avatar_image,omitempty"`
+	RoomID      string    `json:"room_id"`
+	Name        *string   `json:"name,omitempty"`
+	AvatarImage *string   `json:"avatar_image,omitempty"`
+	AgentIDs    *[]string `json:"agent_ids,omitempty"`
 }
 
 type ChannelRoomUpdateResult struct {

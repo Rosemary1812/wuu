@@ -1459,6 +1459,10 @@
   padding-top: 2px;
 }
 
+.sidebar-name-dialog-action-spacer {
+  flex: 1;
+}
+
 .sidebar-name-dialog-actions button {
   min-width: 72px;
   border-radius: var(--radius-sm);
@@ -1488,6 +1492,15 @@
 .sidebar-name-dialog-actions button[type="submit"]:hover,
 .sidebar-name-dialog-actions button[type="submit"]:focus-visible {
   background: var(--ink);
+}
+
+.sidebar-name-dialog-actions .sidebar-name-dialog-destructive {
+  color: var(--danger);
+}
+
+.sidebar-name-dialog-actions .sidebar-name-dialog-destructive:hover,
+.sidebar-name-dialog-actions .sidebar-name-dialog-destructive:focus-visible {
+  background: var(--danger-soft);
 }
 
 .sidebar-name-dialog-actions button:disabled {

@@ -1004,29 +1004,6 @@ html.resizing-workspace-file-split * {
   right: var(--automation-detail-reserved-width);
 }
 
-.automation-detail-pane-divider {
-  position: absolute;
-  z-index: 7;
-  top: 48px;
-  right: calc(var(--automation-detail-reserved-width) - 5px);
-  bottom: 0;
-  width: 1px;
-  background: var(--surface-3);
-  pointer-events: none;
-  transition:
-    background-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out);
-}
-
-.conversation-pane:has(.automations-detail-resizer:hover) .automation-detail-pane-divider,
-.conversation-pane:has(.automations-detail-resizer:focus-visible) .automation-detail-pane-divider,
-.conversation-pane:has(.automations-catalog.resizing-detail) .automation-detail-pane-divider {
-  background: var(--review-resizer-hover-bg);
-  box-shadow:
-    -3px 0 0 var(--ink-overlay-4),
-    3px 0 0 var(--ink-overlay-4);
-}
-
 .conversation-pane.skills-assistant-visible .skills-scroll-region {
   padding-bottom: 132px;
 }
@@ -2182,6 +2159,10 @@ html.resizing-workspace-terminal-split * {
   background: var(--paper);
 }
 
+.automations-scroll-region .scroll-region-content {
+  min-height: 100%;
+}
+
 .automations-catalog {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2243,6 +2224,7 @@ html.resizing-workspace-terminal-split * {
 }
 
 .automations-detail-resizer {
+  box-sizing: border-box;
   position: relative;
   width: 10px;
   min-width: 10px;
@@ -2250,8 +2232,30 @@ html.resizing-workspace-terminal-split * {
   border: 0;
   outline: 0;
   background: transparent;
+  padding: 0;
   cursor: col-resize;
   touch-action: none;
+}
+
+.automations-detail-resizer::before {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  background: var(--surface-3);
+  content: "";
+  transform: translateX(-50%);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.automations-detail-resizer:hover::before,
+.automations-detail-resizer:focus-visible::before,
+.automations-catalog.resizing-detail .automations-detail-resizer::before {
+  background: var(--review-resizer-hover-bg);
+  box-shadow:
+    -3px 0 0 var(--ink-overlay-4),
+    3px 0 0 var(--ink-overlay-4);
 }
 
 .automations-filters {
@@ -2454,7 +2458,6 @@ html.resizing-workspace-terminal-split * {
   display: flex;
   justify-content: flex-end;
 }
-
 .automation-schedule-editor {
   display: grid;
   min-width: 0;

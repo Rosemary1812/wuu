@@ -437,6 +437,16 @@ func TestChannelRoomUpdateAndDeleteRPCs(t *testing.T) {
 	if updated.Room.ID != createdRoom.Room.ID || updated.Room.Name != "Delivery" || len(updated.Room.Members) != 2 {
 		t.Fatalf("updated room = %#v", updated.Room)
 	}
+	var createdAgentTwo ChannelAgentCreateResult
+	callChannelRPC(t, server, out, MethodChannelAgentCreate, ChannelAgentCreateParams{Name: "Beta"}, &createdAgentTwo)
+	agentIDs := []string{createdAgent.Agent.ID, createdAgentTwo.Agent.ID}
+	callChannelRPC(t, server, out, MethodChannelRoomUpdate, ChannelRoomUpdateParams{
+		RoomID:   createdRoom.Room.ID,
+		AgentIDs: &agentIDs,
+	}, &updated)
+	if len(updated.Room.Members) != 3 {
+		t.Fatalf("updated room members = %#v, want local human plus two agents", updated.Room.Members)
+	}
 	loaded, err := server.channelService.GetRoom(context.Background(), createdRoom.Room.ID)
 	if err != nil || loaded.Name != "Delivery" {
 		t.Fatalf("persisted room = %#v, err = %v", loaded, err)

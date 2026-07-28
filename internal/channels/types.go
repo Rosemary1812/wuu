@@ -125,8 +125,9 @@ type CreateRoomParams struct {
 }
 
 type UpdateRoomParams struct {
-	RoomID string
-	Name   string
+	RoomID  string
+	Name    *string
+	Members *[]RoomMember
 }
 
 type Message struct {
