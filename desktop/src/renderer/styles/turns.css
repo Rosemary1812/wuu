@@ -616,7 +616,7 @@
 .subagent-chip-list {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
 }
 

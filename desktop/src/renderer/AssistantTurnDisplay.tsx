@@ -1,7 +1,7 @@
 import { type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
-  agentHandoffChipDisplayItem,
+  agentHandoffChipDisplayItems,
   isAgentHandoffItem,
   type SubagentChipDisplay,
 } from "./AgentHandoff";
@@ -49,7 +49,11 @@ export type TurnEntryKind =
   | "answer"
   | "activity"
   | "process"
-  | "process_group";
+  | "process_group"
+  // A turn that only carries subagent notifications (no assistant work yet)
+  // still needs somewhere for the chips to live; this kind renders as a
+  // bare chip row instead of borrowing another entry's chrome.
+  | "subagent_chips";
 
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
@@ -104,7 +108,7 @@ export function buildAssistantTurnDisplay(
     entries.push(entry);
   }
 
-  function appendChip(chip: SubagentChipDisplay): void {
+  function appendChips(chips: SubagentChipDisplay[]): void {
     const previous = entries.at(-1);
     if (
       previous &&
@@ -114,11 +118,11 @@ export function buildAssistantTurnDisplay(
     ) {
       previous.subagentChipsAfter = [
         ...(previous.subagentChipsAfter ?? []),
-        chip,
+        ...chips,
       ];
       return;
     }
-    pendingChips.push(chip);
+    pendingChips.push(...chips);
   }
 
   function isProcessItemLive(item: ThreadItem): boolean {
@@ -158,12 +162,12 @@ export function buildAssistantTurnDisplay(
     if (seenItemIDs.has(item.id)) continue;
     seenItemIDs.add(item.id);
     if (item.type === "user_message") {
-      const chip = isAgentHandoffItem(item)
-        ? agentHandoffChipDisplayItem(item)
-        : undefined;
-      if (chip) {
+      const chips = isAgentHandoffItem(item)
+        ? agentHandoffChipDisplayItems(item)
+        : [];
+      if (chips.length > 0) {
         sawAssistantWork = true;
-        appendChip(chip);
+        appendChips(chips);
       }
       continue;
     }
@@ -259,11 +263,38 @@ export function buildAssistantTurnDisplay(
         position: "process",
         settled: true,
         streaming: false,
-        kind: "process",
+        kind: "subagent_chips",
         subagentChipsAfter: pendingChips,
       });
     }
     pendingChips = [];
+  }
+
+  // Chips must never sit between two text entries: consecutive
+  // commentary/answer reads as one continuous message, and a chip inside it
+  // would land "in the middle of the text". Carry such chips forward to the
+  // tail of the text run (the last text entry before a non-text entry).
+  let carriedChips: SubagentChipDisplay[] = [];
+  const isTextEntry = (entry: TurnEntry): boolean =>
+    entry.kind === "commentary" || entry.kind === "answer";
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    if (!isTextEntry(entry)) {
+      carriedChips = [];
+      continue;
+    }
+    if (carriedChips.length > 0) {
+      entry.subagentChipsAfter = [
+        ...carriedChips,
+        ...(entry.subagentChipsAfter ?? []),
+      ];
+      carriedChips = [];
+    }
+    const next = entries[index + 1];
+    if (next && isTextEntry(next) && entry.subagentChipsAfter?.length) {
+      carriedChips = entry.subagentChipsAfter;
+      delete entry.subagentChipsAfter;
+    }
   }
 
   // For an in_progress turn we always return a display so TurnView keeps

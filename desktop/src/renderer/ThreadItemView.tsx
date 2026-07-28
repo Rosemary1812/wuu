@@ -9,7 +9,8 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp, Plus, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
-import { agentHandoffChipDisplayItem, isAgentHandoffItem } from "./AgentHandoff";
+import { agentHandoffChipDisplayItems, isAgentHandoffItem } from "./AgentHandoff";
+import { SubagentChipList } from "./SubagentChip";
 import {
   clipboardAttachmentFiles,
   composerFileFromFile,
@@ -101,23 +102,14 @@ export function ThreadItemView({
         return null;
       }
       // Item-aware gate: the name field is the reliable wire signal. Even
-      // when the payload text is malformed (combined envelopes with \n\n
-      // joins, <changed_file_overlap> tails), the item-level helper short-
-      // circuits to a generic handoff divider rather than letting raw JSON
-      // slip into the chat bubble.
-      const handoff = isAgentHandoffItem(item)
-        ? agentHandoffChipDisplayItem(item)
-        : undefined;
-      if (handoff) {
-        return (
-          <span
-            className="subagent-chip"
-            role="status"
-            aria-label={handoff.label}
-          >
-            {handoff.label}
-          </span>
-        );
+      // when the payload text is malformed, the item-level helper short-
+      // circuits to a generic chip rather than letting raw JSON slip into
+      // the chat bubble.
+      const handoffChips = isAgentHandoffItem(item)
+        ? agentHandoffChipDisplayItems(item)
+        : [];
+      if (handoffChips.length > 0) {
+        return <SubagentChipList displays={handoffChips} />;
       }
       if (isInternalUserNotificationItem(item)) {
         return null;
