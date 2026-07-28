@@ -1031,8 +1031,12 @@ func (s *Service) UpdateRoom(ctx context.Context, params UpdateRoomParams) (Room
 			if _, keep := desiredAgents[agentID]; keep {
 				continue
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE room_messages SET task_owner = NULL WHERE room_id = ? AND task_owner = ?`, id, agentID); err != nil {
-				return Room{}, fmt.Errorf("clear removed room agent task ownership: %w", err)
+			var ownedTasks int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_messages WHERE room_id = ? AND task_owner = ? AND task_state IN ('open', 'doing')`, id, agentID).Scan(&ownedTasks); err != nil {
+				return Room{}, fmt.Errorf("count removed room agent task ownership: %w", err)
+			}
+			if ownedTasks > 0 {
+				return Room{}, fmt.Errorf("%w: agent %q still owns %d active task(s) in room", ErrConflict, agentID, ownedTasks)
 			}
 			if _, err := tx.ExecContext(ctx, `DELETE FROM room_members WHERE room_id = ? AND member_type = 'agent' AND member_id = ?`, id, agentID); err != nil {
 				return Room{}, fmt.Errorf("remove room agent member: %w", err)

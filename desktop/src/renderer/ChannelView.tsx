@@ -440,6 +440,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         await window.wuu.updateChannelRoom({
           room_id: roomID,
           name,
+          avatar_image: roomAvatarImage,
           agent_ids: roomAgentIDs,
         });
         closeRoomPanel();
@@ -944,9 +945,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               const model = agent.model_override || t("channels.inheritModel");
               return (
                 <div className="channel-directory-row channel-agent-directory-row" key={agent.id}>
-                  <div className="channel-directory-avatar">
+                  <button className="channel-directory-avatar" type="button" aria-label={t("channels.editAgent")} onClick={() => editAgent(agent)}>
                     <AgentAvatar name={agent.name} avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} status={status} statusText={activityText(status)} />
-                  </div>
+                  </button>
                   <button className="channel-directory-identity channel-agent-directory-identity" type="button" onClick={() => editAgent(agent)}>
                     <span><strong>{agent.name}</strong><small>{model} · {t("channels.agentRoomCount", { count: roomCount })}</small></span>
                   </button>
@@ -1137,7 +1138,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               className="channel-room-avatar-preview"
               type="button"
               aria-label={t("channels.customGroupAvatar")}
-              onClick={() => chooseRoomAvatar(editingRoomID)}
+              onClick={() => chooseRoomAvatar("")}
             >
               <ChannelGroupAvatar
                 room={{

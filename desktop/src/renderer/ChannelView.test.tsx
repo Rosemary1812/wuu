@@ -406,10 +406,13 @@ describe("ChannelView", () => {
     const agentRow = container.querySelector(".channel-agent-directory-row");
     expect(agentRow?.classList.contains("channel-directory-row")).toBe(true);
     expect(agentRow?.children).toHaveLength(3);
-    expect(agentRow?.querySelector(".channel-directory-avatar")).not.toBeNull();
+    const agentAvatar = agentRow?.querySelector<HTMLButtonElement>("button.channel-directory-avatar");
+    expect(agentAvatar).not.toBeNull();
     expect(agentRow?.querySelector(".channel-directory-identity")?.textContent).toContain("Alpha");
     expect(agentRow?.querySelectorAll(".channel-directory-settings")).toHaveLength(1);
     expect(agentRow?.querySelector(".channel-agent-directory-actions")).toBeNull();
+    act(() => agentAvatar?.click());
+    expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("编辑 Agent");
 
     act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("156");
@@ -537,6 +540,7 @@ describe("ChannelView", () => {
     expect(api.updateChannelRoom).toHaveBeenCalledWith({
       room_id: "room-2",
       name: "research",
+      avatar_image: "",
       agent_ids: ["agent-1"],
     });
 

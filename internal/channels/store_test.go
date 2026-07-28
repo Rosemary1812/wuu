@@ -342,6 +342,61 @@ func TestUpdateRoomReplacesAgentMembersWithoutResettingUnchangedCursors(t *testi
 	}
 }
 
+func TestUpdateRoomRejectsRemovingAgentWithOwnedTasks(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	alpha := createTestAgent(t, service, "Alpha")
+	beta := createTestAgent(t, service, "Beta")
+	room := createTestRoom(t, service, alpha, beta)
+	task, err := service.CreateTaskHuman(ctx, TaskCreateParams{
+		RoomID: room.ID, Title: "Investigate", OwnerID: alpha.Agent.ID, HumanID: "human-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateTaskHuman() error = %v", err)
+	}
+
+	members := []RoomMember{{MemberType: MemberAgent, MemberID: beta.Agent.ID}}
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Members: &members}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("UpdateRoom(remove task owner) error = %v, want ErrConflict", err)
+	}
+
+	var memberships int
+	if err := service.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID).Scan(&memberships); err != nil {
+		t.Fatal(err)
+	}
+	if memberships != 1 {
+		t.Fatalf("Alpha memberships = %d, want 1 after rejected update", memberships)
+	}
+	var owner string
+	if err := service.db.QueryRowContext(ctx, `SELECT task_owner FROM room_messages WHERE id = ?`, task.ID).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != alpha.Agent.ID {
+		t.Fatalf("task owner = %q, want %q after rejected update", owner, alpha.Agent.ID)
+	}
+
+	if _, err := service.UpdateTask(ctx, TaskUpdateParams{
+		TaskID: task.ID, State: TaskStateDone, AgentID: alpha.Agent.ID, Token: alpha.Token,
+	}); err != nil {
+		t.Fatalf("UpdateTask(done) error = %v", err)
+	}
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Members: &members}); err != nil {
+		t.Fatalf("UpdateRoom(remove completed task owner) error = %v", err)
+	}
+	if err := service.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID).Scan(&memberships); err != nil {
+		t.Fatal(err)
+	}
+	if memberships != 0 {
+		t.Fatalf("Alpha memberships = %d, want 0 after task completed", memberships)
+	}
+	if err := service.db.QueryRowContext(ctx, `SELECT task_owner FROM room_messages WHERE id = ?`, task.ID).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != alpha.Agent.ID {
+		t.Fatalf("completed task owner = %q, want historical owner %q", owner, alpha.Agent.ID)
+	}
+}
+
 func TestDeleteRoomCascadesRoomDataAndPreservesNamedAgent(t *testing.T) {
 	ctx := context.Background()
 	service := openTestService(t, nil)
