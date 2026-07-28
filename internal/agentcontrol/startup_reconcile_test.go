@@ -91,10 +91,27 @@ func TestNew_MarksOrphanedRunningTaskInterrupted(t *testing.T) {
 	dir := t.TempDir()
 	harnessDir := filepath.Join(dir, "harness")
 	historyDir := filepath.Join(dir, "workers")
+	threadDir := filepath.Join(dir, "threads")
 	startedAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
 
 	seedOrphanHarnessTask(t, harnessDir, "wk-orphan", harness.TaskStatusRunning, startedAt)
 	writeResumeSnapshot(t, historyDir, "wk-orphan", subagent.ResumeSnapshotVersion, dir, "running")
+	if err := agentthread.NewStore(threadDir).UpsertThread(agentthread.Metadata{
+		ID:        "wk-orphan",
+		ParentID:  "sess-reconcile",
+		Path:      agentthread.RootPath + "/wk-orphan",
+		TaskName:  "wk-orphan",
+		Role:      DefaultSubagentType,
+		Status:    agentthread.StatusRunning,
+		CreatedAt: startedAt,
+		UpdatedAt: startedAt,
+		Source: agentthread.Source{
+			Kind:       agentthread.SourceThreadSpawn,
+			ParentPath: agentthread.RootPath,
+		},
+	}); err != nil {
+		t.Fatalf("seed child thread: %v", err)
+	}
 
 	client := &recordingClient{resp: providers.ChatResponse{Content: "resumed after crash"}}
 	c := reconcileTestControl(t, dir, client)
@@ -131,6 +148,20 @@ func TestNew_MarksOrphanedRunningTaskInterrupted(t *testing.T) {
 	}
 	if !strings.Contains(run.Error, "interrupted") {
 		t.Fatalf("snapshot error should carry the reason, got %q", run.Error)
+	}
+	threads, err := agentthread.NewStore(threadDir).ListThreads()
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	var persistedChild *agentthread.Metadata
+	for index := range threads {
+		if threads[index].ID == "wk-orphan" {
+			persistedChild = &threads[index]
+			break
+		}
+	}
+	if persistedChild == nil || persistedChild.Status != agentthread.StatusFailed {
+		t.Fatalf("persisted child thread must be terminal after reconciliation, got %+v", threads)
 	}
 
 	// CountRunning must not see the settled orphan.

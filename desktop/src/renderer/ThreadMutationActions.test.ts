@@ -192,6 +192,30 @@ describe("createThreadMutationActions", () => {
     expect(harness.getAppState().activeSessionTabID).toBe("draft:fallback");
   });
 
+  it("allows archiving after crash recovery settles a child agent", async () => {
+    const context = projectContext();
+    const child = {
+      id: "agent-interrupted",
+      status: "failed",
+    } as Agent;
+    const base = { ...thread(), child_agents: [child] };
+    const api = installWuuApi(base);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: base,
+        threads: [base],
+        status: "ready",
+      },
+    });
+
+    const outcome = await harness.actions.archiveThread(summary(base));
+
+    expect(outcome).toEqual({ ok: true });
+    expect(api.archiveThread).toHaveBeenCalledWith(base.id, true);
+  });
+
   it("reports a running thread instead of claiming it was archived", async () => {
     const context = projectContext();
     const base = { ...thread(), status: "in_progress" as const };

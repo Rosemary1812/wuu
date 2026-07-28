@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -138,5 +139,19 @@ func TestAgentThreadModelInheritsRootUnlessSnapshotIsPinned(t *testing.T) {
 	}, now)
 	if pinned.ModelProvider != "anthropic" || pinned.Model != "sonnet-4" {
 		t.Fatalf("pinned model = %s/%s, want anthropic/sonnet-4", pinned.ModelProvider, pinned.Model)
+	}
+}
+
+func TestTurnStatusForInterruptedSubAgentSnapshot(t *testing.T) {
+	reason := errors.New("interrupted: previous process exited")
+	status, err := turnStatusForSubAgentSnapshot(subagent.SubAgentSnapshot{
+		Status: subagent.StatusInterrupted,
+		Error:  reason,
+	})
+	if status != TurnStatusInterrupted {
+		t.Fatalf("status = %q, want %q", status, TurnStatusInterrupted)
+	}
+	if !errors.Is(err, reason) {
+		t.Fatalf("error = %v, want %v", err, reason)
 	}
 }
