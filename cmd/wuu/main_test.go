@@ -1708,10 +1708,11 @@ func installExecControllerOverride(t *testing.T, controller wuuexec.Controller) 
 }
 
 type fakeDebugAppServerClient struct {
-	opts     debugAppServerOptions
-	calls    []fakeDebugCall
-	results  map[string]json.RawMessage
-	shutdown bool
+	opts         debugAppServerOptions
+	calls        []fakeDebugCall
+	results      map[string]json.RawMessage
+	resultQueues map[string][]json.RawMessage
+	shutdown     bool
 }
 
 type fakeDebugCall struct {
@@ -1731,6 +1732,10 @@ func (f *fakeDebugAppServerClient) Call(_ context.Context, method string, params
 	f.calls = append(f.calls, fakeDebugCall{method: method, params: rawParams})
 
 	data := f.results[method]
+	if queued := f.resultQueues[method]; len(queued) > 0 {
+		data = queued[0]
+		f.resultQueues[method] = queued[1:]
+	}
 	if len(data) == 0 {
 		data = json.RawMessage(`null`)
 	}
@@ -2194,6 +2199,89 @@ func TestRunDebugAppServerSendForwardsMethodAndParams(t *testing.T) {
 	thread := payload["thread"].(map[string]any)
 	if thread["id"] != "thread-1" {
 		t.Fatalf("unexpected output: %+v", payload)
+	}
+}
+
+func TestRunDebugChannelInspectResolvesRoomNameAndListsMessages(t *testing.T) {
+	client := &fakeDebugAppServerClient{results: map[string]json.RawMessage{
+		appserver.MethodChannelBootstrap:   json.RawMessage(`{"agents":[{"id":"agent-1","name":"Alpha","memory_dir":"/tmp/alpha","avatar_key":"","autostart":true,"created_at":"2026-07-28T00:00:00Z"}],"rooms":[{"id":"room-1","kind":"group","name":"Review","created_by":"local-user","created_at":"2026-07-28T00:00:00Z","members":[]}]}`),
+		appserver.MethodChannelMessageList: json.RawMessage(`{"messages":[{"id":"message-1","room_id":"room-1","seq":4,"author_type":"human","author_id":"local-user","kind":"text","body":"status?","mentions":[],"created_at":"2026-07-28T00:00:00Z"}]}`),
+	}}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"debug", "channel", "inspect", "--room", "review", "--after", "3"}); err != nil {
+			t.Fatalf("run debug channel inspect: %v", err)
+		}
+	})
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["room"].(map[string]any)["id"] != "room-1" || len(payload["messages"].([]any)) != 1 {
+		t.Fatalf("unexpected inspect output: %+v", payload)
+	}
+	if len(client.calls) != 2 || client.calls[1].method != appserver.MethodChannelMessageList {
+		t.Fatalf("unexpected calls: %+v", client.calls)
+	}
+}
+
+func TestRunDebugChannelSendWaitsForAgentReply(t *testing.T) {
+	client := &fakeDebugAppServerClient{
+		results: map[string]json.RawMessage{
+			appserver.MethodChannelBootstrap:   json.RawMessage(`{"agents":[],"rooms":[{"id":"room-1","kind":"group","name":"Review","created_by":"local-user","created_at":"2026-07-28T00:00:00Z","members":[]}]}`),
+			appserver.MethodChannelMessageSend: json.RawMessage(`{"message":{"id":"message-1","room_id":"room-1","seq":5,"author_type":"human","author_id":"local-user","kind":"text","body":"@Alpha review","mentions":["agent-1"],"created_at":"2026-07-28T00:00:00Z"}}`),
+		},
+		resultQueues: map[string][]json.RawMessage{
+			appserver.MethodChannelMessageList: {
+				json.RawMessage(`{"messages":[]}`),
+				json.RawMessage(`{"messages":[{"id":"message-2","room_id":"room-1","seq":6,"author_type":"agent","author_id":"agent-1","kind":"text","body":"done","mentions":[],"created_at":"2026-07-28T00:00:01Z"}]}`),
+			},
+		},
+	}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"debug", "channel", "send", "--room", "room-1", "--wait", "2s", "@Alpha", "review"}); err != nil {
+			t.Fatalf("run debug channel send: %v", err)
+		}
+	})
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["reply_count"] != float64(1) || payload["timed_out"] != false {
+		t.Fatalf("unexpected send output: %+v", payload)
+	}
+	if !client.shutdown {
+		t.Fatal("debug channel client should be shut down")
+	}
+}
+
+func TestRunDebugChannelSendPrintsTimeoutResult(t *testing.T) {
+	client := &fakeDebugAppServerClient{results: map[string]json.RawMessage{
+		appserver.MethodChannelBootstrap:   json.RawMessage(`{"agents":[],"rooms":[{"id":"room-1","kind":"group","name":"Review","created_by":"local-user","created_at":"2026-07-28T00:00:00Z","members":[]}]}`),
+		appserver.MethodChannelMessageSend: json.RawMessage(`{"message":{"id":"message-1","room_id":"room-1","seq":5,"author_type":"human","author_id":"local-user","kind":"text","body":"@Alpha review","mentions":["agent-1"],"created_at":"2026-07-28T00:00:00Z"}}`),
+		appserver.MethodChannelMessageList: json.RawMessage(`{"messages":[]}`),
+	}}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	var runErr error
+	output := captureStdout(t, func() {
+		runErr = run([]string{"debug", "channel", "send", "--room", "room-1", "--wait", "1ms", "@Alpha", "review"})
+	})
+	if wuuexec.ExitCode(runErr) != wuuexec.ExitTimeout {
+		t.Fatalf("exit code = %d, err = %v", wuuexec.ExitCode(runErr), runErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["timed_out"] != true || payload["reply_count"] != float64(0) {
+		t.Fatalf("unexpected timeout output: %+v", payload)
 	}
 }
 

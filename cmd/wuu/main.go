@@ -1185,6 +1185,8 @@ func runDebug(args []string) error {
 	switch args[0] {
 	case "app-server":
 		return runDebugAppServer(args[1:])
+	case "channel":
+		return runDebugChannel(args[1:])
 	case "protocol":
 		return runDebugProtocol(args[1:])
 	default:
@@ -2238,6 +2240,8 @@ Usage:
   wuu skills lint [--json] PATH...
   wuu debug app-server initialize [flags]
   wuu debug app-server send [flags] METHOD [JSON]
+  wuu debug channel inspect [flags]
+  wuu debug channel send [flags] "message"
   wuu debug protocol events [flags] THREAD_ID
   wuu run [flags] "your coding task"
   wuu eval [flags]
@@ -2316,6 +2320,10 @@ Debug commands:
                    start a local app-server and print its initialize result
   app-server send [flags] METHOD [JSON]
                    send one app-server method and print the raw JSON result
+  channel inspect [--room ID|NAME] [--after SEQ] [--limit N] [app-server flags]
+                   inspect persistent rooms and optionally one room's messages
+  channel send --room ID|NAME [--wait DURATION] [--replies N] [app-server flags] "message"
+                   send through the real channel path and optionally wait for agent replies
   protocol events [--json] [--workdir DIR] THREAD_ID
                    print trace JSONL events recorded for a session
 

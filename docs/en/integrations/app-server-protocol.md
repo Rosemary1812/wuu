@@ -310,6 +310,8 @@ for agents, scripts, and developers that need to inspect the core path directly.
 ```bash
 wuu debug app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]
 wuu debug app-server send [--workdir DIR] <method> '<json>'
+wuu debug channel inspect [--room ID|NAME] [--after SEQ] [--limit N]
+wuu debug channel send --room ID|NAME [--wait DURATION] [--replies N] "message"
 wuu debug protocol events [--json] [--workdir DIR] <thread-id>
 ```
 
@@ -319,6 +321,16 @@ wuu debug protocol events [--json] [--workdir DIR] <thread-id>
 `wuu debug app-server send` starts a local app-server instance, sends one
 method with optional JSON params, prints the JSON result, and shuts the server
 down. This is the lowest-level CLI probe for app-server methods.
+
+`wuu debug channel inspect` and `wuu debug channel send` are higher-level,
+agent-facing probes for persistent group chat. They still use the public
+app-server methods rather than reading the channel database directly. `inspect`
+lists the real rooms and agents and can include one room's messages. `send`
+keeps the same local app-server alive while it waits for asynchronous named-agent
+replies, so it exercises the same persistence, mention, wake, provider, and
+message paths as the desktop. Both commands print one JSON value to stdout;
+`send` returns the timeout exit code when `--wait` does not observe the requested
+number of replies.
 
 `wuu debug protocol events` reads the stored session trace and prints the raw
 JSONL trace events. With `--json`, it wraps the events with the thread id and
