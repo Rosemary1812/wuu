@@ -61,8 +61,22 @@ describe("AutomationsCatalog", () => {
       .find((button) => button.textContent?.includes("新建自动化"));
     expect(createButton?.closest(".automations-heading-row")).toBeTruthy();
     expect(createButton?.closest(".catalog-page-controls")).toBeNull();
+    // The workspace picker lives in the new-draft detail, not the page header.
+    expect(container.querySelector(".automations-heading-row .settings-select-trigger")).toBeNull();
     await act(async () => {
       createButton?.click();
+      await Promise.resolve();
+    });
+
+    // Nothing is created until the draft's create action runs.
+    expect(createAutomation).not.toHaveBeenCalled();
+    const workspaceTrigger = container.querySelector<HTMLButtonElement>('.automation-workspace-field [aria-label="工作区"]');
+    expect(workspaceTrigger?.textContent).toContain("Example");
+
+    const submit = container.querySelector<HTMLButtonElement>(".automation-detail-create-bar button");
+    expect(submit?.disabled).toBe(false);
+    await act(async () => {
+      submit?.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -75,9 +89,96 @@ describe("AutomationsCatalog", () => {
       workspace_id: "project-1",
       workspace_path: "/workspaces/example",
     }));
+    // After creation the workspace locks to static text.
     expect(container.querySelector(".automation-workspace-field")?.textContent)
       .toContain("/workspaces/example");
+    expect(container.querySelector('.automation-workspace-field [aria-label="工作区"]')).toBeNull();
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.rows).toBe(4);
+  });
+
+  it("lets the draft pick a different workspace before creating", async () => {
+    const other: DesktopProject = {
+      id: "project-2",
+      name: "Second",
+      path: "/workspaces/second",
+      created_at: "2026-07-27T00:00:00Z",
+      updated_at: "2026-07-27T00:00:00Z",
+    };
+    const createAutomation = vi.fn().mockImplementation(async (params) => ({
+      task: {
+        ...task,
+        id: "automation-new",
+        workspaceId: params.workspace_id,
+        workspacePath: params.workspace_path,
+      },
+    }));
+    installApi([], vi.fn(), createAutomation);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog projects={[project, other]} activeProjectID={project.id} />);
+    });
+
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("新建自动化"));
+    await act(async () => {
+      createButton?.click();
+      await Promise.resolve();
+    });
+
+    const workspaceTrigger = container.querySelector<HTMLButtonElement>('.automation-workspace-field [aria-label="工作区"]');
+    expect(workspaceTrigger?.textContent).toContain("Example");
+    await chooseSelectMenu(workspaceTrigger!, "project-2");
+
+    const submit = container.querySelector<HTMLButtonElement>(".automation-detail-create-bar button");
+    await act(async () => {
+      submit?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      workspace_id: "project-2",
+      workspace_path: "/workspaces/second",
+    }));
+  });
+
+  it("discards an unsaved draft without creating", async () => {
+    const createAutomation = vi.fn();
+    installApi([], vi.fn(), createAutomation);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog projects={[project]} activeProjectID={project.id} />);
+    });
+
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("新建自动化"));
+    await act(async () => {
+      createButton?.click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector(".automations-detail")).toBeTruthy();
+
+    const close = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.getAttribute("aria-label") === "关闭详情");
+    await act(async () => {
+      close?.click();
+      await Promise.resolve();
+    });
+
+    expect(createAutomation).not.toHaveBeenCalled();
+    expect(container.querySelector(".automations-detail")).toBeNull();
+  });
+
+  it("disables creation when no workspace is available", async () => {
+    installApi([], vi.fn(), vi.fn());
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog />);
+    });
+
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("新建自动化"));
+    expect(createButton?.disabled).toBe(true);
   });
 
   it("does not white-screen when listAutomations returns tasks: null", async () => {

@@ -2226,11 +2226,6 @@ html.resizing-workspace-terminal-split * {
   gap: 8px;
 }
 
-.automation-workspace-trigger {
-  width: min(240px, 24vw);
-  min-width: 150px;
-}
-
 .automations-catalog.detail-open .catalog-page-header {
   gap: 20px;
 }
@@ -2453,6 +2448,11 @@ html.resizing-workspace-terminal-split * {
   font-weight: var(--weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.automation-detail-create-bar {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .automation-schedule-editor {
