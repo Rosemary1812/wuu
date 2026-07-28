@@ -1,5 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AppLocale, LanguagePreference } from "../../shared/protocol";
+import {
+  resolveAppLocale,
+  type AppLocale,
+  type LanguagePreference,
+} from "../../shared/protocol";
 import { enUS } from "./resources/en-US";
 import { zhCN, type TranslationKey } from "./resources/zh-CN";
 
@@ -104,8 +108,7 @@ export function resolveLocale(
   preference: LanguagePreference,
   systemLocale: string = navigator.language,
 ): AppLocale {
-  if (preference !== "system") return preference;
-  return systemLocale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+  return resolveAppLocale(preference, systemLocale);
 }
 
 export function translate(

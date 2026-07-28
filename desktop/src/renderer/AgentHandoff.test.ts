@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_NOTIFICATION_NAME,
+  agentHandoffChipDisplayItem,
   agentHandoffDisplay,
   agentHandoffDisplayItem,
   isAgentHandoffItem,
@@ -45,6 +46,17 @@ describe("agentHandoffDisplay", () => {
     expect(agentHandoffDisplay(handoffText("queued"))?.label).toBe(
       "subagent 等待执行任务"
     );
+  });
+
+  it("formats handoffs as compact named chips", () => {
+    const item = {
+      name: AGENT_NOTIFICATION_NAME,
+      text: handoffText("completed"),
+    };
+    expect(agentHandoffChipDisplayItem(item)).toEqual({
+      label: "explore_current_directory 完成了",
+      shimmer: true,
+    });
   });
 
   it("does not treat normal user text as an internal handoff", () => {

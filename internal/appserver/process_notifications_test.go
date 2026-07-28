@@ -261,6 +261,73 @@ func TestProcessCompletionHistoryMarkerPreventsDuplicateModelTurn(t *testing.T) 
 	}
 }
 
+func TestQueuedProcessCompletionAlreadyAnsweredSkipsProvider(t *testing.T) {
+	mainClient := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+	rt := newTestRuntime(t, mainClient)
+	manager, err := process.NewManager(rt.RootDir, filepath.Join(rt.RootDir, "process-runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := "thread-queued-process-already-answered"
+	threadRuntime := &runtime.ThreadRuntime{StreamRunner: rt.StreamRunner, ProcessManager: manager}
+	out := &lockedBuffer{}
+	server := New(rt, out)
+	t.Cleanup(server.Close)
+	started, err := manager.Start(context.Background(), process.StartOptions{
+		Command:   "printf 'done\\n'",
+		OwnerKind: process.OwnerMainAgent,
+		OwnerID:   threadID,
+		Lifecycle: process.LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		pending, err := manager.CompletionPending(started.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pending {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "run and continue"},
+		{Role: "user", ClientID: processCompletionClientID([]string{started.ID}), Content: "process done"},
+		{Role: "assistant", ClientID: processCompletionAnswerClientIDPrefix + started.ID, Content: "already handled"},
+	}
+	rootThread := newThreadState(threadID, history, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
+	rootThread.execRuntime = threadRuntime
+	server.mu.Lock()
+	server.threads[threadID] = rootThread
+	server.mu.Unlock()
+	rootThread.runtimeSubscription = server.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
+
+	queuedID := processCompletionClientID([]string{started.ID})
+	startedTurn, err := server.startQueuedTurn(context.Background(), threadID, queuedTurn{
+		id:       queuedID,
+		msg:      providers.ChatMessage{Role: "user", ClientID: queuedID, Content: "process done"},
+		snapshot: turnRuntimeSnapshot{ProcessCompletionIDs: []string{started.ID}},
+	})
+	if err != nil {
+		t.Fatalf("startQueuedTurn: %v", err)
+	}
+	if !startedTurn {
+		t.Fatal("already answered queued completion should be settled")
+	}
+	assertFakeClientRequestCount(t, mainClient, 0)
+	pending, err := manager.CompletionPending(started.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending {
+		t.Fatal("answered process completion was not marked delivered")
+	}
+}
+
 func TestProcessCompletionDrainYieldsToQueuedUserWork(t *testing.T) {
 	threadID := "thread-user-priority"
 	server := &Server{

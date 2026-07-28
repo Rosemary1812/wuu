@@ -44,10 +44,10 @@ export type AutomationDetailPaneLayout = {
 };
 
 const AUTOMATION_DETAIL_WIDTH_KEY = "wuu.desktop.automationDetailPaneWidth";
-const AUTOMATION_DETAIL_DEFAULT_WIDTH = 520;
-const AUTOMATION_DETAIL_MIN_WIDTH = 360;
+const AUTOMATION_DETAIL_DEFAULT_WIDTH = 560;
+const AUTOMATION_DETAIL_MIN_WIDTH = 480;
 const AUTOMATION_DETAIL_MAX_WIDTH = 760;
-const AUTOMATION_MASTER_MIN_WIDTH = 320;
+const AUTOMATION_MASTER_MIN_WIDTH = 340;
 const AUTOMATION_DETAIL_RESIZER_WIDTH = 10;
 const AUTOMATION_DETAIL_WIDTH_STEP = 32;
 
@@ -90,11 +90,9 @@ export function AutomationsCatalog({
   const [detailWidth, setDetailWidth] = useState(initialDetailWidth);
   const [resizingDetail, setResizingDetail] = useState(false);
   const availableProjects = useMemo(() => projects.filter((project) => !project.missing), [projects]);
-  const [newAutomationProjectID, setNewAutomationProjectID] = useState(() => (
-    projects.some((project) => project.id === activeProjectID && !project.missing)
-      ? activeProjectID
-      : projects.find((project) => !project.missing)?.id ?? ""
-  ));
+  // Non-null while the detail pane shows an unsaved "new automation" draft;
+  // the task only exists server-side once the draft's create action succeeds.
+  const [pendingNew, setPendingNew] = useState<{ workspaceID: string } | null>(null);
   const resizeStartRef = useRef({ x: 0, width: AUTOMATION_DETAIL_DEFAULT_WIDTH });
 
   async function load(): Promise<void> {
@@ -102,8 +100,9 @@ export function AutomationsCatalog({
     setError("");
     try {
       const result = await window.wuu.listAutomations();
-      setTasks(result.tasks ?? []);
-      setSelectedID((current) => result.tasks.some((task) => task.id === current) ? current : "");
+      const tasks = result.tasks ?? [];
+      setTasks(tasks);
+      setSelectedID((current) => (tasks.some((task) => task.id === current) ? current : ""));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : translateCurrent("automations.loadFailed"));
     } finally {
@@ -112,14 +111,6 @@ export function AutomationsCatalog({
   }
 
   useEffect(() => { void load(); }, []);
-
-  useEffect(() => {
-    setNewAutomationProjectID((current) => {
-      if (availableProjects.some((project) => project.id === current)) return current;
-      if (availableProjects.some((project) => project.id === activeProjectID)) return activeProjectID;
-      return availableProjects[0]?.id ?? "";
-    });
-  }, [activeProjectID, availableProjects]);
 
   const visibleTasks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -131,6 +122,21 @@ export function AutomationsCatalog({
     });
   }, [filter, query, tasks]);
   const selected = tasks.find((task) => task.id === selectedID);
+  // Synthetic task carrying the defaults for the unsaved new-automation draft;
+  // AutomationDetail seeds its field draft from it. Never rendered in the list.
+  const pendingTask: AutomationTask | null = pendingNew === null ? null : {
+    id: "__new__",
+    title: t("automations.newTitle"),
+    prompt: "",
+    cron: "0 9 * * 1-5",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    mode: "new_thread",
+    createdAt: 0,
+    recurring: true,
+    paused: true,
+  };
+  const detailTask = selected ?? pendingTask;
+  const detailOpen = detailTask != null;
 
   const updateDetailWidth = useCallback((width: number): void => {
     const nextWidth = clampDetailWidth(width, catalogRef.current?.clientWidth);
@@ -140,14 +146,14 @@ export function AutomationsCatalog({
 
   useEffect(() => {
     onDetailPaneLayoutChange?.({
-      open: Boolean(selectedID),
-      reservedWidth: selectedID ? detailWidth + AUTOMATION_DETAIL_RESIZER_WIDTH : 0,
+      open: detailOpen,
+      reservedWidth: detailOpen ? detailWidth + AUTOMATION_DETAIL_RESIZER_WIDTH : 0,
     });
-  }, [detailWidth, onDetailPaneLayoutChange, selectedID]);
+  }, [detailWidth, onDetailPaneLayoutChange, detailOpen]);
 
   useEffect(() => {
     const catalog = catalogRef.current;
-    if (!catalog || !selectedID) return;
+    if (!catalog || !detailOpen) return;
     const fitDetailToCatalog = (): void => {
       setDetailWidth((current) => {
         const next = clampDetailWidth(current, catalog.clientWidth);
@@ -162,7 +168,7 @@ export function AutomationsCatalog({
     const observer = new ResizeObserver(fitDetailToCatalog);
     observer.observe(catalog);
     return () => observer.disconnect();
-  }, [selectedID]);
+  }, [detailOpen]);
 
   useEffect(() => {
     if (!resizingDetail) return;
@@ -210,29 +216,42 @@ export function AutomationsCatalog({
     }
   }
 
-  async function create(): Promise<void> {
+  function startCreate(): void {
+    if (availableProjects.length === 0) return;
+    setSelectedID("");
+    const workspaceID = availableProjects.some((project) => project.id === activeProjectID)
+      ? activeProjectID
+      : availableProjects[0].id;
+    setPendingNew({ workspaceID });
+  }
+
+  async function createFromDraft(draft: AutomationDraft, workspaceID: string): Promise<boolean> {
     setError("");
-    const project = availableProjects.find((candidate) => candidate.id === newAutomationProjectID);
+    const project = availableProjects.find((candidate) => candidate.id === workspaceID);
     if (!project) {
       setError(t("automations.workspaceRequired"));
-      return;
+      return false;
     }
     try {
       const result = await window.wuu.createAutomation({
-        title: t("automations.newTitle"),
-        prompt: "",
-        schedule: "0 9 * * 1-5",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        mode: "new_thread",
+        title: draft.title,
+        prompt: draft.prompt,
+        schedule: draft.schedule,
+        timezone: draft.timezone,
+        mode: draft.mode,
+        heartbeat_thread_id: draft.heartbeatThreadID || undefined,
         workspace_id: project.id,
         workspace_path: project.path,
-        recurring: true,
+        recurring: draft.recurring,
         paused: true,
       });
       setTasks((current) => [result.task, ...current]);
+      setPendingNew(null);
       setSelectedID(result.task.id);
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : translateCurrent("automations.createFailed"));
+      return false;
     }
   }
 
@@ -257,7 +276,7 @@ export function AutomationsCatalog({
   return (
     <section
       ref={catalogRef}
-      className={`automations-catalog${selected ? " detail-open" : ""}${resizingDetail ? " resizing-detail" : ""}`}
+      className={`automations-catalog${detailOpen ? " detail-open" : ""}${resizingDetail ? " resizing-detail" : ""}`}
       aria-label={t("automations.title")}
       style={{ "--automation-detail-pane-width": `${detailWidth}px` } as CSSProperties}
     >
@@ -269,21 +288,9 @@ export function AutomationsCatalog({
               <span>{t("automations.subtitle")}</span>
             </div>
             <div className="automation-create-controls">
-              <SelectMenu
-                value={newAutomationProjectID}
-                onChange={setNewAutomationProjectID}
-                options={availableProjects.map((project) => ({
-                  value: project.id,
-                  label: project.name,
-                  hint: project.path,
-                }))}
-                placeholder={t("automations.workspaceUnavailable")}
-                ariaLabel={t("automations.workspace")}
-                triggerClassName="settings-select-trigger automation-workspace-trigger"
-                align="right"
-              />
               <button className="settings-button catalog-create" type="button"
-                disabled={!newAutomationProjectID} onClick={() => void create()}>
+                aria-label={t("automations.create")}
+                disabled={availableProjects.length === 0} onClick={startCreate}>
                 <Plus className="icon" aria-hidden="true" />
                 <span>{t("automations.create")}</span>
               </button>
@@ -319,7 +326,7 @@ export function AutomationsCatalog({
           {!loading && visibleTasks.length === 0 ? <div className="automations-empty">{t("automations.empty")}</div> : null}
           {visibleTasks.map((task) => (
             <button key={task.id} type="button" className={`automation-row${task.id === selectedID ? " selected" : ""}`}
-              onClick={() => setSelectedID(task.id)}>
+              onClick={() => { setPendingNew(null); setSelectedID(task.id); }}>
               <span
                 className={`automation-state${task.paused ? " paused" : ""}`}
                 role="img"
@@ -334,7 +341,7 @@ export function AutomationsCatalog({
           ))}
         </div>
       </div>
-      {selected ? (
+      {detailTask ? (
         <>
           <button
             className="automations-detail-resizer"
@@ -350,9 +357,14 @@ export function AutomationsCatalog({
             onDoubleClick={() => updateDetailWidth(AUTOMATION_DETAIL_DEFAULT_WIDTH)}
           />
           <div className="automations-detail">
-            <AutomationDetail key={selected.id} task={selected}
+            <AutomationDetail key={detailTask.id} task={detailTask}
+              creating={pendingTask !== null && !selected}
+              projects={availableProjects}
+              initialWorkspaceID={pendingNew?.workspaceID ?? ""}
+              onCreate={createFromDraft}
               onUpdate={update} onRemove={remove}
-              onSaveRejected={showSaveRejectedNotice} onClose={() => setSelectedID("")} />
+              onSaveRejected={showSaveRejectedNotice}
+              onClose={() => { setPendingNew(null); setSelectedID(""); }} />
           </div>
         </>
       ) : null}
@@ -572,12 +584,20 @@ function AutomationScheduleEditor({
   );
 }
 
-function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }: {
+function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, creating = false, projects = [], initialWorkspaceID = "", onCreate }: {
   task: AutomationTask;
   onUpdate: (params: AutomationUpdateParams) => Promise<void>;
   onRemove: (task: AutomationTask) => Promise<void>;
   onSaveRejected: () => void;
   onClose: () => void;
+  // creating: the task is an unsaved draft. Fields buffer locally, the
+  // workspace stays selectable, and nothing persists until the create action
+  // runs. After creation the workspace is locked (it owns scheduling, so
+  // rebinding would be a migration, not an edit).
+  creating?: boolean;
+  projects?: DesktopProject[];
+  initialWorkspaceID?: string;
+  onCreate?: (draft: AutomationDraft, workspaceID: string) => Promise<boolean>;
 }): JSX.Element {
   const { t } = useI18n();
   const initialDraft = useMemo(() => draftFromAutomation(task), [task.id]);
@@ -585,6 +605,8 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
   const latestDraftRef = useRef(initialDraft);
   const lastSavedDraftRef = useRef(initialDraft);
   const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const [workspaceID, setWorkspaceID] = useState(initialWorkspaceID);
+  const [submitting, setSubmitting] = useState(false);
 
   function updateDraft(next: AutomationDraft): void {
     latestDraftRef.current = next;
@@ -592,6 +614,7 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
   }
 
   function persistDraft(candidate = latestDraftRef.current): Promise<boolean> {
+    if (creating) return Promise.resolve(true);
     const snapshot = { ...candidate };
     const queued = saveQueueRef.current.then(async () => {
       if (draftsMatch(snapshot, lastSavedDraftRef.current)) return true;
@@ -623,8 +646,15 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
   }
 
   async function closeDetails(): Promise<void> {
-    await persistDraft();
+    if (!creating) await persistDraft();
     onClose();
+  }
+
+  async function submitCreate(): Promise<void> {
+    if (!onCreate || submitting) return;
+    setSubmitting(true);
+    const created = await onCreate({ ...latestDraftRef.current }, workspaceID);
+    if (!created) setSubmitting(false);
   }
 
   async function togglePaused(): Promise<void> {
@@ -650,12 +680,16 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
             />
           </label>
         <div className="automation-detail-actions">
-          <button className="icon-button" type="button" aria-label={task.paused ? t("automations.resume") : t("automations.pause")}
-            onClick={() => void togglePaused()}>
-            {task.paused ? <Play className="icon" /> : <Pause className="icon" />}
-          </button>
-          <button className="icon-button danger" type="button" aria-label={t("automations.delete")}
-            onClick={() => void onRemove(task)}><Trash2 className="icon" /></button>
+          {creating ? null : (
+            <>
+              <button className="icon-button" type="button" aria-label={task.paused ? t("automations.resume") : t("automations.pause")}
+                onClick={() => void togglePaused()}>
+                {task.paused ? <Play className="icon" /> : <Pause className="icon" />}
+              </button>
+              <button className="icon-button danger" type="button" aria-label={t("automations.delete")}
+                onClick={() => void onRemove(task)}><Trash2 className="icon" /></button>
+            </>
+          )}
           <button className="icon-button" type="button" aria-label={t("automations.closeDetails")} onClick={() => void closeDetails()}>
             <X className="icon" />
           </button>
@@ -676,7 +710,22 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
         <div className="automation-detail-grid">
           <div className="automation-workspace-field">
             <span>{t("automations.workspace")}</span>
-            <strong title={task.workspacePath}>{task.workspacePath || t("automations.workspaceUnavailable")}</strong>
+            {creating ? (
+              <SelectMenu
+                value={workspaceID}
+                onChange={setWorkspaceID}
+                options={projects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                  hint: project.path,
+                }))}
+                placeholder={t("automations.workspaceUnavailable")}
+                ariaLabel={t("automations.workspace")}
+                triggerClassName="settings-select-trigger"
+              />
+            ) : (
+              <strong title={task.workspacePath}>{task.workspacePath || t("automations.workspaceUnavailable")}</strong>
+            )}
           </div>
           <AutomationScheduleEditor
             schedule={draft.schedule}
@@ -727,6 +776,16 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose }:
           </label>
         ) : null}
       </section>
+      {creating ? (
+        <section className="automation-detail-section automation-detail-create-bar">
+          <button className="settings-button catalog-create" type="button"
+            disabled={!workspaceID || submitting}
+            onClick={() => void submitCreate()}>
+            <Plus className="icon" aria-hidden="true" />
+            <span>{t("automations.create")}</span>
+          </button>
+        </section>
+      ) : null}
     </div>
   );
 }

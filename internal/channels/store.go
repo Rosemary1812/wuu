@@ -953,16 +953,110 @@ func (s *Service) UpdateRoom(ctx context.Context, params UpdateRoomParams) (Room
 	if id == "" {
 		return Room{}, errors.New("room id is required")
 	}
-	name := strings.TrimSpace(params.Name)
-	if name == "" {
-		return Room{}, errors.New("room name is required")
+	if params.Name == nil && params.Members == nil {
+		return Room{}, errors.New("room update requires a name or members")
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE rooms SET name = ? WHERE id = ?`, name, id)
+	var name string
+	if params.Name != nil {
+		name = strings.TrimSpace(*params.Name)
+		if name == "" {
+			return Room{}, errors.New("room name is required")
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Room{}, fmt.Errorf("update room: %w", err)
+		return Room{}, fmt.Errorf("begin room update: %w", err)
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return Room{}, ErrNotFound
+	defer tx.Rollback()
+
+	var kind RoomKind
+	var createdBy string
+	if err := tx.QueryRowContext(ctx, `SELECT kind, created_by FROM rooms WHERE id = ?`, id).Scan(&kind, &createdBy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Room{}, fmt.Errorf("%w: room %q", ErrNotFound, id)
+		}
+		return Room{}, fmt.Errorf("read room for update: %w", err)
+	}
+	if params.Name != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE rooms SET name = ? WHERE id = ?`, name, id); err != nil {
+			return Room{}, fmt.Errorf("update room name: %w", err)
+		}
+	}
+	if params.Members != nil {
+		members, err := normalizeMembers(*params.Members, createdBy)
+		if err != nil {
+			return Room{}, err
+		}
+		if kind == RoomDM && len(members) != 2 {
+			return Room{}, errors.New("dm rooms require exactly two members")
+		}
+		desiredAgents := make(map[string]struct{}, len(members))
+		for _, member := range members {
+			if member.MemberType != MemberAgent {
+				continue
+			}
+			var exists int
+			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM named_agents WHERE id = ?`, member.MemberID).Scan(&exists); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return Room{}, fmt.Errorf("%w: named agent %q", ErrNotFound, member.MemberID)
+				}
+				return Room{}, fmt.Errorf("validate room agent member: %w", err)
+			}
+			desiredAgents[member.MemberID] = struct{}{}
+		}
+
+		rows, err := tx.QueryContext(ctx, `SELECT member_id FROM room_members WHERE room_id = ? AND member_type = 'agent'`, id)
+		if err != nil {
+			return Room{}, fmt.Errorf("list room agent members for update: %w", err)
+		}
+		existingAgents := make(map[string]struct{})
+		for rows.Next() {
+			var agentID string
+			if err := rows.Scan(&agentID); err != nil {
+				rows.Close()
+				return Room{}, fmt.Errorf("scan room agent member for update: %w", err)
+			}
+			existingAgents[agentID] = struct{}{}
+		}
+		if err := rows.Close(); err != nil {
+			return Room{}, fmt.Errorf("close room agent members for update: %w", err)
+		}
+		if err := rows.Err(); err != nil {
+			return Room{}, fmt.Errorf("list room agent members for update: %w", err)
+		}
+		for agentID := range existingAgents {
+			if _, keep := desiredAgents[agentID]; keep {
+				continue
+			}
+			var ownedTasks int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_messages WHERE room_id = ? AND task_owner = ? AND task_state IN ('open', 'doing')`, id, agentID).Scan(&ownedTasks); err != nil {
+				return Room{}, fmt.Errorf("count removed room agent task ownership: %w", err)
+			}
+			if ownedTasks > 0 {
+				return Room{}, fmt.Errorf("%w: agent %q still owns %d active task(s) in room", ErrConflict, agentID, ownedTasks)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM room_members WHERE room_id = ? AND member_type = 'agent' AND member_id = ?`, id, agentID); err != nil {
+				return Room{}, fmt.Errorf("remove room agent member: %w", err)
+			}
+		}
+		joinedAt := toMillis(s.now())
+		for agentID := range desiredAgents {
+			if _, exists := existingAgents[agentID]; exists {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO room_members (room_id, member_type, member_id, joined_at) VALUES (?, 'agent', ?, ?)`, id, agentID, joinedAt); err != nil {
+				return Room{}, fmt.Errorf("add room agent member: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO room_cursors (room_id, member_type, member_id, last_read_seq) VALUES (?, 'agent', ?, 0)`, id, agentID); err != nil {
+				return Room{}, fmt.Errorf("initialize room agent cursor: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Room{}, fmt.Errorf("commit room update: %w", err)
 	}
 	return s.GetRoom(ctx, id)
 }

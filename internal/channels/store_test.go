@@ -260,7 +260,8 @@ func TestUpdateRoomPersistsTrimmedNameAndValidatesInput(t *testing.T) {
 	service := openTestService(t, nil)
 	room := createTestRoom(t, service)
 
-	updated, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Name: "  Delivery  "})
+	name := "  Delivery  "
+	updated, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Name: &name})
 	if err != nil {
 		t.Fatalf("UpdateRoom() error = %v", err)
 	}
@@ -275,11 +276,124 @@ func TestUpdateRoomPersistsTrimmedNameAndValidatesInput(t *testing.T) {
 		t.Fatalf("persisted room name = %q, want Delivery", loaded.Name)
 	}
 
-	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Name: " \t\n "}); err == nil {
+	emptyName := " \t\n "
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Name: &emptyName}); err == nil {
 		t.Fatal("UpdateRoom(empty name) succeeded")
 	}
-	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: "room-missing", Name: "Missing"}); !errors.Is(err, ErrNotFound) {
+	missingName := "Missing"
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: "room-missing", Name: &missingName}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("UpdateRoom(missing room) error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUpdateRoomReplacesAgentMembersWithoutResettingUnchangedCursors(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	alpha := createTestAgent(t, service, "Alpha")
+	beta := createTestAgent(t, service, "Beta")
+	room := createTestRoom(t, service, alpha)
+	if _, err := service.db.ExecContext(ctx, `UPDATE room_cursors SET last_read_seq = 7 WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	members := []RoomMember{
+		{MemberType: MemberAgent, MemberID: alpha.Agent.ID},
+		{MemberType: MemberAgent, MemberID: beta.Agent.ID},
+	}
+	updated, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Members: &members})
+	if err != nil {
+		t.Fatalf("UpdateRoom(add member) error = %v", err)
+	}
+	if len(updated.Members) != 3 {
+		t.Fatalf("updated members = %#v, want local human plus two agents", updated.Members)
+	}
+	for agentID, want := range map[string]int64{alpha.Agent.ID: 7, beta.Agent.ID: 0} {
+		var cursor int64
+		if err := service.db.QueryRowContext(ctx, `SELECT last_read_seq FROM room_cursors WHERE room_id = ? AND member_id = ?`, room.ID, agentID).Scan(&cursor); err != nil {
+			t.Fatalf("read cursor for %s: %v", agentID, err)
+		}
+		if cursor != want {
+			t.Fatalf("cursor for %s = %d, want %d", agentID, cursor, want)
+		}
+	}
+
+	members = []RoomMember{{MemberType: MemberAgent, MemberID: beta.Agent.ID}}
+	updated, err = service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Members: &members})
+	if err != nil {
+		t.Fatalf("UpdateRoom(remove member) error = %v", err)
+	}
+	if len(updated.Members) != 2 {
+		t.Fatalf("members after removal = %#v", updated.Members)
+	}
+	var hasHuman, hasBeta bool
+	for _, member := range updated.Members {
+		hasHuman = hasHuman || member.MemberType == MemberHuman
+		hasBeta = hasBeta || (member.MemberType == MemberAgent && member.MemberID == beta.Agent.ID)
+	}
+	if !hasHuman || !hasBeta {
+		t.Fatalf("members after removal = %#v, want local human and Beta", updated.Members)
+	}
+	var alphaMemberships int
+	if err := service.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID).Scan(&alphaMemberships); err != nil {
+		t.Fatal(err)
+	}
+	if alphaMemberships != 0 {
+		t.Fatalf("removed Alpha memberships = %d, want 0", alphaMemberships)
+	}
+}
+
+func TestUpdateRoomRejectsRemovingAgentWithOwnedTasks(t *testing.T) {
+	ctx := context.Background()
+	service := openTestService(t, nil)
+	alpha := createTestAgent(t, service, "Alpha")
+	beta := createTestAgent(t, service, "Beta")
+	room := createTestRoom(t, service, alpha, beta)
+	task, err := service.CreateTaskHuman(ctx, TaskCreateParams{
+		RoomID: room.ID, Title: "Investigate", OwnerID: alpha.Agent.ID, HumanID: "human-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateTaskHuman() error = %v", err)
+	}
+
+	members := []RoomMember{{MemberType: MemberAgent, MemberID: beta.Agent.ID}}
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Members: &members}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("UpdateRoom(remove task owner) error = %v, want ErrConflict", err)
+	}
+
+	var memberships int
+	if err := service.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID).Scan(&memberships); err != nil {
+		t.Fatal(err)
+	}
+	if memberships != 1 {
+		t.Fatalf("Alpha memberships = %d, want 1 after rejected update", memberships)
+	}
+	var owner string
+	if err := service.db.QueryRowContext(ctx, `SELECT task_owner FROM room_messages WHERE id = ?`, task.ID).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != alpha.Agent.ID {
+		t.Fatalf("task owner = %q, want %q after rejected update", owner, alpha.Agent.ID)
+	}
+
+	if _, err := service.UpdateTask(ctx, TaskUpdateParams{
+		TaskID: task.ID, State: TaskStateDone, AgentID: alpha.Agent.ID, Token: alpha.Token,
+	}); err != nil {
+		t.Fatalf("UpdateTask(done) error = %v", err)
+	}
+	if _, err := service.UpdateRoom(ctx, UpdateRoomParams{RoomID: room.ID, Members: &members}); err != nil {
+		t.Fatalf("UpdateRoom(remove completed task owner) error = %v", err)
+	}
+	if err := service.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, room.ID, alpha.Agent.ID).Scan(&memberships); err != nil {
+		t.Fatal(err)
+	}
+	if memberships != 0 {
+		t.Fatalf("Alpha memberships = %d, want 0 after task completed", memberships)
+	}
+	if err := service.db.QueryRowContext(ctx, `SELECT task_owner FROM room_messages WHERE id = ?`, task.ID).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != alpha.Agent.ID {
+		t.Fatalf("completed task owner = %q, want historical owner %q", owner, alpha.Agent.ID)
 	}
 }
 

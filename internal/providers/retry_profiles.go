@@ -5,14 +5,14 @@ import "time"
 // RetryConfigForProfile is the single source of truth for inference recovery
 // budgets. Unary and streaming executors use the same attempt ceiling.
 //
-// These initial values preserve Wuu's established behavior while moving
-// ownership into one registry. Runtime evidence can tune them later without
-// reopening every agent and auxiliary caller.
+// Interactive agent work gets a larger recovery window because one logical
+// turn can span many provider calls and transient failures share its workflow
+// budget. Auxiliary workloads retain the smaller established allowance.
 func RetryConfigForProfile(profile InferenceWorkloadProfile) RetryConfig {
 	switch profile {
 	case InferenceProfileInteractive, InferenceProfileBackgroundAgent:
 		return RetryConfig{
-			MaxRetries:   5,
+			MaxRetries:   10,
 			InitialDelay: time.Second,
 			MaxDelay:     time.Minute,
 		}

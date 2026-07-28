@@ -134,8 +134,8 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	}
 	var started ChannelAgentStartResult
 	callChannelRPC(t, server, out, MethodChannelAgentStart, ChannelAgentStartParams{AgentID: createdAgent.Agent.ID}, &started)
-	if started.Agent.ID != createdAgent.Agent.ID || server.thread(namedAgentSessionID(createdAgent.Agent)) == nil {
-		t.Fatalf("started named agent = %#v", started.Agent)
+	if started.Agent.ID != createdAgent.Agent.ID || started.WakeState.AgentID != createdAgent.Agent.ID || started.ThreadID != namedAgentSessionID(createdAgent.Agent) || server.thread(started.ThreadID) == nil {
+		t.Fatalf("started named agent = %#v", started)
 	}
 }
 
@@ -436,6 +436,16 @@ func TestChannelRoomUpdateAndDeleteRPCs(t *testing.T) {
 	}, &updated)
 	if updated.Room.ID != createdRoom.Room.ID || updated.Room.Name != "Delivery" || len(updated.Room.Members) != 2 {
 		t.Fatalf("updated room = %#v", updated.Room)
+	}
+	var createdAgentTwo ChannelAgentCreateResult
+	callChannelRPC(t, server, out, MethodChannelAgentCreate, ChannelAgentCreateParams{Name: "Beta"}, &createdAgentTwo)
+	agentIDs := []string{createdAgent.Agent.ID, createdAgentTwo.Agent.ID}
+	callChannelRPC(t, server, out, MethodChannelRoomUpdate, ChannelRoomUpdateParams{
+		RoomID:   createdRoom.Room.ID,
+		AgentIDs: &agentIDs,
+	}, &updated)
+	if len(updated.Room.Members) != 3 {
+		t.Fatalf("updated room members = %#v, want local human plus two agents", updated.Room.Members)
 	}
 	loaded, err := server.channelService.GetRoom(context.Background(), createdRoom.Room.ID)
 	if err != nil || loaded.Name != "Delivery" {

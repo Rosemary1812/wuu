@@ -9,7 +9,7 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp, Plus, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
-import { agentHandoffDisplayItem } from "./AgentHandoff";
+import { agentHandoffChipDisplayItem, isAgentHandoffItem } from "./AgentHandoff";
 import {
   clipboardAttachmentFiles,
   composerFileFromFile,
@@ -38,7 +38,6 @@ import { streamFieldValue } from "./ThreadItemText";
 import { ToolActivityRow } from "./ToolActivity";
 import {
   ContextCompactionNotice,
-  SystemEventDivider,
   TurnNotice,
 } from "./TurnNotice";
 import { userMessageAnchorID } from "./TurnViewHelpers";
@@ -106,13 +105,18 @@ export function ThreadItemView({
       // joins, <changed_file_overlap> tails), the item-level helper short-
       // circuits to a generic handoff divider rather than letting raw JSON
       // slip into the chat bubble.
-      const handoff = agentHandoffDisplayItem(item);
+      const handoff = isAgentHandoffItem(item)
+        ? agentHandoffChipDisplayItem(item)
+        : undefined;
       if (handoff) {
         return (
-          <SystemEventDivider
-            text={handoff.label}
-            className="agent-handoff-divider"
-          />
+          <span
+            className="subagent-chip"
+            role="status"
+            aria-label={handoff.label}
+          >
+            {handoff.label}
+          </span>
         );
       }
       if (isInternalUserNotificationItem(item)) {

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   MESSAGE_FLOW_FONT_SIZE_RANGE,
+  isLanguagePreference,
   type DesktopPlatform,
   type ChannelAgentCreateParams,
   type ChannelAgentUpdateParams,
@@ -46,7 +47,7 @@ const initialThemePreference = ((): ThemePreference => {
 const initialLanguagePreference = ((): LanguagePreference => {
   try {
     const value = ipcRenderer.sendSync("wuu:language-preference-get-sync") as unknown;
-    return value === "zh-CN" || value === "en-US" || value === "system" ? value : "system";
+    return isLanguagePreference(value) ? value : "system";
   } catch {
     return "system";
   }
@@ -348,7 +349,7 @@ const api: WuuDesktopApi = {
       _event: Electron.IpcRendererEvent,
       payload: unknown,
     ) => {
-      if (payload === "zh-CN" || payload === "en-US" || payload === "system") {
+      if (isLanguagePreference(payload)) {
         handler(payload);
       }
     };

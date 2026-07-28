@@ -23,6 +23,8 @@ import {
   APP_SERVER_PROTOCOL_VERSION,
   BROWSER_REVERSE_RPC_METHODS,
   MESSAGE_FLOW_FONT_SIZE_RANGE,
+  isAppLocale,
+  isLanguagePreference,
 } from "../shared/protocol";
 import type {
   ComposerGoalSummary,
@@ -1636,10 +1638,7 @@ app.whenReady().then(async () => {
     (_event, settings: VoiceInputSettings): VoiceInputSettings => {
       const next: VoiceInputSettings = {
         polish_enabled: settings?.polish_enabled === true,
-        language:
-          settings?.language === "zh-CN" || settings?.language === "en-US"
-            ? settings.language
-            : "system",
+        language: isAppLocale(settings?.language) ? settings.language : "system",
       };
       setVoiceInputSettings(next);
       broadcastVoiceInputSettings();
@@ -1666,8 +1665,7 @@ app.whenReady().then(async () => {
     event.returnValue = getLanguagePreference();
   });
   ipcMain.handle("wuu:language-preference-set", (_event, language: LanguagePreference) => {
-    const valid: LanguagePreference[] = ["system", "zh-CN", "en-US"];
-    const next = valid.includes(language) ? language : "system";
+    const next = isLanguagePreference(language) ? language : "system";
     setLanguagePreference(next);
     setMainLocale(resolveMainLocale(next, app.getLocale()));
     codexPetWindowManager.refreshLocale();

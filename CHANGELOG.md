@@ -12,6 +12,9 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 - Fixed Git attribution in Windows Git Bash shells when Git resolves without an
   `.exe` suffix.
+- Fixed a white screen on the Automations tab when no automation records
+  existed, caused by the Go app-server returning `null` for an empty task list
+  while the renderer called `.some()` on it.
 
 ## [0.12.2] - 2026-07-25
 

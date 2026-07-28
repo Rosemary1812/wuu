@@ -1,13 +1,22 @@
-import type { LanguagePreference } from "../shared/protocol";
+import {
+  LANGUAGE_PREFERENCES,
+  type LanguagePreference,
+} from "../shared/protocol";
 import { useI18n } from "./i18n";
+import type { TranslationKey } from "./i18n/resources/zh-CN";
+
+const LANGUAGE_LABEL_KEYS = {
+  system: "common.system",
+  "zh-CN": "common.chinese",
+  "en-US": "common.english",
+} as const satisfies Record<LanguagePreference, TranslationKey>;
 
 export function LanguagePreferenceControl(): JSX.Element {
   const { preference, setPreference, t } = useI18n();
-  const options: Array<{ value: LanguagePreference; label: string }> = [
-    { value: "system", label: t("common.system") },
-    { value: "zh-CN", label: t("common.chinese") },
-    { value: "en-US", label: t("common.english") },
-  ];
+  const options = LANGUAGE_PREFERENCES.map((value) => ({
+    value,
+    label: t(LANGUAGE_LABEL_KEYS[value]),
+  }));
   return (
     <div className="theme-segmented" role="group" aria-label={t("settings.languageGroup")}>
       {options.map((option) => (

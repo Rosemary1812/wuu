@@ -2076,7 +2076,10 @@ type ChannelAgentStartParams struct {
 }
 
 type ChannelAgentStartResult struct {
-	Agent channels.NamedAgent `json:"agent"`
+	Agent     channels.NamedAgent `json:"agent"`
+	WakeState channels.WakeState  `json:"wake_state"`
+	Started   bool                `json:"started"`
+	ThreadID  string              `json:"thread_id"`
 }
 
 type ChannelRoomListResult struct {
@@ -2094,9 +2097,10 @@ type ChannelRoomCreateResult struct {
 }
 
 type ChannelRoomUpdateParams struct {
-	RoomID      string  `json:"room_id"`
-	Name        *string `json:"name,omitempty"`
-	AvatarImage *string `json:"avatar_image,omitempty"`
+	RoomID      string    `json:"room_id"`
+	Name        *string   `json:"name,omitempty"`
+	AvatarImage *string   `json:"avatar_image,omitempty"`
+	AgentIDs    *[]string `json:"agent_ids,omitempty"`
 }
 
 type ChannelRoomUpdateResult struct {

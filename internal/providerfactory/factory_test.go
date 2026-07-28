@@ -379,6 +379,52 @@ func TestResolveAPIKey_AuthStoreFallback(t *testing.T) {
 	}
 }
 
+func TestResolveAPIKey_MiniMaxMigratesStoredAuthTokenFallback(t *testing.T) {
+	home := t.TempDir()
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("minimax", authstorage.Credentials{Type: "auth_token", AuthToken: "sk-minimax-from-old-ui"}); err != nil {
+		t.Fatalf("save auth token: %v", err)
+	}
+
+	provider := config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://api.minimaxi.com/anthropic",
+		Model:   "MiniMax-M3",
+	}
+	key, err := ResolveAPIKeyWithHome(provider, "minimax", home)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if key != "sk-minimax-from-old-ui" {
+		t.Fatalf("expected migrated MiniMax key, got %q", key)
+	}
+}
+
+func TestResolveAuthToken_NonMiniMaxStoredAuthTokenStaysBearer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("anthropic", authstorage.Credentials{Type: "auth_token", AuthToken: "bearer-token"}); err != nil {
+		t.Fatalf("save auth token: %v", err)
+	}
+
+	provider := config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://api.anthropic.com",
+		Model:   "claude-3-5-sonnet-latest",
+	}
+	if got := resolveAuthToken(provider, "anthropic"); got != "bearer-token" {
+		t.Fatalf("auth token = %q, want bearer-token", got)
+	}
+}
+
 func TestBuildClient_MissingAPIKey(t *testing.T) {
 	_ = os.Unsetenv("MISSING_WUU_KEY")
 

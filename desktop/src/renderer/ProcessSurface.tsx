@@ -68,6 +68,7 @@ type ProcessSurfaceProps = {
     item: ThreadItem,
     streaming: boolean,
   ) => JSX.Element | null;
+  trailingContent?: JSX.Element;
 };
 
 const TOOL_ACTIVITY_ITEM_TYPES = new Set<string>([
@@ -135,6 +136,7 @@ export function ProcessSurface({
   streaming,
   active,
   renderReasoningItem,
+  trailingContent,
 }: ProcessSurfaceProps): JSX.Element {
   const { t } = useI18n();
   const toolItems = processItems.filter(isToolActivityItem);
@@ -253,6 +255,7 @@ export function ProcessSurface({
           onClick={handleSummaryClick}
         >
           {summaryLine}
+          {trailingContent}
           {hasDetails ? (
             <ChevronRight
               className="process-surface-chevron icon-xs"

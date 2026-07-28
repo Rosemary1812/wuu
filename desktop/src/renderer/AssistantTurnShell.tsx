@@ -37,6 +37,7 @@ import {
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
+import { SubagentChipList } from "./SubagentChip";
 import { translateCurrent as translate, useI18n } from "./i18n";
 
 export function AssistantTurnShell({
@@ -431,12 +432,36 @@ function EntryRenderer({
   onOpenRuns?: () => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
-  if (kind === "activity" || kind === "process_group") {
+  const withSubagentChips = (
+    content: JSX.Element | null,
+    includeAfter = true,
+  ): JSX.Element | null => {
+    if (!content) return null;
+    const before = entry.subagentChipsBefore ?? [];
+    const after =
+      (entry.kind === "commentary" || entry.kind === "answer") && entry.streaming
+        ? []
+        : (entry.subagentChipsAfter ?? []);
+    if (before.length === 0 && after.length === 0) return content;
     return (
+      <div className="subagent-chip-entry">
+        <SubagentChipList displays={before} />
+        {content}
+        {includeAfter ? <SubagentChipList displays={after} /> : null}
+      </div>
+    );
+  };
+  if (kind === "activity" || kind === "process_group") {
+    const trailingChips = (
+      <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
+    );
+    return withSubagentChips(
+      (
       <ProcessSurface
         processItems={entry.items ?? [item]}
         streaming={streaming}
         active={activeGray}
+        trailingContent={trailingChips}
         renderReasoningItem={(processItem, isStreaming) => (
           <ThreadItemView
             turnID={turn.id}
@@ -450,6 +475,8 @@ function EntryRenderer({
           />
         )}
       />
+      ),
+      false,
     );
   }
   if (item.type === "reasoning") {
@@ -459,7 +486,8 @@ function EntryRenderer({
     // 过程" once settled) and let the user expand to read the trail.
     // Reasoning never collapses the outer fold on its own, and the
     // user's expanded/collapsed choice persists across re-renders.
-    return (
+    return withSubagentChips(
+      (
       <ReasoningFold
         item={item}
         streaming={streaming}
@@ -471,10 +499,12 @@ function EntryRenderer({
         onOpenAgent={onOpenAgent}
         onStreamFrame={onStreamFrame}
       />
+      ),
     );
   }
   if (item.type === "agent_message") {
-    return (
+    return withSubagentChips(
+      (
       <ThreadItemView
         turnID={turn.id}
         turnStatus={turn.status}
@@ -489,11 +519,12 @@ function EntryRenderer({
         onForkMessage={onForkMessage}
         onOpenRuns={onOpenRuns}
       />
+      ),
     );
   }
   if (item.type === "context_compaction" || item.type === "error") {
     const event = turnEventForItem(item);
-    return event ? <TurnEventNotice event={event} /> : null;
+    return withSubagentChips(event ? <TurnEventNotice event={event} /> : null);
   }
   return null;
 }
