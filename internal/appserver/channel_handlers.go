@@ -125,12 +125,14 @@ func (s *Server) handleChannelAgentStart(ctx context.Context, req Request) error
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	started := false
 	if state.Outstanding && !threadIsRunning(thread) {
 		if err := s.startNamedAgentWakeLocked(agent, thread); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
+		started = true
 	}
-	return s.writeResponse(req.ID, ChannelAgentStartResult{Agent: agent}, nil)
+	return s.writeResponse(req.ID, ChannelAgentStartResult{Agent: agent, WakeState: state, Started: started, ThreadID: thread.ID}, nil)
 }
 
 func (s *Server) handleChannelRoomList(ctx context.Context, req Request) error {

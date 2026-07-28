@@ -310,6 +310,7 @@ for agents, scripts, and developers that need to inspect the core path directly.
 ```bash
 wuu debug app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]
 wuu debug app-server send [--workdir DIR] <method> '<json>'
+wuu debug channel e2e --sandbox [--keep-sandbox] [--agent NAME] [--message TEXT] [--expect TEXT] [--timeout DURATION]
 wuu debug channel inspect [--room ID|NAME] [--after SEQ] [--limit N]
 wuu debug channel send --room ID|NAME [--wait DURATION] [--replies N] "message"
 wuu debug protocol events [--json] [--workdir DIR] <thread-id>
@@ -331,6 +332,33 @@ replies, so it exercises the same persistence, mention, wake, provider, and
 message paths as the desktop. Both commands print one JSON value to stdout;
 `send` returns the timeout exit code when `--wait` does not observe the requested
 number of replies.
+
+`wuu debug channel e2e --sandbox` is the one-command acceptance path for a
+coding agent after changing group chat. It loads the normal provider and model
+configuration and credentials into memory, then redirects all runtime state
+into a temporary Wuu home. No credential file is copied into the sandbox. It
+creates a named agent and room, sends a direct mention through
+`channel/message/send`, waits for the real provider turn, and requires the reply
+to contain `--expect` (default `E2E_OK`). The temporary channel database, agent
+memory, session, and trace are removed on shutdown; the user's existing rooms
+and history are not touched. Pass `--keep-sandbox` to retain failed-run state;
+the JSON `sandbox_dir` field identifies it. The result also includes the phase,
+provider, model, created records, wake state, named-Agent thread diagnostics,
+observed messages, protocol notifications, assertion, and duration. Provider,
+turn, timeout, and reply-mismatch failures are printed before the command
+returns a non-zero exit code.
+
+For example:
+
+```bash
+go run ./cmd/wuu debug channel e2e \
+  --sandbox \
+  --agent Andy \
+  --workdir "$PWD" \
+  --message "回复 E2E_OK" \
+  --expect E2E_OK \
+  --timeout 2m
+```
 
 `wuu debug protocol events` reads the stored session trace and prints the raw
 JSONL trace events. With `--json`, it wraps the events with the thread id and

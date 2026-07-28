@@ -2076,7 +2076,10 @@ type ChannelAgentStartParams struct {
 }
 
 type ChannelAgentStartResult struct {
-	Agent channels.NamedAgent `json:"agent"`
+	Agent     channels.NamedAgent `json:"agent"`
+	WakeState channels.WakeState  `json:"wake_state"`
+	Started   bool                `json:"started"`
+	ThreadID  string              `json:"thread_id"`
 }
 
 type ChannelRoomListResult struct {

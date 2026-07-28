@@ -134,8 +134,8 @@ func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	}
 	var started ChannelAgentStartResult
 	callChannelRPC(t, server, out, MethodChannelAgentStart, ChannelAgentStartParams{AgentID: createdAgent.Agent.ID}, &started)
-	if started.Agent.ID != createdAgent.Agent.ID || server.thread(namedAgentSessionID(createdAgent.Agent)) == nil {
-		t.Fatalf("started named agent = %#v", started.Agent)
+	if started.Agent.ID != createdAgent.Agent.ID || started.WakeState.AgentID != createdAgent.Agent.ID || started.ThreadID != namedAgentSessionID(createdAgent.Agent) || server.thread(started.ThreadID) == nil {
+		t.Fatalf("started named agent = %#v", started)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -15,8 +16,10 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
@@ -1708,11 +1711,12 @@ func installExecControllerOverride(t *testing.T, controller wuuexec.Controller) 
 }
 
 type fakeDebugAppServerClient struct {
-	opts         debugAppServerOptions
-	calls        []fakeDebugCall
-	results      map[string]json.RawMessage
-	resultQueues map[string][]json.RawMessage
-	shutdown     bool
+	opts          debugAppServerOptions
+	calls         []fakeDebugCall
+	results       map[string]json.RawMessage
+	resultQueues  map[string][]json.RawMessage
+	notifications chan wuuexec.Notification
+	shutdown      bool
 }
 
 type fakeDebugCall struct {
@@ -1752,6 +1756,14 @@ func (f *fakeDebugAppServerClient) Call(_ context.Context, method string, params
 func (f *fakeDebugAppServerClient) Shutdown(context.Context) error {
 	f.shutdown = true
 	return nil
+}
+
+func (f *fakeDebugAppServerClient) Notifications() <-chan wuuexec.Notification {
+	return f.notifications
+}
+
+func (f *fakeDebugAppServerClient) SandboxDir() string {
+	return "/sandbox/wuu-home"
 }
 
 func installDebugAppServerClientOverride(t *testing.T, client *fakeDebugAppServerClient) func() {
@@ -2283,6 +2295,180 @@ func TestRunDebugChannelSendPrintsTimeoutResult(t *testing.T) {
 	if payload["timed_out"] != true || payload["reply_count"] != float64(0) {
 		t.Fatalf("unexpected timeout output: %+v", payload)
 	}
+}
+
+func TestRunDebugChannelE2EPassesWithMatchingAgentReply(t *testing.T) {
+	client := fakeDebugChannelE2EClient("E2E_OK", true)
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"debug", "channel", "e2e", "--sandbox", "--provider", "test", "--message", "回复 E2E_OK", "--expect", "E2E_OK"}); err != nil {
+			t.Fatalf("run debug channel e2e: %v", err)
+		}
+	})
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["status"] != "passed" || payload["matched"] != true || payload["provider"] != "test-provider" {
+		t.Fatalf("unexpected e2e output: %+v", payload)
+	}
+	if !client.opts.sandbox || client.opts.provider != "test" {
+		t.Fatalf("unexpected debug options: %+v", client.opts)
+	}
+	var sendParams appserver.ChannelMessageSendParams
+	for _, call := range client.calls {
+		if call.method == appserver.MethodChannelMessageSend {
+			if err := json.Unmarshal(call.params, &sendParams); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if sendParams.Body != "@E2EAgent 回复 E2E_OK" {
+		t.Fatalf("send body = %q, want explicit message with direct agent mention", sendParams.Body)
+	}
+}
+
+func TestRunDebugChannelE2EFailsWhenCompletedReplyMissesExpectation(t *testing.T) {
+	client := fakeDebugChannelE2EClient("not the expected result", true)
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	var runErr error
+	output := captureStdout(t, func() {
+		runErr = run([]string{"debug", "channel", "e2e", "--sandbox", "--expect", "E2E_OK", "--timeout", "1s"})
+	})
+	if wuuexec.ExitCode(runErr) != wuuexec.ExitTurnFailed {
+		t.Fatalf("exit code = %d, err = %v", wuuexec.ExitCode(runErr), runErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["status"] != "expectation_failed" || payload["phase"] != "validate" {
+		t.Fatalf("unexpected e2e mismatch output: %+v", payload)
+	}
+}
+
+func TestRunDebugChannelE2ETimesOutWithoutAgentReply(t *testing.T) {
+	client := fakeDebugChannelE2EClient("", false)
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	var runErr error
+	output := captureStdout(t, func() {
+		runErr = run([]string{"debug", "channel", "e2e", "--sandbox", "--timeout", "1ms"})
+	})
+	if wuuexec.ExitCode(runErr) != wuuexec.ExitTimeout {
+		t.Fatalf("exit code = %d, err = %v", wuuexec.ExitCode(runErr), runErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["status"] != "timed_out" || payload["matched"] != false {
+		t.Fatalf("unexpected e2e timeout output: %+v", payload)
+	}
+}
+
+func TestRunDebugChannelE2EReportsProviderFailureWithoutWaitingForTimeout(t *testing.T) {
+	client := fakeDebugChannelE2EClient("", false)
+	client.results[appserver.MethodChannelAgentStart] = json.RawMessage(`{"agent":{"id":"agent-1"},"thread_id":"agent-thread-1","wake_state":{"agent_id":"agent-1","outstanding":true}}`)
+	client.results[appserver.MethodChannelAgentList] = json.RawMessage(`{"agents":[{"id":"agent-1","activity_status":"idle"}]}`)
+	client.results[appserver.MethodThreadResume] = json.RawMessage(`{"thread":{"id":"agent-thread-1","status":"idle","turns":[{"id":"turn-1","items":[],"items_view":"full","status":"failed","error":{"message":"provider authentication failed","category":"auth","provider":"test-provider"}}]}}`)
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	var runErr error
+	output := captureStdout(t, func() {
+		runErr = run([]string{"debug", "channel", "e2e", "--sandbox", "--timeout", "1m"})
+	})
+	if wuuexec.ExitCode(runErr) != wuuexec.ExitTurnFailed {
+		t.Fatalf("exit code = %d, err = %v", wuuexec.ExitCode(runErr), runErr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload["status"] != "turn_failed" || payload["phase"] != "provider" || payload["error"] != "provider authentication failed" {
+		t.Fatalf("unexpected provider failure output: %+v", payload)
+	}
+}
+
+func TestHydrateDebugSandboxCredentialsKeepsSecretsInMemory(t *testing.T) {
+	realWuuHome := filepath.Join(t.TempDir(), "real-wuu-home")
+	t.Setenv("WUU_HOME", realWuuHome)
+	store, err := authstorage.ForHome(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("test-provider", authstorage.Credentials{APIKey: "secret-key", AuthToken: "secret-token"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Providers: map[string]config.ProviderConfig{"test-provider": {Type: "openai-compatible"}}}
+	hydrateDebugSandboxCredentials(&cfg, t.TempDir())
+	provider := cfg.Providers["test-provider"]
+	if provider.APIKey != "secret-key" || provider.AuthToken != "secret-token" {
+		t.Fatalf("hydrated provider = %+v", provider)
+	}
+}
+
+func TestLocalDebugAppServerSandboxIsolatesChannelState(t *testing.T) {
+	realWuuHome := filepath.Join(t.TempDir(), "real-wuu-home")
+	t.Setenv("WUU_HOME", realWuuHome)
+	client, err := newLocalDebugAppServerClient(context.Background(), debugAppServerOptions{
+		workdir: t.TempDir(), noTools: true, sandbox: true,
+	})
+	if err != nil {
+		t.Fatalf("new sandbox debug client: %v", err)
+	}
+	sandboxHome := client.rt.WuuHome
+	if sandboxHome == realWuuHome || !strings.Contains(sandboxHome, "wuu-channel-e2e-") {
+		t.Fatalf("sandbox WUU_HOME = %q, real = %q", sandboxHome, realWuuHome)
+	}
+	var bootstrap appserver.ChannelBootstrapResult
+	if err := client.Call(context.Background(), appserver.MethodChannelBootstrap, nil, &bootstrap); err != nil {
+		t.Fatalf("sandbox bootstrap: %v", err)
+	}
+	if len(bootstrap.Rooms) == 0 {
+		t.Fatal("sandbox bootstrap did not create a room")
+	}
+	if _, err := os.Stat(filepath.Join(realWuuHome, "channels")); !os.IsNotExist(err) {
+		t.Fatalf("real channel state was touched: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown sandbox debug client: %v", err)
+	}
+	if got := os.Getenv("WUU_HOME"); got != realWuuHome {
+		t.Fatalf("WUU_HOME after shutdown = %q, want %q", got, realWuuHome)
+	}
+	if _, err := os.Stat(filepath.Dir(sandboxHome)); !os.IsNotExist(err) {
+		t.Fatalf("sandbox was not removed: %v", err)
+	}
+}
+
+func fakeDebugChannelE2EClient(reply string, completed bool) *fakeDebugAppServerClient {
+	messageList := json.RawMessage(`{"messages":[]}`)
+	if reply != "" {
+		messageList = json.RawMessage(fmt.Sprintf(`{"messages":[{"id":"reply-1","room_id":"room-1","seq":2,"author_type":"agent","author_id":"agent-1","kind":"text","body":%q,"mentions":[],"created_at":"2026-07-28T00:00:01Z"}]}`, reply))
+	}
+	client := &fakeDebugAppServerClient{results: map[string]json.RawMessage{
+		appserver.MethodInitialize:         json.RawMessage(`{"status":"ready","protocol_version":"test/v1","provider":"test-provider","model":"test-model","workspace_root":"/workspace","core":{},"runtime_host":{},"permissions":{},"extension_trust":{},"advanced_settings":{},"general_settings":{},"features":{},"max_parallel":1}`),
+		appserver.MethodChannelAgentCreate: json.RawMessage(`{"agent":{"id":"agent-1","name":"E2EAgent","memory_dir":"/sandbox/memory","avatar_key":"","autostart":true,"created_at":"2026-07-28T00:00:00Z"}}`),
+		appserver.MethodChannelRoomCreate:  json.RawMessage(`{"room":{"id":"room-1","kind":"channel","name":"E2E","created_by":"local-user","created_at":"2026-07-28T00:00:00Z","members":[]}}`),
+		appserver.MethodChannelMessageSend: json.RawMessage(`{"message":{"id":"message-1","room_id":"room-1","seq":1,"author_type":"human","author_id":"local-user","kind":"text","body":"@E2EAgent test","mentions":["agent-1"],"created_at":"2026-07-28T00:00:00Z"}}`),
+		appserver.MethodChannelMessageList: messageList,
+	}}
+	if completed {
+		events := make(chan wuuexec.Notification, 1)
+		events <- cliExecNotification(appserver.NotificationTurnCompleted, map[string]any{"thread_id": "agent-thread-1"})
+		close(events)
+		client.notifications = events
+	}
+	return client
 }
 
 func TestRunDebugProtocolEventsJSONReadsTraceEvents(t *testing.T) {
