@@ -37,7 +37,7 @@ import {
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
-import { SubagentChip } from "./SubagentChip";
+import { SubagentChipList } from "./SubagentChip";
 import { translateCurrent as translate, useI18n } from "./i18n";
 
 export function AssistantTurnShell({
@@ -445,24 +445,16 @@ function EntryRenderer({
     if (before.length === 0 && after.length === 0) return content;
     return (
       <div className="subagent-chip-entry">
-        {before.map((chip, index) => (
-          <SubagentChip key={`before-${index}-${chip.label}`} display={chip} />
-        ))}
+        <SubagentChipList displays={before} />
         {content}
-        {includeAfter ? after.map((chip, index) => (
-          <SubagentChip key={`after-${index}-${chip.label}`} display={chip} />
-        )) : null}
+        {includeAfter ? <SubagentChipList displays={after} /> : null}
       </div>
     );
   };
   if (kind === "activity" || kind === "process_group") {
-    const trailingChips = (entry.subagentChipsAfter ?? []).length > 0 ? (
-      <span className="subagent-chip-list">
-        {(entry.subagentChipsAfter ?? []).map((chip, index) => (
-          <SubagentChip key={`after-${index}-${chip.label}`} display={chip} />
-        ))}
-      </span>
-    ) : undefined;
+    const trailingChips = (
+      <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
+    );
     return withSubagentChips(
       (
       <ProcessSurface
