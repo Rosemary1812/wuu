@@ -18,13 +18,17 @@ import (
 const debugChannelPollInterval = 250 * time.Millisecond
 
 type debugChannelInspectResult struct {
-	Agents   []channels.NamedAgent `json:"agents"`
-	Rooms    []channels.Room       `json:"rooms"`
-	Room     *channels.Room        `json:"room,omitempty"`
-	Messages []channels.Message    `json:"messages,omitempty"`
+	SandboxName string                `json:"sandbox_name,omitempty"`
+	SandboxDir  string                `json:"sandbox_dir,omitempty"`
+	Agents      []channels.NamedAgent `json:"agents"`
+	Rooms       []channels.Room       `json:"rooms"`
+	Room        *channels.Room        `json:"room,omitempty"`
+	Messages    []channels.Message    `json:"messages,omitempty"`
 }
 
 type debugChannelSendResult struct {
+	SandboxName     string             `json:"sandbox_name,omitempty"`
+	SandboxDir      string             `json:"sandbox_dir,omitempty"`
 	Room            channels.Room      `json:"room"`
 	Sent            channels.Message   `json:"sent"`
 	Messages        []channels.Message `json:"messages"`
@@ -42,6 +46,7 @@ type debugChannelE2EResult struct {
 	Status        string                 `json:"status"`
 	Phase         string                 `json:"phase"`
 	Sandbox       bool                   `json:"sandbox"`
+	SandboxName   string                 `json:"sandbox_name,omitempty"`
 	SandboxDir    string                 `json:"sandbox_dir,omitempty"`
 	Provider      string                 `json:"provider,omitempty"`
 	Model         string                 `json:"model,omitempty"`
@@ -83,22 +88,38 @@ func runDebugChannelE2E(args []string) error {
 	fs := flag.NewFlagSet("debug channel e2e", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cfg := addDebugAppServerFlags(fs)
-	sandbox := fs.Bool("sandbox", false, "run with isolated channel, agent, session, and trace state")
+	sandboxCfg := addDebugSandboxFlags(fs)
 	keepSandbox := fs.Bool("keep-sandbox", false, "preserve sandbox state after the command exits")
 	agentName := fs.String("agent", "E2EAgent", "named agent created for the scenario")
+	roomName := fs.String("room", "E2E", "room name created or reused for the scenario")
 	messageFlag := fs.String("message", "", "human message sent to the named agent")
 	expected := fs.String("expect", "E2E_OK", "substring required in the agent reply")
 	timeout := fs.Duration("timeout", 2*time.Minute, "maximum time to wait for a matching reply")
-	if err := fs.Parse(args); err != nil {
+	// E2E historically accepts a positional message immediately after bare
+	// --sandbox. Keep that form disposable; use --sandbox-name or
+	// --sandbox=NAME for an unambiguous named E2E experiment.
+	normalized, err := normalizeDebugSandboxArgs(args, false)
+	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	if !*sandbox {
+	if err := fs.Parse(normalized); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	opts := debugAppServerOptionsFromCLI(cfg)
+	if err := applyDebugSandboxOptions(&opts, sandboxCfg); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if !opts.sandbox && opts.sandboxName == "" {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("debug channel e2e requires --sandbox to protect persistent channel data"))
 	}
+	if opts.sandboxName != "" && *keepSandbox {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("named sandboxes are always preserved; --keep-sandbox applies only to temporary sandboxes"))
+	}
 	name := strings.TrimSpace(*agentName)
+	room := strings.TrimSpace(*roomName)
 	want := strings.TrimSpace(*expected)
-	if name == "" || want == "" || *timeout <= 0 {
-		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("agent and expect must be non-empty and timeout must be positive"))
+	if name == "" || room == "" || want == "" || *timeout <= 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("agent, room, and expect must be non-empty and timeout must be positive"))
 	}
 	message := strings.TrimSpace(*messageFlag)
 	positionalMessage := strings.TrimSpace(strings.Join(fs.Args(), " "))
@@ -114,11 +135,9 @@ func runDebugChannelE2E(args []string) error {
 
 	startedAt := time.Now()
 	result := debugChannelE2EResult{
-		Status: "running", Phase: "start", Sandbox: true, Expected: want,
+		Status: "running", Phase: "start", Sandbox: true, SandboxName: opts.sandboxName, Expected: want,
 		Messages: []channels.Message{}, Events: []debugChannelE2EEvent{},
 	}
-	opts := debugAppServerOptionsFromCLI(cfg)
-	opts.sandbox = true
 	opts.keepSandbox = *keepSandbox
 	client, err := newDebugAppServerClient(context.Background(), opts)
 	if err != nil {
@@ -140,35 +159,65 @@ func runDebugChannelE2E(args []string) error {
 	result.Model = initialized.Model
 	result.WorkspaceRoot = initialized.WorkspaceRoot
 
-	result.Phase = "create_agent"
-	var createdAgent appserver.ChannelAgentCreateResult
-	if err := client.Call(context.Background(), appserver.MethodChannelAgentCreate, appserver.ChannelAgentCreateParams{Name: name}, &createdAgent); err != nil {
+	result.Phase = "resolve_scenario"
+	bootstrap, err := debugChannelBootstrap(context.Background(), client)
+	if err != nil {
 		result.Status = "setup_failed"
 		result.Error = err.Error()
 		return finishDebugChannelE2E(result, startedAt, wuuexec.ExitTurnFailed, err)
 	}
-	result.Agent = createdAgent.Agent
+	scenarioAgent, found, err := resolveDebugChannelAgentByName(bootstrap.Agents, name)
+	if err != nil {
+		result.Status = "setup_failed"
+		result.Error = err.Error()
+		return finishDebugChannelE2E(result, startedAt, wuuexec.ExitInvalidInput, err)
+	}
+	if !found {
+		result.Phase = "create_agent"
+		var created appserver.ChannelAgentCreateResult
+		if err := client.Call(context.Background(), appserver.MethodChannelAgentCreate, appserver.ChannelAgentCreateParams{Name: name}, &created); err != nil {
+			result.Status = "setup_failed"
+			result.Error = err.Error()
+			return finishDebugChannelE2E(result, startedAt, wuuexec.ExitTurnFailed, err)
+		}
+		scenarioAgent = created.Agent
+	}
+	result.Agent = scenarioAgent
 
-	result.Phase = "create_room"
-	var createdRoom appserver.ChannelRoomCreateResult
-	if err := client.Call(context.Background(), appserver.MethodChannelRoomCreate, appserver.ChannelRoomCreateParams{
-		Name: "E2E", AgentIDs: []string{createdAgent.Agent.ID},
-	}, &createdRoom); err != nil {
+	scenarioRoom, found, err := resolveDebugChannelRoomByName(bootstrap.Rooms, room)
+	if err != nil {
 		result.Status = "setup_failed"
 		result.Error = err.Error()
-		return finishDebugChannelE2E(result, startedAt, wuuexec.ExitTurnFailed, err)
+		return finishDebugChannelE2E(result, startedAt, wuuexec.ExitInvalidInput, err)
 	}
-	result.Room = createdRoom.Room
+	if !found {
+		result.Phase = "create_room"
+		var created appserver.ChannelRoomCreateResult
+		if err := client.Call(context.Background(), appserver.MethodChannelRoomCreate, appserver.ChannelRoomCreateParams{
+			Name: room, AgentIDs: []string{scenarioAgent.ID},
+		}, &created); err != nil {
+			result.Status = "setup_failed"
+			result.Error = err.Error()
+			return finishDebugChannelE2E(result, startedAt, wuuexec.ExitTurnFailed, err)
+		}
+		scenarioRoom = created.Room
+	} else if !debugChannelRoomHasAgent(scenarioRoom, scenarioAgent.ID) {
+		err := fmt.Errorf("room %q exists but does not contain agent %q", room, name)
+		result.Status = "setup_failed"
+		result.Error = err.Error()
+		return finishDebugChannelE2E(result, startedAt, wuuexec.ExitInvalidInput, err)
+	}
+	result.Room = scenarioRoom
 
 	body := message
-	mention := "@" + createdAgent.Agent.Name
+	mention := "@" + scenarioAgent.Name
 	if !strings.Contains(strings.ToLower(body), strings.ToLower(mention)) {
 		body = mention + " " + body
 	}
 	result.Phase = "send"
 	var sent appserver.ChannelMessageSendResult
 	if err := client.Call(context.Background(), appserver.MethodChannelMessageSend, appserver.ChannelMessageSendParams{
-		RoomID: createdRoom.Room.ID, Body: body,
+		RoomID: scenarioRoom.ID, Body: body,
 	}, &sent); err != nil {
 		result.Status = "send_failed"
 		result.Error = err.Error()
@@ -182,7 +231,7 @@ func runDebugChannelE2E(args []string) error {
 	result.Phase = "start_agent"
 	var startedAgent appserver.ChannelAgentStartResult
 	if err := client.Call(context.Background(), appserver.MethodChannelAgentStart, appserver.ChannelAgentStartParams{
-		AgentID: createdAgent.Agent.ID,
+		AgentID: scenarioAgent.ID,
 	}, &startedAgent); err != nil {
 		result.Status = "wake_failed"
 		result.Error = err.Error()
@@ -207,7 +256,7 @@ func runDebugChannelE2E(args []string) error {
 
 		var listed appserver.ChannelMessageListResult
 		if err := client.Call(ctx, appserver.MethodChannelMessageList, appserver.ChannelMessageListParams{
-			RoomID: createdRoom.Room.ID, AfterSeq: sent.Message.Seq, Limit: 500,
+			RoomID: scenarioRoom.ID, AfterSeq: sent.Message.Seq, Limit: 500,
 		}, &listed); err != nil {
 			if !errors.Is(err, context.DeadlineExceeded) {
 				result.Status = "read_failed"
@@ -217,7 +266,7 @@ func runDebugChannelE2E(args []string) error {
 		} else {
 			result.Messages = listed.Messages
 			for _, reply := range listed.Messages {
-				if reply.AuthorID == createdAgent.Agent.ID && strings.Contains(reply.Body, want) {
+				if reply.AuthorID == scenarioAgent.ID && strings.Contains(reply.Body, want) {
 					result.Status = "passed"
 					result.Phase = "complete"
 					result.Matched = true
@@ -225,7 +274,7 @@ func runDebugChannelE2E(args []string) error {
 					return finishDebugChannelE2E(result, startedAt, wuuexec.ExitOK, nil)
 				}
 			}
-			if turnCompleted && countDebugChannelAgentMessages(listed.Messages) > 0 {
+			if turnCompleted && countDebugChannelAgentMessagesByID(listed.Messages, scenarioAgent.ID) > 0 {
 				result.Status = "expectation_failed"
 				result.Phase = "validate"
 				result.Error = fmt.Sprintf("agent replied without expected text %q", want)
@@ -233,7 +282,7 @@ func runDebugChannelE2E(args []string) error {
 			}
 		}
 		if !turnTerminalProbed {
-			terminal, failed := probeDebugChannelE2ETerminalTurn(client, createdAgent.Agent.ID, &result)
+			terminal, failed := probeDebugChannelE2ETerminalTurn(client, scenarioAgent.ID, &result)
 			turnTerminalProbed = terminal
 			if failed != nil {
 				result.Status = "turn_failed"
@@ -248,7 +297,7 @@ func runDebugChannelE2E(args []string) error {
 		case <-ctx.Done():
 			result.Events, _ = drainDebugChannelE2EEvents(client.Notifications(), result.Events, turnCompleted)
 			captureDebugChannelE2EState(client, &result)
-			if countDebugChannelAgentMessages(result.Messages) > 0 {
+			if countDebugChannelAgentMessagesByID(result.Messages, scenarioAgent.ID) > 0 {
 				result.Status = "expectation_failed"
 				result.Phase = "validate"
 				result.Error = fmt.Sprintf("agent replied without expected text %q", want)
@@ -360,10 +409,15 @@ func runDebugChannelInspect(args []string) error {
 	fs := flag.NewFlagSet("debug channel inspect", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cfg := addDebugAppServerFlags(fs)
+	sandboxCfg := addDebugSandboxFlags(fs)
 	roomSelector := fs.String("room", "", "room id or unique room name")
 	afterSeq := fs.Int64("after", 0, "list messages after this sequence")
 	limit := fs.Int("limit", 100, "maximum messages to return")
-	if err := fs.Parse(args); err != nil {
+	normalized, err := normalizeDebugSandboxArgs(args, true)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if err := fs.Parse(normalized); err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	if fs.NArg() != 0 {
@@ -373,7 +427,14 @@ func runDebugChannelInspect(args []string) error {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("after must be non-negative and limit must be positive"))
 	}
 
-	client, err := newDebugAppServerClient(context.Background(), debugAppServerOptionsFromCLI(cfg))
+	opts := debugAppServerOptionsFromCLI(cfg)
+	if err := applyDebugSandboxOptions(&opts, sandboxCfg); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if opts.sandbox {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("inspect requires a sandbox name after --sandbox"))
+	}
+	client, err := newDebugAppServerClient(context.Background(), opts)
 	if err != nil {
 		return err
 	}
@@ -383,7 +444,10 @@ func runDebugChannelInspect(args []string) error {
 	if err != nil {
 		return err
 	}
-	result := debugChannelInspectResult{Agents: bootstrap.Agents, Rooms: bootstrap.Rooms}
+	result := debugChannelInspectResult{
+		SandboxName: opts.sandboxName, SandboxDir: client.SandboxDir(),
+		Agents: bootstrap.Agents, Rooms: bootstrap.Rooms,
+	}
 	if strings.TrimSpace(*roomSelector) != "" {
 		room, err := resolveDebugChannelRoom(bootstrap.Rooms, *roomSelector)
 		if err != nil {
@@ -405,10 +469,15 @@ func runDebugChannelSend(args []string) error {
 	fs := flag.NewFlagSet("debug channel send", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cfg := addDebugAppServerFlags(fs)
+	sandboxCfg := addDebugSandboxFlags(fs)
 	roomSelector := fs.String("room", "", "room id or unique room name")
 	wait := fs.Duration("wait", 0, "maximum time to wait for agent replies")
 	expectedReplies := fs.Int("replies", 1, "agent replies required before wait completes")
-	if err := fs.Parse(args); err != nil {
+	normalized, err := normalizeDebugSandboxArgs(args, true)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if err := fs.Parse(normalized); err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	body := strings.TrimSpace(strings.Join(fs.Args(), " "))
@@ -422,7 +491,14 @@ func runDebugChannelSend(args []string) error {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wait must be non-negative and replies must be positive"))
 	}
 
-	client, err := newDebugAppServerClient(context.Background(), debugAppServerOptionsFromCLI(cfg))
+	opts := debugAppServerOptionsFromCLI(cfg)
+	if err := applyDebugSandboxOptions(&opts, sandboxCfg); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	if opts.sandbox {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("send requires a sandbox name after --sandbox"))
+	}
+	client, err := newDebugAppServerClient(context.Background(), opts)
 	if err != nil {
 		return err
 	}
@@ -443,6 +519,7 @@ func runDebugChannelSend(args []string) error {
 	}
 
 	result := debugChannelSendResult{
+		SandboxName: opts.sandboxName, SandboxDir: client.SandboxDir(),
 		Room: room, Sent: sent.Message, Messages: []channels.Message{}, ExpectedReplies: *expectedReplies,
 	}
 	if *wait == 0 {
@@ -485,6 +562,47 @@ func debugChannelBootstrap(ctx context.Context, client debugAppServerClient) (ap
 	return result, err
 }
 
+func resolveDebugChannelAgentByName(agents []channels.NamedAgent, name string) (channels.NamedAgent, bool, error) {
+	matches := make([]channels.NamedAgent, 0, 1)
+	for _, agent := range agents {
+		if strings.EqualFold(strings.TrimSpace(agent.Name), strings.TrimSpace(name)) {
+			matches = append(matches, agent)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true, nil
+	}
+	if len(matches) > 1 {
+		return channels.NamedAgent{}, false, fmt.Errorf("agent name %q is ambiguous", name)
+	}
+	return channels.NamedAgent{}, false, nil
+}
+
+func resolveDebugChannelRoomByName(rooms []channels.Room, name string) (channels.Room, bool, error) {
+	matches := make([]channels.Room, 0, 1)
+	for _, room := range rooms {
+		if strings.EqualFold(strings.TrimSpace(room.Name), strings.TrimSpace(name)) {
+			matches = append(matches, room)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true, nil
+	}
+	if len(matches) > 1 {
+		return channels.Room{}, false, fmt.Errorf("room name %q is ambiguous", name)
+	}
+	return channels.Room{}, false, nil
+}
+
+func debugChannelRoomHasAgent(room channels.Room, agentID string) bool {
+	for _, member := range room.Members {
+		if member.MemberType == channels.MemberAgent && member.MemberID == agentID {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveDebugChannelRoom(rooms []channels.Room, selector string) (channels.Room, error) {
 	selector = strings.TrimSpace(selector)
 	for _, room := range rooms {
@@ -511,6 +629,16 @@ func countDebugChannelAgentMessages(messages []channels.Message) int {
 	count := 0
 	for _, message := range messages {
 		if message.AuthorType == channels.MemberAgent {
+			count++
+		}
+	}
+	return count
+}
+
+func countDebugChannelAgentMessagesByID(messages []channels.Message, agentID string) int {
+	count := 0
+	for _, message := range messages {
+		if message.AuthorType == channels.MemberAgent && message.AuthorID == agentID {
 			count++
 		}
 	}

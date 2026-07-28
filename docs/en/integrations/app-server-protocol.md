@@ -310,9 +310,11 @@ for agents, scripts, and developers that need to inspect the core path directly.
 ```bash
 wuu debug app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]
 wuu debug app-server send [--workdir DIR] <method> '<json>'
-wuu debug channel e2e --sandbox [--keep-sandbox] [--agent NAME] [--message TEXT] [--expect TEXT] [--timeout DURATION]
-wuu debug channel inspect [--room ID|NAME] [--after SEQ] [--limit N]
-wuu debug channel send --room ID|NAME [--wait DURATION] [--replies N] "message"
+wuu debug channel e2e (--sandbox|--sandbox-name NAME) [--keep-sandbox] [--agent NAME] [--room NAME] [--message TEXT] [--expect TEXT] [--timeout DURATION]
+wuu debug channel inspect [--sandbox NAME] [--room ID|NAME] [--after SEQ] [--limit N]
+wuu debug channel send [--sandbox NAME] --room ID|NAME [--wait DURATION] [--replies N] "message"
+wuu debug sandbox list
+wuu debug sandbox delete NAME
 wuu debug protocol events [--json] [--workdir DIR] <thread-id>
 ```
 
@@ -333,11 +335,11 @@ message paths as the desktop. Both commands print one JSON value to stdout;
 `send` returns the timeout exit code when `--wait` does not observe the requested
 number of replies.
 
-`wuu debug channel e2e --sandbox` is the one-command acceptance path for a
-coding agent after changing group chat. It loads the normal provider and model
-configuration and credentials into memory, then redirects all runtime state
-into a temporary Wuu home. No credential file is copied into the sandbox. It
-creates a named agent and room, sends a direct mention through
+`wuu debug channel e2e --sandbox` is the disposable one-command acceptance path
+for a coding agent after changing group chat. It loads the normal provider and
+model configuration and credentials into memory, then redirects all runtime
+state into a temporary Wuu home. No credential file is copied into the sandbox.
+It creates a named agent and room, sends a direct mention through
 `channel/message/send`, waits for the real provider turn, and requires the reply
 to contain `--expect` (default `E2E_OK`). The temporary channel database, agent
 memory, session, and trace are removed on shutdown; the user's existing rooms
@@ -347,6 +349,30 @@ provider, model, created records, wake state, named-Agent thread diagnostics,
 observed messages, protocol notifications, assertion, and duration. Provider,
 turn, timeout, and reply-mismatch failures are printed before the command
 returns a non-zero exit code.
+
+Pass `--sandbox-name NAME` (or `--sandbox=NAME`) to keep a reusable experiment
+instead. Bare `--sandbox` remains the backward-compatible disposable form, so
+an existing positional message after it is not mistaken for a sandbox name:
+
+```bash
+wuu debug channel e2e --sandbox-name group-chat-exp --agent Andy --room Experiment \
+  --message "First round" --expect FIRST_OK
+wuu debug channel inspect --sandbox group-chat-exp --room Experiment
+wuu debug channel send --sandbox group-chat-exp --room Experiment --wait 2m \
+  "@Andy Continue from the previous round"
+wuu debug channel e2e --sandbox-name group-chat-exp --agent Andy --room Experiment \
+  --message "Final check" --expect FINAL_OK
+```
+
+A named sandbox uses a stable isolated Wuu home. Later commands with the same
+name reuse its channel database, Agent memory, sessions, traces, logs, rooms,
+and message history. E2E reuses the requested Agent and room when they already
+exist, so subsequent runs continue the same experiment rather than creating a
+parallel scenario. Named sandboxes never copy credential files and never write
+to normal channel state. They are preserved until explicitly removed. Use
+`wuu debug sandbox list` to discover them and `wuu debug sandbox delete NAME`
+to clean one up. Names are limited to letters, numbers, dot, underscore, and
+hyphen; path separators and traversal names are rejected.
 
 For example:
 

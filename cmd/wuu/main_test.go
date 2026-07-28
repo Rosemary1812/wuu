@@ -2330,6 +2330,53 @@ func TestRunDebugChannelE2EPassesWithMatchingAgentReply(t *testing.T) {
 	}
 }
 
+func TestRunDebugChannelE2EResumesNamedAgentAndRoom(t *testing.T) {
+	client := fakeDebugChannelE2EClient("ROUND_TWO_OK", true)
+	client.results[appserver.MethodChannelBootstrap] = json.RawMessage(`{
+		"agents":[
+			{"id":"agent-1","name":"Andy","memory_dir":"/sandbox/memory-1","autostart":true,"created_at":"2026-07-28T00:00:00Z"},
+			{"id":"agent-2","name":"Other","memory_dir":"/sandbox/memory-2","autostart":true,"created_at":"2026-07-28T00:00:00Z"}
+		],
+		"rooms":[{"id":"room-1","kind":"channel","name":"Experiment","created_by":"local-user","created_at":"2026-07-28T00:00:00Z","members":[
+			{"room_id":"room-1","member_type":"agent","member_id":"agent-1","joined_at":"2026-07-28T00:00:00Z"},
+			{"room_id":"room-1","member_type":"agent","member_id":"agent-2","joined_at":"2026-07-28T00:00:00Z"}
+		]}]
+	}`)
+	client.resultQueues = map[string][]json.RawMessage{
+		appserver.MethodChannelMessageList: {
+			json.RawMessage(`{"messages":[{"id":"other-reply","room_id":"room-1","seq":2,"author_type":"agent","author_id":"agent-2","kind":"text","body":"OTHER_REPLY","mentions":[],"created_at":"2026-07-28T00:00:01Z"}]}`),
+			client.results[appserver.MethodChannelMessageList],
+		},
+	}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"debug", "channel", "e2e", "--sandbox-name", "group-chat-exp",
+			"--agent", "Andy", "--room", "Experiment",
+			"--message", "continue", "--expect", "ROUND_TWO_OK",
+		}); err != nil {
+			t.Fatalf("resume named e2e: %v", err)
+		}
+	})
+	var payload debugChannelE2EResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("parse output: %v\n%s", err, output)
+	}
+	if payload.Status != "passed" || payload.SandboxName != "group-chat-exp" || payload.Room.ID != "room-1" || payload.Agent.ID != "agent-1" {
+		t.Fatalf("unexpected resumed e2e output: %+v", payload)
+	}
+	if client.opts.sandbox || client.opts.sandboxName != "group-chat-exp" {
+		t.Fatalf("unexpected sandbox options: %+v", client.opts)
+	}
+	for _, call := range client.calls {
+		if call.method == appserver.MethodChannelAgentCreate || call.method == appserver.MethodChannelRoomCreate {
+			t.Fatalf("resumed e2e unexpectedly created scenario state: %+v", call)
+		}
+	}
+}
+
 func TestRunDebugChannelE2EFailsWhenCompletedReplyMissesExpectation(t *testing.T) {
 	client := fakeDebugChannelE2EClient("not the expected result", true)
 	restore := installDebugAppServerClientOverride(t, client)
@@ -2447,6 +2494,191 @@ func TestLocalDebugAppServerSandboxIsolatesChannelState(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(sandboxHome)); !os.IsNotExist(err) {
 		t.Fatalf("sandbox was not removed: %v", err)
+	}
+}
+
+func TestNormalizeDebugSandboxArgsSupportsTemporaryAndNamedForms(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "bare remains temporary", args: []string{"--sandbox", "--agent", "Andy"}, want: []string{"--temp-sandbox", "--agent", "Andy"}},
+		{name: "name consumes value", args: []string{"--sandbox", "group-chat-exp", "--room", "Test"}, want: []string{"--sandbox-name", "group-chat-exp", "--room", "Test"}},
+		{name: "equals name", args: []string{"--sandbox=group-chat-exp"}, want: []string{"--sandbox-name=group-chat-exp"}},
+		{name: "equals true remains temporary", args: []string{"--sandbox=true"}, want: []string{"--temp-sandbox=true"}},
+		{name: "equals false remains disabled", args: []string{"--sandbox=false"}, want: []string{"--temp-sandbox=false"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeDebugSandboxArgs(tt.args, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("normalized args = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+	got, err := normalizeDebugSandboxArgs([]string{"--sandbox", "legacy positional message"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--temp-sandbox", "legacy positional message"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("backward-compatible E2E args = %#v, want %#v", got, want)
+	}
+	for _, name := range []string{"../escape", ".", "name/child", "two words", "-leading"} {
+		if err := validateDebugSandboxName(name); err == nil {
+			t.Fatalf("validateDebugSandboxName(%q) unexpectedly passed", name)
+		}
+	}
+}
+
+func TestNamedDebugSandboxPersistsStateAndCanBeDeleted(t *testing.T) {
+	realWuuHome := filepath.Join(t.TempDir(), "real-wuu-home")
+	t.Setenv("WUU_HOME", realWuuHome)
+	workdir := t.TempDir()
+	const sandboxName = "multi-round"
+
+	client, err := newLocalDebugAppServerClient(context.Background(), debugAppServerOptions{
+		workdir: workdir, noTools: true, sandboxName: sandboxName,
+	})
+	if err != nil {
+		t.Fatalf("new named sandbox client: %v", err)
+	}
+	sandboxHome := client.rt.WuuHome
+	wantHome := filepath.Join(realWuuHome, "debug", "sandboxes", sandboxName)
+	if sandboxHome != wantHome {
+		t.Fatalf("sandbox WUU_HOME = %q, want %q", sandboxHome, wantHome)
+	}
+	var bootstrap appserver.ChannelBootstrapResult
+	if err := client.Call(context.Background(), appserver.MethodChannelBootstrap, nil, &bootstrap); err != nil {
+		t.Fatalf("sandbox bootstrap: %v", err)
+	}
+	var sent appserver.ChannelMessageSendResult
+	if err := client.Call(context.Background(), appserver.MethodChannelMessageSend, appserver.ChannelMessageSendParams{
+		RoomID: bootstrap.Rooms[0].ID, Body: "first round",
+	}, &sent); err != nil {
+		t.Fatalf("send first round: %v", err)
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := client.Shutdown(shutdownCtx); err != nil {
+		cancel()
+		t.Fatalf("shutdown first client: %v", err)
+	}
+	cancel()
+
+	client, err = newLocalDebugAppServerClient(context.Background(), debugAppServerOptions{
+		workdir: workdir, noTools: true, sandboxName: sandboxName,
+	})
+	if err != nil {
+		t.Fatalf("resume named sandbox client: %v", err)
+	}
+	var messages appserver.ChannelMessageListResult
+	if err := client.Call(context.Background(), appserver.MethodChannelMessageList, appserver.ChannelMessageListParams{
+		RoomID: bootstrap.Rooms[0].ID, Limit: 100,
+	}, &messages); err != nil {
+		t.Fatalf("list resumed messages: %v", err)
+	}
+	if len(messages.Messages) != 1 || messages.Messages[0].Body != "first round" {
+		t.Fatalf("resumed messages = %+v", messages.Messages)
+	}
+	shutdownCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	if err := client.Shutdown(shutdownCtx); err != nil {
+		cancel()
+		t.Fatalf("shutdown resumed client: %v", err)
+	}
+	cancel()
+	output := captureStdout(t, func() {
+		if err := runDebugChannelSend([]string{
+			"--sandbox", sandboxName, "--workdir", workdir, "--no-tools",
+			"--room", bootstrap.Rooms[0].ID, "second", "round",
+		}); err != nil {
+			t.Fatalf("send through named sandbox CLI: %v", err)
+		}
+	})
+	var sendResult debugChannelSendResult
+	if err := json.Unmarshal([]byte(output), &sendResult); err != nil {
+		t.Fatalf("parse send output: %v", err)
+	}
+	if sendResult.SandboxName != sandboxName || sendResult.Sent.Body != "second round" {
+		t.Fatalf("send result = %+v", sendResult)
+	}
+	output = captureStdout(t, func() {
+		if err := runDebugChannelInspect([]string{
+			"--sandbox", sandboxName, "--workdir", workdir, "--no-tools",
+			"--room", bootstrap.Rooms[0].ID,
+		}); err != nil {
+			t.Fatalf("inspect through named sandbox CLI: %v", err)
+		}
+	})
+	var inspectResult debugChannelInspectResult
+	if err := json.Unmarshal([]byte(output), &inspectResult); err != nil {
+		t.Fatalf("parse inspect output: %v", err)
+	}
+	if inspectResult.SandboxName != sandboxName || len(inspectResult.Messages) != 2 {
+		t.Fatalf("inspect result = %+v", inspectResult)
+	}
+
+	if _, err := os.Stat(filepath.Join(realWuuHome, "channels")); !os.IsNotExist(err) {
+		t.Fatalf("normal channel state was touched: %v", err)
+	}
+	output = captureStdout(t, func() {
+		if err := runDebugSandbox([]string{"list"}); err != nil {
+			t.Fatalf("list named sandboxes: %v", err)
+		}
+	})
+	var listed debugSandboxListResult
+	if err := json.Unmarshal([]byte(output), &listed); err != nil {
+		t.Fatalf("parse sandbox list output: %v", err)
+	}
+	if len(listed.Sandboxes) != 1 || listed.Sandboxes[0].Name != sandboxName || listed.Sandboxes[0].Dir != sandboxHome {
+		t.Fatalf("sandbox list = %+v", listed.Sandboxes)
+	}
+	output = captureStdout(t, func() {
+		if err := runDebugSandbox([]string{"delete", sandboxName}); err != nil {
+			t.Fatalf("delete named sandbox: %v", err)
+		}
+	})
+	var deleted debugSandboxDeleteResult
+	if err := json.Unmarshal([]byte(output), &deleted); err != nil {
+		t.Fatalf("parse delete output: %v", err)
+	}
+	if !deleted.Deleted {
+		t.Fatalf("delete output = %+v", deleted)
+	}
+	if _, err := os.Stat(sandboxHome); !os.IsNotExist(err) {
+		t.Fatalf("named sandbox still exists after delete: %v", err)
+	}
+}
+
+func TestDebugSandboxManagementRejectsSymlinkedBase(t *testing.T) {
+	realWuuHome := filepath.Join(t.TempDir(), "real-wuu-home")
+	t.Setenv("WUU_HOME", realWuuHome)
+	baseDir := filepath.Join(realWuuHome, "debug", "sandboxes")
+	if err := os.MkdirAll(filepath.Dir(baseDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outside, "experiment"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(outside, "experiment", "keep.txt")
+	if err := os.WriteFile(marker, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, baseDir); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := runDebugSandbox([]string{"list"}); err == nil {
+		t.Fatal("list unexpectedly followed a symlinked sandbox base")
+	}
+	if err := runDebugSandbox([]string{"delete", "experiment"}); err == nil {
+		t.Fatal("delete unexpectedly followed a symlinked sandbox base")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("outside marker was touched: %v", err)
 	}
 }
 

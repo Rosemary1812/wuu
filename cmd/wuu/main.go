@@ -1174,6 +1174,7 @@ type debugAppServerOptions struct {
 	model       string
 	noTools     bool
 	sandbox     bool
+	sandboxName string
 	keepSandbox bool
 }
 
@@ -1193,6 +1194,8 @@ func runDebug(args []string) error {
 		return runDebugAppServer(args[1:])
 	case "channel":
 		return runDebugChannel(args[1:])
+	case "sandbox":
+		return runDebugSandbox(args[1:])
 	case "protocol":
 		return runDebugProtocol(args[1:])
 	default:
@@ -1312,9 +1315,13 @@ func newLocalDebugAppServerClient(ctx context.Context, opts debugAppServerOption
 	}
 	var sandboxDir string
 	var sandboxCleanup func()
-	if opts.sandbox {
+	if opts.sandbox || strings.TrimSpace(opts.sandboxName) != "" {
+		realWuuHome, homeErr := statepath.Home(homeDir)
+		if homeErr != nil {
+			return nil, homeErr
+		}
 		hydrateDebugSandboxCredentials(&cfg, homeDir)
-		sandboxDir, sandboxCleanup, err = activateDebugSandbox(opts.keepSandbox)
+		sandboxDir, sandboxCleanup, err = activateDebugSandbox(realWuuHome, opts.sandboxName, opts.keepSandbox)
 		if err != nil {
 			return nil, err
 		}
@@ -1427,34 +1434,6 @@ func (c *localDebugAppServerClient) Shutdown(ctx context.Context) error {
 		_, _ = c.rt.Cleanup()
 	}
 	return err
-}
-
-func activateDebugSandbox(keep bool) (string, func(), error) {
-	debugSandboxMu.Lock()
-	root, err := os.MkdirTemp("", "wuu-channel-e2e-")
-	if err != nil {
-		debugSandboxMu.Unlock()
-		return "", nil, fmt.Errorf("create channel e2e sandbox: %w", err)
-	}
-	previous, existed := os.LookupEnv("WUU_HOME")
-	stateHome := filepath.Join(root, "wuu-home")
-	if err := os.Setenv("WUU_HOME", stateHome); err != nil {
-		_ = os.RemoveAll(root)
-		debugSandboxMu.Unlock()
-		return "", nil, fmt.Errorf("activate channel e2e sandbox: %w", err)
-	}
-	cleanup := func() {
-		if existed {
-			_ = os.Setenv("WUU_HOME", previous)
-		} else {
-			_ = os.Unsetenv("WUU_HOME")
-		}
-		if !keep {
-			_ = os.RemoveAll(root)
-		}
-		debugSandboxMu.Unlock()
-	}
-	return stateHome, cleanup, nil
 }
 
 func shutdownDebugClient(client debugAppServerClient) {
@@ -2334,9 +2313,11 @@ Usage:
   wuu skills lint [--json] PATH...
   wuu debug app-server initialize [flags]
   wuu debug app-server send [flags] METHOD [JSON]
-  wuu debug channel e2e --sandbox [flags]
-  wuu debug channel inspect [flags]
-  wuu debug channel send [flags] "message"
+  wuu debug channel e2e (--sandbox|--sandbox-name NAME) [flags]
+  wuu debug channel inspect [--sandbox NAME] [flags]
+  wuu debug channel send [--sandbox NAME] [flags] "message"
+  wuu debug sandbox list
+  wuu debug sandbox delete NAME
   wuu debug protocol events [flags] THREAD_ID
   wuu run [flags] "your coding task"
   wuu eval [flags]
@@ -2415,12 +2396,15 @@ Debug commands:
                    start a local app-server and print its initialize result
   app-server send [flags] METHOD [JSON]
                    send one app-server method and print the raw JSON result
-  channel e2e --sandbox [--keep-sandbox] [--agent NAME] [--message TEXT] [--expect TEXT] [--timeout DURATION] [app-server flags]
-                   create an isolated real-provider scenario and assert the named-agent reply
-  channel inspect [--room ID|NAME] [--after SEQ] [--limit N] [app-server flags]
+  channel e2e (--sandbox|--sandbox-name NAME) [--keep-sandbox] [--agent NAME] [--room NAME] [--message TEXT] [--expect TEXT] [--timeout DURATION] [app-server flags]
+                   create or resume an isolated real-provider scenario and assert the named-agent reply
+  channel inspect [--sandbox NAME] [--room ID|NAME] [--after SEQ] [--limit N] [app-server flags]
                    inspect persistent rooms and optionally one room's messages
-  channel send --room ID|NAME [--wait DURATION] [--replies N] [app-server flags] "message"
+  channel send [--sandbox NAME] --room ID|NAME [--wait DURATION] [--replies N] [app-server flags] "message"
                    send through the real channel path and optionally wait for agent replies
+  sandbox list      list reusable named debug sandboxes
+  sandbox delete NAME
+                   delete one reusable named debug sandbox
   protocol events [--json] [--workdir DIR] THREAD_ID
                    print trace JSONL events recorded for a session
 
