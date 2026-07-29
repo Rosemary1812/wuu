@@ -1224,14 +1224,14 @@ describe("Composer send control", () => {
 
     const shell = container.querySelector<HTMLElement>(".composer-shell");
     vi.spyOn(shell as HTMLElement, "getBoundingClientRect").mockReturnValue({
-      bottom: 580,
+      bottom: 500,
       height: 100,
       left: 80,
       right: 720,
-      top: 480,
+      top: 400,
       width: 640,
       x: 80,
-      y: 480,
+      y: 400,
       toJSON: () => ({}),
     });
 
@@ -1247,8 +1247,12 @@ describe("Composer send control", () => {
     const menu = document.body.querySelector<HTMLElement>('[data-floating-menu-owner="composer-plus"]');
     expect(menu?.style.width).toBe("640px");
     expect(menu?.style.left).toBe("80px");
-    expect(menu?.style.bottom).toBe(`${window.innerHeight - 480 + 8}px`);
+    expect(menu?.style.bottom).toBe(`${window.innerHeight - 400 + 8}px`);
+    expect(menu?.style.getPropertyValue("--floating-menu-available-height")).toBe("384px");
     expect(composerCSS).toMatch(/\.composer-plus-menu\s*{[^}]*width:\s*100%;/s);
+    expect(composerCSS).toMatch(
+      /\.composer-plus-menu\s*{[^}]*max-height:\s*min\([^}]*var\(--floating-menu-available-height/s,
+    );
     expect(menu?.querySelectorAll(".composer-plus-menu-section")).toHaveLength(2);
     expect(menu?.textContent).toContain("添加");
     expect(menu?.textContent).toContain("添加附件");

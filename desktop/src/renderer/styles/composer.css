@@ -2301,7 +2301,10 @@
 
 .composer-plus-menu {
   width: 100%;
-  max-height: min(420px, calc(100vh - 180px));
+  max-height: min(
+    420px,
+    var(--floating-menu-available-height, calc(100vh - 180px))
+  );
   gap: 1px;
   padding: 7px;
 }

@@ -134,25 +134,21 @@ export function FloatingMenuPortal({
       }
 
       // Constrain max-height to the available viewport room on the
-      // chosen side. This is the proportional-scaling half of the
-      // fix: when the list is taller than the side can show, the
-      // panel scrolls internally instead of overflowing the viewport.
-      // The cap is pushed down as a CSS variable instead of an inline
-      // `maxHeight` because the panel sits inside the layer with
-      // `position: static` — percentage / inherit heights don't reach
-      // it, so the variable is the bridge from layer budget to panel
-      // box. (See select-menu.css `.select-menu-panel`.)
+      // chosen side. Panels consume the shared available-height variable
+      // and scroll internally instead of overflowing the viewport.
+      // The select-menu-specific variable remains for compatibility with
+      // older consumers while shared composer menus use the generic one.
       let availableHeight: number;
       if (actualPlacement === "above") {
         nextStyle.bottom = Math.max(
           viewportMargin,
           window.innerHeight - rect.top + offset
         );
-        availableHeight = Math.max(80, rect.top - offset - viewportMargin);
+        availableHeight = Math.max(0, rect.top - offset - viewportMargin);
       } else if (actualPlacement === "below") {
         nextStyle.top = Math.max(viewportMargin, rect.bottom + offset);
         availableHeight = Math.max(
-          80,
+          0,
           window.innerHeight - rect.bottom - offset - viewportMargin
         );
       } else {
@@ -163,14 +159,15 @@ export function FloatingMenuPortal({
         );
         nextStyle.transform = "translateY(-50%)";
         availableHeight = Math.max(
-          80,
+          0,
           Math.min(window.innerHeight - 2 * viewportMargin, 420)
         );
       }
       // CSS custom property — React's CSSProperties type doesn't allow
       // arbitrary `--*` keys, so the cast is the standard escape hatch.
-      (nextStyle as Record<string, string>)["--select-menu-max-height"] =
-        `${availableHeight}px`;
+      const styleVariables = nextStyle as Record<string, string>;
+      styleVariables["--floating-menu-available-height"] = `${availableHeight}px`;
+      styleVariables["--select-menu-max-height"] = `${availableHeight}px`;
 
       setStyle(nextStyle);
     }
