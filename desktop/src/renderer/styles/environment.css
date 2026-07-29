@@ -962,43 +962,6 @@
   white-space: nowrap;
 }
 
-.conversation-search-result-side {
-  display: grid;
-  width: 132px;
-  max-width: 132px;
-  min-width: 0;
-  grid-template-columns: minmax(0, 88px) 36px;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-regular);
-  line-height: 16px;
-}
-
-.conversation-search-result-side.shortcuts-only {
-  width: 36px;
-  grid-template-columns: 36px;
-}
-
-.conversation-search-result-side.shortcuts-only .conversation-search-result-shortcut {
-  grid-column: 1;
-}
-
-.conversation-search-result-context {
-  grid-column: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.conversation-search-result-context {
-  max-width: 88px;
-}
-
 .conversation-search-result-shortcut {
   grid-column: 2;
   min-width: 36px;
@@ -1241,14 +1204,6 @@
   .conversation-search-result {
     min-height: 48px;
     grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .conversation-search-result-side {
-    max-width: 100%;
-  }
-
-  .conversation-search-result-context {
-    max-width: 40vw;
   }
 }
 
