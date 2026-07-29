@@ -1616,7 +1616,7 @@ function MemorySettingsSection({
   }
 
   return (
-    <SettingsSection title={t("settings.dream")} testID="settings-dream">
+    <SettingsSection testID="settings-dream">
       <SettingsCard>
         <SettingsRow
           title={t("settings.dream")}
