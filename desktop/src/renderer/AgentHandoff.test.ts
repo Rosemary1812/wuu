@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_NOTIFICATION_NAME,
-  agentHandoffChipDisplayItem,
+  agentHandoffChipDisplayItems,
   agentHandoffDisplay,
   agentHandoffDisplayItem,
   isAgentHandoffItem,
@@ -53,10 +53,47 @@ describe("agentHandoffDisplay", () => {
       name: AGENT_NOTIFICATION_NAME,
       text: handoffText("completed"),
     };
-    expect(agentHandoffChipDisplayItem(item)).toEqual({
-      label: "explore_current_directory 完成了",
-      shimmer: true,
-    });
+    expect(agentHandoffChipDisplayItems(item)).toEqual([
+      { label: "explore_current_directory 完成了", outcome: "completed" },
+    ]);
+  });
+
+  it("keeps combined completion envelopes as informative as separate ones", () => {
+    // combineAgentCompletionMessages joins ≥2 envelopes with "\n\n" while the
+    // parent agent is mid-turn; chips must not degrade to a generic label.
+    const first = JSON.parse(handoffText("completed"));
+    const second = JSON.parse(handoffText("failed"));
+    second.content = second.content.replaceAll(
+      "explore_current_directory",
+      "run_tests",
+    );
+    const item = {
+      name: AGENT_NOTIFICATION_NAME,
+      text: `${JSON.stringify(first)}\n\n${JSON.stringify(second)}`,
+    };
+    expect(agentHandoffChipDisplayItems(item)).toEqual([
+      { label: "explore_current_directory 完成了", outcome: "completed" },
+      { label: "run_tests 失败了", outcome: "failed" },
+    ]);
+  });
+
+  it("falls back to one generic chip when a name-stamped payload is unparseable", () => {
+    const item = { name: AGENT_NOTIFICATION_NAME, text: "{not json" };
+    expect(agentHandoffChipDisplayItems(item)).toEqual([
+      { label: "已更新", outcome: "updated" },
+    ]);
+  });
+
+  it("ignores a legacy <changed_file_overlap> tail instead of degrading the chip", () => {
+    const item = {
+      name: AGENT_NOTIFICATION_NAME,
+      text:
+        handoffText("completed") +
+        "\n\n<changed_file_overlap>\n  - foo.ts\n</changed_file_overlap>",
+    };
+    expect(agentHandoffChipDisplayItems(item)).toEqual([
+      { label: "explore_current_directory 完成了", outcome: "completed" },
+    ]);
   });
 
   it("does not treat normal user text as an internal handoff", () => {

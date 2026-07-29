@@ -306,7 +306,7 @@ func (s *Server) applyAgentSnapshotLocked(th *threadState, rootThreadID string, 
 	switch snap.Status {
 	case subagent.StatusRunning, subagent.StatusPending, subagent.StatusQueued:
 		th.UpdatedAt = now
-	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
+	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled, subagent.StatusInterrupted:
 		th.UpdatedAt = firstNonZeroTime(snap.CompletedAt, now)
 	default:
 		th.UpdatedAt = now
@@ -378,6 +378,11 @@ func turnStatusForSubAgentSnapshot(snap subagent.SubAgentSnapshot) (TurnStatus, 
 		return TurnStatusFailed, errors.New("worker failed")
 	case subagent.StatusCancelled:
 		return TurnStatusInterrupted, context.Canceled
+	case subagent.StatusInterrupted:
+		if snap.Error != nil {
+			return TurnStatusInterrupted, snap.Error
+		}
+		return TurnStatusInterrupted, errors.New("worker interrupted")
 	default:
 		return TurnStatusCompleted, nil
 	}

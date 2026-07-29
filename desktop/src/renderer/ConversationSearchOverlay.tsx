@@ -56,10 +56,6 @@ export function ConversationSearchOverlay({
   if (!state.open && !state.closing) {
     return null;
   }
-  const resultContextLabels = results.map(({ thread }) =>
-    conversationSearchContextLabel(thread, projects),
-  );
-  const showResultContexts = new Set(resultContextLabels).size > 1;
 
   return (
     <div
@@ -138,21 +134,12 @@ export function ConversationSearchOverlay({
                     ) : null}
                   </span>
                   <span
-                    className={`conversation-search-result-side${showResultContexts ? "" : " shortcuts-only"}`}
+                    className={`conversation-search-result-shortcut${resultIndex < 9 ? "" : " empty"}`}
+                    aria-hidden={resultIndex >= 9 ? true : undefined}
                   >
-                    {showResultContexts ? (
-                      <span className="conversation-search-result-context">
-                        {resultContextLabels[resultIndex]}
-                      </span>
-                    ) : null}
-                    <span
-                      className={`conversation-search-result-shortcut${resultIndex < 9 ? "" : " empty"}`}
-                      aria-hidden={resultIndex >= 9 ? true : undefined}
-                    >
-                      {resultIndex < 9
-                        ? primaryShortcutLabel(resultIndex + 1)
-                        : ""}
-                    </span>
+                    {resultIndex < 9
+                      ? primaryShortcutLabel(resultIndex + 1)
+                      : ""}
                   </span>
                 </button>
               );

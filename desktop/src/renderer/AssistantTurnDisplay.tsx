@@ -1,7 +1,7 @@
 import { type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
-  agentHandoffChipDisplayItem,
+  agentHandoffChipDisplayItems,
   isAgentHandoffItem,
   type SubagentChipDisplay,
 } from "./AgentHandoff";
@@ -49,7 +49,11 @@ export type TurnEntryKind =
   | "answer"
   | "activity"
   | "process"
-  | "process_group";
+  | "process_group"
+  // A turn that only carries subagent notifications (no assistant work yet)
+  // still needs somewhere for the chips to live; this kind renders as a
+  // bare chip row instead of borrowing another entry's chrome.
+  | "subagent_chips";
 
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
@@ -90,35 +94,48 @@ export function buildAssistantTurnDisplay(
   const isInProgress = turn.status === "in_progress";
   const turnHasReasoning = turn.items.some((item) => item.type === "reasoning");
   let firstTextItemRendered = false;
-  let pendingChips: SubagentChipDisplay[] = [];
+  let collectedChips: SubagentChipDisplay[] = [];
+  // Turn-level chip anchor: every subagent notification in a turn surfaces
+  // as ONE chip group at the spot where the first notification landed.
+  // Readers get a single stable landmark per turn instead of chips
+  // scattered across whatever entries happened to be adjacent.
+  let chipAnchor: { entry: TurnEntry; side: "before" | "after" } | undefined;
+  let anchorPendingBefore = false;
+
+  function isChipHostEntry(entry: TurnEntry): boolean {
+    return (
+      entry.kind === "activity" ||
+      entry.kind === "commentary" ||
+      entry.kind === "answer"
+    );
+  }
 
   function appendEntry(entry: TurnEntry): void {
-    if (pendingChips.length > 0) {
+    // A notification that arrived before any hostable entry waits for the
+    // next text or activity entry; reasoning folds never host chips — a
+    // chip glued to "查看思考过程" reads as part of that control.
+    if (anchorPendingBefore && !chipAnchor) {
       if (entry.kind === "activity") {
-        entry.subagentChipsAfter = pendingChips;
-      } else {
-        entry.subagentChipsBefore = pendingChips;
+        chipAnchor = { entry, side: "after" };
+        anchorPendingBefore = false;
+      } else if (entry.kind === "commentary" || entry.kind === "answer") {
+        chipAnchor = { entry, side: "before" };
+        anchorPendingBefore = false;
       }
-      pendingChips = [];
     }
     entries.push(entry);
   }
 
-  function appendChip(chip: SubagentChipDisplay): void {
-    const previous = entries.at(-1);
-    if (
-      previous &&
-      (previous.kind === "activity" ||
-        previous.kind === "commentary" ||
-        previous.kind === "answer")
-    ) {
-      previous.subagentChipsAfter = [
-        ...(previous.subagentChipsAfter ?? []),
-        chip,
-      ];
-      return;
+  function appendChips(chips: SubagentChipDisplay[]): void {
+    if (!chipAnchor && !anchorPendingBefore) {
+      const previous = entries.at(-1);
+      if (previous && isChipHostEntry(previous)) {
+        chipAnchor = { entry: previous, side: "after" };
+      } else {
+        anchorPendingBefore = true;
+      }
     }
-    pendingChips.push(chip);
+    collectedChips.push(...chips);
   }
 
   function isProcessItemLive(item: ThreadItem): boolean {
@@ -158,12 +175,12 @@ export function buildAssistantTurnDisplay(
     if (seenItemIDs.has(item.id)) continue;
     seenItemIDs.add(item.id);
     if (item.type === "user_message") {
-      const chip = isAgentHandoffItem(item)
-        ? agentHandoffChipDisplayItem(item)
-        : undefined;
-      if (chip) {
+      const chips = isAgentHandoffItem(item)
+        ? agentHandoffChipDisplayItems(item)
+        : [];
+      if (chips.length > 0) {
         sawAssistantWork = true;
-        appendChip(chip);
+        appendChips(chips);
       }
       continue;
     }
@@ -241,14 +258,16 @@ export function buildAssistantTurnDisplay(
     });
   }
 
-  if (pendingChips.length > 0) {
-    const previous = entries.at(-1);
-    if (previous) {
-      previous.subagentChipsAfter = [
-        ...(previous.subagentChipsAfter ?? []),
-        ...pendingChips,
-      ];
+  if (collectedChips.length > 0) {
+    if (chipAnchor) {
+      if (chipAnchor.side === "before") {
+        chipAnchor.entry.subagentChipsBefore = collectedChips;
+      } else {
+        chipAnchor.entry.subagentChipsAfter = collectedChips;
+      }
     } else {
+      // Only reasoning/process entries (or nothing at all) preceded the
+      // notifications: the chips get a bare row of their own.
       appendEntry({
         key: `${turn.id}-subagent-chips`,
         item: {
@@ -259,11 +278,37 @@ export function buildAssistantTurnDisplay(
         position: "process",
         settled: true,
         streaming: false,
-        kind: "process",
-        subagentChipsAfter: pendingChips,
+        kind: "subagent_chips",
+        subagentChipsAfter: collectedChips,
       });
     }
-    pendingChips = [];
+  }
+
+  // Chips must never sit between two text entries: consecutive
+  // commentary/answer reads as one continuous message, and a chip inside it
+  // would land "in the middle of the text". Carry such chips forward to the
+  // tail of the text run (the last text entry before a non-text entry).
+  let carriedChips: SubagentChipDisplay[] = [];
+  const isTextEntry = (entry: TurnEntry): boolean =>
+    entry.kind === "commentary" || entry.kind === "answer";
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    if (!isTextEntry(entry)) {
+      carriedChips = [];
+      continue;
+    }
+    if (carriedChips.length > 0) {
+      entry.subagentChipsAfter = [
+        ...carriedChips,
+        ...(entry.subagentChipsAfter ?? []),
+      ];
+      carriedChips = [];
+    }
+    const next = entries[index + 1];
+    if (next && isTextEntry(next) && entry.subagentChipsAfter?.length) {
+      carriedChips = entry.subagentChipsAfter;
+      delete entry.subagentChipsAfter;
+    }
   }
 
   // For an in_progress turn we always return a display so TurnView keeps
@@ -377,6 +422,12 @@ function groupProcessEntries(entries: TurnEntry[]): TurnEntry[] {
 }
 
 function isProcessGroupCandidate(entry: TurnEntry): boolean {
+  // The bare chip row only borrows a reasoning-shaped item to satisfy the
+  // ThreadItem type; it must never dissolve into a process group, or the
+  // chips would end up glued into the tool/reasoning chrome again.
+  if (entry.kind === "subagent_chips") {
+    return false;
+  }
   if (entry.position !== "process") {
     return false;
   }

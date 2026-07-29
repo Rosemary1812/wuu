@@ -525,12 +525,16 @@ export function createRuntimeSettingsActions(
     const nextVariant = deps.variantByModel.has(targetKey)
       ? deps.variantByModel.get(targetKey)
       : variant;
+    // Codex model discovery is served by the same serial app-server stream as
+    // runtime updates. Close the menu on selection rather than waiting for a
+    // potentially in-flight discovery request to finish, otherwise a valid
+    // click appears to do nothing for the duration of the network request.
+    deps.setCodexRuntimeMenu(null);
     try {
       await sendRuntimeSelection({ provider, model, variant: nextVariant });
     } catch {
       // Failure already surfaced through the status line.
     }
-    deps.setCodexRuntimeMenu(null);
   }
 
   async function selectRuntimeEffort(nextVariant: string): Promise<void> {

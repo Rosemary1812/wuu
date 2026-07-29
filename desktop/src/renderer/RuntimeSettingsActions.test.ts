@@ -627,6 +627,36 @@ describe("createRuntimeSettingsActions", () => {
     expect(api.loadCodexModels).toHaveBeenCalledWith("codex");
   });
 
+  it("closes the model menu immediately while a model update is still queued", async () => {
+    const api = installWuuApi();
+    let resolveUpdate!: (value: {
+      provider: string;
+      model: string;
+      effort: string;
+      variant: string;
+    }) => void;
+    api.updateRuntimeSettings.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    const harness = buildActions();
+    harness.actions.toggleCodexRuntimeMenu("model");
+
+    const selection = harness.actions.selectRuntimeModel("codex", "gpt-5.1", "high");
+
+    expect(api.updateRuntimeSettings).toHaveBeenCalledTimes(1);
+    expect(harness.getRuntimeMenus().codexRuntimeMenu).toBeNull();
+
+    resolveUpdate({
+      provider: "codex",
+      model: "gpt-5.1",
+      effort: "high",
+      variant: "high",
+    });
+    await selection;
+  });
+
   it("loads models for the active session instead of the workspace default", () => {
     const api = installWuuApi();
     const primary = thread();

@@ -4973,10 +4973,50 @@ func (c *AgentControl) markHarnessTaskInterrupted(task harness.Task, now time.Ti
 	if strings.TrimSpace(c.historyDir) != "" {
 		_, _ = subagent.MarkPersistedRunInterrupted(filepath.Join(c.historyDir, task.ID+".json"), reason, now)
 	}
+	c.markAgentThreadInterrupted(task.ID, now)
+}
+
+// markAgentThreadInterrupted settles the child-thread projection consumed by
+// thread/list and thread/resume. After a process restart the old worker is not
+// normally present in the fresh in-memory registry, so recovery must fall back
+// to the durable thread store instead of leaving the UI-facing row running.
+// agentthread has no interrupted status; failed is its terminal crash-recovery
+// projection, matching threadStatusFromSubAgent(StatusInterrupted).
+func (c *AgentControl) markAgentThreadInterrupted(workerID string, now time.Time) {
+	if c == nil || strings.TrimSpace(workerID) == "" {
+		return
+	}
 	if c.threads != nil {
-		if meta, ok := c.threads.UpdateStatus(task.ID, agentthread.StatusFailed, now); ok {
-			_ = c.threadStore.RecordStatus(meta)
+		if meta, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, now); ok {
+			if c.threadStore != nil {
+				if err := c.threadStore.RecordStatus(meta); err != nil {
+					providers.DebugLogf("agentcontrol: persist interrupted child thread %s: %v", workerID, err)
+				}
+			}
+			return
 		}
+	}
+	if c.threadStore == nil {
+		return
+	}
+	threads, err := c.threadStore.ListThreads()
+	if err != nil {
+		providers.DebugLogf("agentcontrol: list child threads while reconciling %s: %v", workerID, err)
+		return
+	}
+	for _, meta := range threads {
+		if meta.ID != workerID {
+			continue
+		}
+		if isFinalAgentThreadStatus(meta.Status) {
+			return
+		}
+		meta.Status = agentthread.StatusFailed
+		meta.UpdatedAt = now
+		if err := c.threadStore.RecordStatus(meta); err != nil {
+			providers.DebugLogf("agentcontrol: persist recovered child thread %s: %v", workerID, err)
+		}
+		return
 	}
 }
 

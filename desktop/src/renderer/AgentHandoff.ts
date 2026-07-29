@@ -4,9 +4,19 @@ export type AgentHandoffDisplay = {
   label: string;
 };
 
+// Structured outcome so chip aggregation never has to re-derive meaning
+// from localized label text.
+export type SubagentChipOutcome =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "running"
+  | "pending"
+  | "updated";
+
 export type SubagentChipDisplay = {
   label: string;
-  shimmer: boolean;
+  outcome: SubagentChipOutcome;
 };
 
 type AgentHandoffEnvelope = {
@@ -100,23 +110,57 @@ export function agentHandoffDisplayItem(
   return agentHandoffDisplay(item.text);
 }
 
-export function agentHandoffChipDisplayItem(
+export function agentHandoffChipDisplayItems(
   item: HandoffItem | undefined,
-): SubagentChipDisplay | undefined {
+): SubagentChipDisplay[] {
   if (!item || !isAgentHandoffItem(item)) {
-    return undefined;
+    return [];
   }
-  const handoff = parseAgentHandoff(item.text);
-  if (!handoff) {
+  const payloads = parseAgentHandoffPayloads(item.text);
+  if (payloads.length === 0) {
+    // Name-stamped but unparseable payload: fall back to one generic chip
+    // so raw JSON never reaches the chat flow.
     return item.name === AGENT_NOTIFICATION_NAME
-      ? { label: handoffGenericLabel(), shimmer: true }
-      : undefined;
+      ? [{ label: handoffChipStatusLabel("updated"), outcome: "updated" }]
+      : [];
   }
-  const name = handoffName(handoff.payload);
-  return {
-    label: `${name} ${handoffChipStatusLabel(stringValue(handoff.payload.status?.status))}`.trim(),
-    shimmer: true,
-  };
+  return payloads.map((payload) => {
+    const name = handoffName(payload);
+    const outcome = handoffChipOutcome(stringValue(payload.status?.status));
+    return {
+      label: `${name} ${handoffChipStatusLabel(outcome)}`.trim(),
+      outcome,
+    };
+  });
+}
+
+// Completion notifications pile up while the parent agent is mid-turn: the
+// backend joins ≥2 envelopes with "\n\n" (combineAgentCompletionMessages),
+// a string JSON.parse cannot consume as a whole. Each segment is still a
+// self-contained envelope (JSON.stringify never emits raw newlines inside a
+// payload), so split and parse each one — combined delivery then stays as
+// informative as notifications delivered one at a time. The same loop also
+// absorbs the legacy <changed_file_overlap> text tail: the envelope segment
+// parses and the tail segment is ignored.
+function parseAgentHandoffPayloads(
+  text: string | undefined,
+): AgentNotificationPayload[] {
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const single = parseAgentHandoff(trimmed);
+  if (single) {
+    return [single.payload];
+  }
+  const payloads: AgentNotificationPayload[] = [];
+  for (const segment of trimmed.split("\n\n")) {
+    const handoff = parseAgentHandoff(segment);
+    if (handoff) {
+      payloads.push(handoff.payload);
+    }
+  }
+  return payloads;
 }
 
 function parseAgentHandoff(
@@ -172,21 +216,38 @@ function handoffStatusLabel(status: string): string {
   }
 }
 
-function handoffChipStatusLabel(status: string): string {
+function handoffChipOutcome(status: string): SubagentChipOutcome {
   switch (status) {
     case "completed":
-      return "完成了";
+      return "completed";
     case "failed":
-      return "失败了";
+      return "failed";
     case "cancelled":
-      return "已取消";
+      return "cancelled";
     case "running":
-      return "执行中";
+      return "running";
     case "pending":
     case "queued":
-      return "等待中";
+      return "pending";
     default:
-      return "已更新";
+      return "updated";
+  }
+}
+
+function handoffChipStatusLabel(outcome: SubagentChipOutcome): string {
+  switch (outcome) {
+    case "completed":
+      return translateCurrent("agent.handoff.chip.completed");
+    case "failed":
+      return translateCurrent("agent.handoff.chip.failed");
+    case "cancelled":
+      return translateCurrent("agent.handoff.chip.cancelled");
+    case "running":
+      return translateCurrent("agent.handoff.chip.running");
+    case "pending":
+      return translateCurrent("agent.handoff.chip.pending");
+    default:
+      return translateCurrent("agent.handoff.chip.updated");
   }
 }
 

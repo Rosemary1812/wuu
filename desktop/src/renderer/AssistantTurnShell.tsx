@@ -437,24 +437,34 @@ function EntryRenderer({
     includeAfter = true,
   ): JSX.Element | null => {
     if (!content) return null;
-    const before = entry.subagentChipsBefore ?? [];
+    // Chips only surface next to settled content. While the host entry is
+    // still streaming, an appearing chip would push the text the user is
+    // reading or ride a tool row that keeps growing — hold it back until
+    // the entry settles, in either direction.
+    const before = entry.streaming ? [] : (entry.subagentChipsBefore ?? []);
     const after =
-      (entry.kind === "commentary" || entry.kind === "answer") && entry.streaming
-        ? []
-        : (entry.subagentChipsAfter ?? []);
+      entry.streaming || !includeAfter ? [] : (entry.subagentChipsAfter ?? []);
     if (before.length === 0 && after.length === 0) return content;
     return (
       <div className="subagent-chip-entry">
         <SubagentChipList displays={before} />
         {content}
-        {includeAfter ? <SubagentChipList displays={after} /> : null}
+        {after.length > 0 ? <SubagentChipList displays={after} /> : null}
       </div>
     );
   };
-  if (kind === "activity" || kind === "process_group") {
-    const trailingChips = (
-      <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
+  if (kind === "subagent_chips") {
+    return (
+      <div className="subagent-chip-entry">
+        <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
+      </div>
     );
+  }
+  if (kind === "activity" || kind === "process_group") {
+    const trailingChips =
+      entry.streaming || (entry.subagentChipsAfter ?? []).length === 0 ? undefined : (
+        <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
+      );
     return withSubagentChips(
       (
       <ProcessSurface
