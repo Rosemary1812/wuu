@@ -974,6 +974,9 @@ describe("SettingsView Dream settings", () => {
     const dreamSwitch = container.querySelector<HTMLButtonElement>(
       '[data-testid="settings-dream-toggle"]',
     );
+    const dreamSection = container.querySelector<HTMLElement>('[data-testid="settings-dream"]');
+    expect(dreamSection?.querySelector(".settings-section-title")).toBeNull();
+    expect(dreamSection?.querySelector(".settings-row-label-title")?.textContent).toBe("Dream");
     expect(dreamSwitch).not.toBeNull();
     expect(dreamSwitch?.getAttribute("aria-checked")).toBe("false");
 

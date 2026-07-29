@@ -16,9 +16,9 @@ import {
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
 } from "./AppState";
+import { RichContent } from "./RichContent";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { useI18n } from "./i18n";
-import { Tooltip } from "./Tooltip";
 import { TruncatedText } from "./TruncatedText";
 
 export function ConversationSearchOverlay({
@@ -261,7 +261,9 @@ function ConversationSearchPreview({
             </div>
           </header>
           {snippet ? (
-            <div className="conversation-search-preview-snippet">{snippet}</div>
+            <div className="conversation-search-preview-snippet">
+              <RichContent text={snippet} />
+            </div>
           ) : null}
           {errorForSelection ? (
             <div className="conversation-search-preview-error">
@@ -281,7 +283,7 @@ function ConversationSearchPreview({
           {hasTurns ? (
             <div className="conversation-search-preview-turns">
               {turnsForSelection.map((turn) => (
-                <PreviewTurnGroup key={turn.id} turn={turn} query={query} />
+                <PreviewTurnGroup key={turn.id} turn={turn} />
               ))}
             </div>
           ) : null}
@@ -301,7 +303,7 @@ function ConversationSearchPreview({
 // Emit up to two rows per turn — a "你" row for the user_message and an
 // "助手" row for the agent_message — so both sides appear in the order
 // they actually happened.
-export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string }): JSX.Element {
+export function PreviewTurnGroup({ turn }: { turn: Turn }): JSX.Element {
   const userText = pickUserText(turn);
   const assistantText = pickAssistantText(turn);
   return (
@@ -311,7 +313,6 @@ export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string })
           key={`${turn.id}:user`}
           role="user"
           text={userText}
-          query={query}
         />
       ) : null}
       {assistantText ? (
@@ -319,7 +320,6 @@ export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string })
           key={`${turn.id}:assistant`}
           role="assistant"
           text={assistantText}
-          query={query}
         />
       ) : null}
     </div>
@@ -329,29 +329,19 @@ export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string })
 function PreviewRow({
   role,
   text,
-  query,
 }: {
   role: "user" | "assistant";
   text: string;
-  query: string;
 }): JSX.Element {
-  const oneLineText = oneLinePreviewText(text, query);
-  // The row's chrome (right-aligned bubble for user, flush-left plain
-  // text for assistant) lives in CSS so this component stays a pure
-  // function of (role, text, query). When the inline one-line preview
-  // drops match context, the hover tooltip reveals the full text —
-  // bounded to the tooltip cap — but only while the two actually differ.
   return (
-    <Tooltip content={text} disabled={oneLineText === text}>
-      <article
-        className={`conversation-search-preview-turn role-${role}`}
-        data-role={role}
-      >
-        <span className="conversation-search-preview-text">
-          {oneLineText}
-        </span>
-      </article>
-    </Tooltip>
+    <article
+      className={`conversation-search-preview-turn role-${role}`}
+      data-role={role}
+    >
+      <div className="conversation-search-preview-text">
+        <RichContent text={text} />
+      </div>
+    </article>
   );
 }
 
@@ -388,31 +378,4 @@ function pickAssistantText(turn: Turn): string {
     if (item.phase === "final_answer") finalAnswer = text;
   }
   return finalAnswer || lastAgentMessage;
-}
-
-// Pick a single-line window of the turn text that keeps the query match
-// visible. A naive "first N chars" slice (the previous behavior) hides the
-// match whenever it sits past position N — the exact disambiguation
-// problem this pane exists to solve. Falls back to the leading window when
-// the turn does not contain the query (e.g. surrounding context turns).
-function oneLinePreviewText(
-  text: string,
-  query: string,
-  halfWindow = 110,
-): string {
-  if (!text) return "";
-  const trimmedQuery = query.trim();
-  if (!trimmedQuery) return leadingWindow(text, halfWindow * 2);
-  const idx = text.toLowerCase().indexOf(trimmedQuery.toLowerCase());
-  if (idx < 0) return leadingWindow(text, halfWindow * 2);
-  const start = Math.max(0, idx - halfWindow);
-  const end = Math.min(text.length, idx + trimmedQuery.length + halfWindow);
-  const prefix = start > 0 ? "…" : "";
-  const suffix = end < text.length ? "…" : "";
-  return prefix + text.slice(start, end).trim() + suffix;
-}
-
-function leadingWindow(text: string, length: number): string {
-  if (text.length <= length) return text;
-  return text.slice(0, length).trimEnd() + "…";
 }

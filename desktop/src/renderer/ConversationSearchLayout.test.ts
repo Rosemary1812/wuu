@@ -64,4 +64,13 @@ describe("conversation preview rhythm", () => {
       /gap:\s*24px/,
     );
   });
+
+  it("allows rendered Markdown to wrap instead of flattening it to one line", () => {
+    expect(cssRule(".conversation-search-preview-text")).not.toMatch(
+      /white-space:\s*nowrap/,
+    );
+    expect(cssRule(".conversation-search-preview-text")).toMatch(
+      /overflow-wrap:\s*anywhere/,
+    );
+  });
 });

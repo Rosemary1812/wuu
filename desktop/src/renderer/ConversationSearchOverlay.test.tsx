@@ -11,8 +11,8 @@
  * per non-empty `user_message` / `agent_message`) so the visible timeline
  * matches the actual conversation. Role distinction lives in CSS — the
  * user row is right-aligned with a chat-bubble background and the
- * assistant row reads flush left — and `nowrap` + `ellipsis` keeps every
- * row exactly one line tall.
+ * assistant row reads flush left. Both rows reuse RichContent so the search
+ * preview has the same Markdown semantics as the live conversation.
  *
  * Real React via `react-dom/client` + `act`, no `@testing-library/react`
  * dependency — matches the TurnSourcesRow / AssistantTurnShell pattern.
@@ -60,12 +60,12 @@ function turnWith(items: ThreadItem[], id = "turn-1"): Turn {
   };
 }
 
-function renderTurn(turn: Turn, query = ""): HTMLDivElement {
+function renderTurn(turn: Turn): HTMLDivElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(createElement(PreviewTurnGroup, { turn, query }));
+    root.render(createElement(PreviewTurnGroup, { turn }));
   });
   mountedRoots.push(root);
   return container;
@@ -161,6 +161,36 @@ describe("PreviewTurnGroup", () => {
     expect(
       container.querySelector(".conversation-search-preview-turn-group"),
     ).not.toBeNull();
+  });
+
+  it("renders Markdown in both sides of the conversation preview", () => {
+    const container = renderTurn(
+      turnWith([
+        userItem("请检查 `src/App.tsx`"),
+        agentItem(
+          "# 修复结果\n\n这里有 **重点**：\n\n- 第一项\n- 第二项",
+          "final_answer",
+        ),
+      ]),
+    );
+    const rendered = rows(container);
+    const user = rendered.find((element) => element.dataset.role === "user");
+    const assistant = rendered.find(
+      (element) => element.dataset.role === "assistant",
+    );
+
+    expect(user?.querySelector(".rich-content code")?.textContent).toBe(
+      "src/App.tsx",
+    );
+    expect(
+      assistant?.querySelector(".rich-heading.rich-heading--h1")?.textContent,
+    ).toBe("修复结果");
+    expect(assistant?.querySelector("strong")?.textContent).toBe("重点");
+    expect(
+      Array.from(assistant?.querySelectorAll("li") ?? []).map(
+        (element) => element.textContent,
+      ),
+    ).toEqual(["第一项", "第二项"]);
   });
 
   it("prefers the final_answer agent_message for the assistant row", () => {

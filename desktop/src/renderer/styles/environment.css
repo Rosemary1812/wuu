@@ -1080,24 +1080,17 @@
 
 .conversation-search-preview-snippet {
   min-width: 0;
+  max-height: 4.65em;
   color: var(--ink);
   font-size: var(--font-sm);
   font-weight: var(--weight-regular);
   line-height: 1.55;
   word-break: break-word;
-  /* Hard-cap the snippet to 3 lines via line-clamp so a long markdown
-   * agent reply (the kind that easily blows past 30 lines once code
-   * blocks, headers and bullet lists are counted) cannot push the
-   * per-turn preview rows below it out of view. The snippet's job is
-   * "where did the query match" — a handful of lines is plenty; the
-   * full conversation lives in the user/assistant rows beneath it.
-   * Belt-and-suspenders with capSnippetText in
-   * ConversationSearchDisplay.ts: that bounds the rendered string, this
-   * bounds the rendered height. */
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.conversation-search-preview-snippet .rich-content {
+  gap: 4px;
 }
 
 .conversation-search-preview-loading,
@@ -1137,7 +1130,7 @@
 .conversation-search-preview-turn {
   display: flex;
   flex-direction: row;
-  align-items: baseline;
+  align-items: flex-start;
   min-width: 0;
   padding: 0;
 }
@@ -1145,8 +1138,7 @@
 .conversation-search-preview-turn.role-user {
   /* Mirror the chat surface: user bubbles align right with the same
    * warm-grey background, hugging the text instead of stretching
-   * across the preview pane. The text span's nowrap + ellipsis keeps
-   * the bubble one row tall even when the underlying message wraps. */
+   * across the preview pane. */
   justify-content: flex-end;
 }
 
@@ -1162,17 +1154,14 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-regular);
   line-height: 1.55;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   user-select: text;
   -webkit-user-select: text;
 }
 
 .conversation-search-preview-turn.role-user .conversation-search-preview-text {
-  /* Hug the text so short queries stay compact; cap at 85% so very
-   * long messages get ellipsis-truncated instead of stretching the
-   * pane edge-to-edge. */
+  /* Hug the text so short queries stay compact; cap at 85% so longer
+   * Markdown messages still retain the chat-bubble shape. */
   flex: 0 1 auto;
   max-width: 85%;
   background: var(--chat-user-message-bg);
@@ -1182,8 +1171,12 @@
 
 .conversation-search-preview-turn.role-assistant .conversation-search-preview-text {
   /* Assistant fills the row, just like a participant's message in the
-   * live chat. nowrap + ellipsis keep it one line tall. */
+   * live chat. */
   flex: 1 1 auto;
+}
+
+.conversation-search-preview-text > .rich-content {
+  min-width: 0;
 }
 
 @media (max-width: 720px) {
