@@ -309,58 +309,60 @@ export function SelectMenu({
                 />
               </label>
             ) : null}
-            {flatOptions.length === 0 ? (
-              <div className="select-menu-empty">{emptyMessage}</div>
-            ) : null}
-            {resolvedGroups.map((group, groupIndex) => (
-              <div className="select-menu-group" key={group.label ?? `group-${groupIndex}`}>
-                {groupIndex > 0 ? <div className="select-menu-separator" /> : null}
-                {group.label ? (
-                  <div className="select-menu-group-label">{group.label}</div>
-                ) : null}
-                {group.options.map((option) => {
-                  flatIndex += 1;
-                  const index = flatIndex;
-                  const isSelected = option.value === value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isSelected}
-                      aria-disabled={option.disabled || undefined}
-                      data-value={option.value}
-                      className="select-menu-item"
-                      tabIndex={index === activeIndex ? 0 : -1}
-                      ref={(node) => {
-                        itemRefs.current[index] = node;
-                      }}
-                      disabled={option.disabled}
-                      onClick={() => {
-                        if (!option.disabled) {
-                          commit(option.value);
-                        }
-                      }}
-                      onMouseEnter={() => {
-                        if (!option.disabled) {
-                          setActiveIndex(index);
-                        }
-                      }}
-                    >
-                      <span className="select-menu-item-text">
-                        <span className="select-menu-item-label">{option.label}</span>
-                        {option.hint ? (
-                          <span className="select-menu-item-hint">{option.hint}</span>
+            <div className="select-menu-options">
+              {flatOptions.length === 0 ? (
+                <div className="select-menu-empty">{emptyMessage}</div>
+              ) : null}
+              {resolvedGroups.map((group, groupIndex) => (
+                <div className="select-menu-group" key={group.label ?? `group-${groupIndex}`}>
+                  {groupIndex > 0 ? <div className="select-menu-separator" /> : null}
+                  {group.label ? (
+                    <div className="select-menu-group-label">{group.label}</div>
+                  ) : null}
+                  {group.options.map((option) => {
+                    flatIndex += 1;
+                    const index = flatIndex;
+                    const isSelected = option.value === value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isSelected}
+                        aria-disabled={option.disabled || undefined}
+                        data-value={option.value}
+                        className="select-menu-item"
+                        tabIndex={index === activeIndex ? 0 : -1}
+                        ref={(node) => {
+                          itemRefs.current[index] = node;
+                        }}
+                        disabled={option.disabled}
+                        onClick={() => {
+                          if (!option.disabled) {
+                            commit(option.value);
+                          }
+                        }}
+                        onMouseEnter={() => {
+                          if (!option.disabled) {
+                            setActiveIndex(index);
+                          }
+                        }}
+                      >
+                        <span className="select-menu-item-text">
+                          <span className="select-menu-item-label">{option.label}</span>
+                          {option.hint ? (
+                            <span className="select-menu-item-hint">{option.hint}</span>
+                          ) : null}
+                        </span>
+                        {isSelected ? (
+                          <Check className="select-menu-check icon-lg" aria-hidden="true" />
                         ) : null}
-                      </span>
-                      {isSelected ? (
-                        <Check className="select-menu-check icon-lg" aria-hidden="true" />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         </FloatingMenuPortal>
       ) : null}

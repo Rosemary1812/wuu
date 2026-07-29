@@ -241,7 +241,8 @@
 }
 
 .select-menu-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1px;
   /* The portal layer (FloatingMenuPortal) computes the available viewport
      space on the chosen side and pushes it down as
@@ -255,7 +256,7 @@
     --select-menu-max-height,
     min(320px, calc(100vh - 120px))
   );
-  overflow-y: auto;
+  overflow: hidden;
   padding: 6px;
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);
@@ -267,10 +268,8 @@
 }
 
 .select-menu-search {
-  position: sticky;
-  top: -6px;
-  z-index: 1;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 7px;
   height: 36px;
@@ -298,6 +297,13 @@
 
 .select-menu-search-icon {
   flex: 0 0 auto;
+}
+
+.select-menu-options {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 1px;
 }
 
 .select-menu-group {
