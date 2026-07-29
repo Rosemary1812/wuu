@@ -368,6 +368,21 @@ describe("JumpToLatestPill", () => {
     ).toBe(true);
 
     act(() => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      stubRect(node, { left: 100, top: 56, bottom: 800, width: 400, height: 744 });
+      flushResizeObservers(resizeObservers, node);
+      vi.advanceTimersToNextFrame();
+    });
+    // Width follows the composer live: 100 + 400 / 2, without waiting for
+    // the resize-settle timer that protects scroll and height measurements.
+    expect(pill?.style.left).toBe("300px");
+
+    act(() => {
+      document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+      vi.advanceTimersByTime(WINDOW_RESIZE_SETTLE_DELAY_MS + 1);
+    });
+
+    act(() => {
       stubRect(frame, { left: 100, top: 640, bottom: 780, width: 600, height: 140 });
       frame.style.setProperty("--composer-expanded-offset", "60px");
       flushResizeObservers(resizeObservers, frame);
