@@ -69,6 +69,18 @@ function answerItem(text: string): ThreadItem {
   };
 }
 
+function commandItem(): ThreadItem {
+  return {
+    id: nextID("cmd"),
+    type: "tool_call",
+    status: "completed",
+    name: "bash",
+    arguments: JSON.stringify({ command: "npm test" }),
+    display: { kind: "command", capability: "command.bash" },
+    result: JSON.stringify({ exit_code: 0 }),
+  };
+}
+
 function makeTurn(
   id: string,
   items: ThreadItem[],
@@ -90,12 +102,17 @@ function makeTurn(
   };
 }
 
-function mountGroup(turns: Turn[], awaiting = false): void {
+function mountGroup(
+  turns: Turn[],
+  awaiting = false,
+  onOpenRuns?: (turnID: string) => void,
+): void {
   render(
     <TurnGroupView
       turns={turns}
       awaiting={awaiting}
       onStreamFrame={() => {}}
+      onOpenRuns={onOpenRuns}
     />,
   );
 }
@@ -156,6 +173,34 @@ describe("TurnGroupView — merged orchestration group", () => {
     expect(container.querySelectorAll("section.turn")).toHaveLength(1);
     expect(container.querySelectorAll(".user-message-block")).toHaveLength(2);
     expect(actionBars()).toHaveLength(1);
+  });
+
+  it("keeps the terminal affordance inside the final action bar only", async () => {
+    const spawnTurn = makeTurn("t1", [
+      userItem("跑一下测试"),
+      commandItem(),
+      spawnItem("research_a"),
+      answerItem("测试已跑，等子任务。"),
+    ]);
+    // While the orchestration waits, the settled member's command runs must
+    // not surface a standalone terminal row below the live block.
+    mountGroup([spawnTurn], true, () => {});
+    expect(container.querySelector(".turn-run-actions")).toBeNull();
+    expect(container.querySelector(".lucide-square-terminal")).toBeNull();
+
+    const wakeTurn = makeTurn("t2", [
+      wakeItem("agent-research_a"),
+      answerItem("汇总如下。"),
+    ]);
+    mountGroup([spawnTurn, wakeTurn], false, () => {});
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    // Settled: exactly one terminal button, riding the final answer's bar.
+    expect(container.querySelector(".turn-run-actions")).toBeNull();
+    expect(
+      container.querySelectorAll(".agent-message-actions .lucide-square-terminal"),
+    ).toHaveLength(1);
   });
 });
 

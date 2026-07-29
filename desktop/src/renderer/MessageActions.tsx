@@ -103,15 +103,6 @@ export function AgentMessageActions({
   );
 }
 
-export function TurnRunActions({ onOpenRuns }: { onOpenRuns: () => void }): JSX.Element {
-  const { t } = useI18n();
-  return (
-    <div className="message-actions agent-message-actions turn-run-actions" aria-label={t("message.assistantActions")}>
-      <TurnRunButton onOpenRuns={onOpenRuns} />
-    </div>
-  );
-}
-
 function TurnRunButton({ onOpenRuns }: { onOpenRuns: () => void }): JSX.Element {
   const { t } = useI18n();
   const label = t("message.viewTurnRuns");

@@ -15,8 +15,6 @@ import {
 } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
-import { TurnRunActions } from "./MessageActions";
-import { isCommandToolCall } from "./TerminalRuns";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -233,9 +231,6 @@ function MergedTurnGroupView({
         />
       ) : null}
       {turns.map((member) => {
-        const hasTurnRuns =
-          (member.status === "completed" || member.status === "failed") &&
-          member.items.some(isCommandToolCall);
         const event = turnEventForTurn(
           member,
           turnHasAssistantOutput(member),
@@ -243,9 +238,6 @@ function MergedTurnGroupView({
         );
         return (
           <Fragment key={member.id}>
-            {hasTurnRuns && onOpenRuns ? (
-              <TurnRunActions onOpenRuns={() => onOpenRuns(member.id)} />
-            ) : null}
             <TurnEditSummaryCard
               turn={member}
               cwd={cwd}
