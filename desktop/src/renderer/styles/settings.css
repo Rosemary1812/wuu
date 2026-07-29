@@ -139,6 +139,14 @@
   color: var(--ink);
 }
 
+.settings-back-button > span,
+.settings-nav-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-nav {
   display: flex;
   flex-direction: column;

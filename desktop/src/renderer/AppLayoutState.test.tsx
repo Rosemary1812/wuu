@@ -266,8 +266,9 @@ describe("useAppLayoutState responsive workspace presentation", () => {
 
 describe("useAppLayoutState initial widths", () => {
   it("scales both ends of the sidebar resize range below the 1280px baseline", () => {
-    expect(clampSidebarWidthForWindow(SIDEBAR_MIN_WIDTH, 1000)).toBe(156);
+    expect(clampSidebarWidthForWindow(SIDEBAR_MIN_WIDTH, 1000)).toBe(SIDEBAR_MIN_WIDTH);
     expect(clampSidebarWidthForWindow(SIDEBAR_MAX_WIDTH, 1000)).toBe(406);
+    expect(clampSidebarWidthForWindow(SIDEBAR_DEFAULT_WIDTH, 640)).toBe(SIDEBAR_MIN_WIDTH);
   });
 
   // localStorage.getItem returns null for a missing key, and Number(null) is
@@ -361,7 +362,7 @@ describe("useAppLayoutState initial widths", () => {
     renderHookHarness();
 
     expect(latest!.sidebarCollapsed).toBe(true);
-    expect(latest!.sidebarWidth).toBe(228);
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_MIN_WIDTH);
 
     act(() => {
       setInnerWidth(roomyWindowWidth);
@@ -382,7 +383,7 @@ describe("useAppLayoutState initial widths", () => {
     });
 
     expect(latest!.sidebarCollapsed).toBe(true);
-    expect(latest!.sidebarWidth).toBe(228);
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_MIN_WIDTH);
 
     act(() => {
       setInnerWidth(roomyWindowWidth);
@@ -416,13 +417,14 @@ describe("useAppLayoutState initial widths", () => {
   });
 
   it("holds at the minimum width before the collapse intent threshold", () => {
-    window.localStorage.setItem("wuu.desktop.sidebarWidth", "220");
+    const startingWidth = SIDEBAR_MIN_WIDTH + 20;
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", String(startingWidth));
     renderHookHarness();
-    expect(latest!.sidebarWidth).toBe(220);
+    expect(latest!.sidebarWidth).toBe(startingWidth);
     expect(latest!.sidebarCollapsed).toBe(false);
 
     act(() => {
-      latest!.startSidebarResize(makePointerDownEvent(220));
+      latest!.startSidebarResize(makePointerDownEvent(startingWidth));
     });
     act(() => {
       window.dispatchEvent(
@@ -441,13 +443,14 @@ describe("useAppLayoutState initial widths", () => {
   });
 
   it("collapses mid-drag once the pointer crosses the collapse intent threshold", () => {
-    window.localStorage.setItem("wuu.desktop.sidebarWidth", "220");
+    const startingWidth = SIDEBAR_MIN_WIDTH + 20;
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", String(startingWidth));
     renderHookHarness();
-    expect(latest!.sidebarWidth).toBe(220);
+    expect(latest!.sidebarWidth).toBe(startingWidth);
     expect(latest!.sidebarCollapsed).toBe(false);
 
     act(() => {
-      latest!.startSidebarResize(makePointerDownEvent(220));
+      latest!.startSidebarResize(makePointerDownEvent(startingWidth));
     });
     act(() => {
       window.dispatchEvent(
@@ -462,6 +465,6 @@ describe("useAppLayoutState initial widths", () => {
       window.dispatchEvent(new Event("pointerup", { bubbles: true }));
     });
     expect(latest!.sidebarCollapsed).toBe(true);
-    expect(latest!.sidebarWidth).toBe(220);
+    expect(latest!.sidebarWidth).toBe(startingWidth);
   });
 });

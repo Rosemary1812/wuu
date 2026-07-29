@@ -27,13 +27,18 @@ export const RIGHT_PANEL_MOTION_MS = motionDurationMs(
   280,
 );
 export const SIDEBAR_DEFAULT_WIDTH = 326;
-export const SIDEBAR_MIN_WIDTH = 200;
+// Keep enough horizontal room for one-line navigation labels and useful
+// conversation titles. The rail becomes an overlay drawer below the compact
+// breakpoint, so shrinking it further saves no canvas space and only makes
+// its contents harder to scan.
+export const SIDEBAR_MIN_WIDTH = 240;
 export const SIDEBAR_MAX_WIDTH = 520;
 // The desktop opens at 1280px. Below that design width, the whole sidebar
 // range scales together; wider windows keep the familiar pixel sizes.
 export const SIDEBAR_SCALE_REFERENCE_WINDOW_WIDTH = 1280;
-// Extremely narrow windows still need enough room for icons and controls.
-export const SIDEBAR_SCALED_MIN_WIDTH = 128;
+// Fonts and icons do not scale with the window, so the readable floor must not
+// scale down either. Narrow windows auto-collapse the rail into a drawer.
+export const SIDEBAR_SCALED_MIN_WIDTH = SIDEBAR_MIN_WIDTH;
 export const SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH = 900;
 // Keep a small pull-past-minimum dead zone so resizing to the minimum width
 // does not collapse the sidebar by accident.
