@@ -1,5 +1,5 @@
-import { ChevronRight, CircleAlert, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { rawTimeZones } from "@vvo/tzdb";
+import { ChevronRight, CircleAlert, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -61,8 +61,11 @@ const SUPPORTED_AUTOMATION_TIMEZONES = (() => {
 })();
 const TIMEZONE_NAME_LOCALES = ["zh-CN", "en-US"] as const;
 const timezoneNameCache = new Map<string, string>();
-const TIMEZONE_METADATA_BY_NAME = new Map(rawTimeZones.flatMap((timezone) => (
-  timezone.group.map((name) => [name, timezone] as const)
+// Use only the timezone's own record. `group` also contains zones that are
+// currently clock-equivalent, and can cross country boundaries (for example
+// Asia/Bangkok and Indian/Christmas), so expanding it would corrupt geography.
+const TIMEZONE_METADATA_BY_NAME = new Map(rawTimeZones.map((timezone) => (
+  [timezone.name, timezone] as const
 )));
 
 function localizedTimezoneName(timezone: string, locale: string): string {
@@ -98,7 +101,7 @@ function automationTimezoneOptions(
   return [...new Set(orderedTimezones.filter(Boolean))].map((timezone) => {
     const metadata = TIMEZONE_METADATA_BY_NAME.get(timezone);
     const localizedName = localizedTimezoneName(timezone, locale);
-    const localizedCountry = metadata ? regionNames.of(metadata.countryCode) ?? "" : "";
+    const localizedCountry = metadata ? regionNames.of(metadata.countryCode) ?? metadata.countryName : "";
     const hint = [...new Set([
       timezone === localTimezone ? localTimezoneLabel : "",
       localizedCountry,

@@ -355,6 +355,15 @@ describe("AutomationsCatalog", () => {
     await act(async () => setInputValue(search!, "indochina"));
     expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeTruthy();
 
+    await act(async () => setInputValue(search!, "tha"));
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeTruthy();
+    expect(document.body.querySelector('.select-menu-item[data-value="Indian/Christmas"]')).toBeNull();
+
+    await act(async () => setInputValue(search!, "christmas"));
+    const christmas = document.body.querySelector('.select-menu-item[data-value="Indian/Christmas"]');
+    expect(christmas?.textContent).toContain("圣诞岛");
+    expect(christmas?.textContent).not.toContain("泰国");
+
     await act(async () => setInputValue(search!, "日本"));
     const tokyo = document.body.querySelector<HTMLButtonElement>('.select-menu-item[data-value="Asia/Tokyo"]');
     expect(tokyo?.textContent).toContain("日本标准时间");
