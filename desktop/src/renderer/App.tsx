@@ -83,6 +83,7 @@ import {
   latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
+  threadAwaitingBackgroundAgents,
   flushPendingStreamingTokenSamples,
   recordPendingStreamingTokenSample,
   type PendingStreamingTokenSamples,
@@ -2090,7 +2091,12 @@ export function App(): JSX.Element {
   );
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
-  const activeThreadCanSteer = Boolean(activeTurnIDForThread(activeThread));
+  // Orchestration wait (threadAwaitingBackgroundAgents): the composer keeps
+  // the steer affordance and a live status so the parked merged block reads
+  // exactly like an in-progress turn (A/B parity).
+  const activeThreadAwaitingAgents = threadAwaitingBackgroundAgents(activeThread);
+  const activeThreadCanSteer =
+    Boolean(activeTurnIDForThread(activeThread)) || activeThreadAwaitingAgents;
   const activeThreadStreamStatus = turnStreamStatusForThread(state, activeThread);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const runningThreadKey = useMemo(() => {
@@ -2382,12 +2388,15 @@ export function App(): JSX.Element {
             ? activeThreadIsRunning
               ? t("app.childTaskRunning")
               : t("app.childTaskReadOnly")
-            : streamStatus?.text ?? state.status
+            : streamStatus?.text ??
+              (activeThreadAwaitingAgents
+                ? t("composer.subagentsRunning")
+                : state.status)
         }
         statusLiveProgress={
           activeThreadReadOnly
             ? false
-            : streamStatus?.liveProgress
+            : streamStatus?.liveProgress ?? activeThreadAwaitingAgents
         }
         readOnly={activeThreadReadOnly}
         initialized={visibleConversationRuntime}

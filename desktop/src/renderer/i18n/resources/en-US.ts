@@ -680,6 +680,7 @@ export const enUS = {
   "composer.queueSend": "Queue message",
   "composer.steerSend": "Send guidance",
   "composer.send": "Send",
+  "composer.subagentsRunning": "Subagents running",
   "composer.stop": "Stop",
   "composer.readOnly": "Subtask conversation is read-only",
   "composer.followupChanges": "Request follow-up changes",

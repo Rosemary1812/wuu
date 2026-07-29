@@ -2423,6 +2423,22 @@ function resolveComposerRunningAction(
     : "queue";
 }
 
+// The orchestration wait: no turn holds the thread but background child
+// agents are still running, so the conversation renders as one live merged
+// block (TurnGrouping) parked between turns. Callers use this to keep the
+// composer reading like an in-progress turn — steer stays offered, and
+// resolveComposerRunningAction degrades it to queue, which starts
+// immediately (nothing runs) and lands inside the orchestration group.
+export function threadAwaitingBackgroundAgents(
+  thread: Thread | undefined,
+): boolean {
+  return Boolean(
+    thread &&
+      !activeTurnIDForThread(thread) &&
+      thread.child_agents?.some(agentRunning),
+  );
+}
+
 function activeTurnForThread(thread: Thread | undefined): Turn | undefined {
   if (!thread) {
     return undefined;

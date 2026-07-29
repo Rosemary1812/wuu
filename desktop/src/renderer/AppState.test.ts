@@ -47,6 +47,7 @@ import {
   sortThreads,
   summarizeThreadsForSidebar,
   threadBelongsToProject,
+  threadAwaitingBackgroundAgents,
   threadNeedsResumeOnReselect,
   threadProjectPath,
   threadSessionTabID,
@@ -194,6 +195,32 @@ describe("isStateActiveThreadRunning with a background agent", () => {
     };
 
     expect(resolveComposerRunningAction("steer", thread)).toBe("steer");
+  });
+
+  it("reports the orchestration wait only when agents run with no active turn", () => {
+    const settled = {
+      ...threadWithUserTexts(["kick off a worker"]),
+      status: "idle" as const,
+      child_agents: [{ id: "agent-running", status: "running" }],
+    } as unknown as Thread;
+    expect(threadAwaitingBackgroundAgents(settled)).toBe(true);
+
+    const idleThread = threadWithUserTexts(["parent is running"]);
+    const midTurn = {
+      ...idleThread,
+      status: "in_progress" as const,
+      turns: idleThread.turns.map((turn) => ({ ...turn, status: "in_progress" as const })),
+      child_agents: [{ id: "agent-running", status: "running" }],
+    } as unknown as Thread;
+    expect(threadAwaitingBackgroundAgents(midTurn)).toBe(false);
+
+    const done = {
+      ...threadWithUserTexts(["worker finished"]),
+      status: "idle" as const,
+      child_agents: [{ id: "agent-done", status: "completed" }],
+    } as unknown as Thread;
+    expect(threadAwaitingBackgroundAgents(done)).toBe(false);
+    expect(threadAwaitingBackgroundAgents(undefined)).toBe(false);
   });
 });
 

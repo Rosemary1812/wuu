@@ -678,6 +678,7 @@ export const zhCN = {
   "composer.queueSend": "排队发送",
   "composer.steerSend": "发送引导",
   "composer.send": "发送",
+  "composer.subagentsRunning": "subagent 运行中",
   "composer.stop": "停止",
   "composer.readOnly": "子任务会话只读",
   "composer.followupChanges": "要求后续变更",
