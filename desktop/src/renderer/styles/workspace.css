@@ -4490,7 +4490,7 @@ html.resizing-workspace-terminal-split * {
 
 /* The composer's rounded, shadowed frame reads slightly narrower than a flat
  * message surface at the same geometric width. Inset regular message flows by
- * 4px per side so their visible edges align while both remain centered. */
+ * 2px per side so their visible edges align while both remain centered. */
 .conversation-width:has(.turn) {
   padding-inline: calc(
     var(--session-outer-padding-inline) + var(--conversation-flow-optical-inset)

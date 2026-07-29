@@ -86,12 +86,12 @@ describe("conversation flow and dock composer alignment", () => {
     );
   });
 
-  it("shares the scroll-gutter center and applies the optical inset symmetrically", () => {
-    expect(composerCss).toMatch(
-      /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:\s*translateX\(calc\(var\(--conversation-scrollbar-gutter\)\s*\/\s*-2\)\);/,
+  it("keeps the composer centered and insets the message flow by 2px per side", () => {
+    expect(composerCss).not.toMatch(
+      /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:/,
     );
     expect(conversationShellCss).toMatch(
-      /--conversation-flow-optical-inset:\s*4px;/,
+      /--conversation-flow-optical-inset:\s*2px;/,
     );
     expect(workspaceCss).toMatch(
       /\.conversation-width:has\(\.turn\)\s*\{[^}]*padding-inline:\s*calc\(\s*var\(--session-outer-padding-inline\)\s*\+\s*var\(--conversation-flow-optical-inset\)\s*\);/,
