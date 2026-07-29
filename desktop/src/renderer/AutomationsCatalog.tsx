@@ -58,11 +58,31 @@ const SUPPORTED_AUTOMATION_TIMEZONES = (() => {
     return [];
   }
 })();
+const TIMEZONE_NAME_LOCALES = ["zh-CN", "en-US"] as const;
+const timezoneNameCache = new Map<string, string>();
+
+function localizedTimezoneName(timezone: string, locale: string): string {
+  const cacheKey = `${locale}:${timezone}`;
+  const cached = timezoneNameCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  try {
+    const name = new Intl.DateTimeFormat(locale, {
+      timeZone: timezone,
+      timeZoneName: "longGeneric",
+    }).formatToParts(new Date(0)).find((part) => part.type === "timeZoneName")?.value ?? "";
+    timezoneNameCache.set(cacheKey, name);
+    return name;
+  } catch {
+    timezoneNameCache.set(cacheKey, "");
+    return "";
+  }
+}
 
 function automationTimezoneOptions(
   currentTimezone: string,
   localTimezone: string,
   localTimezoneLabel: string,
+  locale: string,
 ): SelectMenuOption[] {
   const orderedTimezones = [
     localTimezone,
@@ -70,11 +90,21 @@ function automationTimezoneOptions(
     "UTC",
     ...SUPPORTED_AUTOMATION_TIMEZONES,
   ];
-  return [...new Set(orderedTimezones.filter(Boolean))].map((timezone) => ({
-    value: timezone,
-    label: timezone,
-    hint: timezone === localTimezone ? localTimezoneLabel : undefined,
-  }));
+  return [...new Set(orderedTimezones.filter(Boolean))].map((timezone) => {
+    const localizedName = localizedTimezoneName(timezone, locale);
+    const hint = [...new Set([
+      timezone === localTimezone ? localTimezoneLabel : "",
+      localizedName,
+    ].filter(Boolean))].join(" · ");
+    return {
+      value: timezone,
+      label: timezone,
+      hint: hint || undefined,
+      keywords: TIMEZONE_NAME_LOCALES.map((nameLocale) => (
+        localizedTimezoneName(timezone, nameLocale)
+      )).filter(Boolean),
+    };
+  });
 }
 
 function clampDetailWidth(width: number, containerWidth?: number): number {
@@ -625,7 +655,7 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
   initialWorkspaceID?: string;
   onCreate?: (draft: AutomationDraft, workspaceID: string) => Promise<boolean>;
 }): JSX.Element {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const initialDraft = useMemo(() => draftFromAutomation(task), [task.id]);
   const [draft, setDraft] = useState<AutomationDraft>(initialDraft);
   const latestDraftRef = useRef(initialDraft);
@@ -637,7 +667,8 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
     draft.timezone,
     Intl.DateTimeFormat().resolvedOptions().timeZone,
     t("automations.localTimezone"),
-  ), [draft.timezone, t]);
+    locale,
+  ), [draft.timezone, locale, t]);
 
   function updateDraft(next: AutomationDraft): void {
     latestDraftRef.current = next;

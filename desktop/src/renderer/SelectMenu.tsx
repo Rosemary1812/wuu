@@ -24,6 +24,8 @@ export type SelectMenuOption = {
   label: string;
   // Optional dimmed secondary line (e.g. the provider a model belongs to).
   hint?: string;
+  // Additional terms used only for filtering a searchable menu.
+  keywords?: string[];
   disabled?: boolean;
 };
 
@@ -98,7 +100,7 @@ export function SelectMenu({
       .map((group) => ({
         ...group,
         options: group.options.filter((option) => (
-          [option.label, option.value, option.hint]
+          [option.label, option.value, option.hint, ...(option.keywords ?? [])]
             .some((text) => text?.toLocaleLowerCase().includes(normalizedQuery))
         )),
       }))

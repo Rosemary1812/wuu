@@ -348,15 +348,15 @@ describe("AutomationsCatalog", () => {
 
     const search = document.body.querySelector<HTMLInputElement>('[aria-label="搜索时区"]');
     expect(search).toBeTruthy();
-    await act(async () => setInputValue(search!, "UTC"));
-    const utc = document.body.querySelector<HTMLButtonElement>('.select-menu-item[data-value="UTC"]');
-    expect(utc).toBeTruthy();
+    await act(async () => setInputValue(search!, "日本"));
+    const tokyo = document.body.querySelector<HTMLButtonElement>('.select-menu-item[data-value="Asia/Tokyo"]');
+    expect(tokyo?.textContent).toContain("日本标准时间");
     await act(async () => {
-      utc?.click();
+      tokyo?.click();
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ timezone: "UTC" }));
+    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ timezone: "Asia/Tokyo" }));
   });
 
   it("auto-saves pending edits before closing the detail pane", async () => {

@@ -74,7 +74,7 @@ function keyOn(element: Element, key: string): void {
 
 const FRUIT = [
   { value: "apple", label: "苹果" },
-  { value: "pear", label: "梨" },
+  { value: "pear", label: "梨", keywords: ["green fruit"] },
   { value: "plum", label: "李子" },
 ];
 
@@ -169,7 +169,7 @@ describe("SelectMenu", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("filters a searchable option list by label or value", () => {
+  it("filters a searchable option list by label, value, or keywords", () => {
     mount(
       <SelectMenu
         value="apple"
@@ -189,7 +189,7 @@ describe("SelectMenu", () => {
         HTMLInputElement.prototype,
         "value",
       )?.set;
-      valueSetter?.call(search, "pear");
+      valueSetter?.call(search, "green");
       search.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["pear"]);
