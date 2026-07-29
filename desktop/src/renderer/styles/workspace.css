@@ -2187,16 +2187,17 @@ html.resizing-workspace-terminal-split * {
 }
 
 .automations-master {
+  display: grid;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  max-width: 1080px;
-  justify-self: center;
+  grid-template-columns: minmax(0, 1080px);
+  justify-content: center;
+  align-content: start;
   padding: 42px clamp(32px, 6vw, 88px) 64px;
 }
 
 .automations-catalog.detail-open .automations-master {
-  max-width: none;
   padding: 34px clamp(20px, 3vw, 32px) 56px;
 }
 
@@ -2574,10 +2575,6 @@ html.resizing-workspace-terminal-split * {
   .automations-detail {
     padding-inline: clamp(20px, 6vw, 48px);
   }
-}
-
-@media (max-width: 900px) {
-  .automations-master { padding-inline: 18px; }
 }
 
 .skills-catalog {
@@ -2975,7 +2972,8 @@ html.resizing-workspace-terminal-split * {
 }
 
 @media (max-width: 720px) {
-  .skills-catalog {
+  .skills-catalog,
+  .automations-master {
     padding: 28px 20px 40px;
   }
 
