@@ -59,6 +59,11 @@ const WORKSPACE_TREE_CSS = `
     margin-inline: 0;
     padding-inline: 8px;
   }
+
+  [data-file-tree-search-input] {
+    min-width: 0;
+    margin-inline-end: 40px;
+  }
 `;
 
 export type WorkspaceFileDirtyState = {
@@ -238,7 +243,13 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
     if (!host?.shadowRoot) return undefined;
     const enhanceShadowTree = (): void => {
       const search = host.shadowRoot?.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
-      if (search) search.placeholder = t("workspace.files.searchPlaceholder");
+      if (search) {
+        search.placeholder = t("workspace.files.searchPlaceholder");
+        // The drag handle sits above the tree's shadow root, so reserve its
+        // light-DOM column on the input itself instead of overlapping it.
+        search.style.marginInlineEnd = "40px";
+        search.style.minWidth = "0";
+      }
       const options = host.shadowRoot?.querySelector<HTMLButtonElement>("[data-type='context-menu-trigger']");
       if (options) options.setAttribute("aria-label", t("workspace.files.options"));
       // Rows render without draggable (the library's own drag-and-drop stays

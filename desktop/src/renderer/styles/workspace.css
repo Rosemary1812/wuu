@@ -867,6 +867,7 @@ html.resizing-workspace-file-split * {
 
 .workspace-files-tree {
   display: flex;
+  position: relative;
   grid-row: 1;
   flex-direction: column;
 }
@@ -888,9 +889,12 @@ html.resizing-workspace-file-split * {
 
 .workspace-file-tree-drag-handle {
   display: grid;
-  width: 100%;
-  height: 18px;
-  flex: 0 0 18px;
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 11px;
+  inset-inline-end: 8px;
+  width: 32px;
+  height: 24px;
   place-items: center;
   border-radius: var(--radius-xs);
   color: var(--ink-muted);
