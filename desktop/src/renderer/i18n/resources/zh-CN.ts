@@ -269,8 +269,6 @@ export const zhCN = {
   "settings.usageContext": "上下文",
   "settings.usageOutput": "输出",
   "settings.cacheHitRate": "缓存命中率",
-  "settings.activeDays": "活跃",
-  "settings.dayCount": "{count} 天",
   "settings.usageHeatmap": "每日用量热力图",
   "settings.skillUsage": "Skills 使用分析",
   "settings.skillUsageHint": "查看哪些技能最常被调用",

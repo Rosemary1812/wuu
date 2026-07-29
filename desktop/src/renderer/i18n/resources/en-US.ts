@@ -271,8 +271,6 @@ export const enUS = {
   "settings.usageContext": "Context",
   "settings.usageOutput": "Output",
   "settings.cacheHitRate": "Cache hit rate",
-  "settings.activeDays": "Active",
-  "settings.dayCount": "{count} days",
   "settings.usageHeatmap": "Daily usage heatmap",
   "settings.skillUsage": "Skills usage",
   "settings.skillUsageHint": "See which skills are called most often",

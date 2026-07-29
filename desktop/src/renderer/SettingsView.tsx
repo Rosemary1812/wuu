@@ -2514,7 +2514,6 @@ function SettingsUsagePage({
             title={formatUsageValue(usage.metrics.output_tokens)}
           />
           <UsageStat label={t("settings.cacheHitRate")} value={formatPercent(usage.metrics.cache_hit_rate)} />
-          <UsageStat label={t("settings.activeDays")} value={t("settings.dayCount", { count: formatNumber(usage.metrics.active_days) })} />
         </div>
       )}
 

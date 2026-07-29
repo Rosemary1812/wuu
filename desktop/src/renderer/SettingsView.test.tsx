@@ -1290,6 +1290,8 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("模型使用");
     expect(rootText()).toContain("缓存命中率");
     expect(rootText()).toContain("5%");
+    expect(container.querySelectorAll(".settings-usage-stat")).toHaveLength(4);
+    expect(rootText()).not.toContain("活跃");
     expect(rootText()).toContain("OpenAI API");
     expect(rootText()).not.toContain("最近记录");
     const heatmap = container.querySelector(".settings-usage-heatmap");
