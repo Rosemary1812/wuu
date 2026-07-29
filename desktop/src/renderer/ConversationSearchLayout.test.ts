@@ -19,6 +19,18 @@ function cssRule(selector: string): string {
 }
 
 describe("conversation search shortcut layout", () => {
+  it("keeps the two-pane dialog compact relative to the app window", () => {
+    expect(cssRule(".conversation-search-dialog")).toMatch(
+      /width:\s*clamp\(560px,\s*58vw,\s*800px\)/,
+    );
+    expect(cssRule(".conversation-search-dialog")).toMatch(
+      /max-height:\s*min\(560px,\s*calc\(100vh\s*-\s*160px\)\)/,
+    );
+    expect(cssRule(".conversation-search-body")).toMatch(
+      /grid-template-columns:\s*minmax\(220px,\s*1fr\)\s*minmax\(0,\s*1\.4fr\)/,
+    );
+  });
+
   it("gives the longer Windows shortcut its own content-sized grid track", () => {
     expect(cssRule(".conversation-search-input-wrap")).toMatch(
       /grid-template-columns:\s*24px\s*minmax\(0,\s*1fr\)\s*28px/,

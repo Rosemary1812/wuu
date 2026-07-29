@@ -777,13 +777,12 @@
 .conversation-search-dialog {
   display: flex;
   flex-direction: column;
-  /* Wider default — the dialog now hosts a two-pane layout (result list +
-     preview pane). 60vw keeps it proportionate at common desktop widths
-     (768px @ 1280, 864px @ 1440) and the 880px cap is generous enough for
-     both panes without crowding. The (max-width: 720px) media query below
-     overrides this for phone-sized viewports. */
-  width: clamp(640px, 60vw, 880px);
-  max-height: min(680px, calc(100vh - 96px));
+  /* Keep the two-pane search surface compact enough to read as a command
+     palette rather than a replacement page. The fluid middle value still
+     grows on larger displays, while the cap preserves visible app context
+     around every side of the dialog. */
+  width: clamp(560px, 58vw, 800px);
+  max-height: min(560px, calc(100vh - 160px));
   gap: 10px;
   overflow: hidden;
   border-radius: var(--radius-lg);
@@ -1007,7 +1006,7 @@
   display: grid;
   flex: 1 1 auto;
   min-height: 0;
-  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 1.4fr);
   gap: 16px;
 }
 
@@ -1186,7 +1185,7 @@
 
   .conversation-search-dialog {
     width: calc(100vw - 24px);
-    max-height: calc(100vh - 92px);
+    max-height: min(560px, calc(100vh - 92px));
     border-radius: var(--radius-lg);
   }
 
