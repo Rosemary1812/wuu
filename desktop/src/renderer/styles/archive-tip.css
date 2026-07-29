@@ -11,7 +11,10 @@
 
 .archive-tip {
   position: fixed;
-  top: 24px;
+  /* Keep the whole notice below the shell's 48px draggable titlebar. A
+     fixed sibling painted over that strip still loses real pointer input to
+     Electron's window drag region, even at a higher z-index. */
+  top: 56px;
   left: 50%;
   z-index: 9999; /* above .sidebar (140) and SettingsShell (140), below image-preview (~2.1e9) */
   display: inline-flex;
@@ -154,7 +157,6 @@
 
 @media (max-width: 480px) {
   .archive-tip {
-    top: 12px;
     max-width: calc(100vw - 24px);
   }
 }
