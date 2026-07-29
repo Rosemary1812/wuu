@@ -189,7 +189,7 @@ describe("composer slash commands", () => {
     expect(filterComposerSlashCommands(commands, "")).toEqual(commands.slice(0, 8));
   });
 
-  it("exposes the skill command name as the row title", () => {
+  it("summarizes a skill with its own description", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
       initialized: initialized("gpt-5.5", ["gpt-5.5"]),
@@ -199,8 +199,23 @@ describe("composer slash commands", () => {
 
     const slides = filterComposerSlashCommands(commands, "slides")[0];
 
-    expect(slides?.title).toBe("/slides");
-    expect(slides?.description).toBe("Create slide decks");
+    // The row renders `/name` from `name`, so the title carries the summary
+    // rather than repeating the command.
+    expect(slides?.name).toBe("slides");
+    expect(slides?.title).toBe("Create slide decks");
+  });
+
+  it("falls back to when_to_use when a skill has no description", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      skills: [skill({ name: "release-check", when_to_use: "Before a release" })]
+    });
+
+    expect(commands.find((command) => command.name === "release-check")?.title).toBe(
+      "Before a release"
+    );
   });
 
   it("names /skills after the catalog it opens", () => {

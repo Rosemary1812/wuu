@@ -1462,11 +1462,39 @@ describe("Composer send control", () => {
 
     // Without the command name the row cannot be told apart from any other
     // skill that happens to share a description prefix.
-    expect(skillRow?.querySelector(".slash-command-title")?.textContent).toBe("/slides");
-    expect(skillRow?.querySelector(".slash-command-description")?.textContent).toBe(
+    expect(skillRow?.querySelector(".slash-command-name")?.textContent).toBe("/slides");
+    expect(skillRow?.querySelector(".slash-command-summary")?.textContent).toBe(
       "Create slide decks",
     );
-    expect(composerCSS).toContain(".slash-command-description");
+    expect(composerCSS).toContain(".slash-command-summary");
+  });
+
+  it("leads every built-in row with the command the user types", () => {
+    renderComposer({
+      prompt: "/",
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const reviewRow = container.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="review"]',
+    );
+
+    expect(reviewRow?.querySelector(".slash-command-name")?.textContent).toBe("/review");
+    expect(reviewRow?.querySelector(".slash-command-summary")?.textContent).toBe("审查当前更改");
+    // The name column must not shrink, so a long summary never truncates the
+    // command the user has to type.
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*flex:\s*0 0 auto;/s);
+  });
+
+  it("shares the plus menu typography contract for slash command rows", () => {
+    // The command name and summary use the same title/description roles as the
+    // plus menu so the two surfaces read as one consistent menu system.
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*color:\s*var\(--ink\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*font-size:\s*var\(--font-ui\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*font-weight:\s*var\(--weight-medium\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*color:\s*var\(--ink-muted\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*font-size:\s*var\(--font-ui\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*font-weight:\s*400;/s);
   });
 
   it("sends an exact slash command with arguments on Enter", () => {

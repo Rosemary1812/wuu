@@ -488,11 +488,15 @@ function buildSkillSlashCommands(skills: SkillSummary[], disabledReason?: string
       continue;
     }
     seen.add(key);
+    // A skill has one human line of its own, so it serves as both the summary
+    // shown beside `/name` and the longer text a built-in command puts in its
+    // description.
+    const summary = skill.description || skill.when_to_use || skill.trigger_condition || t("slash.useSkill");
     out.push({
       id: `skill:${key}`,
       name,
-      title: `/${name}`,
-      description: skill.description || skill.when_to_use || skill.trigger_condition || t("slash.useSkill"),
+      title: summary,
+      description: summary,
       tag: "Skill",
       kind: "skill",
       aliases: skill.examples?.slice(0, 3),

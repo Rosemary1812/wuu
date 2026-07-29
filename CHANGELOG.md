@@ -8,6 +8,11 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Changed
+
+- Slash command rows now lead with the command to type (`/review`) and carry a
+  short summary beside it, so built-in commands and skills read the same way.
+
 ### Removed
 
 - Removed Wuu's provider-neutral `wuu_tool_search` progressive tool loading.
