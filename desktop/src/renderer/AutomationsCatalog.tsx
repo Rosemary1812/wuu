@@ -22,7 +22,7 @@ import {
 import { CatalogSearchField } from "./CatalogSearchField";
 import { translateCurrent, useI18n } from "./i18n";
 import { MinuteClockPicker } from "./MinuteClockPicker";
-import { SelectMenu } from "./SelectMenu";
+import { SelectMenu, type SelectMenuOption } from "./SelectMenu";
 import { TopNotice } from "./TopNotice";
 
 type Filter = "all" | "active" | "paused";
@@ -50,6 +50,32 @@ const AUTOMATION_DETAIL_MAX_WIDTH = 760;
 const AUTOMATION_MASTER_MIN_WIDTH = 340;
 const AUTOMATION_DETAIL_RESIZER_WIDTH = 10;
 const AUTOMATION_DETAIL_WIDTH_STEP = 32;
+
+const SUPPORTED_AUTOMATION_TIMEZONES = (() => {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return [];
+  }
+})();
+
+function automationTimezoneOptions(
+  currentTimezone: string,
+  localTimezone: string,
+  localTimezoneLabel: string,
+): SelectMenuOption[] {
+  const orderedTimezones = [
+    localTimezone,
+    currentTimezone,
+    "UTC",
+    ...SUPPORTED_AUTOMATION_TIMEZONES,
+  ];
+  return [...new Set(orderedTimezones.filter(Boolean))].map((timezone) => ({
+    value: timezone,
+    label: timezone,
+    hint: timezone === localTimezone ? localTimezoneLabel : undefined,
+  }));
+}
 
 function clampDetailWidth(width: number, containerWidth?: number): number {
   const availableWidth = containerWidth
@@ -607,6 +633,11 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
   const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const [workspaceID, setWorkspaceID] = useState(initialWorkspaceID);
   const [submitting, setSubmitting] = useState(false);
+  const timezoneOptions = useMemo(() => automationTimezoneOptions(
+    draft.timezone,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    t("automations.localTimezone"),
+  ), [draft.timezone, t]);
 
   function updateDraft(next: AutomationDraft): void {
     latestDraftRef.current = next;
@@ -745,9 +776,20 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
           />
           <label>
             <span>{t("automations.timezone")}</span>
-            <input className="settings-input" value={draft.timezone}
-              onChange={(event) => updateDraft({ ...latestDraftRef.current, timezone: event.currentTarget.value })}
-              onBlur={() => void persistDraft()} />
+            <SelectMenu
+              triggerClassName="settings-select-trigger"
+              ariaLabel={t("automations.timezone")}
+              value={draft.timezone}
+              searchable
+              searchPlaceholder={t("automations.timezoneSearch")}
+              emptyMessage={t("automations.timezoneNoMatches")}
+              options={timezoneOptions}
+              onChange={(timezone) => {
+                const next = { ...latestDraftRef.current, timezone };
+                updateDraft(next);
+                void persistDraft(next);
+              }}
+            />
           </label>
           <label>
             <span>{t("automations.mode")}</span>

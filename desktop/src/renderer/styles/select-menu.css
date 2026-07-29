@@ -266,6 +266,40 @@
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
+.select-menu-search {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  margin: -1px -1px 4px;
+  padding: 0 9px;
+  border-bottom: 1px solid var(--menu-border);
+  background: var(--menu-bg);
+  color: var(--ink-tertiary);
+}
+
+.select-menu-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-ui);
+}
+
+.select-menu-search input::placeholder {
+  color: var(--ink-muted);
+}
+
+.select-menu-search-icon {
+  flex: 0 0 auto;
+}
+
 .select-menu-group {
   display: grid;
   gap: 1px;

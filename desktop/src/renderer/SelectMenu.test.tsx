@@ -169,6 +169,43 @@ describe("SelectMenu", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("filters a searchable option list by label or value", () => {
+    mount(
+      <SelectMenu
+        value="apple"
+        onChange={() => {}}
+        options={FRUIT}
+        searchable
+        searchPlaceholder="搜索水果"
+        emptyMessage="没有匹配的水果"
+      />,
+    );
+    openMenu();
+    const search = document.querySelector<HTMLInputElement>(".select-menu-search input")!;
+    expect(document.activeElement).toBe(search);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "pear");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["pear"]);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "orange");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items()).toHaveLength(0);
+    expect(panel()?.textContent).toContain("没有匹配的水果");
+  });
+
   it("closes on Escape and on an outside pointerdown", () => {
     mount(<SelectMenu value="apple" onChange={() => {}} options={FRUIT} />);
     openMenu();

@@ -330,6 +330,35 @@ describe("AutomationsCatalog", () => {
     expect(updateAutomation).toHaveBeenCalledWith({ id: task.id, paused: true });
   });
 
+  it("selects a valid timezone from a searchable list and saves it", async () => {
+    const updateAutomation = vi.fn().mockResolvedValue({
+      task: { ...task, timezone: "UTC" },
+    });
+    installApi([task], updateAutomation);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog />);
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".automation-row")?.click());
+
+    const timezone = container.querySelector<HTMLButtonElement>('[aria-label="时区"]');
+    expect(timezone?.textContent).toContain("Asia/Shanghai");
+    expect(container.querySelector('input[value="Asia/Shanghai"]')).toBeNull();
+    await act(async () => timezone?.click());
+
+    const search = document.body.querySelector<HTMLInputElement>('[aria-label="搜索时区"]');
+    expect(search).toBeTruthy();
+    await act(async () => setInputValue(search!, "UTC"));
+    const utc = document.body.querySelector<HTMLButtonElement>('.select-menu-item[data-value="UTC"]');
+    expect(utc).toBeTruthy();
+    await act(async () => {
+      utc?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ timezone: "UTC" }));
+  });
+
   it("auto-saves pending edits before closing the detail pane", async () => {
     const updateAutomation = vi.fn().mockImplementation(async (params) => ({
       task: { ...task, title: params.title ?? task.title },
