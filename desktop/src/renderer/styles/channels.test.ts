@@ -54,8 +54,8 @@ describe("channel message resizing", () => {
     const footer = ruleFor(".channel-conversation-footer");
 
     expect(roomMain).toMatch(/display:\s*grid/);
-    expect(roomMain).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
-    expect(stream).toMatch(/grid-row:\s*2/);
+    expect(roomMain).toMatch(/grid-template-rows:\s*auto auto minmax\(0, 1fr\)/);
+    expect(stream).toMatch(/grid-row:\s*3/);
     expect(stream).toMatch(/overflow-y:\s*auto/);
     expect(stream).toMatch(/scrollbar-gutter:\s*stable/);
     expect(footer).toMatch(/position:\s*absolute/);
