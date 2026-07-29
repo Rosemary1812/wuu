@@ -72,8 +72,7 @@
   width: min(
     var(--session-composer-width),
     calc(
-      100% - var(--session-outer-padding-inline) - var(--session-outer-padding-inline) -
-        var(--conversation-scrollbar-gutter)
+      100% - var(--session-outer-padding-inline) - var(--session-outer-padding-inline)
     )
   );
   min-width: 0;

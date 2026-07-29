@@ -90,6 +90,9 @@ describe("conversation flow and dock composer alignment", () => {
     expect(composerCss).not.toMatch(
       /\.dock-composer-wrap \.composer-stack\s*\{[^}]*transform:/,
     );
+    expect(composerCss).not.toMatch(
+      /\.composer-stack\s*\{[^}]*width:[^}]*var\(--conversation-scrollbar-gutter\)/,
+    );
     expect(conversationShellCss).toMatch(
       /--conversation-flow-optical-inset:\s*2px;/,
     );

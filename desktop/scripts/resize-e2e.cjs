@@ -181,6 +181,8 @@ async function run() {
   assert.equal(scrollbarHiddenAfterIdle, true, "Conversation scrollbar should hide after scrolling stops.");
 
   const defaultEnvironment = await waitFor(win, () => environmentSnapshot(), 5000);
+  const defaultFlow = await waitFor(win, () => flowSnapshot(), 1000);
+  assertFlowInset(defaultFlow, "Default-window");
   assert.equal(defaultEnvironment.visible, true, "Environment panel should start visible above the wide-window breakpoint.");
   assert.equal(typeof defaultEnvironment.panelRightGap, "number", "Environment panel right gap should be measurable.");
   assert.equal(typeof defaultEnvironment.panelMessageGap, "number", "Environment panel message gap should be measurable.");
@@ -213,14 +215,7 @@ async function run() {
     `Extra width should preserve the readable message-flow cap. Wide=${JSON.stringify(beforeEnvironmentResize)}`
   );
   const wideFlow = await waitFor(win, () => flowSnapshot(), 1000);
-  assert.ok(
-    Math.abs(wideFlow.composerStackCenter - wideFlow.conversationContentCenter) <= 2,
-    `Wide-screen composer and message flow should share a center. Flow=${JSON.stringify(wideFlow)}`
-  );
-  assert.ok(
-    Math.abs(wideFlow.composerStackWidth - wideFlow.conversationContentWidth) <= 4,
-    `Wide-screen composer and message flow should share a width. Flow=${JSON.stringify(wideFlow)}`
-  );
+  assertFlowInset(wideFlow, "Wide-screen");
   assert.ok(
     beforeEnvironmentResize.panelMessageGap <= 136,
     `The wider flow and panel should keep the full-screen gap controlled. Wide=${JSON.stringify(beforeEnvironmentResize)}`
@@ -262,6 +257,7 @@ async function run() {
   win.setSize(2000, 860);
   await waitFor(win, () => !document.documentElement.classList.contains("window-resizing"), 1000);
   const collapsedWideFlow = await waitFor(win, () => flowSnapshot(), 1000);
+  assertFlowInset(collapsedWideFlow, "Collapsed-sidebar");
   assert.ok(
     Math.abs(collapsedWideFlow.conversationContentCenter - collapsedWideFlow.paneCenter) <= 6,
     `With no fixed sidebar, the full-screen message flow should return to the pane center. Flow=${JSON.stringify(collapsedWideFlow)}`
@@ -269,11 +265,6 @@ async function run() {
   assert.ok(
     collapsedWideFlow.conversationContentLeft >= collapsedWideFlow.sidebarOpenWidth + 24,
     `The centered message flow should stay clear of the hover sidebar drawer. Flow=${JSON.stringify(collapsedWideFlow)}`
-  );
-  assert.ok(
-    Math.abs(collapsedWideFlow.composerStackCenter - collapsedWideFlow.conversationContentCenter) <= 2 &&
-      Math.abs(collapsedWideFlow.composerStackWidth - collapsedWideFlow.conversationContentWidth) <= 4,
-    `Collapsed-sidebar composer and message flow should remain aligned. Flow=${JSON.stringify(collapsedWideFlow)}`
   );
   await evaluate(win, () => {
     const button = Array.from(document.querySelectorAll(".sidebar-toggle-button")).find((candidate) =>
@@ -348,6 +339,7 @@ async function run() {
     "Composer should release inline environment panel space after resize settles."
   );
   const flowResize = await waitFor(win, () => flowSnapshot(), 1000);
+  assertFlowInset(flowResize, "Resized-window");
   assert.ok(
     flowResize.conversationContentWidth <= 990,
     `Message flow should keep a capped reading content width during right-side window resize. Flow=${JSON.stringify(flowResize)}`
@@ -355,14 +347,6 @@ async function run() {
   assert.ok(
     Math.abs(flowResize.conversationCenter - flowResize.scrollContentCenter) <= 2,
     "Message flow should stay centered in the live scroll region during right-side window resize."
-  );
-  assert.ok(
-    Math.abs(flowResize.composerStackCenter - flowResize.conversationContentCenter) <= 2,
-    "Dock composer should stay centered with the message content during right-side window resize."
-  );
-  assert.ok(
-    Math.abs(flowResize.composerStackWidth - flowResize.conversationContentWidth) <= 4,
-    `Dock composer should use the same width as the message content. Flow=${JSON.stringify(flowResize)}`
   );
 
   await delay(300);
@@ -397,21 +381,20 @@ async function run() {
   const maxFlowCenterDelta = Math.max(
     ...flowProbe.samples.map((sample) => Math.abs(sample.conversationCenter - sample.scrollContentCenter))
   );
-  const maxComposerCenterDelta = Math.max(
-    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackCenter - sample.conversationContentCenter))
-  );
-  const maxComposerWidthDelta = Math.max(
-    ...flowProbe.samples.map((sample) => Math.abs(sample.composerStackWidth - sample.conversationContentWidth))
+  const maxComposerInsetDelta = Math.max(
+    ...flowProbe.samples.flatMap((sample) => [
+      Math.abs(sample.conversationContentLeft - sample.composerStackLeft - 2),
+      Math.abs(sample.composerStackRight - sample.conversationContentRight - 2)
+    ])
   );
   assert.ok(
     maxConversationContentWidth <= 990,
     `Message flow content should stay capped throughout continuous right-side resize. Max=${maxConversationContentWidth}`
   );
   assert.ok(maxFlowCenterDelta <= 2, "Message flow should stay centered throughout continuous right-side resize.");
-  assert.ok(maxComposerCenterDelta <= 2, "Dock composer should stay centered with the message content throughout resize.");
   assert.ok(
-    maxComposerWidthDelta <= 4,
-    `Dock composer should stay the same width as the message content throughout resize. Max delta=${maxComposerWidthDelta}`
+    maxComposerInsetDelta <= 1,
+    `Message flow should stay inset 2px per side from the composer throughout resize. Max delta=${maxComposerInsetDelta}`
   );
   assert.ok(maxFrameMs < 80, `Continuous right-side resize should not stall the renderer for ${Math.round(maxFrameMs)}ms.`);
 
@@ -944,6 +927,15 @@ async function run() {
   app.exit(0);
 }
 
+function assertFlowInset(flow, label) {
+  const leftInset = flow.conversationContentLeft - flow.composerStackLeft;
+  const rightInset = flow.composerStackRight - flow.conversationContentRight;
+  assert.ok(
+    Math.abs(leftInset - 2) <= 1 && Math.abs(rightInset - 2) <= 1,
+    `${label} message flow should inset 2px per side from the composer. Left=${leftInset} Right=${rightInset} Flow=${JSON.stringify(flow)}`
+  );
+}
+
 function loadFile(win, file) {
   return new Promise((resolve, reject) => {
     win.webContents.once("did-fail-load", (_event, _code, description) => reject(new Error(description)));
@@ -1045,6 +1037,7 @@ async function evaluate(win, fn) {
       return {
         composerContentRight: composerRect.left + composer.clientWidth - composerPaddingRight,
         composerStackCenter: stackRect.left + stackRect.width / 2,
+        composerStackLeft: stackRect.left,
         composerStackRight: stackRect.right,
         composerStackWidth: stackRect.width,
         conversationContentCenter: conversationContentLeft + (conversationContentRight - conversationContentLeft) / 2,
