@@ -184,7 +184,7 @@ describe("WorkspaceRightPanel", () => {
       /\.workspace-files-tree\s*\{[^}]*position:\s*relative;/s,
     );
     expect(workspaceCSS).toMatch(
-      /\.workspace-file-tree-drag-handle\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*11px;[^}]*inset-inline-end:\s*8px;[^}]*width:\s*32px;[^}]*height:\s*24px;/s,
+      /\.workspace-file-tree-drag-handle\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*11px;[^}]*inset-inline-end:\s*8px;[^}]*width:\s*32px;[^}]*height:\s*26px;/s,
     );
   });
 

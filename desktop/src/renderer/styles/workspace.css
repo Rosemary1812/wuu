@@ -894,7 +894,7 @@ html.resizing-workspace-file-split * {
   inset-block-start: 11px;
   inset-inline-end: 8px;
   width: 32px;
-  height: 24px;
+  height: 26px;
   place-items: center;
   border-radius: var(--radius-xs);
   color: var(--ink-muted);
