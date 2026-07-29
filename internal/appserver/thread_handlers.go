@@ -639,9 +639,38 @@ func (s *Server) handleThreadList(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	// Agent worker sessions are persisted alongside regular conversations, but
+	// their worker-only parent/path metadata lives in the agent thread store
+	// rather than the session index. Build this set once before constructing
+	// entries so a restarted server cannot leak workers into the root rail
+	// without turning a list request into an N² metadata scan.
+	agentThreadIDs := make(map[string]struct{})
+	rootIDs, err := s.rootThreadIDs()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	for _, rootID := range rootIDs {
+		store := s.agentThreadStore(rootID)
+		if store == nil {
+			continue
+		}
+		threads, err := store.ListThreads()
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		for _, meta := range threads {
+			if meta.Source.Kind == agentthread.SourceThreadSpawn {
+				agentThreadIDs[meta.ID] = struct{}{}
+			}
+		}
+	}
+
 	entries := make(map[string]threadListEntry, len(sessions))
 	for _, sess := range sessions {
 		if sess.ArchivedAt != nil {
+			continue
+		}
+		if _, isAgentThread := agentThreadIDs[sess.ID]; isAgentThread {
 			continue
 		}
 		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)

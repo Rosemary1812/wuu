@@ -7202,6 +7202,9 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	if err := session.UpdateIndex(rt.SessionDir, "root-thread", 2, "root summary"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "worker-1", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
 
 	now := time.Date(2026, 5, 24, 10, 0, 0, 0, time.UTC)
 	store := agentthread.NewStore(filepath.Join(statepath.SessionArtifactDir(rt.StateDir, "root-thread"), "threads"))

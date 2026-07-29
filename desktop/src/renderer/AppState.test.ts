@@ -459,6 +459,13 @@ describe("summarizeThreadsForSidebar", () => {
         id: "legacy-read-only-thread",
         read_only: true,
       },
+      {
+        ...threadWithUserTexts(["recovered child task"]),
+        id: "recovered-child-thread",
+        // A recovered worker may retain its agent path even when its parent
+        // link was not present in the persisted record.
+        agent_path: "/root/inspect",
+      },
     ]);
 
     expect(summaries.map((thread) => thread.id)).toEqual(["root-thread"]);

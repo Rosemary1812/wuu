@@ -1484,7 +1484,11 @@ function sortThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
       // thread) — including ultra-mode siblings of the root. Those live
       // under the parent thread's info panel ("子任务"), not in the
       // sidebar navigation list, regardless of pin state.
-      !thread.parent_id,
+      !thread.parent_id &&
+      // Older/recovered worker records can lose parent_id while retaining
+      // their agent_path. agent_path is worker-only metadata, so keep these
+      // records out of the root-session rail as well.
+      !thread.agent_path,
   );
   const running = valid.filter(isThreadRunning);
   const settled = valid.filter((thread) => !isThreadRunning(thread));
