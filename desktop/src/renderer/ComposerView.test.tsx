@@ -2356,6 +2356,9 @@ describe("Composer expand button", () => {
       /\.workspace-document-turn-composer\s*\{[^}]*z-index:\s*10/,
     );
     expect(workspaceCSS).toMatch(
+      /\.workspace-document-composer\s+\.dock-composer-wrap\s+\.composer-stack\s*\{[^}]*width:\s*100%/,
+    );
+    expect(workspaceCSS).toMatch(
       /\.workspace-document-turn-dock:has\([^}]*\.composer-goal-strip \+ \.composer-pending-drawer[^}]*\)[^{]*\.workspace-document-turn-drawer\s*\{[^}]*width:\s*calc\(100% - 72px\)/,
     );
     expect(composerCSS).toMatch(

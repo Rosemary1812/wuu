@@ -1132,6 +1132,7 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-document-composer .dock-composer-wrap .composer-stack {
+  width: 100%;
   transform: none;
 }
 
