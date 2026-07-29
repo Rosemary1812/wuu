@@ -49,6 +49,25 @@ function groupIDs(turns: Turn[], lastGroupOpen = false): string[][] {
   );
 }
 
+function spawnItemFor(id: string, agentID: string): ThreadItem {
+  return {
+    id,
+    type: "collab_agent_tool_call",
+    name: "spawn_agent",
+    status: "completed",
+    result: JSON.stringify({ agent_id: agentID, status: "running" }),
+  };
+}
+
+function wakeItemFor(id: string, agentID: string): ThreadItem {
+  return {
+    id,
+    type: "user_message",
+    name: "wuu_agent_notification",
+    text: `<subagent_notification>{"status":{"agent_id":"${agentID}","status":"completed"}}</subagent_notification>`,
+  };
+}
+
 describe("TurnGrouping classification", () => {
   it("detects a wake turn only when every user item is a handoff", () => {
     expect(isAgentWakeTurn(makeTurn("t", [wakeItem("w1"), answerItem("a1")]))).toBe(true);
@@ -176,5 +195,56 @@ describe("groupConversationTurns", () => {
       makeTurn("t3", [wakeItem("w1"), answerItem("a3")]),
     ];
     expect(groupIDs(turns)).toEqual([["t1"], ["tc", "t3"]]);
+  });
+});
+
+describe("groupConversationTurns — spawning interjections", () => {
+  it("merges a spawning interjection while the earlier orchestration is open (wake evidence)", () => {
+    // "多启动一个吧" during the wait: the interjection spawns agent B while
+    // agent A still runs. A's wake lands after the interjection, proving
+    // the earlier orchestration was open — one continuous block.
+    const turns = [
+      makeTurn("t1", [userItem("u1"), spawnItemFor("s1", "agent-a")]),
+      makeTurn("t2", [userItem("u2"), spawnItemFor("s2", "agent-b"), answerItem("a2")]),
+      makeTurn("t3", [wakeItemFor("w1", "agent-a")]),
+      makeTurn("t4", [wakeItemFor("w2", "agent-b"), answerItem("a4")]),
+    ];
+    expect(groupIDs(turns)).toEqual([["t1", "t2", "t3", "t4"]]);
+  });
+
+  it("merges a spawning tail interjection via the running-agents hint", () => {
+    const turns = [
+      makeTurn("t1", [userItem("u1"), spawnItemFor("s1", "agent-a")]),
+      makeTurn("t2", [userItem("u2"), spawnItemFor("s2", "agent-b"), answerItem("a2")]),
+    ];
+    // Agent A (spawned before the interjection) still runs → same block.
+    expect(
+      groupConversationTurns(turns, { runningAgentIDs: ["agent-a", "agent-b"] }).map(
+        (group) => group.turns.map((turn) => turn.id),
+      ),
+    ).toEqual([["t1", "t2"]]);
+    // Only the interjection's own agent runs → it is a fresh root.
+    expect(
+      groupConversationTurns(turns, { runningAgentIDs: ["agent-b"] }).map(
+        (group) => group.turns.map((turn) => turn.id),
+      ),
+    ).toEqual([["t1"], ["t2"]]);
+  });
+
+  it("keeps a spawning turn as a root once the earlier orchestration settled", () => {
+    const turns = [
+      makeTurn("t1", [userItem("u1"), spawnItemFor("s1", "agent-a")]),
+      makeTurn("t2", [wakeItemFor("w1", "agent-a"), answerItem("a2")]),
+      makeTurn("t3", [userItem("u3"), spawnItemFor("s2", "agent-b"), answerItem("a3")]),
+      makeTurn("t4", [wakeItemFor("w2", "agent-b"), answerItem("a4")]),
+    ];
+    expect(
+      groupConversationTurns(turns, { runningAgentIDs: ["agent-b"] }).map(
+        (group) => group.turns.map((turn) => turn.id),
+      ),
+    ).toEqual([
+      ["t1", "t2"],
+      ["t3", "t4"],
+    ]);
   });
 });

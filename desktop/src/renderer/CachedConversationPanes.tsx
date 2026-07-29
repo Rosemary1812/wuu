@@ -426,6 +426,9 @@ const CachedConversationPane = memo(function CachedConversationPane({
             historyMessageEdit ? [historyMessageEdit.turnID] : undefined
           }
           lastGroupOpen={thread.child_agents?.some(agentRunning) ?? false}
+          runningAgentIDs={thread.child_agents
+            ?.filter(agentRunning)
+            .map((agent) => agent.id)}
           renderTurnGroup={(groupTurns) => {
             const groupLast = groupTurns[groupTurns.length - 1];
             return (
