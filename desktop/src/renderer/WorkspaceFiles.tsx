@@ -65,6 +65,11 @@ const WORKSPACE_TREE_CSS = `
     margin-inline-end: 40px;
     border-color: var(--hairline-strong);
   }
+
+  [data-file-tree-search-input]:focus-visible,
+  [data-file-tree-search-input][data-file-tree-search-input-fake-focus="true"] {
+    outline: none;
+  }
 `;
 
 export type WorkspaceFileDirtyState = {
@@ -251,6 +256,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
         search.style.marginInlineEnd = "40px";
         search.style.minWidth = "0";
         search.style.borderColor = "var(--hairline-strong)";
+        search.style.outline = "none";
       }
       const options = host.shadowRoot?.querySelector<HTMLButtonElement>("[data-type='context-menu-trigger']");
       if (options) options.setAttribute("aria-label", t("workspace.files.options"));

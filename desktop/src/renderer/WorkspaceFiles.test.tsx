@@ -237,12 +237,16 @@ describe("WorkspaceFileTree", () => {
     expect(unsafeStyle?.textContent).toMatch(
       /\[data-file-tree-search-input\]\s*\{[^}]*min-width:\s*0;[^}]*margin-inline-end:\s*40px;[^}]*border-color:\s*var\(--hairline-strong\);/s,
     );
+    expect(unsafeStyle?.textContent).toMatch(
+      /\[data-file-tree-search-input\]:focus-visible,[\s\S]*\[data-file-tree-search-input\]\[data-file-tree-search-input-fake-focus="true"\]\s*\{[^}]*outline:\s*none;/,
+    );
     const search = treeShadowRoot().querySelector<HTMLInputElement>(
       "[data-file-tree-search-input]",
     );
     expect(search?.style.marginInlineEnd).toBe("40px");
     expect(search?.style.minWidth).toBe("0");
     expect(search?.style.borderColor).toBe("var(--hairline-strong)");
+    expect(search?.style.outline).toBe("none");
   });
 
   it("expands and scrolls to the selected workspace file path", async () => {
