@@ -38,6 +38,7 @@ import {
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
 import { SubagentChipList } from "./SubagentChip";
+import type { SubagentChipDisplay } from "./AgentHandoff";
 import { translateCurrent as translate, useI18n } from "./i18n";
 
 export function AssistantTurnShell({
@@ -101,6 +102,7 @@ export function AssistantTurnShell({
   const hasProcess =
     processEntries.length > 0 ||
     Boolean(display.latestProcessPreview) ||
+    display.subagentChips.length > 0 ||
     turn.status === "in_progress";
   const hasAnswer = answerEntries.length > 0;
   const answerHandoffRequested = answerEntries.some(
@@ -136,6 +138,7 @@ export function AssistantTurnShell({
       {hasProcess ? (
         <TurnProcessFold
           entries={processEntries}
+          subagentChips={display.subagentChips}
           collapseRequested={answerHandoffRequested}
           latestPreview={
             answerHandoffRequested ? undefined : display.latestProcessPreview
@@ -170,6 +173,7 @@ export function AssistantTurnShell({
 function TurnProcessFold({
   turn,
   entries,
+  subagentChips,
   collapseRequested,
   latestPreview,
   sources,
@@ -186,6 +190,9 @@ function TurnProcessFold({
 }: {
   turn: Turn;
   entries: TurnEntry[];
+  /** Turn-level subagent notifications, rendered in the header next to
+   *  the elapsed-time label. */
+  subagentChips: SubagentChipDisplay[];
   collapseRequested: boolean;
   latestPreview?: TurnProcessPreview;
   sources: ReturnType<typeof collectTurnSources>;
@@ -302,6 +309,12 @@ function TurnProcessFold({
             {part}
           </span>
         ))}
+        {/* Subagent notifications ride the turn chrome: the wake event is
+            this turn's cause, so it sits with the elapsed-time label
+            instead of occupying a message row of its own. Updates are
+            in-place (the aggregated count swaps text), never a layout
+            shift below. */}
+        <SubagentChipList displays={subagentChips} />
       </span>
       {hasPreview ? (
         <span
@@ -432,46 +445,12 @@ function EntryRenderer({
   onOpenRuns?: () => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
-  const withSubagentChips = (
-    content: JSX.Element | null,
-    includeAfter = true,
-  ): JSX.Element | null => {
-    if (!content) return null;
-    // Chips only surface next to settled content. While the host entry is
-    // still streaming, an appearing chip would push the text the user is
-    // reading or ride a tool row that keeps growing — hold it back until
-    // the entry settles, in either direction.
-    const before = entry.streaming ? [] : (entry.subagentChipsBefore ?? []);
-    const after =
-      entry.streaming || !includeAfter ? [] : (entry.subagentChipsAfter ?? []);
-    if (before.length === 0 && after.length === 0) return content;
-    return (
-      <div className="subagent-chip-entry">
-        <SubagentChipList displays={before} />
-        {content}
-        {after.length > 0 ? <SubagentChipList displays={after} /> : null}
-      </div>
-    );
-  };
-  if (kind === "subagent_chips") {
-    return (
-      <div className="subagent-chip-entry">
-        <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
-      </div>
-    );
-  }
   if (kind === "activity" || kind === "process_group") {
-    const trailingChips =
-      entry.streaming || (entry.subagentChipsAfter ?? []).length === 0 ? undefined : (
-        <SubagentChipList displays={entry.subagentChipsAfter ?? []} />
-      );
-    return withSubagentChips(
-      (
+    return (
       <ProcessSurface
         processItems={entry.items ?? [item]}
         streaming={streaming}
         active={activeGray}
-        trailingContent={trailingChips}
         renderReasoningItem={(processItem, isStreaming) => (
           <ThreadItemView
             turnID={turn.id}
@@ -485,8 +464,6 @@ function EntryRenderer({
           />
         )}
       />
-      ),
-      false,
     );
   }
   if (item.type === "reasoning") {
@@ -496,8 +473,7 @@ function EntryRenderer({
     // 过程" once settled) and let the user expand to read the trail.
     // Reasoning never collapses the outer fold on its own, and the
     // user's expanded/collapsed choice persists across re-renders.
-    return withSubagentChips(
-      (
+    return (
       <ReasoningFold
         item={item}
         streaming={streaming}
@@ -509,12 +485,10 @@ function EntryRenderer({
         onOpenAgent={onOpenAgent}
         onStreamFrame={onStreamFrame}
       />
-      ),
     );
   }
   if (item.type === "agent_message") {
-    return withSubagentChips(
-      (
+    return (
       <ThreadItemView
         turnID={turn.id}
         turnStatus={turn.status}
@@ -529,12 +503,11 @@ function EntryRenderer({
         onForkMessage={onForkMessage}
         onOpenRuns={onOpenRuns}
       />
-      ),
     );
   }
   if (item.type === "context_compaction" || item.type === "error") {
     const event = turnEventForItem(item);
-    return withSubagentChips(event ? <TurnEventNotice event={event} /> : null);
+    return event ? <TurnEventNotice event={event} /> : null;
   }
   return null;
 }

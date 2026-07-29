@@ -586,20 +586,6 @@
   margin: 2px auto 18px;
 }
 
-.subagent-chip-entry {
-  display: inline-flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 6px;
-  width: 100%;
-  /* Same quiet register as the other turn meta rows (用时, 查看思考过程):
-     chips are footnotes, not buttons. */
-  color: var(--conversation-process-control-color, var(--process-control-color-fallback));
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-}
-
 .subagent-chip {
   white-space: nowrap;
 }
@@ -612,6 +598,13 @@
   display: inline-flex;
   align-items: baseline;
   flex-wrap: nowrap;
+  /* Same quiet register as the turn meta rows (用时, 查看思考过程) the
+     list rides on: chips are footnotes, not buttons. Self-styled so the
+     register holds on every host (turn header, user message bubble). */
+  color: var(--conversation-process-control-color, var(--process-control-color-fallback));
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .subagent-chip-separator {
