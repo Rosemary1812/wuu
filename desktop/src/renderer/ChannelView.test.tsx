@@ -250,8 +250,10 @@ describe("ChannelView", () => {
     expect(detailsToggle).not.toBeNull();
     act(() => detailsToggle?.click());
     expect(container.querySelector(".channel-room-details")).not.toBeNull();
-    expect(container.querySelector(".channel-room-details")?.textContent).toContain("群聊成员");
-    act(() => detailsToggle?.click());
+    expect(container.querySelector(".channel-room-details")?.textContent).toContain("Agent 成员");
+    const detailsClose = container.querySelector<HTMLButtonElement>(".channel-room-details-close");
+    expect(detailsClose?.getAttribute("aria-label")).toBe("关闭群聊详情");
+    act(() => detailsClose?.click());
     expect(container.querySelector(".channel-room-details")).toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
       .find((button) => button.textContent?.includes("research"));
@@ -542,7 +544,8 @@ describe("ChannelView", () => {
     const manageResearch = container.querySelector<HTMLButtonElement>('button[aria-label="管理 research"]');
     expect(manageResearch).not.toBeNull();
     act(() => manageResearch?.click());
-    expect(document.querySelector(".channel-room-details")?.textContent).toContain("群聊成员");
+    expect(document.querySelector(".channel-room-details")?.textContent).toContain("Agent 成员");
+    expect(document.querySelector(".channel-room-details")?.textContent).not.toContain("群公告");
     const memberButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".channel-room-member"));
     expect(memberButtons).toHaveLength(2);
     act(() => memberButtons[0]?.click());

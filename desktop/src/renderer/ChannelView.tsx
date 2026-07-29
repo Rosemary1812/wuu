@@ -1,4 +1,4 @@
-import { Bot, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, Plus, Reply, Settings2, X } from "lucide-react";
+import { Bot, Check, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, Plus, Reply, Settings2, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
@@ -935,7 +935,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         {roomDetailsOpen && selectedRoom ? (
           <aside className="channel-room-details" aria-label={t("channels.roomDetails") }>
             <div className="channel-room-details-scroll">
-              <section className="channel-room-summary-card">
+              <section className="channel-room-summary">
                 <button
                   className="channel-room-details-avatar"
                   type="button"
@@ -965,6 +965,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   <strong>{roomName}</strong>
                   <span>{t("channels.memberCount", { count: selectedRoom.members.filter((member) => member.member_type === "human").length + roomAgentIDs.length })}</span>
                 </div>
+                <button
+                  className="icon-button channel-room-details-close"
+                  type="button"
+                  aria-label={t("channels.closeRoomDetails")}
+                  onClick={() => setRoomDetailsOpen(false)}
+                >
+                  <X className="icon" aria-hidden="true" />
+                </button>
               </section>
 
               <section className="channel-room-details-section">
@@ -972,7 +980,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   <strong>{t("channels.groupMembers")}</strong>
                   <span>{roomAgentIDs.length}</span>
                 </div>
-                <div className="channel-room-member-grid">
+                <div className="channel-room-member-list">
                   {agents.map((agent) => {
                     const selected = roomAgentIDs.includes(agent.id);
                     return (
@@ -985,6 +993,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       >
                         <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
                         <span>{agent.name}</span>
+                        {selected ? <Check aria-hidden="true" /> : null}
                       </button>
                     );
                   })}
@@ -992,16 +1001,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               </section>
 
               <section className="channel-room-details-section">
-                <div className="channel-room-details-section-heading"><strong>{t("channels.roomProfile")}</strong></div>
                 <label className="channel-room-details-field">
                   <span>{t("channels.name")}</span>
                   <input value={roomName} onChange={(event) => setRoomName(event.currentTarget.value)} />
                 </label>
-              </section>
-
-              <section className="channel-room-details-section">
-                <div className="channel-room-details-section-heading"><strong>{t("channels.roomAnnouncement")}</strong></div>
-                <div className="channel-room-announcement-empty">{t("channels.roomAnnouncementEmpty")}</div>
               </section>
             </div>
             <div className="channel-room-details-actions">
