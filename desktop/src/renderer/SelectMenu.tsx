@@ -26,6 +26,9 @@ export type SelectMenuOption = {
   hint?: string;
   // Additional terms used only for filtering a searchable menu.
   keywords?: string[];
+  // When any option matches one of these terms, only matching options remain.
+  // Used for semantic categories such as a timezone's actual country.
+  priorityKeywords?: string[];
   disabled?: boolean;
 };
 
@@ -34,6 +37,23 @@ export type SelectMenuGroup = {
   label?: string;
   options: SelectMenuOption[];
 };
+
+function normalizeSearchText(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase();
+}
+
+function matchesPriorityKeyword(text: string | undefined, query: string): boolean {
+  if (!text) return false;
+  const normalizedText = normalizeSearchText(text);
+  const queryWords = query.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const textWords = normalizedText.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return queryWords.every((queryWord) => (
+    textWords.some((textWord) => textWord.startsWith(queryWord))
+  ));
+}
 
 export function SelectMenu({
   value,
@@ -94,15 +114,23 @@ export function SelectMenu({
   const sourceGroups: SelectMenuGroup[] =
     groups ?? (options ? [{ options }] : []);
   const sourceOptions = sourceGroups.flatMap((group) => group.options);
-  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const normalizedQuery = normalizeSearchText(searchQuery.trim());
+  const hasPriorityMatch = normalizedQuery !== "" && sourceOptions.some((option) => (
+    option.priorityKeywords?.some((keyword) => matchesPriorityKeyword(keyword, normalizedQuery))
+  ));
   const resolvedGroups = normalizedQuery
     ? sourceGroups
       .map((group) => ({
         ...group,
-        options: group.options.filter((option) => (
-          [option.label, option.value, option.hint, ...(option.keywords ?? [])]
-            .some((text) => text?.toLocaleLowerCase().includes(normalizedQuery))
-        )),
+        options: group.options.filter((option) => {
+          if (hasPriorityMatch) {
+            return option.priorityKeywords?.some((keyword) => (
+              matchesPriorityKeyword(keyword, normalizedQuery)
+            )) ?? false;
+          }
+          return [option.label, option.value, option.hint, ...(option.keywords ?? [])]
+            .some((text) => normalizeSearchText(text ?? "").includes(normalizedQuery));
+        }),
       }))
       .filter((group) => group.options.length > 0)
     : sourceGroups;

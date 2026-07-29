@@ -73,8 +73,13 @@ function keyOn(element: Element, key: string): void {
 }
 
 const FRUIT = [
-  { value: "apple", label: "苹果" },
-  { value: "pear", label: "梨", keywords: ["green fruit"] },
+  { value: "apple", label: "苹果", priorityKeywords: ["China"] },
+  {
+    value: "pear",
+    label: "梨",
+    keywords: ["green fruit", "Indochina"],
+    priorityKeywords: ["Thailand"],
+  },
   { value: "plum", label: "李子" },
 ];
 
@@ -190,6 +195,26 @@ describe("SelectMenu", () => {
         "value",
       )?.set;
       valueSetter?.call(search, "green");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["pear"]);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "china");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["apple"]);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "indochina");
       search.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["pear"]);

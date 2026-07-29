@@ -348,6 +348,13 @@ describe("AutomationsCatalog", () => {
 
     const search = document.body.querySelector<HTMLInputElement>('[aria-label="搜索时区"]');
     expect(search).toBeTruthy();
+    await act(async () => setInputValue(search!, "china"));
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Shanghai"]')).toBeTruthy();
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeNull();
+
+    await act(async () => setInputValue(search!, "indochina"));
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeTruthy();
+
     await act(async () => setInputValue(search!, "日本"));
     const tokyo = document.body.querySelector<HTMLButtonElement>('.select-menu-item[data-value="Asia/Tokyo"]');
     expect(tokyo?.textContent).toContain("日本标准时间");

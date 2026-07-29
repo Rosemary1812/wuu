@@ -1,4 +1,5 @@
 import { ChevronRight, CircleAlert, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { rawTimeZones } from "@vvo/tzdb";
 import {
   useCallback,
   useEffect,
@@ -60,6 +61,9 @@ const SUPPORTED_AUTOMATION_TIMEZONES = (() => {
 })();
 const TIMEZONE_NAME_LOCALES = ["zh-CN", "en-US"] as const;
 const timezoneNameCache = new Map<string, string>();
+const TIMEZONE_METADATA_BY_NAME = new Map(rawTimeZones.flatMap((timezone) => (
+  timezone.group.map((name) => [name, timezone] as const)
+)));
 
 function localizedTimezoneName(timezone: string, locale: string): string {
   const cacheKey = `${locale}:${timezone}`;
@@ -84,6 +88,7 @@ function automationTimezoneOptions(
   localTimezoneLabel: string,
   locale: string,
 ): SelectMenuOption[] {
+  const regionNames = new Intl.DisplayNames([locale], { type: "region" });
   const orderedTimezones = [
     localTimezone,
     currentTimezone,
@@ -91,18 +96,30 @@ function automationTimezoneOptions(
     ...SUPPORTED_AUTOMATION_TIMEZONES,
   ];
   return [...new Set(orderedTimezones.filter(Boolean))].map((timezone) => {
+    const metadata = TIMEZONE_METADATA_BY_NAME.get(timezone);
     const localizedName = localizedTimezoneName(timezone, locale);
+    const localizedCountry = metadata ? regionNames.of(metadata.countryCode) ?? "" : "";
     const hint = [...new Set([
       timezone === localTimezone ? localTimezoneLabel : "",
+      localizedCountry,
       localizedName,
     ].filter(Boolean))].join(" · ");
     return {
       value: timezone,
       label: timezone,
       hint: hint || undefined,
+      priorityKeywords: metadata ? [
+        localizedCountry,
+        metadata.countryName,
+        metadata.countryCode,
+      ].filter(Boolean) : undefined,
       keywords: TIMEZONE_NAME_LOCALES.map((nameLocale) => (
         localizedTimezoneName(timezone, nameLocale)
-      )).filter(Boolean),
+      )).concat(metadata ? [
+        metadata.continentName,
+        metadata.alternativeName,
+        ...metadata.mainCities,
+      ] : []).filter(Boolean),
     };
   });
 }
