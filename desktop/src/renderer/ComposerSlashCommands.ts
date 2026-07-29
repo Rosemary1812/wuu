@@ -48,6 +48,10 @@ export type ComposerFastModelTarget = {
 };
 
 const COMPOSER_SLASH_COMMAND_LIMIT = 8;
+// Skills are appended after the built-ins, so the shared limit alone would drop
+// every skill from the unsearched view. Reserve slots for them instead, keeping
+// installed workflows discoverable without typing a query first.
+const COMPOSER_SLASH_DEFAULT_SKILL_LIMIT = 3;
 
 export function parseComposerSlashDraft(value: string): ComposerSlashDraft | undefined {
   if (!value.startsWith("/") || value.startsWith("//") || value.includes("\n")) {
@@ -427,11 +431,19 @@ export function runtimeFastModelTarget(initialized?: InitializeResult): Composer
 export function filterComposerSlashCommands(commands: ComposerSlashCommand[], query: string): ComposerSlashCommand[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
-    return commands.slice(0, COMPOSER_SLASH_COMMAND_LIMIT);
+    return defaultComposerSlashCommands(commands);
   }
   return commands
     .filter((command) => composerSlashCommandSearchText(command).includes(normalized))
     .slice(0, COMPOSER_SLASH_COMMAND_LIMIT);
+}
+
+// Skills keep their source ordering (project, then user, then bundled), so the
+// reserved slots surface the most project-specific workflows first.
+function defaultComposerSlashCommands(commands: ComposerSlashCommand[]): ComposerSlashCommand[] {
+  const builtIns = commands.filter((command) => command.kind !== "skill").slice(0, COMPOSER_SLASH_COMMAND_LIMIT);
+  const skills = commands.filter((command) => command.kind === "skill").slice(0, COMPOSER_SLASH_DEFAULT_SKILL_LIMIT);
+  return [...builtIns, ...skills];
 }
 
 export function firstEnabledSlashCommandIndex(commands: ComposerSlashCommand[]): number {

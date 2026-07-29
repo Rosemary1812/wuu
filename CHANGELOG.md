@@ -10,6 +10,10 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ### Fixed
 
+- Fixed the composer slash command panel hiding every skill until the user typed
+  a search query, showing skill rows without their `/<name>` command, and
+  labelling the skills catalog entry `Browse Skills` while it opened a catalog
+  tab.
 - Fixed Git attribution in Windows Git Bash shells when Git resolves without an
   `.exe` suffix.
 - Fixed a white screen on the Automations tab when no automation records

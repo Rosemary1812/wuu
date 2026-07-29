@@ -2127,17 +2127,32 @@
 .slash-command-label {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: baseline;
+  gap: 8px;
   overflow: hidden;
   white-space: nowrap;
 }
 
 .slash-command-title {
+  flex: 0 0 auto;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Skill rows pair the command name with its description. Only the description
+   shrinks, so the command name that identifies the row stays readable. */
+.slash-command-description {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

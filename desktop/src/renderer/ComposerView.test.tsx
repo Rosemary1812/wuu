@@ -1433,6 +1433,38 @@ describe("Composer send control", () => {
     expect(setPrompt).toHaveBeenCalledWith("/slides ");
   });
 
+  it("shows both the command name and the description on a skill row", async () => {
+    installSkillList([
+      {
+        name: "slides",
+        description: "Create slide decks",
+        source: "bundled",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+    renderComposer({
+      prompt: "/sli",
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const skillRow = container.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="slides"]',
+    );
+
+    // Without the command name the row cannot be told apart from any other
+    // skill that happens to share a description prefix.
+    expect(skillRow?.querySelector(".slash-command-title")?.textContent).toBe("/slides");
+    expect(skillRow?.querySelector(".slash-command-description")?.textContent).toBe(
+      "Create slide decks",
+    );
+    expect(composerCSS).toContain(".slash-command-description");
+  });
+
   it("sends an exact slash command with arguments on Enter", () => {
     const onSend = vi.fn();
     renderComposer({
