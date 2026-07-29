@@ -2343,7 +2343,7 @@ function isThreadRunning(
   );
 }
 
-function agentRunning(
+export function agentRunning(
   agent: Pick<Agent, "status" | "nested_running_count">,
 ): boolean {
   if ((agent.nested_running_count ?? 0) > 0) {

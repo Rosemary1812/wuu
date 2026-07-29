@@ -53,6 +53,7 @@ export function AssistantTurnShell({
   onForkMessage,
   onOpenRuns,
   onCollapseComplete,
+  suppressAnswerHandoff,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -65,6 +66,11 @@ export function AssistantTurnShell({
   onForkMessage?: (turnID: string, itemID: string) => void;
   onOpenRuns?: () => void;
   onCollapseComplete?: () => void;
+  /** Group rendering (TurnGroupView) sets this while the orchestration is
+   *  parked between turns: an existing answer must not collapse the
+   *  process fold, because the live spawn rows are the only surface that
+   *  still shows the subagents running. */
+  suppressAnswerHandoff?: boolean;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -108,8 +114,8 @@ export function AssistantTurnShell({
   const answerHandoffRequested = answerEntries.some(
     (entry) =>
       entry.item.type === "agent_message" &&
-      streamFieldValue(turn.id, entry.item, "text").trim().length > 0,
-  );
+      streamFieldValue(entry.turn?.id ?? turn.id, entry.item, "text").trim().length > 0,
+  ) && !suppressAnswerHandoff;
 
   const className = [
     "assistant-turn-shell",
@@ -445,6 +451,10 @@ function EntryRenderer({
   onOpenRuns?: () => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
+  // Entries merged from other turns (group display) render against their
+  // own origin turn: stream-text store keys, fork targets and turn status
+  // all belong to the turn the item was produced in, not the shell's.
+  const originTurn = entry.turn ?? turn;
   if (kind === "activity" || kind === "process_group") {
     return (
       <ProcessSurface
@@ -453,8 +463,8 @@ function EntryRenderer({
         active={activeGray}
         renderReasoningItem={(processItem, isStreaming) => (
           <ThreadItemView
-            turnID={turn.id}
-            turnStatus={turn.status}
+            turnID={originTurn.id}
+            turnStatus={originTurn.status}
             item={processItem}
             cwd={cwd}
             onOpenFile={onOpenFile}
@@ -478,8 +488,8 @@ function EntryRenderer({
         item={item}
         streaming={streaming}
         activeGray={activeGray}
-        turnID={turn.id}
-        turnStatus={turn.status}
+        turnID={originTurn.id}
+        turnStatus={originTurn.status}
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}
@@ -490,8 +500,8 @@ function EntryRenderer({
   if (item.type === "agent_message") {
     return (
       <ThreadItemView
-        turnID={turn.id}
-        turnStatus={turn.status}
+        turnID={originTurn.id}
+        turnStatus={originTurn.status}
         item={item}
         cwd={cwd}
         onOpenFile={onOpenFile}

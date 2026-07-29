@@ -40,6 +40,12 @@ export type TurnEntry = {
   streaming: boolean;
   kind: TurnEntryKind;
   count?: number;
+  /** Origin turn when entries from several turns are merged into one
+   *  group display (TurnGroupView). Undefined means "the shell's own
+   *  turn" — single-turn displays never set it, so stream-text keys,
+   *  fork targets and turn status all resolve to the owning turn either
+   *  way. */
+  turn?: Turn;
 };
 
 export type TurnEntryKind =
@@ -78,7 +84,7 @@ export type TurnProcessPreview = {
 export function buildAssistantTurnDisplay(
   turn: Turn,
   _actionableAgentMessageID: string | undefined,
-  renderThreadItem: (
+  renderThreadItem?: (
     item: ThreadItem,
     streaming: boolean,
     pendingCompanionReasoning?: boolean,
@@ -156,12 +162,16 @@ export function buildAssistantTurnDisplay(
       if (text.trim().length === 0 && !streaming) continue;
       const shouldDelayCursor = turnHasReasoning && !firstTextItemRendered;
       firstTextItemRendered = true;
-      const rendered = renderThreadItem(
-        item,
-        streaming,
-        shouldDelayCursor ? true : undefined,
-      );
-      if (!rendered) continue;
+      if (
+        renderThreadItem &&
+        !renderThreadItem(
+          item,
+          streaming,
+          shouldDelayCursor ? true : undefined,
+        )
+      ) {
+        continue;
+      }
       const position = entryPosition(item);
       if (position === "answer") hasAnswer = true;
       entries.push({
@@ -207,8 +217,7 @@ export function buildAssistantTurnDisplay(
 
     // reasoning, error, context_compaction, ...
     const streaming = isProcessItemLive(item);
-    const rendered = renderThreadItem(item, streaming);
-    if (!rendered) continue;
+    if (renderThreadItem && !renderThreadItem(item, streaming)) continue;
     entries.push({
       key: item.id,
       item,
