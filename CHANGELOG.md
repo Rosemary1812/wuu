@@ -8,6 +8,22 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Removed
+
+- Removed Wuu's provider-neutral `wuu_tool_search` progressive tool loading.
+  Appending schemas to the top-level `tools` array mid-conversation invalidated
+  the provider prompt-cache prefix past the insertion point, so every load
+  risked another cold prefix. Loading is now `native` where the provider and
+  model support deferred discovery and `flat` everywhere else, which keeps the
+  request prefix stable for the fixed cost of the full tool schema. The local
+  search executor stays: provider-native discovery still needs it to search the
+  catalog and return loadable schemas. Existing configs setting
+  `agent.tool_loading` to `wuu_tool_search` (or the `tool_search` alias, or
+  `tool_search: true`) keep starting and now resolve to `auto`, printing a
+  one-time deprecation notice. Explicit `native` on a provider or model without
+  native discovery now falls back to `flat` with a visible notice instead of
+  silently selecting Wuu progressive loading.
+
 ### Fixed
 
 - Fixed the composer slash command panel hiding every skill until the user typed

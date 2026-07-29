@@ -132,20 +132,6 @@ func nativeToolSearchOption(options map[string]any) (bool, bool) {
 	return false, false
 }
 
-func ShouldFallbackToWuuToolSearchByDefault(provider config.ProviderConfig, model string, _ map[string]any) bool {
-	profile, err := resolveProviderProfile(provider)
-	if err != nil {
-		return false
-	}
-	switch profile.Wire {
-	case wireOpenAIResponses:
-		return !openAIModelSupportsNativeToolSearch(model) &&
-			(isFirstPartyOpenAIResponsesBaseURL(provider.BaseURL) || profile.Auth == authCodexOAuth)
-	default:
-		return false
-	}
-}
-
 func openAIModelSupportsNativeToolSearch(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
 	if !strings.HasPrefix(model, "gpt-") {

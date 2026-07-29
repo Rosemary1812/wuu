@@ -808,16 +808,20 @@ func resolveToolLoadingModeForProvider(mode config.ToolLoadingMode, providerCfg 
 		if providerfactory.SupportsNativeToolDiscovery(providerCfg, model, providerOptions) {
 			return mode, true, true
 		}
-		return config.ToolLoadingWuuToolSearch, true, false
-	case config.ToolLoadingWuuToolSearch:
-		return mode, true, false
+		// Explicit native on a path that cannot carry the provider's own
+		// deferred-discovery protocol degrades to flat rather than silently
+		// selecting a different loading strategy. Say so: the user asked for
+		// deferred tools and is not getting them.
+		warnUnsupportedNativeToolLoadingOnce(providerCfg, model)
+		return config.ToolLoadingFlat, false, false
 	default:
 		if providerfactory.SupportsNativeToolDiscoveryByDefault(providerCfg, model, providerOptions) {
 			return config.ToolLoadingNative, true, true
 		}
-		if providerfactory.ShouldFallbackToWuuToolSearchByDefault(providerCfg, model, providerOptions) {
-			return config.ToolLoadingWuuToolSearch, true, false
-		}
+		// Everything else is flat. Paying the fixed schema cost once keeps the
+		// provider prompt-cache prefix stable, which progressive loading could
+		// not do: appending to the top-level tools array invalidated the cached
+		// prefix past the insertion point on every load.
 		return config.ToolLoadingFlat, false, false
 	}
 }
