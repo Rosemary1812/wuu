@@ -63,6 +63,7 @@ const WORKSPACE_TREE_CSS = `
   [data-file-tree-search-input] {
     min-width: 0;
     margin-inline-end: 40px;
+    border-color: var(--hairline-strong);
   }
 `;
 
@@ -249,6 +250,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
         // light-DOM column on the input itself instead of overlapping it.
         search.style.marginInlineEnd = "40px";
         search.style.minWidth = "0";
+        search.style.borderColor = "var(--hairline-strong)";
       }
       const options = host.shadowRoot?.querySelector<HTMLButtonElement>("[data-type='context-menu-trigger']");
       if (options) options.setAttribute("aria-label", t("workspace.files.options"));

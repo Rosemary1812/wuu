@@ -235,13 +235,14 @@ describe("WorkspaceFileTree", () => {
       /\[data-file-tree-search-container\]\s*\{[^}]*box-sizing:\s*border-box;[^}]*width:\s*100%;[^}]*margin-inline:\s*0;[^}]*padding-inline:\s*8px;/s,
     );
     expect(unsafeStyle?.textContent).toMatch(
-      /\[data-file-tree-search-input\]\s*\{[^}]*min-width:\s*0;[^}]*margin-inline-end:\s*40px;/s,
+      /\[data-file-tree-search-input\]\s*\{[^}]*min-width:\s*0;[^}]*margin-inline-end:\s*40px;[^}]*border-color:\s*var\(--hairline-strong\);/s,
     );
     const search = treeShadowRoot().querySelector<HTMLInputElement>(
       "[data-file-tree-search-input]",
     );
     expect(search?.style.marginInlineEnd).toBe("40px");
     expect(search?.style.minWidth).toBe("0");
+    expect(search?.style.borderColor).toBe("var(--hairline-strong)");
   });
 
   it("expands and scrolls to the selected workspace file path", async () => {
