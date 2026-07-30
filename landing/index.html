@@ -837,14 +837,21 @@ html.fx-on .statement .w{opacity:.13}
 .vision-zh{font-family:var(--serif);font-weight:600;font-size:clamp(38px,5.4vw,66px);line-height:1.12;letter-spacing:.02em}
 .vision-en{font-family:var(--serif-latin);font-style:italic;font-size:clamp(20px,2.4vw,30px);line-height:1.2;color:var(--accent)}
 /* JS 开启后静态换词升级为 3D 字筒：滚动进度直接驱动绕 X 轴转角 */
-.vision-swap.p3d{display:block;perspective:720px}
+.vision-swap.p3d{display:block;perspective:720px;-webkit-box-reflect:below 12px -webkit-linear-gradient(rgba(0,0,0,.16),transparent 58%)}
 .vision-drum{position:relative;display:block;transform-style:preserve-3d;will-change:transform}
 .vision-face{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;gap:20px;white-space:nowrap;backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:transform,opacity}
 .vision-face .vision-zh{transform-style:preserve-3d}
 .vision-face .vc{display:inline-block;will-change:transform}
+/* 套准角标：框住当前词的四个角，翻面时轻轻收紧 */
+.vision-marks{position:absolute;inset:-26px -30px;pointer-events:none;color:var(--gray-500)}
+.vision-marks i{position:absolute;width:11px;height:11px;opacity:.55}
+.vision-marks .tl{left:0;top:0;border-left:1px solid;border-top:1px solid}
+.vision-marks .tr{right:0;top:0;border-right:1px solid;border-top:1px solid}
+.vision-marks .bl{left:0;bottom:0;border-left:1px solid;border-bottom:1px solid}
+.vision-marks .br{right:0;bottom:0;border-right:1px solid;border-bottom:1px solid}
 .vision-measure{position:absolute;left:0;top:0;z-index:-1;visibility:hidden;pointer-events:none}
 .vision-measure .mrow{display:flex;align-items:baseline;justify-content:center;gap:20px;width:max-content;white-space:nowrap}
-/* 钉住区背景的词相关笔迹场 */
+/* 钉住区背景的手绘 3D 线框环 */
 #vision .vision-fx{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none}
 #vision .meta{
   position:absolute;left:50%;bottom:7vh;transform:translateX(-50%);z-index:2;
@@ -2160,7 +2167,7 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     });
   }
 
-  /* ---- vision：钉住 + 滚动 scrub 的 3D 字筒 + 词相关笔迹场 ---- */
+  /* ---- vision：钉住 + 滚动 scrub 的 3D 字筒 + 线框环 ---- */
   const vSec = document.getElementById('vision'), vPin = document.getElementById('vision-pin');
   const vSwap = document.getElementById('vision-swap');
   const vIdx = document.getElementById('vision-idx');
@@ -2182,8 +2189,13 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     meas.className = 'vision-measure';
     meas.setAttribute('aria-hidden','true');
     meas.innerHTML = VWORDS.map(w=>`<span class="mrow">${faceHTML(w)}</span>`).join('');
+    const marks = document.createElement('span');
+    marks.className = 'vision-marks';
+    marks.setAttribute('aria-hidden','true');
+    marks.innerHTML = '<i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>';
     vSwap.textContent = '';
     vSwap.classList.add('p3d');
+    vSwap.appendChild(marks);
     vSwap.appendChild(drum);
     vPin.appendChild(meas);
     const vFaces = [...drum.children];
@@ -2202,15 +2214,45 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ measDirty = true; });
     addEventListener('resize', ()=>{ measDirty = true; });
 
-    /* 词相关笔迹场：一组发丝横线随词变形——读=扫描 / 改=挪段+光标 / 跑=chevron 行进 / 验=行尾打勾 */
-    const vField = (()=>{
+    /* 线框 torus knot：手写 3D 投影，随滚动转动，accent 光点沿环行进 */
+    const vKnot = (()=>{
       if(!vCv) return null;
       const ctx = vCv.getContext('2d');
       if(!ctx) return null;
-      const R = 8;
+      const N = 360, HK = 10, HN = 24, RAD = 3.2, HR = .42/RAD, TAU = Math.PI*2;
+      const L = new Float32Array(N*3);
+      for(let i=0;i<N;i++){
+        const u = i/N*TAU;
+        L[i*3]   = (2+Math.cos(3*u))*Math.cos(2*u)/RAD;
+        L[i*3+1] = (2+Math.cos(3*u))*Math.sin(2*u)/RAD;
+        L[i*3+2] = Math.sin(3*u)/RAD;
+      }
+      const hoops = [];
+      for(let j=0;j<HN;j++){
+        const i = j*(N/HN)|0, a = 3*((i-1+N)%N), b = 3*((i+1)%N), c = 3*i;
+        let tx = L[b]-L[a], ty = L[b+1]-L[a+1], tz = L[b+2]-L[a+2];
+        const tl = Math.hypot(tx,ty,tz)||1; tx/=tl; ty/=tl; tz/=tl;
+        let nx = ty, ny = -tx, nz = 0, nl = Math.hypot(nx,ny,nz);      /* T × z 轴 */
+        if(nl<.05){ nx = -tz; ny = 0; nz = tx; nl = Math.hypot(nx,ny,nz)||1; }
+        nx/=nl; ny/=nl; nz/=nl;
+        const bx = ty*nz - tz*ny, by = tz*nx - tx*nz, bz = tx*ny - ty*nx;
+        const hv = new Float32Array(HK*3);
+        for(let k=0;k<HK;k++){
+          const th = k/HK*TAU, co = Math.cos(th)*HR, si = Math.sin(th)*HR;
+          hv[k*3]   = L[c]   + nx*co + bx*si;
+          hv[k*3+1] = L[c+1] + ny*co + by*si;
+          hv[k*3+2] = L[c+2] + nz*co + bz*si;
+        }
+        hoops.push(hv);
+      }
+      const proj = new Float32Array(N*2), hproj = new Float32Array(HK*2), zbuf = new Float32Array(N);
+      /* 稀疏深点：与线框环同一套旋转投影的远景层 */
+      const NP = 42, ptcl = new Float32Array(NP*3), pproj = new Float32Array(NP*2), pz = new Float32Array(NP);
       const hs = i=>{ const x = Math.sin(i*12.9898)*43758.5453; return x - Math.floor(x); };
-      const IND = [], LEN = [];                       /* 每行稳定的参差缩进与长度 */
-      for(let i=0;i<R;i++){ IND.push(.02+hs(i*3+1)*.15); LEN.push(.34+hs(i*7+2)*.46); }
+      for(let i=0;i<NP;i++){
+        const u = hs(i*5+1)*TAU, v = hs(i*7+2)*2-1, rr = 1.02 + hs(i*11+3)*.55, sq = Math.sqrt(1-v*v);
+        ptcl[i*3] = rr*sq*Math.cos(u); ptcl[i*3+1] = rr*v; ptcl[i*3+2] = rr*sq*Math.sin(u);
+      }
       let ink = 'rgb(1,1,1)', acc = '#ff3d00', cw = 0, ch = 0, dpr = 1;
       const readTheme = ()=>{
         const m = getComputedStyle(vSec).color.match(/[\d.]+/g);
@@ -2220,8 +2262,7 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
       readTheme();
       const tmq = matchMedia('(prefers-color-scheme: dark)');
       if(tmq.addEventListener) tmq.addEventListener('change', readTheme);
-      const smooth = (a,b,v)=>{ const t = clampN((v-a)/(b-a),0,1); return t*t*(3-2*t); };
-      return (ps)=>{
+      return (t, p)=>{
         const w = vCv.clientWidth, h = vCv.clientHeight;
         if(!w || !h) return;
         const d = Math.min(2, devicePixelRatio||1);
@@ -2231,84 +2272,70 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
         }
         ctx.setTransform(d,0,0,d,0,0);
         ctx.clearRect(0,0,w,h);
-        const g = ps*(NF-1), wi = Math.min(NF-2, Math.floor(g)), frac = g - wi;
-        const m = smooth(.34,.66,frac);               /* 过渡窗口与字筒翻面同步 */
-        const fw = Math.min(w*.62, 640), fx0 = w/2 - fw/2;
-        const sp = Math.min(34, h*.042), cy = h/2;
-        /* 行基础参数跨词插值：读/写同形，跑收拢压短，验保持压短、缩进回参差 */
-        const P = (word,i)=>{
-          if(word===2) return [.02, LEN[i]*.45];
-          if(word===3) return [IND[i], LEN[i]*.45];
-          return [IND[i], LEN[i]];
+        const R = Math.min(w,h)*.355, OX = w/2, OY = h/2, F = 3.1;
+        const ay = t*.0001 + p*Math.PI, ax = .46 + p*.8 + Math.sin(t*.00023)*.05;
+        const cy = Math.cos(ay), sy = Math.sin(ay), cx1 = Math.cos(ax), sx1 = Math.sin(ax);
+        const project = (src,dst,n,zdst)=>{
+          for(let i=0;i<n;i++){
+            const x = src[i*3], y = src[i*3+1], z = src[i*3+2];
+            const x1 = x*cy + z*sy, z1 = z*cy - x*sy;
+            const y2 = y*cx1 - z1*sx1, z2 = y*sx1 + z1*cx1;
+            const s = F/(F - z2);
+            dst[i*2] = OX + x1*s*R; dst[i*2+1] = OY - y2*s*R;
+            if(zdst) zdst[i] = z2;
+          }
         };
         ctx.lineWidth = 1;
         ctx.strokeStyle = ink;
-        const rows = [];
-        for(let i=0;i<R;i++){
-          const A = P(wi,i), B = P(Math.min(NF-1,wi+1),i);
-          const ind = A[0]+(B[0]-A[0])*m, ln = A[1]+(B[1]-A[1])*m;
-          const x0 = fx0 + ind*fw, x1 = x0 + ln*fw, y = cy + (i-(R-1)/2)*sp;
-          rows.push([x0,x1,y]);
-          const mid = Math.abs(i-(R-1)/2)/((R-1)/2);  /* 中间行让位于词 */
-          ctx.globalAlpha = .10 + .08*mid;
-          ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke();
+        project(L, proj, N, zbuf);
+        project(ptcl, pproj, NP, pz);
+        ctx.fillStyle = ink;
+        for(let i=0;i<NP;i++){
+          const dn = clampN(pz[i]/1.4*.5+.5, 0, 1);
+          ctx.globalAlpha = .07 + .2*dn;
+          ctx.beginPath();
+          ctx.arc(pproj[i*2], pproj[i*2+1], .8 + dn*1.4, 0, 7);
+          ctx.fill();
         }
-        /* 每词的专属笔迹：按与词中心的距离淡入淡出 */
-        for(let wd=0; wd<NF; wd++){
-          const da = 1 - Math.min(1, Math.abs(g-wd)*2.6);
-          if(da<=.02) continue;
-          /* 首尾词的窗口被滚动域截断，故事进度按截断后的窗口归一 */
-          const lo = wd===0 ? 0 : wd-.5, hi = wd===NF-1 ? NF-1 : wd+.5;
-          const segP = clampN((g-lo)/(hi-lo), 0, 1), e = 1-(1-segP)*(1-segP);
-          ctx.strokeStyle = acc;
-          if(wd===0){                                  /* 读：扫描头一行行往下 */
-            const s = Math.min(R-1, Math.floor(segP*R)), fr = segP*R - s;
-            const rw = rows[s], xh = rw[0]+(rw[1]-rw[0])*fr;
-            ctx.globalAlpha = .8*da;
-            ctx.beginPath(); ctx.moveTo(rw[0],rw[2]); ctx.lineTo(xh,rw[2]); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(xh,rw[2]-sp*.3); ctx.lineTo(xh,rw[2]+sp*.3); ctx.stroke();
-          }else if(wd===1){                            /* 改：三行尾段挪位(叠影)+裂口光标 */
-            const ER = [1,4,6], CUT = [.62,.5,.7], DIR = [1,-.7,1];
-            for(let k=0;k<3;k++){
-              const rw = rows[ER[k]], cut = rw[0]+(rw[1]-rw[0])*CUT[k], dx = e*.07*fw*DIR[k];
-              ctx.globalAlpha = .34*da;
-              ctx.beginPath(); ctx.moveTo(cut+dx,rw[2]); ctx.lineTo(rw[1]+dx,rw[2]); ctx.stroke();
-            }
-            const rw = rows[ER[1]], cxp = rw[0]+(rw[1]-rw[0])*CUT[1] + e*.07*fw*DIR[1];
-            ctx.globalAlpha = .85*da;
-            ctx.beginPath(); ctx.moveTo(cxp,rw[2]-sp*.34); ctx.lineTo(cxp,rw[2]+sp*.34); ctx.stroke();
-          }else if(wd===2){                            /* 跑：chevron 沿行行进 */
-            const y = rows[3][2], s2 = sp*.3;
-            for(let k=0;k<5;k++){
-              const t2 = (segP*1.5 + k/5)%1;
-              ctx.globalAlpha = Math.sin(t2*Math.PI)*.8*da;
-              const xx = fx0 + fw*.02 + t2*fw*.88;
-              ctx.beginPath();
-              ctx.moveTo(xx-s2*.5,y-s2); ctx.lineTo(xx+s2*.5,y); ctx.lineTo(xx-s2*.5,y+s2);
-              ctx.stroke();
-            }
-          }else{                                       /* 验：行尾依次长出细勾 */
-            for(let i=0;i<R;i++){
-              const dp = clampN(segP*(R+2)-(i+1), 0, 1);
-              if(dp<=0) continue;
-              const s2 = sp*.26, tx = rows[i][1] + sp*.5, y = rows[i][2];
-              const ax = tx-s2, ay = y-s2*.1, bx = tx-s2*.2, by = y+s2*.8, cx2 = tx+s2*1.3, cy2 = y-s2*.9;
-              const d1 = Math.min(dp*2,1), d2 = clampN(dp*2-1,0,1);
-              ctx.globalAlpha = .85*da;
-              ctx.beginPath();
-              ctx.moveTo(ax,ay); ctx.lineTo(ax+(bx-ax)*d1, ay+(by-ay)*d1);
-              if(d2>0){ ctx.moveTo(bx,by); ctx.lineTo(bx+(cx2-bx)*d2, by+(cy2-by)*d2); }
-              ctx.stroke();
-            }
-          }
+        /* 主线按深度分段调透明度：近实远虚，线框才有体积 */
+        for(let s=0;s<N;s+=12){
+          let z = 0;
+          ctx.beginPath();
+          ctx.moveTo(proj[s*2], proj[s*2+1]);
+          for(let i=1;i<=12;i++){ const idx = (s+i)%N; ctx.lineTo(proj[idx*2], proj[idx*2+1]); z += zbuf[idx]; }
+          ctx.globalAlpha = .05 + .17*clampN((z/12)/.9*.5+.5, 0, 1);
+          ctx.stroke();
+        }
+        for(let j=0;j<HN;j++){
+          project(hoops[j], hproj, HK);
+          ctx.beginPath();
+          ctx.moveTo(hproj[0], hproj[1]);
+          for(let k=1;k<HK;k++) ctx.lineTo(hproj[k*2], hproj[k*2+1]);
+          ctx.closePath();
+          ctx.globalAlpha = .04 + .12*clampN(zbuf[j*(N/HN)|0]/.9*.5+.5, 0, 1);
+          ctx.stroke();
+        }
+        /* 朱红线段沿环行进：当前进度的一小段主线描成 accent，两端淡出 */
+        const di = Math.floor(p*N)%N;
+        ctx.strokeStyle = acc;
+        for(let k=-16;k<16;k++){
+          const a = Math.sin((k+16)/32*Math.PI)*.85;
+          if(a<.04) continue;
+          const i0 = (di+k+N)%N, i1 = (di+k+1+N)%N;
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.moveTo(proj[i0*2], proj[i0*2+1]); ctx.lineTo(proj[i1*2], proj[i1*2+1]);
+          ctx.stroke();
         }
         ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(proj[di*2], proj[di*2+1], 2.6 + Math.sin(t*.004)*.8, 0, 7);
+        ctx.fillStyle = acc; ctx.fill();
       };
     })();
 
-
     /* 滚动进度直接 scrub 转角，轻量惯性让停顿处自然落定 */
-    let ps = 0, vSegShown = -1;
+    let ps = 0, vSegShown = -1, bgSeg = -1;
     FX.push(()=>{
       const vh = innerHeight, r = vSec.getBoundingClientRect();
       if(r.top > vh || r.bottom < 0) return;
@@ -2340,8 +2367,18 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
       const seg = Math.min(NF-1, Math.round(ps*(NF-1)));
       if(seg!==vSegShown){ vSegShown = seg; vIdx.textContent = `0${seg+1} / 0${NF}`; }
       vBar.style.transform = `scaleX(${ps.toFixed(4)})`;
-      if(vBg) vBg.style.transform = `translate(-50%,-50%) translate3d(0,${((ps-.5)*-70).toFixed(1)}px,0) scale(${(1+ps*.07).toFixed(3)})`;
-      if(vField) vField(ps);
+      const g = ps*(NF-1), frac = g - Math.floor(g);
+      /* 背景大字跟随当前词，翻面瞬间 dip 掉再换字 */
+      if(vBg){
+        if(seg!==bgSeg){ bgSeg = seg; vBg.textContent = VWORDS[seg][1]; }
+        vBg.style.opacity = clampN(Math.abs(frac-.5)/.18, 0, 1).toFixed(3);
+        vBg.style.transform = `translate(-50%,-50%) translate3d(0,${((ps-.5)*-70).toFixed(1)}px,0) scale(${(1+ps*.07).toFixed(3)})`;
+      }
+      /* 套准角标随翻面轻轻收紧 */
+      const act = clampN(1-Math.abs(frac-.5)*2, 0, 1);
+      marks.style.inset = `${(-26+act*8).toFixed(1)}px ${(-30+act*10).toFixed(1)}px`;
+      marks.style.opacity = (.4+.3*act).toFixed(3);
+      if(vKnot) vKnot(performance.now(), ps);
     });
   }
 
