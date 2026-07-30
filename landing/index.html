@@ -837,9 +837,11 @@ html.fx-on .statement .w{opacity:.13}
 .vision-zh{font-family:var(--serif);font-weight:600;font-size:clamp(38px,5.4vw,66px);line-height:1.12;letter-spacing:.02em}
 .vision-en{font-family:var(--serif-latin);font-style:italic;font-size:clamp(20px,2.4vw,30px);line-height:1.2;color:var(--accent)}
 /* JS 开启后静态换词升级为 3D 字筒：滚动进度直接驱动绕 X 轴转角 */
-.vision-swap.p3d{display:block;perspective:1000px}
+.vision-swap.p3d{display:block;perspective:720px}
 .vision-drum{position:relative;display:block;transform-style:preserve-3d;will-change:transform}
 .vision-face{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;gap:20px;white-space:nowrap;backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:transform,opacity}
+.vision-face .vision-zh{transform-style:preserve-3d}
+.vision-face .vc{display:inline-block;will-change:transform}
 .vision-measure{position:absolute;left:0;top:0;z-index:-1;visibility:hidden;pointer-events:none}
 .vision-measure .mrow{display:flex;align-items:baseline;justify-content:center;gap:20px;width:max-content;white-space:nowrap}
 /* 钉住区背景的手绘 3D 线框环 */
@@ -2165,12 +2167,14 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
   const vBar = document.getElementById('vision-bar');
   const vCv = document.getElementById('vision-fx');
   const vBg = vSec ? vSec.querySelector('.bgword') : null;
+  const vEb = vSec ? vSec.querySelector('.eyebrow') : null;
+  const vCap = vSec ? vSec.querySelector('.cap') : null;
   if(vSec && vPin && vSwap && vIdx && vBar){
     const VWORDS = [['读代码','read.'],['改代码','write.'],['跑命令','run.'],['做验证','verify.']];
     const NF = VWORDS.length, STEP = 360/NF;
 
-    /* 静态兜底升级为 3D 字筒：四个词是绕 X 轴的四个面 */
-    const faceHTML = w=>`<span class="vision-zh">${w[0]}</span><span class="vision-en">${w[1]}</span>`;
+    /* 静态兜底升级为 3D 字筒：四个词是绕 X 轴的四个面，中文字符拆成单字以便扇形微扭 */
+    const faceHTML = w=>`<span class="vision-zh">${[...w[0]].map(c=>`<span class="vc">${c}</span>`).join('')}</span><span class="vision-en">${w[1]}</span>`;
     const drum = document.createElement('span');
     drum.className = 'vision-drum';
     drum.innerHTML = VWORDS.map(w=>`<span class="vision-face">${faceHTML(w)}</span>`).join('');
@@ -2183,14 +2187,16 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     vSwap.appendChild(drum);
     vPin.appendChild(meas);
     const vFaces = [...drum.children];
-    let measDirty = true;
+    const vChars = vFaces.map(f=>[...f.querySelectorAll('.vc')]);
+    let measDirty = true, vRadius = 0;
     const vMeasure = ()=>{
       measDirty = false;
       let w = 0, h = 0;
       for(const row of meas.children){ w = Math.max(w, row.offsetWidth); h = Math.max(h, row.offsetHeight); }
       if(!w || !h) return;
       drum.style.width = w + 'px'; drum.style.height = h + 'px';
-      const radius = (h/2).toFixed(1);
+      vRadius = h*1.9;                              /* 虚拟筒半径：比字高大得多， tumble 才读得出纵深 */
+      const radius = vRadius.toFixed(1);
       vFaces.forEach((f,i)=> f.style.transform = `rotateX(${(-i*STEP).toFixed(1)}deg) translateZ(${radius}px)`);
     };
     if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ measDirty = true; });
@@ -2227,11 +2233,11 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
         }
         hoops.push(hv);
       }
-      const proj = new Float32Array(N*2), hproj = new Float32Array(HK*2);
-      let ink = 'rgba(1,1,1,.13)', acc = '#ff3d00', cw = 0, ch = 0, dpr = 1;
+      const proj = new Float32Array(N*2), hproj = new Float32Array(HK*2), zbuf = new Float32Array(N);
+      let ink = 'rgb(1,1,1)', acc = '#ff3d00', cw = 0, ch = 0, dpr = 1;
       const readTheme = ()=>{
         const m = getComputedStyle(vSec).color.match(/[\d.]+/g);
-        if(m) ink = `rgba(${m[0]},${m[1]},${m[2]},.13)`;
+        if(m) ink = `rgb(${m[0]},${m[1]},${m[2]})`;
         acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || acc;
       };
       readTheme();
@@ -2247,40 +2253,55 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
         }
         ctx.setTransform(d,0,0,d,0,0);
         ctx.clearRect(0,0,w,h);
-        const R = Math.min(w,h)*.33, OX = w/2, OY = h/2, F = 3.1;
+        const R = Math.min(w,h)*.355, OX = w/2, OY = h/2, F = 3.1;
         const ay = t*.0001 + p*Math.PI, ax = .46 + p*.8 + Math.sin(t*.00023)*.05;
         const cy = Math.cos(ay), sy = Math.sin(ay), cx1 = Math.cos(ax), sx1 = Math.sin(ax);
-        const project = (src,dst,n)=>{
+        const project = (src,dst,n,zdst)=>{
           for(let i=0;i<n;i++){
             const x = src[i*3], y = src[i*3+1], z = src[i*3+2];
             const x1 = x*cy + z*sy, z1 = z*cy - x*sy;
             const y2 = y*cx1 - z1*sx1, z2 = y*sx1 + z1*cx1;
             const s = F/(F - z2);
             dst[i*2] = OX + x1*s*R; dst[i*2+1] = OY - y2*s*R;
+            if(zdst) zdst[i] = z2;
           }
         };
         ctx.lineWidth = 1;
-        project(L, proj, N);
         ctx.strokeStyle = ink;
-        ctx.beginPath();
-        ctx.moveTo(proj[0], proj[1]);
-        for(let i=1;i<N;i++) ctx.lineTo(proj[i*2], proj[i*2+1]);
-        ctx.closePath(); ctx.stroke();
-        const hi = Math.round(p*(HN-1));
+        project(L, proj, N, zbuf);
+        /* 主线按深度分段调透明度：近实远虚，线框才有体积 */
+        for(let s=0;s<N;s+=12){
+          let z = 0;
+          ctx.beginPath();
+          ctx.moveTo(proj[s*2], proj[s*2+1]);
+          for(let i=1;i<=12;i++){ const idx = (s+i)%N; ctx.lineTo(proj[idx*2], proj[idx*2+1]); z += zbuf[idx]; }
+          ctx.globalAlpha = .05 + .17*clampN((z/12)/.9*.5+.5, 0, 1);
+          ctx.stroke();
+        }
         for(let j=0;j<HN;j++){
           project(hoops[j], hproj, HK);
           ctx.beginPath();
           ctx.moveTo(hproj[0], hproj[1]);
           for(let k=1;k<HK;k++) ctx.lineTo(hproj[k*2], hproj[k*2+1]);
           ctx.closePath();
-          ctx.strokeStyle = j===hi ? acc : ink;
-          ctx.globalAlpha = j===hi ? .55 : .8;
+          ctx.globalAlpha = .04 + .12*clampN(zbuf[j*(N/HN)|0]/.9*.5+.5, 0, 1);
+          ctx.stroke();
+        }
+        /* 朱红线段沿环行进：当前进度的一小段主线描成 accent，两端淡出 */
+        const di = Math.floor(p*N)%N;
+        ctx.strokeStyle = acc;
+        for(let k=-16;k<16;k++){
+          const a = Math.sin((k+16)/32*Math.PI)*.85;
+          if(a<.04) continue;
+          const i0 = (di+k+N)%N, i1 = (di+k+1+N)%N;
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.moveTo(proj[i0*2], proj[i0*2+1]); ctx.lineTo(proj[i1*2], proj[i1*2+1]);
           ctx.stroke();
         }
         ctx.globalAlpha = 1;
-        const di = Math.floor(p*N)%N;                    /* 行进光点 */
         ctx.beginPath();
-        ctx.arc(proj[di*2], proj[di*2+1], 2.4 + Math.sin(t*.004)*.7, 0, 7);
+        ctx.arc(proj[di*2], proj[di*2+1], 2.6 + Math.sin(t*.004)*.8, 0, 7);
         ctx.fillStyle = acc; ctx.fill();
       };
     })();
@@ -2297,9 +2318,24 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
       const p = total>0 ? y/total : 0;
       ps += (p-ps)*.18; if(Math.abs(p-ps)<1e-4) ps = p;
       const ang = ps*(360-STEP);                      /* 正向转角：词向上滚出，与滚动方向一致 */
-      drum.style.transform = `rotateX(${ang.toFixed(2)}deg)`;
-      for(let i=0;i<NF;i++)
-        vFaces[i].style.opacity = clampN((90-Math.abs(ang - i*STEP))/34, 0, 1).toFixed(3);
+      drum.style.transform = `translateZ(${(-vRadius).toFixed(1)}px) rotateX(${ang.toFixed(2)}deg)`;
+      for(let i=0;i<NF;i++){
+        const eff = ang - i*STEP, ae = Math.abs(eff), f = vFaces[i];
+        f.style.opacity = clampN((90-ae)/38, 0, 1).toFixed(3);
+        const b = clampN((ae-16)/74, 0, 1)*2.2;       /* 转远的面轻微失焦，拉出景深 */
+        f.style.filter = b>.04 ? `blur(${b.toFixed(2)}px)` : '';
+        const fan = clampN(eff/90, -1, 1)*4.5, chars = vChars[i];
+        for(let c=0;c<chars.length;c++){
+          const off = (c-(chars.length-1)/2)*fan;    /* 过渡中字符扇形微扭 */
+          chars[c].style.transform = off ? `rotateX(${off.toFixed(2)}deg)` : '';
+        }
+      }
+      /* 入场落定：钉住后的前 10% 进度里内容依次浮现 */
+      const ez = v=>1-(1-v)*(1-v);
+      const s1 = ez(clampN(ps/.07, 0, 1)), s2 = ez(clampN((ps-.015)/.08, 0, 1)), s3 = ez(clampN((ps-.03)/.08, 0, 1));
+      if(vEb){ vEb.style.opacity = (.25+.75*s1).toFixed(3); vEb.style.transform = `translate3d(0,${((1-s1)*14).toFixed(1)}px,0)`; }
+      vSwap.style.opacity = (.2+.8*s2).toFixed(3);
+      if(vCap){ vCap.style.opacity = (.25+.75*s3).toFixed(3); vCap.style.transform = `translate3d(0,${((1-s3)*10).toFixed(1)}px,0)`; }
       const seg = Math.min(NF-1, Math.round(ps*(NF-1)));
       if(seg!==vSegShown){ vSegShown = seg; vIdx.textContent = `0${seg+1} / 0${NF}`; }
       vBar.style.transform = `scaleX(${ps.toFixed(4)})`;
