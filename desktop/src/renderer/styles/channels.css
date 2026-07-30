@@ -149,6 +149,20 @@
   background: var(--bg-primary);
 }
 
+.channel-list-pane.collapsed .channel-pane-heading {
+  justify-content: center;
+  padding: 0;
+}
+
+.channel-list-pane.collapsed .channel-heading-actions {
+  width: 100%;
+  justify-content: center;
+}
+
+.channel-list-collapse-toggle {
+  flex: 0 0 auto;
+}
+
 .channel-split-resizer {
   position: absolute;
   top: 0;

@@ -108,6 +108,8 @@ export const zhCN = {
   "channels.title": "群聊",
   "channels.rooms": "频道",
   "channels.resizeList": "调整列表宽度",
+  "channels.collapseList": "收起列表",
+  "channels.expandList": "展开列表",
   "channels.newRoom": "新建频道",
   "channels.groupAvatar": "群头像",
   "channels.customGroupAvatar": "自定义群头像",

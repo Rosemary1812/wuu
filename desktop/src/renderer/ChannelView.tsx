@@ -1,4 +1,4 @@
-import { Bot, Check, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, Plus, Reply, Settings2, X } from "lucide-react";
+import { Bot, Check, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
@@ -27,9 +27,11 @@ type AgentActivityStatus = "idle" | "thinking" | "sending";
 
 const CHANNEL_SPLIT_WIDTH_KEY = "wuu.channels.splitPaneWidth";
 const LEGACY_CHANNEL_LIST_WIDTH_KEY = "wuu.channels.listWidth";
+const CHANNEL_LIST_COLLAPSED_KEY = "wuu.channels.listCollapsed";
 const CHANNEL_SPLIT_MIN_WIDTH = 156;
 const CHANNEL_SPLIT_MAX_WIDTH = 360;
 const CHANNEL_SPLIT_DEFAULT_WIDTH = 208;
+const CHANNEL_SPLIT_COLLAPSED_WIDTH = 44;
 const CHANNEL_SPLIT_WIDTH_STEP = 16;
 
 const AGENT_AVATAR_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
@@ -86,6 +88,10 @@ function initialChannelSplitWidth(): number {
     : CHANNEL_SPLIT_DEFAULT_WIDTH;
 }
 
+function initialChannelListCollapsed(): boolean {
+  return window.localStorage.getItem(CHANNEL_LIST_COLLAPSED_KEY) === "true";
+}
+
 function taskStateKey(state?: string): "channels.taskState.open" | "channels.taskState.doing" | "channels.taskState.done" {
   if (state === "doing") return "channels.taskState.doing";
   if (state === "done") return "channels.taskState.done";
@@ -105,6 +111,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [trackedTasks, setTrackedTasks] = useState<ChannelMessage[]>([]);
   const [setupPanel, setSetupPanel] = useState<SetupPanel>(null);
   const [splitWidth, setSplitWidth] = useState(initialChannelSplitWidth);
+  const [listCollapsed, setListCollapsed] = useState(initialChannelListCollapsed);
   const [resizingSplit, setResizingSplit] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -154,6 +161,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     const nextWidth = clampChannelSplitWidth(width);
     setSplitWidth(nextWidth);
     window.localStorage.setItem(CHANNEL_SPLIT_WIDTH_KEY, String(nextWidth));
+  }, []);
+
+  const toggleListCollapsed = useCallback((): void => {
+    setListCollapsed((collapsed) => {
+      const nextCollapsed = !collapsed;
+      window.localStorage.setItem(CHANNEL_LIST_COLLAPSED_KEY, String(nextCollapsed));
+      return nextCollapsed;
+    });
   }, []);
 
   useEffect(() => {
@@ -703,20 +718,25 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 
   return (
     <section
-      className={`channel-view channel-mode-${section}${resizingSplit ? " resizing-channel-split" : ""}`}
+      className={`channel-view channel-mode-${section}${listCollapsed && section !== "tasks" ? " channel-list-collapsed" : ""}${resizingSplit ? " resizing-channel-split" : ""}`}
       aria-label={t("channels.title")}
-      style={section !== "tasks" ? { gridTemplateColumns: `${splitWidth}px minmax(0, 1fr)` } : undefined}
+      style={section !== "tasks" ? { gridTemplateColumns: `${listCollapsed ? CHANNEL_SPLIT_COLLAPSED_WIDTH : splitWidth}px minmax(0, 1fr)` } : undefined}
     >
-      {section === "rooms" ? <aside className="channel-list-pane">
+      {section === "rooms" ? <aside className={`channel-list-pane${listCollapsed ? " collapsed" : ""}`}>
         <div className="channel-pane-heading">
-          <span>{t("channels.rooms")}</span>
+          {!listCollapsed ? <span>{t("channels.rooms")}</span> : null}
           <div className="channel-heading-actions">
-            <button className="icon-button" type="button" aria-label={t("channels.newRoom")} onClick={openNewRoom}>
-              <Plus className="icon" />
+            <button className="icon-button channel-list-collapse-toggle" type="button" aria-label={t(listCollapsed ? "channels.expandList" : "channels.collapseList")} aria-expanded={!listCollapsed} onClick={toggleListCollapsed}>
+              {listCollapsed ? <PanelLeftOpen className="icon" /> : <PanelLeftClose className="icon" />}
             </button>
+            {!listCollapsed ? (
+              <button className="icon-button" type="button" aria-label={t("channels.newRoom")} onClick={openNewRoom}>
+                <Plus className="icon" />
+              </button>
+            ) : null}
           </div>
         </div>
-        <div className="channel-room-list channel-directory-list">
+        {!listCollapsed ? <div className="channel-room-list channel-directory-list">
           {rooms.map((room) => (
             <div className={`channel-directory-row channel-room-row${room.id === selectedRoomID ? " active" : ""}`} key={room.id}>
               <span className="channel-directory-avatar channel-room-avatar">
@@ -745,8 +765,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               {t("channels.newRoom")}
             </button>
           ) : null}
-        </div>
-        <button
+        </div> : null}
+        {!listCollapsed ? <button
           className="channel-split-resizer"
           type="button"
           role="separator"
@@ -757,7 +777,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
           aria-valuenow={splitWidth}
           onPointerDown={startSplitResize}
           onKeyDown={handleSplitResizeKeyDown}
-        />
+        /> : null}
       </aside> : null}
 
       {section === "rooms" ? <div ref={conversationRef} className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}${roomDetailsOpen ? " details-open" : ""}`}>
@@ -1015,11 +1035,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         ) : null}
       </div> : section === "agents" ? (
         <div className="channel-agent-workspace">
-          <aside className="channel-list-pane channel-agent-directory">
+          <aside className={`channel-list-pane channel-agent-directory${listCollapsed ? " collapsed" : ""}`}>
             <div className="channel-pane-heading">
-              <span>{t("channels.agents")}<small className="channel-pane-count">{agents.length}</small></span>
+              {!listCollapsed ? <span>{t("channels.agents")}<small className="channel-pane-count">{agents.length}</small></span> : null}
               <div className="channel-heading-actions">
-                <button
+                <button className="icon-button channel-list-collapse-toggle" type="button" aria-label={t(listCollapsed ? "channels.expandList" : "channels.collapseList")} aria-expanded={!listCollapsed} onClick={toggleListCollapsed}>
+                  {listCollapsed ? <PanelLeftOpen className="icon" /> : <PanelLeftClose className="icon" />}
+                </button>
+                {!listCollapsed ? <button
                   className="icon-button"
                   type="button"
                   aria-label={t("channels.newAgent")}
@@ -1033,11 +1056,11 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   }}
                 >
                   <Plus className="icon" />
-                </button>
+                </button> : null}
               </div>
             </div>
-            {error ? <div className="channel-error" role="alert">{error}</div> : null}
-            <div className="channel-agent-directory-list channel-directory-list">
+            {!listCollapsed && error ? <div className="channel-error" role="alert">{error}</div> : null}
+            {!listCollapsed ? <div className="channel-agent-directory-list channel-directory-list">
             {agents.map((agent) => {
               const status = activityFor(agent);
               const roomCount = rooms.filter((room) => room.members.some((member) => member.member_type === "agent" && member.member_id === agent.id)).length;
@@ -1055,8 +1078,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               );
             })}
             {!loading && agents.length === 0 ? <div className="channel-management-empty">{t("channels.newAgent")}</div> : null}
-            </div>
-            <button
+            </div> : null}
+            {!listCollapsed ? <button
               className="channel-split-resizer"
               type="button"
               role="separator"
@@ -1067,7 +1090,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               aria-valuenow={splitWidth}
               onPointerDown={startSplitResize}
               onKeyDown={handleSplitResizeKeyDown}
-            />
+            /> : null}
           </aside>
           <div className="channel-agent-graph-pane">
             <AgentRelationshipGraph

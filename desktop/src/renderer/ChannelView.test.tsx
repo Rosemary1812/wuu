@@ -210,6 +210,31 @@ describe("ChannelView", () => {
     expect(graphDensityScale(10_000)).toBe(0.68);
   });
 
+  it("collapses the room and agent lists with one persistent control", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const collapse = container.querySelector<HTMLButtonElement>('[aria-label="收起列表"]');
+    expect(collapse?.getAttribute("aria-expanded")).toBe("true");
+    act(() => collapse?.click());
+
+    expect(container.querySelector(".channel-view")?.classList.contains("channel-list-collapsed")).toBe(true);
+    expect(container.querySelector(".channel-room-list")).toBeNull();
+    expect(container.querySelector('[aria-label="展开列表"]')).not.toBeNull();
+    expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("true");
+
+    act(() => root?.render(<ChannelView section="agents" />));
+    expect(container.querySelector(".channel-agent-directory-list")).toBeNull();
+    expect(container.querySelector(".channel-agent-graph-pane")).not.toBeNull();
+
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="展开列表"]')?.click());
+    expect(container.querySelector(".channel-agent-directory-list")).not.toBeNull();
+    expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("false");
+  });
+
   it("loads rooms, selects a room, and sends a human message", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });

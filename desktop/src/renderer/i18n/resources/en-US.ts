@@ -110,6 +110,8 @@ export const enUS = {
   "channels.title": "Group chat",
   "channels.rooms": "Channels",
   "channels.resizeList": "Resize list",
+  "channels.collapseList": "Collapse list",
+  "channels.expandList": "Expand list",
   "channels.newRoom": "New channel",
   "channels.groupAvatar": "Group avatar",
   "channels.customGroupAvatar": "Custom group avatar",
