@@ -1320,8 +1320,10 @@ func (s *Server) interruptThreadExecution(threadID, expectedRunID string) (bool,
 	}
 	if cancel == nil {
 		hasAgentWork := threadRuntimeHasOutstandingAgentWork(threadRuntime)
+		var interruptedThread Thread
 		if hasAgentWork {
 			th.workerTreeFrozen = true
+			interruptedThread = th.snapshotLocked()
 		}
 		th.mu.Unlock()
 		if hasAgentWork && threadRuntime.AgentControl != nil {
@@ -1329,6 +1331,11 @@ func (s *Server) interruptThreadExecution(threadID, expectedRunID string) (bool,
 		}
 		if err := s.stopResumeProcessesForThread(threadID, threadRuntime); err != nil {
 			return false, err
+		}
+		if hasAgentWork {
+			if err := s.notifyThreadUpdated(interruptedThread); err != nil {
+				return false, err
+			}
 		}
 		return false, nil
 	}

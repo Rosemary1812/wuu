@@ -1682,6 +1682,7 @@ export const zhCN = {
   "composer.attachment.pdfTooLarge": "「{name}」超过 PDF {limit}MB 大小上限",
   "composer.attachment.addFailed": "附件添加失败",
   "turn.interrupted.title": "回复已中断",
+  "turn.orchestrationPaused": "已暂停回答",
   "turn.stopped.title": "已停止",
   "turn.interrupted.detail": "已保留已生成内容，可以继续发送消息。",
   "turn.stopped.detail": "这次请求已停止，没有生成回复内容。",

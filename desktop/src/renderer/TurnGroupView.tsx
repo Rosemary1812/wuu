@@ -18,7 +18,7 @@ import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
-import { TurnEventNotice, StreamReconnectNotice } from "./TurnNotice";
+import { SystemEventDivider, TurnEventNotice, StreamReconnectNotice } from "./TurnNotice";
 import { turnEventForTurn } from "./TurnEvents";
 import { isAgentHandoffItem } from "./AgentHandoff";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
@@ -31,6 +31,7 @@ import {
 import { TurnView } from "./TurnView";
 import type { TurnStreamStatus } from "./AppState";
 import type { SubagentChipDisplay } from "./AgentHandoff";
+import { translateCurrent } from "./i18n";
 
 export type TurnGroupViewProps = {
   /** One orchestration group (TurnGrouping). Length 1 for ordinary turns. */
@@ -38,6 +39,8 @@ export type TurnGroupViewProps = {
   /** The thread still has running child agents and this is the last group:
    *  the orchestration is between turns, waiting for a completion wake. */
   awaiting?: boolean;
+  /** The user stopped this orchestration while it was between wake turns. */
+  interrupted?: boolean;
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
@@ -62,14 +65,16 @@ export type TurnGroupViewProps = {
 };
 
 export function TurnGroupView(props: TurnGroupViewProps): JSX.Element {
-  const { turns, awaiting } = props;
+  const { turns, awaiting, interrupted } = props;
   const first = turns[0];
   // A single-turn group with no live orchestration renders through the
   // ordinary per-turn path untouched; everything else (merged groups, and
   // the waiting-between-turns state) renders one shell for the whole run.
   const orchestrationLive =
     Boolean(awaiting) && turns.some(turnHasSpawnAgentCall);
-  if (turns.length === 1 && !orchestrationLive && first) {
+  const orchestrationInterrupted =
+    Boolean(interrupted) && turns.some(turnHasSpawnAgentCall);
+  if (turns.length === 1 && !orchestrationLive && !orchestrationInterrupted && first) {
     const turn = first;
     return (
       <TurnView
@@ -100,6 +105,7 @@ export function TurnGroupView(props: TurnGroupViewProps): JSX.Element {
 function MergedTurnGroupView({
   turns,
   awaiting,
+  interrupted,
   cwd,
   onOpenFile,
   onOpenAgent,
@@ -124,7 +130,7 @@ function MergedTurnGroupView({
   // The group reads as one live turn while any member runs OR while the
   // orchestration is parked between turns waiting for a completion wake.
   const live = anyMemberInProgress || Boolean(awaiting);
-  const closed = !live && last.status === "completed";
+  const closed = !live && !interrupted && last.status === "completed";
   // Only the group's final answer carries the action bar; intermediate
   // answers (the wake-up progress reports) render as plain text.
   const actionableAgentMessageID = closed
@@ -154,14 +160,14 @@ function MergedTurnGroupView({
     return {
       ...first,
       items: turns.flatMap((turn) => turn.items),
-      status: live ? "in_progress" : last.status,
+      status: live ? "in_progress" : interrupted ? "interrupted" : last.status,
       started_at: first.started_at,
       completed_at: live ? undefined : last.completed_at,
       duration_ms: durationMs,
       error: live ? undefined : last.error,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turns, live]);
+  }, [turns, live, interrupted]);
 
   const display = useMemo(() => mergeTurnDisplays(turns), [turns]);
   const presented = useAssistantTurnPresentation(shellTurn.id, display);
@@ -229,6 +235,7 @@ function MergedTurnGroupView({
           // preview so it cannot read like a finished answer.
           suppressAnswerHandoff={waitingForSubagent}
           waitingForSubagent={waitingForSubagent}
+          interruptedSubagentWait={Boolean(interrupted)}
         />
       ) : null}
       {turns.map((member) => {
@@ -249,6 +256,9 @@ function MergedTurnGroupView({
           </Fragment>
         );
       })}
+      {interrupted ? (
+        <SystemEventDivider text={translateCurrent("turn.orchestrationPaused")} />
+      ) : null}
       {isLatestTurn &&
       last.status === "in_progress" &&
       streamStatus?.liveProgress ? (

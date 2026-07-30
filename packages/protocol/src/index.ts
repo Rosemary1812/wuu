@@ -1230,6 +1230,7 @@ export type Thread = {
   // workspace_kind tags the thread with the workspace it was created in.
   workspace_kind?: "project" | "scratch";
   status: ThreadStatus;
+  orchestration_interrupted?: boolean;
   read_only?: boolean;
   // Ephemeral threads live only in the active app-server process and must not
   // appear in user-facing thread or session history.

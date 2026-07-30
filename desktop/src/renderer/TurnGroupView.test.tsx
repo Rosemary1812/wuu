@@ -106,11 +106,13 @@ function mountGroup(
   turns: Turn[],
   awaiting = false,
   onOpenRuns?: (turnID: string) => void,
+  interrupted = false,
 ): void {
   render(
     <TurnGroupView
       turns={turns}
       awaiting={awaiting}
+      interrupted={interrupted}
       onStreamFrame={() => {}}
       onOpenRuns={onOpenRuns}
     />,
@@ -238,6 +240,24 @@ describe("TurnGroupView — awaiting between turns", () => {
     mountGroup(turns, false);
     expect(section().dataset.turnStatus).toBe("completed");
     expect(actionBars()).toHaveLength(1);
+  });
+
+  it("keeps the waiting activity as a settled record when the orchestration is interrupted", () => {
+    const turns = [
+      makeTurn("t1", [
+        userItem("帮我查 X"),
+        spawnItem("research_a"),
+        answerItem("我先派一个子任务。"),
+      ]),
+    ];
+    mountGroup(turns, false, undefined, true);
+
+    expect(section().dataset.turnStatus).toBe("interrupted");
+    expect(actionBars()).toHaveLength(0);
+    const waiting = container.querySelector(".turn-process-preview-activity");
+    expect(waiting?.textContent).toContain("子任务仍在运行");
+    expect(waiting?.classList.contains("is-live")).toBe(false);
+    expect(container.querySelector(".turn-event-title")?.textContent).toBe("已暂停回答");
   });
 
   it("settles the whole group when the wake lands and completes", async () => {

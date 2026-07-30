@@ -438,6 +438,10 @@ const CachedConversationPane = memo(function CachedConversationPane({
                   (thread.child_agents?.some(agentRunning) ?? false) &&
                   latestTurn?.id === groupLast.id
                 }
+                interrupted={
+                  Boolean(thread.orchestration_interrupted) &&
+                  latestTurn?.id === groupLast.id
+                }
                 cwd={thread.cwd ?? activeContextCwd}
                 onOpenFile={onOpenFile ? handleOpenFile : undefined}
                 onOpenAgent={handleOpenAgentByID}
@@ -589,6 +593,7 @@ const PaneTurnView = memo(function PaneTurnView({
 type PaneTurnGroupViewProps = Omit<PaneTurnViewProps, "turn"> & {
   turns: Turn[];
   awaiting?: boolean;
+  interrupted?: boolean;
 };
 
 // Group counterpart of PaneTurnView: same memo strategy (identity-stable
@@ -598,6 +603,7 @@ const PaneTurnGroupView = memo(
   function PaneTurnGroupView({
     turns,
     awaiting,
+    interrupted,
     cwd,
     latestAgentMessageID,
     isLatestTurn,
@@ -619,6 +625,7 @@ const PaneTurnGroupView = memo(
       <TurnGroupView
         turns={turns}
         awaiting={awaiting}
+        interrupted={interrupted}
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}

@@ -55,6 +55,7 @@ export function AssistantTurnShell({
   onCollapseComplete,
   suppressAnswerHandoff,
   waitingForSubagent,
+  interruptedSubagentWait,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -74,6 +75,8 @@ export function AssistantTurnShell({
   suppressAnswerHandoff?: boolean;
   /** The group is between real turns while one or more subagents still run. */
   waitingForSubagent?: boolean;
+  /** The user stopped a group while it was waiting for subagents. */
+  interruptedSubagentWait?: boolean;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -119,7 +122,8 @@ export function AssistantTurnShell({
       entry.item.type === "agent_message" &&
       streamFieldValue(entry.turn?.id ?? turn.id, entry.item, "text").trim().length > 0,
   ) && !suppressAnswerHandoff && !waitingForSubagent;
-  const processCollapseRequested = answerHandoffRequested || Boolean(waitingForSubagent);
+  const processCollapseRequested =
+    answerHandoffRequested || Boolean(waitingForSubagent) || Boolean(interruptedSubagentWait);
 
   const className = [
     "assistant-turn-shell",
@@ -151,6 +155,7 @@ export function AssistantTurnShell({
           subagentChips={display.subagentChips}
           collapseRequested={processCollapseRequested}
           waitingForSubagent={waitingForSubagent}
+          interruptedSubagentWait={interruptedSubagentWait}
           latestPreview={
             answerHandoffRequested ? undefined : display.latestProcessPreview
           }
@@ -187,6 +192,7 @@ function TurnProcessFold({
   subagentChips,
   collapseRequested,
   waitingForSubagent,
+  interruptedSubagentWait,
   latestPreview,
   sources,
   onOpenSource,
@@ -207,6 +213,7 @@ function TurnProcessFold({
   subagentChips: SubagentChipDisplay[];
   collapseRequested: boolean;
   waitingForSubagent?: boolean;
+  interruptedSubagentWait?: boolean;
   latestPreview?: TurnProcessPreview;
   sources: ReturnType<typeof collectTurnSources>;
   onOpenSource?: (url: string) => void;
@@ -306,7 +313,7 @@ function TurnProcessFold({
   }, []);
 
   const hasDetails = entries.length > 0;
-  const visiblePreview = waitingForSubagent
+  const visiblePreview = waitingForSubagent || interruptedSubagentWait
     ? { text: translate("process.waitingForSubagents"), kind: "activity" as const }
     : expanded
       ? undefined

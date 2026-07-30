@@ -1684,6 +1684,7 @@ export const enUS = {
   "composer.attachment.pdfTooLarge": "\"{name}\" exceeds the {limit}MB PDF size limit",
   "composer.attachment.addFailed": "Failed to add attachment",
   "turn.interrupted.title": "Response interrupted",
+  "turn.orchestrationPaused": "Response paused",
   "turn.stopped.title": "Stopped",
   "turn.interrupted.detail": "Generated content was preserved. You can continue by sending another message.",
   "turn.stopped.detail": "This request was stopped before a response was generated.",

@@ -10,6 +10,17 @@ import (
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
+func TestThreadSnapshotExposesInterruptedOrchestration(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/tmp", false, now)
+	th.workerTreeFrozen = true
+
+	snapshot := th.snapshotLocked()
+	if !snapshot.TreeInterrupted {
+		t.Fatal("snapshot must expose the frozen worker tree as an interrupted orchestration")
+	}
+}
+
 func TestEmptyTurnsKeepItemsAsAnArray(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	tests := []struct {

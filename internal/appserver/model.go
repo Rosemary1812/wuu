@@ -59,6 +59,7 @@ func (th *threadState) snapshotLocked() Thread {
 		CWD:              th.CWD,
 		WorkspaceKind:    th.WorkspaceKind,
 		Status:           status,
+		TreeInterrupted:  th.workerTreeFrozen,
 		ReadOnly:         th.ReadOnly,
 		Ephemeral:        th.Ephemeral,
 		Pinned:           th.PinnedAt != nil,
