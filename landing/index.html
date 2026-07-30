@@ -641,41 +641,8 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .lifefield canvas{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
-/* ---------- 并行看板 ---------- */
-.variants{
-  position:absolute;inset:0;display:grid;gap:18px;padding:28px;
-  grid-template-columns:repeat(2,1fr);align-content:center;
-  background:var(--wu-canvas);
-}
-@media (min-width:1080px){.variants{grid-template-columns:repeat(3,1fr)}}
-.mini{
-  background:var(--wu-surface);border:1px solid var(--wu-border);border-radius:10px;
-  padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0;
-  transition:box-shadow .4s ease,transform .4s ease,border-color .4s ease;
-}
-.mini.spot{box-shadow:0 14px 34px rgba(0,0,0,.14);transform:translateY(-4px);border-color:var(--accent-soft)}
-.mini .m-head{display:flex;align-items:center;gap:10px}
-.mini .m-ico{
-  width:34px;height:34px;border-radius:8px;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;
-  background:var(--wu-raised);color:var(--dark-gray);
-  font-family:var(--mono);font-size:13px;
-}
-.mini .m-title{font-size:13px;font-weight:var(--fw-semibold);color:var(--wu-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mini .m-sub{font-size:11px;color:var(--wu-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mini .m-body{
-  border-radius:6px;background:var(--wu-raised);padding:9px 10px;
-  font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--dark-gray);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.mini .m-body .ok{color:var(--green)}
-.mini .m-body .acc{color:var(--accent)}
-.mini.v-dark{background:#1c1c1e;border-color:#333336}
-.mini.v-dark .m-title{color:#f0f0f0}
-.mini.v-dark .m-ico{background:#2c2c2f;color:#c9c9c9}
-.mini.v-dark .m-body{background:#2c2c2f;color:#c9c9c9}
-.mini.v-acc{border-color:var(--accent-soft)}
-.mini.v-acc .m-ico{background:var(--accent);color:#fff}
+/* ---------- 03 多线并行：生长树 ---------- */
+#tree-fx{position:absolute;inset:0;width:100%;height:100%;display:block;background:var(--wu-canvas)}
 
 /* 结尾 CTA 单元 */
 .closing-cell .inner{align-items:center;text-align:center;justify-content:center}
@@ -1185,7 +1152,7 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
         <div class="window">
           <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
           <div class="body">
-            <div class="variants" id="variants"></div>
+            <canvas id="tree-fx" aria-hidden="true"></canvas>
           </div>
         </div>
       </div>
@@ -1436,35 +1403,6 @@ document.querySelectorAll('[data-wu-panes]').forEach(el=> el.innerHTML = PANES_H
     '夜深了，还要继续吗？';
   document.querySelectorAll('[data-wu-greeting]').forEach(el=> el.textContent = greeting);
 }
-
-/* ============================================================
-   并行看板：六条会话同时推进，你该出现时出现
-   ============================================================ */
-const MINIS = [
-  {cls:'', ico:'▶', title:'发布前检查', sub:'产品发布 · 运行中',
-   body:'███████░░░ 78%<br>构建、类型、测试'},
-  {cls:'v-acc', ico:'◆', title:'重写产品首页', sub:'产品发布 · 待 review',
-   body:'改了 12 个文件<br>等你过目'},
-  {cls:'', ico:'▶', title:'修复结算页回归', sub:'代码库维护 · 运行中',
-   body:'████░░░░░░ 41%<br>复现、定位、修'},
-  {cls:'', ico:'✓', title:'整理更新日志', sub:'产品发布 · 已完成',
-   body:'<span class="ok">✓</span> 全绿 · 3 个文件'},
-  {cls:'', ico:'▶', title:'升级桌面端依赖', sub:'代码库维护 · 运行中',
-   body:'██░░░░░░░░ 23%<br>锁版本、跑回归'},
-  {cls:'', ico:'○', title:'重构会话存储', sub:'代码库维护 · 排队中',
-   body:'等前面两件<br>做完自动开工'},
-];
-document.getElementById('variants').innerHTML = MINIS.map((m,i)=>`
-  <div class="mini ${m.cls}" data-vi="${i}">
-    <div class="m-head">
-      <div class="m-ico">${m.ico}</div>
-      <div style="min-width:0">
-        <div class="m-title">${m.title}</div>
-        <div class="m-sub">${m.sub}</div>
-      </div>
-    </div>
-    <div class="m-body">${m.body}</div>
-  </div>`).join('');
 
 /* ============================================================
    点击入口：ASCII 光场、透明度涟漪与 mascot 视差
@@ -2015,25 +1953,140 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 })();
 
 /* ============================================================
-   六宫格：spotlight 轮播
+   03 多线并行：生长树
+   随滚动从左向右生长、分叉，开花、结果，果实散成种子。
+   树形由固定种子生成，人人看到同一棵；除种子飘散(真实时间)
+   外全部由滚动驱动，reduceMotion 下直接落最终帧。
    ============================================================ */
 (function(){
+  const canvas = document.getElementById('tree-fx');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const cell = canvas.closest('.demo-cell');
+
+  const SEED = 20260730;
+  const MAXD = 5;                                  /* 最深五级分叉 */
+  const G_BLOOM = .62, G_FRUIT = .8, G_SEED = .92; /* 阶段窗口:生长→开花→结果→散种 */
+  const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+  const easeOut = t=>1-Math.pow(1-t,3);
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+  let W=0, H=0, g=0, raf=null;
+  let branches=[], tips=[], seeds=[];
+
+  function build(){
+    const rand = mulberry32(SEED);
+    branches=[]; tips=[]; seeds=[];
+    let maxT=0;
+    function branch(x,y,ang,len,depth,t0){
+      const bend=(rand()-.5)*.5;
+      const ex=x+Math.cos(ang+bend*.5)*len, ey=y+Math.sin(ang+bend*.5)*len;
+      /* 二次贝塞尔控制点：沿垂直方向弯出一点 organic 感 */
+      const mx=(x+ex)/2, my=(y+ey)/2, nx=-(ey-y), ny=ex-x, nl=Math.hypot(nx,ny)||1;
+      const b={x0:x,y0:y,cx:mx+nx/nl*bend*len*.4,cy:my+ny/nl*bend*len*.4,
+               x1:ex,y1:ey,depth,t0,t1:t0+.09+depth*.018};
+      branches.push(b); maxT=Math.max(maxT,b.t1);
+      if(depth>=MAXD || ex>W*.97){ tips.push({x:ex,y:ey,fruit:rand()<.34}); return; }
+      const n=depth<2 && rand()<.3 ? 3 : 2;
+      for(let i=0;i<n;i++){
+        const side=i-(n-1)/2;
+        let a=ang+bend*.3+side*(.42+rand()*.22)*(.7+rand()*.5)+(rand()-.5)*.12;
+        a=clamp(a,-1.05,1.05);                 /* 不回头 */
+        a=clamp(a+(H*.5-ey)/H*.3,-1.05,1.05);  /* 纵向向中线收 */
+        if(ey>H*.8) a=-Math.abs(a)*.9;         /* 上下沿折返,不出窗 */
+        else if(ey<H*.2) a=Math.abs(a)*.9;
+        branch(ex,ey,a,len*(.74+rand()*.12)*(side===0?1:.86),depth+1,b.t1*.92);
+      }
+    }
+    branch(W*.05,H*.58,-.12,Math.min(W*.22,H*.55),0,0);
+    /* 生长时间归一到 [0,G_BLOOM],花/果/种子错峰 */
+    branches.forEach(b=>{b.t0=b.t0/maxT*G_BLOOM;b.t1=b.t1/maxT*G_BLOOM;});
+    const r2=mulberry32(SEED^0x9e37);
+    tips.forEach(t=>{
+      t.bloomAt=G_BLOOM+.04+r2()*.1;
+      t.fruitAt=G_FRUIT+.03+r2()*.08;
+      if(t.fruit) for(let s=0;s<2;s++) seeds.push({
+        x:t.x,y:t.y,a:Math.PI*.92+(r2()-.5)*.6,sp:12+r2()*20,
+        ph:r2()*6.28,life:2.4+r2()*.8,wait:1.5+r2()*3.5,at:G_SEED+r2()*.06
+      });
+    });
+  }
+
+  const pt={x:0,y:0};
+  function qpos(b,t){const u=1-t;pt.x=u*u*b.x0+2*u*t*b.cx+t*t*b.x1;pt.y=u*u*b.y0+2*u*t*b.cy+t*t*b.y1;}
+
+  function draw(g,now){
+    const cs=getComputedStyle(document.documentElement);
+    const ink=cs.getPropertyValue('--wu-text').trim()||'#1c1c1e';
+    const acc=cs.getPropertyValue('--accent').trim()||'#ff3d00';
+    ctx.clearRect(0,0,W,H);
+    ctx.lineCap='round';ctx.lineJoin='round';
+    /* 枝干：按各自时间窗生长,越深越细越淡 */
+    for(const b of branches){
+      const f=clamp((g-b.t0)/(b.t1-b.t0),0,1);
+      if(f<=0) continue;
+      ctx.strokeStyle=ink;ctx.globalAlpha=.92-b.depth*.11;
+      ctx.lineWidth=b.depth===0?1.6:b.depth<3?1.2:1;
+      ctx.beginPath();ctx.moveTo(b.x0,b.y0);
+      const N=24,end=Math.floor(N*f);
+      for(let i=1;i<=end;i++){qpos(b,i/N);ctx.lineTo(pt.x,pt.y);}
+      if(N*f>end){qpos(b,f);ctx.lineTo(pt.x,pt.y);}
+      ctx.stroke();
+    }
+    /* 花：末梢圆环;结果：环收成朱红实心 */
+    for(const t of tips){
+      const bp=easeOut(clamp((g-t.bloomAt)/.06,0,1));
+      if(bp<=0) continue;
+      const fp=t.fruit?easeOut(clamp((g-t.fruitAt)/.07,0,1)):0;
+      if(fp<1){
+        ctx.globalAlpha=bp*(1-fp)*.8;ctx.strokeStyle=ink;ctx.lineWidth=1;
+        ctx.beginPath();ctx.arc(t.x,t.y,3.2*bp*(1-fp*.4),0,6.2832);ctx.stroke();
+      }
+      if(fp>0){
+        ctx.globalAlpha=fp;ctx.fillStyle=acc;
+        ctx.beginPath();ctx.arc(t.x,t.y,.4+2.2*fp,0,6.2832);ctx.fill();
+      }
+    }
+    /* 种子：释放后向左下方飘(回到根的方向),淡出后错峰重结 */
+    for(const s of seeds){
+      const rp=clamp((g-s.at)/.05,0,1);
+      if(rp<=0) continue;
+      const cyc=s.life+s.wait, ct=reduceMotion?s.life*.4:(now+s.ph*10)%cyc;
+      if(ct>s.life) continue;
+      const p=ct/s.life, d=s.sp*ct;
+      ctx.globalAlpha=rp*(1-p)*.9;ctx.fillStyle=ink;
+      ctx.beginPath();
+      ctx.arc(s.x+Math.cos(s.a)*d+Math.sin(ct*2+s.ph)*3,s.y+Math.sin(s.a)*d+ct*ct*3,1.3,0,6.2832);
+      ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  function resize(){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    W=canvas.clientWidth;H=canvas.clientHeight;
+    if(W<=0||H<=0) return;
+    canvas.width=W*dpr;canvas.height=H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    build();draw(reduceMotion?1:g,performance.now()/1000);
+  }
+
+  new ResizeObserver(resize).observe(canvas);
   if(reduceMotion) return;
-  const cards = [...document.querySelectorAll('.mini')];
-  if(!cards.length) return;
-  let i = 0, timer = null;
-  const step = ()=>{
-    cards.forEach(c=>c.classList.remove('spot'));
-    cards[i % cards.length].classList.add('spot');
-    i++;
-    timer = setTimeout(step, 1600);
-  };
+  /* 滚动驱动:cell 从视口底走到 17% 高度时树长完 */
+  function frame(){
+    const r=cell.getBoundingClientRect();
+    const target=clamp((innerHeight*.92-r.top)/(innerHeight*.75),0,1);
+    g=Math.abs(target-g)<.0004?target:g+(target-g)*.12;
+    draw(g,performance.now()/1000);
+    raf=requestAnimationFrame(frame);
+  }
   new IntersectionObserver(es=>{
     es.forEach(e=>{
-      if(e.isIntersecting && !timer) step();
-      else if(!e.isIntersecting && timer){ clearTimeout(timer); timer = null; }
+      if(e.isIntersecting&&!raf)raf=requestAnimationFrame(frame);
+      else if(!e.isIntersecting&&raf){cancelAnimationFrame(raf);raf=null;}
     });
-  },{threshold:.2}).observe(document.getElementById('variants'));
+  },{threshold:.05}).observe(cell);
 })();
 
 /* ============================================================
