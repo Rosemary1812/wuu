@@ -641,7 +641,7 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .lifefield canvas{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
-/* ---------- 形态六宫格 ---------- */
+/* ---------- 模型六宫格 ---------- */
 .variants{
   position:absolute;inset:0;display:grid;gap:18px;padding:28px;
   grid-template-columns:repeat(2,1fr);align-content:center;
@@ -661,6 +661,7 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
   background:var(--wu-raised);color:var(--dark-gray);
   font-family:var(--mono);font-size:13px;
 }
+.mini .m-ico img{width:18px;height:18px;display:block}
 .mini .m-title{font-size:13px;font-weight:var(--fw-semibold);color:var(--wu-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini .m-sub{font-size:11px;color:var(--wu-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini .m-body{
@@ -956,7 +957,7 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
     <a class="wordmark" href="#" aria-label="wuu">wuu<i class="dot"></i></a>
     <span class="links">
       <a href="#features">功能</a>
-      <a href="#ch-forms">形态</a>
+      <a href="#ch-models">模型</a>
       <a href="#news">更新</a>
       <a href="#">文档</a>
       <a href="#">GitHub</a>
@@ -1065,7 +1066,7 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
       <h2>
         <span>wuu <i>Desktop</i></span>
       </h2>
-      <p class="lede">它长在终端里，但桌面上有它的一扇窗——编辑器、内置浏览器、会话管理都在一起。它在这头干活，你在那头看进度。</p>
+      <p class="lede">编辑器、内置浏览器、会话管理，收进一个窗口。它在这头干活，你在那头看进度。</p>
     </div>
     <div class="chip">
       <img src="assets/app-icon.png" alt="wuu app icon">
@@ -1169,15 +1170,15 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
         </div>
       </div>
 
-      <!-- 03 随处开工 -->
-      <div class="cell span2 headline-cell reveal" id="ch-forms">
+      <!-- 03 任何模型 -->
+      <div class="cell span2 headline-cell reveal" id="ch-models">
         <div class="tri"></div>
         <span class="fnum" aria-hidden="true">03</span>
         <div class="inner">
-          <p class="eyebrow">随处开工</p>
-          <h2>终端、桌面、定时任务，
-它在哪儿都醒着</h2>
-          <p class="desc">挂一个 cron，它每天按时自己醒来巡检；技能和记忆攒得越多，它干活越像你。</p>
+          <p class="eyebrow">任何模型</p>
+          <h2>换模型，
+不用换工具</h2>
+          <p class="desc">今天在 Claude 上，明天换 DeepSeek——同一份技能、记忆和会话都还在，引擎照常在你机器上跑。</p>
         </div>
       </div>
 
@@ -1192,14 +1193,14 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
 
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>定时任务</h3>
-          <p>一句 cron 表达式，它到点自己醒来：巡检依赖、写日报、盯 CI。</p>
+          <h3>直连服务商</h3>
+          <p>API key 存在本地，调用直连——额度、花销都在你自己的账号。</p>
         </div>
       </div>
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>技能与记忆</h3>
-          <p>把 workflow 存成技能，把偏好写进记忆——越用越顺手。</p>
+          <h3>断网也能干活</h3>
+          <p>接上 Ollama 里的本地模型，代码和会话不出这台机器。</p>
         </div>
       </div>
 
@@ -1320,11 +1321,11 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
           <a href="#">路线图</a>
         </div>
         <div class="group">
-          <h4>形态</h4>
+          <h4>产品</h4>
           <a href="#">wuu CLI</a>
           <a href="#desktop">wuu Desktop</a>
-          <a href="#ch-forms">技能</a>
-          <a href="#ch-forms">定时任务</a>
+          <a href="#ch-models">任何模型</a>
+          <a href="#features">工程循环</a>
         </div>
         <div class="group">
           <h4>资源</h4>
@@ -1438,26 +1439,22 @@ document.querySelectorAll('[data-wu-panes]').forEach(el=> el.innerHTML = PANES_H
 }
 
 /* ============================================================
-   形态六宫格
+   模型六宫格：同一个任务，谁来做都行
    ============================================================ */
+const TASK_LINE = '<span class="acc">❯</span> wuu "修一下折扣"<br><span class="ok">✓</span> 3 个文件 · 测试全绿';
 const MINIS = [
-  {cls:'v-dark', ico:'❯', title:'wuu CLI', sub:'终端 · 它的主场',
-   body:'<span class="acc">❯</span> wuu "修一下折扣"<br><span class="ok">✓</span> 3 个文件 · 测试全绿'},
-  {cls:'', ico:'◱', title:'wuu Desktop', sub:'桌面 · 会话 #247',
-   body:'编辑器 · 浏览器 · 会话<br>都在一个窗口里'},
-  {cls:'', ico:'▣', title:'PiP 浮窗', sub:'钉在屏幕角落',
-   body:'折扣修复 ██████░░ 82%<br>不用切窗也能盯进度'},
-  {cls:'v-acc', ico:'◷', title:'cron 定时', sub:'到点自己醒来',
-   body:'0 9 * * * 依赖巡检<br>下次：明天 09:00'},
-  {cls:'', ico:'⑂', title:'子代理', sub:'worker-2 · worktree #3',
-   body:'改写样式表 · 运行中<br>和主干互不打扰'},
-  {cls:'', ico:'✎', title:'记忆', sub:'越用越像你',
-   body:'42 条偏好被记住<br>测试先跑 npm test'},
+  {cls:'', logo:'anthropic.svg', title:'Claude', sub:'Anthropic', body:TASK_LINE},
+  {cls:'', logo:'openai.svg', title:'GPT', sub:'OpenAI', body:TASK_LINE},
+  {cls:'', logo:'googlegemini.svg', title:'Gemini', sub:'Google', body:TASK_LINE},
+  {cls:'', logo:'moonshotai.svg', title:'Kimi', sub:'Moonshot AI', body:TASK_LINE},
+  {cls:'', logo:'deepseek.svg', title:'DeepSeek', sub:'开源权重', body:TASK_LINE},
+  {cls:'v-acc', logo:'ollama.svg', title:'本地模型', sub:'Ollama · 断网也照跑',
+   body:'<span class="acc">❯</span> wuu "修一下折扣"<br><span class="ok">✓</span> 全绿 · 没出这台机器'},
 ];
 document.getElementById('variants').innerHTML = MINIS.map((m,i)=>`
   <div class="mini ${m.cls}" data-vi="${i}">
     <div class="m-head">
-      <div class="m-ico">${m.ico}</div>
+      <div class="m-ico"><img src="assets/logos/${m.logo}" alt=""></div>
       <div style="min-width:0">
         <div class="m-title">${m.title}</div>
         <div class="m-sub">${m.sub}</div>
