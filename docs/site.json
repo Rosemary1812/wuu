@@ -32,15 +32,18 @@
           "title": "个性化",
           "pages": [
             "zh-cn/customize/skills.md",
+            "zh-cn/customize/skill-authoring.md",
             "zh-cn/customize/memory.md",
             "zh-cn/reference/permissions.md",
             "zh-cn/reference/configuration.md"
           ]
         },
         {
-          "title": "自动化与集成（英文）",
+          "title": "自动化与集成",
           "pages": [
-            "en/automation/exec.md",
+            "zh-cn/automation/scheduled-tasks.md",
+            "zh-cn/automation/exec.md",
+            "zh-cn/customize/mcp.md",
             "en/automation/jsonl-events.md",
             "en/integrations/app-server-protocol.md",
             "en/integrations/compatibility/claude-code-stream-json.md"

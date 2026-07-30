@@ -25,8 +25,10 @@ wuu 的桌面应用适合交互式工作；`wuu exec` 适合终端、脚本、CI
   [会话与分支](desktop/conversations.md)。
 - **检查 Agent 的成果：**[文件、改动、终端与浏览器](desktop/workspace-tools.md)。
 - **复用工作方式：**[Skills](customize/skills.md) 和[记忆](customize/memory.md)。
+- **按计划运行：**[Automations](automation/scheduled-tasks.md)。
+- **接入外部工具：**[MCP 服务器](customize/mcp.md)。
 - **控制本地权限：**[权限模式](reference/permissions.md)和[安全模型](reference/security-model.md)。
-- **接入脚本和 CI：**[`wuu exec`](../en/automation/exec.md)和
+- **接入脚本和 CI：**[用 `wuu exec` 做自动化](automation/exec.md)和
   [JSONL 事件](../en/automation/jsonl-events.md)（英文）。
 - **遇到问题：**从[故障排查](help/troubleshooting.md)开始。
 
