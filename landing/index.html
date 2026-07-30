@@ -642,14 +642,16 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 @media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
 /* ---------- 03 多线并行：生长树长卷 ---------- */
-.growth-stage{height:280vh;padding:0;position:relative}
-.growth-stick{position:absolute;top:0;left:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;will-change:transform}
-.growth-stick .window{
-  width:min(1120px,92vw,calc((100vh - 120px)*1.4));aspect-ratio:var(--window-aspect);
-  box-shadow:rgba(0,0,0,.12) 0 4px 10px,rgba(0,0,0,.12) 0 2px 4px -1px,rgba(0,0,0,.12) 0 0 4px -1px;
-}
-@media (max-width:1079px){.growth-stage{height:240vh}}
+.growth-stage{height:420vh;padding:0;position:relative}
+.growth-stick{position:absolute;top:0;left:0;width:100%;height:100vh;overflow:hidden;will-change:transform}
+@media (max-width:1079px){.growth-stage{height:320vh}}
 #tree-fx{position:absolute;inset:0;width:100%;height:100%;display:block;background:var(--wu-canvas)}
+.growth-cap{position:absolute;left:max(4vw,28px);bottom:7vh;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.growth-cap i{font-family:var(--mono);font-style:normal;font-size:10px;letter-spacing:.18em;color:var(--gray-500)}
+.growth-word{display:flex;align-items:baseline;gap:12px;transition:opacity .25s ease,transform .25s ease}
+.growth-word b{font-family:var(--serif);font-weight:600;font-size:clamp(20px,2.2vw,28px);letter-spacing:.04em}
+.growth-word em{font-family:var(--serif-latin);font-style:italic;font-size:14px;color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.growth-cap{display:none}}
 
 /* 结尾 CTA 单元 */
 .closing-cell .inner{align-items:center;text-align:center;justify-content:center}
@@ -1157,11 +1159,10 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
 
       <div class="cell span2 growth-stage reveal" id="growth">
         <div class="growth-stick" id="growth-pin">
-          <div class="window">
-            <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
-            <div class="body">
-              <canvas id="tree-fx" aria-hidden="true"></canvas>
-            </div>
+          <canvas id="tree-fx" aria-hidden="true"></canvas>
+          <div class="growth-cap" aria-hidden="true">
+            <i id="growth-idx">01 / 04</i>
+            <span class="growth-word" id="growth-word"><b id="growth-zh">发芽</b><em id="growth-en">sprout.</em></span>
           </div>
         </div>
       </div>
@@ -1991,7 +1992,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   const rgb = c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 
   let W=0, H=0, g=0, raf=null;
-  let nodes=[], tips=[], seeds=[], chains=[], root=null, iters=1, seg=5;
+  let nodes=[], tips=[], seeds=[], chains=[], sprouts=[], root=null, iters=1, seg=5;
 
   /* 空间殖民(Runions 2005/2007, jasonwebb 开源实现的忠实移植):
      每个吸引子只影响最近节点,节点被抵达即死亡;受影响的节点
@@ -2000,15 +2001,15 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   function build(){
     nodes=[]; tips=[]; seeds=[];
     const rand=mulberry32(SEED);
-    seg=Math.min(W,H)*.007;
+    seg=Math.min(W,H)*.006;
     const AT=seg*10, KILL=seg*2.5, MAXN=4000;
-    const CX=W*.58, CY=H*.5, RX=W*.36, RY=H*.34;
-    /* 场:椭圆树冠 ∪ 根部收窄走廊(颈部宽度控制主干形态) */
+    const CX=W*.56, CY=H*.5, RX=W*.44, RY=H*.4;
+    /* 场:椭圆树冠 ∪ 根部收窄走廊(颈部宽度控制主干形态),横贯全屏 */
     const attractors=[];
-    const SP=AT*.55, X0=W*.05, X1=CX+RX*.92;
+    const SP=AT*.55, X0=W*.04, X1=CX+RX*.92;
     for(let gx=X0; gx<X1; gx+=SP){
       const u=Math.min(1,(gx-X0)/(CX-X0));
-      for(let gy=H*.06; gy<H*.94; gy+=SP){
+      for(let gy=H*.08; gy<H*.92; gy+=SP){
         const x=gx+(rand()-.5)*SP*.76, y=gy+(rand()-.5)*SP*.76;
         const inEllipse=((x-CX)/RX)**2+((y-CY)/RY)**2<=1;
         const inCorridor=x>=X0&&x<=CX&&Math.abs(y-CY)<=H*(.04+.06*u);
@@ -2065,35 +2066,44 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     })(root);
     const wS=2.8/root.w;
     nodes.forEach(n=>{n.w*=wS;n.bornU=n.born/iters*G_GROW;});
-    /* 梢开花(按出生先后涟漪);三成结果;果实散种 */
+    /* 梢开花(按出生先后涟漪);近半梢在花谢处散种 */
     tips=nodes.filter(n=>!n.children.length);
     tips.forEach((t,i)=>{
       const u=t.bornU/G_GROW;
       t.bloomAt=G_GROW+.015+u*.12;
-      t.fruit=hash(i*3+7)<.32;
-      t.fruitAt=G_BLOOM+u*.1;
       t.wob=hash(i*5+2); t.rot=hash(i*7+3)*3.14;
-      if(t.fruit) for(let k=0;k<2;k++){
+      if(hash(i*3+7)<.45) for(let k=0;k<2;k++){
         const h1=hash(i*17+k*5), h2=hash(i*23+k*7), h3=hash(i*29+k*11);
         seeds.push({x:t.x,y:t.y,a:Math.PI*(.9+h1*.14),sp:W*(.014+h2*.012),
-          ph:h3*6.28,life:2.2+h1*.9,wait:1.6+h2*3.6,at:G_SEED+u*.07});
+          ph:h3*6.28,life:2.2+h1*.9,wait:1.6+h2*3.6,at:G_BLOOM+u*.1});
       }
     });
-    /* 渲染链:分叉点之间是一条连续枝,整体平滑绘出 */
+    /* 渲染链:分叉点之间是一条连续枝,整体平滑绘出;梢记所属链(随风摆) */
     chains=[];
     (function walk(n){
       for(const c of n.children){
         const pts=[n,c]; let cur=c;
         while(cur.children.length===1){cur=cur.children[0];pts.push(cur);}
         chains.push({pts});
+        if(!cur.children.length) cur.ch=chains[chains.length-1];
         walk(cur);
       }
     })(root);
+    /* 尾声:散落的种子在地平线上扎根冒芽——一颗树长成很多颗 */
+    sprouts=[];
+    for(let k=0;k<7;k++){
+      sprouts.push({x:W*(.18+hash(k*13+4)*.68),y:H*.93,at:.9+hash(k*7+2)*.06,ph:hash(k*11)*6.28});
+    }
   }
 
   function draw(g,now){
     const p=darkMq.matches?PAL.dark:PAL.light;
     ctx.clearRect(0,0,W,H);
+    /* 镜头:从种子的特写缓缓拉远,世界随进度极轻地转——播片感 */
+    ctx.save();
+    ctx.translate(W*.5,H*.5);ctx.rotate(Math.sin(clamp(g,0,1)*Math.PI)*.012);ctx.translate(-W*.5,-H*.5);
+    const z=1.16-.16*clamp(g/.4,0,1);
+    ctx.translate(W*.04,H*.5);ctx.scale(z,z);ctx.translate(-W*.04,-H*.5);
     ctx.lineCap='round';ctx.lineJoin='round';
     /* 枝干:整链一次平滑绘出(过中点二次曲线),链内分块带锥度,
        粗枝先晕一层墨——告别逐段折线的草图感 */
@@ -2110,6 +2120,10 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       if(full<1&&!hasP) continue;
       const R=pts.slice(0,full+1);
       if(hasP) R.push({x:px,y:py,w:R[R.length-1].w});
+      /* 风:每条链绕自己的根轻摆,越细摆越大——树是活的 */
+      const sway=Math.sin(now*1.15+pts[0].x*.0016+pts[0].y*.0009)*(.003+(1-Math.min(1,pts[0].w/2.8))*.018);
+      ctx.save();
+      ctx.translate(pts[0].x,pts[0].y);ctx.rotate(sway);ctx.translate(-pts[0].x,-pts[0].y);
       for(let a=0;a<R.length-1;a+=5){
         const b=Math.min(a+5,R.length-1);
         let ws=0;for(let i=a;i<=b;i++)ws+=R[i].w;
@@ -2128,42 +2142,53 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
         ctx.globalAlpha=alpha;ctx.lineWidth=w;
         path();ctx.stroke();
       }
+      ctx.restore();
     }
-    /* 花:末梢细环+蕊点,回弹绽开;果:环收成朱红,带淡晕 */
+    /* 花:末梢微椭圆细环+蕊点,回弹绽开时旋半圈,随风轻摆 */
     for(const t of tips){
       const bp=clamp((g-t.bloomAt)/.05,0,1);
       if(bp<=0) continue;
       const bs=back(bp);
-      const fp=t.fruit?clamp((g-t.fruitAt)/.06,0,1):0;
-      if(fp<1){
-        ctx.globalAlpha=.75*bp*(1-fp);
-        ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
-        const er=3*bs*(1-fp*.35);
-        ctx.beginPath();ctx.ellipse(t.x,t.y,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),t.rot,0,6.2832);ctx.stroke();
-        ctx.globalAlpha=.5*bp*(1-fp);ctx.fillStyle=rgb(p.ink);
-        ctx.beginPath();ctx.arc(t.x,t.y,.9*bp,0,6.2832);ctx.fill();
+      let bx=t.x,by=t.y;
+      if(t.ch){
+        const c0=t.ch.pts[0];
+        const ang=Math.sin(now*1.15+c0.x*.0016+c0.y*.0009)*(.003+(1-Math.min(1,c0.w/2.8))*.018);
+        bx=t.x-(t.y-c0.y)*ang; by=t.y+(t.x-c0.x)*ang;
       }
-      if(fp>0){
-        const fs=back(fp);
-        ctx.globalAlpha=.2*fp;ctx.strokeStyle=rgb(p.accent);ctx.lineWidth=1;
-        ctx.beginPath();ctx.arc(t.x,t.y,4.4*fs,0,6.2832);ctx.stroke();
-        ctx.globalAlpha=fp;ctx.fillStyle=rgb(p.accent);
-        ctx.beginPath();ctx.arc(t.x,t.y,2.5*fs,0,6.2832);ctx.fill();
-      }
+      const er=3*bs;
+      ctx.globalAlpha=.75*bp;ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
+      ctx.beginPath();ctx.ellipse(bx,by,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),t.rot+bs*.9,0,6.2832);ctx.stroke();
+      ctx.globalAlpha=.5*bp;ctx.fillStyle=rgb(p.ink);
+      ctx.beginPath();ctx.arc(bx,by,.9*bp,0,6.2832);ctx.fill();
     }
-    /* 种子:向左下方飘回根的方向,淡出后错峰重结 */
+    /* 种子:朱红微粒,翻滚着向左下方飘回根的方向,淡出后错峰重结 */
     for(const sd of seeds){
       const rp=clamp((g-sd.at)/.04,0,1);
       if(rp<=0) continue;
       const cyc=sd.life+sd.wait, ct=reduceMotion?sd.life*.35:(now+sd.ph*10)%cyc;
       if(ct>sd.life) continue;
       const q=ct/sd.life, d=sd.sp*ct;
-      ctx.globalAlpha=rp*Math.pow(1-q,1.5)*.85;ctx.fillStyle=rgb(p.ink);
+      ctx.globalAlpha=rp*Math.pow(1-q,1.5)*.9;ctx.fillStyle=rgb(p.accent);
       ctx.beginPath();
-      ctx.arc(sd.x+Math.cos(sd.a)*d+Math.sin(ct*2.2+sd.ph)*2.5,
-              sd.y+Math.sin(sd.a)*d+ct*ct*H*.008,1.3,0,6.2832);
+      ctx.ellipse(sd.x+Math.cos(sd.a)*d+Math.sin(ct*2.2+sd.ph)*2.5,
+              sd.y+Math.sin(sd.a)*d+ct*ct*H*.008,1.7,1,ct*2.6+sd.ph,0,6.2832);
       ctx.fill();
     }
+    /* 新芽:尾声在地平线上依次冒出,随风轻摆 */
+    for(const s of sprouts){
+      const q=clamp((g-s.at)/.05,0,1);
+      if(q<=0) continue;
+      const e=back(q), h=10*e;
+      ctx.save();
+      ctx.translate(s.x,s.y);ctx.rotate(Math.sin(now*1.3+s.ph)*.06*q);
+      ctx.globalAlpha=.5*q;ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(0,0);ctx.quadraticCurveTo(1,-h*.5,0,-h);
+      ctx.moveTo(0,-h*.55);ctx.quadraticCurveTo(-3.5,-h*.7,-4.5,-h*.85);
+      ctx.moveTo(0,-h*.7);ctx.quadraticCurveTo(3.5,-h*.85,4.5,-h);
+      ctx.stroke();ctx.restore();
+    }
+    ctx.restore();
     ctx.globalAlpha=1;
   }
 
@@ -2179,15 +2204,43 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   new ResizeObserver(resize).observe(canvas);
   if(reduceMotion) return;
   /* 钉住长卷:与 vision 同款 JS 钉住(body overflow-x:hidden 会废掉
-     CSS sticky)——滚过 stage(280vh−一屏)的距离=树的一生 */
+     CSS sticky)。滚动是叙事:四幕配速不同——发芽慢,分枝猛,
+     开花涟漪,散种悠长;左下字幕随幕换场。 */
   const stage=document.getElementById('growth');
   const pin=document.getElementById('growth-pin');
+  const capIdx=document.getElementById('growth-idx');
+  const capWord=document.getElementById('growth-word');
+  const capZh=document.getElementById('growth-zh');
+  const capEn=document.getElementById('growth-en');
+  const ACTS=[['发芽','sprout.'],['分枝','branch.'],['开花','bloom.'],['散种','scatter.']];
+  const K=[0,.28,.55,.78,1];                     /* 四幕滚动边界 */
+  /* 滚动进度→树时轴:非线性 warp,各幕节奏不同 */
+  const warp=p=>{
+    let i=1;while(p>K[i])i++;
+    const t=(p-K[i-1])/(K[i]-K[i-1]);
+    const V=[0,.3,.56,.78,1];                    /* 各幕对应的树时 */
+    return V[i-1]+t*(V[i]-V[i-1]);
+  };
+  let actShown=0, capT=null;
+  function setAct(a){
+    if(a===actShown) return; actShown=a;
+    if(!capWord) return;
+    capWord.style.opacity=0;capWord.style.transform='translateY(8px)';
+    clearTimeout(capT);
+    capT=setTimeout(()=>{
+      capZh.textContent=ACTS[a][0];capEn.textContent=ACTS[a][1];
+      capIdx.textContent='0'+(a+1)+' / 04';
+      capWord.style.opacity=1;capWord.style.transform='none';
+    },220);
+  }
   function frame(){
     const total=stage.offsetHeight-innerHeight;
     const y=clamp(-stage.getBoundingClientRect().top,0,total);
     pin.style.transform=`translate3d(0,${y}px,0)`;
-    const target=clamp(y/Math.max(1,total),0,1);
-    g=Math.abs(target-g)<.0005?target:g+(target-g)*.14;
+    const p=clamp(y/Math.max(1,total),0,1);
+    setAct(p>=.78?3:p>=.55?2:p>=.28?1:0);
+    const target=warp(p);
+    g=Math.abs(target-g)<.0005?target:g+(target-g)*.09;
     draw(g,performance.now()/1000);
     raf=requestAnimationFrame(frame);
   }
