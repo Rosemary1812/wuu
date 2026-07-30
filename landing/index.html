@@ -836,8 +836,14 @@ html.fx-on .statement .w{opacity:.13}
 .vision-mask > span{display:block;transition:transform .5s cubic-bezier(.16,1,.3,1),opacity .38s ease}
 .vision-zh{font-family:var(--serif);font-weight:600;font-size:clamp(38px,5.4vw,66px);line-height:1.12;letter-spacing:.02em}
 .vision-en{font-family:var(--serif-latin);font-style:italic;font-size:clamp(20px,2.4vw,30px);line-height:1.2;color:var(--accent)}
-.vision-swap.out .vision-mask > span{transform:translateY(-110%);opacity:0}
-.vision-swap.pre .vision-mask > span{transform:translateY(110%);opacity:0;transition:none}
+/* JS 开启后静态换词升级为 3D 字筒：滚动进度直接驱动绕 X 轴转角 */
+.vision-swap.p3d{display:block;perspective:1000px}
+.vision-drum{position:relative;display:block;transform-style:preserve-3d;will-change:transform}
+.vision-face{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;gap:20px;white-space:nowrap;backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:transform,opacity}
+.vision-measure{position:absolute;left:0;top:0;z-index:-1;visibility:hidden;pointer-events:none}
+.vision-measure .mrow{display:flex;align-items:baseline;justify-content:center;gap:20px;width:max-content;white-space:nowrap}
+/* 钉住区背景的手绘 3D 线框环 */
+#vision .vision-fx{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none}
 #vision .meta{
   position:absolute;left:50%;bottom:7vh;transform:translateX(-50%);z-index:2;
   display:flex;align-items:center;gap:16px;
@@ -1065,10 +1071,11 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
     <p class="statement" id="statement">wuu 是开源的 AI 编程智能体。说清楚要做什么——它<em>读代码、改代码、跑命令、验证</em>，把完整的工程循环在你的机器上跑完。模型是你的，API key 也是你的。</p>
   </section>
 
-  <!-- ================= vision：钉住轮换 ================= -->
+  <!-- ================= vision：钉住 + 滚动驱动的 3D 字筒 ================= -->
   <section id="vision" aria-label="工程循环">
     <div class="pin" id="vision-pin">
       <span class="bgword" aria-hidden="true">loop.</span>
+      <canvas class="vision-fx" id="vision-fx" aria-hidden="true"></canvas>
       <p class="eyebrow">从一句话到结果</p>
       <div class="vision-swap" id="vision-swap">
         <span class="vision-mask"><span class="vision-zh" id="vision-zh">读代码</span></span>
@@ -2094,7 +2101,7 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
   const giant = document.querySelector('footer .giant');
 
   /* ============================================================
-     trionn 式滚动动效：marquee / 逐词点亮 / 钉住轮换 / count-up / hero 淡出 / 十字光标
+     trionn 式滚动动效：marquee / 逐词点亮 / 钉住 3D 字筒 / count-up / hero 淡出 / 十字光标
      ============================================================ */
   document.documentElement.classList.add('fx-on');
   const FX = [];
@@ -2151,35 +2158,153 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     });
   }
 
-  /* ---- vision：钉住 + 滚动换词 ---- */
+  /* ---- vision：钉住 + 滚动 scrub 的 3D 字筒 + 线框环 ---- */
   const vSec = document.getElementById('vision'), vPin = document.getElementById('vision-pin');
-  const vSwap = document.getElementById('vision-swap'), vZh = document.getElementById('vision-zh');
-  const vEn = document.getElementById('vision-en'), vIdx = document.getElementById('vision-idx');
+  const vSwap = document.getElementById('vision-swap');
+  const vIdx = document.getElementById('vision-idx');
   const vBar = document.getElementById('vision-bar');
-  if(vSec && vPin && vSwap && vZh && vEn && vIdx && vBar){
+  const vCv = document.getElementById('vision-fx');
+  const vBg = vSec ? vSec.querySelector('.bgword') : null;
+  if(vSec && vPin && vSwap && vIdx && vBar){
     const VWORDS = [['读代码','read.'],['改代码','write.'],['跑命令','run.'],['做验证','verify.']];
-    let vSeg = 0, vTimer = 0;
-    const vGo = (i)=>{
-      if(i===vSeg) return;
-      vSeg = i;                          /* 立即记账，避免后续帧反复重排计时器 */
-      clearTimeout(vTimer);
-      vSwap.classList.remove('pre'); vSwap.classList.add('out');
-      vTimer = setTimeout(()=>{
-        vZh.textContent = VWORDS[i][0]; vEn.textContent = VWORDS[i][1];
-        vIdx.textContent = `0${i+1} / 04`;
-        vSwap.classList.add('pre'); vSwap.classList.remove('out');
-        requestAnimationFrame(()=>requestAnimationFrame(()=> vSwap.classList.remove('pre')));
-      }, 240);
+    const NF = VWORDS.length, STEP = 360/NF;
+
+    /* 静态兜底升级为 3D 字筒：四个词是绕 X 轴的四个面 */
+    const faceHTML = w=>`<span class="vision-zh">${w[0]}</span><span class="vision-en">${w[1]}</span>`;
+    const drum = document.createElement('span');
+    drum.className = 'vision-drum';
+    drum.innerHTML = VWORDS.map(w=>`<span class="vision-face">${faceHTML(w)}</span>`).join('');
+    const meas = document.createElement('span');
+    meas.className = 'vision-measure';
+    meas.setAttribute('aria-hidden','true');
+    meas.innerHTML = VWORDS.map(w=>`<span class="mrow">${faceHTML(w)}</span>`).join('');
+    vSwap.textContent = '';
+    vSwap.classList.add('p3d');
+    vSwap.appendChild(drum);
+    vPin.appendChild(meas);
+    const vFaces = [...drum.children];
+    let measDirty = true;
+    const vMeasure = ()=>{
+      measDirty = false;
+      let w = 0, h = 0;
+      for(const row of meas.children){ w = Math.max(w, row.offsetWidth); h = Math.max(h, row.offsetHeight); }
+      if(!w || !h) return;
+      drum.style.width = w + 'px'; drum.style.height = h + 'px';
+      const radius = (h/2).toFixed(1);
+      vFaces.forEach((f,i)=> f.style.transform = `rotateX(${(-i*STEP).toFixed(1)}deg) translateZ(${radius}px)`);
     };
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ measDirty = true; });
+    addEventListener('resize', ()=>{ measDirty = true; });
+
+    /* 线框 torus knot：手写 3D 投影，随滚动转动，accent 光点沿环行进 */
+    const vKnot = (()=>{
+      if(!vCv) return null;
+      const ctx = vCv.getContext('2d');
+      if(!ctx) return null;
+      const N = 360, HK = 10, HN = 24, RAD = 3.2, HR = .42/RAD, TAU = Math.PI*2;
+      const L = new Float32Array(N*3);
+      for(let i=0;i<N;i++){
+        const u = i/N*TAU;
+        L[i*3]   = (2+Math.cos(3*u))*Math.cos(2*u)/RAD;
+        L[i*3+1] = (2+Math.cos(3*u))*Math.sin(2*u)/RAD;
+        L[i*3+2] = Math.sin(3*u)/RAD;
+      }
+      const hoops = [];
+      for(let j=0;j<HN;j++){
+        const i = j*(N/HN)|0, a = 3*((i-1+N)%N), b = 3*((i+1)%N), c = 3*i;
+        let tx = L[b]-L[a], ty = L[b+1]-L[a+1], tz = L[b+2]-L[a+2];
+        const tl = Math.hypot(tx,ty,tz)||1; tx/=tl; ty/=tl; tz/=tl;
+        let nx = ty, ny = -tx, nz = 0, nl = Math.hypot(nx,ny,nz);      /* T × z 轴 */
+        if(nl<.05){ nx = -tz; ny = 0; nz = tx; nl = Math.hypot(nx,ny,nz)||1; }
+        nx/=nl; ny/=nl; nz/=nl;
+        const bx = ty*nz - tz*ny, by = tz*nx - tx*nz, bz = tx*ny - ty*nx;
+        const hv = new Float32Array(HK*3);
+        for(let k=0;k<HK;k++){
+          const th = k/HK*TAU, co = Math.cos(th)*HR, si = Math.sin(th)*HR;
+          hv[k*3]   = L[c]   + nx*co + bx*si;
+          hv[k*3+1] = L[c+1] + ny*co + by*si;
+          hv[k*3+2] = L[c+2] + nz*co + bz*si;
+        }
+        hoops.push(hv);
+      }
+      const proj = new Float32Array(N*2), hproj = new Float32Array(HK*2);
+      let ink = 'rgba(1,1,1,.13)', acc = '#ff3d00', cw = 0, ch = 0, dpr = 1;
+      const readTheme = ()=>{
+        const m = getComputedStyle(vSec).color.match(/[\d.]+/g);
+        if(m) ink = `rgba(${m[0]},${m[1]},${m[2]},.13)`;
+        acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || acc;
+      };
+      readTheme();
+      const tmq = matchMedia('(prefers-color-scheme: dark)');
+      if(tmq.addEventListener) tmq.addEventListener('change', readTheme);
+      return (t, p)=>{
+        const w = vCv.clientWidth, h = vCv.clientHeight;
+        if(!w || !h) return;
+        const d = Math.min(2, devicePixelRatio||1);
+        if(w!==cw || h!==ch || d!==dpr){
+          cw = w; ch = h; dpr = d;
+          vCv.width = Math.round(w*d); vCv.height = Math.round(h*d);
+        }
+        ctx.setTransform(d,0,0,d,0,0);
+        ctx.clearRect(0,0,w,h);
+        const R = Math.min(w,h)*.33, OX = w/2, OY = h/2, F = 3.1;
+        const ay = t*.0001 + p*Math.PI, ax = .46 + p*.8 + Math.sin(t*.00023)*.05;
+        const cy = Math.cos(ay), sy = Math.sin(ay), cx1 = Math.cos(ax), sx1 = Math.sin(ax);
+        const project = (src,dst,n)=>{
+          for(let i=0;i<n;i++){
+            const x = src[i*3], y = src[i*3+1], z = src[i*3+2];
+            const x1 = x*cy + z*sy, z1 = z*cy - x*sy;
+            const y2 = y*cx1 - z1*sx1, z2 = y*sx1 + z1*cx1;
+            const s = F/(F - z2);
+            dst[i*2] = OX + x1*s*R; dst[i*2+1] = OY - y2*s*R;
+          }
+        };
+        ctx.lineWidth = 1;
+        project(L, proj, N);
+        ctx.strokeStyle = ink;
+        ctx.beginPath();
+        ctx.moveTo(proj[0], proj[1]);
+        for(let i=1;i<N;i++) ctx.lineTo(proj[i*2], proj[i*2+1]);
+        ctx.closePath(); ctx.stroke();
+        const hi = Math.round(p*(HN-1));
+        for(let j=0;j<HN;j++){
+          project(hoops[j], hproj, HK);
+          ctx.beginPath();
+          ctx.moveTo(hproj[0], hproj[1]);
+          for(let k=1;k<HK;k++) ctx.lineTo(hproj[k*2], hproj[k*2+1]);
+          ctx.closePath();
+          ctx.strokeStyle = j===hi ? acc : ink;
+          ctx.globalAlpha = j===hi ? .55 : .8;
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        const di = Math.floor(p*N)%N;                    /* 行进光点 */
+        ctx.beginPath();
+        ctx.arc(proj[di*2], proj[di*2+1], 2.4 + Math.sin(t*.004)*.7, 0, 7);
+        ctx.fillStyle = acc; ctx.fill();
+      };
+    })();
+
+    /* 滚动进度直接 scrub 转角，轻量惯性让停顿处自然落定 */
+    let ps = 0, vSegShown = -1;
     FX.push(()=>{
       const vh = innerHeight, r = vSec.getBoundingClientRect();
       if(r.top > vh || r.bottom < 0) return;
+      if(measDirty) vMeasure();
       const total = vSec.offsetHeight - vh;
       const y = clampN(-r.top, 0, total);
       vPin.style.transform = `translate3d(0,${y}px,0)`;
       const p = total>0 ? y/total : 0;
-      vBar.style.transform = `scaleX(${p.toFixed(4)})`;
-      vGo(Math.min(3, Math.floor(p*4)));
+      ps += (p-ps)*.18; if(Math.abs(p-ps)<1e-4) ps = p;
+      const ang = ps*(360-STEP);                      /* 正向转角：词向上滚出，与滚动方向一致 */
+      drum.style.transform = `rotateX(${ang.toFixed(2)}deg)`;
+      for(let i=0;i<NF;i++)
+        vFaces[i].style.opacity = clampN((90-Math.abs(ang - i*STEP))/34, 0, 1).toFixed(3);
+      const seg = Math.min(NF-1, Math.round(ps*(NF-1)));
+      if(seg!==vSegShown){ vSegShown = seg; vIdx.textContent = `0${seg+1} / 0${NF}`; }
+      vBar.style.transform = `scaleX(${ps.toFixed(4)})`;
+      if(vBg) vBg.style.transform = `translate(-50%,-50%) translate3d(0,${((ps-.5)*-70).toFixed(1)}px,0) scale(${(1+ps*.07).toFixed(3)})`;
+      if(vKnot) vKnot(performance.now(), ps);
     });
   }
 
