@@ -1954,109 +1954,142 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 
 /* ============================================================
    03 多线并行：生长树
-   随滚动从左向右生长、分叉，开花、结果，果实散成种子。
-   树形由固定种子生成，人人看到同一棵；除种子飘散(真实时间)
-   外全部由滚动驱动，reduceMotion 下直接落最终帧。
+   曲线二叉树:每枝都是三次贝塞尔,入口切向继承父枝出口
+   方向,关节处处相切,全树没有一根直线;等比枝长、递减
+   分叉角、确定性微幅 sweep,自动取景适配任意窗口。
+   随滚动生长——画布进入视野中段才开始,占满屏幕时长成;
+   开花→结果→散种,种子飘回根的方向。单枝 easeInOut +
+   子枝 55% 重叠推进 + 花果回弹,流畅度对齐生命场。
+   reduceMotion 直接落最终帧。
    ============================================================ */
 (function(){
   const canvas = document.getElementById('tree-fx');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
-  const cell = canvas.closest('.demo-cell');
 
-  const SEED = 20260730;
-  const MAXD = 5;                                  /* 最深五级分叉 */
-  const G_BLOOM = .62, G_FRUIT = .8, G_SEED = .92; /* 阶段窗口:生长→开花→结果→散种 */
+  const LEVELS = 5;                                  /* 五级分叉,32 个末梢 */
+  const G_GROW = .56, G_BLOOM = .76, G_SEED = .88;   /* 阶段窗口:生长→开花→结果→散种 */
   const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
-  const easeOut = t=>1-Math.pow(1-t,3);
-  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  const easeInOut = t=>t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+  const back = t=>{const c=1.4;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2);};
+  const hash = i=>{const x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+
+  /* 与生命场同一套明暗色板 */
+  const PAL = {
+    light:{ink:[34,34,34], accent:[255,61,0]},
+    dark:{ink:[230,228,214], accent:[255,105,56]},
+  };
+  const darkMq = matchMedia('(prefers-color-scheme: dark)');
+  const rgb = c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 
   let W=0, H=0, g=0, raf=null;
   let branches=[], tips=[], seeds=[];
 
   function build(){
-    const rand = mulberry32(SEED);
     branches=[]; tips=[]; seeds=[];
-    let maxT=0;
-    function branch(x,y,ang,len,depth,t0){
-      const bend=(rand()-.5)*.5;
-      const ex=x+Math.cos(ang+bend*.5)*len, ey=y+Math.sin(ang+bend*.5)*len;
-      /* 二次贝塞尔控制点：沿垂直方向弯出一点 organic 感 */
-      const mx=(x+ex)/2, my=(y+ey)/2, nx=-(ey-y), ny=ex-x, nl=Math.hypot(nx,ny)||1;
-      const b={x0:x,y0:y,cx:mx+nx/nl*bend*len*.4,cy:my+ny/nl*bend*len*.4,
-               x1:ex,y1:ey,depth,t0,t1:t0+.09+depth*.018};
+    let idx=0, maxT=0;
+    /* 原始坐标:根在原点向 +x 生长,之后统一取景 */
+    (function grow(x,y,inAng,outAng,len,lvl,t0){
+      const i=idx++;
+      outAng=clamp(outAng,-.9,.9);                     /* 扇形树冠,不回头 */
+      const ex=x+Math.cos(outAng)*len, ey=y+Math.sin(outAng)*len;
+      /* 三次贝塞尔:入口切向继承父枝出口方向,关节处处相切 */
+      const k=len*(.38+hash(i*5+2)*.1);
+      const dur=1-Math.min(.3,lvl*.05);
+      const b={x0:x,y0:y,
+               c1x:x+Math.cos(inAng)*k,  c1y:y+Math.sin(inAng)*k,
+               c2x:ex-Math.cos(outAng)*k,c2y:ey-Math.sin(outAng)*k,
+               x1:ex,y1:ey,lvl,t0,t1:t0+dur};
       branches.push(b); maxT=Math.max(maxT,b.t1);
-      if(depth>=MAXD || ex>W*.97){ tips.push({x:ex,y:ey,fruit:rand()<.34}); return; }
-      const n=depth<2 && rand()<.3 ? 3 : 2;
-      for(let i=0;i<n;i++){
-        const side=i-(n-1)/2;
-        let a=ang+bend*.3+side*(.42+rand()*.22)*(.7+rand()*.5)+(rand()-.5)*.12;
-        a=clamp(a,-1.05,1.05);                 /* 不回头 */
-        a=clamp(a+(H*.5-ey)/H*.3,-1.05,1.05);  /* 纵向向中线收 */
-        if(ey>H*.8) a=-Math.abs(a)*.9;         /* 上下沿折返,不出窗 */
-        else if(ey<H*.2) a=Math.abs(a)*.9;
-        branch(ex,ey,a,len*(.74+rand()*.12)*(side===0?1:.86),depth+1,b.t1*.92);
-      }
-    }
-    branch(W*.05,H*.58,-.12,Math.min(W*.22,H*.55),0,0);
-    /* 生长时间归一到 [0,G_BLOOM],花/果/种子错峰 */
-    branches.forEach(b=>{b.t0=b.t0/maxT*G_BLOOM;b.t1=b.t1/maxT*G_BLOOM;});
-    const r2=mulberry32(SEED^0x9e37);
-    tips.forEach(t=>{
-      t.bloomAt=G_BLOOM+.04+r2()*.1;
-      t.fruitAt=G_FRUIT+.03+r2()*.08;
-      if(t.fruit) for(let s=0;s<2;s++) seeds.push({
-        x:t.x,y:t.y,a:Math.PI*.92+(r2()-.5)*.6,sp:12+r2()*20,
-        ph:r2()*6.28,life:2.4+r2()*.8,wait:1.5+r2()*3.5,at:G_SEED+r2()*.06
+      if(lvl>=LEVELS){ tips.push({x:ex,y:ey}); return; }
+      [-1,1].forEach(s=>{
+        const ha=.58*Math.pow(.84,lvl)*(.94+hash(i*7+s+1)*.12);
+        const cl=len*(.78+hash(i*11+s*3)*.08);
+        const sweep=(hash(i*13+s*5)-.5)*.16;           /* 每枝自带一点弯 */
+        grow(ex,ey,outAng,outAng+s*ha+sweep,cl,lvl+1,b.t0+dur*.55); /* 55% 重叠,波形推进 */
       });
+    })(0,0,-.03,-.03,W*.19,0,0);
+    /* 生长时间归一到 [0,G_GROW] */
+    branches.forEach(b=>{b.t0=b.t0/maxT*G_GROW;b.t1=b.t1/maxT*G_GROW;});
+    /* 自动取景:统一缩放+轻微横向拉伸,根锚左缘,纵向居中 */
+    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+    const eat=(x,y)=>{minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);};
+    branches.forEach(b=>{eat(b.x0,b.y0);eat(b.c1x,b.c1y);eat(b.c2x,b.c2y);eat(b.x1,b.y1);});
+    const bw=maxX-minX, bh=maxY-minY||1;
+    const s=Math.min(W*.9/bw, H*.76/bh);
+    const sx=Math.min(s*1.42, W*.88/bw);
+    const ox=W*.055-minX*sx, oy=H*.52-(minY+bh/2)*s;
+    branches.forEach(b=>{b.x0=b.x0*sx+ox;b.x1=b.x1*sx+ox;b.c1x=b.c1x*sx+ox;b.c2x=b.c2x*sx+ox;
+                         b.y0=b.y0*s+oy;b.y1=b.y1*s+oy;b.c1y=b.c1y*s+oy;b.c2y=b.c2y*s+oy;});
+    tips.forEach(t=>{t.x=t.x*sx+ox;t.y=t.y*s+oy;});
+    /* 花/果/种子错峰:按末梢顺序自上而下涟漪 */
+    tips.forEach((t,i)=>{
+      const u=tips.length>1 ? i/(tips.length-1) : 0;
+      t.bloomAt=G_GROW+.015+u*.13;
+      t.fruit=i%3===0;
+      t.fruitAt=G_BLOOM+u*.1;
+      if(t.fruit) for(let k=0;k<2;k++){
+        const h1=hash(i*17+k*5), h2=hash(i*23+k*7), h3=hash(i*29+k*11);
+        seeds.push({x:t.x,y:t.y,a:Math.PI*(.9+h1*.14),sp:W*(.014+h2*.012),
+          ph:h3*6.28,life:2.2+h1*.9,wait:1.6+h2*3.6,at:G_SEED+u*.07});
+      }
     });
   }
 
   const pt={x:0,y:0};
-  function qpos(b,t){const u=1-t;pt.x=u*u*b.x0+2*u*t*b.cx+t*t*b.x1;pt.y=u*u*b.y0+2*u*t*b.cy+t*t*b.y1;}
+  function qpos(b,t){const u=1-t;
+    pt.x=u*u*u*b.x0+3*u*u*t*b.c1x+3*u*t*t*b.c2x+t*t*t*b.x1;
+    pt.y=u*u*u*b.y0+3*u*u*t*b.c1y+3*u*t*t*b.c2y+t*t*t*b.y1;}
 
   function draw(g,now){
-    const cs=getComputedStyle(document.documentElement);
-    const ink=cs.getPropertyValue('--wu-text').trim()||'#1c1c1e';
-    const acc=cs.getPropertyValue('--accent').trim()||'#ff3d00';
+    const p=darkMq.matches?PAL.dark:PAL.light;
     ctx.clearRect(0,0,W,H);
     ctx.lineCap='round';ctx.lineJoin='round';
-    /* 枝干：按各自时间窗生长,越深越细越淡 */
+    /* 枝干:按时间窗生长,单枝 easeInOut,越深越细越淡 */
     for(const b of branches){
       const f=clamp((g-b.t0)/(b.t1-b.t0),0,1);
       if(f<=0) continue;
-      ctx.strokeStyle=ink;ctx.globalAlpha=.92-b.depth*.11;
-      ctx.lineWidth=b.depth===0?1.6:b.depth<3?1.2:1;
+      const fe=easeInOut(f);
+      ctx.strokeStyle=rgb(p.ink);ctx.globalAlpha=.95-b.lvl*.075;
+      ctx.lineWidth=1.8-b.lvl*.16;
       ctx.beginPath();ctx.moveTo(b.x0,b.y0);
-      const N=24,end=Math.floor(N*f);
+      const N=20,end=Math.floor(N*fe);
       for(let i=1;i<=end;i++){qpos(b,i/N);ctx.lineTo(pt.x,pt.y);}
-      if(N*f>end){qpos(b,f);ctx.lineTo(pt.x,pt.y);}
+      if(N*fe>end){qpos(b,fe);ctx.lineTo(pt.x,pt.y);}
       ctx.stroke();
     }
-    /* 花：末梢圆环;结果：环收成朱红实心 */
+    /* 花:末梢细环+蕊点,回弹绽开;果:环收成朱红,带淡晕 */
     for(const t of tips){
-      const bp=easeOut(clamp((g-t.bloomAt)/.06,0,1));
+      const bp=clamp((g-t.bloomAt)/.05,0,1);
       if(bp<=0) continue;
-      const fp=t.fruit?easeOut(clamp((g-t.fruitAt)/.07,0,1)):0;
+      const bs=back(bp);
+      const fp=t.fruit?clamp((g-t.fruitAt)/.06,0,1):0;
       if(fp<1){
-        ctx.globalAlpha=bp*(1-fp)*.8;ctx.strokeStyle=ink;ctx.lineWidth=1;
-        ctx.beginPath();ctx.arc(t.x,t.y,3.2*bp*(1-fp*.4),0,6.2832);ctx.stroke();
+        ctx.globalAlpha=.75*bp*(1-fp);
+        ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
+        ctx.beginPath();ctx.arc(t.x,t.y,3*bs*(1-fp*.35),0,6.2832);ctx.stroke();
+        ctx.globalAlpha=.5*bp*(1-fp);ctx.fillStyle=rgb(p.ink);
+        ctx.beginPath();ctx.arc(t.x,t.y,.9*bp,0,6.2832);ctx.fill();
       }
       if(fp>0){
-        ctx.globalAlpha=fp;ctx.fillStyle=acc;
-        ctx.beginPath();ctx.arc(t.x,t.y,.4+2.2*fp,0,6.2832);ctx.fill();
+        const fs=back(fp);
+        ctx.globalAlpha=.2*fp;ctx.strokeStyle=rgb(p.accent);ctx.lineWidth=1;
+        ctx.beginPath();ctx.arc(t.x,t.y,4.4*fs,0,6.2832);ctx.stroke();
+        ctx.globalAlpha=fp;ctx.fillStyle=rgb(p.accent);
+        ctx.beginPath();ctx.arc(t.x,t.y,2.5*fs,0,6.2832);ctx.fill();
       }
     }
-    /* 种子：释放后向左下方飘(回到根的方向),淡出后错峰重结 */
-    for(const s of seeds){
-      const rp=clamp((g-s.at)/.05,0,1);
+    /* 种子:向左下方飘回根的方向,淡出后错峰重结 */
+    for(const sd of seeds){
+      const rp=clamp((g-sd.at)/.04,0,1);
       if(rp<=0) continue;
-      const cyc=s.life+s.wait, ct=reduceMotion?s.life*.4:(now+s.ph*10)%cyc;
-      if(ct>s.life) continue;
-      const p=ct/s.life, d=s.sp*ct;
-      ctx.globalAlpha=rp*(1-p)*.9;ctx.fillStyle=ink;
+      const cyc=sd.life+sd.wait, ct=reduceMotion?sd.life*.35:(now+sd.ph*10)%cyc;
+      if(ct>sd.life) continue;
+      const q=ct/sd.life, d=sd.sp*ct;
+      ctx.globalAlpha=rp*Math.pow(1-q,1.5)*.85;ctx.fillStyle=rgb(p.ink);
       ctx.beginPath();
-      ctx.arc(s.x+Math.cos(s.a)*d+Math.sin(ct*2+s.ph)*3,s.y+Math.sin(s.a)*d+ct*ct*3,1.3,0,6.2832);
+      ctx.arc(sd.x+Math.cos(sd.a)*d+Math.sin(ct*2.2+sd.ph)*2.5,
+              sd.y+Math.sin(sd.a)*d+ct*ct*H*.008,1.3,0,6.2832);
       ctx.fill();
     }
     ctx.globalAlpha=1;
@@ -2073,11 +2106,12 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 
   new ResizeObserver(resize).observe(canvas);
   if(reduceMotion) return;
-  /* 滚动驱动:cell 从视口底走到 17% 高度时树长完 */
+  /* 滚动驱动:画布顶从 80% 视口高走到 28% 时树长完——
+     生长全程画布都在视野里,不会"还没看就长完" */
   function frame(){
-    const r=cell.getBoundingClientRect();
-    const target=clamp((innerHeight*.92-r.top)/(innerHeight*.75),0,1);
-    g=Math.abs(target-g)<.0004?target:g+(target-g)*.12;
+    const r=canvas.getBoundingClientRect();
+    const target=clamp((innerHeight*.8-r.top)/(innerHeight*.52),0,1);
+    g=Math.abs(target-g)<.0005?target:g+(target-g)*.14;
     draw(g,performance.now()/1000);
     raf=requestAnimationFrame(frame);
   }
@@ -2086,7 +2120,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       if(e.isIntersecting&&!raf)raf=requestAnimationFrame(frame);
       else if(!e.isIntersecting&&raf){cancelAnimationFrame(raf);raf=null;}
     });
-  },{threshold:.05}).observe(cell);
+  },{threshold:.02}).observe(canvas);
 })();
 
 /* ============================================================
