@@ -21,15 +21,20 @@
           ]
         },
         {
-          "title": "配置",
+          "title": "桌面工作",
           "pages": [
-            "zh-cn/reference/configuration.md"
+            "zh-cn/desktop/workspaces.md",
+            "zh-cn/desktop/conversations.md",
+            "zh-cn/desktop/workspace-tools.md"
           ]
         },
         {
-          "title": "Agent 运行机制",
+          "title": "个性化",
           "pages": [
-            "zh-cn/reference/agent-command-system.md"
+            "zh-cn/customize/skills.md",
+            "zh-cn/customize/memory.md",
+            "zh-cn/reference/permissions.md",
+            "zh-cn/reference/configuration.md"
           ]
         },
         {
@@ -42,8 +47,10 @@
           ]
         },
         {
-          "title": "安全",
+          "title": "帮助",
           "pages": [
+            "zh-cn/help/troubleshooting.md",
+            "zh-cn/reference/agent-command-system.md",
             "zh-cn/reference/security-model.md"
           ]
         },

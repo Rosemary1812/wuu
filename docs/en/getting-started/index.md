@@ -115,7 +115,7 @@ wuu stores persistent sessions so work can continue across runs:
 
 ```bash
 wuu exec --continue "continue from the last session"
-wuu exec --resume THREAD_ID "continue this task"
+wuu exec resume THREAD_ID "continue this task"
 wuu session list
 wuu session show --last
 ```
