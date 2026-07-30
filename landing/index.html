@@ -641,7 +641,7 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .lifefield canvas{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
-/* ---------- 模型六宫格 ---------- */
+/* ---------- 并行看板 ---------- */
 .variants{
   position:absolute;inset:0;display:grid;gap:18px;padding:28px;
   grid-template-columns:repeat(2,1fr);align-content:center;
@@ -661,7 +661,6 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
   background:var(--wu-raised);color:var(--dark-gray);
   font-family:var(--mono);font-size:13px;
 }
-.mini .m-ico img{width:18px;height:18px;display:block}
 .mini .m-title{font-size:13px;font-weight:var(--fw-semibold);color:var(--wu-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini .m-sub{font-size:11px;color:var(--wu-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini .m-body{
@@ -957,7 +956,7 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
     <a class="wordmark" href="#" aria-label="wuu">wuu<i class="dot"></i></a>
     <span class="links">
       <a href="#features">功能</a>
-      <a href="#ch-models">模型</a>
+      <a href="#ch-parallel">并行</a>
       <a href="#news">更新</a>
       <a href="#">文档</a>
       <a href="#">GitHub</a>
@@ -1170,15 +1169,15 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
         </div>
       </div>
 
-      <!-- 03 任何模型 -->
-      <div class="cell span2 headline-cell reveal" id="ch-models">
+      <!-- 03 多线并行 -->
+      <div class="cell span2 headline-cell reveal" id="ch-parallel">
         <div class="tri"></div>
         <span class="fnum" aria-hidden="true">03</span>
         <div class="inner">
-          <p class="eyebrow">任何模型</p>
-          <h2>换模型，
-不用换工具</h2>
-          <p class="desc">今天在 Claude 上，明天换 DeepSeek——同一份技能、记忆和会话都还在，引擎照常在你机器上跑。</p>
+          <p class="eyebrow">多线并行</p>
+          <h2>交代完，
+就去忙别的</h2>
+          <p class="desc">这个项目的修复、那个项目的重构，一起交代下去。它分头推进，你只在该出现的时候出现。</p>
         </div>
       </div>
 
@@ -1193,14 +1192,14 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
 
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>直连服务商</h3>
-          <p>API key 存在本地，调用直连——额度、花销都在你自己的账号。</p>
+          <h3>进度摆在明处</h3>
+          <p>每条会话做到哪一步、动了哪些文件，都摆在那儿，不用追着问。</p>
         </div>
       </div>
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>断网也能干活</h3>
-          <p>接上 Ollama 里的本地模型，代码和会话不出这台机器。</p>
+          <h3>该你出现才叫你</h3>
+          <p>跑完的、要拍板的，会亮起来等你过目；其余的它自己往前走。</p>
         </div>
       </div>
 
@@ -1324,7 +1323,7 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
           <h4>产品</h4>
           <a href="#">wuu CLI</a>
           <a href="#desktop">wuu Desktop</a>
-          <a href="#ch-models">任何模型</a>
+          <a href="#ch-parallel">多线并行</a>
           <a href="#features">工程循环</a>
         </div>
         <div class="group">
@@ -1439,22 +1438,26 @@ document.querySelectorAll('[data-wu-panes]').forEach(el=> el.innerHTML = PANES_H
 }
 
 /* ============================================================
-   模型六宫格：同一个任务，谁来做都行
+   并行看板：六条会话同时推进，你该出现时出现
    ============================================================ */
-const TASK_LINE = '<span class="acc">❯</span> wuu "修一下折扣"<br><span class="ok">✓</span> 3 个文件 · 测试全绿';
 const MINIS = [
-  {cls:'', logo:'anthropic.svg', title:'Claude', sub:'Anthropic', body:TASK_LINE},
-  {cls:'', logo:'openai.svg', title:'GPT', sub:'OpenAI', body:TASK_LINE},
-  {cls:'', logo:'googlegemini.svg', title:'Gemini', sub:'Google', body:TASK_LINE},
-  {cls:'', logo:'moonshotai.svg', title:'Kimi', sub:'Moonshot AI', body:TASK_LINE},
-  {cls:'', logo:'deepseek.svg', title:'DeepSeek', sub:'开源权重', body:TASK_LINE},
-  {cls:'v-acc', logo:'ollama.svg', title:'本地模型', sub:'Ollama · 断网也照跑',
-   body:'<span class="acc">❯</span> wuu "修一下折扣"<br><span class="ok">✓</span> 全绿 · 没出这台机器'},
+  {cls:'', ico:'▶', title:'发布前检查', sub:'产品发布 · 运行中',
+   body:'███████░░░ 78%<br>构建、类型、测试'},
+  {cls:'v-acc', ico:'◆', title:'重写产品首页', sub:'产品发布 · 待 review',
+   body:'改了 12 个文件<br>等你过目'},
+  {cls:'', ico:'▶', title:'修复结算页回归', sub:'代码库维护 · 运行中',
+   body:'████░░░░░░ 41%<br>复现、定位、修'},
+  {cls:'', ico:'✓', title:'整理更新日志', sub:'产品发布 · 已完成',
+   body:'<span class="ok">✓</span> 全绿 · 3 个文件'},
+  {cls:'', ico:'▶', title:'升级桌面端依赖', sub:'代码库维护 · 运行中',
+   body:'██░░░░░░░░ 23%<br>锁版本、跑回归'},
+  {cls:'', ico:'○', title:'重构会话存储', sub:'代码库维护 · 排队中',
+   body:'等前面两件<br>做完自动开工'},
 ];
 document.getElementById('variants').innerHTML = MINIS.map((m,i)=>`
   <div class="mini ${m.cls}" data-vi="${i}">
     <div class="m-head">
-      <div class="m-ico"><img src="assets/logos/${m.logo}" alt=""></div>
+      <div class="m-ico">${m.ico}</div>
       <div style="min-width:0">
         <div class="m-title">${m.title}</div>
         <div class="m-sub">${m.sub}</div>
