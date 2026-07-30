@@ -47,4 +47,4 @@ wuu exec resume THREAD_ID "继续这个任务"
 ```
 
 自动化任务不需要保存会话时使用 `wuu exec --ephemeral`。完整选项见
-[`wuu exec`](../../en/automation/exec.md)（英文）。
+[中文 `wuu exec` 指南](../automation/exec.md)。

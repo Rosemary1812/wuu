@@ -53,8 +53,7 @@
             "zh-cn/automation/exec.md",
             "zh-cn/customize/mcp.md",
             "en/automation/jsonl-events.md",
-            "en/integrations/app-server-protocol.md",
-            "en/integrations/compatibility/claude-code-stream-json.md"
+            "en/integrations/app-server-protocol.md"
           ]
         },
         {
@@ -93,8 +92,7 @@
         {
           "title": "Integrations",
           "pages": [
-            "en/integrations/app-server-protocol.md",
-            "en/integrations/compatibility/claude-code-stream-json.md"
+            "en/integrations/app-server-protocol.md"
           ]
         },
         {

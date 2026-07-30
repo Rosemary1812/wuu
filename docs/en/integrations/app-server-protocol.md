@@ -101,7 +101,7 @@ the server-initiated methods it can handle:
   "method": "initialize",
   "params": {
     "protocol_version": "wuu-app-server/v0.1",
-    "client": {"name": "wuu-desktop", "version": "0.10.1"},
+    "client": {"name": "wuu-desktop", "version": "<desktop-version>"},
     "capabilities": {
       "reverse_rpc": {
         "methods": [

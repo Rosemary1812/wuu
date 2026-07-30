@@ -78,7 +78,7 @@ Read the [security model](docs/en/reference/security-model.md) before using wuu 
 
 ## Project
 
-- [Documentation](docs/README.md)
+- [Documentation](docs/en/index.md)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 - [Public evaluations](evals/)

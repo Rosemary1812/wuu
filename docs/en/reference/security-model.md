@@ -109,7 +109,8 @@ bundles in bug reports without reviewing them first.
 
 ## App server and desktop boundary
 
-`wuu app-server` uses JSON-RPC over the subprocess's standard input and output.
+`wuu app-server` uses a newline-delimited JSON request/response protocol over the
+subprocess's standard input and output.
 It does not open a network listener by itself. The Electron shell starts and
 owns this process and exposes selected operations to the renderer through its
 preload/IPC bridge. A renderer-to-main IPC bypass or an unsafe navigation is a
