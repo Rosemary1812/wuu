@@ -24,6 +24,8 @@ wuu 的桌面应用适合交互式工作；`wuu exec` 适合终端、脚本、CI
 - **管理项目和会话：**[工作区与项目](desktop/workspaces.md)、
   [会话与分支](desktop/conversations.md)。
 - **检查 Agent 的成果：**[文件、改动、终端与浏览器](desktop/workspace-tools.md)。
+- **理解复杂任务怎样推进：**[Agent 协作与子代理](desktop/subagents.md)和
+  [命令与后台任务](reference/agent-command-system.md)。
 - **复用工作方式：**[Skills](customize/skills.md) 和[记忆](customize/memory.md)。
 - **按计划运行：**[Automations](automation/scheduled-tasks.md)。
 - **接入外部工具：**[MCP 服务器](customize/mcp.md)。
@@ -61,7 +63,7 @@ JSON-RPC 协议复用会话、工具和模型能力。当前 wire protocol 仍�
 ## 稳定文档的边界
 
 这套导航只把默认生产构建中可达、并由当前实现支持的能力写成稳定功能。需要特殊构建
-开关的群聊、主动多 Agent、远程桌面入口和语音输入，不作为默认体验承诺；调试面板、
+开关的群聊、用户编排的常驻 Agent 团队、远程桌面入口和语音输入，不作为默认体验承诺；调试面板、
 评测命令和内部协议细节也不会混入普通用户路径。
 
 ---

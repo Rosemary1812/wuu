@@ -29,6 +29,14 @@
           ]
         },
         {
+          "title": "Wuu 怎样工作",
+          "pages": [
+            "zh-cn/desktop/subagents.md",
+            "zh-cn/reference/agent-command-system.md",
+            "zh-cn/reference/security-model.md"
+          ]
+        },
+        {
           "title": "个性化",
           "pages": [
             "zh-cn/customize/skills.md",
@@ -52,9 +60,7 @@
         {
           "title": "帮助",
           "pages": [
-            "zh-cn/help/troubleshooting.md",
-            "zh-cn/reference/agent-command-system.md",
-            "zh-cn/reference/security-model.md"
+            "zh-cn/help/troubleshooting.md"
           ]
         },
         {
