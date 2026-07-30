@@ -641,7 +641,14 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .lifefield canvas{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
-/* ---------- 03 多线并行：生长树 ---------- */
+/* ---------- 03 多线并行：生长树长卷 ---------- */
+.growth-stage{height:280vh;padding:0;position:relative}
+.growth-stick{position:absolute;top:0;left:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;will-change:transform}
+.growth-stick .window{
+  width:min(1120px,92vw,calc((100vh - 120px)*1.4));aspect-ratio:var(--window-aspect);
+  box-shadow:rgba(0,0,0,.12) 0 4px 10px,rgba(0,0,0,.12) 0 2px 4px -1px,rgba(0,0,0,.12) 0 0 4px -1px;
+}
+@media (max-width:1079px){.growth-stage{height:240vh}}
 #tree-fx{position:absolute;inset:0;width:100%;height:100%;display:block;background:var(--wu-canvas)}
 
 /* 结尾 CTA 单元 */
@@ -1148,11 +1155,13 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
         </div>
       </div>
 
-      <div class="cell span2 demo-cell reveal">
-        <div class="window">
-          <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
-          <div class="body">
-            <canvas id="tree-fx" aria-hidden="true"></canvas>
+      <div class="cell span2 growth-stage reveal" id="growth">
+        <div class="growth-stick" id="growth-pin">
+          <div class="window">
+            <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
+            <div class="body">
+              <canvas id="tree-fx" aria-hidden="true"></canvas>
+            </div>
           </div>
         </div>
       </div>
@@ -1982,7 +1991,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   const rgb = c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 
   let W=0, H=0, g=0, raf=null;
-  let nodes=[], tips=[], seeds=[], iters=1, seg=5;
+  let nodes=[], tips=[], seeds=[], chains=[], root=null, iters=1, seg=5;
 
   /* 空间殖民(Runions 2005/2007, jasonwebb 开源实现的忠实移植):
      每个吸引子只影响最近节点,节点被抵达即死亡;受影响的节点
@@ -2019,7 +2028,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       }
       return best?{n:best,d:Math.sqrt(bd)}:null;
     }
-    const root={x:X0,y:CY,parent:null,children:[],born:0,bornU:0,w:1};
+    root={x:X0,y:CY,parent:null,children:[],born:0,bornU:0,w:1};
     nodes.push(root); gadd(root);
     iters=0;
     while(iters<1400){
@@ -2063,32 +2072,62 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       t.bloomAt=G_GROW+.015+u*.12;
       t.fruit=hash(i*3+7)<.32;
       t.fruitAt=G_BLOOM+u*.1;
+      t.wob=hash(i*5+2); t.rot=hash(i*7+3)*3.14;
       if(t.fruit) for(let k=0;k<2;k++){
         const h1=hash(i*17+k*5), h2=hash(i*23+k*7), h3=hash(i*29+k*11);
         seeds.push({x:t.x,y:t.y,a:Math.PI*(.9+h1*.14),sp:W*(.014+h2*.012),
           ph:h3*6.28,life:2.2+h1*.9,wait:1.6+h2*3.6,at:G_SEED+u*.07});
       }
     });
+    /* 渲染链:分叉点之间是一条连续枝,整体平滑绘出 */
+    chains=[];
+    (function walk(n){
+      for(const c of n.children){
+        const pts=[n,c]; let cur=c;
+        while(cur.children.length===1){cur=cur.children[0];pts.push(cur);}
+        chains.push({pts});
+        walk(cur);
+      }
+    })(root);
   }
 
   function draw(g,now){
     const p=darkMq.matches?PAL.dark:PAL.light;
     ctx.clearRect(0,0,W,H);
     ctx.lineCap='round';ctx.lineJoin='round';
-    /* 枝干:按出生时刻浮现,Murray 锥度,粗者更实 */
+    /* 枝干:整链一次平滑绘出(过中点二次曲线),链内分块带锥度,
+       粗枝先晕一层墨——告别逐段折线的草图感 */
     const win=G_GROW/Math.max(1,iters);
-    for(const n of nodes){
-      if(!n.parent) continue;
-      const f=clamp((g-n.bornU)/win,0,1);
-      if(f<=0) continue;
-      const w=(n.w+n.parent.w)/2;
-      ctx.strokeStyle=rgb(p.ink);
-      ctx.lineWidth=Math.max(.45,w);
-      ctx.globalAlpha=.28+Math.min(1,w/2.8)*.67;
-      ctx.beginPath();
-      ctx.moveTo(n.parent.x,n.parent.y);
-      ctx.lineTo(n.parent.x+(n.x-n.parent.x)*f,n.parent.y+(n.y-n.parent.y)*f);
-      ctx.stroke();
+    for(const ch of chains){
+      const pts=ch.pts;
+      let full=0,hasP=false,px=0,py=0;
+      for(let i=1;i<pts.length;i++){
+        const f=clamp((g-pts[i].bornU)/win,0,1);
+        if(f>=1){full=i;continue;}
+        if(f>0){full=i-1;hasP=true;px=pts[i-1].x+(pts[i].x-pts[i-1].x)*f;py=pts[i-1].y+(pts[i].y-pts[i-1].y)*f;}
+        break;
+      }
+      if(full<1&&!hasP) continue;
+      const R=pts.slice(0,full+1);
+      if(hasP) R.push({x:px,y:py,w:R[R.length-1].w});
+      for(let a=0;a<R.length-1;a+=5){
+        const b=Math.min(a+5,R.length-1);
+        let ws=0;for(let i=a;i<=b;i++)ws+=R[i].w;
+        const w=Math.max(.45,ws/(b-a+1));
+        const alpha=.28+Math.min(1,w/2.8)*.67;
+        const path=()=>{
+          ctx.beginPath();
+          ctx.moveTo(R[a].x,R[a].y);
+          for(let i=a+1;i<b;i++){
+            ctx.quadraticCurveTo(R[i].x,R[i].y,(R[i].x+R[i+1].x)/2,(R[i].y+R[i+1].y)/2);
+          }
+          ctx.lineTo(R[b].x,R[b].y);
+        };
+        ctx.strokeStyle=rgb(p.ink);
+        if(w>1.1){ctx.globalAlpha=alpha*.14;ctx.lineWidth=w*1.9;path();ctx.stroke();}
+        ctx.globalAlpha=alpha;ctx.lineWidth=w;
+        path();ctx.stroke();
+      }
     }
     /* 花:末梢细环+蕊点,回弹绽开;果:环收成朱红,带淡晕 */
     for(const t of tips){
@@ -2099,7 +2138,8 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       if(fp<1){
         ctx.globalAlpha=.75*bp*(1-fp);
         ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
-        ctx.beginPath();ctx.arc(t.x,t.y,3*bs*(1-fp*.35),0,6.2832);ctx.stroke();
+        const er=3*bs*(1-fp*.35);
+        ctx.beginPath();ctx.ellipse(t.x,t.y,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),t.rot,0,6.2832);ctx.stroke();
         ctx.globalAlpha=.5*bp*(1-fp);ctx.fillStyle=rgb(p.ink);
         ctx.beginPath();ctx.arc(t.x,t.y,.9*bp,0,6.2832);ctx.fill();
       }
@@ -2138,11 +2178,15 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 
   new ResizeObserver(resize).observe(canvas);
   if(reduceMotion) return;
-  /* 滚动驱动:画布顶从 80% 视口高走到 28% 时树长完——
-     生长全程画布都在视野里,不会"还没看就长完" */
+  /* 钉住长卷:与 vision 同款 JS 钉住(body overflow-x:hidden 会废掉
+     CSS sticky)——滚过 stage(280vh−一屏)的距离=树的一生 */
+  const stage=document.getElementById('growth');
+  const pin=document.getElementById('growth-pin');
   function frame(){
-    const r=canvas.getBoundingClientRect();
-    const target=clamp((innerHeight*.8-r.top)/(innerHeight*.52),0,1);
+    const total=stage.offsetHeight-innerHeight;
+    const y=clamp(-stage.getBoundingClientRect().top,0,total);
+    pin.style.transform=`translate3d(0,${y}px,0)`;
+    const target=clamp(y/Math.max(1,total),0,1);
     g=Math.abs(target-g)<.0005?target:g+(target-g)*.14;
     draw(g,performance.now()/1000);
     raf=requestAnimationFrame(frame);
@@ -2152,7 +2196,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       if(e.isIntersecting&&!raf)raf=requestAnimationFrame(frame);
       else if(!e.isIntersecting&&raf){cancelAnimationFrame(raf);raf=null;}
     });
-  },{threshold:.02}).observe(canvas);
+  },{threshold:.02}).observe(stage);
 })();
 
 /* ============================================================
