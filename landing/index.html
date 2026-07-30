@@ -1954,12 +1954,11 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 
 /* ============================================================
    03 多线并行：生长树
-   曲线二叉树:每枝都是三次贝塞尔,入口切向继承父枝出口
-   方向,关节处处相切,全树没有一根直线;等比枝长、递减
-   分叉角、确定性微幅 sweep,自动取景适配任意窗口。
-   随滚动生长——画布进入视野中段才开始,占满屏幕时长成;
-   开花→结果→散种,种子飘回根的方向。单枝 easeInOut +
-   子枝 55% 重叠推进 + 花果回弹,流畅度对齐生命场。
+   空间殖民生长树(Runions 2005/2007, Algorithmic Botany):
+   吸引子散布在右侧椭圆树冠,枝梢竞争空间逐代生长,天然
+   不对称;长吸引距离+父向延续出柔和曲线;Murray 定律回
+   流管径,干粗梢细,粗者更实。随滚动按出生时刻长成,
+   开花→结果→散种,种子飘回根的方向。
    reduceMotion 直接落最终帧。
    ============================================================ */
 (function(){
@@ -1967,12 +1966,12 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const LEVELS = 5;                                  /* 五级分叉,32 个末梢 */
+  const SEED = 20260730;
   const G_GROW = .56, G_BLOOM = .76, G_SEED = .88;   /* 阶段窗口:生长→开花→结果→散种 */
   const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
-  const easeInOut = t=>t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
   const back = t=>{const c=1.4;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2);};
   const hash = i=>{const x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
   /* 与生命场同一套明暗色板 */
   const PAL = {
@@ -1983,50 +1982,86 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   const rgb = c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 
   let W=0, H=0, g=0, raf=null;
-  let branches=[], tips=[], seeds=[];
+  let nodes=[], tips=[], seeds=[], iters=1, seg=5;
 
+  /* 空间殖民(Runions 2005/2007, jasonwebb 开源实现的忠实移植):
+     每个吸引子只影响最近节点,节点被抵达即死亡;受影响的节点
+     朝平均方向伸一段,加 edap 抖动防停滞——网络天然不对称,
+     填满椭圆树冠+根部收窄走廊;Murray 定律回流管径,干粗梢细。*/
   function build(){
-    branches=[]; tips=[]; seeds=[];
-    let idx=0, maxT=0;
-    /* 原始坐标:根在原点向 +x 生长,之后统一取景 */
-    (function grow(x,y,inAng,outAng,len,lvl,t0){
-      const i=idx++;
-      outAng=clamp(outAng,-.9,.9);                     /* 扇形树冠,不回头 */
-      const ex=x+Math.cos(outAng)*len, ey=y+Math.sin(outAng)*len;
-      /* 三次贝塞尔:入口切向继承父枝出口方向,关节处处相切 */
-      const k=len*(.38+hash(i*5+2)*.1);
-      const dur=1-Math.min(.3,lvl*.05);
-      const b={x0:x,y0:y,
-               c1x:x+Math.cos(inAng)*k,  c1y:y+Math.sin(inAng)*k,
-               c2x:ex-Math.cos(outAng)*k,c2y:ey-Math.sin(outAng)*k,
-               x1:ex,y1:ey,lvl,t0,t1:t0+dur};
-      branches.push(b); maxT=Math.max(maxT,b.t1);
-      if(lvl>=LEVELS){ tips.push({x:ex,y:ey}); return; }
-      [-1,1].forEach(s=>{
-        const ha=.58*Math.pow(.84,lvl)*(.94+hash(i*7+s+1)*.12);
-        const cl=len*(.78+hash(i*11+s*3)*.08);
-        const sweep=(hash(i*13+s*5)-.5)*.16;           /* 每枝自带一点弯 */
-        grow(ex,ey,outAng,outAng+s*ha+sweep,cl,lvl+1,b.t0+dur*.55); /* 55% 重叠,波形推进 */
-      });
-    })(0,0,-.03,-.03,W*.19,0,0);
-    /* 生长时间归一到 [0,G_GROW] */
-    branches.forEach(b=>{b.t0=b.t0/maxT*G_GROW;b.t1=b.t1/maxT*G_GROW;});
-    /* 自动取景:统一缩放+轻微横向拉伸,根锚左缘,纵向居中 */
-    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
-    const eat=(x,y)=>{minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);};
-    branches.forEach(b=>{eat(b.x0,b.y0);eat(b.c1x,b.c1y);eat(b.c2x,b.c2y);eat(b.x1,b.y1);});
-    const bw=maxX-minX, bh=maxY-minY||1;
-    const s=Math.min(W*.9/bw, H*.76/bh);
-    const sx=Math.min(s*1.42, W*.88/bw);
-    const ox=W*.055-minX*sx, oy=H*.52-(minY+bh/2)*s;
-    branches.forEach(b=>{b.x0=b.x0*sx+ox;b.x1=b.x1*sx+ox;b.c1x=b.c1x*sx+ox;b.c2x=b.c2x*sx+ox;
-                         b.y0=b.y0*s+oy;b.y1=b.y1*s+oy;b.c1y=b.c1y*s+oy;b.c2y=b.c2y*s+oy;});
-    tips.forEach(t=>{t.x=t.x*sx+ox;t.y=t.y*s+oy;});
-    /* 花/果/种子错峰:按末梢顺序自上而下涟漪 */
+    nodes=[]; tips=[]; seeds=[];
+    const rand=mulberry32(SEED);
+    seg=Math.min(W,H)*.007;
+    const AT=seg*10, KILL=seg*2.5, MAXN=4000;
+    const CX=W*.58, CY=H*.5, RX=W*.36, RY=H*.34;
+    /* 场:椭圆树冠 ∪ 根部收窄走廊(颈部宽度控制主干形态) */
+    const attractors=[];
+    const SP=AT*.55, X0=W*.05, X1=CX+RX*.92;
+    for(let gx=X0; gx<X1; gx+=SP){
+      const u=Math.min(1,(gx-X0)/(CX-X0));
+      for(let gy=H*.06; gy<H*.94; gy+=SP){
+        const x=gx+(rand()-.5)*SP*.76, y=gy+(rand()-.5)*SP*.76;
+        const inEllipse=((x-CX)/RX)**2+((y-CY)/RY)**2<=1;
+        const inCorridor=x>=X0&&x<=CX&&Math.abs(y-CY)<=H*(.04+.06*u);
+        if(inEllipse||inCorridor) attractors.push({x,y,dead:false});
+      }
+    }
+    /* 节点网格(增量插入):吸引子查最近节点 */
+    const CELL=AT, ngrid=new Map();
+    const gk=(x,y)=>((x/CELL)|0)+':'+((y/CELL)|0);
+    const gadd=n=>{const k=gk(n.x,n.y);let l=ngrid.get(k);if(!l){l=[];ngrid.set(k,l);}l.push(n);};
+    function closestNode(x,y){
+      let best=null,bd=AT*AT;
+      const cx=(x/CELL)|0, cy=(y/CELL)|0;
+      for(let i=cx-1;i<=cx+1;i++) for(let j=cy-1;j<=cy+1;j++){
+        const l=ngrid.get(i+':'+j); if(!l) continue;
+        for(const n of l){const dx=n.x-x,dy=n.y-y,d2=dx*dx+dy*dy;if(d2<bd){bd=d2;best=n;}}
+      }
+      return best?{n:best,d:Math.sqrt(bd)}:null;
+    }
+    const root={x:X0,y:CY,parent:null,children:[],born:0,bornU:0,w:1};
+    nodes.push(root); gadd(root);
+    iters=0;
+    while(iters<1400){
+      iters++;
+      /* 每个吸引子找最近节点;已被抵达的死亡(open venation) */
+      const inf=new Map();
+      for(const a of attractors){
+        if(a.dead) continue;
+        const c=closestNode(a.x,a.y);
+        if(!c) continue;
+        if(c.d<KILL){a.dead=true;continue;}
+        let l=inf.get(c.n); if(!l){l=[];inf.set(c.n,l);}
+        l.push(a);
+      }
+      if(!inf.size) break;                              /* 场被殖民完,自然收工 */
+      for(const [t,l] of inf){
+        let dx=0,dy=0;
+        for(const a of l){const d=Math.hypot(a.x-t.x,a.y-t.y)||1;dx+=(a.x-t.x)/d;dy+=(a.y-t.y)/d;}
+        dx+=(rand()-.5)*.24; dy+=(rand()-.5)*.24;      /* edap 抖动防停滞 */
+        if(t.parent){const px=t.x-t.parent.x,py=t.y-t.parent.y,pl=Math.hypot(px,py)||1;
+          dx+=px/pl*.3;dy+=py/pl*.3;}                  /* 延续父向,曲线更柔 */
+        const n=Math.hypot(dx,dy)||1;
+        const node={x:t.x+dx/n*seg,y:t.y+dy/n*seg,parent:t,children:[],born:iters,bornU:0,w:1};
+        t.children.push(node);nodes.push(node);gadd(node);
+        if(nodes.length>=MAXN) break;
+      }
+      if(nodes.length>=MAXN) break;
+    }
+    /* Murray 管径回流:梢 1,父 sqrt(Σ子²),归一到 2.8px */
+    (function thick(n){
+      if(!n.children.length){n.w=1;return 1;}
+      let s=0;for(const c of n.children){const w=thick(c);s+=w*w;}
+      n.w=Math.sqrt(s);return n.w;
+    })(root);
+    const wS=2.8/root.w;
+    nodes.forEach(n=>{n.w*=wS;n.bornU=n.born/iters*G_GROW;});
+    /* 梢开花(按出生先后涟漪);三成结果;果实散种 */
+    tips=nodes.filter(n=>!n.children.length);
     tips.forEach((t,i)=>{
-      const u=tips.length>1 ? i/(tips.length-1) : 0;
-      t.bloomAt=G_GROW+.015+u*.13;
-      t.fruit=i%3===0;
+      const u=t.bornU/G_GROW;
+      t.bloomAt=G_GROW+.015+u*.12;
+      t.fruit=hash(i*3+7)<.32;
       t.fruitAt=G_BLOOM+u*.1;
       if(t.fruit) for(let k=0;k<2;k++){
         const h1=hash(i*17+k*5), h2=hash(i*23+k*7), h3=hash(i*29+k*11);
@@ -2036,26 +2071,23 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     });
   }
 
-  const pt={x:0,y:0};
-  function qpos(b,t){const u=1-t;
-    pt.x=u*u*u*b.x0+3*u*u*t*b.c1x+3*u*t*t*b.c2x+t*t*t*b.x1;
-    pt.y=u*u*u*b.y0+3*u*u*t*b.c1y+3*u*t*t*b.c2y+t*t*t*b.y1;}
-
   function draw(g,now){
     const p=darkMq.matches?PAL.dark:PAL.light;
     ctx.clearRect(0,0,W,H);
     ctx.lineCap='round';ctx.lineJoin='round';
-    /* 枝干:按时间窗生长,单枝 easeInOut,越深越细越淡 */
-    for(const b of branches){
-      const f=clamp((g-b.t0)/(b.t1-b.t0),0,1);
+    /* 枝干:按出生时刻浮现,Murray 锥度,粗者更实 */
+    const win=G_GROW/Math.max(1,iters);
+    for(const n of nodes){
+      if(!n.parent) continue;
+      const f=clamp((g-n.bornU)/win,0,1);
       if(f<=0) continue;
-      const fe=easeInOut(f);
-      ctx.strokeStyle=rgb(p.ink);ctx.globalAlpha=.95-b.lvl*.075;
-      ctx.lineWidth=1.8-b.lvl*.16;
-      ctx.beginPath();ctx.moveTo(b.x0,b.y0);
-      const N=20,end=Math.floor(N*fe);
-      for(let i=1;i<=end;i++){qpos(b,i/N);ctx.lineTo(pt.x,pt.y);}
-      if(N*fe>end){qpos(b,fe);ctx.lineTo(pt.x,pt.y);}
+      const w=(n.w+n.parent.w)/2;
+      ctx.strokeStyle=rgb(p.ink);
+      ctx.lineWidth=Math.max(.45,w);
+      ctx.globalAlpha=.28+Math.min(1,w/2.8)*.67;
+      ctx.beginPath();
+      ctx.moveTo(n.parent.x,n.parent.y);
+      ctx.lineTo(n.parent.x+(n.x-n.parent.x)*f,n.parent.y+(n.y-n.parent.y)*f);
       ctx.stroke();
     }
     /* 花:末梢细环+蕊点,回弹绽开;果:环收成朱红,带淡晕 */
