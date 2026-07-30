@@ -220,10 +220,13 @@ describe("TurnGroupView — awaiting between turns", () => {
     mountGroup(turns, true);
 
     // The turn does not look finished: in_progress status, no action bar,
-    // and the fold stays expanded so the shimmering spawn row is visible.
+    // and one quiet synthetic activity preview carries the live shimmer while
+    // the real parent turn is parked between subagent wake-ups.
     expect(section().dataset.turnStatus).toBe("in_progress");
     expect(actionBars()).toHaveLength(0);
-    expect(foldToggle().getAttribute("aria-expanded")).toBe("true");
+    expect(foldToggle().getAttribute("aria-expanded")).toBe("false");
+    const waiting = container.querySelector(".turn-process-preview-activity.is-live");
+    expect(waiting?.textContent).toContain("子任务仍在运行");
   });
 
   it("releases to the normal single-turn path when nothing is awaiting", () => {

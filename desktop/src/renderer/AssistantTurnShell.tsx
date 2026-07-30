@@ -54,6 +54,7 @@ export function AssistantTurnShell({
   onOpenRuns,
   onCollapseComplete,
   suppressAnswerHandoff,
+  waitingForSubagent,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -71,6 +72,8 @@ export function AssistantTurnShell({
    *  process fold, because the live spawn rows are the only surface that
    *  still shows the subagents running. */
   suppressAnswerHandoff?: boolean;
+  /** The group is between real turns while one or more subagents still run. */
+  waitingForSubagent?: boolean;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -115,7 +118,8 @@ export function AssistantTurnShell({
     (entry) =>
       entry.item.type === "agent_message" &&
       streamFieldValue(entry.turn?.id ?? turn.id, entry.item, "text").trim().length > 0,
-  ) && !suppressAnswerHandoff;
+  ) && !suppressAnswerHandoff && !waitingForSubagent;
+  const processCollapseRequested = answerHandoffRequested || Boolean(waitingForSubagent);
 
   const className = [
     "assistant-turn-shell",
@@ -145,7 +149,8 @@ export function AssistantTurnShell({
         <TurnProcessFold
           entries={processEntries}
           subagentChips={display.subagentChips}
-          collapseRequested={answerHandoffRequested}
+          collapseRequested={processCollapseRequested}
+          waitingForSubagent={waitingForSubagent}
           latestPreview={
             answerHandoffRequested ? undefined : display.latestProcessPreview
           }
@@ -181,6 +186,7 @@ function TurnProcessFold({
   entries,
   subagentChips,
   collapseRequested,
+  waitingForSubagent,
   latestPreview,
   sources,
   onOpenSource,
@@ -200,6 +206,7 @@ function TurnProcessFold({
    *  the elapsed-time label. */
   subagentChips: SubagentChipDisplay[];
   collapseRequested: boolean;
+  waitingForSubagent?: boolean;
   latestPreview?: TurnProcessPreview;
   sources: ReturnType<typeof collectTurnSources>;
   onOpenSource?: (url: string) => void;
@@ -299,7 +306,11 @@ function TurnProcessFold({
   }, []);
 
   const hasDetails = entries.length > 0;
-  const visiblePreview = expanded ? undefined : latestPreview;
+  const visiblePreview = waitingForSubagent
+    ? { text: translate("process.waitingForSubagents"), kind: "activity" as const }
+    : expanded
+      ? undefined
+      : latestPreview;
   const hasPreview = Boolean(visiblePreview);
   const activeGrayEntryKey =
     turn.status === "in_progress"

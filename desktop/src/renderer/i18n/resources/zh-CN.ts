@@ -905,6 +905,7 @@ export const zhCN = {
   "process.viewReasoning": "查看思考过程",
   "process.finishedUnderSecond": "用时不到 1 秒",
   "process.finishedIn": "用时 {duration}",
+  "process.waitingForSubagents": "子任务仍在运行",
   "message.userActions": "用户消息操作",
   "message.viewFullProcess": "查看完整过程",
   "message.viewProcess": "查看过程",

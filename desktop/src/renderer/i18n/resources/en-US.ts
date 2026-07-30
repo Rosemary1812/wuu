@@ -907,6 +907,7 @@ export const enUS = {
   "process.viewReasoning": "View reasoning",
   "process.finishedUnderSecond": "Finished in under 1 second",
   "process.finishedIn": "Finished in {duration}",
+  "process.waitingForSubagents": "Subagents are still running",
   "message.userActions": "User message actions",
   "message.viewFullProcess": "View full process",
   "message.viewProcess": "View process",

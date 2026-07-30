@@ -165,6 +165,7 @@ function MergedTurnGroupView({
 
   const display = useMemo(() => mergeTurnDisplays(turns), [turns]);
   const presented = useAssistantTurnPresentation(shellTurn.id, display);
+  const waitingForSubagent = Boolean(awaiting) && !anyMemberInProgress;
 
   const hasMissingReply =
     closed && presented?.missingReplyMessage !== undefined;
@@ -223,11 +224,11 @@ function MergedTurnGroupView({
             onOpenRuns ? () => onOpenRuns(last.id) : undefined
           }
           onCollapseComplete={onCollapseComplete}
-          // While the orchestration is parked between turns, the answer
-          // handoff must not collapse the process fold: the shimmering
-          // spawn rows are exactly what tells the user the subagents are
-          // still running.
-          suppressAnswerHandoff={Boolean(awaiting) && !anyMemberInProgress}
+          // Between wake turns the group remains live, but its settled
+          // process history yields to one synthetic shimmering activity
+          // preview so it cannot read like a finished answer.
+          suppressAnswerHandoff={waitingForSubagent}
+          waitingForSubagent={waitingForSubagent}
         />
       ) : null}
       {turns.map((member) => {
