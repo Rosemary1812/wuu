@@ -1324,6 +1324,15 @@
   padding: 24px;
 }
 
+.sidebar-name-dialog-overlay-drawer {
+  align-items: stretch;
+  justify-items: end;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .sidebar-name-dialog {
   width: min(520px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
@@ -1331,6 +1340,19 @@
   gap: 14px;
   padding: 18px;
   transform-origin: center;
+}
+
+.sidebar-name-dialog-drawer {
+  width: min(380px, 100vw);
+  max-height: none;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-left: 1px solid var(--hairline-strong);
+  border-radius: 0;
+  box-shadow: -18px 0 40px var(--env-shadow-dark-010);
+  transform-origin: right center;
+  animation: sidebar-name-dialog-drawer-in var(--search-enter-duration) var(--search-motion-easing) both;
 }
 
 .sidebar-name-dialog-header {

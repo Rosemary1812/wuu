@@ -8,6 +8,7 @@ import { ChannelComposer } from "./ChannelComposer";
 import { ChannelGroupAvatar } from "./ChannelGroupAvatar";
 import { buildComposerAttachments } from "./ComposerDraftState";
 import { ComposerAttachmentStrip } from "./ComposerInputSections";
+import { DefaultAvatarMark } from "./DefaultAvatar";
 import {
   awaitComposerImages,
   inputFilesFromComposer,
@@ -218,6 +219,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     () => rooms.find((room) => room.id === selectedRoomID),
     [rooms, selectedRoomID],
   );
+  const roomIncludesCurrentUser = selectedRoom?.members.some(
+    (member) => member.member_type === "human" && member.member_id === "local-user",
+  ) ?? false;
   const agentNames = useMemo(
     () => new Map(agents.map((agent) => [agent.id, agent.name])),
     [agents],
@@ -1158,36 +1162,95 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         cancelLabel={t("channels.cancel")}
         submitDisabled={!roomName.trim()}
         destructiveAction={editingRoomID ? { label: t("channels.deleteRoom"), onClick: () => void deleteRoom() } : undefined}
-        content={<div className="channel-setup-form">
-          <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.name")}</span><input className="sidebar-name-dialog-input" value={roomName} onChange={(event) => setRoomName(event.currentTarget.value)} autoFocus /></label>
-          <fieldset className="channel-room-avatar-picker">
-            <legend>{t("channels.groupAvatar")}</legend>
-            <button
-              className="channel-room-avatar-preview"
-              type="button"
-              aria-label={t("channels.customGroupAvatar")}
-              onClick={() => chooseRoomAvatar("")}
-            >
-              <ChannelGroupAvatar
-                room={{
-                  id: editingRoomID || "new-room",
-                  kind: "channel",
-                  name: roomName,
-                  avatar_image: roomAvatarImage || undefined,
-                  created_by: "local-user",
-                  created_at: "",
-                  members: [
-                    { room_id: editingRoomID || "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
-                    ...roomAgentIDs.map((agentID) => ({ room_id: editingRoomID || "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
-                  ],
-                }}
-                agents={agents}
+        variant={editingRoomID ? "drawer" : "default"}
+        content={editingRoomID ? (
+          <div className="channel-room-details-form">
+            <label className="sidebar-name-dialog-field">
+              <span className="sidebar-name-dialog-label">{t("channels.name")}</span>
+              <input
+                className="sidebar-name-dialog-input"
+                value={roomName}
+                onChange={(event) => setRoomName(event.currentTarget.value)}
+                autoFocus
               />
-              <span><ImagePlus className="icon" />{t("channels.customGroupAvatar")}</span>
-            </button>
-          </fieldset>
-          <fieldset><legend>{t("channels.groupMembers")}</legend>{agents.map((agent) => <label className="channel-checkbox-row" key={agent.id}><input type="checkbox" checked={roomAgentIDs.includes(agent.id)} onChange={() => toggleRoomAgent(agent.id)} /><span>{agent.name}</span></label>)}</fieldset>
-        </div>}
+            </label>
+            <section className="channel-room-members-section" aria-labelledby="channel-room-members-title">
+              <header className="channel-room-members-header">
+                <div>
+                  <h3 id="channel-room-members-title">{t("channels.groupMembers")}</h3>
+                  <span>{t("channels.memberCount", { count: roomAgentIDs.length + (roomIncludesCurrentUser ? 1 : 0) })}</span>
+                </div>
+                <SelectMenu
+                  value=""
+                  onChange={(agentID) => toggleRoomAgent(agentID)}
+                  options={agents
+                    .filter((agent) => !roomAgentIDs.includes(agent.id))
+                    .map((agent) => ({ value: agent.id, label: agent.name }))}
+                  placeholder={t("channels.addMember")}
+                  ariaLabel={t("channels.addMember")}
+                  triggerClassName="channel-room-member-add-trigger"
+                  disabled={agents.every((agent) => roomAgentIDs.includes(agent.id))}
+                />
+              </header>
+              <div className="channel-room-member-grid">
+                {roomIncludesCurrentUser ? (
+                  <div className="channel-room-member-card current" aria-label={t("channels.you")}>
+                    <span className="channel-room-member-avatar">
+                      <DefaultAvatarMark seed="local-user" />
+                    </span>
+                    <span className="channel-room-member-name">{t("channels.you")}</span>
+                  </div>
+                ) : null}
+                {agents.filter((agent) => roomAgentIDs.includes(agent.id)).map((agent) => (
+                  <button
+                    className="channel-room-member-card"
+                    key={agent.id}
+                    type="button"
+                    aria-label={t("channels.removeMember", { name: agent.name })}
+                    onClick={() => toggleRoomAgent(agent.id)}
+                  >
+                    <span className="channel-room-member-avatar">
+                      <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
+                    </span>
+                    <span className="channel-room-member-name">{agent.name}</span>
+                    <span className="channel-room-member-remove" aria-hidden="true"><X className="icon" /></span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : (
+          <div className="channel-setup-form">
+            <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.name")}</span><input className="sidebar-name-dialog-input" value={roomName} onChange={(event) => setRoomName(event.currentTarget.value)} autoFocus /></label>
+            <fieldset className="channel-room-avatar-picker">
+              <legend>{t("channels.groupAvatar")}</legend>
+              <button
+                className="channel-room-avatar-preview"
+                type="button"
+                aria-label={t("channels.customGroupAvatar")}
+                onClick={() => chooseRoomAvatar("")}
+              >
+                <ChannelGroupAvatar
+                  room={{
+                    id: editingRoomID || "new-room",
+                    kind: "channel",
+                    name: roomName,
+                    avatar_image: roomAvatarImage || undefined,
+                    created_by: "local-user",
+                    created_at: "",
+                    members: [
+                      { room_id: editingRoomID || "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
+                      ...roomAgentIDs.map((agentID) => ({ room_id: editingRoomID || "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
+                    ],
+                  }}
+                  agents={agents}
+                />
+                <span><ImagePlus className="icon" />{t("channels.customGroupAvatar")}</span>
+              </button>
+            </fieldset>
+            <fieldset><legend>{t("channels.groupMembers")}</legend>{agents.map((agent) => <label className="channel-checkbox-row" key={agent.id}><input type="checkbox" checked={roomAgentIDs.includes(agent.id)} onChange={() => toggleRoomAgent(agent.id)} /><span>{agent.name}</span></label>)}</fieldset>
+          </div>
+        )}
       />
       <SidebarNameDialog
         open={setupPanel === "task"}
