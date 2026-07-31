@@ -592,7 +592,6 @@ describe("ChannelView", () => {
     expect(api.updateChannelRoom).toHaveBeenCalledWith({
       room_id: "room-2",
       name: "research",
-      avatar_image: "",
       agent_ids: ["agent-1"],
     });
 
@@ -629,7 +628,6 @@ describe("ChannelView", () => {
     expect(api.updateChannelRoom).toHaveBeenCalledWith({
       room_id: "room-1",
       name: "general",
-      avatar_image: "",
       agent_ids: ["agent-2"],
     });
   });

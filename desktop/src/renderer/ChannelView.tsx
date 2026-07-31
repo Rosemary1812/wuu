@@ -459,7 +459,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         const result = await window.wuu.updateChannelRoom({
           room_id: roomID,
           name,
-          avatar_image: roomAvatarImage,
           agent_ids: roomAgentIDs,
         });
         if (result.room.id === roomID) {
