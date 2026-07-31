@@ -29,6 +29,14 @@
 
 ## 浏览器
 
+内置浏览器可以单独使用 Clash 等本地代理，不会改变 app-server 或模型服务的网络连接。启动桌面端前设置 `WUU_BROWSER_PROXY`，例如 Clash Verge 常见的混合端口：
+
+```bash
+WUU_BROWSER_PROXY=http://127.0.0.1:7897 npm run dev --prefix desktop
+```
+
+打包版可以从终端传入同名环境变量后启动应用。代理只作用于 Wuu 内置浏览器使用的 session；如果代理端口不可用，桌面端和 API 服务仍会正常启动，但浏览器请求会失败，修正端口后重启桌面端即可。
+
 浏览器面板用于在工作区旁查看网页。Agent 操作网页时，你可以选择**接管浏览器**进行
 手动操作，再选择**交还浏览器给 Agent**让任务继续；需要结束本次自动化时选择
 **停止浏览器 Activity**。Agent 控制浏览器仍需要当前 shell 和 runtime 提供对应能力；

@@ -1007,6 +1007,21 @@ export function installBrowserSessionHandlers(session: Session, coordinator: Bro
   });
 }
 
+// Configure only the embedded browser partition. The app-server and model
+// provider clients use their own transports, so this must not be replaced with
+// a process-wide proxy setting. Keep the proxy opt-in: machines without Clash
+// should retain Electron's normal direct connection.
+export async function configureBrowserProxy(
+  session: Pick<Session, "setProxy">,
+  rawProxy = process.env.WUU_BROWSER_PROXY,
+): Promise<boolean> {
+  const proxy = rawProxy?.trim();
+  if (!proxy) return false;
+
+  await session.setProxy({ proxyRules: proxy });
+  return true;
+}
+
 export function defaultBrowserHostDeps(
   createHostWindow: () => BrowserHostWindowHandle,
   createView: () => BrowserViewHandle,
