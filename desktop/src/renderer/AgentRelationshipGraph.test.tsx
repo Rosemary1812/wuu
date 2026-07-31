@@ -30,7 +30,7 @@ describe("AgentRelationshipGraph", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses a full-height canvas and keeps a dragged node where it is placed", () => {
+  it("keeps the grabbed point under the cursor while dragging", () => {
     const onSelectAgent = vi.fn();
     const agents = [
       { id: "agent-1", name: "Andy", avatar_key: "abstract-1" },
@@ -72,6 +72,8 @@ describe("AgentRelationshipGraph", () => {
     expect(onSelectAgent).toHaveBeenCalledWith(agents[1]);
     expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
 
+    // Andy starts at (610, 280); grabbing its exact centre moves the centre
+    // with the cursor.
     act(() => {
       node.dispatchEvent(pointerEvent("pointerdown", 610, 280));
       node.dispatchEvent(pointerEvent("pointermove", 200, 150));
@@ -82,5 +84,16 @@ describe("AgentRelationshipGraph", () => {
     expect(Array.from(container.querySelectorAll("line")).some((line) =>
       line.getAttribute("x1") === "200" || line.getAttribute("x2") === "200"
     )).toBe(true);
+
+    // Grabbing off-centre must not snap the node centre to the cursor: the
+    // grab offset (-12, -8) is preserved through the drag.
+    act(() => {
+      node.dispatchEvent(pointerEvent("pointerdown", 212, 158));
+      node.dispatchEvent(pointerEvent("pointermove", 400, 300));
+      node.dispatchEvent(pointerEvent("pointerup", 400, 300));
+    });
+
+    expect(node.getAttribute("transform")).toBe("translate(388 292)");
+    expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
   });
 });

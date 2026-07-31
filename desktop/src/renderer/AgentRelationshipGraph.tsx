@@ -23,7 +23,6 @@ type GraphNode = {
   vx: number;
   vy: number;
   radius: number;
-  pinned: boolean;
 };
 
 type GraphLink = {
@@ -51,7 +50,6 @@ function buildGraph(agents: NamedAgent[], rooms: ChannelRoom[]): { nodes: GraphN
       vx: 0,
       vy: 0,
       radius: 24,
-      pinned: false,
     };
     nodes.push(node);
     byID.set(node.id, node);
@@ -68,7 +66,6 @@ function buildGraph(agents: NamedAgent[], rooms: ChannelRoom[]): { nodes: GraphN
       vx: 0,
       vy: 0,
       radius: 8,
-      pinned: false,
     };
     nodes.push(node);
     byID.set(node.id, node);
@@ -118,14 +115,23 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   const nodeRefs = useRef(new Map<string, SVGGElement>());
   const linkRefs = useRef(new Map<string, SVGLineElement>());
   const frameRef = useRef<number | null>(null);
+  const canvasRef = useRef<SVGSVGElement | null>(null);
   const viewportElementRef = useRef<SVGGElement | null>(null);
   const viewportRef = useRef({ x: 0, y: 0, scale: 1 });
   const restartRef = useRef<() => void>(() => undefined);
   const paintRef = useRef<() => void>(() => undefined);
-  const dragRef = useRef<{ node: GraphNode; pointerID: number; moved: boolean } | null>(null);
+  const dragRef = useRef<{ node: GraphNode; pointerID: number; moved: boolean; downClientX: number; downClientY: number; offsetX: number; offsetY: number } | null>(null);
   const panRef = useRef<{ pointerID: number; x: number; y: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
+    // Obsidian-style force simulation: the loop never stops, it cools toward
+    // a small alpha floor so nodes always stay subject to forces; dragging
+    // re-heats the graph so neighbours react with elastic lag.
+    const ALPHA_FLOOR = 0.012;
+    const DRAG_ALPHA_TARGET = 0.3;
+    const VELOCITY_DECAY = 0.86;
+    const MAX_SPEED = 14;
+    const BOUNDS_MARGIN = 40;
     let alpha = 1;
     let stopped = false;
     const paint = (): void => {
@@ -145,6 +151,9 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     const tick = (): void => {
       frameRef.current = null;
       if (stopped) return;
+      const alphaTarget = dragRef.current ? DRAG_ALPHA_TARGET : 0;
+      alpha += (alphaTarget - alpha) * 0.04;
+      if (alpha < ALPHA_FLOOR) alpha = ALPHA_FLOOR;
       for (let leftIndex = 0; leftIndex < graph.nodes.length; leftIndex++) {
         const left = graph.nodes[leftIndex];
         for (let rightIndex = leftIndex + 1; rightIndex < graph.nodes.length; rightIndex++) {
@@ -161,12 +170,19 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
           left.vy -= dy * repulsion;
           right.vx += dx * repulsion;
           right.vy += dy * repulsion;
+          // Positional overlap correction: energy-free, so nodes resting in
+          // contact separate steadily instead of vibrating.
           const overlap = (left.radius + right.radius) * settingsRef.current.nodeScale * densityScale + 16 - distance;
           if (overlap > 0) {
-            left.vx -= dx * overlap * 0.025;
-            left.vy -= dy * overlap * 0.025;
-            right.vx += dx * overlap * 0.025;
-            right.vy += dy * overlap * 0.025;
+            const push = overlap * 0.5 * Math.max(alpha, 0.08);
+            if (dragRef.current?.node !== left) {
+              left.x -= dx * push;
+              left.y -= dy * push;
+            }
+            if (dragRef.current?.node !== right) {
+              right.x += dx * push;
+              right.y += dy * push;
+            }
           }
         }
       }
@@ -178,7 +194,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         const desiredLength = link.kind === "relationship"
           ? Math.max(64, (settingsRef.current.linkLength - link.weight * 12) * densityLengthScale)
           : settingsRef.current.linkLength * 0.78 * densityLengthScale;
-        const strength = link.kind === "relationship" ? 0.0038 : 0.0012;
+        const strength = link.kind === "relationship" ? 0.09 : 0.055;
         const pull = (distance - desiredLength) * strength * alpha;
         link.source.vx += (dx / distance) * pull;
         link.source.vy += (dy / distance) * pull;
@@ -186,24 +202,33 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         link.target.vy -= (dy / distance) * pull;
       }
       for (const node of graph.nodes) {
-        if (dragRef.current?.node === node || node.pinned) {
+        if (dragRef.current?.node === node) {
           node.vx = 0;
           node.vy = 0;
           continue;
         }
-        node.vx += (GRAPH_WIDTH / 2 - node.x) * settingsRef.current.centerForce * 0.047 * alpha;
-        node.vy += (GRAPH_HEIGHT / 2 - node.y) * settingsRef.current.centerForce * 0.06 * alpha;
-        node.vx *= 0.88;
-        node.vy *= 0.88;
-        node.x = Math.max(56, Math.min(GRAPH_WIDTH - 56, node.x + node.vx));
-        node.y = Math.max(44, Math.min(GRAPH_HEIGHT - 44, node.y + node.vy));
+        node.vx += (GRAPH_WIDTH / 2 - node.x) * settingsRef.current.centerForce * alpha;
+        node.vy += (GRAPH_HEIGHT / 2 - node.y) * settingsRef.current.centerForce * alpha;
+        // Soft bounds: a gentle push back instead of a hard clamp.
+        if (node.x < BOUNDS_MARGIN) node.vx += (BOUNDS_MARGIN - node.x) * 0.04;
+        else if (node.x > GRAPH_WIDTH - BOUNDS_MARGIN) node.vx -= (node.x - (GRAPH_WIDTH - BOUNDS_MARGIN)) * 0.04;
+        if (node.y < BOUNDS_MARGIN) node.vy += (BOUNDS_MARGIN - node.y) * 0.04;
+        else if (node.y > GRAPH_HEIGHT - BOUNDS_MARGIN) node.vy -= (node.y - (GRAPH_HEIGHT - BOUNDS_MARGIN)) * 0.04;
+        node.vx *= VELOCITY_DECAY;
+        node.vy *= VELOCITY_DECAY;
+        const speed = Math.hypot(node.vx, node.vy);
+        if (speed > MAX_SPEED) {
+          node.vx = (node.vx / speed) * MAX_SPEED;
+          node.vy = (node.vy / speed) * MAX_SPEED;
+        }
+        node.x += node.vx;
+        node.y += node.vy;
       }
       paint();
-      alpha *= 0.975;
-      if (alpha > 0.018 || dragRef.current) frameRef.current = window.requestAnimationFrame(tick);
+      frameRef.current = window.requestAnimationFrame(tick);
     };
     restartRef.current = () => {
-      alpha = Math.max(alpha, 0.42);
+      alpha = Math.max(alpha, 0.55);
       if (frameRef.current === null) frameRef.current = window.requestAnimationFrame(tick);
     };
     paint();
@@ -221,13 +246,24 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     restartRef.current();
   }
 
-  function pointFromEvent(event: ReactPointerEvent<SVGGElement>): { x: number; y: number } {
-    const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+  function viewBoxPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = canvasRef.current;
+    const ctm = svg?.getScreenCTM?.();
+    if (svg && ctm) {
+      const point = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+      return { x: point.x, y: point.y };
+    }
+    // Fallback for environments without SVG geometry (tests): assumes the
+    // viewBox fills the element without letterboxing.
+    const bounds = svg?.getBoundingClientRect();
     if (!bounds || bounds.width === 0 || bounds.height === 0) return { x: GRAPH_WIDTH / 2, y: GRAPH_HEIGHT / 2 };
-    const rawX = ((event.clientX - bounds.left) / bounds.width) * GRAPH_WIDTH;
-    const rawY = ((event.clientY - bounds.top) / bounds.height) * GRAPH_HEIGHT;
+    return { x: ((clientX - bounds.left) / bounds.width) * GRAPH_WIDTH, y: ((clientY - bounds.top) / bounds.height) * GRAPH_HEIGHT };
+  }
+
+  function worldPointFromEvent(event: ReactPointerEvent<SVGGElement>): { x: number; y: number } {
+    const point = viewBoxPoint(event.clientX, event.clientY);
     const viewport = viewportRef.current;
-    return { x: (rawX - viewport.x) / viewport.scale, y: (rawY - viewport.y) / viewport.scale };
+    return { x: (point.x - viewport.x) / viewport.scale, y: (point.y - viewport.y) / viewport.scale };
   }
 
   function applyViewport(): void {
@@ -246,20 +282,18 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
 
   function handleWheel(event: ReactWheelEvent<SVGSVGElement>): void {
     event.preventDefault();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    if (bounds.width === 0 || bounds.height === 0) return;
-    const x = ((event.clientX - bounds.left) / bounds.width) * GRAPH_WIDTH;
-    const y = ((event.clientY - bounds.top) / bounds.height) * GRAPH_HEIGHT;
-    zoomAt(viewportRef.current.scale * Math.exp(-event.deltaY * 0.0015), x, y);
+    const point = viewBoxPoint(event.clientX, event.clientY);
+    zoomAt(viewportRef.current.scale * Math.exp(-event.deltaY * 0.0015), point.x, point.y);
   }
 
   function handleCanvasPointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
     if (event.target !== event.currentTarget) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const point = viewBoxPoint(event.clientX, event.clientY);
     panRef.current = {
       pointerID: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
+      x: point.x,
+      y: point.y,
       originX: viewportRef.current.x,
       originY: viewportRef.current.y,
     };
@@ -268,9 +302,9 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   function handleCanvasPointerMove(event: ReactPointerEvent<SVGSVGElement>): void {
     const pan = panRef.current;
     if (!pan || pan.pointerID !== event.pointerId) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    viewportRef.current.x = pan.originX + ((event.clientX - pan.x) / Math.max(bounds.width, 1)) * GRAPH_WIDTH;
-    viewportRef.current.y = pan.originY + ((event.clientY - pan.y) / Math.max(bounds.height, 1)) * GRAPH_HEIGHT;
+    const point = viewBoxPoint(event.clientX, event.clientY);
+    viewportRef.current.x = pan.originX + (point.x - pan.x);
+    viewportRef.current.y = pan.originY + (point.y - pan.y);
     applyViewport();
   }
 
@@ -282,25 +316,31 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
 
   function handlePointerDown(event: ReactPointerEvent<SVGGElement>, node: GraphNode): void {
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { node, pointerID: event.pointerId, moved: false };
+    const point = worldPointFromEvent(event);
+    dragRef.current = {
+      node,
+      pointerID: event.pointerId,
+      moved: false,
+      downClientX: event.clientX,
+      downClientY: event.clientY,
+      offsetX: node.x - point.x,
+      offsetY: node.y - point.y,
+    };
+    restartRef.current();
   }
 
   function handlePointerMove(event: ReactPointerEvent<SVGGElement>): void {
     const drag = dragRef.current;
     if (!drag || drag.pointerID !== event.pointerId) return;
     if (!drag.moved) {
-      drag.node.pinned = true;
-      drag.node.vx = 0;
-      drag.node.vy = 0;
-      if (frameRef.current !== null) {
-        window.cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
+      if (Math.hypot(event.clientX - drag.downClientX, event.clientY - drag.downClientY) < 4) return;
+      drag.moved = true;
     }
-    const point = pointFromEvent(event);
-    drag.node.x = point.x;
-    drag.node.y = point.y;
-    drag.moved = true;
+    const point = worldPointFromEvent(event);
+    drag.node.x = point.x + drag.offsetX;
+    drag.node.y = point.y + drag.offsetY;
+    drag.node.vx = 0;
+    drag.node.vy = 0;
     paintRef.current();
   }
 
@@ -319,7 +359,6 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     viewportRef.current = { x: 0, y: 0, scale: 1 };
     applyViewport();
     for (const node of graph.nodes) {
-      node.pinned = false;
       node.vx = 0;
       node.vy = 0;
     }
@@ -331,6 +370,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       <div className="channel-agent-graph-surface">
       <button className="icon-button channel-agent-graph-settings-toggle" type="button" aria-label={t("channels.graphSettings")} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}><Settings2 className="icon" /></button>
       <svg
+        ref={canvasRef}
         className="channel-agent-graph-canvas"
         viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
         role="img"
