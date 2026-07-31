@@ -10,6 +10,19 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ### Changed
 
+- `unconfined` permission mode now lifts only the path boundary and keeps a
+  protection floor in every mode. Sensitive paths (`.env`, SSH private keys,
+  credential configuration) can no longer be written through file tools or
+  staged/committed through git in `unconfined`; reads of sensitive files
+  reach the model with common secret patterns masked; command-output
+  redaction stays on. The app's own credential files under the wuu home
+  (`auth.json`, `credentials.json`, `remote.json`, `phone.json`) are now
+  unreadable and unwritable through agent tools in every mode — previously
+  `standard` mode could overwrite them through the runtime-metadata
+  exemption. The sensitive-path list also covers `id_rsa`/`id_ed25519`/
+  `id_ecdsa` key files, and output redaction now masks PEM private-key
+  blocks.
+
 - Background command records now add durable owning-conversation and app-server
   host-generation data. The owning conversation is taken from host state rather
   than a model argument. This is additive record data only: no lifecycle cleanup

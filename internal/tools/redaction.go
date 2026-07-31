@@ -7,6 +7,9 @@ var toolOutputRedactors = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|authorization|password|passwd|secret)\s*[:=]\s*["']?[^"'\s,;]+`),
 	regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`),
 	regexp.MustCompile(`\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b`),
+	// PEM-encoded private keys (SSH, TLS): the base64 body contains no
+	// key=value marker, so it needs a dedicated block pattern.
+	regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`),
 }
 
 var (

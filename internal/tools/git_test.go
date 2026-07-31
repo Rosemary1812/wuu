@@ -570,24 +570,29 @@ func TestToolkit_Git_CommitRejectsSensitiveStagedPaths(t *testing.T) {
 	}
 }
 
-func TestToolkit_Git_UnconfinedAllowsSensitiveStageAndCommitWithoutConfirmation(t *testing.T) {
+func TestToolkit_Git_UnconfinedStillRejectsSensitiveStageAndCommit(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	kit.SetBoundary(UnconfinedBoundary())
 	runBash(t, root, "printf 'API_KEY=full-access-secret\n' > .env")
 
-	p := gitCall(t, kit, "add", ".env")
-	requireGitAction(t, p, "add")
-	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != ".env" {
-		t.Fatalf("unconfined git add should stage sensitive path, staged: %q", got)
+	// Unconfined lifts the path boundary but not secret staging guards.
+	msg := gitErr(t, kit, "add", ".env")
+	if !strings.Contains(msg, "sensitive path") || !strings.Contains(msg, "explicit secret handling") {
+		t.Fatalf("expected sensitive path staging guidance in unconfined mode, got: %q", msg)
+	}
+	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "" {
+		t.Fatalf("sensitive file should not be staged in unconfined mode, staged: %q", got)
 	}
 
-	p = gitCall(t, kit, "commit", "-m", "Add env")
-	requireGitAction(t, p, "commit")
-	if p["exit_code"].(float64) != 0 {
-		t.Fatalf("unconfined git commit should run without extra confirmation: %+v", p)
+	// Even when the sensitive file was staged outside the tool, commit
+	// must refuse it in unconfined mode too.
+	runBash(t, root, "git add .env")
+	msg = gitErr(t, kit, "commit", "-m", "Add env")
+	if !strings.Contains(msg, "staged sensitive path") {
+		t.Fatalf("expected staged sensitive path refusal in unconfined mode, got: %q", msg)
 	}
-	if log := runBash(t, root, "git log --format=%s -1"); !strings.Contains(log, "Add env") {
-		t.Fatalf("expected unconfined commit in log, got %q", log)
+	if strings.Contains(msg, "full-access-secret") {
+		t.Fatalf("unconfined commit refusal leaked file content: %q", msg)
 	}
 }
 
@@ -709,19 +714,20 @@ func TestToolkit_Git_RedactsSensitiveDiffContent(t *testing.T) {
 	}
 }
 
-func TestToolkit_Git_UnconfinedDoesNotRedactSensitiveDiffContent(t *testing.T) {
+func TestToolkit_Git_UnconfinedStillRedactsSensitiveDiffContent(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	kit.SetBoundary(UnconfinedBoundary())
 	runBash(t, root, "printf 'API_KEY=old-secret-value\n' > .env && git add .env && git commit -qm env")
 	runBash(t, root, "printf 'API_KEY=new-secret-value\n' > .env")
 
+	// Unconfined lifts the path boundary but not diff redaction.
 	p := gitCall(t, kit, "diff")
 	output := p["output"].(string)
-	if !strings.Contains(output, "old-secret-value") || !strings.Contains(output, "new-secret-value") {
-		t.Fatalf("unconfined git diff should expose sensitive content, got: %q", output)
+	if strings.Contains(output, "old-secret-value") || strings.Contains(output, "new-secret-value") {
+		t.Fatalf("unconfined git diff leaked sensitive file content: %q", output)
 	}
-	if redacted, _ := p["redacted"].(bool); redacted {
-		t.Fatalf("unconfined git diff should not mark output redacted: %+v", p)
+	if !strings.Contains(output, "REDACTED git diff") || p["redacted"] != true {
+		t.Fatalf("unconfined git diff should report redacted sensitive content: %+v", p)
 	}
 }
 

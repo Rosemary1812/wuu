@@ -30,6 +30,8 @@ func sensitivePathReason(path string) (string, bool) {
 			return "credential configuration", true
 		case strings.Contains(part, "credential") || strings.Contains(part, "secret"):
 			return "credential or secret path", true
+		case part == "id_rsa" || part == "id_ed25519" || part == "id_ecdsa":
+			return "SSH private key", true
 		case strings.Contains(part, "private") && strings.Contains(part, "key"):
 			return "private key path", true
 		}
@@ -94,7 +96,56 @@ func isAgentMemoryNotebookPath(absPath string) bool {
 	return len(parts) >= 3 && strings.TrimSpace(parts[0]) != "" && parts[1] == "memory"
 }
 
+// wuuCredentialFileNames are the app's own credential files at the root of
+// the wuu home directory. They are floor-protected in every permission
+// mode, including unconfined: no agent tool may read or write them. The
+// agent never needs their contents to do its job, and the runtime-metadata
+// exemption below exists for the memory notebook and session artifacts —
+// not for these files.
+var wuuCredentialFileNames = map[string]struct{}{
+	"auth.json":        {},
+	"credentials.json": {},
+	"remote.json":      {},
+	"phone.json":       {},
+}
+
+// isWuuCredentialPath reports whether absPath is one of the app's own
+// credential files directly under the wuu home directory.
+func isWuuCredentialPath(absPath string) bool {
+	if strings.TrimSpace(absPath) == "" {
+		return false
+	}
+	if _, ok := wuuCredentialFileNames[filepath.Base(filepath.Clean(absPath))]; !ok {
+		return false
+	}
+	home, err := statepath.Home("")
+	if err != nil {
+		return false
+	}
+	return filepath.Dir(filepath.Clean(absPath)) == filepath.Clean(home)
+}
+
+func wuuCredentialRefusal(toolName, action, absPath string) error {
+	return fmt.Errorf("%s refuses to %s wuu credential file %q: it stores the app's own login credentials and is never accessible to the agent in any permission mode. Ask the user to manage it outside the session", toolName, action, absPath)
+}
+
+// redactSensitiveReadContent masks credential values in content read from a
+// sensitive path while unconfined. Confined modes never reach this helper:
+// the read itself is refused by rejectSensitiveReadPath instead.
+func redactSensitiveReadContent(env *Env, absPath, content string) string {
+	if content == "" || env == nil || !env.BypassToolHardProtections() {
+		return content
+	}
+	if _, ok := sensitivePathReason(env.NormalizeDisplayPath(absPath)); !ok {
+		return content
+	}
+	return redactToolOutput(content)
+}
+
 func rejectSensitiveReadPath(env *Env, toolName, absPath string) error {
+	if isWuuCredentialPath(absPath) {
+		return wuuCredentialRefusal(toolName, "read", absPath)
+	}
 	if env.BypassToolHardProtections() {
 		return nil
 	}
@@ -109,9 +160,11 @@ func rejectSensitiveReadPath(env *Env, toolName, absPath string) error {
 }
 
 func rejectSensitiveToolPath(env *Env, toolName, action, absPath string) error {
-	if env.BypassToolHardProtections() {
-		return nil
+	if isWuuCredentialPath(absPath) {
+		return wuuCredentialRefusal(toolName, action, absPath)
 	}
+	// Sensitive-path writes stay blocked in every mode, including
+	// unconfined: lifting the path boundary does not lift secret guards.
 	// Agent's own runtime metadata is allowed when the boundary permits
 	// mutations. Read-only mode keeps the gate (env.AllowMutations == false).
 	if env.AllowMutations && isAgentRuntimeMetadataPath(absPath) {

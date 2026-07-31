@@ -24,3 +24,19 @@ func TestRedactToolOutput(t *testing.T) {
 		t.Fatalf("expected redaction markers, got: %s", got)
 	}
 }
+
+func TestRedactToolOutput_PEMPrivateKey(t *testing.T) {
+	input := strings.Join([]string{
+		"-----BEGIN OPENSSH PRIVATE KEY-----",
+		"b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMw",
+		"-----END OPENSSH PRIVATE KEY-----",
+	}, "\n")
+
+	got := redactToolOutput(input)
+	if strings.Contains(got, "b3BlbnNzaC1rZXktdjE") {
+		t.Fatalf("redacted output leaked PEM body: %s", got)
+	}
+	if !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("expected PEM block redaction marker, got: %s", got)
+	}
+}

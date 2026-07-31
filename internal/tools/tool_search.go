@@ -585,10 +585,15 @@ func grepWithFallback(env *Env, rootDir, pattern, searchRoot, include string, op
 }
 
 func grepMatchContentForPath(env *Env, path, content string) string {
-	if !env.BypassToolHardProtections() && isSensitivePath(path) {
-		return "[REDACTED: sensitive file content]"
+	if !isSensitivePath(path) {
+		return content
 	}
-	return content
+	// Unconfined lifts the read gate but not secret redaction: the match
+	// reaches the model with credential values masked.
+	if env.BypassToolHardProtections() {
+		return redactToolOutput(content)
+	}
+	return "[REDACTED: sensitive file content]"
 }
 
 func globWithRipgrep(rootDir, searchRoot, pattern string, limit int) ([]string, error) {

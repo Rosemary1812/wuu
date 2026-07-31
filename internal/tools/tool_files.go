@@ -223,7 +223,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		if args.Symbol != nil || args.Range != nil || args.Offset > 0 || args.Limit != nil || contextLines > 0 {
 			return "", errors.New("read_file accepts byte_range instead of line range, symbol, offset/limit, or context_lines")
 		}
-		return readFileByteWindow(ctx, t.env, resolved, displayPath, args.ByteRange.Offset, args.ByteRange.Limit, args.ByteRange.EndOffset, strings.TrimSpace(args.ExpectedSHA256), info.Size())
+		return readFileByteWindowRedacted(ctx, t.env, resolved, displayPath, args.ByteRange.Offset, args.ByteRange.Limit, args.ByteRange.EndOffset, strings.TrimSpace(args.ExpectedSHA256), info.Size())
 	}
 	if args.Symbol == nil && args.Range == nil && args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
 		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
@@ -344,7 +344,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"path":               displayPath,
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"content_sha256":     contentHash,
-		"content":            buf.String(),
+		"content":            redactSensitiveReadContent(t.env, resolved, buf.String()),
 		"num_lines":          len(readResult.Lines),
 		"start_line":         args.Offset,
 		"total_lines":        readResult.TotalLines,
@@ -824,6 +824,18 @@ func hashOpenFile(f *os.File) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+// readFileByteWindowRedacted wraps readFileByteWindow so that content read
+// from a sensitive path while unconfined reaches the model with credential
+// values masked. Confined modes never get this far: the read is refused
+// earlier by rejectSensitiveReadPath.
+func readFileByteWindowRedacted(ctx context.Context, env *Env, resolved, displayPath string, offset, limit, endOffset int, expectedSHA256 string, fileSize int64) (string, error) {
+	out, err := readFileByteWindow(ctx, env, resolved, displayPath, offset, limit, endOffset, expectedSHA256, fileSize)
+	if err != nil {
+		return out, err
+	}
+	return redactSensitiveReadContent(env, resolved, out), nil
+}
+
 func readFileByteWindow(ctx context.Context, env *Env, resolved, displayPath string, offset, limit, endOffset int, expectedSHA256 string, fileSize int64) (string, error) {
 	if offset < 0 {
 		return "", errors.New("read_file byte_range.offset must be non-negative")
@@ -1223,6 +1235,13 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	for _, entry := range entries {
 		entryPath := filepath.Join(resolved, entry.Name())
 		displayPath := t.env.NormalizeDisplayPathExec(ctx, entryPath)
+		// The app's own credential files stay hidden in every mode,
+		// including unconfined; other sensitive entries are hidden unless
+		// the boundary is lifted.
+		if isWuuCredentialPath(entryPath) {
+			omittedProtected++
+			continue
+		}
 		if _, ok := sensitivePathReason(displayPath); ok && !t.env.BypassToolHardProtections() {
 			omittedProtected++
 			continue

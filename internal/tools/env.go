@@ -474,10 +474,10 @@ func (e *Env) BypassToolHardProtections() bool {
 	return e != nil && e.Unconfined
 }
 
+// RedactToolOutput masks common credential patterns in text returned to the
+// model. It stays on in every permission mode, including unconfined: lifting
+// the path boundary does not lift secret redaction.
 func (e *Env) RedactToolOutput(text string) string {
-	if e.BypassToolHardProtections() {
-		return text
-	}
 	return redactToolOutput(text)
 }
 

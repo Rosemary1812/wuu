@@ -16,7 +16,7 @@ Wuu has three permission modes:
 |---|---|---|
 | `standard` | Registered workspace roots | Allowed inside those roots |
 | `read_only` | Registered workspace roots | Denied |
-| `unconfined` | No Wuu workspace or sensitive-path restrictions | Allowed where OS permissions permit |
+| `unconfined` | No Wuu workspace restrictions | Allowed where OS permissions permit, but sensitive-file writes are still refused by Wuu |
 
 The default `standard` mode enforces paths and tool rules inside the Wuu
 process. It is **not** a macOS sandbox, container, virtual machine, or separate
@@ -25,11 +25,16 @@ identity, inherited environment, and network stack. The path boundary and hard
 tool guards reduce mistakes, but they are not a security boundary against
 malicious native code or a compromised dependency.
 
-`unconfined` means that Wuu no longer applies its own path boundary or
-sensitive-file protections. The agent can read, modify, or delete any file the
-Wuu process can access, including the user's home directory, other repositories,
-configuration and credential files, and local state under `~/.wuu`; common
-secret-pattern redaction in tool output is also disabled. It does not grant
+`unconfined` means that Wuu no longer applies its own path boundary. The
+agent can read any file the Wuu process can access and modify most of them,
+including the user's home directory, other repositories, and configuration
+files. Three protections stay on in every mode, however: sensitive paths
+such as `.env`, SSH private keys, and credential configuration cannot be
+written through file tools, nor staged or committed through git; when
+sensitive files are read, common secret patterns are masked before the
+content reaches the model; and the app's own credential files under
+`~/.wuu` (`auth.json`, `credentials.json`, `remote.json`, `phone.json`) are
+never readable or writable in any mode. `unconfined` does not grant
 permissions beyond the current OS user, so file ownership and ACLs, macOS
 privacy controls, System Integrity Protection, read-only filesystems, and any
 container or OS sandbox still apply. Treat `unconfined` as full local authority

@@ -439,8 +439,11 @@ var blockedCommitFlags = map[string]bool{
 }
 
 func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) {
-	allowSensitive := env.BypassToolHardProtections()
-	invocation, err := parseGitInvocation(argsJSON, allowSensitive)
+	// Unconfined lifts the read gate for content-emitting subcommands
+	// (diff/show/grep of sensitive paths), but write-side sensitive guards
+	// and output redaction stay on in every mode.
+	allowSensitiveReads := env.BypassToolHardProtections()
+	invocation, err := parseGitInvocation(argsJSON, allowSensitiveReads)
 	if err != nil {
 		return "", err
 	}
@@ -453,7 +456,7 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	gitArgs := append([]string{"--no-optional-locks"}, subcmdParts...)
 	gitArgs = append(gitArgs, invocation.Args...)
 	if invocation.Subcommand == "add" {
-		pathspecs, err := normalizeExplicitGitPathspecs(invocation.Subcommand, invocation.Args, allowSensitive)
+		pathspecs, err := normalizeExplicitGitPathspecs(invocation.Subcommand, invocation.Args, false)
 		if err != nil {
 			return "", err
 		}
@@ -485,7 +488,11 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	return runGit(env, ctx, invocation.Subcommand, gitArgs)
 }
 
-func parseGitInvocation(argsJSON string, allowSensitive bool) (gitInvocation, error) {
+// parseGitInvocation validates a git tool call. allowSensitiveReads lifts
+// the read-side gate for content-emitting subcommands (unconfined mode);
+// write-side sensitive guards (pathspec staging, commit message files) are
+// always enforced regardless of mode.
+func parseGitInvocation(argsJSON string, allowSensitiveReads bool) (gitInvocation, error) {
 	var args struct {
 		Subcommand string   `json:"subcommand"`
 		Args       []string `json:"args"`
@@ -521,13 +528,13 @@ func parseGitInvocation(argsJSON string, allowSensitive bool) (gitInvocation, er
 			return gitInvocation{}, err
 		}
 	} else if allowedGitSubcommands[subcmd] {
-		if err := validateGitArgs(subcmd, remainingArgs, allowSensitive); err != nil {
+		if err := validateGitArgs(subcmd, remainingArgs, false); err != nil {
 			return gitInvocation{}, err
 		}
 	} else {
 		return gitInvocation{}, fmt.Errorf("git subcommand %q is not allowed in restricted mode", args.Subcommand)
 	}
-	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs, allowSensitive); err != nil {
+	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs, allowSensitiveReads); err != nil {
 		return gitInvocation{}, err
 	}
 
@@ -572,7 +579,7 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		}
 	}
 
-	output, redacted := sanitizeGitOutput(subcmd, stdout.String()+stderr.String(), env.BypassToolHardProtections())
+	output, redacted := sanitizeGitOutput(subcmd, stdout.String()+stderr.String(), false)
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 
 	result := map[string]any{
@@ -728,7 +735,7 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 
 	staged, unstaged, untracked := parseGitPorcelain(stdout.String())
 
-	rawOutput, redacted := sanitizeGitOutput("status", stdout.String()+stderr.String(), env.BypassToolHardProtections())
+	rawOutput, redacted := sanitizeGitOutput("status", stdout.String()+stderr.String(), false)
 	trimmed, truncated := truncate(rawOutput, maxShellOutputBytes)
 
 	result := map[string]any{
@@ -1096,10 +1103,10 @@ func validateCommitMessageFileArg(flag, raw string, allowSensitive bool) error {
 	return nil
 }
 
+// rejectSensitiveStagePathspecs refuses to stage sensitive paths in every
+// permission mode, including unconfined: lifting the path boundary does not
+// lift secret staging guards.
 func rejectSensitiveStagePathspecs(env *Env, ctx context.Context, pathspecs []string) error {
-	if env.BypassToolHardProtections() {
-		return nil
-	}
 	paths, err := changedPathsForPathspecs(env, ctx, pathspecs)
 	if err != nil {
 		return err
@@ -1178,10 +1185,10 @@ func gitStatusSnapshot(env *Env, ctx context.Context) (staged, unstaged []fileEn
 	return staged, unstaged, untracked, nil
 }
 
+// rejectSensitiveStagedCommitPaths refuses to commit staged sensitive paths
+// in every permission mode, including unconfined: lifting the path boundary
+// does not lift secret commit guards.
 func rejectSensitiveStagedCommitPaths(env *Env, ctx context.Context) error {
-	if env.BypassToolHardProtections() {
-		return nil
-	}
 	workDir, err := env.ExecRootDir(ctx)
 	if err != nil {
 		return err
