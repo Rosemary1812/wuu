@@ -15,6 +15,7 @@ import {
 } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
+import { AnimatedProcessText } from "./ProcessTextMotion";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -230,12 +231,6 @@ function MergedTurnGroupView({
             onOpenRuns ? () => onOpenRuns(last.id) : undefined
           }
           onCollapseComplete={onCollapseComplete}
-          // Between wake turns the group remains live, but its settled
-          // process history yields to one synthetic shimmering activity
-          // preview so it cannot read like a finished answer.
-          suppressAnswerHandoff={waitingForSubagent}
-          waitingForSubagent={waitingForSubagent}
-          interruptedSubagentWait={Boolean(interrupted)}
         />
       ) : null}
       {turns.map((member) => {
@@ -256,6 +251,9 @@ function MergedTurnGroupView({
           </Fragment>
         );
       })}
+      {waitingForSubagent || interrupted ? (
+        <SubagentWaitRow live={waitingForSubagent} />
+      ) : null}
       {interrupted ? (
         <SystemEventDivider text={translateCurrent("turn.orchestrationPaused")} />
       ) : null}
@@ -265,6 +263,22 @@ function MergedTurnGroupView({
         <StreamReconnectNotice text={streamStatus.text} />
       ) : null}
     </section>
+  );
+}
+
+function SubagentWaitRow({ live }: { live: boolean }): JSX.Element {
+  return (
+    <div
+      className={`turn-orchestration-wait process-surface-row${
+        live ? " is-live-gray" : ""
+      }`}
+      role="status"
+      aria-live={live ? "polite" : undefined}
+    >
+      <AnimatedProcessText
+        text={translateCurrent("process.waitingForSubagents")}
+      />
+    </div>
   );
 }
 

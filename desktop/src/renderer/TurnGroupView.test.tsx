@@ -222,13 +222,21 @@ describe("TurnGroupView — awaiting between turns", () => {
     mountGroup(turns, true);
 
     // The turn does not look finished: in_progress status, no action bar,
-    // and one quiet synthetic activity preview carries the live shimmer while
+    // and one quiet synthetic activity row carries the live shimmer while
     // the real parent turn is parked between subagent wake-ups.
     expect(section().dataset.turnStatus).toBe("in_progress");
     expect(actionBars()).toHaveLength(0);
     expect(foldToggle().getAttribute("aria-expanded")).toBe("false");
-    const waiting = container.querySelector(".turn-process-preview-activity.is-live");
+    const waiting = container.querySelector(".turn-orchestration-wait.is-live-gray");
     expect(waiting?.textContent).toContain("子任务仍在运行");
+    const shell = container.querySelector(".assistant-turn-shell");
+    if (!shell || !waiting) {
+      throw new Error("expected the waiting row after the assistant shell");
+    }
+    expect(
+      shell.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.querySelector(".turn-process-preview-activity")).toBeNull();
   });
 
   it("releases to the normal single-turn path when nothing is awaiting", () => {
@@ -254,9 +262,9 @@ describe("TurnGroupView — awaiting between turns", () => {
 
     expect(section().dataset.turnStatus).toBe("interrupted");
     expect(actionBars()).toHaveLength(0);
-    const waiting = container.querySelector(".turn-process-preview-activity");
+    const waiting = container.querySelector(".turn-orchestration-wait");
     expect(waiting?.textContent).toContain("子任务仍在运行");
-    expect(waiting?.classList.contains("is-live")).toBe(false);
+    expect(waiting?.classList.contains("is-live-gray")).toBe(false);
     expect(container.querySelector(".turn-event-title")?.textContent).toBe("已暂停回答");
   });
 
