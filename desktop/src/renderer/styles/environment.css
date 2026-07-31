@@ -1343,7 +1343,7 @@
 }
 
 .sidebar-name-dialog-drawer {
-  width: min(380px, 100vw);
+  width: min(420px, 100vw);
   max-height: none;
   height: 100%;
   box-sizing: border-box;

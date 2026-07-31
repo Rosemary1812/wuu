@@ -1191,20 +1191,20 @@
 
 .channel-room-details-form {
   display: grid;
-  gap: 24px;
+  gap: 20px;
 }
 
 .channel-room-members-section {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   border-top: 1px solid var(--border-subtle);
-  padding-top: 18px;
+  padding-top: 16px;
 }
 
 .channel-room-members-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 144px;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 }
 
@@ -1213,10 +1213,13 @@
 }
 
 .channel-room-members-header h3 {
+  min-width: 0;
   margin: 0;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .channel-room-members-header span {
@@ -1227,7 +1230,7 @@
 }
 
 .channel-room-member-add-trigger {
-  min-width: 96px;
+  min-width: 0;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: var(--surface-2);
@@ -1238,8 +1241,8 @@
 
 .channel-room-member-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .channel-room-member-card {
@@ -1247,13 +1250,13 @@
   min-width: 0;
   display: grid;
   justify-items: center;
-  gap: 7px;
+  gap: 4px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: var(--surface-2);
   color: var(--text-primary);
   cursor: pointer;
-  padding: 10px 6px 8px;
+  padding: 7px 4px 6px;
 }
 
 .channel-room-member-card:hover,
@@ -1267,8 +1270,8 @@
 }
 
 .channel-room-member-avatar {
-  width: 46px;
-  height: 46px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1288,15 +1291,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .channel-room-member-remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 18px;
-  height: 18px;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -1305,8 +1308,8 @@
 }
 
 .channel-room-member-remove .icon {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 
 .channel-setup-form .select-menu {
