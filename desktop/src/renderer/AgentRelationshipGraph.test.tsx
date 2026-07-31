@@ -10,6 +10,12 @@ function pointerEvent(type: string, x: number, y: number): Event {
   return event;
 }
 
+function translateOf(element: Element): { x: number; y: number } {
+  const match = /translate\((-?[\d.e]+) (-?[\d.e]+)\)/.exec(element.getAttribute("transform") ?? "");
+  if (!match) throw new Error(`no translate in ${element.getAttribute("transform")}`);
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+
 describe("AgentRelationshipGraph", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -61,6 +67,15 @@ describe("AgentRelationshipGraph", () => {
     vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
       left: 0, top: 0, width: 960, height: 560, right: 960, bottom: 560, x: 0, y: 0, toJSON: () => ({}),
     });
+
+    // First open fits the camera to the content: the 2 agents + 1 room
+    // cluster spans 360x140 world units, so fit clamps to its 1.6 cap and
+    // the reset button shows the live zoom percentage.
+    const viewport = container.querySelector(".channel-agent-graph-viewport")!;
+    expect(viewport.getAttribute("transform")).toContain("scale(1.6)");
+    const controls = container.querySelectorAll<HTMLButtonElement>(".channel-agent-graph-controls button");
+    expect(controls[1]?.textContent).toBe("160%");
+
     const node = container.querySelector<SVGGElement>('[aria-label="Andy"]')!;
     const clickNode = container.querySelector<SVGGElement>('[aria-label="Le"]')!;
     expect(node.querySelector(".channel-agent-graph-hit-target")).not.toBeNull();
@@ -72,28 +87,39 @@ describe("AgentRelationshipGraph", () => {
     expect(onSelectAgent).toHaveBeenCalledWith(agents[1]);
     expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
 
-    // Andy starts at (610, 280); grabbing its exact centre moves the centre
-    // with the cursor.
+    // Andy (world 610,280) sits at viewBox ~(768,280) under the fitted
+    // camera (scale 1.6, translate ~(-208,-168)). Grabbing its centre moves
+    // it with the cursor: viewBox (500,400) -> world (442.5,355).
     act(() => {
-      node.dispatchEvent(pointerEvent("pointerdown", 610, 280));
-      node.dispatchEvent(pointerEvent("pointermove", 200, 150));
-      node.dispatchEvent(pointerEvent("pointerup", 200, 150));
+      node.dispatchEvent(pointerEvent("pointerdown", 768, 280));
+      node.dispatchEvent(pointerEvent("pointermove", 500, 400));
+      node.dispatchEvent(pointerEvent("pointerup", 500, 400));
     });
 
-    expect(node.getAttribute("transform")).toBe("translate(200 150)");
+    const first = translateOf(node);
+    expect(first.x).toBeCloseTo(442.5, 4);
+    expect(first.y).toBeCloseTo(355, 4);
     expect(Array.from(container.querySelectorAll("line")).some((line) =>
-      line.getAttribute("x1") === "200" || line.getAttribute("x2") === "200"
+      Math.abs(Number(line.getAttribute("x1")) - 442.5) < 0.001 || Math.abs(Number(line.getAttribute("x2")) - 442.5) < 0.001
     )).toBe(true);
 
     // Grabbing off-centre must not snap the node centre to the cursor: the
-    // grab offset (-12, -8) is preserved through the drag.
+    // grab offset (world -7.5,-5) is preserved through the drag.
     act(() => {
-      node.dispatchEvent(pointerEvent("pointerdown", 212, 158));
-      node.dispatchEvent(pointerEvent("pointermove", 400, 300));
-      node.dispatchEvent(pointerEvent("pointerup", 400, 300));
+      node.dispatchEvent(pointerEvent("pointerdown", 512, 408));
+      node.dispatchEvent(pointerEvent("pointermove", 600, 300));
+      node.dispatchEvent(pointerEvent("pointerup", 600, 300));
     });
 
-    expect(node.getAttribute("transform")).toBe("translate(388 292)");
+    const second = translateOf(node);
+    expect(second.x).toBeCloseTo(497.5, 4);
+    expect(second.y).toBeCloseTo(287.5, 4);
     expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
+
+    // Zoom buttons move the percentage.
+    act(() => controls[2]?.click());
+    expect(controls[1]?.textContent).toBe("200%");
+    act(() => controls[0]?.click());
+    expect(controls[1]?.textContent).toBe("160%");
   });
 });

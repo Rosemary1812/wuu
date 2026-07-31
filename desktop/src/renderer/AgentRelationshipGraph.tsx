@@ -107,7 +107,10 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({ repulsion: 2800, linkLength: 136, centerForce: 0.015, nodeScale: 1, showLabels: true });
+  const [zoomPercent, setZoomPercent] = useState(100);
   const settingsRef = useRef(settings);
+  const userNavigatedRef = useRef(false);
+  const fitRef = useRef<() => void>(() => undefined);
   const agentSignature = agents.map((agent) => `${agent.id}:${agent.name}:${agent.avatar_key}:${agent.activity_status}`).join("|");
   const roomSignature = rooms.map((room) => `${room.id}:${room.name}:${room.members.map((member) => `${member.member_type}:${member.member_id}`).join(",")}`).join("|");
   const graph = useMemo(() => buildGraph(agents, rooms), [agentSignature, roomSignature]);
@@ -134,6 +137,8 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     const BOUNDS_MARGIN = 40;
     let alpha = 1;
     let stopped = false;
+    let settledFitDone = false;
+    userNavigatedRef.current = false;
     const paint = (): void => {
       for (const link of graph.links) {
         const element = linkRefs.current.get(link.id);
@@ -154,6 +159,12 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       const alphaTarget = dragRef.current ? DRAG_ALPHA_TARGET : 0;
       alpha += (alphaTarget - alpha) * 0.04;
       if (alpha < ALPHA_FLOOR) alpha = ALPHA_FLOOR;
+      // Once the initial layout has settled, re-fit the camera to the
+      // relaxed positions — unless the user already moved the camera.
+      if (!settledFitDone && alpha < 0.06) {
+        settledFitDone = true;
+        if (!userNavigatedRef.current) fitRef.current();
+      }
       for (let leftIndex = 0; leftIndex < graph.nodes.length; leftIndex++) {
         const left = graph.nodes[leftIndex];
         for (let rightIndex = leftIndex + 1; rightIndex < graph.nodes.length; rightIndex++) {
@@ -232,6 +243,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       if (frameRef.current === null) frameRef.current = window.requestAnimationFrame(tick);
     };
     paint();
+    fitRef.current();
     restartRef.current();
     return () => {
       stopped = true;
@@ -269,9 +281,39 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   function applyViewport(): void {
     const { x, y, scale } = viewportRef.current;
     viewportElementRef.current?.setAttribute("transform", `translate(${x} ${y}) scale(${scale})`);
+    const percent = Math.round(scale * 100);
+    setZoomPercent((current) => (current === percent ? current : percent));
   }
 
+  // Fit the camera to the content's bounding box so the graph opens at a
+  // sensible size instead of swimming in the fixed 960x560 world.
+  const FIT_PADDING = 90;
+  function fitViewport(): void {
+    if (graph.nodes.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const node of graph.nodes) {
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x);
+      maxY = Math.max(maxY, node.y);
+    }
+    const width = Math.max(maxX - minX, 1) + FIT_PADDING * 2;
+    const height = Math.max(maxY - minY, 1) + FIT_PADDING * 2;
+    const scale = Math.max(0.55, Math.min(1.6, Math.min(GRAPH_WIDTH / width, GRAPH_HEIGHT / height)));
+    viewportRef.current = {
+      x: GRAPH_WIDTH / 2 - ((minX + maxX) / 2) * scale,
+      y: GRAPH_HEIGHT / 2 - ((minY + maxY) / 2) * scale,
+      scale,
+    };
+    applyViewport();
+  }
+  fitRef.current = fitViewport;
+
   function zoomAt(nextScale: number, centerX: number, centerY: number): void {
+    userNavigatedRef.current = true;
     const viewport = viewportRef.current;
     const scale = Math.max(0.55, Math.min(2.5, nextScale));
     const worldX = (centerX - viewport.x) / viewport.scale;
@@ -289,6 +331,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   function handleCanvasPointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
     if (event.target !== event.currentTarget) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    userNavigatedRef.current = true;
     const point = viewBoxPoint(event.clientX, event.clientY);
     panRef.current = {
       pointerID: event.pointerId,
@@ -356,8 +399,8 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   }
 
   function resetGraph(): void {
-    viewportRef.current = { x: 0, y: 0, scale: 1 };
-    applyViewport();
+    userNavigatedRef.current = true;
+    fitViewport();
     for (const node of graph.nodes) {
       node.vx = 0;
       node.vy = 0;
@@ -382,7 +425,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         onPointerCancel={handleCanvasPointerUp}
         onDoubleClick={(event) => { if (event.target === event.currentTarget) resetGraph(); }}
       >
-        <g ref={viewportElementRef}>
+        <g className="channel-agent-graph-viewport" ref={viewportElementRef}>
           <g className="channel-agent-graph-links">
             {graph.links.map((link) => <line className={link.kind} key={link.id} ref={(element) => { if (element) linkRefs.current.set(link.id, element); }} />)}
           </g>
@@ -436,7 +479,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       ) : null}
       <div className="channel-agent-graph-controls">
         <button type="button" aria-label={zoomOutLabel} onClick={() => zoomAt(viewportRef.current.scale / 1.25, GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2)}>−</button>
-        <button type="button" aria-label={resetViewLabel} onClick={resetGraph}>1:1</button>
+        <button type="button" aria-label={resetViewLabel} onClick={() => { userNavigatedRef.current = true; fitViewport(); }}>{zoomPercent}%</button>
         <button type="button" aria-label={zoomInLabel} onClick={() => zoomAt(viewportRef.current.scale * 1.25, GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2)}>+</button>
       </div>
       </div>
