@@ -235,6 +235,19 @@ describe("ChannelView", () => {
     expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("false");
   });
 
+  it("does not show a conversation composer without a selected room", async () => {
+    const api = createApi();
+    api.bootstrapChannels = vi.fn(async () => ({ agents, rooms: [] }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    expect(container.querySelector(".channel-empty-action")?.textContent).toBe("新建频道");
+    expect(container.querySelector(".channel-conversation-footer")).toBeNull();
+    expect(container.querySelector(".channel-composer")).toBeNull();
+  });
+
   it("loads rooms, selects a room, and sends a human message", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });

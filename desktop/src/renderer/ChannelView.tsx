@@ -944,21 +944,23 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
           bottomAnchor={composerFooterNode}
           threshold={AUTO_FOLLOW_BOTTOM_THRESHOLD_PX}
         />
-        <div ref={setComposerFooter} className="channel-conversation-footer">
-          <ChannelComposer
-            draft={body}
-            placeholder={selectedRoom ? t("channels.messagePlaceholder") : t("channels.chooseRoom")}
-            disabled={!selectedRoom}
-            sending={sending}
-            files={composerFiles}
-            images={composerImages}
-            onChangeDraft={setBody}
-            onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
-            onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
-            onRemoveImage={(id) => setComposerImages((current) => current.filter((image) => image.id !== id))}
-            onSend={() => void sendMessage()}
-          />
-        </div>
+        {selectedRoom ? (
+          <div ref={setComposerFooter} className="channel-conversation-footer">
+            <ChannelComposer
+              draft={body}
+              placeholder={t("channels.messagePlaceholder")}
+              disabled={false}
+              sending={sending}
+              files={composerFiles}
+              images={composerImages}
+              onChangeDraft={setBody}
+              onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
+              onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
+              onRemoveImage={(id) => setComposerImages((current) => current.filter((image) => image.id !== id))}
+              onSend={() => void sendMessage()}
+            />
+          </div>
+        ) : null}
         </div>
         {activeThreadRoot ? (
           <aside className="channel-thread-panel" aria-label={t("channels.thread")}>
