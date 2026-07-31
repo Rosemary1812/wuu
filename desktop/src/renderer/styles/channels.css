@@ -574,39 +574,29 @@
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  margin: 0 auto 14px;
+  margin: 0 auto 18px;
 }
 
 .channel-message.own {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: end;
+  grid-template-columns: 30px minmax(0, 1fr);
+  justify-items: stretch;
 }
 
 .channel-message-content {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
 }
 
 .channel-message.own .channel-message-content {
-  max-width: calc(100% - 40px);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  max-width: 100%;
+  display: block;
 }
 
 .channel-message-content.has-thread-digest,
 .channel-message.own .channel-message-content.has-thread-digest {
   width: 100%;
   max-width: 100%;
-}
-
-.channel-message.own .channel-message-content.has-thread-digest {
-  align-items: stretch;
-}
-
-.channel-message.own .channel-message-content.has-thread-digest > :not(.channel-thread-digest) {
-  align-self: flex-end;
 }
 
 .channel-message-meta {
@@ -617,11 +607,11 @@
 }
 
 .channel-message.own .channel-message-meta {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .channel-message.own .channel-message-meta strong {
-  display: none;
+  display: inline;
 }
 
 .channel-message-meta time {
@@ -632,9 +622,9 @@
 .channel-message-bubble {
   max-width: 100%;
   margin: 0;
-  border-radius: 12px 12px 12px 3px;
-  padding: 8px 12px;
-  background: var(--chat-user-message-bg, #f3f3f4);
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
   color: var(--text-primary);
   font-size: var(--conversation-message-font-size, 14px);
   line-height: var(--conversation-reading-line-height, 1.5);
@@ -685,7 +675,7 @@
 }
 
 .channel-message.own .channel-message-bubble {
-  border-radius: 12px 12px 3px 12px;
+  border-radius: 0;
 }
 
 .channel-message-content > .composer-attachments {
@@ -693,7 +683,7 @@
 }
 
 .channel-message.own .composer-attachments {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .channel-message-actions {
@@ -710,7 +700,20 @@
 }
 
 .channel-message.own .channel-message-actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
+}
+
+.channel-human-avatar {
+  width: 30px;
+  height: 30px;
+  display: block;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.channel-human-avatar > * {
+  width: 100%;
+  height: 100%;
 }
 
 .channel-message-actions button,

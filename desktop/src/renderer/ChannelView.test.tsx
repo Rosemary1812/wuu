@@ -260,7 +260,8 @@ describe("ChannelView", () => {
     expect(container.querySelector<HTMLImageElement>(".channel-message.own .composer-image-attachment img")?.src).toContain("data:image/png;base64,aW1hZ2U=");
     expect(container.querySelector(".channel-message.own .composer-file-attachment")?.textContent).toContain("brief.pdf");
     expect(container.querySelector(".channel-message.own .composer-attachments button")).toBeNull();
-    expect(container.querySelector(".channel-message.own .channel-agent-avatar")).toBeNull();
+    expect(container.querySelector(".channel-message.own .channel-human-avatar .default-avatar")).not.toBeNull();
+    expect(container.querySelector(".channel-message.own .channel-message-meta strong")?.textContent).toBe("你");
     expect(container.querySelector(".channel-task-card")).toBeNull();
     expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("Investigate flaky build");
     expect(container.querySelector('[aria-label="Alpha: 处理中"]')).not.toBeNull();

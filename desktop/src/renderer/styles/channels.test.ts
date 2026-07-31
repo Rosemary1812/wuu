@@ -36,15 +36,22 @@ describe("channel message resizing", () => {
   it("keeps bubble width and horizontal gutters continuous across window sizes", () => {
     const stream = ruleFor(".channel-message-stream");
     const composer = ruleFor(".channel-composer");
+    const message = ruleFor(".channel-message");
+    const ownMessage = ruleFor(".channel-message.own");
     const messageContent = ruleFor(".channel-message-content");
     const ownMessageContent = ruleFor(".channel-message.own .channel-message-content");
     const messageBubble = ruleFor(".channel-message-bubble");
 
     expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 12px/);
     expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
+    expect(message).toMatch(/grid-template-columns:\s*30px minmax\(0, 1fr\)/);
+    expect(ownMessage).toMatch(/grid-template-columns:\s*30px minmax\(0, 1fr\)/);
     expect(messageContent).toMatch(/max-width:\s*100%/);
-    expect(ownMessageContent).toMatch(/max-width:\s*calc\(100% - 40px\)/);
+    expect(messageContent).toMatch(/width:\s*100%/);
+    expect(ownMessageContent).toMatch(/max-width:\s*100%/);
     expect(messageBubble).toMatch(/max-width:\s*100%/);
+    expect(messageBubble).toMatch(/background:\s*transparent/);
+    expect(messageBubble).toMatch(/padding:\s*0/);
     expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
   });
 

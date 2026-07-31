@@ -893,11 +893,15 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             const threadReplies = repliesByThread.get(message.id) ?? [];
             return (
               <article className={`channel-message ${own ? "own" : "agent"}`} key={message.id}>
-                {!own ? (() => {
+                {own ? (
+                  <span className="channel-human-avatar" aria-hidden="true">
+                    <DefaultAvatarMark seed="local-user" />
+                  </span>
+                ) : (() => {
                   const agent = agents.find((candidate) => candidate.id === message.author_id);
                   const status = activityFor(agent);
                   return <AgentAvatar name={author} avatarKey={agent?.avatar_key ?? "abstract-1"} avatarImage={agent?.avatar_image} status={status} statusText={activityText(status)} />;
-                })() : null}
+                })()}
                 <div className={`channel-message-content${threadReplies.length ? " has-thread-digest" : ""}`}>
                   <div className="channel-message-meta">
                     <strong>{author}</strong>
@@ -969,11 +973,15 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 const repliedMessage = message.reply_to ? messageByID.get(message.reply_to) : undefined;
                 return (
                   <article className={`channel-message channel-thread-message ${own ? "own" : "agent"}`} key={message.id}>
-                    {!own ? (() => {
+                    {own ? (
+                      <span className="channel-human-avatar" aria-hidden="true">
+                        <DefaultAvatarMark seed="local-user" />
+                      </span>
+                    ) : (() => {
                       const agent = agents.find((candidate) => candidate.id === message.author_id);
                       const status = activityFor(agent);
                       return <AgentAvatar name={author} avatarKey={agent?.avatar_key ?? "abstract-1"} avatarImage={agent?.avatar_image} status={status} statusText={activityText(status)} />;
-                    })() : null}
+                    })()}
                     <div className="channel-message-content">
                       <div className="channel-message-meta">
                         <strong>{author}</strong>
