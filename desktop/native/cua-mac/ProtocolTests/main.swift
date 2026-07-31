@@ -235,19 +235,68 @@ private func testNativePermissionAndAppDiscoveryAreInspectable() throws {
     try expect(apps.structured["apps"] is [[String: Any]], "running apps list")
 }
 
+// A wait_for_change timeout is a normal result, never a tool error: the
+// contract travels through the server unchanged, and the timeout argument
+// reaches the backend command.
+private func testWaitForChangePassesThroughAsANormalResult() throws {
+    let backend = FakeBackend()
+    backend.next = ComputerResult(
+        text: "No accessibility change was observed within 0.1 seconds.",
+        structured: ["changed": false, "timed_out": true, "timeout_seconds": 0.1]
+    )
+    let server = MCPServer(backend: backend)
+    let response = try server.handle([
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": [
+            "name": "computer",
+            "arguments": ["action": "wait_for_change", "app": "com.apple.TextEdit", "timeout": 0.1],
+        ],
+    ])
+    try expect(backend.commands.count == 1, "wait_for_change reaches the backend once")
+    try expect(backend.commands.first?.action == .waitForChange, "wait_for_change action")
+    try expect(backend.commands.first?.timeout == 0.1, "timeout reaches the backend command")
+    let result = response?["result"] as? [String: Any]
+    let structured = result?["structuredContent"] as? [String: Any]
+    try expect(result?["isError"] as? Bool == false, "a wait_for_change timeout is a normal result, not a tool error")
+    try expect(structured?["changed"] as? Bool == false, "changed passes through to structured content")
+    try expect(structured?["timed_out"] as? Bool == true, "timed_out passes through to structured content")
+}
+
+// Integration smoke against the real AX stack. Opt-in (CUA_MAC_INTEGRATION=1)
+// because it launches a real GUI process on the developer's machine; whatever
+// the test launches is terminated again on the way out.
 @MainActor
-private func testWaitForChangeReturnsAConsistentNormalResultWhenAccessibilityIsAvailable() throws {
+private func testWaitForChangeAgainstARealApp() throws {
+    guard ProcessInfo.processInfo.environment["CUA_MAC_INTEGRATION"] == "1" else {
+        print("skipping real-app wait_for_change integration test (set CUA_MAC_INTEGRATION=1 to enable)")
+        return
+    }
     _ = NSApplication.shared
     let backend = MacComputerBackend()
     let permission = try backend.perform(ComputerCommand(arguments: ["action": "permission_status"]))
-    guard permission.structured["accessibility"] as? Bool == true else { return }
+    guard permission.structured["accessibility"] as? Bool == true else {
+        print("skipping real-app wait_for_change integration test (accessibility permission not granted to the test process)")
+        return
+    }
+
+    let calculator = "/System/Applications/Calculator.app"
+    let calculatorWasRunning = NSWorkspace.shared.runningApplications.contains {
+        !$0.isTerminated && $0.bundleURL?.path == calculator
+    }
+    defer {
+        // Only tear down an instance this test launched; one the user already
+        // had open stays untouched.
+        if !calculatorWasRunning {
+            terminateRunningApp(at: calculator)
+        }
+    }
 
     _ = try backend.perform(ComputerCommand(arguments: [
-        "action": "observe", "app": "/System/Applications/Calculator.app",
+        "action": "observe", "app": calculator,
     ]))
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.25))
     _ = try backend.perform(ComputerCommand(arguments: [
-        "action": "observe", "app": "/System/Applications/Calculator.app",
+        "action": "observe", "app": calculator,
     ]))
     let server = MCPServer(backend: backend)
     let response = try server.handle([
@@ -256,7 +305,7 @@ private func testWaitForChangeReturnsAConsistentNormalResultWhenAccessibilityIsA
             "name": "computer",
             "arguments": [
                 "action": "wait_for_change",
-                "app": "/System/Applications/Calculator.app",
+                "app": calculator,
                 "timeout": 0.1,
             ],
         ],
@@ -271,6 +320,19 @@ private func testWaitForChangeReturnsAConsistentNormalResultWhenAccessibilityIsA
     try expect(result?["isError"] as? Bool == false, "wait_for_change returns a normal result")
     try expect(changed != nil, "wait_for_change reports whether accessibility changed")
     try expect(timedOut == !(changed ?? true), "timed_out is the inverse of changed")
+}
+
+private func terminateRunningApp(at path: String) {
+    for app in NSWorkspace.shared.runningApplications where !app.isTerminated && app.bundleURL?.path == path {
+        app.terminate()
+        let deadline = Date(timeIntervalSinceNow: 2.5)
+        while !app.isTerminated && Date() < deadline {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+        if !app.isTerminated {
+            app.forceTerminate()
+        }
+    }
 }
 
 private func testScreenshotCoordinatesMapToGlobalWindowCoordinates() throws {
@@ -320,7 +382,8 @@ do {
     try testForegroundPolicyParsingAndErrors()
     try testKeyChordParserSupportsSkyStyleAliases()
     try testNativePermissionAndAppDiscoveryAreInspectable()
-    try testWaitForChangeReturnsAConsistentNormalResultWhenAccessibilityIsAvailable()
+    try testWaitForChangePassesThroughAsANormalResult()
+    try testWaitForChangeAgainstARealApp()
     try testScreenshotCoordinatesMapToGlobalWindowCoordinates()
     try testCompositeUnionGeometryMapsClicksAcrossWindows()
     print("cua-mac protocol tests passed")
