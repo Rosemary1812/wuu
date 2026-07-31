@@ -244,7 +244,7 @@ describe("ChannelView", () => {
     await settle();
 
     expect(container.querySelector(".channel-conversation-heading")?.textContent).toContain("general");
-    expect(container.querySelector(".channel-room-details")).toBeNull();
+    expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
     const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
     expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown\n<img src=x onerror=alert(1)>");
     expect(
@@ -274,12 +274,15 @@ describe("ChannelView", () => {
     const detailsToggle = container.querySelector<HTMLButtonElement>(".channel-room-details-toggle");
     expect(detailsToggle).not.toBeNull();
     act(() => detailsToggle?.click());
-    expect(container.querySelector(".channel-room-details")).not.toBeNull();
-    expect(container.querySelector(".channel-room-details")?.textContent).toContain("Agent 成员");
-    const detailsClose = container.querySelector<HTMLButtonElement>(".channel-room-details-close");
-    expect(detailsClose?.getAttribute("aria-label")).toBe("关闭群聊详情");
-    act(() => detailsClose?.click());
-    expect(container.querySelector(".channel-room-details")).toBeNull();
+    const detailsDialog = document.querySelector(".sidebar-name-dialog");
+    expect(detailsDialog?.textContent).toContain("群聊详情");
+    expect(detailsDialog?.textContent).toContain("Agent 成员");
+    expect(container.querySelector(".channel-conversation")?.classList.contains("details-open")).toBe(false);
+    expect(container.querySelector(".channel-room-main")).not.toBeNull();
+    const cancelDetails = Array.from(detailsDialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent === "取消");
+    act(() => cancelDetails?.click());
+    expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
       .find((button) => button.textContent?.includes("research"));
     act(() => research?.click());
@@ -569,12 +572,14 @@ describe("ChannelView", () => {
     const manageResearch = container.querySelector<HTMLButtonElement>('button[aria-label="管理 research"]');
     expect(manageResearch).not.toBeNull();
     act(() => manageResearch?.click());
-    expect(document.querySelector(".channel-room-details")?.textContent).toContain("Agent 成员");
-    expect(document.querySelector(".channel-room-details")?.textContent).not.toContain("群公告");
-    const memberButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".channel-room-member"));
-    expect(memberButtons).toHaveLength(2);
-    act(() => memberButtons[0]?.click());
-    const saveButton = document.querySelector<HTMLButtonElement>(".channel-room-save-button");
+    const detailsDialog = document.querySelector(".sidebar-name-dialog");
+    expect(detailsDialog?.textContent).toContain("群聊详情");
+    expect(detailsDialog?.textContent).toContain("Agent 成员");
+    expect(detailsDialog?.textContent).not.toContain("群公告");
+    const memberInputs = Array.from(detailsDialog?.querySelectorAll<HTMLInputElement>(".channel-checkbox-row input") ?? []);
+    expect(memberInputs).toHaveLength(2);
+    act(() => memberInputs[0]?.click());
+    const saveButton = detailsDialog?.querySelector<HTMLButtonElement>('button[type="submit"]');
     await act(async () => saveButton?.click());
 
     expect(api.updateChannelRoom).toHaveBeenCalledWith({
@@ -584,8 +589,10 @@ describe("ChannelView", () => {
       agent_ids: ["agent-1"],
     });
 
+    expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
+    act(() => manageResearch?.click());
     const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const deleteButton = document.querySelector<HTMLButtonElement>(".channel-room-delete-button");
+    const deleteButton = document.querySelector<HTMLButtonElement>(".sidebar-name-dialog-destructive");
     expect(deleteButton?.textContent).toBe("删除频道");
     await act(async () => deleteButton?.click());
     expect(confirmDelete).toHaveBeenCalledWith("删除“research”？频道及其中的消息将被永久删除。");
