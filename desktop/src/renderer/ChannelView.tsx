@@ -1194,7 +1194,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                     <span className="channel-room-member-avatar">
                       <DefaultAvatarMark seed="local-user" />
                     </span>
-                    <span className="channel-room-member-name">{t("channels.you")}</span>
                   </div>
                 ) : null}
                 {agents.filter((agent) => roomAgentIDs.includes(agent.id)).map((agent) => (
@@ -1208,7 +1207,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                     <span className="channel-room-member-avatar">
                       <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
                     </span>
-                    <span className="channel-room-member-name">{agent.name}</span>
                     <span className="channel-room-member-remove" aria-hidden="true"><X className="icon" /></span>
                   </button>
                 ))}

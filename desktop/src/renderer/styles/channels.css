@@ -1241,26 +1241,27 @@
 
 .channel-room-member-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .channel-room-member-card {
   position: relative;
   min-width: 0;
+  aspect-ratio: 1;
   display: grid;
-  justify-items: center;
-  gap: 4px;
+  place-items: center;
   border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--surface-2);
+  border-radius: 50%;
+  background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  padding: 7px 4px 6px;
+  padding: 4px;
 }
 
 .channel-room-member-card:hover,
 .channel-room-member-card:focus-visible {
+  background: var(--surface-2);
   border-color: var(--ink-overlay-12);
   outline: 0;
 }
@@ -1270,8 +1271,8 @@
 }
 
 .channel-room-member-avatar {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1285,15 +1286,6 @@
   display: block;
 }
 
-.channel-room-member-name {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
 .channel-room-member-remove {
   position: absolute;
   top: 3px;
@@ -1305,6 +1297,13 @@
   border-radius: 50%;
   background: var(--surface-4);
   color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.channel-room-member-card:hover .channel-room-member-remove,
+.channel-room-member-card:focus-visible .channel-room-member-remove {
+  opacity: 1;
 }
 
 .channel-room-member-remove .icon {
