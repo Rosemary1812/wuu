@@ -742,6 +742,7 @@
 .run-debug-anchor {
   position: relative;
   display: inline-flex;
+  anchor-name: --run-debug-anchor;
   -webkit-app-region: no-drag;
 }
 
@@ -772,6 +773,15 @@
   backdrop-filter: blur(18px);
   transform-origin: top right;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+@supports (position-anchor: --run-debug-anchor) {
+  .run-debug-panel {
+    position: fixed;
+    position-anchor: --run-debug-anchor;
+    top: calc(anchor(bottom) + 10px);
+    right: anchor(right);
+  }
 }
 
 .run-debug-header {

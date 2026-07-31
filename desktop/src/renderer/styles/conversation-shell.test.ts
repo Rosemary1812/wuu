@@ -154,3 +154,22 @@ describe("conversation shell message-flow preview", () => {
     );
   });
 });
+
+describe("conversation shell Run Debug panel", () => {
+  it("escapes title overflow by fixing the panel to its toolbar anchor", () => {
+    expect(cssRuleBody(".run-debug-anchor")).toMatch(
+      /anchor-name:\s*--run-debug-anchor;/,
+    );
+    expect(conversationShellCssNoComments).toMatch(
+      /@supports\s*\(position-anchor:\s*--run-debug-anchor\)\s*\{\s*\.run-debug-panel\s*\{[^}]*position:\s*fixed;[^}]*position-anchor:\s*--run-debug-anchor;[^}]*top:\s*calc\(anchor\(bottom\)\s*\+\s*10px\);[^}]*right:\s*anchor\(right\);/s,
+    );
+  });
+
+  it("retains absolute positioning as a fallback for older renderers", () => {
+    const panel = cssRuleBody(".run-debug-panel");
+
+    expect(panel).toMatch(/position:\s*absolute;/);
+    expect(panel).toMatch(/top:\s*calc\(100%\s*\+\s*10px\);/);
+    expect(panel).toMatch(/right:\s*0;/);
+  });
+});
