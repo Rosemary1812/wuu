@@ -4262,6 +4262,7 @@ func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-process-tty")
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -4310,6 +4311,7 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-process-telemetry")
 
 	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -4420,6 +4422,7 @@ func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-process-redaction")
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",

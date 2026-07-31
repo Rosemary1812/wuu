@@ -27,6 +27,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
+	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -62,6 +63,26 @@ func TestSessionUltraModeIsConcurrencySafe(t *testing.T) {
 	var zero Session
 	if zero.MaxParallel() != config.DefaultAgentMaxParallel {
 		t.Fatalf("zero-value MaxParallel = %d, want %d", zero.MaxParallel(), config.DefaultAgentMaxParallel)
+	}
+}
+
+func TestThreadProcessManagerSharesRuntimeHostGeneration(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	workspaceManager, err := process.NewManager(workspaceRoot, filepath.Join(t.TempDir(), "workspace-runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	s := &Session{RootDir: workspaceRoot, ProcessManager: workspaceManager}
+
+	threadManager, err := s.processManagerForThread(t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatalf("processManagerForThread: %v", err)
+	}
+	if threadManager == workspaceManager {
+		t.Fatal("a different thread root should receive a thread-local manager")
+	}
+	if threadManager.HostGenerationID() != workspaceManager.HostGenerationID() {
+		t.Fatalf("thread host generation = %q, want workspace generation %q", threadManager.HostGenerationID(), workspaceManager.HostGenerationID())
 	}
 }
 

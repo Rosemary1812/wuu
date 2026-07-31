@@ -67,6 +67,7 @@ func TestBashUpdateBackgroundScheduleLifecycle(t *testing.T) {
 	}
 	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-update-background")
 
 	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -133,6 +134,7 @@ func TestBashStartBackgroundAllowsExplicitLogOnlyMode(t *testing.T) {
 	}
 	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-log-only-background")
 
 	response, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -168,6 +170,7 @@ func TestBashStartBackgroundRejectsInvalidRecheck(t *testing.T) {
 	}
 	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-invalid-recheck")
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",

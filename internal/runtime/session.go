@@ -1138,13 +1138,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		agentControl *agentcontrol.AgentControl
 		toolExecutor = s.StreamRunner.Tools
 	)
-	threadProcessManager := s.ProcessManager
-	if !sameRuntimeRoot(threadRoot, s.RootDir) && threadProcessManager != nil {
-		manager, err := process.NewManager(threadRoot, statepath.RuntimeDir(stateDir))
-		if err != nil {
-			return nil, fmt.Errorf("thread process manager: %w", err)
-		}
-		threadProcessManager = manager
+	threadProcessManager, err := s.processManagerForThread(threadRoot, stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("thread process manager: %w", err)
 	}
 
 	// Prepare every fallible thread-local dependency before AgentControl. The
@@ -1383,6 +1379,20 @@ func sameRuntimeRoot(left, right string) bool {
 	left = cleanRuntimeRoot(left)
 	right = cleanRuntimeRoot(right)
 	return left != "" && left == right
+}
+
+func (s *Session) processManagerForThread(threadRoot, stateDir string) (*process.Manager, error) {
+	if s == nil || s.ProcessManager == nil || sameRuntimeRoot(threadRoot, s.RootDir) {
+		if s == nil {
+			return nil, nil
+		}
+		return s.ProcessManager, nil
+	}
+	return process.NewManagerWithHostGeneration(
+		threadRoot,
+		s.ProcessManager.HostGenerationID(),
+		statepath.RuntimeDir(stateDir),
+	)
 }
 
 // sessionParticipantStore adapts the session store to

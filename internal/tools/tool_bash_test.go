@@ -412,6 +412,7 @@ func TestBashBackgroundModeUsesManagedProcessBackend(t *testing.T) {
 	}
 	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-bash-background")
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -476,6 +477,7 @@ func TestBashReadBackgroundConsumesCompletionWhenTerminalResultIsReturned(t *tes
 		t.Fatalf("NewManager: %v", err)
 	}
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-bash-completion")
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
@@ -632,6 +634,7 @@ func TestBashBackgroundUsesCWD(t *testing.T) {
 	}
 	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-bash-background-cwd")
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",

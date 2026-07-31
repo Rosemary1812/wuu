@@ -413,6 +413,10 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if strings.TrimSpace(args.OwnerID) == "" {
 		args.OwnerID = defaultProcessOwnerID(t.env)
 	}
+	rootThreadID := processRootThreadID(t.env)
+	if rootThreadID == "" {
+		return "", errors.New("bash start_background requires a bound session ID")
+	}
 	m, err := t.env.ProcessManager()
 	if err != nil {
 		return "", err
@@ -421,7 +425,7 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if args.TTY != nil {
 		tty = *args.TTY
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CommandPrefix: commandPrefix, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: tty, AllowOutsideWorkspace: t.env.BypassToolHardProtections(), RecheckMinutes: args.RecheckMinutes})
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CommandPrefix: commandPrefix, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, RootThreadID: rootThreadID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: tty, AllowOutsideWorkspace: t.env.BypassToolHardProtections(), RecheckMinutes: args.RecheckMinutes})
 	response := startProcessResponse{}
 	if p != nil {
 		response.Process = redactProcess(t.env, *p)

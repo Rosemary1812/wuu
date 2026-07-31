@@ -10,6 +10,12 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ### Changed
 
+- Background command records now add durable owning-conversation and app-server
+  host-generation data. The owning conversation is taken from host state rather
+  than a model argument. This is additive record data only: no lifecycle cleanup
+  or cascade behavior is implemented yet, and legacy `lifecycle` data continues
+  to parse and round-trip.
+
 - Slash command rows now lead with the command to type (`/review`) and carry a
   short summary beside it, so built-in commands and skills read the same way.
 
