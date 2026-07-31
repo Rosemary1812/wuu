@@ -771,14 +771,8 @@
 }
 
 .channel-thread-digest-heading {
-  gap: 6px;
   color: var(--text-secondary);
   font-size: 11px;
-}
-
-.channel-thread-digest-heading svg {
-  width: 13px;
-  height: 13px;
 }
 
 .channel-thread-digest-rows {

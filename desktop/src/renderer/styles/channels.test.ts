@@ -74,6 +74,7 @@ describe("channel message resizing", () => {
     expect(content).toMatch(/max-width:\s*100%/);
     expect(digest).toMatch(/display:\s*grid/);
     expect(digest).toMatch(/width:\s*100%/);
+    expect(channelsCss).not.toContain(".channel-thread-digest-heading svg");
     expect(digest).toMatch(/padding:\s*5px 0 0/);
     expect(digest).toMatch(/border-top:\s*1px solid var\(--border-subtle\)/);
     expect(digest).toMatch(/background:\s*transparent/);

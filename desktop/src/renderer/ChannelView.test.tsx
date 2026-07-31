@@ -311,6 +311,7 @@ describe("ChannelView", () => {
 
     const digest = container.querySelector<HTMLButtonElement>(".channel-thread-digest");
     expect(digest?.textContent).toContain("1 条回复");
+    expect(digest?.querySelector(".channel-thread-digest-heading svg")).toBeNull();
     expect(digest?.textContent).toContain("Beta");
     expect(digest?.textContent).toContain("A threaded answer");
     expect(container.querySelector(".channel-message-stream > .channel-message")?.textContent).toContain("A threaded answer");

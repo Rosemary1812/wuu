@@ -95,7 +95,6 @@ function ChannelThreadDigest({
   return (
     <button className="channel-thread-digest" type="button" onClick={onOpen}>
       <span className="channel-thread-digest-heading">
-        <MessageCircle aria-hidden="true" />
         <strong>{t("channels.replyCount", { count: replies.length })}</strong>
       </span>
       <span className="channel-thread-digest-rows">
