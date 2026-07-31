@@ -1402,7 +1402,7 @@
 }
 
 .channel-room-row {
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr) 28px;
 }
 
 .channel-directory-row:hover,

@@ -737,6 +737,18 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 <span className="channel-room-name">{room.name}</span>
                 <span className="channel-room-members">{t("channels.memberCount", { count: room.members.length })}</span>
               </button>
+              <button
+                className="icon-button channel-directory-settings channel-room-details-toggle"
+                type="button"
+                aria-label={t("channels.manageRoom", { name: room.name })}
+                aria-haspopup="dialog"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  editRoom(room);
+                }}
+              >
+                <MoreHorizontal className="icon" />
+              </button>
             </div>
           ))}
           <input
@@ -773,22 +785,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 
       {section === "rooms" ? <div ref={conversationRef} className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}`}>
         <div className="channel-room-main">
-          <header className="channel-conversation-heading">
-            <div className="channel-conversation-title">
-              <strong>{selectedRoom?.name ?? t("channels.chooseRoom")}</strong>
-              {selectedRoom ? <span>{t("channels.memberCount", { count: selectedRoom.members.length })}</span> : null}
-            </div>
-            <button
-              className="icon-button channel-room-details-toggle"
-              type="button"
-              aria-label={selectedRoom ? t("channels.manageRoom", { name: selectedRoom.name }) : t("channels.roomDetails")}
-              aria-haspopup="dialog"
-              disabled={!selectedRoom}
-              onClick={() => selectedRoom && editRoom(selectedRoom)}
-            >
-              <MoreHorizontal className="icon" />
-            </button>
-          </header>
           {error ? <div className="channel-error" role="alert">{error}</div> : null}
         <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
           {rootMessages.map((message) => {

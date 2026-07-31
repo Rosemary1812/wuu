@@ -243,7 +243,7 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    expect(container.querySelector(".channel-conversation-heading")?.textContent).toContain("general");
+    expect(container.querySelector(".channel-conversation-heading")).toBeNull();
     expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
     const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
     expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown\n<img src=x onerror=alert(1)>");
@@ -270,7 +270,7 @@ describe("ChannelView", () => {
     const firstRoomRow = container.querySelector(".channel-room-row");
     expect(firstRoomRow?.textContent).toContain("2 位成员");
     expect(firstRoomRow?.querySelectorAll(".channel-group-avatar-cell")).toHaveLength(2);
-    expect(firstRoomRow?.querySelector(".channel-directory-settings")).toBeNull();
+    expect(firstRoomRow?.querySelector(".channel-directory-settings")).not.toBeNull();
     const detailsToggle = container.querySelector<HTMLButtonElement>(".channel-room-details-toggle");
     expect(detailsToggle).not.toBeNull();
     act(() => detailsToggle?.click());
@@ -279,6 +279,7 @@ describe("ChannelView", () => {
     expect(detailsDialog?.textContent).toContain("群成员");
     expect(container.querySelector(".channel-conversation")?.classList.contains("details-open")).toBe(false);
     expect(container.querySelector(".channel-room-main")).not.toBeNull();
+    expect(container.querySelector(".channel-conversation-heading")).toBeNull();
     const cancelDetails = Array.from(detailsDialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])
       .find((button) => button.textContent === "取消");
     act(() => cancelDetails?.click());
