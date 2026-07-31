@@ -908,6 +908,12 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                     <time dateTime={message.created_at}>
                       {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
                     </time>
+                    <div className="channel-message-actions">
+                      <button type="button" onClick={() => openThread(message)}>
+                        <Reply aria-hidden="true" />
+                        {t("channels.reply")}
+                      </button>
+                    </div>
                   </div>
                   {message.body ? (
                     <ChannelMessageBody text={message.body} allowCollapse={!own} />
@@ -919,12 +925,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       removable={false}
                     />
                   ) : null}
-                  <div className="channel-message-actions">
-                    <button type="button" onClick={() => openThread(message)}>
-                      <Reply aria-hidden="true" />
-                      {t("channels.reply")}
-                    </button>
-                  </div>
                   {threadReplies.length ? (
                     <ChannelThreadDigest
                       replies={threadReplies}
@@ -988,6 +988,12 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                         <time dateTime={message.created_at}>
                           {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
                         </time>
+                        <div className="channel-message-actions">
+                          <button type="button" onClick={() => setThreadReplyTargetID(message.id)}>
+                            <Reply aria-hidden="true" />
+                            {t("channels.reply")}
+                          </button>
+                        </div>
                       </div>
                       {repliedMessage && repliedMessage.id !== activeThreadRoot.id ? (
                         <button className="channel-thread-reference" type="button" onClick={() => setThreadReplyTargetID(repliedMessage.id)}>
@@ -1007,12 +1013,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                           removable={false}
                         />
                       ) : null}
-                      <div className="channel-message-actions">
-                        <button type="button" onClick={() => setThreadReplyTargetID(message.id)}>
-                          <Reply aria-hidden="true" />
-                          {t("channels.reply")}
-                        </button>
-                      </div>
                     </div>
                   </article>
                 );

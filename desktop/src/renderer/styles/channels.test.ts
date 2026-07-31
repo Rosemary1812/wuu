@@ -34,16 +34,23 @@ describe("channel directory alignment", () => {
 
 describe("channel message resizing", () => {
   it("keeps bubble width and horizontal gutters continuous across window sizes", () => {
+    const view = ruleFor(".channel-view");
     const stream = ruleFor(".channel-message-stream");
     const composer = ruleFor(".channel-composer");
+    const composerWrap = ruleFor(".channel-composer .dock-composer-wrap");
     const message = ruleFor(".channel-message");
     const ownMessage = ruleFor(".channel-message.own");
     const messageContent = ruleFor(".channel-message-content");
     const ownMessageContent = ruleFor(".channel-message.own .channel-message-content");
     const messageBubble = ruleFor(".channel-message-bubble");
 
-    expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 12px/);
-    expect(composer).toMatch(/padding:\s*12px clamp\(20px, 5vw, 72px\) 18px/);
+    expect(view).toMatch(/--channel-content-max-width:\s*1040px/);
+    expect(view).toMatch(/--channel-horizontal-gutter:\s*clamp\(16px, 3vw, 40px\)/);
+    expect(stream).toMatch(/padding:\s*12px var\(--channel-horizontal-gutter\)/);
+    expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 8px/);
+    expect(composer).toMatch(/padding:\s*10px var\(--channel-horizontal-gutter\) 12px/);
+    expect(composerWrap).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
+    expect(message).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
     expect(message).toMatch(/grid-template-columns:\s*30px minmax\(0, 1fr\)/);
     expect(ownMessage).toMatch(/grid-template-columns:\s*30px minmax\(0, 1fr\)/);
     expect(messageContent).toMatch(/max-width:\s*100%/);
@@ -66,6 +73,15 @@ describe("channel message resizing", () => {
     expect(digest).toMatch(/width:\s*100%/);
     expect(preview).toMatch(/text-overflow:\s*ellipsis/);
     expect(preview).toMatch(/white-space:\s*nowrap/);
+  });
+
+  it("keeps hover actions out of the vertical reading rhythm", () => {
+    const meta = ruleFor(".channel-message-meta");
+    const actions = ruleFor(".channel-message-actions");
+
+    expect(meta).toMatch(/display:\s*flex/);
+    expect(actions).toMatch(/margin:\s*0 0 0 auto/);
+    expect(actions).not.toMatch(/position:/);
   });
 
   it("runs the room scroll surface to the bottom behind a floating composer", () => {
