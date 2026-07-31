@@ -30,6 +30,14 @@ describe("channel directory alignment", () => {
     expect(agentIdentity).not.toMatch(/grid-template-columns/);
     expect(channelsCss).not.toContain("channel-agent-directory-actions");
   });
+
+  it("aligns the empty room action with the pane heading", () => {
+    const roomList = ruleFor(".channel-room-list");
+
+    expect(roomList).toMatch(/padding:\s*var\(--channel-directory-list-padding\)/);
+    expect(channelsCss).toContain("--channel-directory-list-padding: 0 8px");
+    expect(channelsCss).toMatch(/\.channel-empty-action\s*\{\s*padding:\s*10px 8px/);
+  });
 });
 
 describe("channel message resizing", () => {
