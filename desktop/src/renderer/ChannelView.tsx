@@ -77,6 +77,63 @@ function AgentAvatar({ name, avatarKey, avatarImage, status, statusText, compact
   );
 }
 
+const CHANNEL_THREAD_DIGEST_MAX_REPLIES = 3;
+
+function ChannelThreadDigest({
+  replies,
+  agents,
+  onOpen,
+}: {
+  replies: ChannelMessage[];
+  agents: NamedAgent[];
+  onOpen: () => void;
+}): JSX.Element {
+  const { formatDate, t } = useI18n();
+  const visibleReplies = replies.slice(-CHANNEL_THREAD_DIGEST_MAX_REPLIES);
+
+  return (
+    <button className="channel-thread-digest" type="button" onClick={onOpen}>
+      <span className="channel-thread-digest-heading">
+        <MessageCircle aria-hidden="true" />
+        <strong>{t("channels.replyCount", { count: replies.length })}</strong>
+      </span>
+      <span className="channel-thread-digest-rows">
+        {visibleReplies.map((reply) => {
+          const own = reply.author_type === "human";
+          const agent = own
+            ? undefined
+            : agents.find((candidate) => candidate.id === reply.author_id);
+          const author = own ? t("channels.you") : (agent?.name ?? reply.author_id);
+          const preview = reply.body.trim().replace(/\s+/g, " ")
+            || reply.files?.[0]?.filename
+            || (reply.images?.length
+              ? t("appState.images", { count: reply.images.length })
+              : "");
+          return (
+            <span className="channel-thread-digest-row" key={reply.id}>
+              <span className="channel-thread-digest-avatar" aria-hidden="true">
+                {own ? (
+                  <DefaultAvatarMark seed="local-user" />
+                ) : (
+                  <AgentAvatarMark
+                    avatarKey={agent?.avatar_key ?? "abstract-1"}
+                    avatarImage={agent?.avatar_image}
+                  />
+                )}
+              </span>
+              <strong>{author}</strong>
+              <span className="channel-thread-digest-preview">{preview}</span>
+              <time dateTime={reply.created_at}>
+                {formatDate(reply.created_at, { hour: "2-digit", minute: "2-digit" })}
+              </time>
+            </span>
+          );
+        })}
+      </span>
+    </button>
+  );
+}
+
 function clampChannelSplitWidth(width: number): number {
   return Math.min(CHANNEL_SPLIT_MAX_WIDTH, Math.max(CHANNEL_SPLIT_MIN_WIDTH, Math.round(width)));
 }
@@ -234,12 +291,20 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     () => messages.filter((message) => message.kind !== "task" && !message.thread_id),
     [messages],
   );
+  const repliesByThread = useMemo(() => {
+    const replies = new Map<string, ChannelMessage[]>();
+    for (const message of messages) {
+      if (!message.thread_id || message.kind === "task") continue;
+      const current = replies.get(message.thread_id) ?? [];
+      current.push(message);
+      replies.set(message.thread_id, current);
+    }
+    return replies;
+  }, [messages]);
   const activeThreadRoot = activeThreadRootID ? messageByID.get(activeThreadRootID) : undefined;
   const activeThreadMessages = useMemo(
-    () => activeThreadRootID
-      ? messages.filter((message) => message.thread_id === activeThreadRootID && message.kind !== "task")
-      : [],
-    [activeThreadRootID, messages],
+    () => activeThreadRootID ? (repliesByThread.get(activeThreadRootID) ?? []) : [],
+    [activeThreadRootID, repliesByThread],
   );
   const threadScroll = useAutoFollowScrollContainer({
     open: section === "rooms" && Boolean(activeThreadRootID),
@@ -789,7 +854,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
           {rootMessages.map((message) => {
             const own = message.author_type === "human";
             const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
-            const replyCount = messages.filter((candidate) => candidate.thread_id === message.id && candidate.kind !== "task").length;
+            const threadReplies = repliesByThread.get(message.id) ?? [];
             return (
               <article className={`channel-message ${own ? "own" : "agent"}`} key={message.id}>
                 {!own ? (() => {
@@ -797,7 +862,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   const status = activityFor(agent);
                   return <AgentAvatar name={author} avatarKey={agent?.avatar_key ?? "abstract-1"} avatarImage={agent?.avatar_image} status={status} statusText={activityText(status)} />;
                 })() : null}
-                <div className="channel-message-content">
+                <div className={`channel-message-content${threadReplies.length ? " has-thread-digest" : ""}`}>
                   <div className="channel-message-meta">
                     <strong>{author}</strong>
                     <time dateTime={message.created_at}>
@@ -821,13 +886,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                       <Reply aria-hidden="true" />
                       {t("channels.reply")}
                     </button>
-                    {replyCount > 0 ? (
-                      <button type="button" onClick={() => openThread(message)}>
-                        <MessageCircle aria-hidden="true" />
-                        {t("channels.replyCount", { count: replyCount })}
-                      </button>
-                    ) : null}
                   </div>
+                  {threadReplies.length ? (
+                    <ChannelThreadDigest
+                      replies={threadReplies}
+                      agents={agents}
+                      onOpen={() => openThread(message)}
+                    />
+                  ) : null}
                 </div>
               </article>
             );

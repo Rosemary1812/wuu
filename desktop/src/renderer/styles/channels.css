@@ -595,6 +595,20 @@
   align-items: flex-end;
 }
 
+.channel-message-content.has-thread-digest,
+.channel-message.own .channel-message-content.has-thread-digest {
+  width: 100%;
+  max-width: 100%;
+}
+
+.channel-message.own .channel-message-content.has-thread-digest {
+  align-items: stretch;
+}
+
+.channel-message.own .channel-message-content.has-thread-digest > :not(.channel-thread-digest) {
+  align-self: flex-end;
+}
+
 .channel-message-meta {
   min-height: 22px;
   display: flex;
@@ -681,6 +695,88 @@
 .channel-thread-reply-action svg {
   width: 13px;
   height: 13px;
+}
+
+.channel-thread-digest {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 9px 11px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--ink-overlay-3);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.channel-thread-digest:hover,
+.channel-thread-digest:focus-visible {
+  background: var(--ink-overlay-5);
+}
+
+.channel-thread-digest-heading,
+.channel-thread-digest-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.channel-thread-digest-heading {
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.channel-thread-digest-heading svg {
+  width: 13px;
+  height: 13px;
+}
+
+.channel-thread-digest-rows {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.channel-thread-digest-row {
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.channel-thread-digest-avatar {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.channel-thread-digest-avatar > * {
+  width: 100%;
+  height: 100%;
+}
+
+.channel-thread-digest-row > strong {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.channel-thread-digest-preview {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-thread-digest-row time {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 10px;
 }
 
 .channel-stream-empty {

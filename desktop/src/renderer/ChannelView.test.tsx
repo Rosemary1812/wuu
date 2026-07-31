@@ -308,10 +308,12 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    expect(container.querySelector(".channel-message-stream")?.textContent).not.toContain("A threaded answer");
-    const threadButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-message-actions button"))
-      .find((button) => button.textContent?.includes("1 条回复"));
-    act(() => threadButton?.click());
+    const digest = container.querySelector<HTMLButtonElement>(".channel-thread-digest");
+    expect(digest?.textContent).toContain("1 条回复");
+    expect(digest?.textContent).toContain("Beta");
+    expect(digest?.textContent).toContain("A threaded answer");
+    expect(container.querySelector(".channel-message-stream > .channel-message")?.textContent).toContain("A threaded answer");
+    act(() => digest?.click());
 
     const panel = container.querySelector<HTMLElement>(".channel-thread-panel");
     expect(panel?.textContent).toContain("A threaded answer");

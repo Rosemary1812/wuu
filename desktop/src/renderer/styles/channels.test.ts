@@ -48,6 +48,19 @@ describe("channel message resizing", () => {
     expect(channelsCss).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.channel-message-content/);
   });
 
+  it("keeps thread summaries on the full message axis with clipped reply previews", () => {
+    const content = ruleFor(".channel-message-content.has-thread-digest,\n.channel-message.own .channel-message-content.has-thread-digest");
+    const digest = ruleFor(".channel-thread-digest");
+    const preview = ruleFor(".channel-thread-digest-preview");
+
+    expect(content).toMatch(/width:\s*100%/);
+    expect(content).toMatch(/max-width:\s*100%/);
+    expect(digest).toMatch(/display:\s*grid/);
+    expect(digest).toMatch(/width:\s*100%/);
+    expect(preview).toMatch(/text-overflow:\s*ellipsis/);
+    expect(preview).toMatch(/white-space:\s*nowrap/);
+  });
+
   it("runs the room scroll surface to the bottom behind a floating composer", () => {
     const roomMain = ruleFor(".channel-room-main");
     const stream = ruleFor(".channel-message-stream");
