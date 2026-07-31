@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import type {
   GitChangeFile,
   GitChangesResult,
@@ -22,12 +22,24 @@ import {
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
+// COMMIT_MESSAGE_DIFF_MAX_BYTES caps the staged diff sent to the app-server
+// for AI commit message generation; the server enforces its own guard too.
+const COMMIT_MESSAGE_DIFF_MAX_BYTES = 150 * 1024;
+
+// CommitMessageGenerator produces a commit message from the staged change.
+// Injected by the IPC layer so gitService stays free of app-server client
+// wiring; when it throws or returns empty, the commit must not happen.
+export type CommitMessageGenerator = (
+  context: RuntimeContext,
+  input: { diff: string; files: string[] },
+) => Promise<string>;
 
 export class GitService {
   constructor(
     private readonly getRuntimeContext: () => RuntimeContext,
     private readonly getRunningThreadCwds: () => string[] = () => [],
     private readonly getKnownThreadCwds: () => string[] = () => [],
+    private readonly generateCommitMessage?: CommitMessageGenerator,
   ) {}
 
   worktreeRoot(cwd: string): string {
@@ -65,10 +77,10 @@ export class GitService {
     return createCheckoutGitBranch(context, branch);
   }
 
-  commit(params: GitCommitParams, root?: string): GitCommitResult {
+  commit(params: GitCommitParams, root?: string): Promise<GitCommitResult> {
     const context = this.contextForRoot(root);
     this.assertMutationAllowed(context.cwd);
-    return commitGitChanges(context, params);
+    return commitGitChanges(context, params, this.generateCommitMessage);
   }
 
   createPullRequest(params: GitPullRequestParams, root?: string): GitPullRequestResult {
@@ -376,10 +388,11 @@ function createCheckoutGitBranch(
   return { status: gitStatusResult(context) };
 }
 
-function commitGitChanges(
+async function commitGitChanges(
   context: RuntimeContext,
   params: GitCommitParams,
-): GitCommitResult {
+  generateCommitMessage?: CommitMessageGenerator,
+): Promise<GitCommitResult> {
   const current = gitStatusResult(context);
   if (!current.is_repo) {
     throw new Error("current workspace is not a git repository");
@@ -391,7 +404,10 @@ function commitGitChanges(
   if (stagedDiff.files === 0) {
     throw new Error("there are no staged changes to commit");
   }
-  const message = params.message?.trim() || generatedCommitMessage(context.cwd);
+  let message = params.message?.trim();
+  if (!message) {
+    message = await generateAICommitMessage(context, generateCommitMessage);
+  }
   gitRun(context.cwd, ["commit", "-m", message]);
   const commit = gitOutput(context.cwd, ["rev-parse", "--short", "HEAD"]) ?? "";
   return {
@@ -399,6 +415,66 @@ function commitGitChanges(
     commit,
     message,
   };
+}
+
+// generateAICommitMessage asks the app-server's BYOK model for a commit
+// message from the staged change. Any failure (no generator wired, provider
+// error, empty result) aborts the commit — the staged state is left intact
+// so the user can type a message or retry.
+async function generateAICommitMessage(
+  context: RuntimeContext,
+  generateCommitMessage?: CommitMessageGenerator,
+): Promise<string> {
+  if (!generateCommitMessage) {
+    throw new Error("AI commit message generation is not available");
+  }
+  const files = (
+    gitOutput(context.cwd, ["diff", "--cached", "--name-only", "--"]) ?? ""
+  )
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const diff = gitStagedDiffForPrompt(context.cwd);
+  let generated: string;
+  try {
+    generated = await generateCommitMessage(context, { diff, files });
+  } catch (error) {
+    throw new Error(
+      `AI commit message generation failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  const message = generated.trim();
+  if (!message) {
+    throw new Error("AI commit message generation returned an empty message");
+  }
+  return message;
+}
+
+// gitStagedDiffForPrompt returns the staged diff capped to
+// COMMIT_MESSAGE_DIFF_MAX_BYTES; when the diff overflows the command buffer
+// entirely (giant binary drops, huge generated files), it degrades to the
+// --stat summary so the model still sees the shape of the change.
+function gitStagedDiffForPrompt(cwd: string): string {
+  const result = spawnSync(
+    "git",
+    ["-C", cwd, "diff", "--cached", "--no-ext-diff", "--find-renames", "--"],
+    {
+      cwd,
+      encoding: "utf8",
+      env: process.env,
+      maxBuffer: GIT_DIFF_COMMAND_MAX_BUFFER,
+    },
+  );
+  if (result.status !== 0 || result.error) {
+    const stat = gitOutput(cwd, ["diff", "--cached", "--stat", "--"]);
+    if (!stat) {
+      throw new Error("failed to read staged changes");
+    }
+    return `[full diff unavailable]\n${stat}`;
+  }
+  return truncateTextBytes(result.stdout, COMMIT_MESSAGE_DIFF_MAX_BYTES).text;
 }
 
 function createPullRequest(
@@ -920,25 +996,4 @@ function ghOutput(cwd: string, args: string[]): string | undefined {
 
 function ghPullRequestURL(cwd: string): string | undefined {
   return ghOutput(cwd, ["pr", "view", "--json", "url", "--jq", ".url"]);
-}
-
-function generatedCommitMessage(cwd: string): string {
-  const files = gitOutput(cwd, ["diff", "--cached", "--name-only"])
-    ?.split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  if (!files?.length) {
-    return "Update workspace changes";
-  }
-  if (files.length === 1) {
-    return `Update ${basename(files[0])}`;
-  }
-  const topLevel = files.map((file) => file.split("/", 1)[0]).filter(Boolean);
-  const sharedArea =
-    topLevel.length > 0 && topLevel.every((item) => item === topLevel[0])
-      ? topLevel[0]
-      : "";
-  return sharedArea
-    ? `Update ${sharedArea} changes`
-    : "Update workspace changes";
 }

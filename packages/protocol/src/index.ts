@@ -850,6 +850,16 @@ export type GitCommitParams = {
   include_unstaged?: boolean;
 };
 
+// git/commit-message: AI-generated commit message for the staged change.
+export type GitCommitMessageParams = {
+  diff: string;
+  files?: string[];
+};
+
+export type GitCommitMessageResult = {
+  message: string;
+};
+
 export type GitCommitResult = {
   status: GitStatusResult;
   commit: string;

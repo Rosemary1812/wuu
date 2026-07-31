@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RuntimeContext } from "../shared/protocol";
-import { GitService, gitWorkingTreeBusy } from "./gitService";
+import { GitService, gitWorkingTreeBusy, type CommitMessageGenerator } from "./gitService";
 
 const roots: string[] = [];
 
@@ -33,12 +33,14 @@ function serviceFor(
   root: string,
   runningThreadCwds: string[] = [],
   knownThreadCwds: string[] = [],
+  generateCommitMessage?: CommitMessageGenerator,
 ): GitService {
   const context: RuntimeContext = { kind: "no_project", cwd: root };
   return new GitService(
     () => context,
     () => runningThreadCwds,
     () => knownThreadCwds,
+    generateCommitMessage,
   );
 }
 
@@ -74,6 +76,100 @@ describe("GitService file previews", () => {
         .changes()
         .files.map((file) => file.path),
     ).not.toContain("ignored.txt");
+  });
+});
+
+describe("GitService commit", () => {
+  function headMessage(root: string): string {
+    return execFileSync("git", ["-C", root, "log", "-1", "--pretty=%s"], {
+      encoding: "utf8",
+    }).trim();
+  }
+
+  function headHash(root: string): string {
+    return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+  }
+
+  function writeChange(root: string): void {
+    writeFileSync(join(root, "feature.ts"), "export const feature = true;\n");
+  }
+
+  it("commits with the AI-generated message when the input is empty", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const calls: { diff: string; files: string[] }[] = [];
+    const generate: CommitMessageGenerator = async (_context, input) => {
+      calls.push(input);
+      return "feat(desktop): add feature flag";
+    };
+
+    const result = await serviceFor(root, [], [], generate).commit({ message: "" });
+
+    expect(result.message).toBe("feat(desktop): add feature flag");
+    expect(headMessage(root)).toBe("feat(desktop): add feature flag");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].files).toEqual(["feature.ts"]);
+    expect(calls[0].diff).toContain("+export const feature = true;");
+    expect(result.status.dirty_count).toBe(0);
+  });
+
+  it("does not commit when no generator is wired", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const before = headHash(root);
+
+    await expect(serviceFor(root).commit({ message: "  " })).rejects.toThrow(
+      "AI commit message generation is not available",
+    );
+
+    expect(headHash(root)).toBe(before);
+    // The staged change is preserved so the user can retry or type a message.
+    expect(serviceFor(root).status().dirty_count).toBeGreaterThan(0);
+  });
+
+  it("does not commit when the generator fails or returns empty", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const before = headHash(root);
+    const failing: CommitMessageGenerator = async () => {
+      throw new Error("BYOK model runtime is not available");
+    };
+
+    await expect(
+      serviceFor(root, [], [], failing).commit({ message: "" }),
+    ).rejects.toThrow("AI commit message generation failed");
+
+    const empty: CommitMessageGenerator = async () => "   ";
+    await expect(
+      serviceFor(root, [], [], empty).commit({ message: "" }),
+    ).rejects.toThrow("empty message");
+
+    expect(headHash(root)).toBe(before);
+  });
+
+  it("never calls the generator when a message is provided", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    let called = 0;
+    const generate: CommitMessageGenerator = async () => {
+      called += 1;
+      return "unused";
+    };
+
+    await serviceFor(root, [], [], generate).commit({ message: "manual message" });
+
+    expect(called).toBe(0);
+    expect(headMessage(root)).toBe("manual message");
+  });
+
+  it("still rejects when there is nothing staged", async () => {
+    const root = makeRepository();
+
+    await expect(serviceFor(root).commit({ message: "" })).rejects.toThrow(
+      "there are no staged changes to commit",
+    );
   });
 });
 

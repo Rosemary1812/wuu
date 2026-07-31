@@ -87,6 +87,7 @@ const (
 	MethodMemoryChat       = "memory/chat"
 	MethodMemoryRead       = "memory/read"
 	MethodTextPolish       = "text/polish"
+	MethodGitCommitMessage = "git/commit-message"
 	MethodTurnStart        = "turn/start"
 	MethodTurnQueue        = "turn/queue"
 	MethodTurnUpdateQueued = "turn/update-queued"
@@ -1266,6 +1267,18 @@ type TextPolishParams struct {
 
 type TextPolishResult struct {
 	Text string `json:"text"`
+}
+
+// GitCommitMessageParams is the input for `git/commit-message`: the staged
+// diff (already size-capped by the desktop) plus the staged file list so the
+// model keeps an overview even when the diff itself is truncated.
+type GitCommitMessageParams struct {
+	Diff  string   `json:"diff"`
+	Files []string `json:"files,omitempty"`
+}
+
+type GitCommitMessageResult struct {
+	Message string `json:"message"`
 }
 
 // MemoryChangedFile is one real notebook file the manager agent touched.

@@ -102,6 +102,7 @@ import type {
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
+  GitCommitMessageResult,
   SettingsUsageResponse,
   TerminalSessionStartParams,
   TextPolishResult,
@@ -421,6 +422,14 @@ function gitServiceForEvent(event: IpcMainInvokeEvent): GitService {
     () => {
       const context = runtimeContextForEvent(event);
       return appServerClientPool.threadCwdsForWorkdir(context.cwd);
+    },
+    async (context, input) => {
+      const result = await appServerClientPool.requestInContext<GitCommitMessageResult>(
+        context,
+        "git/commit-message",
+        input,
+      );
+      return result.message ?? "";
     },
   );
 }
