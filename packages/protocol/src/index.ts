@@ -2099,6 +2099,7 @@ export type WuuDesktopApi = {
   checkoutGitBranch: (branch: string, root?: string) => Promise<GitStatusResult>;
   createCheckoutGitBranch: (branch: string, root?: string) => Promise<GitCreateBranchResult>;
   commitGitChanges: (params: GitCommitParams, root?: string) => Promise<GitCommitResult>;
+  generateCommitMessage: (params: GitCommitParams, root?: string) => Promise<GitCommitMessageResult>;
   createPullRequest: (params: GitPullRequestParams, root?: string) => Promise<GitPullRequestResult>;
   // root is an optional absolute directory override, used to root the
   // workspace file tree / preview at the active thread's own cwd (e.g. a

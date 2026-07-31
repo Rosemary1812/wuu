@@ -1152,6 +1152,11 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:git-commit", (event, params: GitCommitParams, root?: string) =>
     gitServiceForEvent(event).commit(params ?? {}, root),
   );
+  ipcMain.handle(
+    "wuu:git-commit-message",
+    (event, params: GitCommitParams, root?: string) =>
+      gitServiceForEvent(event).commitMessage(params ?? {}, root),
+  );
   ipcMain.handle("wuu:git-create-pr", (event, params: GitPullRequestParams, root?: string) =>
     gitServiceForEvent(event).createPullRequest(params ?? {}, root),
   );

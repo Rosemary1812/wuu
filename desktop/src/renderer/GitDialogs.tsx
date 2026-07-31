@@ -1,4 +1,4 @@
-import { CornerDownRight, Github } from "lucide-react";
+import { CornerDownRight, Github, Loader2, Sparkles } from "lucide-react";
 import {
   type FormEvent as ReactFormEvent,
   useState,
@@ -13,24 +13,28 @@ export function CommitChangesDialog({
   branch,
   onCancel,
   onCommit,
+  onGenerateMessage,
 }: {
   gitStatus?: GitStatusResult;
   branch?: string;
   onCancel: () => void;
   onCommit: (params: { message: string; includeUnstaged: boolean }) => Promise<GitCommitResult>;
+  onGenerateMessage: (params: { includeUnstaged: boolean }) => Promise<string>;
 }): JSX.Element {
   const { t, formatNumber } = useI18n();
   const [message, setMessage] = useState("");
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
   const staged = gitStatus?.staged_diff ?? { files: 0, additions: 0, deletions: 0 };
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0 || staged.files > 0));
+  const busy = submitting || generating;
 
   async function submit(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!hasChanges || submitting) {
+    if (!hasChanges || busy || !message.trim()) {
       return;
     }
     setSubmitting(true);
@@ -42,6 +46,23 @@ export function CommitChangesDialog({
       setError(commitError instanceof Error ? commitError.message : t("git.commit.failed"));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // Explicit AI generation: fills the input for the user to confirm or edit
+  // before committing — nothing is committed from this path.
+  async function generate(): Promise<void> {
+    if (!hasChanges || busy) {
+      return;
+    }
+    setGenerating(true);
+    setError("");
+    try {
+      setMessage(await onGenerateMessage({ includeUnstaged }));
+    } catch (generateError) {
+      setError(generateError instanceof Error ? generateError.message : t("git.commit.generateFailed"));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -61,7 +82,7 @@ export function CommitChangesDialog({
           <button
             className="primary-button"
             type="submit"
-            disabled={!hasChanges || submitting}
+            disabled={!hasChanges || busy || !message.trim()}
           >
             {t("common.continue")}
           </button>
@@ -88,11 +109,27 @@ export function CommitChangesDialog({
       </label>
       <label className="environment-field">
         <span>{t("git.commit.message")}</span>
-        <input
-          value={message}
-          placeholder={t("git.commit.messagePlaceholder")}
-          onChange={(event) => setMessage(event.target.value)}
-        />
+        <span className="environment-field-inline">
+          <input
+            value={message}
+            placeholder={t("git.commit.messagePlaceholder")}
+            onChange={(event) => setMessage(event.target.value)}
+          />
+          <button
+            aria-label={generating ? t("git.commit.generating") : t("git.commit.generate")}
+            className="environment-generate-button"
+            disabled={!hasChanges || busy}
+            onClick={() => void generate()}
+            title={generating ? t("git.commit.generating") : t("git.commit.generate")}
+            type="button"
+          >
+            {generating ? (
+              <Loader2 className="icon-md environment-generate-spinner" />
+            ) : (
+              <Sparkles className="icon-md" />
+            )}
+          </button>
+        </span>
       </label>
       {error ? <div className="environment-dialog-error">{error}</div> : null}
     </Modal>

@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type {
   GitChangeFile,
   GitChangesResult,
+  GitCommitMessageResult,
   GitCommitParams,
   GitCommitResult,
   GitCreateBranchResult,
@@ -80,7 +81,19 @@ export class GitService {
   commit(params: GitCommitParams, root?: string): Promise<GitCommitResult> {
     const context = this.contextForRoot(root);
     this.assertMutationAllowed(context.cwd);
-    return commitGitChanges(context, params, this.generateCommitMessage);
+    return commitGitChanges(context, params);
+  }
+
+  // commitMessage generates an AI commit message for the current staged
+  // change without committing — the dialog fills the result into the input
+  // so the user confirms or edits it before the actual commit.
+  commitMessage(
+    params: GitCommitParams,
+    root?: string,
+  ): Promise<GitCommitMessageResult> {
+    const context = this.contextForRoot(root);
+    this.assertMutationAllowed(context.cwd);
+    return generateStagedCommitMessage(context, params, this.generateCommitMessage);
   }
 
   createPullRequest(params: GitPullRequestParams, root?: string): GitPullRequestResult {
@@ -391,7 +404,6 @@ function createCheckoutGitBranch(
 async function commitGitChanges(
   context: RuntimeContext,
   params: GitCommitParams,
-  generateCommitMessage?: CommitMessageGenerator,
 ): Promise<GitCommitResult> {
   const current = gitStatusResult(context);
   if (!current.is_repo) {
@@ -404,9 +416,11 @@ async function commitGitChanges(
   if (stagedDiff.files === 0) {
     throw new Error("there are no staged changes to commit");
   }
-  let message = params.message?.trim();
+  // The message is always user-confirmed here: either typed directly, or
+  // AI-generated via commitMessage() and then edited/accepted in the dialog.
+  const message = params.message?.trim();
   if (!message) {
-    message = await generateAICommitMessage(context, generateCommitMessage);
+    throw new Error("commit message is required");
   }
   gitRun(context.cwd, ["commit", "-m", message]);
   const commit = gitOutput(context.cwd, ["rev-parse", "--short", "HEAD"]) ?? "";
@@ -415,6 +429,30 @@ async function commitGitChanges(
     commit,
     message,
   };
+}
+
+// generateStagedCommitMessage stages the same change a commit would include
+// and asks the app-server's BYOK model for a commit message — but never
+// commits. Any failure (no generator wired, provider error, empty result)
+// surfaces as an error; the staged state is left intact either way.
+async function generateStagedCommitMessage(
+  context: RuntimeContext,
+  params: GitCommitParams,
+  generateCommitMessage?: CommitMessageGenerator,
+): Promise<GitCommitMessageResult> {
+  const current = gitStatusResult(context);
+  if (!current.is_repo) {
+    throw new Error("current workspace is not a git repository");
+  }
+  if (params.include_unstaged !== false) {
+    gitRun(context.cwd, ["add", "-A"]);
+  }
+  const stagedDiff = gitStagedDiffStats(context.cwd);
+  if (stagedDiff.files === 0) {
+    throw new Error("there are no staged changes to commit");
+  }
+  const message = await generateAICommitMessage(context, generateCommitMessage);
+  return { message };
 }
 
 // generateAICommitMessage asks the app-server's BYOK model for a commit

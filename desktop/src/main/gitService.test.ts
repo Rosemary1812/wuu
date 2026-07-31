@@ -96,60 +96,7 @@ describe("GitService commit", () => {
     writeFileSync(join(root, "feature.ts"), "export const feature = true;\n");
   }
 
-  it("commits with the AI-generated message when the input is empty", async () => {
-    const root = makeRepository();
-    writeChange(root);
-    const calls: { diff: string; files: string[] }[] = [];
-    const generate: CommitMessageGenerator = async (_context, input) => {
-      calls.push(input);
-      return "feat(desktop): add feature flag";
-    };
-
-    const result = await serviceFor(root, [], [], generate).commit({ message: "" });
-
-    expect(result.message).toBe("feat(desktop): add feature flag");
-    expect(headMessage(root)).toBe("feat(desktop): add feature flag");
-    expect(calls).toHaveLength(1);
-    expect(calls[0].files).toEqual(["feature.ts"]);
-    expect(calls[0].diff).toContain("+export const feature = true;");
-    expect(result.status.dirty_count).toBe(0);
-  });
-
-  it("does not commit when no generator is wired", async () => {
-    const root = makeRepository();
-    writeChange(root);
-    const before = headHash(root);
-
-    await expect(serviceFor(root).commit({ message: "  " })).rejects.toThrow(
-      "AI commit message generation is not available",
-    );
-
-    expect(headHash(root)).toBe(before);
-    // The staged change is preserved so the user can retry or type a message.
-    expect(serviceFor(root).status().dirty_count).toBeGreaterThan(0);
-  });
-
-  it("does not commit when the generator fails or returns empty", async () => {
-    const root = makeRepository();
-    writeChange(root);
-    const before = headHash(root);
-    const failing: CommitMessageGenerator = async () => {
-      throw new Error("BYOK model runtime is not available");
-    };
-
-    await expect(
-      serviceFor(root, [], [], failing).commit({ message: "" }),
-    ).rejects.toThrow("AI commit message generation failed");
-
-    const empty: CommitMessageGenerator = async () => "   ";
-    await expect(
-      serviceFor(root, [], [], empty).commit({ message: "" }),
-    ).rejects.toThrow("empty message");
-
-    expect(headHash(root)).toBe(before);
-  });
-
-  it("never calls the generator when a message is provided", async () => {
+  it("commits with the confirmed message without calling the generator", async () => {
     const root = makeRepository();
     writeChange(root);
     let called = 0;
@@ -164,12 +111,95 @@ describe("GitService commit", () => {
     expect(headMessage(root)).toBe("manual message");
   });
 
+  it("requires a message — implicit generation was removed", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const before = headHash(root);
+
+    await expect(serviceFor(root).commit({ message: "  " })).rejects.toThrow(
+      "commit message is required",
+    );
+
+    expect(headHash(root)).toBe(before);
+    // The staged change is preserved so the user can retry with a message.
+    expect(serviceFor(root).status().dirty_count).toBeGreaterThan(0);
+  });
+
   it("still rejects when there is nothing staged", async () => {
     const root = makeRepository();
 
-    await expect(serviceFor(root).commit({ message: "" })).rejects.toThrow(
+    await expect(serviceFor(root).commit({ message: "x" })).rejects.toThrow(
       "there are no staged changes to commit",
     );
+  });
+});
+
+describe("GitService commit message generation", () => {
+  function headHash(root: string): string {
+    return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+  }
+
+  function writeChange(root: string): void {
+    writeFileSync(join(root, "feature.ts"), "export const feature = true;\n");
+  }
+
+  it("returns the AI message without committing, staging unstaged files", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const before = headHash(root);
+    const calls: { diff: string; files: string[] }[] = [];
+    const generate: CommitMessageGenerator = async (_context, input) => {
+      calls.push(input);
+      return "feat(desktop): add feature flag";
+    };
+
+    const result = await serviceFor(root, [], [], generate).commitMessage({});
+
+    expect(result.message).toBe("feat(desktop): add feature flag");
+    expect(headHash(root)).toBe(before);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].files).toEqual(["feature.ts"]);
+    expect(calls[0].diff).toContain("+export const feature = true;");
+    // Generation stages the change exactly like a commit would.
+    expect(serviceFor(root).status().staged_diff?.files).toBe(1);
+  });
+
+  it("leaves unstaged files alone when include_unstaged is false", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const generate: CommitMessageGenerator = async () => "unused";
+
+    await expect(
+      serviceFor(root, [], [], generate).commitMessage({ include_unstaged: false }),
+    ).rejects.toThrow("there are no staged changes to commit");
+  });
+
+  it("rejects when no generator is wired", async () => {
+    const root = makeRepository();
+    writeChange(root);
+
+    await expect(serviceFor(root).commitMessage({})).rejects.toThrow(
+      "AI commit message generation is not available",
+    );
+  });
+
+  it("rejects when the generator fails or returns empty", async () => {
+    const root = makeRepository();
+    writeChange(root);
+    const failing: CommitMessageGenerator = async () => {
+      throw new Error("BYOK model runtime is not available");
+    };
+
+    await expect(
+      serviceFor(root, [], [], failing).commitMessage({}),
+    ).rejects.toThrow("AI commit message generation failed");
+
+    const empty: CommitMessageGenerator = async () => "   ";
+    await expect(
+      serviceFor(root, [], [], empty).commitMessage({}),
+    ).rejects.toThrow("empty message");
   });
 });
 

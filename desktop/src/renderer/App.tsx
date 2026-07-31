@@ -2532,6 +2532,7 @@ export function App(): JSX.Element {
     scheduleGitStatusRefresh,
     createAndCheckoutBranch,
     commitEnvironmentChanges,
+    generateEnvironmentCommitMessage,
     createEnvironmentPullRequest,
     toggleEnvironmentPanel,
     openEnvironmentPanel,
@@ -4626,6 +4627,7 @@ export function App(): JSX.Element {
           branch={state.gitStatus?.branch}
           onCancel={() => setEnvironmentDialog(null)}
           onCommit={commitEnvironmentChanges}
+          onGenerateMessage={generateEnvironmentCommitMessage}
         />
       ) : null}
       {environmentDialog === "pull-request" ? (

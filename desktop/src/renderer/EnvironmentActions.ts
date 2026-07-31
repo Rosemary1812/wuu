@@ -32,6 +32,9 @@ export type EnvironmentActions = {
     message: string;
     includeUnstaged: boolean;
   }) => Promise<GitCommitResult>;
+  generateEnvironmentCommitMessage: (params: {
+    includeUnstaged: boolean;
+  }) => Promise<string>;
   createEnvironmentPullRequest: (params: {
     title: string;
     body: string;
@@ -198,6 +201,20 @@ export function createEnvironmentActions(
     return result;
   }
 
+  async function generateEnvironmentCommitMessage(params: {
+    includeUnstaged: boolean;
+  }): Promise<string> {
+    const root = deps.getEnvironmentRoot();
+    if (!root) {
+      throw new Error("session working directory is unavailable");
+    }
+    const result = await window.wuu.generateCommitMessage(
+      { include_unstaged: params.includeUnstaged },
+      root,
+    );
+    return result.message;
+  }
+
   async function createEnvironmentPullRequest(params: {
     title: string;
     body: string;
@@ -263,6 +280,7 @@ export function createEnvironmentActions(
     scheduleGitStatusRefresh,
     createAndCheckoutBranch,
     commitEnvironmentChanges,
+    generateEnvironmentCommitMessage,
     createEnvironmentPullRequest,
     toggleEnvironmentPanel,
     openEnvironmentPanel,

@@ -168,6 +168,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:git-create-checkout-branch", branch, root),
   commitGitChanges: (params, root?: string) =>
     ipcRenderer.invoke("wuu:git-commit", params, root),
+  generateCommitMessage: (params, root?: string) =>
+    ipcRenderer.invoke("wuu:git-commit-message", params, root),
   createPullRequest: (params, root?: string) =>
     ipcRenderer.invoke("wuu:git-create-pr", params, root),
   listWorkspaceFiles: (root?: string) =>
