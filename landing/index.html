@@ -1977,12 +1977,15 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
    不对称;长吸引距离+父向延续出柔和曲线;Murray 定律回
    流管径,干粗梢细,粗者更实。随滚动按出生时刻长成,
    开花→结果→散种,种子飘回根的方向。
-   放映方式是电影语法,不是刮刮卡:
-   - 分镜摄影机:微距贴根→跟拍生长前沿→拉远给全貌→
-     失重随种子漂浮;滚动驱动的是镜头,不是树的生命。
-   - 手持感:镜头永不静止,叠加慢速漂移与呼吸变焦。
-   - 三层景深:远景虚化林层(预渲染反向视差)、焦平面
-     的树、前景穿镜孢子;散种期有种子贴着镜头飞过。
+   放映方式是 3D 电影语法,不是刮刮卡:
+   - 树在三维世界:画布 x/y 是地面的 x/z,节点带连贯高度
+     (主干贴地,细梢翘起),花有花茎,种子飞抛物线。
+   - 球坐标摄影机:贴地掠拍→低角度仰拍→侧面环绕→高位
+     追拍→花微距→升起顶视→荷兰角→低位随种子。顶视
+     只是其中一站。滚动驱动的是镜头,不是树的生命。
+   - 手持感:机位永不静止,目标漂移+仰角/距离呼吸。
+   - 大气透视:远枝淡去;天光在低角度入画;孢子与种子
+     在同一世界坐标系里漂浮,视差天然正确。
    - 光:生长梢头与初开的花有暖辉,暗角+颗粒在罩层。
    - 生长有质量:树时以弹簧追逐目标,梢尖带微颤。
    种子固定——每场放映 identical,但感觉是活的。
@@ -2010,8 +2013,9 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 
   let W=0, H=0, g=0, raf=null;
   let nodes=[], tips=[], seeds=[], chains=[], sprouts=[], root=null, iters=1, seg=5;
-  /* 电影机:分镜关键帧、跟拍轨迹、预渲染远景、光斑 sprites、前景粒子 */
-  let cam={x:0,y:0,z:1}, camKeys=[], camInit=false, track=[];
+  /* 电影机:3D 球坐标机位(目标/仰角/方位/距离/滚转)、跟拍轨迹、
+     天光预渲染、光斑 sprites、同世界坐标系的漂浮粒子 */
+  let cam={tx:0,ty:0,tz:0,el:1.2,az:0,dist:800,roll:0}, camKeys=[], camInit=false, track=[];
   let bgCv=null, glowSpr=null, dotSpr=null, motes=[], nearSeeds=[];
 
   /* 空间殖民(Runions 2005/2007, jasonwebb 开源实现的忠实移植):
@@ -2086,6 +2090,15 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     })(root);
     const wS=2.8/root.w;
     nodes.forEach(n=>{n.w*=wS;n.bornU=n.born/iters*G_GROW;});
+    /* 抬成 3D:画布 x/y 是地面的 x/z,每节点给连贯高度——主干贴地,
+       细梢翘起;按出生序随机游走(父先子后,高度天然跨链连续) */
+    const hRand=mulberry32(SEED+9);
+    root.h=0;
+    for(const n of nodes){
+      if(!n.parent) continue;
+      const hmax=H*.085*(1-Math.min(1,n.w/2.8)*.75);
+      n.h=clamp(n.parent.h+(hRand()-.5)*seg*1.1,0,hmax);
+    }
     /* 梢开花(按出生先后涟漪);近半梢在花谢处散种 */
     tips=nodes.filter(n=>!n.children.length);
     tips.forEach((t,i)=>{
@@ -2094,7 +2107,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       t.wob=hash(i*5+2); t.rot=hash(i*7+3)*3.14;
       if(hash(i*3+7)<.45) for(let k=0;k<2;k++){
         const h1=hash(i*17+k*5), h2=hash(i*23+k*7), h3=hash(i*29+k*11);
-        seeds.push({x:t.x,y:t.y,a:Math.PI*(.9+h1*.14),sp:W*(.014+h2*.012),
+        seeds.push({x:t.x,y:t.y,h:t.h||0,a:Math.PI*(.9+h1*.14),sp:W*(.014+h2*.012),
           ph:h3*6.28,life:2.2+h1*.9,wait:1.6+h2*3.6,at:G_BLOOM+u*.1});
       }
     });
@@ -2115,131 +2128,232 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       sprouts.push({x:W*(.18+hash(k*13+4)*.68),y:H*.93,at:.9+hash(k*7+2)*.06,ph:hash(k*11)*6.28});
     }
 
-    /* 跟拍轨迹:按出生时刻分桶取生长重心,平滑后就是摄影机的"动作点" */
+    /* 跟拍轨迹(世界坐标):按出生时刻分桶取生长重心(Murray 管径加权,
+       镜头跟"有视觉质量的生长"),平滑后就是摄影机的"动作点" */
+    const OX=W/2, OZ=H/2;
     track=[];
     const BN=56;
     for(let b=0;b<=BN;b++){
       const u0=b/BN*G_GROW,u1=(b+1)/BN*G_GROW;
-      /* 按 Murray 管径加权:镜头跟的是"有视觉质量的生长"(主干/粗枝),
-         不被稀疏的梢尖质心带偏 */
       let sx=0,sy=0,sw=0;
       for(const nd of nodes){if(nd.bornU>=u0&&nd.bornU<u1){sx+=nd.x*nd.w;sy+=nd.y*nd.w;sw+=nd.w;}}
-      track.push(sw?{x:sx/sw,y:sy/sw}:b?{x:track[b-1].x,y:track[b-1].y}:{x:W*.06,y:H*.5});
+      track.push(sw?{x:sx/sw-OX,z:sy/sw-OZ}:b?{x:track[b-1].x,z:track[b-1].z}:{x:-W*.44,z:0});
     }
     for(let s=0;s<2;s++)for(let b=1;b<track.length-1;b++){
       track[b].x=(track[b-1].x+track[b].x*2+track[b+1].x)/4;
-      track[b].y=(track[b-1].y+track[b].y*2+track[b+1].y)/4;
+      track[b].z=(track[b-1].z+track[b].z*2+track[b+1].z)/4;
     }
     const tAt=u=>{
       const f=clamp(u/G_GROW,0,1)*BN, i=Math.min(BN-1,f|0), t=f-i;
       const a=track[i],b=track[i+1];
-      return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+      return{x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t};
     };
-    /* 分镜:发芽微距贴根→分枝跟拍前沿→开花拉远全貌→散种失重漂浮。
-       与 warp 的 p→树时映射对齐选点(p=.14→g≈.15,p=.30→g≈.32…) */
+    /* 3D 分镜:球坐标机位(tx/ty/tz 目标,el 仰角,az 方位,dist 距离,roll 滚转)。
+       机位之间是环绕/升起/俯冲的真实运镜;顶视(el→86°)只是其中一站——
+       曾经的"全部"。 */
     const t0=tAt(.02),t1=tAt(.15),t2=tAt(.32),t3=tAt(.5);
+    const cc={x:W*.06,z:0};                       /* 树冠中心(世界) */
+    let bloomTip=null;for(const tp of tips){if(!bloomTip||tp.bloomAt<bloomTip.bloomAt)bloomTip=tp;}
+    const bt={x:bloomTip.x-OX,y:bloomTip.h||0,z:bloomTip.y-OZ};      /* 花微距主角 */
+    const sd0=seeds.length?{x:seeds[0].x-OX,y:seeds[0].h||0,z:seeds[0].y-OZ}:null;
     camKeys=[
-      {p:0,   x:t0.x,  y:t0.y,  z:2.6},
-      {p:.14, x:t1.x,  y:t1.y,  z:2.0},
-      {p:.30, x:t2.x,  y:t2.y,  z:1.5},
-      {p:.55, x:t3.x,  y:t3.y,  z:1.1},
-      {p:.78, x:W*.52, y:H*.48, z:.92},
-      {p:1,   x:W*.44, y:H*.55, z:1.06},
+      {p:0,   tx:t0.x, ty:0,     tz:t0.z,   el:.2,  az:-.55, dist:H*.5,  roll:0},     /* 发芽:贴地掠拍根部 */
+      {p:.14, tx:t1.x, ty:0,     tz:t1.z,   el:.1,  az:.35,  dist:H*.58, roll:-.03},  /* 低角度仰拍 */
+      {p:.30, tx:t2.x, ty:H*.01, tz:t2.z,   el:.5,  az:-.75, dist:H*.6,  roll:.015},  /* 分枝:侧面环绕 */
+      {p:.45, tx:t3.x, ty:H*.01, tz:t3.z,   el:.72, az:.4,   dist:H*.46, roll:0},     /* 高位追拍前沿 */
+      {p:.62, tx:bt.x, ty:bt.y,  tz:bt.z,   el:.85, az:.65,  dist:H*.3,  roll:0},     /* 开花:斜俯花微距 */
+      {p:.78, tx:cc.x, ty:0,     tz:cc.z,   el:1.3, az:.1,   dist:H*1.8, roll:0},     /* 升起→顶视 reveal */
+      {p:.9,  tx:cc.x, ty:0,     tz:cc.z,   el:1.0, az:.95,  dist:H*1.15,roll:.05},   /* 荷兰角环绕 */
+      {p:1,   tx:sd0?sd0.x:0, ty:sd0?sd0.y:0, tz:sd0?sd0.z:H*.25, el:.45, az:-.35, dist:H*.65, roll:-.02}, /* 散种:低位随种子 */
     ];
-    if(!camInit){cam={x:camKeys[0].x,y:camKeys[0].y,z:camKeys[0].z};camInit=true;}
+    if(!camInit){cam={...camKeys[0]};camInit=true;}
 
-    /* 前景:全年漂浮的孢子(近镜焦外);散种期贴镜飞过的种子 */
+    /* 同世界坐标系的粒子:全年浮空的孢子;散种期穿镜而过的种子 */
     motes=[];
-    for(let i=0;i<22;i++) motes.push({x:hash(i*3+11)*W*1.5,y:hash(i*5+17)*H*1.2-H*.1,sp:5+hash(i*7+3)*11,s:9+hash(i*11+5)*38,a:.04+hash(i*13+7)*.07,ph:hash(i*17)*6.28});
+    for(let i=0;i<22;i++) motes.push({
+      x:(hash(i*3+11)*1.6-.55)*W, z:(hash(i*5+17)*1.4-.45)*H,
+      y:H*.02+hash(i*9+1)*H*.16,
+      sp:5+hash(i*7+3)*11, s:10+hash(i*11+5)*36,
+      a:.05+hash(i*13+7)*.08, ph:hash(i*17)*6.28});
     nearSeeds=[];
-    for(let i=0;i<7;i++) nearSeeds.push({x:W*(.35+hash(i*5+31)*.4),y:H*(.25+hash(i*7+41)*.5),sp:W*(.05+hash(i*11+13)*.05),s:13+hash(i*13+3)*16,a:.08+hash(i*17+5)*.06,ph:hash(i*19)*6.28});
+    for(let i=0;i<7;i++) nearSeeds.push({
+      x:cc.x+(hash(i*5+31)-.5)*W*.5, z:(hash(i*7+41)-.5)*H*.6,
+      y:H*.04+hash(i*3+9)*H*.1,
+      sp:W*(.05+hash(i*11+13)*.05), s:14+hash(i*13+3)*16,
+      a:.08+hash(i*17+5)*.07, ph:hash(i*19)*6.28});
   }
 
   function draw(g,now){
     const p=darkMq.matches?PAL.dark:PAL.light;
     ctx.clearRect(0,0,W,H);
-    /* 手持感:镜头永不静止——慢速漂移+呼吸变焦,你停下手画面也在呼吸 */
-    const cx=cam.x+Math.sin(now*.31)*2.2+Math.sin(now*.083)*3.2;
-    const cy=cam.y+Math.cos(now*.27)*1.8+Math.sin(now*.061)*2.6;
-    const cz=cam.z*(1+Math.sin(now*.11)*.004);
-    const cr=Math.sin(now*.05)*.0038;
-    /* 远景:预渲染的大气+虚化林层,反向小视差——它最远,动得最慢 */
+    const OX=W/2, OZ=H/2;
+    /* 手持感:机位永不静止——目标漂移+仰角/距离呼吸 */
+    const tx=cam.tx+Math.sin(now*.31)*2.2+Math.sin(now*.083)*3.2;
+    const ty=cam.ty+Math.sin(now*.19)*1.2;
+    const tz=cam.tz+Math.cos(now*.27)*1.8+Math.sin(now*.061)*2.6;
+    const el=cam.el+Math.sin(now*.09)*.006;
+    const az=cam.az+Math.sin(now*.07)*.008;
+    const dist=cam.dist*(1+Math.sin(now*.11)*.004);
+    const roll=cam.roll+Math.sin(now*.05)*.0038;
+    /* 相机基:球坐标取位,注视目标,up=(0,1,0),roll 绕视轴 */
+    const cE=Math.cos(el),sE=Math.sin(el),cA=Math.cos(az),sA=Math.sin(az);
+    const cx=tx+dist*cE*cA, cy=ty+dist*sE, cz=tz+dist*cE*sA;
+    let fx=tx-cx, fy=ty-cy, fz=tz-cz;
+    const fl=Math.hypot(fx,fy,fz)||1; fx/=fl;fy/=fl;fz/=fl;
+    let rx=-fz, ry=0, rz=fx;
+    const rl=Math.hypot(rx,rz)||1; rx/=rl; rz/=rl;
+    let ux=ry*fz-rz*fy, uy=rz*fx-rx*fz, uz=rx*fy-ry*fx;
+    if(roll){
+      const cr=Math.cos(roll),sr=Math.sin(roll);
+      const nrx=rx*cr+ux*sr, nry=ry*cr+uy*sr, nrz=rz*cr+uz*sr;
+      const nux=ux*cr-rx*sr, nuy=uy*cr-ry*sr, nuz=uz*cr-rz*sr;
+      rx=nrx;ry=nry;rz=nrz;ux=nux;uy=nuy;uz=nuz;
+    }
+    const focal=(H/2)/Math.tan(.35);
+    const proj=(px,py,pz,o)=>{
+      const dx=px-cx, dy=py-cy, dz=pz-cz;
+      const vz=dx*fx+dy*fy+dz*fz;
+      if(vz<H*.02) return null;
+      const s=focal/vz;
+      o.x=W/2+(dx*rx+dy*ry+dz*rz)*s;
+      o.y=H/2-(dx*ux+dy*uy+dz*uz)*s;
+      o.s=s; o.vz=vz;
+      return o;
+    };
+    /* 大气透视:越远越淡 */
+    const fog=v=>clamp(1.25-v/(H*3.2),.3,1);
+    /* 天光:低角度时天色入画,顶视时只剩一层暖底 */
     if(bgCv){
       ctx.save();
-      ctx.translate((W/2-cx)*.12,(H/2-cy)*.12);
-      ctx.scale(1.15,1.15);ctx.translate(-W/2,-H/2);
+      ctx.globalAlpha=clamp(1.35-el/1.5,.2,1);
       ctx.drawImage(bgCv,0,0,W,H);
       ctx.restore();
     }
-    /* 焦平面:摄影机对准树 */
-    ctx.save();
-    ctx.translate(W/2,H/2);ctx.scale(cz,cz);ctx.rotate(cr);ctx.translate(-cx,-cy);
     ctx.lineCap='round';ctx.lineJoin='round';
+    /* 远林:同一几何在世界里的两个副本,退在纵深后面 */
+    ctx.strokeStyle=rgb(p.ink);
+    for(const [ox,oz,fs,mir] of [[-W*.55,H*.5,.55,true],[W*.8,H*.62,.38,false]]){
+      for(const ch of chains){
+        const pts=ch.pts;
+        let sAcc=0,vAcc=0,nAcc=0;
+        ctx.beginPath();
+        let started=false;
+        for(let i=0;i<pts.length;i++){
+          const n=pts[i];
+          const q=proj(((mir?-1:1)*(n.x-OX))*fs+ox,(n.h||0)*fs,(n.y-OZ)*fs+oz,{x:0,y:0,s:1,vz:1});
+          if(!q){started=false;continue;}
+          sAcc+=q.s;vAcc+=q.vz;nAcc++;
+          if(!started){ctx.moveTo(q.x,q.y);started=true;}
+          else ctx.lineTo(q.x,q.y);
+        }
+        if(nAcc<2) continue;
+        ctx.globalAlpha=.05*fog(vAcc/nAcc);
+        ctx.lineWidth=Math.max(.4,pts[0].w*.8*(sAcc/nAcc));
+        ctx.stroke();
+      }
+    }
     const glowTips=[];
     /* 枝干:整链一次平滑绘出(过中点二次曲线),链内分块带锥度,
        粗枝先晕一层墨——告别逐段折线的草图感 */
     const win=G_GROW/Math.max(1,iters);
     for(const ch of chains){
       const pts=ch.pts;
-      let full=0,hasP=false,px=0,py=0,fp=0;
+      let full=0,hasP=false,px=0,py=0,pz=0,fp=0;
       for(let i=1;i<pts.length;i++){
         const f=clamp((g-pts[i].bornU)/win,0,1);
         if(f>=1){full=i;continue;}
-        if(f>0){full=i-1;hasP=true;fp=f;px=pts[i-1].x+(pts[i].x-pts[i-1].x)*f;py=pts[i-1].y+(pts[i].y-pts[i-1].y)*f;}
+        if(f>0){
+          full=i-1;hasP=true;fp=f;
+          px=pts[i-1].x+(pts[i].x-pts[i-1].x)*f;
+          py=(pts[i-1].h||0)+((pts[i].h||0)-(pts[i-1].h||0))*f;
+          pz=pts[i-1].y+(pts[i].y-pts[i-1].y)*f;
+        }
         break;
       }
       if(full<1&&!hasP) continue;
-      const R=pts.slice(0,full+1);
-      if(hasP){
-        const tp={x:px,y:py,w:R[R.length-1].w};
-        /* 梢尖微颤:正在伸长的尖不是死的,带着生长的犹豫 */
-        const P=R[R.length-1], dx=tp.x-P.x, dy=tp.y-P.y, dl=Math.hypot(dx,dy)||1;
-        const tr=Math.sin(now*6.3+pts[0].x*.13+pts[0].y*.07)*1.6*(1-fp*.7);
-        tp.x+=-dy/dl*tr; tp.y+=dx/dl*tr;
-        R.push(tp);
-        glowTips.push({x:tp.x,y:tp.y,r:seg*6+18,a:.16});
-      }
-      /* 风:每条链绕自己的根轻摆,越细摆越大——树是活的 */
+      /* 风:每条链绕自己的根在地面(x/z)轻摆,越细摆越大 */
       const sway=Math.sin(now*1.15+pts[0].x*.0016+pts[0].y*.0009)*(.003+(1-Math.min(1,pts[0].w/2.8))*.018);
-      ctx.save();
-      ctx.translate(pts[0].x,pts[0].y);ctx.rotate(sway);ctx.translate(-pts[0].x,-pts[0].y);
-      for(let a=0;a<R.length-1;a+=5){
-        const b=Math.min(a+5,R.length-1);
-        let ws=0;for(let i=a;i<=b;i++)ws+=R[i].w;
-        const w=Math.max(.45,ws/(b-a+1));
-        const alpha=.28+Math.min(1,w/2.8)*.67;
+      const cs=Math.cos(sway),sn=Math.sin(sway);
+      const x0=pts[0].x-OX, z0=pts[0].y-OZ;
+      /* 生长中的链(世界坐标),梢尖带微颤 */
+      const R=[];
+      for(let i=0;i<=full;i++){
+        const n=pts[i], dx=(n.x-OX)-x0, dz=(n.y-OZ)-z0;
+        R.push({x:x0+dx*cs-dz*sn, y:n.h||0, z:z0+dx*sn+dz*cs, w:n.w});
+      }
+      if(hasP){
+        const wx=px-OX, wz=pz-OZ;
+        const P=R[R.length-1];
+        const dxp=wx-P.x, dzp=wz-P.z, dl=Math.hypot(dxp,dzp)||1;
+        const tr=Math.sin(now*6.3+pts[0].x*.13+pts[0].y*.07)*1.6*(1-fp*.7);
+        const dx=(wx+(-dzp/dl)*tr)-x0, dz=(wz+(dxp/dl)*tr)-z0;
+        R.push({x:x0+dx*cs-dz*sn, y:py, z:z0+dx*sn+dz*cs, w:P.w});
+      }
+      /* 投影到画面 */
+      const PR=[];
+      for(const r of R){
+        const q=proj(r.x,r.y,r.z,{x:0,y:0,s:1,vz:1});
+        if(!q){PR.push(null);}else{q.w=r.w;PR.push(q);}
+      }
+      for(let a=0;a<PR.length-1;a+=5){
+        const b=Math.min(a+5,PR.length-1);
+        let ws=0,ss=0,vv=0,nn=0;
+        for(let i=a;i<=b;i++){const q=PR[i];if(!q){nn=0;break;}ws+=q.w;ss+=q.s;vv+=q.vz;nn++;}
+        if(!nn) continue;
+        const w=Math.max(.45,ws/nn), s=ss/nn;
+        const alpha=(.28+Math.min(1,w/2.8)*.67)*fog(vv/nn);
         const path=()=>{
           ctx.beginPath();
-          ctx.moveTo(R[a].x,R[a].y);
+          ctx.moveTo(PR[a].x,PR[a].y);
           for(let i=a+1;i<b;i++){
-            ctx.quadraticCurveTo(R[i].x,R[i].y,(R[i].x+R[i+1].x)/2,(R[i].y+R[i+1].y)/2);
+            ctx.quadraticCurveTo(PR[i].x,PR[i].y,(PR[i].x+PR[i+1].x)/2,(PR[i].y+PR[i+1].y)/2);
           }
-          ctx.lineTo(R[b].x,R[b].y);
+          ctx.lineTo(PR[b].x,PR[b].y);
         };
         ctx.strokeStyle=rgb(p.ink);
-        if(w>1.1){ctx.globalAlpha=alpha*.14;ctx.lineWidth=w*1.9;path();ctx.stroke();}
-        ctx.globalAlpha=alpha;ctx.lineWidth=w;
+        if(w>1.1){ctx.globalAlpha=alpha*.14;ctx.lineWidth=w*1.9*s;path();ctx.stroke();}
+        ctx.globalAlpha=alpha;ctx.lineWidth=Math.max(.4,w*s);
         path();ctx.stroke();
       }
-      ctx.restore();
+      if(hasP){
+        const q=PR[PR.length-1];
+        if(q) glowTips.push({x:q.x,y:q.y,r:(seg*6+18)*q.s,a:.16});
+      }
     }
-    /* 花:末梢微椭圆细环+蕊点,回弹绽开时旋半圈,随风轻摆 */
+    /* 花:花茎立起,花环躺地面——投影两个切向量得到透视椭圆,
+       回弹绽开时旋半圈,随风轻摆 */
     for(const t of tips){
       const bp=clamp((g-t.bloomAt)/.05,0,1);
       if(bp<=0) continue;
       const bs=back(bp);
-      let bx=t.x,by=t.y;
+      let wx=t.x-OX, wz=t.y-OZ;
       if(t.ch){
         const c0=t.ch.pts[0];
         const ang=Math.sin(now*1.15+c0.x*.0016+c0.y*.0009)*(.003+(1-Math.min(1,c0.w/2.8))*.018);
-        bx=t.x-(t.y-c0.y)*ang; by=t.y+(t.x-c0.x)*ang;
+        wx=t.x-OX-(t.y-c0.y)*ang; wz=t.y-OZ+(t.x-c0.x)*ang;
       }
-      const er=3*bs;
-      ctx.globalAlpha=.75*bp;ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
-      ctx.beginPath();ctx.ellipse(bx,by,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),t.rot+bs*.9,0,6.2832);ctx.stroke();
+      const er=3*bs, th=t.h||0;
+      const qB=proj(wx,th,wz,{x:0,y:0,s:1,vz:1});
+      const qT=proj(wx,th+er,wz,{x:0,y:0,s:1,vz:1});
+      if(!qB||!qT) continue;
+      const rot=t.rot+bs*.9;
+      const q1=proj(wx+Math.cos(rot)*er,th+er,wz+Math.sin(rot)*er,{x:0,y:0,s:1,vz:1});
+      const q2=proj(wx-Math.sin(rot)*er,th+er,wz+Math.cos(rot)*er,{x:0,y:0,s:1,vz:1});
+      ctx.strokeStyle=rgb(p.ink);
+      ctx.globalAlpha=.6*bp;ctx.lineWidth=Math.max(.4,.8*qB.s);
+      ctx.beginPath();ctx.moveTo(qB.x,qB.y);ctx.lineTo(qT.x,qT.y);ctx.stroke();
+      if(q1&&q2){
+        ctx.globalAlpha=.75*bp;
+        ctx.save();
+        ctx.translate(qT.x,qT.y);
+        ctx.transform((q1.x-qT.x)/er,(q1.y-qT.y)/er,(q2.x-qT.x)/er,(q2.y-qT.y)/er,0,0);
+        ctx.beginPath();ctx.ellipse(0,0,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),0,0,6.2832);
+        ctx.lineWidth=1;ctx.stroke();
+        ctx.restore();
+      }
       ctx.globalAlpha=.5*bp;ctx.fillStyle=rgb(p.ink);
-      ctx.beginPath();ctx.arc(bx,by,.9*bp,0,6.2832);ctx.fill();
-      if(bp<1) glowTips.push({x:bx,y:by,r:26,a:.14*bp*(1-bp*.6)});
+      ctx.beginPath();ctx.arc(qT.x,qT.y,Math.max(.4,.9*bp*qT.s),0,6.2832);ctx.fill();
+      if(bp<1) glowTips.push({x:qT.x,y:qT.y,r:26*qT.s,a:.14*bp*(1-bp*.6)});
     }
     /* 光:生长梢头与初开的花笼一层暖辉——发光说明"这里正在发生" */
     if(glowTips.length&&glowSpr){
@@ -2253,67 +2367,77 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       }
       ctx.restore();
     }
-    /* 种子:朱红微粒,翻滚着向左下方飘回根的方向,淡出后错峰重结 */
+    /* 种子:朱红微粒,抛物线弧飘回根的方向,淡出后错峰重结 */
     for(const sd of seeds){
       const rp=clamp((g-sd.at)/.04,0,1);
       if(rp<=0) continue;
       const cyc=sd.life+sd.wait, ct=reduceMotion?sd.life*.35:(now+sd.ph*10)%cyc;
       if(ct>sd.life) continue;
       const q=ct/sd.life, d=sd.sp*ct;
+      const wx=sd.x-OX+Math.cos(sd.a)*d+Math.sin(ct*2.2+sd.ph)*2.5;
+      const wz=sd.y-OZ+Math.sin(sd.a)*d+ct*ct*H*.008;
+      const wy=(sd.h||0)+Math.sin(Math.min(1,q*1.15)*Math.PI)*H*.05;
+      const qq=proj(wx,wy,wz,{x:0,y:0,s:1,vz:1});
+      if(!qq) continue;
       ctx.globalAlpha=rp*Math.pow(1-q,1.5)*.9;ctx.fillStyle=rgb(p.accent);
       ctx.beginPath();
-      ctx.ellipse(sd.x+Math.cos(sd.a)*d+Math.sin(ct*2.2+sd.ph)*2.5,
-              sd.y+Math.sin(sd.a)*d+ct*ct*H*.008,1.7,1,ct*2.6+sd.ph,0,6.2832);
+      ctx.ellipse(qq.x,qq.y,Math.max(.4,1.7*qq.s),Math.max(.3,qq.s),ct*2.6+sd.ph,0,6.2832);
       ctx.fill();
     }
-    /* 新芽:尾声在地平线上依次冒出,随风轻摆 */
+    /* 新芽:尾声在地平线上依次冒出(直立的 billboard),随风轻摆 */
     for(const s of sprouts){
       const q=clamp((g-s.at)/.05,0,1);
       if(q<=0) continue;
-      const e=back(q), h=10*e;
+      const e=back(q);
+      const qq=proj(s.x-OX,0,s.y-OZ,{x:0,y:0,s:1,vz:1});
+      if(!qq) continue;
+      const h=10*e*qq.s;
       ctx.save();
-      ctx.translate(s.x,s.y);ctx.rotate(Math.sin(now*1.3+s.ph)*.06*q);
-      ctx.globalAlpha=.5*q;ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
+      ctx.translate(qq.x,qq.y);ctx.rotate(Math.sin(now*1.3+s.ph)*.06*q);
+      ctx.globalAlpha=.5*q*fog(qq.vz);ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=Math.max(.4,qq.s);
       ctx.beginPath();
       ctx.moveTo(0,0);ctx.quadraticCurveTo(1,-h*.5,0,-h);
       ctx.moveTo(0,-h*.55);ctx.quadraticCurveTo(-3.5,-h*.7,-4.5,-h*.85);
       ctx.moveTo(0,-h*.7);ctx.quadraticCurveTo(3.5,-h*.85,4.5,-h);
       ctx.stroke();ctx.restore();
     }
-    ctx.restore();
-    /* 前景:孢子贴着镜头飘(更大更虚,视差最快);散种期有种子穿镜而过 */
-    ctx.save();
-    ctx.translate(W/2,H/2);ctx.scale(cz*1.45,cz*1.45);ctx.translate(-cx*.8,-cy*.8);
+    /* 同世界的漂浮粒子:孢子全年浮空;散种期有种子抛物线穿镜 */
     if(dotSpr){
       const span=W*1.5;
       for(const m of motes){
-        const mx=((m.x-now*m.sp)%span+span)%span-W*.25;
-        const my=m.y+Math.sin(now*.3+m.ph)*20;
-        ctx.globalAlpha=m.a;
-        ctx.drawImage(dotSpr,mx-m.s/2,my-m.s/2,m.s,m.s);
+        const mx=((m.x-now*m.sp)%span+span)%span-W*.75;
+        const my=m.y+Math.sin(now*.3+m.ph)*H*.008;
+        const qq=proj(mx,my,m.z,{x:0,y:0,s:1,vz:1});
+        if(!qq) continue;
+        ctx.globalAlpha=m.a*fog(qq.vz);
+        const sz=m.s*qq.s;
+        ctx.drawImage(dotSpr,qq.x-sz/2,qq.y-sz/2,sz,sz);
       }
     }
     if(glowSpr&&g>G_SEED){
       const q=clamp((g-G_SEED)/.06,0,1), loop=W*1.1;
       for(const sd of nearSeeds){
         const d=((now*sd.sp+sd.ph*97)%loop+loop)%loop;
-        const sx=sd.x-d*.9, sy=sd.y+d*.28+Math.sin(now*.8+sd.ph)*14;
-        ctx.globalAlpha=sd.a*q;
-        ctx.drawImage(glowSpr,sx-sd.s/2,sy-sd.s/2,sd.s,sd.s);
+        const wy=sd.y+Math.sin(Math.min(1,d/loop)*Math.PI)*H*.12;
+        const qq=proj(sd.x-d*.9,wy,sd.z+d*.3+Math.sin(now*.8+sd.ph)*10,{x:0,y:0,s:1,vz:1});
+        if(!qq) continue;
+        ctx.globalAlpha=sd.a*q*fog(qq.vz);
+        const sz=sd.s*qq.s;
+        ctx.drawImage(glowSpr,qq.x-sz/2,qq.y-sz/2,sz,sz);
       }
     }
-    ctx.restore();
     ctx.globalAlpha=1;
   }
 
-  /* 分镜插值:滚动位置 → 机位,smoothstep 过场 */
+  /* 分镜插值:滚动位置 → 3D 机位,smoothstep 过场 */
   function camAt(p){
-    if(!camKeys.length) return{x:W*.5,y:H*.5,z:1};
+    if(!camKeys.length) return{tx:0,ty:0,tz:0,el:1.2,az:0,dist:H*1.6,roll:0};
     let i=1;while(i<camKeys.length-1&&p>camKeys[i].p)i++;
     const a=camKeys[i-1],b=camKeys[i];
     let t=clamp((p-a.p)/Math.max(1e-6,b.p-a.p),0,1);
     t=t*t*(3-2*t);
-    return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:a.z+(b.z-a.z)*t};
+    const L=(u,v)=>u+(v-u)*t;
+    return{tx:L(a.tx,b.tx),ty:L(a.ty,b.ty),tz:L(a.tz,b.tz),el:L(a.el,b.el),az:L(a.az,b.az),dist:L(a.dist,b.dist),roll:L(a.roll,b.roll)};
   }
 
   /* 光斑 sprite:暖辉(加色混合用)与焦外墨点各一张 */
@@ -2331,34 +2455,18 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     c.fillStyle=gr;c.fillRect(0,0,64,64);
   }
 
-  /* 远景预渲染:大气罩染+主树剪影的缩放镜像(重度虚化成远处的林),
-     每帧只做一次 drawImage,纵深是便宜的 */
+  /* 天光预渲染:顶部罩染+左上暖光。低角度机位时入画,顶视只剩暖底 */
   function renderBackdrop(){
     const dpr=Math.min(devicePixelRatio||1,2);
     bgCv=document.createElement('canvas');bgCv.width=W*dpr;bgCv.height=H*dpr;
     const b=bgCv.getContext('2d');b.setTransform(dpr,0,0,dpr,0,0);
     const pal=darkMq.matches?PAL.dark:PAL.light, hz=pal.haze;
     const lg=b.createLinearGradient(0,0,0,H);
-    lg.addColorStop(0,`rgba(${hz},0)`);lg.addColorStop(.72,`rgba(${hz},.3)`);lg.addColorStop(1,`rgba(${hz},.55)`);
+    lg.addColorStop(0,`rgba(${hz},.55)`);lg.addColorStop(.45,`rgba(${hz},.12)`);lg.addColorStop(1,`rgba(${hz},0)`);
     b.fillStyle=lg;b.fillRect(0,0,W,H);
-    const rg=b.createRadialGradient(W*.3,H*.28,0,W*.3,H*.28,W*.55);
+    const rg=b.createRadialGradient(W*.28,H*.2,0,W*.28,H*.2,W*.5);
     rg.addColorStop(0,`rgba(${hz},.45)`);rg.addColorStop(1,`rgba(${hz},0)`);
     b.fillStyle=rg;b.fillRect(0,0,W,H);
-    b.lineCap='round';b.lineJoin='round';
-    const silhou=(sx,sy,s,mirror,al,blur)=>{
-      b.save();b.translate(sx,sy);b.scale(mirror?-s:s,s);
-      b.filter=`blur(${blur}px)`;
-      b.strokeStyle=`rgba(${pal.ink},${al})`;
-      for(const ch of chains){
-        const pts=ch.pts;
-        b.beginPath();b.moveTo(pts[0].x,pts[0].y);
-        for(let i=1;i<pts.length-1;i++) b.quadraticCurveTo(pts[i].x,pts[i].y,(pts[i].x+pts[i+1].x)/2,(pts[i].y+pts[i+1].y)/2);
-        b.lineWidth=Math.max(.5,pts[0].w*.8);b.stroke();
-      }
-      b.restore();
-    };
-    silhou(W*.08,H*.66,.5,true,.06,7);
-    silhou(W*1.02,H*.6,.36,false,.05,9);
   }
 
   function resize(){
@@ -2368,7 +2476,7 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     canvas.width=W*dpr;canvas.height=H*dpr;
     ctx.setTransform(dpr,0,0,dpr,0,0);
     build();makeSprites();renderBackdrop();
-    if(reduceMotion&&camKeys.length){const k=camKeys[4];cam={x:k.x,y:k.y,z:k.z};}
+    if(reduceMotion&&camKeys.length){cam={...camKeys[5]};} /* 顶视定镜 */
     draw(reduceMotion?1:g,performance.now()/1000);
   }
 
@@ -2419,9 +2527,10 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     pin.style.transform=`translate3d(0,${y}px,0)`;
     const p=clamp(y/Math.max(1,total),0,1);
     setAct(p>=.78?3:p>=.55?2:p>=.28?1:0);
-    /* 滚动驱动摄影机(弹簧追踪分镜),树时同理由滚动给目标、弹簧给质量 */
+    /* 滚动驱动 3D 摄影机(弹簧追踪分镜),树时同理由滚动给目标、弹簧给质量 */
     const ct=camAt(p);
-    cam.x+=(ct.x-cam.x)*.11;cam.y+=(ct.y-cam.y)*.11;cam.z+=(ct.z-cam.z)*.11;
+    cam.tx+=(ct.tx-cam.tx)*.11;cam.ty+=(ct.ty-cam.ty)*.11;cam.tz+=(ct.tz-cam.tz)*.11;
+    cam.el+=(ct.el-cam.el)*.11;cam.az+=(ct.az-cam.az)*.11;cam.dist+=(ct.dist-cam.dist)*.11;cam.roll+=(ct.roll-cam.roll)*.11;
     const target=warp(p);
     g=Math.abs(target-g)<.0005?target:g+(target-g)*.09;
     draw(g,performance.now()/1000);
