@@ -867,6 +867,7 @@ html.resizing-workspace-file-split * {
 
 .workspace-files-tree {
   display: flex;
+  position: relative;
   grid-row: 1;
   flex-direction: column;
 }
@@ -888,9 +889,12 @@ html.resizing-workspace-file-split * {
 
 .workspace-file-tree-drag-handle {
   display: grid;
-  width: 100%;
-  height: 18px;
-  flex: 0 0 18px;
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 11px;
+  inset-inline-end: 8px;
+  width: 32px;
+  height: 26px;
   place-items: center;
   border-radius: var(--radius-xs);
   color: var(--ink-muted);
@@ -1128,6 +1132,7 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-document-composer .dock-composer-wrap .composer-stack {
+  width: 100%;
   transform: none;
 }
 
@@ -2182,16 +2187,17 @@ html.resizing-workspace-terminal-split * {
 }
 
 .automations-master {
+  display: grid;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  max-width: 1080px;
-  justify-self: center;
+  grid-template-columns: minmax(0, 1080px);
+  justify-content: center;
+  align-content: start;
   padding: 42px clamp(32px, 6vw, 88px) 64px;
 }
 
 .automations-catalog.detail-open .automations-master {
-  max-width: none;
   padding: 34px clamp(20px, 3vw, 32px) 56px;
 }
 
@@ -2569,10 +2575,6 @@ html.resizing-workspace-terminal-split * {
   .automations-detail {
     padding-inline: clamp(20px, 6vw, 48px);
   }
-}
-
-@media (max-width: 900px) {
-  .automations-master { padding-inline: 18px; }
 }
 
 .skills-catalog {
@@ -2970,7 +2972,8 @@ html.resizing-workspace-terminal-split * {
 }
 
 @media (max-width: 720px) {
-  .skills-catalog {
+  .skills-catalog,
+  .automations-master {
     padding: 28px 20px 40px;
   }
 
@@ -4490,7 +4493,7 @@ html.resizing-workspace-terminal-split * {
 
 /* The composer's rounded, shadowed frame reads slightly narrower than a flat
  * message surface at the same geometric width. Inset regular message flows by
- * 4px per side so their visible edges align while both remain centered. */
+ * 2px per side so their visible edges align while both remain centered. */
 .conversation-width:has(.turn) {
   padding-inline: calc(
     var(--session-outer-padding-inline) + var(--conversation-flow-optical-inset)

@@ -88,7 +88,7 @@ hook 和本地 skill 不执行原生代码，其中仍可能包含提示词注�
 
 ## App server 与桌面端边界
 
-`wuu app-server` 通过子进程的标准输入和标准输出使用 JSON-RPC，本身不会打开网络
+`wuu app-server` 通过子进程的标准输入和标准输出使用逐行 JSON 请求/响应协议，本身不会打开网络
 监听端口。Electron 客户端负责启动并管理该进程，通过 preload/IPC 桥向 renderer
 开放选定操作。任何从 renderer 绕过 IPC 限制的方式或不安全的页面跳转都属于安全
 问题。

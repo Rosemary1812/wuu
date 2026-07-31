@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +19,8 @@ import {
   type WorkspaceViewTab,
 } from "./WorkspaceViewTabs";
 import { hoverTooltipText, unhoverTooltip } from "./tooltipTestUtils";
+
+const workspaceCSS = readFileSync(resolve(__dirname, "styles/workspace.css"), "utf-8");
 
 // Renders the cwd it received so tests can assert which context prop
 // (activeContext vs workspaceContext) actually reached the terminal panel,
@@ -175,6 +179,15 @@ function baseProps(): Parameters<typeof WorkspaceRightPanel>[0] {
 }
 
 describe("WorkspaceRightPanel", () => {
+  it("places the file-tree drag handle in the search row instead of a separate row", () => {
+    expect(workspaceCSS).toMatch(
+      /\.workspace-files-tree\s*\{[^}]*position:\s*relative;/s,
+    );
+    expect(workspaceCSS).toMatch(
+      /\.workspace-file-tree-drag-handle\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*11px;[^}]*inset-inline-end:\s*8px;[^}]*width:\s*32px;[^}]*height:\s*26px;/s,
+    );
+  });
+
   it("prewarms the hidden lightweight body during idle time", () => {
     let idleCallback: IdleRequestCallback | undefined;
     const cancelIdleCallback = vi.fn();

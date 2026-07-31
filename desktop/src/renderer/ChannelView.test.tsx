@@ -210,6 +210,31 @@ describe("ChannelView", () => {
     expect(graphDensityScale(10_000)).toBe(0.68);
   });
 
+  it("collapses the room and agent lists with one persistent control", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const collapse = container.querySelector<HTMLButtonElement>('[aria-label="收起列表"]');
+    expect(collapse?.getAttribute("aria-expanded")).toBe("true");
+    act(() => collapse?.click());
+
+    expect(container.querySelector(".channel-view")?.classList.contains("channel-list-collapsed")).toBe(true);
+    expect(container.querySelector(".channel-room-list")).toBeNull();
+    expect(container.querySelector('[aria-label="展开列表"]')).not.toBeNull();
+    expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("true");
+
+    act(() => root?.render(<ChannelView section="agents" />));
+    expect(container.querySelector(".channel-agent-directory-list")).toBeNull();
+    expect(container.querySelector(".channel-agent-graph-pane")).not.toBeNull();
+
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="展开列表"]')?.click());
+    expect(container.querySelector(".channel-agent-directory-list")).not.toBeNull();
+    expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("false");
+  });
+
   it("loads rooms, selects a room, and sends a human message", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
@@ -219,6 +244,7 @@ describe("ChannelView", () => {
     await settle();
 
     expect(container.querySelector(".channel-conversation-heading")).toBeNull();
+    expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
     const agentBubble = container.querySelector(".channel-message.agent .channel-message-bubble");
     expect(agentBubble?.textContent).toBe("Hello from Alpha with markdown\n<img src=x onerror=alert(1)>");
     expect(
@@ -244,6 +270,20 @@ describe("ChannelView", () => {
     const firstRoomRow = container.querySelector(".channel-room-row");
     expect(firstRoomRow?.textContent).toContain("2 位成员");
     expect(firstRoomRow?.querySelectorAll(".channel-group-avatar-cell")).toHaveLength(2);
+    expect(firstRoomRow?.querySelector(".channel-directory-settings")).not.toBeNull();
+    const detailsToggle = container.querySelector<HTMLButtonElement>(".channel-room-details-toggle");
+    expect(detailsToggle).not.toBeNull();
+    act(() => detailsToggle?.click());
+    const detailsDialog = document.querySelector(".sidebar-name-dialog");
+    expect(detailsDialog?.textContent).toContain("群聊详情");
+    expect(detailsDialog?.textContent).toContain("群成员");
+    expect(container.querySelector(".channel-conversation")?.classList.contains("details-open")).toBe(false);
+    expect(container.querySelector(".channel-room-main")).not.toBeNull();
+    expect(container.querySelector(".channel-conversation-heading")).toBeNull();
+    const cancelDetails = Array.from(detailsDialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent === "取消");
+    act(() => cancelDetails?.click());
+    expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
     const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
       .find((button) => button.textContent?.includes("research"));
     act(() => research?.click());
@@ -526,16 +566,28 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
+    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
+      .find((button) => button.textContent?.includes("research"));
+    act(() => research?.click());
+    await settle();
     const manageResearch = container.querySelector<HTMLButtonElement>('button[aria-label="管理 research"]');
     expect(manageResearch).not.toBeNull();
     act(() => manageResearch?.click());
-    expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("频道设置");
-    const memberCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('.channel-setup-form input[type="checkbox"]'));
-    expect(memberCheckboxes).toHaveLength(2);
-    expect(memberCheckboxes.every((checkbox) => !checkbox.checked)).toBe(true);
-    act(() => memberCheckboxes[0]?.click());
-    const settingsForm = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
-    await act(async () => settingsForm?.requestSubmit());
+    const detailsDialog = document.querySelector(".sidebar-name-dialog");
+    expect(detailsDialog?.textContent).toContain("群聊详情");
+    expect(document.querySelector(".sidebar-name-dialog-overlay-drawer")).not.toBeNull();
+    expect(detailsDialog?.classList.contains("sidebar-name-dialog-drawer")).toBe(true);
+    expect(detailsDialog?.textContent).toContain("群成员");
+    expect(detailsDialog?.textContent).not.toContain("群公告");
+    expect(detailsDialog?.querySelectorAll(".channel-room-member-card")).toHaveLength(0);
+    const addMemberTrigger = detailsDialog?.querySelector<HTMLButtonElement>(".channel-room-member-add-trigger");
+    expect(addMemberTrigger).not.toBeNull();
+    act(() => addMemberTrigger?.click());
+    const addAgent = document.querySelector<HTMLButtonElement>('.select-menu-item[data-value="agent-1"]');
+    expect(addAgent).not.toBeNull();
+    act(() => addAgent?.click());
+    const saveButton = detailsDialog?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await act(async () => saveButton?.click());
 
     expect(api.updateChannelRoom).toHaveBeenCalledWith({
       room_id: "room-2",
@@ -544,13 +596,42 @@ describe("ChannelView", () => {
       agent_ids: ["agent-1"],
     });
 
-    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+    expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
     act(() => manageResearch?.click());
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
     const deleteButton = document.querySelector<HTMLButtonElement>(".sidebar-name-dialog-destructive");
     expect(deleteButton?.textContent).toBe("删除频道");
     await act(async () => deleteButton?.click());
     expect(confirmDelete).toHaveBeenCalledWith("删除“research”？频道及其中的消息将被永久删除。");
     expect(api.deleteChannelRoom).toHaveBeenCalledWith({ room_id: "room-2" });
+  });
+
+  it("shows current members as avatar cards and supports removing one", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const general = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
+      .find((button) => button.textContent?.includes("general"));
+    act(() => general?.click());
+    await settle();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="管理 general"]')?.click());
+
+    const detailsDialog = document.querySelector(".sidebar-name-dialog");
+    expect(detailsDialog?.querySelectorAll(".channel-room-member-card")).toHaveLength(2);
+    const removeAlpha = detailsDialog?.querySelector<HTMLButtonElement>('[aria-label="移除 Alpha"]');
+    expect(removeAlpha).not.toBeNull();
+    act(() => removeAlpha?.click());
+    await act(async () => document.querySelector<HTMLFormElement>(".sidebar-name-dialog")?.requestSubmit());
+
+    expect(api.updateChannelRoom).toHaveBeenCalledWith({
+      room_id: "room-1",
+      name: "general",
+      avatar_image: "",
+      agent_ids: ["agent-2"],
+    });
   });
 
   it("creates a task for a named agent", async () => {

@@ -974,6 +974,9 @@ describe("SettingsView Dream settings", () => {
     const dreamSwitch = container.querySelector<HTMLButtonElement>(
       '[data-testid="settings-dream-toggle"]',
     );
+    const dreamSection = container.querySelector<HTMLElement>('[data-testid="settings-dream"]');
+    expect(dreamSection?.querySelector(".settings-section-title")).toBeNull();
+    expect(dreamSection?.querySelector(".settings-row-label-title")?.textContent).toBe("Dream");
     expect(dreamSwitch).not.toBeNull();
     expect(dreamSwitch?.getAttribute("aria-checked")).toBe("false");
 
@@ -1290,6 +1293,8 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("模型使用");
     expect(rootText()).toContain("缓存命中率");
     expect(rootText()).toContain("5%");
+    expect(container.querySelectorAll(".settings-usage-stat")).toHaveLength(4);
+    expect(rootText()).not.toContain("活跃");
     expect(rootText()).toContain("OpenAI API");
     expect(rootText()).not.toContain("最近记录");
     const heatmap = container.querySelector(".settings-usage-heatmap");

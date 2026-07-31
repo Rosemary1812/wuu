@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -24,6 +24,11 @@ export type SelectMenuOption = {
   label: string;
   // Optional dimmed secondary line (e.g. the provider a model belongs to).
   hint?: string;
+  // Additional terms used only for filtering a searchable menu.
+  keywords?: string[];
+  // When any option matches one of these terms, only matching options remain.
+  // Used for semantic categories such as a timezone's actual country.
+  priorityKeywords?: string[];
   disabled?: boolean;
 };
 
@@ -32,6 +37,23 @@ export type SelectMenuGroup = {
   label?: string;
   options: SelectMenuOption[];
 };
+
+function normalizeSearchText(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase();
+}
+
+function matchesPriorityKeyword(text: string | undefined, query: string): boolean {
+  if (!text) return false;
+  const normalizedText = normalizeSearchText(text);
+  const queryWords = query.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const textWords = normalizedText.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return queryWords.every((queryWord) => (
+    textWords.some((textWord) => textWord.startsWith(queryWord))
+  ));
+}
 
 export function SelectMenu({
   value,
@@ -48,6 +70,9 @@ export function SelectMenu({
   dataField,
   placement = "below",
   align = "left",
+  searchable = false,
+  searchPlaceholder,
+  emptyMessage = "没有可选项",
   // When true, the floating menu flips to the opposite side of the
   // trigger if the requested placement doesn't have enough viewport
   // room (e.g. the model picker in the new-participant dialog, where
@@ -72,19 +97,45 @@ export function SelectMenu({
   placement?: FloatingMenuPlacement;
   align?: FloatingMenuAlign;
   flip?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const anchorRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
   const [menuWidth, setMenuWidth] = useState(220);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const resolvedGroups: SelectMenuGroup[] =
+  const sourceGroups: SelectMenuGroup[] =
     groups ?? (options ? [{ options }] : []);
+  const sourceOptions = sourceGroups.flatMap((group) => group.options);
+  const normalizedQuery = normalizeSearchText(searchQuery.trim());
+  const hasPriorityMatch = normalizedQuery !== "" && sourceOptions.some((option) => (
+    option.priorityKeywords?.some((keyword) => matchesPriorityKeyword(keyword, normalizedQuery))
+  ));
+  const resolvedGroups = normalizedQuery
+    ? sourceGroups
+      .map((group) => ({
+        ...group,
+        options: group.options.filter((option) => {
+          if (hasPriorityMatch) {
+            return option.priorityKeywords?.some((keyword) => (
+              matchesPriorityKeyword(keyword, normalizedQuery)
+            )) ?? false;
+          }
+          return [option.label, option.value, option.hint, ...(option.keywords ?? [])]
+            .some((text) => normalizeSearchText(text ?? "").includes(normalizedQuery));
+        }),
+      }))
+      .filter((group) => group.options.length > 0)
+    : sourceGroups;
   const flatOptions = resolvedGroups.flatMap((group) => group.options);
-  const selected = flatOptions.find((option) => option.value === value);
+  const selected = sourceOptions.find((option) => option.value === value);
   const triggerLabel = selected?.label ?? placeholder ?? t("common.select");
   const hasSelection = selected !== undefined;
 
@@ -126,6 +177,11 @@ export function SelectMenu({
     if (!open) {
       return;
     }
+    if (searchable) {
+      setActiveIndex(-1);
+      searchInputRef.current?.focus();
+      return;
+    }
     const selectedIndex = selected ? flatOptions.indexOf(selected) : -1;
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : firstEnabledIndex());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,6 +212,7 @@ export function SelectMenu({
         return;
       }
       setOpen(false);
+      setSearchQuery("");
     }
     document.addEventListener("pointerdown", handlePointerDown);
     return () => {
@@ -166,6 +223,7 @@ export function SelectMenu({
   function commit(nextValue: string): void {
     onChange(nextValue);
     setOpen(false);
+    setSearchQuery("");
     triggerRef.current?.focus();
   }
 
@@ -180,6 +238,7 @@ export function SelectMenu({
       event.key === " "
     ) {
       event.preventDefault();
+      if (!open) setSearchQuery("");
       setOpen(true);
     }
   }
@@ -188,7 +247,15 @@ export function SelectMenu({
     if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
+      setSearchQuery("");
       triggerRef.current?.focus();
+    } else if (
+      event.target === searchInputRef.current &&
+      event.key !== "ArrowDown" &&
+      event.key !== "ArrowUp" &&
+      event.key !== "Tab"
+    ) {
+      return;
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((current) => nextEnabledIndex(current, 1));
@@ -203,6 +270,7 @@ export function SelectMenu({
       setActiveIndex(nextEnabledIndex(0, -1));
     } else if (event.key === "Tab") {
       setOpen(false);
+      setSearchQuery("");
     }
   }
 
@@ -230,7 +298,10 @@ export function SelectMenu({
         aria-expanded={open}
         aria-label={ariaLabel}
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (!open) setSearchQuery("");
+          setOpen((current) => !current);
+        }}
         onKeyDown={handleTriggerKeyDown}
       >
         <span className="select-menu-value">{triggerLabel}</span>
@@ -252,58 +323,76 @@ export function SelectMenu({
             style={{ width: menuWidth }}
             onKeyDown={handleMenuKeyDown}
           >
-            {flatOptions.length === 0 ? (
-              <div className="select-menu-empty">没有可选项</div>
+            {searchable ? (
+              <label className="select-menu-search">
+                <Search className="select-menu-search-icon icon" aria-hidden="true" />
+                <input
+                  ref={searchInputRef}
+                  type="search"
+                  value={searchQuery}
+                  placeholder={searchPlaceholder}
+                  aria-label={searchPlaceholder}
+                  onChange={(event) => {
+                    setSearchQuery(event.currentTarget.value);
+                    setActiveIndex(-1);
+                  }}
+                />
+              </label>
             ) : null}
-            {resolvedGroups.map((group, groupIndex) => (
-              <div className="select-menu-group" key={group.label ?? `group-${groupIndex}`}>
-                {groupIndex > 0 ? <div className="select-menu-separator" /> : null}
-                {group.label ? (
-                  <div className="select-menu-group-label">{group.label}</div>
-                ) : null}
-                {group.options.map((option) => {
-                  flatIndex += 1;
-                  const index = flatIndex;
-                  const isSelected = option.value === value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isSelected}
-                      aria-disabled={option.disabled || undefined}
-                      data-value={option.value}
-                      className="select-menu-item"
-                      tabIndex={index === activeIndex ? 0 : -1}
-                      ref={(node) => {
-                        itemRefs.current[index] = node;
-                      }}
-                      disabled={option.disabled}
-                      onClick={() => {
-                        if (!option.disabled) {
-                          commit(option.value);
-                        }
-                      }}
-                      onMouseEnter={() => {
-                        if (!option.disabled) {
-                          setActiveIndex(index);
-                        }
-                      }}
-                    >
-                      <span className="select-menu-item-text">
-                        <span className="select-menu-item-label">{option.label}</span>
-                        {option.hint ? (
-                          <span className="select-menu-item-hint">{option.hint}</span>
+            <div className="select-menu-options">
+              {flatOptions.length === 0 ? (
+                <div className="select-menu-empty">{emptyMessage}</div>
+              ) : null}
+              {resolvedGroups.map((group, groupIndex) => (
+                <div className="select-menu-group" key={group.label ?? `group-${groupIndex}`}>
+                  {groupIndex > 0 ? <div className="select-menu-separator" /> : null}
+                  {group.label ? (
+                    <div className="select-menu-group-label">{group.label}</div>
+                  ) : null}
+                  {group.options.map((option) => {
+                    flatIndex += 1;
+                    const index = flatIndex;
+                    const isSelected = option.value === value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isSelected}
+                        aria-disabled={option.disabled || undefined}
+                        data-value={option.value}
+                        className="select-menu-item"
+                        tabIndex={index === activeIndex ? 0 : -1}
+                        ref={(node) => {
+                          itemRefs.current[index] = node;
+                        }}
+                        disabled={option.disabled}
+                        onClick={() => {
+                          if (!option.disabled) {
+                            commit(option.value);
+                          }
+                        }}
+                        onMouseEnter={() => {
+                          if (!option.disabled) {
+                            setActiveIndex(index);
+                          }
+                        }}
+                      >
+                        <span className="select-menu-item-text">
+                          <span className="select-menu-item-label">{option.label}</span>
+                          {option.hint ? (
+                            <span className="select-menu-item-hint">{option.hint}</span>
+                          ) : null}
+                        </span>
+                        {isSelected ? (
+                          <Check className="select-menu-check icon-lg" aria-hidden="true" />
                         ) : null}
-                      </span>
-                      {isSelected ? (
-                        <Check className="select-menu-check icon-lg" aria-hidden="true" />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         </FloatingMenuPortal>
       ) : null}

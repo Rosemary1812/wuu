@@ -1,3 +1,4 @@
+import { rawTimeZones } from "@vvo/tzdb";
 import { ChevronRight, CircleAlert, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   useCallback,
@@ -22,7 +23,7 @@ import {
 import { CatalogSearchField } from "./CatalogSearchField";
 import { translateCurrent, useI18n } from "./i18n";
 import { MinuteClockPicker } from "./MinuteClockPicker";
-import { SelectMenu } from "./SelectMenu";
+import { SelectMenu, type SelectMenuOption } from "./SelectMenu";
 import { TopNotice } from "./TopNotice";
 
 type Filter = "all" | "active" | "paused";
@@ -50,6 +51,81 @@ const AUTOMATION_DETAIL_MAX_WIDTH = 760;
 const AUTOMATION_MASTER_MIN_WIDTH = 340;
 const AUTOMATION_DETAIL_RESIZER_WIDTH = 10;
 const AUTOMATION_DETAIL_WIDTH_STEP = 32;
+
+const SUPPORTED_AUTOMATION_TIMEZONES = (() => {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return [];
+  }
+})();
+const TIMEZONE_NAME_LOCALES = ["zh-CN", "en-US"] as const;
+const timezoneNameCache = new Map<string, string>();
+// Use only the timezone's own record. `group` also contains zones that are
+// currently clock-equivalent, and can cross country boundaries (for example
+// Asia/Bangkok and Indian/Christmas), so expanding it would corrupt geography.
+const TIMEZONE_METADATA_BY_NAME = new Map(rawTimeZones.map((timezone) => (
+  [timezone.name, timezone] as const
+)));
+
+function localizedTimezoneName(timezone: string, locale: string): string {
+  const cacheKey = `${locale}:${timezone}`;
+  const cached = timezoneNameCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  try {
+    const name = new Intl.DateTimeFormat(locale, {
+      timeZone: timezone,
+      timeZoneName: "longGeneric",
+    }).formatToParts(new Date(0)).find((part) => part.type === "timeZoneName")?.value ?? "";
+    timezoneNameCache.set(cacheKey, name);
+    return name;
+  } catch {
+    timezoneNameCache.set(cacheKey, "");
+    return "";
+  }
+}
+
+function automationTimezoneOptions(
+  currentTimezone: string,
+  localTimezone: string,
+  localTimezoneLabel: string,
+  locale: string,
+): SelectMenuOption[] {
+  const regionNames = new Intl.DisplayNames([locale], { type: "region" });
+  const orderedTimezones = [
+    localTimezone,
+    currentTimezone,
+    "UTC",
+    ...SUPPORTED_AUTOMATION_TIMEZONES,
+  ];
+  return [...new Set(orderedTimezones.filter(Boolean))].map((timezone) => {
+    const metadata = TIMEZONE_METADATA_BY_NAME.get(timezone);
+    const localizedName = localizedTimezoneName(timezone, locale);
+    const localizedCountry = metadata ? regionNames.of(metadata.countryCode) ?? metadata.countryName : "";
+    const hint = [...new Set([
+      timezone === localTimezone ? localTimezoneLabel : "",
+      localizedCountry,
+      localizedName,
+    ].filter(Boolean))].join(" · ");
+    return {
+      value: timezone,
+      label: timezone,
+      hint: hint || undefined,
+      priorityKeywords: metadata ? [
+        localizedCountry,
+        metadata.countryName,
+        metadata.countryCode,
+      ].filter(Boolean) : undefined,
+      keywords: TIMEZONE_NAME_LOCALES.map((nameLocale) => (
+        localizedTimezoneName(timezone, nameLocale)
+      )).concat(metadata ? [
+        metadata.continentName,
+        metadata.alternativeName,
+        ...metadata.mainCities,
+      ] : []).filter(Boolean),
+    };
+  });
+}
 
 function clampDetailWidth(width: number, containerWidth?: number): number {
   const availableWidth = containerWidth
@@ -599,7 +675,7 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
   initialWorkspaceID?: string;
   onCreate?: (draft: AutomationDraft, workspaceID: string) => Promise<boolean>;
 }): JSX.Element {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const initialDraft = useMemo(() => draftFromAutomation(task), [task.id]);
   const [draft, setDraft] = useState<AutomationDraft>(initialDraft);
   const latestDraftRef = useRef(initialDraft);
@@ -607,6 +683,12 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
   const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const [workspaceID, setWorkspaceID] = useState(initialWorkspaceID);
   const [submitting, setSubmitting] = useState(false);
+  const timezoneOptions = useMemo(() => automationTimezoneOptions(
+    draft.timezone,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    t("automations.localTimezone"),
+    locale,
+  ), [draft.timezone, locale, t]);
 
   function updateDraft(next: AutomationDraft): void {
     latestDraftRef.current = next;
@@ -745,9 +827,20 @@ function AutomationDetail({ task, onUpdate, onRemove, onSaveRejected, onClose, c
           />
           <label>
             <span>{t("automations.timezone")}</span>
-            <input className="settings-input" value={draft.timezone}
-              onChange={(event) => updateDraft({ ...latestDraftRef.current, timezone: event.currentTarget.value })}
-              onBlur={() => void persistDraft()} />
+            <SelectMenu
+              triggerClassName="settings-select-trigger"
+              ariaLabel={t("automations.timezone")}
+              value={draft.timezone}
+              searchable
+              searchPlaceholder={t("automations.timezoneSearch")}
+              emptyMessage={t("automations.timezoneNoMatches")}
+              options={timezoneOptions}
+              onChange={(timezone) => {
+                const next = { ...latestDraftRef.current, timezone };
+                updateDraft(next);
+                void persistDraft(next);
+              }}
+            />
           </label>
           <label>
             <span>{t("automations.mode")}</span>

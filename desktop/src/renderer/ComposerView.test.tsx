@@ -1224,14 +1224,14 @@ describe("Composer send control", () => {
 
     const shell = container.querySelector<HTMLElement>(".composer-shell");
     vi.spyOn(shell as HTMLElement, "getBoundingClientRect").mockReturnValue({
-      bottom: 580,
+      bottom: 500,
       height: 100,
       left: 80,
       right: 720,
-      top: 480,
+      top: 400,
       width: 640,
       x: 80,
-      y: 480,
+      y: 400,
       toJSON: () => ({}),
     });
 
@@ -1247,8 +1247,12 @@ describe("Composer send control", () => {
     const menu = document.body.querySelector<HTMLElement>('[data-floating-menu-owner="composer-plus"]');
     expect(menu?.style.width).toBe("640px");
     expect(menu?.style.left).toBe("80px");
-    expect(menu?.style.bottom).toBe(`${window.innerHeight - 480 + 8}px`);
+    expect(menu?.style.bottom).toBe(`${window.innerHeight - 400 + 8}px`);
+    expect(menu?.style.getPropertyValue("--floating-menu-available-height")).toBe("384px");
     expect(composerCSS).toMatch(/\.composer-plus-menu\s*{[^}]*width:\s*100%;/s);
+    expect(composerCSS).toMatch(
+      /\.composer-plus-menu\s*{[^}]*max-height:\s*min\([^}]*var\(--floating-menu-available-height/s,
+    );
     expect(menu?.querySelectorAll(".composer-plus-menu-section")).toHaveLength(2);
     expect(menu?.textContent).toContain("添加");
     expect(menu?.textContent).toContain("添加附件");
@@ -1431,6 +1435,66 @@ describe("Composer send control", () => {
     });
 
     expect(setPrompt).toHaveBeenCalledWith("/slides ");
+  });
+
+  it("shows both the command name and the description on a skill row", async () => {
+    installSkillList([
+      {
+        name: "slides",
+        description: "Create slide decks",
+        source: "bundled",
+        user_invocable: true,
+        disable_model_invoke: false,
+      },
+    ]);
+    renderComposer({
+      prompt: "/sli",
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const skillRow = container.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="slides"]',
+    );
+
+    // Without the command name the row cannot be told apart from any other
+    // skill that happens to share a description prefix.
+    expect(skillRow?.querySelector(".slash-command-name")?.textContent).toBe("/slides");
+    expect(skillRow?.querySelector(".slash-command-summary")?.textContent).toBe(
+      "Create slide decks",
+    );
+    expect(composerCSS).toContain(".slash-command-summary");
+  });
+
+  it("leads every built-in row with the command the user types", () => {
+    renderComposer({
+      prompt: "/",
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const reviewRow = container.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="review"]',
+    );
+
+    expect(reviewRow?.querySelector(".slash-command-name")?.textContent).toBe("/review");
+    expect(reviewRow?.querySelector(".slash-command-summary")?.textContent).toBe("审查当前更改");
+    // The name column must not shrink, so a long summary never truncates the
+    // command the user has to type.
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*flex:\s*0 0 auto;/s);
+  });
+
+  it("shares the plus menu typography contract for slash command rows", () => {
+    // The command name and summary use the same title/description roles as the
+    // plus menu so the two surfaces read as one consistent menu system.
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*color:\s*var\(--ink\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*font-size:\s*var\(--font-ui\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*font-weight:\s*var\(--weight-medium\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*color:\s*var\(--ink-muted\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*font-size:\s*var\(--font-ui\);/s);
+    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*font-weight:\s*400;/s);
   });
 
   it("sends an exact slash command with arguments on Enter", () => {
@@ -2322,6 +2386,9 @@ describe("Composer expand button", () => {
     );
     expect(workspaceCSS).toMatch(
       /\.workspace-document-turn-composer\s*\{[^}]*z-index:\s*10/,
+    );
+    expect(workspaceCSS).toMatch(
+      /\.workspace-document-composer\s+\.dock-composer-wrap\s+\.composer-stack\s*\{[^}]*width:\s*100%/,
     );
     expect(workspaceCSS).toMatch(
       /\.workspace-document-turn-dock:has\([^}]*\.composer-goal-strip \+ \.composer-pending-drawer[^}]*\)[^{]*\.workspace-document-turn-drawer\s*\{[^}]*width:\s*calc\(100% - 72px\)/,

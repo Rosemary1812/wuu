@@ -26,6 +26,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
+import { AGENT_NOTIFICATION_NAME } from "./AgentHandoff";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { AssistantTurnShell } from "./AssistantTurnShell";
 import {
@@ -1484,5 +1485,84 @@ describe("AssistantTurnShell — turn sources pill end-to-end", () => {
     expect(openExternal).toHaveBeenCalledWith(
       "https://docs.anthropic.com/api",
     );
+  });
+});
+
+describe("AssistantTurnShell — subagent chips in the fold header", () => {
+  function makeNotification(taskName: string, status = "completed"): ThreadItem {
+    return {
+      id: nextID("notification"),
+      type: "user_message",
+      name: AGENT_NOTIFICATION_NAME,
+      status: "completed",
+      text: JSON.stringify({
+        author: `/root/${taskName}`,
+        recipient: "/root",
+        content: `<subagent_notification>\n${JSON.stringify({
+          agent_path: `/root/${taskName}`,
+          status: { task_name: taskName, status },
+        })}\n</subagent_notification>`,
+        trigger_turn: true,
+      }),
+    };
+  }
+
+  it("renders chips on the turn topline next to the elapsed label, not in the entry stream", () => {
+    const turn = makeTurn(
+      "completed",
+      [makeNotification("ok_agent_two"), makeCommentary("两个子代理均已回复 ok。")],
+      800,
+    );
+    const { container } = renderShell(turn);
+
+    const header = container.querySelector(".turn-process-header");
+    expect(header?.textContent).toContain("用时不到 1 秒");
+    const chips = header?.querySelectorAll(".subagent-chip");
+    expect(chips).toHaveLength(1);
+    expect(chips?.[0].textContent).toBe("ok_agent_two 完成了");
+    // The message body itself carries no chip rows.
+    expect(
+      container.querySelector(".turn-process-fold-body-inner .subagent-chip"),
+    ).toBeNull();
+  });
+
+  it("aggregates adjacent completions into one count chip on the topline", () => {
+    const turn = makeTurn(
+      "completed",
+      [makeNotification("one"), makeNotification("two"), makeCommentary("done")],
+      800,
+    );
+    const { container } = renderShell(turn);
+
+    const chips = container.querySelectorAll(
+      ".turn-process-header .subagent-chip",
+    );
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toBe("2 个 subagent 完成了");
+  });
+
+  it("marks failed chips with the danger class", () => {
+    const turn = makeTurn(
+      "completed",
+      [makeNotification("lint", "failed"), makeCommentary("子代理失败了")],
+      800,
+    );
+    const { container } = renderShell(turn);
+
+    const failed = container.querySelector(
+      ".turn-process-header .subagent-chip-failed",
+    );
+    expect(failed?.textContent).toBe("lint 失败了");
+  });
+
+  it("mounts the fold for a notification-only turn so the chips have a home", () => {
+    const turn = makeTurn("completed", [makeNotification("one")], 500);
+    const { container } = renderShell(turn);
+
+    expect(processFold(container)).not.toBeNull();
+    expect(
+      container.querySelector(".turn-process-header .subagent-chip")
+        ?.textContent,
+    ).toBe("one 完成了");
   });
 });

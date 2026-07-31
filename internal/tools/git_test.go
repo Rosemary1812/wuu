@@ -169,6 +169,7 @@ func TestBashBackgroundGitAttributionUsesWrapper(t *testing.T) {
 	}
 	defer func() { _ = manager.CleanupSession() }()
 	kit.SetProcessManager(manager)
+	kit.SetSessionID("thread-background-git-attribution")
 	runBash(t, root, "printf 'background\\n' > hello.txt")
 	args, _ := json.Marshal(map[string]any{
 		"action":          "start_background",

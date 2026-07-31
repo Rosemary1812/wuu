@@ -1484,7 +1484,11 @@ function sortThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
       // thread) — including ultra-mode siblings of the root. Those live
       // under the parent thread's info panel ("子任务"), not in the
       // sidebar navigation list, regardless of pin state.
-      !thread.parent_id,
+      !thread.parent_id &&
+      // Older/recovered worker records can lose parent_id while retaining
+      // their agent_path. agent_path is worker-only metadata, so keep these
+      // records out of the root-session rail as well.
+      !thread.agent_path,
   );
   const running = valid.filter(isThreadRunning);
   const settled = valid.filter((thread) => !isThreadRunning(thread));
@@ -2343,7 +2347,7 @@ function isThreadRunning(
   );
 }
 
-function agentRunning(
+export function agentRunning(
   agent: Pick<Agent, "status" | "nested_running_count">,
 ): boolean {
   if ((agent.nested_running_count ?? 0) > 0) {
@@ -2421,6 +2425,22 @@ function resolveComposerRunningAction(
   return requestedAction === "steer" && activeTurnIDForThread(thread)
     ? "steer"
     : "queue";
+}
+
+// The orchestration wait: no turn holds the thread but background child
+// agents are still running, so the conversation renders as one live merged
+// block (TurnGrouping) parked between turns. Callers use this to keep the
+// composer reading like an in-progress turn — steer stays offered, and
+// resolveComposerRunningAction degrades it to queue, which starts
+// immediately (nothing runs) and lands inside the orchestration group.
+export function threadAwaitingBackgroundAgents(
+  thread: Thread | undefined,
+): boolean {
+  return Boolean(
+    thread &&
+      !activeTurnIDForThread(thread) &&
+      thread.child_agents?.some(agentRunning),
+  );
 }
 
 function activeTurnForThread(thread: Thread | undefined): Turn | undefined {

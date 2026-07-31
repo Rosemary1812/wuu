@@ -1861,6 +1861,14 @@ func validateExecFlags(cfg execCLIConfig) error {
 	if cfg.maxTurns != nil && *cfg.maxTurns < 0 {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("wuu exec --max-turns must be non-negative"))
 	}
+	if cfg.permissionMode != nil {
+		mode := strings.TrimSpace(*cfg.permissionMode)
+		switch mode {
+		case "", config.PermissionModeStandard, config.PermissionModeReadOnly, config.PermissionModeUnconfined:
+		default:
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("invalid --permission-mode %q: must be standard, read_only, or unconfined", mode))
+		}
+	}
 	return nil
 }
 
@@ -2348,13 +2356,15 @@ Exec flags:
   --ignore-user-config
                    trust project config and ignore user config
   --env KEY=VALUE   set environment variable for the run (repeatable)
-  --file            attach a local file (repeatable)
+  --file            attach a local PDF file (repeatable)
   --image           attach a local image (repeatable)
+  --image-original  send images without resizing
   --no-tools        disable local tools
   --json            emit JSONL to stdout
   --ephemeral       run without creating a persistent session
   --input-json      read machine input JSON from stdin
   --max-turns       max agent loop turns
+  --ultra           enable proactive multi-agent delegation
   --output-schema   JSON schema for structured final output
   --timeout         total timeout (e.g. 20m)
   --output-last-message

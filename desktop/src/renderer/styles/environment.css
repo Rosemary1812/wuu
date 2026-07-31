@@ -777,13 +777,12 @@
 .conversation-search-dialog {
   display: flex;
   flex-direction: column;
-  /* Wider default — the dialog now hosts a two-pane layout (result list +
-     preview pane). 60vw keeps it proportionate at common desktop widths
-     (768px @ 1280, 864px @ 1440) and the 880px cap is generous enough for
-     both panes without crowding. The (max-width: 720px) media query below
-     overrides this for phone-sized viewports. */
-  width: clamp(640px, 60vw, 880px);
-  max-height: min(680px, calc(100vh - 96px));
+  /* Keep the two-pane search surface compact enough to read as a command
+     palette rather than a replacement page. The outer min lets unusually
+     narrow windows shrink safely without a breakpoint that makes the dialog
+     wider again. */
+  width: min(clamp(560px, 58vw, 800px), calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 160px));
   gap: 10px;
   overflow: hidden;
   border-radius: var(--radius-lg);
@@ -1007,7 +1006,7 @@
   display: grid;
   flex: 1 1 auto;
   min-height: 0;
-  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 1.4fr);
   gap: 16px;
 }
 
@@ -1080,24 +1079,17 @@
 
 .conversation-search-preview-snippet {
   min-width: 0;
+  max-height: 4.65em;
   color: var(--ink);
   font-size: var(--font-sm);
   font-weight: var(--weight-regular);
   line-height: 1.55;
   word-break: break-word;
-  /* Hard-cap the snippet to 3 lines via line-clamp so a long markdown
-   * agent reply (the kind that easily blows past 30 lines once code
-   * blocks, headers and bullet lists are counted) cannot push the
-   * per-turn preview rows below it out of view. The snippet's job is
-   * "where did the query match" — a handful of lines is plenty; the
-   * full conversation lives in the user/assistant rows beneath it.
-   * Belt-and-suspenders with capSnippetText in
-   * ConversationSearchDisplay.ts: that bounds the rendered string, this
-   * bounds the rendered height. */
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.conversation-search-preview-snippet .rich-content {
+  gap: 4px;
 }
 
 .conversation-search-preview-loading,
@@ -1137,7 +1129,7 @@
 .conversation-search-preview-turn {
   display: flex;
   flex-direction: row;
-  align-items: baseline;
+  align-items: flex-start;
   min-width: 0;
   padding: 0;
 }
@@ -1145,8 +1137,7 @@
 .conversation-search-preview-turn.role-user {
   /* Mirror the chat surface: user bubbles align right with the same
    * warm-grey background, hugging the text instead of stretching
-   * across the preview pane. The text span's nowrap + ellipsis keeps
-   * the bubble one row tall even when the underlying message wraps. */
+   * across the preview pane. */
   justify-content: flex-end;
 }
 
@@ -1162,17 +1153,14 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-regular);
   line-height: 1.55;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   user-select: text;
   -webkit-user-select: text;
 }
 
 .conversation-search-preview-turn.role-user .conversation-search-preview-text {
-  /* Hug the text so short queries stay compact; cap at 85% so very
-   * long messages get ellipsis-truncated instead of stretching the
-   * pane edge-to-edge. */
+  /* Hug the text so short queries stay compact; cap at 85% so longer
+   * Markdown messages still retain the chat-bubble shape. */
   flex: 0 1 auto;
   max-width: 85%;
   background: var(--chat-user-message-bg);
@@ -1182,8 +1170,12 @@
 
 .conversation-search-preview-turn.role-assistant .conversation-search-preview-text {
   /* Assistant fills the row, just like a participant's message in the
-   * live chat. nowrap + ellipsis keep it one line tall. */
+   * live chat. */
   flex: 1 1 auto;
+}
+
+.conversation-search-preview-text > .rich-content {
+  min-width: 0;
 }
 
 @media (max-width: 720px) {
@@ -1192,8 +1184,7 @@
   }
 
   .conversation-search-dialog {
-    width: calc(100vw - 24px);
-    max-height: calc(100vh - 92px);
+    max-height: min(560px, calc(100vh - 92px));
     border-radius: var(--radius-lg);
   }
 
@@ -1333,6 +1324,15 @@
   padding: 24px;
 }
 
+.sidebar-name-dialog-overlay-drawer {
+  align-items: stretch;
+  justify-items: end;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .sidebar-name-dialog {
   width: min(520px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
@@ -1340,6 +1340,19 @@
   gap: 14px;
   padding: 18px;
   transform-origin: center;
+}
+
+.sidebar-name-dialog-drawer {
+  width: min(420px, 100vw);
+  max-height: none;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-left: 1px solid var(--hairline-strong);
+  border-radius: 0;
+  box-shadow: -18px 0 40px var(--env-shadow-dark-010);
+  transform-origin: right center;
+  animation: sidebar-name-dialog-drawer-in var(--search-enter-duration) var(--search-motion-easing) both;
 }
 
 .sidebar-name-dialog-header {

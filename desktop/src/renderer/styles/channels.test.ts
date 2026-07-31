@@ -54,8 +54,8 @@ describe("channel message resizing", () => {
     const footer = ruleFor(".channel-conversation-footer");
 
     expect(roomMain).toMatch(/display:\s*grid/);
-    expect(roomMain).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
-    expect(stream).toMatch(/grid-row:\s*2/);
+    expect(roomMain).toMatch(/grid-template-rows:\s*auto auto minmax\(0, 1fr\)/);
+    expect(stream).toMatch(/grid-row:\s*3/);
     expect(stream).toMatch(/overflow-y:\s*auto/);
     expect(stream).toMatch(/scrollbar-gutter:\s*stable/);
     expect(footer).toMatch(/position:\s*absolute/);
@@ -68,5 +68,26 @@ describe("channel message resizing", () => {
 describe("channel agent status", () => {
   it("keeps thinking indicators static", () => {
     expect(channelsCss).not.toContain("channel-agent-status-pulse");
+  });
+});
+
+describe("channel task board spacing", () => {
+  it("uses a compact two-line card rhythm without hidden metadata", () => {
+    const board = ruleFor(".channel-task-board");
+    const heading = ruleFor(".channel-task-column-heading");
+    const items = ruleFor(".channel-task-column-items");
+    const card = ruleFor(".channel-task-card");
+    const meta = ruleFor(".channel-task-card-meta");
+
+    expect(board).toMatch(/gap:\s*16px/);
+    expect(board).toMatch(/padding-top:\s*20px/);
+    expect(heading).toMatch(/min-height:\s*36px/);
+    expect(items).toMatch(/gap:\s*4px/);
+    expect(card).toMatch(/gap:\s*4px/);
+    expect(card).toMatch(/min-height:\s*0/);
+    expect(card).toMatch(/padding:\s*10px 12px 11px/);
+    expect(meta).not.toMatch(/position:\s*absolute/);
+    expect(meta).not.toMatch(/clip:/);
+    expect(channelsCss).not.toContain(".channel-task-card:hover::after");
   });
 });

@@ -739,7 +739,7 @@ func TestStreamRunner_EmitsStructuredLifecycleEvents(t *testing.T) {
 	if lifecycle[3].Phase != providers.StreamPhaseConnected || lifecycle[3].Attempt != 2 {
 		t.Fatalf("unexpected connected lifecycle event: %+v", lifecycle[3])
 	}
-	if lifecycle[1].MaxAttempts != 6 || lifecycle[1].MaxRetries != 5 {
+	if lifecycle[1].MaxAttempts != 11 || lifecycle[1].MaxRetries != 10 {
 		t.Fatalf("unexpected retry budget: %+v", lifecycle[1])
 	}
 	if lifecycle[0].OperationID == "" || lifecycle[0].AttemptID == "" || lifecycle[0].AttemptID == lifecycle[3].AttemptID {

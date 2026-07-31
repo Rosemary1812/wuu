@@ -16,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
@@ -638,9 +639,38 @@ func (s *Server) handleThreadList(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	// Agent worker sessions are persisted alongside regular conversations, but
+	// their worker-only parent/path metadata lives in the agent thread store
+	// rather than the session index. Build this set once before constructing
+	// entries so a restarted server cannot leak workers into the root rail
+	// without turning a list request into an N² metadata scan.
+	agentThreadIDs := make(map[string]struct{})
+	rootIDs, err := s.rootThreadIDs()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	for _, rootID := range rootIDs {
+		store := s.agentThreadStore(rootID)
+		if store == nil {
+			continue
+		}
+		threads, err := store.ListThreads()
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		for _, meta := range threads {
+			if meta.Source.Kind == agentthread.SourceThreadSpawn {
+				agentThreadIDs[meta.ID] = struct{}{}
+			}
+		}
+	}
+
 	entries := make(map[string]threadListEntry, len(sessions))
 	for _, sess := range sessions {
 		if sess.ArchivedAt != nil {
+			continue
+		}
+		if _, isAgentThread := agentThreadIDs[sess.ID]; isAgentThread {
 			continue
 		}
 		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
@@ -993,6 +1023,10 @@ func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	threads, err = s.reconcilePersistedTerminalAgentThreads(threadID, store, threads)
+	if err != nil {
+		return nil, err
+	}
 
 	children := make([]Agent, 0)
 	childIndexByPath := make(map[string]int)
@@ -1033,6 +1067,76 @@ func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {
 		return children[i].AgentPath < children[j].AgentPath
 	})
 	return children, nil
+}
+
+// reconcilePersistedTerminalAgentThreads repairs a UI-facing thread index when
+// the worker snapshot reached a terminal state before the previous process
+// recorded the matching thread status. AgentControl performs the full durable
+// task reconciliation when an execution runtime is created, but thread/list
+// and thread/resume must also report terminal truth without requiring the user
+// to start another turn first.
+func (s *Server) reconcilePersistedTerminalAgentThreads(
+	rootThreadID string,
+	store *agentthread.Store,
+	threads []agentthread.Metadata,
+) ([]agentthread.Metadata, error) {
+	if s == nil || store == nil || strings.TrimSpace(rootThreadID) == "" {
+		return threads, nil
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	artifactDir := statepath.SessionArtifactDir(stateDir, rootThreadID)
+	historyDir := filepath.Join(artifactDir, "workers")
+	harnessDir := filepath.Join(artifactDir, "harness")
+	for index := range threads {
+		meta := threads[index]
+		if meta.Source.Kind != agentthread.SourceThreadSpawn ||
+			!isRunningAgentStatus(string(meta.Status)) {
+			continue
+		}
+		active, err := agentcontrol.WorkerExecutionActive(harnessDir, meta.ID)
+		if err != nil {
+			return nil, fmt.Errorf("inspect worker %q execution lease: %w", meta.ID, err)
+		}
+		if active {
+			continue
+		}
+		run, err := subagent.LoadPersistedRun(filepath.Join(historyDir, meta.ID+".json"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("load worker %q snapshot: %w", meta.ID, err)
+		}
+		status, terminal := terminalAgentThreadStatus(run.Status)
+		if !terminal {
+			continue
+		}
+		meta.Status = status
+		if !run.CompletedAt.IsZero() {
+			meta.UpdatedAt = run.CompletedAt
+		}
+		if err := store.RecordStatus(meta); err != nil {
+			return nil, fmt.Errorf("persist terminal worker %q thread status: %w", meta.ID, err)
+		}
+		threads[index] = meta
+	}
+	return threads, nil
+}
+
+func terminalAgentThreadStatus(status subagent.Status) (agentthread.Status, bool) {
+	switch status {
+	case subagent.StatusCompleted:
+		return agentthread.StatusCompleted, true
+	case subagent.StatusFailed, subagent.StatusInterrupted:
+		return agentthread.StatusFailed, true
+	case subagent.StatusCancelled:
+		return agentthread.StatusCancelled, true
+	default:
+		return "", false
+	}
 }
 
 // childAgentPinArchive fetches the pinned/archived flags for a child agent's

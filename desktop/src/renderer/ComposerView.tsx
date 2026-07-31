@@ -965,9 +965,10 @@ export function Composer({
                             <SlashCommandIcon command={command} />
                           </span>
                           <span className="slash-command-label">
-                            <span className="slash-command-title">
-                              {command.kind === "skill" ? command.description : command.title}
-                            </span>
+                            <span className="slash-command-name">/{command.name}</span>
+                            {command.title ? (
+                              <span className="slash-command-summary">{command.title}</span>
+                            ) : null}
                           </span>
                           {command.disabledReason ? (
                             <span className="slash-command-meta">{command.disabledReason}</span>

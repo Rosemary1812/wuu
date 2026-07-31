@@ -863,6 +863,36 @@ func TestRunJSONLEmitsWorkEventFamilies(t *testing.T) {
 	}
 }
 
+func TestEmitItemStartedRedactsToolArguments(t *testing.T) {
+	var stdout bytes.Buffer
+	state := runState{}
+	emitItemStarted(Options{JSON: true, Stdout: &stdout}, appserver.ItemStartedNotification{
+		ThreadID: "thread-1",
+		TurnID:   "turn-1",
+		Item: appserver.ThreadItem{
+			ID:        "item-bash",
+			Type:      appserver.ThreadItemToolCall,
+			Name:      "bash",
+			Arguments: `{"command":"curl -H 'Authorization: Bearer secret-token-value' example.com"}`,
+		},
+	}, &state)
+
+	events := parseJSONLines(t, stdout.String())
+	for _, event := range events {
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			t.Fatalf("marshal event: %v", err)
+		}
+		if strings.Contains(string(encoded), "secret-token-value") {
+			t.Fatalf("secret leaked in event: %s", encoded)
+		}
+	}
+	toolStarted := firstEventOfType(t, events, "tool_started")
+	if !strings.Contains(toolStarted["arguments"].(string), "[REDACTED]") {
+		t.Fatalf("tool arguments were not redacted: %+v", toolStarted)
+	}
+}
+
 func TestRunIgnoresChildTurnCompletionUntilRootCompletes(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{

@@ -6,17 +6,33 @@ wuu 是一个从软件开发开始的本地工作区 AI Agent。它直接在你�
 wuu 的桌面应用适合交互式工作；`wuu exec` 适合终端、脚本、CI 和其他 Agent。
 两种入口使用同一个 Go 核心，但桌面应用自带私有 core，不依赖单独安装的 CLI。
 
-## 从这里开始
+## 第一次使用
 
-- **第一次使用：**按照[用户指南](getting-started/index.md)安装 wuu、连接模型提供商，
-  并在本地工作区中完成第一个任务。
-- **理解配置：**阅读[配置模型](reference/configuration.md)，了解用户配置、项目规则、
-  凭据和权限之间的边界。
-- **接入自动化：**阅读 [`wuu exec`](../en/automation/exec.md) 和
+沿着[快速开始](getting-started/index.md)完成一条真实路径：
+
+1. 安装桌面应用；
+2. 连接模型服务；
+3. 添加一个本地工作区；
+4. 交代一个范围明确的小任务；
+5. 检查文件、diff 和验证结果。
+
+桌面应用首次启动后会直接进入共享的“对话”区域，不会先经过账号注册或强制的新手
+向导。要让 Agent 读写项目文件或运行项目命令，请添加真实工作区。
+
+## 按你要做的事阅读
+
+- **管理项目和会话：**[工作区与项目](desktop/workspaces.md)、
+  [会话与分支](desktop/conversations.md)。
+- **检查 Agent 的成果：**[文件、改动、终端与浏览器](desktop/workspace-tools.md)。
+- **理解复杂任务怎样推进：**[Agent 协作与子代理](desktop/subagents.md)和
+  [命令与后台任务](reference/agent-command-system.md)。
+- **复用工作方式：**[Skills](customize/skills.md) 和[记忆](customize/memory.md)。
+- **按计划运行：**[Automations](automation/scheduled-tasks.md)。
+- **接入外部工具：**[MCP 服务器](customize/mcp.md)。
+- **控制本地权限：**[权限模式](reference/permissions.md)和[安全模型](reference/security-model.md)。
+- **接入脚本和 CI：**[用 `wuu exec` 做自动化](automation/exec.md)和
   [JSONL 事件](../en/automation/jsonl-events.md)（英文）。
-- **构建其他客户端：**阅读 [`app-server` 协议](../en/integrations/app-server-protocol.md)
-  （英文）。
-- **处理敏感内容：**先阅读[安全模型](reference/security-model.md)。
+- **遇到问题：**从[故障排查](help/troubleshooting.md)开始。
 
 ## 工作区是成果的来源
 
@@ -27,7 +43,7 @@ Git 和文件工具处理它们，而不必把内容锁在一次对话里。
 当前公开版本首先服务软件开发工作流。文档只描述已经可以使用的行为；仍在设计中的
 写作、知识管理和发布能力不会作为现有功能提前写入指南。
 
-## 当前入口
+## 产品入口
 
 ### 桌面应用
 
@@ -38,10 +54,17 @@ Git 和文件工具处理它们，而不必把内容锁在一次对话里。
 `wuu exec` 提供自动化安全的文本和 JSONL 输出，可用于脚本、CI、评审任务或由其他
 Agent 调用。
 
-### App-server
+### App-server 集成
 
 新的桌面端、编辑器插件或其他 Shell 可以把 wuu core 作为子进程启动，并通过
-JSON-RPC 协议复用会话、工具和模型能力。
+基于标准输入输出的逐行 JSON 协议复用会话、工具和模型能力。当前 wire protocol 仍是 `v0.1`，适合受控
+集成，不应假设所有字段已经长期稳定。
+
+## 稳定文档的边界
+
+这套导航只把默认生产构建中可达、并由当前实现支持的能力写成稳定功能。需要特殊构建
+开关的群聊、用户编排的常驻 Agent 团队、远程桌面入口和语音输入，不作为默认体验承诺；调试面板、
+评测命令和内部协议细节也不会混入普通用户路径。
 
 ---
 

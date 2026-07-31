@@ -39,6 +39,23 @@ func defaultProcessOwnerKind(env *Env, ownerKind string) string {
 	return string(proc.OwnerMainAgent)
 }
 
+// processRootThreadID resolves the conversation a background command belongs
+// to. It is deliberately host-derived rather than a model argument: the record
+// preserves durable ownership for later lifecycle work, so the model cannot
+// point it elsewhere. The model-facing start boundary rejects an empty result;
+// low-level internal Manager.Start callers may have another legitimate
+// ownership model.
+func processRootThreadID(env *Env) string {
+	if env == nil {
+		return ""
+	}
+	id := strings.TrimSpace(env.SessionID)
+	if id == "session-pending" {
+		return ""
+	}
+	return id
+}
+
 func defaultProcessOwnerID(env *Env) string {
 	if env == nil {
 		return "main"
@@ -63,6 +80,11 @@ func redactProcessPtr(env *Env, p *proc.Process) *proc.Process {
 func redactProcess(env *Env, p proc.Process) proc.Process {
 	p.Command = env.RedactToolOutput(p.Command)
 	p.LastError = env.RedactToolOutput(p.LastError)
+	// These fields are durable routing/identity metadata, not useful model
+	// controls. Keep them in persisted records while omitting them from the
+	// model-facing response boundary.
+	p.RootThreadID = ""
+	p.HostGenerationID = ""
 	return p
 }
 

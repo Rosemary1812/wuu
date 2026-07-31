@@ -155,6 +155,21 @@ export function JumpToLatestPill({
     });
   }, [containerRef, bottomAnchor]);
 
+  const recomputeHorizontalPosition = useCallback((): void => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const left = containerRect.left + containerRect.width / 2;
+    setPosition((current) => {
+      if (!current || current.left === left) {
+        return current;
+      }
+      return { ...current, left };
+    });
+  }, [containerRef]);
+
   // Measured positioning for the portaled pill. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the
   // composer, moving its top edge). The composer frame is observed separately
@@ -177,13 +192,21 @@ export function JumpToLatestPill({
     const schedule = (): void => {
       if (isWindowResizing()) {
         resizeSettleRecompute.schedule();
-        return;
       }
       if (frame) {
         return;
       }
       frame = window.requestAnimationFrame(() => {
         frame = 0;
+        if (isWindowResizing()) {
+          // Keep the pill centered with the CSS-driven composer during a live
+          // window drag. Only read the container's horizontal bounds here;
+          // visibility, composer height, and scroll metrics remain deferred
+          // until layout settles so they cannot destabilize auto-follow.
+          recomputeHorizontalPosition();
+          resizeSettleRecompute.schedule();
+          return;
+        }
         recomputeWhenStable();
       });
     };
@@ -224,7 +247,13 @@ export function JumpToLatestPill({
       anchorChildObserver?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, [bottomAnchor, scrolledAway, recomputePosition, containerRef]);
+  }, [
+    bottomAnchor,
+    scrolledAway,
+    recomputeHorizontalPosition,
+    recomputePosition,
+    containerRef,
+  ]);
 
   if (!scrolledAway) {
     return null;

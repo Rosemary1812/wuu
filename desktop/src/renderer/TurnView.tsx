@@ -10,8 +10,6 @@ import { isAgentHandoffItem } from "./AgentHandoff";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
-import { TurnRunActions } from "./MessageActions";
-import { isCommandToolCall } from "./TerminalRuns";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -146,9 +144,6 @@ export function TurnView({
     turn.id,
     rawAssistantDisplay,
   );
-  const hasTurnRuns =
-    (turn.status === "completed" || turn.status === "failed") &&
-    turn.items.some(isCommandToolCall);
   // `buildAssistantTurnDisplay` already classifies "turn completed but
   // only commentary, no `final_answer`" and surfaces it as
   // `missingReplyMessage`. Forward that to the event pipeline so the
@@ -183,9 +178,6 @@ export function TurnView({
           onCollapseComplete={onCollapseComplete}
           onOpenAgent={onOpenAgent}
         />
-      ) : null}
-      {hasTurnRuns && onOpenRuns && !runActionAttachedToMessage ? (
-        <TurnRunActions onOpenRuns={onOpenRuns} />
       ) : null}
       {!runActionAttachedToMessage ? (
         <TurnEditSummaryCard

@@ -62,10 +62,23 @@ const (
 )
 
 type Process struct {
-	Action                string         `json:"action,omitempty"`
-	ID                    string         `json:"id"`
-	OwnerKind             OwnerKind      `json:"owner_kind"`
-	OwnerID               string         `json:"owner_id"`
+	Action    string    `json:"action,omitempty"`
+	ID        string    `json:"id"`
+	OwnerKind OwnerKind `json:"owner_kind"`
+	OwnerID   string    `json:"owner_id"`
+	// RootThreadID is the conversation that owns this command. It is stamped
+	// at start from host state, never derived afterwards: once a thread or
+	// subagent is gone there is nothing left to scan to recover the owner. This
+	// step only persists the association; lifecycle cleanup is not implemented.
+	RootThreadID string `json:"root_thread_id,omitempty"`
+	// HostGenerationID identifies the top-level app-server host lifetime that
+	// started this command. It is durable record identity, not proof that the
+	// running process still has an in-memory control handle. Records written
+	// before this field existed have it empty.
+	HostGenerationID string `json:"host_generation_id,omitempty"`
+	// Deprecated: Lifecycle is being retired with the managed process class.
+	// It still parses and round-trips so existing registry records keep
+	// loading; new behavior must not branch on it.
 	Lifecycle             Lifecycle      `json:"lifecycle"`
 	CompletionMode        CompletionMode `json:"completion_mode,omitempty"`
 	Status                Status         `json:"status"`
@@ -96,11 +109,15 @@ type Process struct {
 }
 
 type StartOptions struct {
-	Command               string
-	CommandPrefix         string
-	CWD                   string
-	OwnerKind             OwnerKind
-	OwnerID               string
+	Command       string
+	CommandPrefix string
+	CWD           string
+	OwnerKind     OwnerKind
+	OwnerID       string
+	// RootThreadID is host-supplied. Callers pass the conversation the command
+	// belongs to; it is not a model-declared argument.
+	RootThreadID string
+	// Deprecated: see Process.Lifecycle.
 	Lifecycle             Lifecycle
 	CompletionMode        CompletionMode
 	TTY                   bool
@@ -142,14 +159,37 @@ type OutputSnapshot struct {
 }
 
 type Manager struct {
-	rootDir     string
-	registryDir string
-	logDir      string
-	mu          sync.Mutex
-	subMu       sync.Mutex
-	handles     map[string]*processHandle
-	subscribers []chan<- Event
-	recheckWake chan struct{}
+	rootDir string
+	// hostGenerationID is shared by Managers belonging to one top-level
+	// app-server lifetime and stamped on every command they start. The handles
+	// map, not this label, is the authority for live in-memory control.
+	hostGenerationID string
+	registryDir      string
+	logDir           string
+	mu               sync.Mutex
+	subMu            sync.Mutex
+	handles          map[string]*processHandle
+	subscribers      []chan<- Event
+	recheckWake      chan struct{}
+}
+
+// newHostGenerationID mints an identifier for one app-server lifetime. Time
+// alone would collide across a fast restart, so it is paired with random bytes.
+func newHostGenerationID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("host-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("host-%d-%s", time.Now().UnixNano(), hex.EncodeToString(buf))
+}
+
+// HostGenerationID returns the durable identity label for this manager's host
+// lifetime. Matching this value does not establish live controllability.
+func (m *Manager) HostGenerationID() string {
+	if m == nil {
+		return ""
+	}
+	return m.hostGenerationID
 }
 
 type processHandle struct {
@@ -160,8 +200,20 @@ type processHandle struct {
 }
 
 func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
+	return NewManagerWithHostGeneration(rootDir, newHostGenerationID(), runtimeDirs...)
+}
+
+// NewManagerWithHostGeneration creates a manager using an existing top-level
+// host lifetime label. Runtime sessions use this for thread-local managers so
+// records from one app-server host share durable identity; standalone callers
+// should use NewManager, which mints its own label for compatibility.
+func NewManagerWithHostGeneration(rootDir, hostGenerationID string, runtimeDirs ...string) (*Manager, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		return nil, errors.New("root directory is required")
+	}
+	hostGenerationID = strings.TrimSpace(hostGenerationID)
+	if hostGenerationID == "" {
+		return nil, errors.New("host generation id is required")
 	}
 	abs, err := filepath.Abs(rootDir)
 	if err != nil {
@@ -187,11 +239,12 @@ func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 		return nil, err
 	}
 	m := &Manager{
-		rootDir:     abs,
-		registryDir: filepath.Join(runtimeDir, "processes"),
-		logDir:      filepath.Join(runtimeDir, "logs"),
-		handles:     make(map[string]*processHandle),
-		recheckWake: make(chan struct{}, 1),
+		rootDir:          abs,
+		hostGenerationID: hostGenerationID,
+		registryDir:      filepath.Join(runtimeDir, "processes"),
+		logDir:           filepath.Join(runtimeDir, "logs"),
+		handles:          make(map[string]*processHandle),
+		recheckWake:      make(chan struct{}, 1),
 	}
 	if err := os.MkdirAll(m.registryDir, 0o755); err != nil {
 		return nil, err
@@ -224,6 +277,9 @@ func (m *Manager) SetRootDir(rootDir string) {
 	m.mu.Unlock()
 }
 
+// Start is the low-level manager launch path. Model-facing command tools must
+// bind a SessionID before using it; internal callers may use it for legitimate
+// non-thread work and provide RootThreadID when they own that association.
 func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error) {
 	if strings.TrimSpace(opt.Command) == "" {
 		return nil, errors.New("command is required")
@@ -261,7 +317,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		opt.TTY = false
 	}
 	id := "proc-" + randomHex(4)
-	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, CompletionMode: opt.CompletionMode, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1, RecheckMinutes: opt.RecheckMinutes}
+	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, RootThreadID: strings.TrimSpace(opt.RootThreadID), HostGenerationID: m.hostGenerationID, Lifecycle: opt.Lifecycle, CompletionMode: opt.CompletionMode, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1, RecheckMinutes: opt.RecheckMinutes}
 	if opt.RecheckMinutes > 0 {
 		p.NextRecheckAt = p.StartedAt.Add(time.Duration(opt.RecheckMinutes) * time.Minute)
 	}

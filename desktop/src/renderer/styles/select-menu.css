@@ -241,7 +241,8 @@
 }
 
 .select-menu-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1px;
   /* The portal layer (FloatingMenuPortal) computes the available viewport
      space on the chosen side and pushes it down as
@@ -255,7 +256,7 @@
     --select-menu-max-height,
     min(320px, calc(100vh - 120px))
   );
-  overflow-y: auto;
+  overflow: hidden;
   padding: 6px;
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);
@@ -264,6 +265,45 @@
   backdrop-filter: blur(16px);
   --menu-enter-y: -4px;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.select-menu-search {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  margin: -1px -1px 4px;
+  padding: 0 9px;
+  border-bottom: 1px solid var(--menu-border);
+  background: var(--menu-bg);
+  color: var(--ink-tertiary);
+}
+
+.select-menu-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-ui);
+}
+
+.select-menu-search input::placeholder {
+  color: var(--ink-muted);
+}
+
+.select-menu-search-icon {
+  flex: 0 0 auto;
+}
+
+.select-menu-options {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 1px;
 }
 
 .select-menu-group {

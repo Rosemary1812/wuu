@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
+	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -61,6 +63,26 @@ func TestSessionUltraModeIsConcurrencySafe(t *testing.T) {
 	var zero Session
 	if zero.MaxParallel() != config.DefaultAgentMaxParallel {
 		t.Fatalf("zero-value MaxParallel = %d, want %d", zero.MaxParallel(), config.DefaultAgentMaxParallel)
+	}
+}
+
+func TestThreadProcessManagerSharesRuntimeHostGeneration(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	workspaceManager, err := process.NewManager(workspaceRoot, filepath.Join(t.TempDir(), "workspace-runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	s := &Session{RootDir: workspaceRoot, ProcessManager: workspaceManager}
+
+	threadManager, err := s.processManagerForThread(t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatalf("processManagerForThread: %v", err)
+	}
+	if threadManager == workspaceManager {
+		t.Fatal("a different thread root should receive a thread-local manager")
+	}
+	if threadManager.HostGenerationID() != workspaceManager.HostGenerationID() {
+		t.Fatalf("thread host generation = %q, want workspace generation %q", threadManager.HostGenerationID(), workspaceManager.HostGenerationID())
 	}
 }
 
@@ -2079,7 +2101,7 @@ func TestReconfigureToolLoadingClearsNativeDiscoveryForCompatibleProvider(t *tes
 	}
 }
 
-func TestNewSessionAutoFallsBackToWuuToolSearchForUnsupportedFirstPartyOpenAIResponsesModel(t *testing.T) {
+func TestNewSessionAutoFallsBackToFlatForUnsupportedFirstPartyOpenAIResponsesModel(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -2104,23 +2126,28 @@ func TestNewSessionAutoFallsBackToWuuToolSearchForUnsupportedFirstPartyOpenAIRes
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if rt.ToolLoadingMode != config.ToolLoadingWuuToolSearch {
-		t.Fatalf("ToolLoadingMode = %q, want wuu_tool_search", rt.ToolLoadingMode)
+	if rt.ToolLoadingMode != config.ToolLoadingFlat {
+		t.Fatalf("ToolLoadingMode = %q, want flat", rt.ToolLoadingMode)
 	}
-	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
-		t.Fatalf("unsupported OpenAI model should use Wuu tool_search fallback, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	if rt.Toolkit == nil || rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("unsupported OpenAI model should declare tools flat, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
 	}
 	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
 		t.Fatal("unsupported OpenAI model must not mark provider requests as native deferred")
 	}
-	for _, want := range []string{
-		"# Deferred Tool Catalog",
-		"<available-deferred-tools>",
-		"send_message",
-	} {
-		if !strings.Contains(rt.BaseSystemPrompt, want) {
-			t.Fatalf("Wuu tool_search prompt missing static catalog entry %q:\n%s", want, rt.BaseSystemPrompt)
+	// A flat surface declares every tool up front, so the deferred catalog
+	// prompt that Wuu progressive loading needed must not be emitted at all.
+	for _, unwanted := range []string{"# Deferred Tool Catalog", "<available-deferred-tools>"} {
+		if strings.Contains(rt.BaseSystemPrompt, unwanted) {
+			t.Fatalf("flat fallback must not ship the deferred catalog prompt, found %q:\n%s", unwanted, rt.BaseSystemPrompt)
 		}
+	}
+	defs := rt.Toolkit.Definitions()
+	if _, ok := sessionToolDefByName(defs, "tool_search"); ok {
+		t.Fatalf("flat fallback must not expose tool_search, got %+v", defs)
+	}
+	if _, ok := sessionToolDefByName(defs, "send_message"); !ok {
+		t.Fatalf("flat fallback must declare formerly deferred tools directly, got %+v", defs)
 	}
 	for _, block := range rt.Toolkit.ContextBlocks() {
 		if block.Kind == wuucontext.BlockAvailableDeferred {
@@ -2248,10 +2275,27 @@ func TestNewSessionAllowsCompatibleOpenAIResponsesToOptIntoNativeDeferred(t *tes
 	}
 }
 
-func TestNewSessionExplicitNativeFallsBackToWuuToolSearchForUnsupportedOpenAIResponsesModel(t *testing.T) {
+// captureUnsupportedNativeWarnings redirects the fallback notice into buf and
+// clears the process-level dedupe set so each test starts from a clean slate.
+func captureUnsupportedNativeWarnings(t *testing.T, buf *bytes.Buffer) func() {
+	t.Helper()
+	previous := unsupportedNativeWarnWriter
+	unsupportedNativeWarnWriter = buf
+	resetUnsupportedNativeWarnings()
+	return func() {
+		unsupportedNativeWarnWriter = previous
+		resetUnsupportedNativeWarnings()
+	}
+}
+
+func TestNewSessionExplicitNativeFallsBackToFlatForUnsupportedOpenAIResponsesModel(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	var warnings bytes.Buffer
+	restore := captureUnsupportedNativeWarnings(t, &warnings)
+	defer restore()
 
 	rt, err := NewSession(Options{
 		RootDir:    root,
@@ -2274,18 +2318,51 @@ func TestNewSessionExplicitNativeFallsBackToWuuToolSearchForUnsupportedOpenAIRes
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if rt.ToolLoadingMode != config.ToolLoadingWuuToolSearch {
-		t.Fatalf("ToolLoadingMode = %q, want wuu_tool_search", rt.ToolLoadingMode)
+	if rt.ToolLoadingMode != config.ToolLoadingFlat {
+		t.Fatalf("ToolLoadingMode = %q, want flat", rt.ToolLoadingMode)
 	}
-	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
-		t.Fatalf("unsupported explicit OpenAI native should fall back to Wuu tool_search, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	if rt.Toolkit == nil || rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("unsupported explicit OpenAI native should fall back to flat, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
 	}
 	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
 		t.Fatal("unsupported explicit OpenAI native should not mark provider requests as native deferred")
 	}
+	// The user asked for deferred tools and is not getting them, so the
+	// downgrade has to be visible rather than silent.
+	notice := warnings.String()
+	for _, want := range []string{"native", "flat", "gpt-test"} {
+		if !strings.Contains(notice, want) {
+			t.Fatalf("fallback notice missing %q, got %q", want, notice)
+		}
+	}
 }
 
-func TestNewSessionAllowsExplicitWuuToolSearchFallback(t *testing.T) {
+func TestUnsupportedNativeFallbackNoticeIsEmittedOncePerProviderModel(t *testing.T) {
+	var warnings bytes.Buffer
+	restore := captureUnsupportedNativeWarnings(t, &warnings)
+	defer restore()
+
+	providerCfg := config.ProviderConfig{
+		Type:    "openai-compatible",
+		BaseURL: "https://compatible.example.com/v1",
+		APIKey:  "abc",
+		WireAPI: "responses",
+	}
+	for range 3 {
+		resolveToolLoadingModeForProvider(config.ToolLoadingNative, providerCfg, "gpt-test", nil)
+	}
+	if got := strings.Count(warnings.String(), "does not support provider-native"); got != 1 {
+		t.Fatalf("notice count = %d, want 1 (dedupe across repeated provider switches):\n%s", got, warnings.String())
+	}
+
+	// A different unsupported pair is a different problem and reports again.
+	resolveToolLoadingModeForProvider(config.ToolLoadingNative, providerCfg, "gpt-other", nil)
+	if got := strings.Count(warnings.String(), "does not support provider-native"); got != 2 {
+		t.Fatalf("notice count = %d, want 2 after switching model:\n%s", got, warnings.String())
+	}
+}
+
+func TestNewSessionTreatsRetiredWuuToolSearchConfigAsAuto(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -2304,30 +2381,34 @@ func TestNewSessionAllowsExplicitWuuToolSearchFallback(t *testing.T) {
 					Model:   "generic-coder",
 				},
 			},
-			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingWuuToolSearch},
+			// An existing config still naming the removed mode must keep
+			// starting rather than failing validation.
+			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingMode("wuu_tool_search")},
 		},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if rt.ToolLoadingMode != config.ToolLoadingWuuToolSearch {
-		t.Fatalf("ToolLoadingMode = %q, want wuu_tool_search", rt.ToolLoadingMode)
+	// A generic compatible endpoint has no native discovery, so auto lands on
+	// flat — the retired value no longer selects a loading strategy of its own.
+	if rt.ToolLoadingPreference != config.ToolLoadingAuto {
+		t.Fatalf("ToolLoadingPreference = %q, want auto", rt.ToolLoadingPreference)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingFlat {
+		t.Fatalf("ToolLoadingMode = %q, want flat", rt.ToolLoadingMode)
 	}
 	if rt.Toolkit == nil {
 		t.Fatal("expected toolkit")
 	}
-	if !rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
-		t.Fatalf("wuu_tool_search should expose Wuu tool_search without native provider defer, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
-	}
-	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
-		t.Fatal("wuu_tool_search should not mark provider requests as native deferred")
+	if rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("retired mode must not resurrect progressive loading, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
 	}
 	defs := rt.Toolkit.Definitions()
-	if _, ok := sessionToolDefByName(defs, "tool_search"); !ok {
-		t.Fatalf("wuu_tool_search should expose tool_search, got %+v", defs)
+	if _, ok := sessionToolDefByName(defs, "tool_search"); ok {
+		t.Fatalf("retired mode must not expose tool_search, got %+v", defs)
 	}
-	if _, ok := sessionToolDefByName(defs, "send_message"); ok {
-		t.Fatalf("wuu_tool_search should keep deferred tools behind tool_search until loaded, got %+v", defs)
+	if _, ok := sessionToolDefByName(defs, "send_message"); !ok {
+		t.Fatalf("retired mode should declare formerly deferred tools directly, got %+v", defs)
 	}
 }
 

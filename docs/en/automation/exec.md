@@ -251,7 +251,9 @@ On a native `mcp_servers` name clash the native entry wins; `disabled` wins over
 
 The mode is an in-process tool boundary, not an operating-system sandbox.
 Permitted child processes keep Wuu's OS identity, inherited environment, and
-network stack. Permission modes do not disable hard tool guards. See the
+network stack. `standard` and `read_only` retain hard tool guards and output
+redaction. `unconfined` explicitly bypasses path confinement, hard tool guards,
+and tool-output redaction; use it only for short, trusted tasks. See the
 [security model](../reference/security-model.md) before unattended or untrusted-repository
 use.
 
@@ -278,8 +280,9 @@ workspace-scoped artifacts Wuu can locate for that thread.
 
 ## Safety
 
-`wuu exec` runs through the same workspace boundary and tool guards as the
-desktop app. Unsafe Git operations, common secret reads and environment dumps,
-and other high-risk command patterns receive hard checks. Common credential
-patterns are redacted from tool output. These controls are defense in depth,
-not OS isolation and not a guarantee that every secret format is recognized.
+Unless `unconfined` is selected, `wuu exec` runs through the same workspace
+boundary and tool guards as the desktop app. Unsafe Git operations, common
+secret reads and environment dumps, and other high-risk command patterns
+receive hard checks. Common credential patterns are redacted from tool output.
+These controls are defense in depth, not OS isolation and not a guarantee that
+every secret format is recognized.

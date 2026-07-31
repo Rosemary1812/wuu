@@ -166,7 +166,10 @@
 
 .globalized-sidebar-toggle-region {
   position: fixed;
-  top: 9px;
+  /* Match the normal 30px toggle's center inside the 48px titlebar content
+   * box. The titlebar's 1px bottom border leaves 47px for centered content;
+   * using 9px here moves the replacement down one physical pixel on Retina. */
+  top: calc((48px - 1px - 30px) / 2);
   left: max(8px, var(--window-controls-inset-left));
   z-index: 150;
   width: 34px;
@@ -174,7 +177,7 @@
   -webkit-app-region: drag;
 }
 
-.globalized-sidebar-toggle {
+.globalized-sidebar-toggle-region .globalized-sidebar-toggle {
   width: 30px;
   height: 30px;
   padding: 2px;

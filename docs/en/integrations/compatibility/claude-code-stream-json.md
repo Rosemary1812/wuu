@@ -549,5 +549,3 @@ and usage). The unavoidable lossy points to advertise up front:
 - cc CLI flags: `thirdparty/claude-code-sourcemap/src/main.tsx:976-1000` (and validation at
   `1279-1367`, `1825-1850`).
 - cc exit: `thirdparty/claude-code-sourcemap/src/utils/gracefulShutdown.ts:336-347`.
-</content>
-</invoke>

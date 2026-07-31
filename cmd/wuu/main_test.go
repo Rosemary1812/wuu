@@ -452,6 +452,16 @@ func TestRunExecRejectsNegativeMaxTurnsWithExitCodeTwo(t *testing.T) {
 	}
 }
 
+func TestRunExecRejectsInvalidPermissionModeWithExitCodeTwo(t *testing.T) {
+	err := run([]string{"exec", "--permission-mode", "readonly", "hello"})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
+		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid --permission-mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunExecRejectsInvalidEnvWithExitCodeTwo(t *testing.T) {
 	err := run([]string{"exec", "--env", "not-an-assignment", "hello"})
 	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {

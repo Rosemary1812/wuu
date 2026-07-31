@@ -330,6 +330,51 @@ describe("AutomationsCatalog", () => {
     expect(updateAutomation).toHaveBeenCalledWith({ id: task.id, paused: true });
   });
 
+  it("selects a valid timezone from a searchable list and saves it", async () => {
+    const updateAutomation = vi.fn().mockResolvedValue({
+      task: { ...task, timezone: "UTC" },
+    });
+    installApi([task], updateAutomation);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<AutomationsCatalog />);
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".automation-row")?.click());
+
+    const timezone = container.querySelector<HTMLButtonElement>('[aria-label="时区"]');
+    expect(timezone?.textContent).toContain("Asia/Shanghai");
+    expect(container.querySelector('input[value="Asia/Shanghai"]')).toBeNull();
+    await act(async () => timezone?.click());
+
+    const search = document.body.querySelector<HTMLInputElement>('[aria-label="搜索时区"]');
+    expect(search).toBeTruthy();
+    await act(async () => setInputValue(search!, "china"));
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Shanghai"]')).toBeTruthy();
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeNull();
+
+    await act(async () => setInputValue(search!, "indochina"));
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeTruthy();
+
+    await act(async () => setInputValue(search!, "tha"));
+    expect(document.body.querySelector('.select-menu-item[data-value="Asia/Bangkok"]')).toBeTruthy();
+    expect(document.body.querySelector('.select-menu-item[data-value="Indian/Christmas"]')).toBeNull();
+
+    await act(async () => setInputValue(search!, "christmas"));
+    const christmas = document.body.querySelector('.select-menu-item[data-value="Indian/Christmas"]');
+    expect(christmas?.textContent).toContain("圣诞岛");
+    expect(christmas?.textContent).not.toContain("泰国");
+
+    await act(async () => setInputValue(search!, "日本"));
+    const tokyo = document.body.querySelector<HTMLButtonElement>('.select-menu-item[data-value="Asia/Tokyo"]');
+    expect(tokyo?.textContent).toContain("日本标准时间");
+    await act(async () => {
+      tokyo?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(updateAutomation).toHaveBeenCalledWith(expect.objectContaining({ timezone: "Asia/Tokyo" }));
+  });
+
   it("auto-saves pending edits before closing the detail pane", async () => {
     const updateAutomation = vi.fn().mockImplementation(async (params) => ({
       task: { ...task, title: params.title ?? task.title },

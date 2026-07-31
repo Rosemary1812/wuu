@@ -55,6 +55,19 @@ describe("conversation message-flow rhythm", () => {
 });
 
 describe("automation master-detail layout", () => {
+  it("uses the same content column and narrow-screen inset as the skills catalog", () => {
+    const automationMaster = cssRuleBody(".automations-master");
+    const skillsCatalog = cssRuleBody(".skills-catalog");
+
+    expect(automationMaster).toMatch(/grid-template-columns:\s*minmax\(0,\s*1080px\);/);
+    expect(skillsCatalog).toMatch(/grid-template-columns:\s*minmax\(0,\s*1080px\);/);
+    expect(automationMaster).toMatch(/padding:\s*42px\s+clamp\(32px,\s*6vw,\s*88px\)\s+64px;/);
+    expect(skillsCatalog).toMatch(/padding:\s*42px\s+clamp\(32px,\s*6vw,\s*88px\)\s+64px;/);
+    expect(workspaceCss).toMatch(
+      /@media \(max-width:\s*720px\)[\s\S]*?\.skills-catalog,\s*\n\s*\.automations-master\s*\{[\s\S]*?padding:\s*28px\s+20px\s+40px;/,
+    );
+  });
+
   it("keeps the detail track and its safe padding inside the available width", () => {
     expect(cssRuleBody(".automations-catalog.detail-open")).toMatch(
       /grid-template-columns:\s*minmax\(340px,\s*1fr\)\s+10px\s+var\(--automation-detail-pane-width\);/,

@@ -28,6 +28,7 @@ export interface SidebarNameDialogProps {
     label: string;
     onClick: () => void;
   };
+  variant?: "default" | "drawer";
 }
 
 // Shared floating name dialog for the sidebar flows that need a single text
@@ -50,6 +51,7 @@ export function SidebarNameDialog({
   content,
   submitDisabled,
   destructiveAction,
+  variant = "default",
 }: SidebarNameDialogProps): ReactElement | null {
   useEffect(() => {
     if (!open) {
@@ -82,11 +84,11 @@ export function SidebarNameDialog({
 
   return createPortal(
     <div
-      className="conversation-search-overlay sidebar-name-dialog-overlay"
+      className={`conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}`}
       onPointerDown={handleOverlayPointerDown}
     >
       <form
-        className="conversation-search-dialog sidebar-name-dialog"
+        className={`conversation-search-dialog sidebar-name-dialog${variant === "drawer" ? " sidebar-name-dialog-drawer" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={dialogTitleId}

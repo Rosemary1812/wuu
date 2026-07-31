@@ -60,6 +60,7 @@ async function run() {
     () => document.querySelector(".settings-shell")?.classList.contains("sidebar-collapsed") || null,
     3000
   );
+  win.setSize(760, 820);
   await delay(300);
 
   const before = await toggleHitState(win);
@@ -89,6 +90,12 @@ async function run() {
   assert.equal(after.hitOwnedByToggle, true, `Toggle must own its center hit after drawer opens: ${JSON.stringify(after)}`);
   assert.equal(after.visible, true, `Toggle must remain visible after drawer opens: ${JSON.stringify(after)}`);
   assert.equal(after.hovered, true, `The real Electron pointer must still hover the toggle: ${JSON.stringify(after)}`);
+  const readability = await sidebarReadabilityState(win);
+  assert.ok(readability.width >= 240, `Narrow-window drawer must stay readable: ${JSON.stringify(readability)}`);
+  assert.equal(readability.backWhiteSpace, "nowrap", `Back label must stay on one line: ${JSON.stringify(readability)}`);
+  assert.equal(readability.providerWhiteSpace, "nowrap", `Provider label must stay on one line: ${JSON.stringify(readability)}`);
+  assert.equal(readability.backFullyVisible, true, `Back label should fit at the readable floor: ${JSON.stringify(readability)}`);
+  assert.equal(readability.providerFullyVisible, true, `Provider label should fit at the readable floor: ${JSON.stringify(readability)}`);
   await capture(win, "settings-sidebar-hit-after.png");
 
   win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x: after.centerX, y: after.centerY });
@@ -99,7 +106,7 @@ async function run() {
     3000
   );
 
-  console.log(JSON.stringify({ before, after, transformSamples }));
+  console.log(JSON.stringify({ before, after, readability, transformSamples }));
   win.close();
   app.quit();
 }
@@ -134,6 +141,28 @@ async function drawerTranslateX(win) {
     }
     const transform = getComputedStyle(drawer).transform;
     return transform === "none" ? 0 : new DOMMatrixReadOnly(transform).m41;
+  });
+}
+
+async function sidebarReadabilityState(win) {
+  return evaluate(win, () => {
+    const drawer = document.querySelector(".settings-sidebar");
+    const backLabel = document.querySelector(".settings-back-button > span");
+    const providerLabel = document.querySelector(".settings-nav-item > span");
+    if (
+      !(drawer instanceof HTMLElement) ||
+      !(backLabel instanceof HTMLElement) ||
+      !(providerLabel instanceof HTMLElement)
+    ) {
+      throw new Error("Settings sidebar readability targets not found.");
+    }
+    return {
+      width: drawer.getBoundingClientRect().width,
+      backWhiteSpace: getComputedStyle(backLabel).whiteSpace,
+      providerWhiteSpace: getComputedStyle(providerLabel).whiteSpace,
+      backFullyVisible: backLabel.scrollWidth <= backLabel.clientWidth,
+      providerFullyVisible: providerLabel.scrollWidth <= providerLabel.clientWidth
+    };
   });
 }
 

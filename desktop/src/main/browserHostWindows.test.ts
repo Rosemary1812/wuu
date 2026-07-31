@@ -14,12 +14,31 @@ import {
   type BrowserWebContentsHandle,
   boxModelCenter,
   browserPermissionDecision,
+  configureBrowserProxy,
   interactableNodesFromSnapshot,
   tabKey,
   valueFor,
 } from "./browserHostWindows";
 
 let nextWebContentsID = 1;
+
+describe("configureBrowserProxy", () => {
+  it("configures only the supplied browser session", async () => {
+    const setProxy = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      configureBrowserProxy({ setProxy }, "http://127.0.0.1:7897"),
+    ).resolves.toBe(true);
+    expect(setProxy).toHaveBeenCalledWith({ proxyRules: "http://127.0.0.1:7897" });
+  });
+
+  it("does not change the session when no proxy is configured", async () => {
+    const setProxy = vi.fn().mockResolvedValue(undefined);
+
+    await expect(configureBrowserProxy({ setProxy }, "  ")).resolves.toBe(false);
+    expect(setProxy).not.toHaveBeenCalled();
+  });
+});
 
 class FakeView implements BrowserViewHandle {
   readonly wcID = nextWebContentsID++;

@@ -9,7 +9,7 @@ wuu 使用 BYOK（自带密钥）模式。你选择模型服务并提供凭据�
 2. 选择**新增服务**。
 3. 选择服务类型：**OpenAI 兼容**或**Anthropic 兼容**。
 4. 填写服务标识和模型名称。
-5. 按服务要求填写 API 端点和 API Key，或者完成可用的 OAuth 登录。
+5. 按服务要求填写 API 端点和 API Key。
 6. 选择**添加服务**，并确认它显示为当前服务。
 
 “模型名称”必须使用服务端实际接受的模型 ID。使用 OpenAI 兼容网关、本地模型服务或
@@ -17,7 +17,9 @@ wuu 使用 BYOK（自带密钥）模式。你选择模型服务并提供凭据�
 
 ## 常见选择
 
-- **OpenAI：**使用 OpenAI 服务、API Key 或产品支持的 OAuth 登录。
+- **OpenAI：**选择 OpenAI 兼容类型并填写 API Key。桌面端当前不能直接发起 OpenAI
+  OAuth 登录；使用 OAuth 需要已有 Wuu 凭据，或先运行 Codex CLI 完成登录，再在
+  `openai-codex` provider 配置中启用 `reuse_codex_credentials`。
 - **Anthropic：**选择 Anthropic 兼容类型，填写 Anthropic API Key 和模型 ID。
 - **OpenRouter、one-api 或其他网关：**选择 OpenAI 兼容类型，并填写网关端点、Key
   和它提供的模型 ID。

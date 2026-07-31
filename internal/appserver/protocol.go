@@ -1723,6 +1723,7 @@ type Thread struct {
 	CWD              string        `json:"cwd"`
 	WorkspaceKind    WorkspaceKind `json:"workspace_kind,omitempty"`
 	Status           ThreadStatus  `json:"status"`
+	TreeInterrupted  bool          `json:"orchestration_interrupted,omitempty"`
 	ReadOnly         bool          `json:"read_only,omitempty"`
 	Ephemeral        bool          `json:"ephemeral,omitempty"`
 	Pinned           bool          `json:"pinned,omitempty"`

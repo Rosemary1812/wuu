@@ -8,8 +8,39 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+### Changed
+
+- Background command records now add durable owning-conversation and app-server
+  host-generation data. The owning conversation is taken from host state rather
+  than a model argument. This is additive record data only: no lifecycle cleanup
+  or cascade behavior is implemented yet, and legacy `lifecycle` data continues
+  to parse and round-trip.
+
+- Slash command rows now lead with the command to type (`/review`) and carry a
+  short summary beside it, so built-in commands and skills read the same way.
+
+### Removed
+
+- Removed Wuu's provider-neutral `wuu_tool_search` progressive tool loading.
+  Appending schemas to the top-level `tools` array mid-conversation invalidated
+  the provider prompt-cache prefix past the insertion point, so every load
+  risked another cold prefix. Loading is now `native` where the provider and
+  model support deferred discovery and `flat` everywhere else, which keeps the
+  request prefix stable for the fixed cost of the full tool schema. The local
+  search executor stays: provider-native discovery still needs it to search the
+  catalog and return loadable schemas. Existing configs setting
+  `agent.tool_loading` to `wuu_tool_search` (or the `tool_search` alias, or
+  `tool_search: true`) keep starting and now resolve to `auto`, printing a
+  one-time deprecation notice. Explicit `native` on a provider or model without
+  native discovery now falls back to `flat` with a visible notice instead of
+  silently selecting Wuu progressive loading.
+
 ### Fixed
 
+- Fixed the composer slash command panel hiding every skill until the user typed
+  a search query, showing skill rows without their `/<name>` command, and
+  labelling the skills catalog entry `Browse Skills` while it opened a catalog
+  tab.
 - Fixed Git attribution in Windows Git Bash shells when Git resolves without an
   `.exe` suffix.
 - Fixed a white screen on the Automations tab when no automation records

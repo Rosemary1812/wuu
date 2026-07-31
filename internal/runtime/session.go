@@ -808,16 +808,20 @@ func resolveToolLoadingModeForProvider(mode config.ToolLoadingMode, providerCfg 
 		if providerfactory.SupportsNativeToolDiscovery(providerCfg, model, providerOptions) {
 			return mode, true, true
 		}
-		return config.ToolLoadingWuuToolSearch, true, false
-	case config.ToolLoadingWuuToolSearch:
-		return mode, true, false
+		// Explicit native on a path that cannot carry the provider's own
+		// deferred-discovery protocol degrades to flat rather than silently
+		// selecting a different loading strategy. Say so: the user asked for
+		// deferred tools and is not getting them.
+		warnUnsupportedNativeToolLoadingOnce(providerCfg, model)
+		return config.ToolLoadingFlat, false, false
 	default:
 		if providerfactory.SupportsNativeToolDiscoveryByDefault(providerCfg, model, providerOptions) {
 			return config.ToolLoadingNative, true, true
 		}
-		if providerfactory.ShouldFallbackToWuuToolSearchByDefault(providerCfg, model, providerOptions) {
-			return config.ToolLoadingWuuToolSearch, true, false
-		}
+		// Everything else is flat. Paying the fixed schema cost once keeps the
+		// provider prompt-cache prefix stable, which progressive loading could
+		// not do: appending to the top-level tools array invalidated the cached
+		// prefix past the insertion point on every load.
 		return config.ToolLoadingFlat, false, false
 	}
 }
@@ -1134,13 +1138,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		agentControl *agentcontrol.AgentControl
 		toolExecutor = s.StreamRunner.Tools
 	)
-	threadProcessManager := s.ProcessManager
-	if !sameRuntimeRoot(threadRoot, s.RootDir) && threadProcessManager != nil {
-		manager, err := process.NewManager(threadRoot, statepath.RuntimeDir(stateDir))
-		if err != nil {
-			return nil, fmt.Errorf("thread process manager: %w", err)
-		}
-		threadProcessManager = manager
+	threadProcessManager, err := s.processManagerForThread(threadRoot, stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("thread process manager: %w", err)
 	}
 
 	// Prepare every fallible thread-local dependency before AgentControl. The
@@ -1379,6 +1379,20 @@ func sameRuntimeRoot(left, right string) bool {
 	left = cleanRuntimeRoot(left)
 	right = cleanRuntimeRoot(right)
 	return left != "" && left == right
+}
+
+func (s *Session) processManagerForThread(threadRoot, stateDir string) (*process.Manager, error) {
+	if s == nil || s.ProcessManager == nil || sameRuntimeRoot(threadRoot, s.RootDir) {
+		if s == nil {
+			return nil, nil
+		}
+		return s.ProcessManager, nil
+	}
+	return process.NewManagerWithHostGeneration(
+		threadRoot,
+		s.ProcessManager.HostGenerationID(),
+		statepath.RuntimeDir(stateDir),
+	)
 }
 
 // sessionParticipantStore adapts the session store to

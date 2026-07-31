@@ -66,7 +66,7 @@ wuu exec --json "审查当前 diff"
 wuu exec review --uncommitted
 ```
 
-结构化输出、附件、会话控制和 `review` 选项见 [`wuu exec` 指南](docs/en/automation/exec.md)（英文）。
+结构化输出、附件、会话控制和常用参数见 [`wuu exec` 指南](docs/zh-cn/automation/exec.md)。
 
 ## 模型与本地数据
 
@@ -78,7 +78,7 @@ wuu exec review --uncommitted
 
 ## 项目
 
-- [文档](docs/README.md)
+- [文档](docs/zh-cn/index.md)
 - [路线图](ROADMAP_zh.md)
 - [更新记录](CHANGELOG.md)
 - [公开评测](evals/)

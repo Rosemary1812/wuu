@@ -13,6 +13,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/execution"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 type runState struct {
@@ -529,10 +530,12 @@ func emitTurnStarted(opts Options, threadID string, turn appserver.Turn) {
 func emitItemStarted(opts Options, params appserver.ItemStartedNotification, state *runState) {
 	switch params.Item.Type {
 	case appserver.ThreadItemToolCall, appserver.ThreadItemCollabAgentTool:
-		emitJSON(opts, map[string]any{"type": "tool_started", "thread_id": params.ThreadID, "turn_id": params.TurnID, "item_id": params.Item.ID, "name": params.Item.Name, "arguments": params.Item.Arguments})
-		if isCommandTool(params.Item.Name) {
-			state.rememberCommandItem(params.Item)
-			emitJSON(opts, commandEventPayload("command_started", params.ThreadID, params.TurnID, params.Item))
+		safeItem := params.Item
+		safeItem.Arguments = tools.RedactToolOutput(safeItem.Arguments)
+		emitJSON(opts, map[string]any{"type": "tool_started", "thread_id": params.ThreadID, "turn_id": params.TurnID, "item_id": safeItem.ID, "name": safeItem.Name, "arguments": safeItem.Arguments})
+		if isCommandTool(safeItem.Name) {
+			state.rememberCommandItem(safeItem)
+			emitJSON(opts, commandEventPayload("command_started", params.ThreadID, params.TurnID, safeItem))
 		}
 		if !opts.JSON && params.Item.Name != "" {
 			fmt.Fprintf(opts.Stderr, "tool_started: %s\n", params.Item.Name)

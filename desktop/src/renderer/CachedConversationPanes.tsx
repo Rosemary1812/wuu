@@ -8,6 +8,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { TurnStreamStatus } from "./AppState";
+import { agentRunning } from "./AppState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import {
   ContextCompositionCard,
@@ -20,6 +21,7 @@ import {
 } from "./InstructionFilesCard";
 import { OPTIMISTIC_TURN_ID_PREFIX } from "./ComposerMessages";
 import { TurnView } from "./TurnView";
+import { TurnGroupView } from "./TurnGroupView";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { latestAgentMessageLocation } from "./TurnViewHelpers";
 import type { HistoryMessageEditState } from "./ConversationHistoryActions";
@@ -423,6 +425,55 @@ const CachedConversationPane = memo(function CachedConversationPane({
           forcedFullTurnIDs={
             historyMessageEdit ? [historyMessageEdit.turnID] : undefined
           }
+          lastGroupOpen={thread.child_agents?.some(agentRunning) ?? false}
+          runningAgentIDs={thread.child_agents
+            ?.filter(agentRunning)
+            .map((agent) => agent.id)}
+          renderTurnGroup={(groupTurns) => {
+            const groupLast = groupTurns[groupTurns.length - 1];
+            return (
+              <PaneTurnGroupView
+                turns={groupTurns}
+                awaiting={
+                  (thread.child_agents?.some(agentRunning) ?? false) &&
+                  latestTurn?.id === groupLast.id
+                }
+                interrupted={
+                  Boolean(thread.orchestration_interrupted) &&
+                  latestTurn?.id === groupLast.id
+                }
+                cwd={thread.cwd ?? activeContextCwd}
+                onOpenFile={onOpenFile ? handleOpenFile : undefined}
+                onOpenAgent={handleOpenAgentByID}
+                latestAgentMessageID={
+                  latestAgentLocation &&
+                  groupTurns.some(
+                    (turn) => turn.id === latestAgentLocation.turnID,
+                  )
+                    ? latestAgentLocation.itemID
+                    : undefined
+                }
+                isLatestTurn={latestTurn?.id === groupLast.id}
+                onStreamFrame={onStreamFrame}
+                onCollapseComplete={onCollapseComplete}
+                onForkMessage={handleForkMessage}
+                canEdit={canEditThreadMessage(thread)}
+                onEditMessage={handleEditMessage}
+                editingMessage={historyMessageEdit}
+                onCancelEditMessage={onCancelEditMessage}
+                onSubmitEditMessage={handleSubmitEditMessage}
+                onOpenFileDiff={handleOpenFileDiffSelection}
+                onOpenTurnRuns={
+                  onOpenTurnRuns ? handleOpenTurnRunsForThread : undefined
+                }
+                streamStatus={
+                  latestTurn?.id === groupLast.id
+                    ? latestTurnStreamStatus
+                    : undefined
+                }
+              />
+            );
+          }}
           renderTurn={(turn) => (
             <PaneTurnView
               turn={turn}
@@ -538,6 +589,81 @@ const PaneTurnView = memo(function PaneTurnView({
     />
   );
 });
+
+type PaneTurnGroupViewProps = Omit<PaneTurnViewProps, "turn"> & {
+  turns: Turn[];
+  awaiting?: boolean;
+  interrupted?: boolean;
+};
+
+// Group counterpart of PaneTurnView: same memo strategy (identity-stable
+// callbacks + value comparison) with element-wise turn identity for the
+// member array — server events rebuild only the turns they touch.
+const PaneTurnGroupView = memo(
+  function PaneTurnGroupView({
+    turns,
+    awaiting,
+    interrupted,
+    cwd,
+    latestAgentMessageID,
+    isLatestTurn,
+    canEdit,
+    editingMessage,
+    streamStatus,
+    onOpenFile,
+    onOpenAgent,
+    onStreamFrame,
+    onCollapseComplete,
+    onForkMessage,
+    onEditMessage,
+    onCancelEditMessage,
+    onSubmitEditMessage,
+    onOpenFileDiff,
+    onOpenTurnRuns,
+  }: PaneTurnGroupViewProps): JSX.Element {
+    return (
+      <TurnGroupView
+        turns={turns}
+        awaiting={awaiting}
+        interrupted={interrupted}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
+        onOpenAgent={onOpenAgent}
+        latestAgentMessageID={latestAgentMessageID}
+        onStreamFrame={onStreamFrame}
+        onForkMessage={onForkMessage}
+        onEditMessage={canEdit ? onEditMessage : undefined}
+        editingMessage={editingMessage}
+        onCancelEditMessage={onCancelEditMessage}
+        onSubmitEditMessage={onSubmitEditMessage}
+        onCollapseComplete={onCollapseComplete}
+        onOpenFileDiff={onOpenFileDiff}
+        onOpenRuns={onOpenTurnRuns}
+        streamStatus={streamStatus}
+        isLatestTurn={isLatestTurn}
+      />
+    );
+  },
+  (previous, next) =>
+    previous.awaiting === next.awaiting &&
+    previous.cwd === next.cwd &&
+    previous.latestAgentMessageID === next.latestAgentMessageID &&
+    previous.isLatestTurn === next.isLatestTurn &&
+    previous.canEdit === next.canEdit &&
+    previous.editingMessage === next.editingMessage &&
+    previous.streamStatus === next.streamStatus &&
+    previous.onOpenFile === next.onOpenFile &&
+    previous.onOpenAgent === next.onOpenAgent &&
+    previous.onStreamFrame === next.onStreamFrame &&
+    previous.onCollapseComplete === next.onCollapseComplete &&
+    previous.onForkMessage === next.onForkMessage &&
+    previous.onEditMessage === next.onEditMessage &&
+    previous.onCancelEditMessage === next.onCancelEditMessage &&
+    previous.onSubmitEditMessage === next.onSubmitEditMessage &&
+    previous.onOpenFileDiff === next.onOpenFileDiff &&
+    previous.onOpenTurnRuns === next.onOpenTurnRuns &&
+    sameEntriesByIdentity(previous.turns, next.turns),
+);
 
 function ConversationGridGuides(): JSX.Element {
   return (

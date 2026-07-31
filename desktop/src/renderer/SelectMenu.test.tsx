@@ -73,8 +73,13 @@ function keyOn(element: Element, key: string): void {
 }
 
 const FRUIT = [
-  { value: "apple", label: "苹果" },
-  { value: "pear", label: "梨" },
+  { value: "apple", label: "苹果", priorityKeywords: ["China"] },
+  {
+    value: "pear",
+    label: "梨",
+    keywords: ["green fruit", "Indochina"],
+    priorityKeywords: ["Thailand"],
+  },
   { value: "plum", label: "李子" },
 ];
 
@@ -167,6 +172,63 @@ describe("SelectMenu", () => {
       pear.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("filters a searchable option list by label, value, or keywords", () => {
+    mount(
+      <SelectMenu
+        value="apple"
+        onChange={() => {}}
+        options={FRUIT}
+        searchable
+        searchPlaceholder="搜索水果"
+        emptyMessage="没有匹配的水果"
+      />,
+    );
+    openMenu();
+    const search = document.querySelector<HTMLInputElement>(".select-menu-search input")!;
+    expect(document.activeElement).toBe(search);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "green");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["pear"]);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "china");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["apple"]);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "indochina");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items().map((item) => item.getAttribute("data-value"))).toEqual(["pear"]);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, "orange");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(items()).toHaveLength(0);
+    expect(panel()?.textContent).toContain("没有匹配的水果");
   });
 
   it("closes on Escape and on an outside pointerdown", () => {

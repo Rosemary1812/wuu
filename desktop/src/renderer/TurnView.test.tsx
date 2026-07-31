@@ -359,7 +359,7 @@ describe("TurnView", () => {
     expect(onOpenRuns).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the command-run action when a settled turn has no final answer", () => {
+  it("renders no run action when a settled turn has no final answer", () => {
     const onOpenRuns = vi.fn();
     const view = render(
       makeTurn("failed", [
@@ -376,12 +376,10 @@ describe("TurnView", () => {
       onOpenRuns,
     );
 
-    const button = view.querySelector<HTMLButtonElement>(
-      ".turn-run-actions button",
-    );
-    expect(button).not.toBeNull();
-    act(() => button?.click());
-    expect(onOpenRuns).toHaveBeenCalledTimes(1);
+    // The terminal affordance lives only in the final answer's action bar;
+    // without an answer there is no bar and no standalone row either.
+    expect(view.querySelector(".turn-run-actions")).toBeNull();
+    expect(view.querySelector("button:has(.lucide-square-terminal)")).toBeNull();
   });
 });
 

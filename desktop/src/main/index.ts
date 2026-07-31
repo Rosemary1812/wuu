@@ -181,6 +181,7 @@ import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
 import {
   BrowserHostCoordinator,
   BROWSER_PARTITION,
+  configureBrowserProxy,
   type BrowserHostWindowHandle,
   type BrowserParentWindowHandle,
   type BrowserViewHandle,
@@ -965,10 +966,20 @@ app.whenReady().then(async () => {
   // Sort permission/download traffic on the shared browser partition by
   // webContents ownership: only agent-driven views are denied sensitive
   // capabilities, the user's own <webview> on the same partition is untouched.
-  installBrowserSessionHandlers(
-    electronSession.fromPartition(BROWSER_PARTITION),
-    browserHostCoordinator,
-  );
+  const browserSession = electronSession.fromPartition(BROWSER_PARTITION);
+  try {
+    if (await configureBrowserProxy(browserSession)) {
+      console.info("[desktop] embedded browser proxy enabled via WUU_BROWSER_PROXY");
+    }
+  } catch (error) {
+    // A stale or unavailable Clash port must not prevent the app-server and
+    // desktop shell from starting. The browser will fall back to its normal
+    // connection behavior until the app is restarted with a valid proxy.
+    console.warn(
+      `[desktop] failed to configure embedded browser proxy: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  installBrowserSessionHandlers(browserSession, browserHostCoordinator);
   // Pick up the user's chosen size before the pet window is created, so the
   // initial BrowserWindow and the inline data: URL are sized right the first
   // time. setSize is a no-op when the persisted size equals the default. A

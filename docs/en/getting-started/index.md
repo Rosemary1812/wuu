@@ -48,7 +48,7 @@ wuu is BYOK: model requests use a provider and credentials that you configure.
 
 ### Desktop
 
-Open **Settings → Providers**, choose or add a provider, then enter its model,
+Open **Settings → Model providers**, choose or add a provider, then enter its model,
 endpoint, and API key. Save the provider before starting a conversation.
 
 ### CLI
@@ -97,6 +97,28 @@ Describe the outcome you want. Include constraints that affect product behavior,
 security, compatibility, or data. wuu can inspect the repository to decide routine
 implementation details.
 
+## Complete and review a first desktop task
+
+In the selected project, create a conversation and start with a read-only check:
+
+```text
+Read this workspace without changing files. Explain what it contains and how the
+existing project should be verified.
+```
+
+After confirming that wuu sees the right directory, give it one small task with a
+clear result, scope, constraints, and verification command. While it runs, follow
+the tool activity in the conversation. When it finishes:
+
+1. open **Files** or enter `/files` and confirm that only expected files changed;
+2. open **Review** or enter `/diff` and inspect the current Git diff;
+3. confirm that the reported tests or build actually ran and passed;
+4. use **Terminal** or `/terminal` when you want to run an independent check.
+
+The permission control beside the composer switches between Standard, Read only,
+and Unconfined. Keep Standard for normal project work, use Read only for
+investigation, and read the security model before enabling Unconfined.
+
 ## Attach files and images
 
 The desktop composer accepts attachments. In the CLI, pass them explicitly:
@@ -115,7 +137,7 @@ wuu stores persistent sessions so work can continue across runs:
 
 ```bash
 wuu exec --continue "continue from the last session"
-wuu exec --resume THREAD_ID "continue this task"
+wuu exec resume THREAD_ID "continue this task"
 wuu session list
 wuu session show --last
 ```
@@ -157,7 +179,7 @@ Add the equivalent line to your shell profile if it fixes the problem.
 
 Confirm that the configured `api_key_env` name matches the variable you exported,
 then start wuu from an environment that can see it. For the desktop app, enter the
-key in **Settings → Providers** instead of relying on a terminal-only export.
+key in **Settings → Model providers** instead of relying on a terminal-only export.
 
 ### The wrong repository or sessions appear
 

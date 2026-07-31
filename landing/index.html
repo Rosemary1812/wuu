@@ -30,6 +30,14 @@
   --black:#000;
   --white:#fff;
 
+  /* 深色对比区（keyfacts 等反白区块） */
+  --ink-0:#101013;
+  --ink-1:#17171b;
+  --ink-2:#212127;
+  --ink-line:#2a2a31;
+  --on-ink:#e9e9e5;
+  --on-ink-2:#9b9b96;
+
   --accent:#ff3d00;          /* wuu 朱红（desktop --wuu-accent） */
   --accent-soft:#ff9d7a;
   --accent-ink:#d63600;
@@ -65,6 +73,8 @@
 
   --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
   --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --serif:"Songti SC","Noto Serif SC","STSong",serif;            /* 中文 display（对应 trionn 的 PP Editorial） */
+  --serif-latin:"Bodoni 72","Bodoni MT",Didot,Georgia,serif;     /* 拉丁斜体点缀 */
 
   /* 演示组件（固定浅色） */
   --wu-surface:#fff;
@@ -101,7 +111,7 @@ body{
 }
 body.entry-locked{height:100vh;overflow:hidden}
 
-/* 首屏入口：ASCII 感应场 + mascot 迷幻视差 */
+/* 首屏入口：ASCII 感应场 + mascot 迷幻视差（trionn 式角标） */
 .entry{
   position:fixed;inset:0;z-index:1000;overflow:hidden;
   display:grid;place-items:center;background:#f4f1e9;color:#d63600;
@@ -115,6 +125,34 @@ body.entry-locked{height:100vh;overflow:hidden}
     linear-gradient(rgba(1,1,1,.025) 1px,transparent 1px),
     linear-gradient(90deg,rgba(1,1,1,.025) 1px,transparent 1px);
   background-size:auto,96px 96px,96px 96px;
+}
+/* 四角 plus 定位符 + mono 微文案（trionn preloader 语汇） */
+.entry-corner{
+  position:absolute;z-index:6;width:13px;height:13px;pointer-events:none;
+}
+.entry-corner::before,.entry-corner::after{content:"";position:absolute;background:#b3ae9f}
+.entry-corner::before{left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%)}
+.entry-corner::after{top:50%;left:0;right:0;height:1px;transform:translateY(-50%)}
+.entry-corner.tl{left:clamp(14px,2.4vw,34px);top:clamp(14px,2.4vw,34px)}
+.entry-corner.tr{right:clamp(14px,2.4vw,34px);top:clamp(14px,2.4vw,34px)}
+.entry-corner.bl{left:clamp(14px,2.4vw,34px);bottom:clamp(14px,2.4vw,34px)}
+.entry-corner.br{right:clamp(14px,2.4vw,34px);bottom:clamp(14px,2.4vw,34px)}
+.entry-meta{
+  position:absolute;z-index:6;pointer-events:none;
+  font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.34em;text-transform:uppercase;
+  color:#8f8a7a;white-space:nowrap;
+}
+.entry-meta.tl{left:clamp(36px,4.4vw,62px);top:clamp(16px,2.6vw,38px)}
+.entry-meta.tr{right:clamp(36px,4.4vw,62px);top:clamp(16px,2.6vw,38px);text-align:right}
+.entry-meta.bl{left:clamp(36px,4.4vw,62px);bottom:clamp(16px,2.6vw,38px)}
+.entry-meta.br{right:clamp(36px,4.4vw,62px);bottom:clamp(16px,2.6vw,38px);text-align:right}
+.entry-meta em{font-style:normal;color:#d63600}
+@media (prefers-color-scheme:dark){
+  .entry{background:#161513;color:#ff6938}
+  .entry::before{filter:invert(1);opacity:.26}
+  .entry-corner::before,.entry-corner::after{background:#55524a}
+  .entry-meta{color:#6f6b60}
+  .entry-meta em{color:#ff6938}
 }
 body.entry-leaving .entry{opacity:0;visibility:hidden;pointer-events:none}
 body.entered .entry{display:none}
@@ -200,10 +238,7 @@ body.entered .entry{display:none}
   .entry-title small{margin-left:4.7em}
   .entry-arch{left:63%;width:min(58vw,260px)}
   .entry-lockup::before{left:63%;width:min(66vw,290px)}
-}
-@media (prefers-color-scheme:dark){
-  .entry{background:#161513;color:#ff6938}
-  .entry::before{filter:invert(1);opacity:.26}
+  .entry-meta.tr,.entry-meta.bl{display:none}
 }
 ::selection{background:var(--selection)}
 a{color:inherit;text-decoration:none}
@@ -247,13 +282,11 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 #nav{
   position:fixed;top:0;left:50%;transform:translateX(-50%);
   z-index:50;height:61px;width:100%;
-  transition:background-color .15s ease-out,box-shadow .15s ease-out;
-  box-shadow:0 1px 0 0 transparent;
+  mix-blend-mode:difference;color:#fff;          /* 过深色区块自动反白（trionn 手法） */
 }
-#nav[data-scrolled="true"]{background:var(--paper);box-shadow:0 1px 0 0 rgba(0,0,0,.08)}
-@media (prefers-color-scheme:dark){
-  #nav[data-scrolled="true"]{background:var(--black);box-shadow:0 1px 0 0 rgba(255,255,255,.08)}
-}
+#nav .wordmark .dot{background:#fff}
+#nav .btn-primary{background:transparent;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.85)}
+#nav .btn-primary:hover{background:#fff;color:#000}
 #nav .inner{position:relative;display:flex;height:100%;align-items:center;justify-content:space-between;white-space:nowrap}
 .wordmark{
   display:flex;align-items:baseline;flex:1;
@@ -529,13 +562,18 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 /* ============================================================
    5. provider 墙 / Desktop 介绍
    ============================================================ */
-#logos{display:flex;flex-direction:column;align-items:center;gap:56px;padding:90px 0 60px}
-#logos p{font-size:var(--text-base);font-weight:var(--fw-medium);color:var(--gray);text-align:center}
-#logos .rows{display:flex;flex-direction:column;align-items:center;gap:34px;width:100%}
-#logos .row{display:flex;align-items:center;justify-content:center;gap:44px;flex-wrap:wrap}
-#logos .row div{display:flex;align-items:center;justify-content:center;flex-shrink:0}
-#logos img{height:20px;width:auto;opacity:.85}
-@media (prefers-color-scheme:dark){#logos img{filter:brightness(1.1) contrast(1.05) invert(1)}}
+#logos{display:block;padding:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+#logos .mq-label{text-align:center;padding:52px 16px 8px;font-size:var(--text-base);font-weight:var(--fw-medium);color:var(--gray)}
+/* trionn 式跑马灯：JS 驱动，滚动速度有加成 */
+.marquee{overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
+.marquee + .marquee{border-top:1px solid var(--border)}
+.mq-track{display:flex;align-items:center;gap:76px;width:max-content;padding:30px 0;will-change:transform}
+.mq-track img{height:20px;width:auto;opacity:.8;flex-shrink:0}
+.mq-track .sep{color:var(--gray-300);font-size:11px;flex-shrink:0;user-select:none}
+@media (prefers-color-scheme:dark){
+  .mq-track img{filter:brightness(1.1) contrast(1.05) invert(1)}
+  .mq-track .sep{color:var(--gray-700)}
+}
 
 #desktop{display:flex;flex-direction:column;align-items:center;gap:56px;padding:60px 0 90px;text-align:center}
 #desktop .titles{display:flex;flex-direction:column;align-items:center;gap:26px}
@@ -603,41 +641,17 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .lifefield canvas{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:599px){.lifefield{aspect-ratio:4/3}}
 
-/* ---------- 形态六宫格 ---------- */
-.variants{
-  position:absolute;inset:0;display:grid;gap:18px;padding:28px;
-  grid-template-columns:repeat(2,1fr);align-content:center;
-  background:var(--wu-canvas);
-}
-@media (min-width:1080px){.variants{grid-template-columns:repeat(3,1fr)}}
-.mini{
-  background:var(--wu-surface);border:1px solid var(--wu-border);border-radius:10px;
-  padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0;
-  transition:box-shadow .4s ease,transform .4s ease,border-color .4s ease;
-}
-.mini.spot{box-shadow:0 14px 34px rgba(0,0,0,.14);transform:translateY(-4px);border-color:var(--accent-soft)}
-.mini .m-head{display:flex;align-items:center;gap:10px}
-.mini .m-ico{
-  width:34px;height:34px;border-radius:8px;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;
-  background:var(--wu-raised);color:var(--dark-gray);
-  font-family:var(--mono);font-size:13px;
-}
-.mini .m-title{font-size:13px;font-weight:var(--fw-semibold);color:var(--wu-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mini .m-sub{font-size:11px;color:var(--wu-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mini .m-body{
-  border-radius:6px;background:var(--wu-raised);padding:9px 10px;
-  font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--dark-gray);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.mini .m-body .ok{color:var(--green)}
-.mini .m-body .acc{color:var(--accent)}
-.mini.v-dark{background:#1c1c1e;border-color:#333336}
-.mini.v-dark .m-title{color:#f0f0f0}
-.mini.v-dark .m-ico{background:#2c2c2f;color:#c9c9c9}
-.mini.v-dark .m-body{background:#2c2c2f;color:#c9c9c9}
-.mini.v-acc{border-color:var(--accent-soft)}
-.mini.v-acc .m-ico{background:var(--accent);color:#fff}
+/* ---------- 03 多线并行：生长树长卷 ---------- */
+.growth-stage{height:420vh;padding:0;position:relative}
+.growth-stick{position:absolute;top:0;left:0;width:100%;height:100vh;overflow:hidden;will-change:transform}
+@media (max-width:1079px){.growth-stage{height:320vh}}
+#tree-fx{position:absolute;inset:0;width:100%;height:100%;display:block;background:var(--wu-canvas)}
+.growth-cap{position:absolute;left:max(4vw,28px);bottom:7vh;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.growth-cap i{font-family:var(--mono);font-style:normal;font-size:10px;letter-spacing:.18em;color:var(--gray-500)}
+.growth-word{display:flex;align-items:baseline;gap:12px;transition:opacity .25s ease,transform .25s ease}
+.growth-word b{font-family:var(--serif);font-weight:600;font-size:clamp(20px,2.2vw,28px);letter-spacing:.04em}
+.growth-word em{font-family:var(--serif-latin);font-style:italic;font-size:14px;color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.growth-cap{display:none}}
 
 /* 结尾 CTA 单元 */
 .closing-cell .inner{align-items:center;text-align:center;justify-content:center}
@@ -758,6 +772,130 @@ html:has(body.entry-locked){overflow:hidden}
 @media (prefers-color-scheme:dark){
   #features .cell::after,#news .cell::after{color:var(--gray-800)}
 }
+
+/* ============================================================
+   11. trionn 式滚动动效区块
+   ============================================================ */
+
+/* ---- about：滚动逐词点亮 ---- */
+#about{position:relative;padding:clamp(96px,15vh,170px) 0}
+#about .eyebrow{margin-bottom:38px}
+.statement{
+  max-width:24em;
+  font-family:var(--serif);font-weight:500;
+  font-size:clamp(22px,2.5vw,34px);line-height:1.66;letter-spacing:.015em;
+}
+.statement .w{opacity:1}
+html.fx-on .statement .w{opacity:.13}
+.statement .w.acc,.statement em{color:var(--accent-ink);font-style:normal}
+@media (prefers-color-scheme:dark){.statement .w.acc,.statement em{color:var(--accent-soft)}}
+
+/* ---- vision：JS 钉住 + 滚动换词 ---- */
+#vision{position:relative;height:340vh;background:var(--paper);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+@media (prefers-color-scheme:dark){#vision{background:var(--gray-950)}}
+#vision .pin{
+  position:absolute;top:0;left:0;width:100%;height:100vh;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+  will-change:transform;
+}
+#vision .bgword{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:0;
+  font-family:var(--serif-latin);font-style:italic;font-size:min(36vh,32vw);line-height:1;
+  color:transparent;-webkit-text-stroke:1px rgba(1,1,1,.055);
+  pointer-events:none;user-select:none;white-space:nowrap;
+}
+@media (prefers-color-scheme:dark){#vision .bgword{-webkit-text-stroke-color:rgba(255,255,255,.07)}}
+#vision .eyebrow,#vision .cap{position:relative;z-index:2}
+#vision .cap{color:var(--dark-gray);font-size:var(--text-base)}
+.vision-swap{position:relative;z-index:2;display:flex;align-items:baseline;gap:20px}
+.vision-mask{display:block;overflow:hidden}
+.vision-mask > span{display:block;transition:transform .5s cubic-bezier(.16,1,.3,1),opacity .38s ease}
+.vision-zh{font-family:var(--serif);font-weight:600;font-size:clamp(38px,5.4vw,66px);line-height:1.12;letter-spacing:.02em}
+.vision-en{font-family:var(--serif-latin);font-style:italic;font-size:clamp(20px,2.4vw,30px);line-height:1.2;color:var(--accent)}
+/* JS 开启后静态换词升级为 3D 字筒：滚动进度直接驱动绕 X 轴转角 */
+.vision-swap.p3d{display:block;perspective:720px;-webkit-box-reflect:below 12px -webkit-linear-gradient(rgba(0,0,0,.16),transparent 58%)}
+.vision-drum{position:relative;display:block;transform-style:preserve-3d;will-change:transform}
+.vision-face{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;gap:20px;white-space:nowrap;backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:transform,opacity}
+.vision-face .vision-zh{transform-style:preserve-3d}
+.vision-face .vc{display:inline-block;will-change:transform}
+/* 套准角标：框住当前词的四个角，翻面时轻轻收紧 */
+.vision-marks{position:absolute;inset:-26px -30px;pointer-events:none;color:var(--gray-500)}
+.vision-marks i{position:absolute;width:11px;height:11px;opacity:.55}
+.vision-marks .tl{left:0;top:0;border-left:1px solid;border-top:1px solid}
+.vision-marks .tr{right:0;top:0;border-right:1px solid;border-top:1px solid}
+.vision-marks .bl{left:0;bottom:0;border-left:1px solid;border-bottom:1px solid}
+.vision-marks .br{right:0;bottom:0;border-right:1px solid;border-bottom:1px solid}
+.vision-measure{position:absolute;left:0;top:0;z-index:-1;visibility:hidden;pointer-events:none}
+.vision-measure .mrow{display:flex;align-items:baseline;justify-content:center;gap:20px;width:max-content;white-space:nowrap}
+/* 钉住区背景的手绘 3D 线框环 */
+#vision .vision-fx{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none}
+#vision .meta{
+  position:absolute;left:50%;bottom:7vh;transform:translateX(-50%);z-index:2;
+  display:flex;align-items:center;gap:16px;
+  font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.3em;color:var(--gray);
+}
+#vision .bar{position:relative;width:130px;height:1px;background:var(--gray-200);overflow:hidden}
+#vision .bar i{position:absolute;inset:0;background:var(--accent);transform:scaleX(0);transform-origin:left}
+@media (prefers-color-scheme:dark){#vision .bar{background:var(--gray-800)}}
+
+/* ---- facts：深色对比区（页面唯一的黑，滚动到这里背景翻转） ---- */
+#facts{position:relative;background:var(--ink-0);color:var(--on-ink);overflow:hidden}
+#facts .facts-wrap{padding:clamp(92px,13vh,150px) 0}
+#facts .eyebrow{color:var(--on-ink-2)}
+#facts .eyebrow::before{background:var(--accent)}
+#facts h2{
+  font-family:var(--serif);font-weight:600;letter-spacing:.02em;
+  font-size:var(--text-xl);margin:28px 0 66px;
+}
+#facts h2 i{font-family:var(--serif-latin);font-style:italic;font-weight:400;color:var(--accent)}
+@media (min-width:640px){#facts h2{font-size:var(--text-3xl)}}
+.facts-grid{display:grid;grid-template-columns:1fr;border-top:1px solid var(--ink-line)}
+@media (min-width:700px){.facts-grid{grid-template-columns:repeat(2,1fr)}}
+@media (min-width:1080px){.facts-grid{grid-template-columns:repeat(4,1fr)}}
+.fact{position:relative;padding:36px 28px 42px;border-bottom:1px solid var(--ink-line)}
+@media (min-width:700px){.fact{border-right:1px solid var(--ink-line)}.fact:nth-child(2n){border-right:0}}
+@media (min-width:1080px){.fact{border-right:1px solid var(--ink-line)}.fact:nth-child(2n){border-right:1px solid var(--ink-line)}.fact:last-child{border-right:0}}
+.fact::before{content:"+";position:absolute;top:10px;right:12px;font-family:var(--mono);font-size:12px;color:#3d3d44}
+.fact .num{display:flex;align-items:baseline;font-family:var(--serif-latin);font-size:clamp(52px,4.6vw,74px);line-height:1;color:var(--on-ink)}
+.fact .num i{font-style:italic;font-size:.6em;color:var(--accent);margin-left:5px}
+.fact p{margin-top:18px;font-size:var(--text-sm);line-height:22px;color:var(--on-ink-2);max-width:24em}
+
+/* ---- features：幽灵序号 + accent 生长线（滚动驱动） ---- */
+.headline-cell{overflow:hidden}
+.headline-cell::before{
+  content:"";position:absolute;left:0;top:0;z-index:2;width:100%;height:2px;
+  background:var(--accent);transform:scaleX(var(--fp,0));transform-origin:left;
+}
+.headline-cell .fnum{
+  position:absolute;top:16px;right:22px;z-index:1;pointer-events:none;user-select:none;
+  font-family:var(--serif-latin);font-style:italic;font-size:clamp(58px,5vw,86px);line-height:1;
+  color:transparent;-webkit-text-stroke:1px var(--gray-200);
+}
+@media (prefers-color-scheme:dark){.headline-cell .fnum{-webkit-text-stroke-color:var(--gray-800)}}
+.headline-cell h2,#desktop h2{font-family:var(--serif);font-weight:600;letter-spacing:.02em}
+#desktop h2 i{font-family:var(--serif-latin);font-style:italic;font-weight:400;color:var(--accent)}
+
+/* ---- footer：ticker 跑马灯 + 描边巨型字 ---- */
+footer .ticker{border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden}
+footer .ticker .mq-track{padding:15px 0;gap:0}
+footer .ticker span{
+  padding:0 30px;white-space:nowrap;
+  font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.34em;text-transform:uppercase;color:var(--gray);
+}
+footer .ticker .sep{color:var(--accent);padding:0;font-size:11px}
+footer .giant{color:transparent;-webkit-text-stroke:1.5px rgba(1,1,1,.22);opacity:1}
+@media (prefers-color-scheme:dark){footer .giant{-webkit-text-stroke-color:rgba(255,255,255,.28)}}
+
+/* ---- 自定义十字光标（blend-difference，过深/浅区自动反色） ---- */
+#cursor{
+  position:fixed;left:0;top:0;z-index:1200;width:16px;height:16px;
+  pointer-events:none;mix-blend-mode:difference;opacity:0;transition:opacity .25s ease;
+}
+#cursor::before,#cursor::after{content:"";position:absolute;left:50%;top:50%;background:#fff;transform:translate(-50%,-50%)}
+#cursor::before{width:1px;height:100%}
+#cursor::after{width:100%;height:1px}
+body.has-cursor #cursor{opacity:.9}
+body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefield,body.has-cursor .entry-hit{cursor:none}
 </style>
 </head>
 <body class="entry-locked">
@@ -765,6 +903,14 @@ html:has(body.entry-locked){overflow:hidden}
 <!-- ================= 点击进入首屏 ================= -->
 <section class="entry" id="entry" aria-label="进入 wuu Desktop">
   <canvas class="entry-canvas" id="entry-canvas" aria-hidden="true"></canvas>
+  <span class="entry-corner tl" aria-hidden="true"></span>
+  <span class="entry-corner tr" aria-hidden="true"></span>
+  <span class="entry-corner bl" aria-hidden="true"></span>
+  <span class="entry-corner br" aria-hidden="true"></span>
+  <span class="entry-meta tl" aria-hidden="true">wuu <em>✦</em> 开源智能体</span>
+  <span class="entry-meta tr" aria-hidden="true">est. 2025 <em>✦</em> mit</span>
+  <span class="entry-meta bl" aria-hidden="true">读代码 · 改代码 · 跑命令</span>
+  <span class="entry-meta br" aria-hidden="true">把活干完 <em>✦</em> get it done</span>
   <button class="entry-hit" id="entry-hit" type="button" aria-label="点击进入 wuu Desktop">
     <span class="entry-lockup" id="entry-lockup" aria-hidden="true">
       <span class="entry-title"><i>wuu</i><small>Desktop</small></span>
@@ -777,16 +923,16 @@ html:has(body.entry-locked){overflow:hidden}
     <span class="entry-caption">进入</span>
   </button>
 </section>
-<noscript><style>.entry{display:none}body.entry-locked{height:auto;overflow-x:hidden}</style></noscript>
+<noscript><style>.entry{display:none}body.entry-locked{height:auto;overflow-x:hidden}#vision{height:auto}#vision .pin{position:relative;height:100vh;transform:none!important}</style></noscript>
+<div id="cursor" aria-hidden="true"></div>
 
 <!-- ================= 导航 ================= -->
 <nav id="nav" data-scrolled="false">
-  <div class="noise"></div>
   <div class="content-container inner">
     <a class="wordmark" href="#" aria-label="wuu">wuu<i class="dot"></i></a>
     <span class="links">
       <a href="#features">功能</a>
-      <a href="#ch-forms">形态</a>
+      <a href="#ch-parallel">并行</a>
       <a href="#news">更新</a>
       <a href="#">文档</a>
       <a href="#">GitHub</a>
@@ -862,27 +1008,29 @@ html:has(body.entry-locked){overflow:hidden}
     </div>
   </section>
 
-  <!-- ================= provider 墙 ================= -->
-  <section id="logos" class="content-container reveal">
-    <p>接谁的模型都行——API key 在你手里</p>
-    <div class="rows">
-      <div class="row">
-        <div><img src="assets/logos/anthropic.svg" alt="Anthropic"></div>
-        <div><img src="assets/logos/openai.svg" alt="OpenAI"></div>
-        <div><img src="assets/logos/googlegemini.svg" alt="Google Gemini"></div>
-        <div><img src="assets/logos/moonshotai.svg" alt="Moonshot AI"></div>
-        <div><img src="assets/logos/deepseek.svg" alt="DeepSeek"></div>
-        <div><img src="assets/logos/qwen.svg" alt="Qwen"></div>
-        <div><img src="assets/logos/mistralai.svg" alt="Mistral AI"></div>
+  <!-- ================= provider 跑马灯 ================= -->
+  <section id="logos" class="reveal">
+    <p class="mq-label">接谁的模型都行——API key 在你手里</p>
+    <div class="marquee" data-dir="left">
+      <div class="mq-track">
+        <img src="assets/logos/anthropic.svg" alt="Anthropic"><span class="sep">✦</span>
+        <img src="assets/logos/openai.svg" alt="OpenAI"><span class="sep">✦</span>
+        <img src="assets/logos/googlegemini.svg" alt="Google Gemini"><span class="sep">✦</span>
+        <img src="assets/logos/moonshotai.svg" alt="Moonshot AI"><span class="sep">✦</span>
+        <img src="assets/logos/deepseek.svg" alt="DeepSeek"><span class="sep">✦</span>
+        <img src="assets/logos/qwen.svg" alt="Qwen"><span class="sep">✦</span>
+        <img src="assets/logos/mistralai.svg" alt="Mistral AI"><span class="sep">✦</span>
       </div>
-      <div class="row">
-        <div><img src="assets/logos/ollama.svg" alt="Ollama"></div>
-        <div><img src="assets/logos/openrouter.svg" alt="OpenRouter"></div>
-        <div><img src="assets/logos/huggingface.svg" alt="Hugging Face"></div>
-        <div><img src="assets/logos/meta.svg" alt="Meta"></div>
-        <div><img src="assets/logos/x.svg" alt="xAI"></div>
-        <div><img src="assets/logos/perplexity.svg" alt="Perplexity"></div>
-        <div><img src="assets/logos/claude.svg" alt="Claude"></div>
+    </div>
+    <div class="marquee" data-dir="right">
+      <div class="mq-track">
+        <img src="assets/logos/ollama.svg" alt="Ollama"><span class="sep">✦</span>
+        <img src="assets/logos/openrouter.svg" alt="OpenRouter"><span class="sep">✦</span>
+        <img src="assets/logos/huggingface.svg" alt="Hugging Face"><span class="sep">✦</span>
+        <img src="assets/logos/meta.svg" alt="Meta"><span class="sep">✦</span>
+        <img src="assets/logos/x.svg" alt="xAI"><span class="sep">✦</span>
+        <img src="assets/logos/perplexity.svg" alt="Perplexity"><span class="sep">✦</span>
+        <img src="assets/logos/claude.svg" alt="Claude"><span class="sep">✦</span>
       </div>
     </div>
   </section>
@@ -891,14 +1039,38 @@ html:has(body.entry-locked){overflow:hidden}
   <section id="desktop" class="content-container reveal">
     <div class="titles">
       <h2>
-        <span>wuu Desktop</span>
+        <span>wuu <i>Desktop</i></span>
       </h2>
-      <p class="lede">它长在终端里，但桌面上有它的一扇窗——编辑器、内置浏览器、会话管理都在一起。它在这头干活，你在那头看进度。</p>
+      <p class="lede">编辑器、内置浏览器、会话管理，收进一个窗口。它在这头干活，你在那头看进度。</p>
     </div>
     <div class="chip">
       <img src="assets/app-icon.png" alt="wuu app icon">
       <span>wuu for macOS</span>
       <a class="btn btn-primary" href="#install">下载</a>
+    </div>
+  </section>
+
+  <!-- ================= about：滚动逐词点亮 ================= -->
+  <section id="about" class="content-container">
+    <p class="eyebrow">关于 wuu</p>
+    <p class="statement" id="statement">wuu 是开源的 AI 编程智能体。说清楚要做什么——它<em>读代码、改代码、跑命令、验证</em>，把完整的工程循环在你的机器上跑完。模型是你的，API key 也是你的。</p>
+  </section>
+
+  <!-- ================= vision：钉住 + 滚动驱动的 3D 字筒 ================= -->
+  <section id="vision" aria-label="工程循环">
+    <div class="pin" id="vision-pin">
+      <span class="bgword" aria-hidden="true">loop.</span>
+      <canvas class="vision-fx" id="vision-fx" aria-hidden="true"></canvas>
+      <p class="eyebrow">从一句话到结果</p>
+      <div class="vision-swap" id="vision-swap">
+        <span class="vision-mask"><span class="vision-zh" id="vision-zh">读代码</span></span>
+        <span class="vision-mask"><span class="vision-en" id="vision-en">read.</span></span>
+      </div>
+      <p class="cap">完整的工程循环，在你的机器上跑完</p>
+      <div class="meta" aria-hidden="true">
+        <span id="vision-idx">01 / 04</span>
+        <span class="bar"><i id="vision-bar"></i></span>
+      </div>
     </div>
   </section>
 
@@ -909,6 +1081,7 @@ html:has(body.entry-locked){overflow:hidden}
       <!-- 01 工程循环 -->
       <div class="cell span2 headline-cell reveal">
         <div class="tri"></div>
+        <span class="fnum" aria-hidden="true">01</span>
         <div class="inner">
           <p class="eyebrow">工程循环</p>
           <h2>交代一句话，
@@ -944,6 +1117,7 @@ html:has(body.entry-locked){overflow:hidden}
       <!-- 02 自我生长 -->
       <div class="cell span2 headline-cell reveal">
         <div class="tri"></div>
+        <span class="fnum" aria-hidden="true">02</span>
         <div class="inner">
           <p class="eyebrow">自我生长</p>
           <h2>它构建项目，
@@ -971,42 +1145,45 @@ html:has(body.entry-locked){overflow:hidden}
         </div>
       </div>
 
-      <!-- 03 随处开工 -->
-      <div class="cell span2 headline-cell reveal" id="ch-forms">
+      <!-- 03 多线并行 -->
+      <div class="cell span2 headline-cell reveal" id="ch-parallel">
         <div class="tri"></div>
+        <span class="fnum" aria-hidden="true">03</span>
         <div class="inner">
-          <p class="eyebrow">随处开工</p>
-          <h2>终端、桌面、定时任务，
-它在哪儿都醒着</h2>
-          <p class="desc">挂一个 cron，它每天按时自己醒来巡检；技能和记忆攒得越多，它干活越像你。</p>
+          <p class="eyebrow">多线并行</p>
+          <h2>交代完，
+就去忙别的</h2>
+          <p class="desc">这个项目的修复、那个项目的重构，一起交代下去。它分头推进，你只在该出现的时候出现。</p>
         </div>
       </div>
 
-      <div class="cell span2 demo-cell reveal">
-        <div class="window">
-          <div class="chrome"><div class="dots"><i></i><i></i><i></i></div></div>
-          <div class="body">
-            <div class="variants" id="variants"></div>
+      <div class="cell span2 growth-stage reveal" id="growth">
+        <div class="growth-stick" id="growth-pin">
+          <canvas id="tree-fx" aria-hidden="true"></canvas>
+          <div class="growth-cap" aria-hidden="true">
+            <i id="growth-idx">01 / 04</i>
+            <span class="growth-word" id="growth-word"><b id="growth-zh">发芽</b><em id="growth-en">sprout.</em></span>
           </div>
         </div>
       </div>
 
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>定时任务</h3>
-          <p>一句 cron 表达式，它到点自己醒来：巡检依赖、写日报、盯 CI。</p>
+          <h3>进度摆在明处</h3>
+          <p>每条会话做到哪一步、动了哪些文件，都摆在那儿，不用追着问。</p>
         </div>
       </div>
       <div class="cell h3-cell reveal">
         <div class="inner">
-          <h3>技能与记忆</h3>
-          <p>把 workflow 存成技能，把偏好写进记忆——越用越顺手。</p>
+          <h3>该你出现才叫你</h3>
+          <p>跑完的、要拍板的，会亮起来等你过目；其余的它自己往前走。</p>
         </div>
       </div>
 
       <!-- 开源 CTA -->
       <div class="cell span2 headline-cell closing-cell reveal" id="install">
         <div class="tri"></div>
+        <span class="fnum" aria-hidden="true">04</span>
         <div class="inner">
           <p class="eyebrow">开源</p>
           <h2>MIT 协议，
@@ -1016,6 +1193,32 @@ html:has(body.entry-locked){overflow:hidden}
             <span>curl -fsSL https://wuu.dev/install | sh</span>
             <button class="copy-btn" type="button" data-cmd="curl -fsSL https://wuu.dev/install | sh">复制</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= keyfacts：深色对比区 ================= -->
+  <section id="facts">
+    <div class="content-container facts-wrap">
+      <p class="eyebrow">✦ 关键事实</p>
+      <h2>数字里的 <i>wuu</i></h2>
+      <div class="facts-grid">
+        <div class="fact">
+          <div class="num"><span data-count="100">100</span><i>%</i></div>
+          <p>开源 · MIT 协议，引擎到桌面全部摊开</p>
+        </div>
+        <div class="fact">
+          <div class="num"><span data-count="14">14</span><i>+</i></div>
+          <p>模型供应商随便接，API key 在你手里</p>
+        </div>
+        <div class="fact">
+          <div class="num"><span data-count="6">6</span></div>
+          <p>种在场形态：CLI、桌面、浮窗、cron、子代理、记忆</p>
+        </div>
+        <div class="fact">
+          <div class="num">24<i>/</i>7</div>
+          <p>挂着 cron 它自己醒来干活，不用你盯着</p>
         </div>
       </div>
     </div>
@@ -1064,6 +1267,16 @@ html:has(body.entry-locked){overflow:hidden}
 <!-- ================= 页脚 ================= -->
 <footer>
   <div class="noise"></div>
+  <div class="ticker marquee" data-dir="left" aria-hidden="true">
+    <div class="mq-track">
+      <span>把活干完</span><span class="sep">✦</span>
+      <span>get it done</span><span class="sep">✦</span>
+      <span>开源 · mit</span><span class="sep">✦</span>
+      <span>任何模型</span><span class="sep">✦</span>
+      <span>读代码 · 改代码 · 跑命令 · 验证</span><span class="sep">✦</span>
+      <span>wuu desktop</span><span class="sep">✦</span>
+    </div>
+  </div>
   <div class="content-container">
     <div class="inner">
       <div class="brandcol">
@@ -1084,11 +1297,11 @@ html:has(body.entry-locked){overflow:hidden}
           <a href="#">路线图</a>
         </div>
         <div class="group">
-          <h4>形态</h4>
+          <h4>产品</h4>
           <a href="#">wuu CLI</a>
           <a href="#desktop">wuu Desktop</a>
-          <a href="#ch-forms">技能</a>
-          <a href="#ch-forms">定时任务</a>
+          <a href="#ch-parallel">多线并行</a>
+          <a href="#features">工程循环</a>
         </div>
         <div class="group">
           <h4>资源</h4>
@@ -1200,35 +1413,6 @@ document.querySelectorAll('[data-wu-panes]').forEach(el=> el.innerHTML = PANES_H
     '夜深了，还要继续吗？';
   document.querySelectorAll('[data-wu-greeting]').forEach(el=> el.textContent = greeting);
 }
-
-/* ============================================================
-   形态六宫格
-   ============================================================ */
-const MINIS = [
-  {cls:'v-dark', ico:'❯', title:'wuu CLI', sub:'终端 · 它的主场',
-   body:'<span class="acc">❯</span> wuu "修一下折扣"<br><span class="ok">✓</span> 3 个文件 · 测试全绿'},
-  {cls:'', ico:'◱', title:'wuu Desktop', sub:'桌面 · 会话 #247',
-   body:'编辑器 · 浏览器 · 会话<br>都在一个窗口里'},
-  {cls:'', ico:'▣', title:'PiP 浮窗', sub:'钉在屏幕角落',
-   body:'折扣修复 ██████░░ 82%<br>不用切窗也能盯进度'},
-  {cls:'v-acc', ico:'◷', title:'cron 定时', sub:'到点自己醒来',
-   body:'0 9 * * * 依赖巡检<br>下次：明天 09:00'},
-  {cls:'', ico:'⑂', title:'子代理', sub:'worker-2 · worktree #3',
-   body:'改写样式表 · 运行中<br>和主干互不打扰'},
-  {cls:'', ico:'✎', title:'记忆', sub:'越用越像你',
-   body:'42 条偏好被记住<br>测试先跑 npm test'},
-];
-document.getElementById('variants').innerHTML = MINIS.map((m,i)=>`
-  <div class="mini ${m.cls}" data-vi="${i}">
-    <div class="m-head">
-      <div class="m-ico">${m.ico}</div>
-      <div style="min-width:0">
-        <div class="m-title">${m.title}</div>
-        <div class="m-sub">${m.sub}</div>
-      </div>
-    </div>
-    <div class="m-body">${m.body}</div>
-  </div>`).join('');
 
 /* ============================================================
    点击入口：ASCII 光场、透明度涟漪与 mascot 视差
@@ -1779,25 +1963,293 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
 })();
 
 /* ============================================================
-   六宫格：spotlight 轮播
+   03 多线并行：生长树
+   空间殖民生长树(Runions 2005/2007, Algorithmic Botany):
+   吸引子散布在右侧椭圆树冠,枝梢竞争空间逐代生长,天然
+   不对称;长吸引距离+父向延续出柔和曲线;Murray 定律回
+   流管径,干粗梢细,粗者更实。随滚动按出生时刻长成,
+   开花→结果→散种,种子飘回根的方向。
+   reduceMotion 直接落最终帧。
    ============================================================ */
 (function(){
-  if(reduceMotion) return;
-  const cards = [...document.querySelectorAll('.mini')];
-  if(!cards.length) return;
-  let i = 0, timer = null;
-  const step = ()=>{
-    cards.forEach(c=>c.classList.remove('spot'));
-    cards[i % cards.length].classList.add('spot');
-    i++;
-    timer = setTimeout(step, 1600);
+  const canvas = document.getElementById('tree-fx');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const SEED = 20260730;
+  const G_GROW = .56, G_BLOOM = .76, G_SEED = .88;   /* 阶段窗口:生长→开花→结果→散种 */
+  const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+  const back = t=>{const c=1.4;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2);};
+  const hash = i=>{const x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+  /* 与生命场同一套明暗色板 */
+  const PAL = {
+    light:{ink:[34,34,34], accent:[255,61,0]},
+    dark:{ink:[230,228,214], accent:[255,105,56]},
   };
+  const darkMq = matchMedia('(prefers-color-scheme: dark)');
+  const rgb = c=>`rgb(${c[0]},${c[1]},${c[2]})`;
+
+  let W=0, H=0, g=0, raf=null;
+  let nodes=[], tips=[], seeds=[], chains=[], sprouts=[], root=null, iters=1, seg=5;
+
+  /* 空间殖民(Runions 2005/2007, jasonwebb 开源实现的忠实移植):
+     每个吸引子只影响最近节点,节点被抵达即死亡;受影响的节点
+     朝平均方向伸一段,加 edap 抖动防停滞——网络天然不对称,
+     填满椭圆树冠+根部收窄走廊;Murray 定律回流管径,干粗梢细。*/
+  function build(){
+    nodes=[]; tips=[]; seeds=[];
+    const rand=mulberry32(SEED);
+    seg=Math.min(W,H)*.006;
+    const AT=seg*10, KILL=seg*2.5, MAXN=4000;
+    const CX=W*.56, CY=H*.5, RX=W*.44, RY=H*.4;
+    /* 场:椭圆树冠 ∪ 根部收窄走廊(颈部宽度控制主干形态),横贯全屏 */
+    const attractors=[];
+    const SP=AT*.55, X0=W*.04, X1=CX+RX*.92;
+    for(let gx=X0; gx<X1; gx+=SP){
+      const u=Math.min(1,(gx-X0)/(CX-X0));
+      for(let gy=H*.08; gy<H*.92; gy+=SP){
+        const x=gx+(rand()-.5)*SP*.76, y=gy+(rand()-.5)*SP*.76;
+        const inEllipse=((x-CX)/RX)**2+((y-CY)/RY)**2<=1;
+        const inCorridor=x>=X0&&x<=CX&&Math.abs(y-CY)<=H*(.04+.06*u);
+        if(inEllipse||inCorridor) attractors.push({x,y,dead:false});
+      }
+    }
+    /* 节点网格(增量插入):吸引子查最近节点 */
+    const CELL=AT, ngrid=new Map();
+    const gk=(x,y)=>((x/CELL)|0)+':'+((y/CELL)|0);
+    const gadd=n=>{const k=gk(n.x,n.y);let l=ngrid.get(k);if(!l){l=[];ngrid.set(k,l);}l.push(n);};
+    function closestNode(x,y){
+      let best=null,bd=AT*AT;
+      const cx=(x/CELL)|0, cy=(y/CELL)|0;
+      for(let i=cx-1;i<=cx+1;i++) for(let j=cy-1;j<=cy+1;j++){
+        const l=ngrid.get(i+':'+j); if(!l) continue;
+        for(const n of l){const dx=n.x-x,dy=n.y-y,d2=dx*dx+dy*dy;if(d2<bd){bd=d2;best=n;}}
+      }
+      return best?{n:best,d:Math.sqrt(bd)}:null;
+    }
+    root={x:X0,y:CY,parent:null,children:[],born:0,bornU:0,w:1};
+    nodes.push(root); gadd(root);
+    iters=0;
+    while(iters<1400){
+      iters++;
+      /* 每个吸引子找最近节点;已被抵达的死亡(open venation) */
+      const inf=new Map();
+      for(const a of attractors){
+        if(a.dead) continue;
+        const c=closestNode(a.x,a.y);
+        if(!c) continue;
+        if(c.d<KILL){a.dead=true;continue;}
+        let l=inf.get(c.n); if(!l){l=[];inf.set(c.n,l);}
+        l.push(a);
+      }
+      if(!inf.size) break;                              /* 场被殖民完,自然收工 */
+      for(const [t,l] of inf){
+        let dx=0,dy=0;
+        for(const a of l){const d=Math.hypot(a.x-t.x,a.y-t.y)||1;dx+=(a.x-t.x)/d;dy+=(a.y-t.y)/d;}
+        dx+=(rand()-.5)*.24; dy+=(rand()-.5)*.24;      /* edap 抖动防停滞 */
+        if(t.parent){const px=t.x-t.parent.x,py=t.y-t.parent.y,pl=Math.hypot(px,py)||1;
+          dx+=px/pl*.3;dy+=py/pl*.3;}                  /* 延续父向,曲线更柔 */
+        const n=Math.hypot(dx,dy)||1;
+        const node={x:t.x+dx/n*seg,y:t.y+dy/n*seg,parent:t,children:[],born:iters,bornU:0,w:1};
+        t.children.push(node);nodes.push(node);gadd(node);
+        if(nodes.length>=MAXN) break;
+      }
+      if(nodes.length>=MAXN) break;
+    }
+    /* Murray 管径回流:梢 1,父 sqrt(Σ子²),归一到 2.8px */
+    (function thick(n){
+      if(!n.children.length){n.w=1;return 1;}
+      let s=0;for(const c of n.children){const w=thick(c);s+=w*w;}
+      n.w=Math.sqrt(s);return n.w;
+    })(root);
+    const wS=2.8/root.w;
+    nodes.forEach(n=>{n.w*=wS;n.bornU=n.born/iters*G_GROW;});
+    /* 梢开花(按出生先后涟漪);近半梢在花谢处散种 */
+    tips=nodes.filter(n=>!n.children.length);
+    tips.forEach((t,i)=>{
+      const u=t.bornU/G_GROW;
+      t.bloomAt=G_GROW+.015+u*.12;
+      t.wob=hash(i*5+2); t.rot=hash(i*7+3)*3.14;
+      if(hash(i*3+7)<.45) for(let k=0;k<2;k++){
+        const h1=hash(i*17+k*5), h2=hash(i*23+k*7), h3=hash(i*29+k*11);
+        seeds.push({x:t.x,y:t.y,a:Math.PI*(.9+h1*.14),sp:W*(.014+h2*.012),
+          ph:h3*6.28,life:2.2+h1*.9,wait:1.6+h2*3.6,at:G_BLOOM+u*.1});
+      }
+    });
+    /* 渲染链:分叉点之间是一条连续枝,整体平滑绘出;梢记所属链(随风摆) */
+    chains=[];
+    (function walk(n){
+      for(const c of n.children){
+        const pts=[n,c]; let cur=c;
+        while(cur.children.length===1){cur=cur.children[0];pts.push(cur);}
+        chains.push({pts});
+        if(!cur.children.length) cur.ch=chains[chains.length-1];
+        walk(cur);
+      }
+    })(root);
+    /* 尾声:散落的种子在地平线上扎根冒芽——一颗树长成很多颗 */
+    sprouts=[];
+    for(let k=0;k<7;k++){
+      sprouts.push({x:W*(.18+hash(k*13+4)*.68),y:H*.93,at:.9+hash(k*7+2)*.06,ph:hash(k*11)*6.28});
+    }
+  }
+
+  function draw(g,now){
+    const p=darkMq.matches?PAL.dark:PAL.light;
+    ctx.clearRect(0,0,W,H);
+    /* 镜头:从种子的特写缓缓拉远,世界随进度极轻地转——播片感 */
+    ctx.save();
+    ctx.translate(W*.5,H*.5);ctx.rotate(Math.sin(clamp(g,0,1)*Math.PI)*.012);ctx.translate(-W*.5,-H*.5);
+    const z=1.16-.16*clamp(g/.4,0,1);
+    ctx.translate(W*.04,H*.5);ctx.scale(z,z);ctx.translate(-W*.04,-H*.5);
+    ctx.lineCap='round';ctx.lineJoin='round';
+    /* 枝干:整链一次平滑绘出(过中点二次曲线),链内分块带锥度,
+       粗枝先晕一层墨——告别逐段折线的草图感 */
+    const win=G_GROW/Math.max(1,iters);
+    for(const ch of chains){
+      const pts=ch.pts;
+      let full=0,hasP=false,px=0,py=0;
+      for(let i=1;i<pts.length;i++){
+        const f=clamp((g-pts[i].bornU)/win,0,1);
+        if(f>=1){full=i;continue;}
+        if(f>0){full=i-1;hasP=true;px=pts[i-1].x+(pts[i].x-pts[i-1].x)*f;py=pts[i-1].y+(pts[i].y-pts[i-1].y)*f;}
+        break;
+      }
+      if(full<1&&!hasP) continue;
+      const R=pts.slice(0,full+1);
+      if(hasP) R.push({x:px,y:py,w:R[R.length-1].w});
+      /* 风:每条链绕自己的根轻摆,越细摆越大——树是活的 */
+      const sway=Math.sin(now*1.15+pts[0].x*.0016+pts[0].y*.0009)*(.003+(1-Math.min(1,pts[0].w/2.8))*.018);
+      ctx.save();
+      ctx.translate(pts[0].x,pts[0].y);ctx.rotate(sway);ctx.translate(-pts[0].x,-pts[0].y);
+      for(let a=0;a<R.length-1;a+=5){
+        const b=Math.min(a+5,R.length-1);
+        let ws=0;for(let i=a;i<=b;i++)ws+=R[i].w;
+        const w=Math.max(.45,ws/(b-a+1));
+        const alpha=.28+Math.min(1,w/2.8)*.67;
+        const path=()=>{
+          ctx.beginPath();
+          ctx.moveTo(R[a].x,R[a].y);
+          for(let i=a+1;i<b;i++){
+            ctx.quadraticCurveTo(R[i].x,R[i].y,(R[i].x+R[i+1].x)/2,(R[i].y+R[i+1].y)/2);
+          }
+          ctx.lineTo(R[b].x,R[b].y);
+        };
+        ctx.strokeStyle=rgb(p.ink);
+        if(w>1.1){ctx.globalAlpha=alpha*.14;ctx.lineWidth=w*1.9;path();ctx.stroke();}
+        ctx.globalAlpha=alpha;ctx.lineWidth=w;
+        path();ctx.stroke();
+      }
+      ctx.restore();
+    }
+    /* 花:末梢微椭圆细环+蕊点,回弹绽开时旋半圈,随风轻摆 */
+    for(const t of tips){
+      const bp=clamp((g-t.bloomAt)/.05,0,1);
+      if(bp<=0) continue;
+      const bs=back(bp);
+      let bx=t.x,by=t.y;
+      if(t.ch){
+        const c0=t.ch.pts[0];
+        const ang=Math.sin(now*1.15+c0.x*.0016+c0.y*.0009)*(.003+(1-Math.min(1,c0.w/2.8))*.018);
+        bx=t.x-(t.y-c0.y)*ang; by=t.y+(t.x-c0.x)*ang;
+      }
+      const er=3*bs;
+      ctx.globalAlpha=.75*bp;ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
+      ctx.beginPath();ctx.ellipse(bx,by,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),t.rot+bs*.9,0,6.2832);ctx.stroke();
+      ctx.globalAlpha=.5*bp;ctx.fillStyle=rgb(p.ink);
+      ctx.beginPath();ctx.arc(bx,by,.9*bp,0,6.2832);ctx.fill();
+    }
+    /* 种子:朱红微粒,翻滚着向左下方飘回根的方向,淡出后错峰重结 */
+    for(const sd of seeds){
+      const rp=clamp((g-sd.at)/.04,0,1);
+      if(rp<=0) continue;
+      const cyc=sd.life+sd.wait, ct=reduceMotion?sd.life*.35:(now+sd.ph*10)%cyc;
+      if(ct>sd.life) continue;
+      const q=ct/sd.life, d=sd.sp*ct;
+      ctx.globalAlpha=rp*Math.pow(1-q,1.5)*.9;ctx.fillStyle=rgb(p.accent);
+      ctx.beginPath();
+      ctx.ellipse(sd.x+Math.cos(sd.a)*d+Math.sin(ct*2.2+sd.ph)*2.5,
+              sd.y+Math.sin(sd.a)*d+ct*ct*H*.008,1.7,1,ct*2.6+sd.ph,0,6.2832);
+      ctx.fill();
+    }
+    /* 新芽:尾声在地平线上依次冒出,随风轻摆 */
+    for(const s of sprouts){
+      const q=clamp((g-s.at)/.05,0,1);
+      if(q<=0) continue;
+      const e=back(q), h=10*e;
+      ctx.save();
+      ctx.translate(s.x,s.y);ctx.rotate(Math.sin(now*1.3+s.ph)*.06*q);
+      ctx.globalAlpha=.5*q;ctx.strokeStyle=rgb(p.ink);ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(0,0);ctx.quadraticCurveTo(1,-h*.5,0,-h);
+      ctx.moveTo(0,-h*.55);ctx.quadraticCurveTo(-3.5,-h*.7,-4.5,-h*.85);
+      ctx.moveTo(0,-h*.7);ctx.quadraticCurveTo(3.5,-h*.85,4.5,-h);
+      ctx.stroke();ctx.restore();
+    }
+    ctx.restore();
+    ctx.globalAlpha=1;
+  }
+
+  function resize(){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    W=canvas.clientWidth;H=canvas.clientHeight;
+    if(W<=0||H<=0) return;
+    canvas.width=W*dpr;canvas.height=H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    build();draw(reduceMotion?1:g,performance.now()/1000);
+  }
+
+  new ResizeObserver(resize).observe(canvas);
+  if(reduceMotion) return;
+  /* 钉住长卷:与 vision 同款 JS 钉住(body overflow-x:hidden 会废掉
+     CSS sticky)。滚动是叙事:四幕配速不同——发芽慢,分枝猛,
+     开花涟漪,散种悠长;左下字幕随幕换场。 */
+  const stage=document.getElementById('growth');
+  const pin=document.getElementById('growth-pin');
+  const capIdx=document.getElementById('growth-idx');
+  const capWord=document.getElementById('growth-word');
+  const capZh=document.getElementById('growth-zh');
+  const capEn=document.getElementById('growth-en');
+  const ACTS=[['发芽','sprout.'],['分枝','branch.'],['开花','bloom.'],['散种','scatter.']];
+  const K=[0,.28,.55,.78,1];                     /* 四幕滚动边界 */
+  /* 滚动进度→树时轴:非线性 warp,各幕节奏不同 */
+  const warp=p=>{
+    let i=1;while(p>K[i])i++;
+    const t=(p-K[i-1])/(K[i]-K[i-1]);
+    const V=[0,.3,.56,.78,1];                    /* 各幕对应的树时 */
+    return V[i-1]+t*(V[i]-V[i-1]);
+  };
+  let actShown=0, capT=null;
+  function setAct(a){
+    if(a===actShown) return; actShown=a;
+    if(!capWord) return;
+    capWord.style.opacity=0;capWord.style.transform='translateY(8px)';
+    clearTimeout(capT);
+    capT=setTimeout(()=>{
+      capZh.textContent=ACTS[a][0];capEn.textContent=ACTS[a][1];
+      capIdx.textContent='0'+(a+1)+' / 04';
+      capWord.style.opacity=1;capWord.style.transform='none';
+    },220);
+  }
+  function frame(){
+    const total=stage.offsetHeight-innerHeight;
+    const y=clamp(-stage.getBoundingClientRect().top,0,total);
+    pin.style.transform=`translate3d(0,${y}px,0)`;
+    const p=clamp(y/Math.max(1,total),0,1);
+    setAct(p>=.78?3:p>=.55?2:p>=.28?1:0);
+    const target=warp(p);
+    g=Math.abs(target-g)<.0005?target:g+(target-g)*.09;
+    draw(g,performance.now()/1000);
+    raf=requestAnimationFrame(frame);
+  }
   new IntersectionObserver(es=>{
     es.forEach(e=>{
-      if(e.isIntersecting && !timer) step();
-      else if(!e.isIntersecting && timer){ clearTimeout(timer); timer = null; }
+      if(e.isIntersecting&&!raf)raf=requestAnimationFrame(frame);
+      else if(!e.isIntersecting&&raf){cancelAnimationFrame(raf);raf=null;}
     });
-  },{threshold:.2}).observe(document.getElementById('variants'));
+  },{threshold:.02}).observe(stage);
 })();
 
 /* ============================================================
@@ -1872,6 +2324,337 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
   }
   const plx = [...document.querySelectorAll('[data-plx]')];
   const giant = document.querySelector('footer .giant');
+
+  /* ============================================================
+     trionn 式滚动动效：marquee / 逐词点亮 / 钉住 3D 字筒 / count-up / hero 淡出 / 十字光标
+     ============================================================ */
+  document.documentElement.classList.add('fx-on');
+  const FX = [];
+  const clampN = (v,a,b)=> Math.max(a, Math.min(b, v));
+
+  /* ---- marquee：基础速度 + 滚动速度加成 ---- */
+  const mqs = [...document.querySelectorAll('.marquee')].map(m=>{
+    const track = m.querySelector('.mq-track');
+    if(!track) return null;
+    track.innerHTML += track.innerHTML;
+    while(track.scrollWidth/2 < innerWidth) track.innerHTML += track.innerHTML;
+    return {m, track, x:0, dir:m.dataset.dir==='right'?1:-1, half:0};
+  }).filter(Boolean);
+  const measureMq = ()=> mqs.forEach(q=> q.half = q.track.scrollWidth/2);
+  measureMq(); addEventListener('load', measureMq); addEventListener('resize', measureMq);
+  FX.push(()=>{
+    const vel = smoothOn ? scrollY - cur : 0, vh = innerHeight;
+    for(const q of mqs){
+      if(!q.half) continue;
+      const r = q.m.getBoundingClientRect();
+      if(r.bottom < -80 || r.top > vh+80) continue;
+      q.x += q.dir*(.55 + Math.min(6, Math.abs(vel)*.14));
+      const off = ((q.x % q.half) + q.half) % q.half;
+      q.track.style.transform = `translate3d(${(q.dir===1 ? off-q.half : -off).toFixed(2)}px,0,0)`;
+    }
+  });
+
+  /* ---- about：逐词点亮（CJK 逐字、ASCII 成词） ---- */
+  const stmt = document.getElementById('statement');
+  if(stmt){
+    const isAscii = c=> /[\x21-\x7E]/.test(c);
+    const splitInto = (text, acc)=>{
+      let out = '', buf = '';
+      const flush = ()=>{ if(buf){ out += `<span class="w${acc?' acc':''}">${buf}</span>`; buf=''; } };
+      for(const ch of text){
+        if(isAscii(ch)){ buf += ch; continue; }
+        flush();
+        out += ch===' ' ? ' ' : `<span class="w${acc?' acc':''}">${ch}</span>`;
+      }
+      flush(); return out;
+    };
+    stmt.innerHTML = [...stmt.childNodes].map(n=>
+      n.nodeType===3 ? splitInto(n.textContent,false) : splitInto(n.textContent,true)).join('');
+    const stmtWords = [...stmt.querySelectorAll('.w')];
+    const aboutSec = document.getElementById('about');
+    FX.push(()=>{
+      const vh = innerHeight, r = aboutSec.getBoundingClientRect();
+      if(r.top > vh || r.bottom < 0) return;
+      const head = clampN((vh*.9 - r.top)/(r.height + vh*.3), 0, 1) * (stmtWords.length + 6);
+      for(let i=0;i<stmtWords.length;i++){
+        const o = clampN((head - i)/3, 0, 1);
+        stmtWords[i].style.opacity = (.13 + .87*o).toFixed(3);
+      }
+    });
+  }
+
+  /* ---- vision：钉住 + 滚动 scrub 的 3D 字筒 + 线框环 ---- */
+  const vSec = document.getElementById('vision'), vPin = document.getElementById('vision-pin');
+  const vSwap = document.getElementById('vision-swap');
+  const vIdx = document.getElementById('vision-idx');
+  const vBar = document.getElementById('vision-bar');
+  const vCv = document.getElementById('vision-fx');
+  const vBg = vSec ? vSec.querySelector('.bgword') : null;
+  const vEb = vSec ? vSec.querySelector('.eyebrow') : null;
+  const vCap = vSec ? vSec.querySelector('.cap') : null;
+  if(vSec && vPin && vSwap && vIdx && vBar){
+    const VWORDS = [['读代码','read.'],['改代码','write.'],['跑命令','run.'],['做验证','verify.']];
+    const NF = VWORDS.length, STEP = 360/NF;
+
+    /* 静态兜底升级为 3D 字筒：四个词是绕 X 轴的四个面，中文字符拆成单字以便扇形微扭 */
+    const faceHTML = w=>`<span class="vision-zh">${[...w[0]].map(c=>`<span class="vc">${c}</span>`).join('')}</span><span class="vision-en">${w[1]}</span>`;
+    const drum = document.createElement('span');
+    drum.className = 'vision-drum';
+    drum.innerHTML = VWORDS.map(w=>`<span class="vision-face">${faceHTML(w)}</span>`).join('');
+    const meas = document.createElement('span');
+    meas.className = 'vision-measure';
+    meas.setAttribute('aria-hidden','true');
+    meas.innerHTML = VWORDS.map(w=>`<span class="mrow">${faceHTML(w)}</span>`).join('');
+    const marks = document.createElement('span');
+    marks.className = 'vision-marks';
+    marks.setAttribute('aria-hidden','true');
+    marks.innerHTML = '<i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>';
+    vSwap.textContent = '';
+    vSwap.classList.add('p3d');
+    vSwap.appendChild(marks);
+    vSwap.appendChild(drum);
+    vPin.appendChild(meas);
+    const vFaces = [...drum.children];
+    const vChars = vFaces.map(f=>[...f.querySelectorAll('.vc')]);
+    let measDirty = true, vRadius = 0;
+    const vMeasure = ()=>{
+      measDirty = false;
+      let w = 0, h = 0;
+      for(const row of meas.children){ w = Math.max(w, row.offsetWidth); h = Math.max(h, row.offsetHeight); }
+      if(!w || !h) return;
+      drum.style.width = w + 'px'; drum.style.height = h + 'px';
+      vRadius = h*1.9;                              /* 虚拟筒半径：比字高大得多， tumble 才读得出纵深 */
+      const radius = vRadius.toFixed(1);
+      vFaces.forEach((f,i)=> f.style.transform = `rotateX(${(-i*STEP).toFixed(1)}deg) translateZ(${radius}px)`);
+    };
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ measDirty = true; });
+    addEventListener('resize', ()=>{ measDirty = true; });
+
+    /* 线框 torus knot：手写 3D 投影，随滚动转动，accent 光点沿环行进 */
+    const vKnot = (()=>{
+      if(!vCv) return null;
+      const ctx = vCv.getContext('2d');
+      if(!ctx) return null;
+      const N = 360, HK = 10, HN = 24, RAD = 3.2, HR = .42/RAD, TAU = Math.PI*2;
+      const L = new Float32Array(N*3);
+      for(let i=0;i<N;i++){
+        const u = i/N*TAU;
+        L[i*3]   = (2+Math.cos(3*u))*Math.cos(2*u)/RAD;
+        L[i*3+1] = (2+Math.cos(3*u))*Math.sin(2*u)/RAD;
+        L[i*3+2] = Math.sin(3*u)/RAD;
+      }
+      const hoops = [];
+      for(let j=0;j<HN;j++){
+        const i = j*(N/HN)|0, a = 3*((i-1+N)%N), b = 3*((i+1)%N), c = 3*i;
+        let tx = L[b]-L[a], ty = L[b+1]-L[a+1], tz = L[b+2]-L[a+2];
+        const tl = Math.hypot(tx,ty,tz)||1; tx/=tl; ty/=tl; tz/=tl;
+        let nx = ty, ny = -tx, nz = 0, nl = Math.hypot(nx,ny,nz);      /* T × z 轴 */
+        if(nl<.05){ nx = -tz; ny = 0; nz = tx; nl = Math.hypot(nx,ny,nz)||1; }
+        nx/=nl; ny/=nl; nz/=nl;
+        const bx = ty*nz - tz*ny, by = tz*nx - tx*nz, bz = tx*ny - ty*nx;
+        const hv = new Float32Array(HK*3);
+        for(let k=0;k<HK;k++){
+          const th = k/HK*TAU, co = Math.cos(th)*HR, si = Math.sin(th)*HR;
+          hv[k*3]   = L[c]   + nx*co + bx*si;
+          hv[k*3+1] = L[c+1] + ny*co + by*si;
+          hv[k*3+2] = L[c+2] + nz*co + bz*si;
+        }
+        hoops.push(hv);
+      }
+      const proj = new Float32Array(N*2), hproj = new Float32Array(HK*2), zbuf = new Float32Array(N);
+      /* 稀疏深点：与线框环同一套旋转投影的远景层 */
+      const NP = 42, ptcl = new Float32Array(NP*3), pproj = new Float32Array(NP*2), pz = new Float32Array(NP);
+      const hs = i=>{ const x = Math.sin(i*12.9898)*43758.5453; return x - Math.floor(x); };
+      for(let i=0;i<NP;i++){
+        const u = hs(i*5+1)*TAU, v = hs(i*7+2)*2-1, rr = 1.02 + hs(i*11+3)*.55, sq = Math.sqrt(1-v*v);
+        ptcl[i*3] = rr*sq*Math.cos(u); ptcl[i*3+1] = rr*v; ptcl[i*3+2] = rr*sq*Math.sin(u);
+      }
+      let ink = 'rgb(1,1,1)', acc = '#ff3d00', cw = 0, ch = 0, dpr = 1;
+      const readTheme = ()=>{
+        const m = getComputedStyle(vSec).color.match(/[\d.]+/g);
+        if(m) ink = `rgb(${m[0]},${m[1]},${m[2]})`;
+        acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || acc;
+      };
+      readTheme();
+      const tmq = matchMedia('(prefers-color-scheme: dark)');
+      if(tmq.addEventListener) tmq.addEventListener('change', readTheme);
+      return (t, p)=>{
+        const w = vCv.clientWidth, h = vCv.clientHeight;
+        if(!w || !h) return;
+        const d = Math.min(2, devicePixelRatio||1);
+        if(w!==cw || h!==ch || d!==dpr){
+          cw = w; ch = h; dpr = d;
+          vCv.width = Math.round(w*d); vCv.height = Math.round(h*d);
+        }
+        ctx.setTransform(d,0,0,d,0,0);
+        ctx.clearRect(0,0,w,h);
+        const R = Math.min(w,h)*.355, OX = w/2, OY = h/2, F = 3.1;
+        const ay = t*.0001 + p*Math.PI, ax = .46 + p*.8 + Math.sin(t*.00023)*.05;
+        const cy = Math.cos(ay), sy = Math.sin(ay), cx1 = Math.cos(ax), sx1 = Math.sin(ax);
+        const project = (src,dst,n,zdst)=>{
+          for(let i=0;i<n;i++){
+            const x = src[i*3], y = src[i*3+1], z = src[i*3+2];
+            const x1 = x*cy + z*sy, z1 = z*cy - x*sy;
+            const y2 = y*cx1 - z1*sx1, z2 = y*sx1 + z1*cx1;
+            const s = F/(F - z2);
+            dst[i*2] = OX + x1*s*R; dst[i*2+1] = OY - y2*s*R;
+            if(zdst) zdst[i] = z2;
+          }
+        };
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = ink;
+        project(L, proj, N, zbuf);
+        project(ptcl, pproj, NP, pz);
+        ctx.fillStyle = ink;
+        for(let i=0;i<NP;i++){
+          const dn = clampN(pz[i]/1.4*.5+.5, 0, 1);
+          ctx.globalAlpha = .07 + .2*dn;
+          ctx.beginPath();
+          ctx.arc(pproj[i*2], pproj[i*2+1], .8 + dn*1.4, 0, 7);
+          ctx.fill();
+        }
+        /* 主线按深度分段调透明度：近实远虚，线框才有体积 */
+        for(let s=0;s<N;s+=12){
+          let z = 0;
+          ctx.beginPath();
+          ctx.moveTo(proj[s*2], proj[s*2+1]);
+          for(let i=1;i<=12;i++){ const idx = (s+i)%N; ctx.lineTo(proj[idx*2], proj[idx*2+1]); z += zbuf[idx]; }
+          ctx.globalAlpha = .05 + .17*clampN((z/12)/.9*.5+.5, 0, 1);
+          ctx.stroke();
+        }
+        for(let j=0;j<HN;j++){
+          project(hoops[j], hproj, HK);
+          ctx.beginPath();
+          ctx.moveTo(hproj[0], hproj[1]);
+          for(let k=1;k<HK;k++) ctx.lineTo(hproj[k*2], hproj[k*2+1]);
+          ctx.closePath();
+          ctx.globalAlpha = .04 + .12*clampN(zbuf[j*(N/HN)|0]/.9*.5+.5, 0, 1);
+          ctx.stroke();
+        }
+        /* 朱红线段沿环行进：当前进度的一小段主线描成 accent，两端淡出 */
+        const di = Math.floor(p*N)%N;
+        ctx.strokeStyle = acc;
+        for(let k=-16;k<16;k++){
+          const a = Math.sin((k+16)/32*Math.PI)*.85;
+          if(a<.04) continue;
+          const i0 = (di+k+N)%N, i1 = (di+k+1+N)%N;
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.moveTo(proj[i0*2], proj[i0*2+1]); ctx.lineTo(proj[i1*2], proj[i1*2+1]);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(proj[di*2], proj[di*2+1], 2.6 + Math.sin(t*.004)*.8, 0, 7);
+        ctx.fillStyle = acc; ctx.fill();
+      };
+    })();
+
+    /* 滚动进度直接 scrub 转角，轻量惯性让停顿处自然落定 */
+    let ps = 0, vSegShown = -1, bgSeg = -1;
+    FX.push(()=>{
+      const vh = innerHeight, r = vSec.getBoundingClientRect();
+      if(r.top > vh || r.bottom < 0) return;
+      if(measDirty) vMeasure();
+      const total = vSec.offsetHeight - vh;
+      const y = clampN(-r.top, 0, total);
+      vPin.style.transform = `translate3d(0,${y}px,0)`;
+      const p = total>0 ? y/total : 0;
+      ps += (p-ps)*.18; if(Math.abs(p-ps)<1e-4) ps = p;
+      const ang = ps*(360-STEP);                      /* 正向转角：词向上滚出，与滚动方向一致 */
+      drum.style.transform = `translateZ(${(-vRadius).toFixed(1)}px) rotateX(${ang.toFixed(2)}deg)`;
+      for(let i=0;i<NF;i++){
+        const eff = ang - i*STEP, ae = Math.abs(eff), f = vFaces[i];
+        f.style.opacity = clampN((90-ae)/38, 0, 1).toFixed(3);
+        const b = clampN((ae-16)/74, 0, 1)*2.2;       /* 转远的面轻微失焦，拉出景深 */
+        f.style.filter = b>.04 ? `blur(${b.toFixed(2)}px)` : '';
+        const fan = clampN(eff/90, -1, 1)*4.5, chars = vChars[i];
+        for(let c=0;c<chars.length;c++){
+          const off = (c-(chars.length-1)/2)*fan;    /* 过渡中字符扇形微扭 */
+          chars[c].style.transform = off ? `rotateX(${off.toFixed(2)}deg)` : '';
+        }
+      }
+      /* 入场落定：钉住后的前 10% 进度里内容依次浮现 */
+      const ez = v=>1-(1-v)*(1-v);
+      const s1 = ez(clampN(ps/.07, 0, 1)), s2 = ez(clampN((ps-.015)/.08, 0, 1)), s3 = ez(clampN((ps-.03)/.08, 0, 1));
+      if(vEb){ vEb.style.opacity = (.25+.75*s1).toFixed(3); vEb.style.transform = `translate3d(0,${((1-s1)*14).toFixed(1)}px,0)`; }
+      vSwap.style.opacity = (.2+.8*s2).toFixed(3);
+      if(vCap){ vCap.style.opacity = (.25+.75*s3).toFixed(3); vCap.style.transform = `translate3d(0,${((1-s3)*10).toFixed(1)}px,0)`; }
+      const seg = Math.min(NF-1, Math.round(ps*(NF-1)));
+      if(seg!==vSegShown){ vSegShown = seg; vIdx.textContent = `0${seg+1} / 0${NF}`; }
+      vBar.style.transform = `scaleX(${ps.toFixed(4)})`;
+      const g = ps*(NF-1), frac = g - Math.floor(g);
+      /* 背景大字跟随当前词，翻面瞬间 dip 掉再换字 */
+      if(vBg){
+        if(seg!==bgSeg){ bgSeg = seg; vBg.textContent = VWORDS[seg][1]; }
+        vBg.style.opacity = clampN(Math.abs(frac-.5)/.18, 0, 1).toFixed(3);
+        vBg.style.transform = `translate(-50%,-50%) translate3d(0,${((ps-.5)*-70).toFixed(1)}px,0) scale(${(1+ps*.07).toFixed(3)})`;
+      }
+      /* 套准角标随翻面轻轻收紧 */
+      const act = clampN(1-Math.abs(frac-.5)*2, 0, 1);
+      marks.style.inset = `${(-26+act*8).toFixed(1)}px ${(-30+act*10).toFixed(1)}px`;
+      marks.style.opacity = (.4+.3*act).toFixed(3);
+      if(vKnot) vKnot(performance.now(), ps);
+    });
+  }
+
+  /* ---- facts：滚入视口 count-up ---- */
+  const counters = [...document.querySelectorAll('[data-count]')];
+  if(counters.length){
+    const cio = new IntersectionObserver(es=>{
+      es.forEach(e=>{
+        if(!e.isIntersecting) return;
+        cio.unobserve(e.target);
+        const el = e.target, target = +el.dataset.count, t0 = performance.now(), dur = 1400;
+        el.textContent = '0';
+        const tick = now=>{
+          const k = Math.min(1,(now-t0)/dur);
+          el.textContent = String(Math.round(target*(1-Math.pow(1-k,3))));
+          if(k<1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    },{threshold:.5});
+    counters.forEach(el=> cio.observe(el));
+  }
+
+  /* ---- features：accent 发丝线随滚动生长 ---- */
+  const hcells = [...document.querySelectorAll('.headline-cell')];
+  if(hcells.length) FX.push(()=>{
+    const vh = innerHeight;
+    for(const c of hcells){
+      const r = c.getBoundingClientRect();
+      if(r.top > vh || r.bottom < 0) continue;
+      c.style.setProperty('--fp', clampN((vh*.92 - r.top)/(vh*.5), 0, 1).toFixed(3));
+    }
+  });
+
+  /* ---- hero：滚动淡出 ---- */
+  const heroSec = document.getElementById('hero');
+  const heroStage = heroSec ? heroSec.querySelector('.stage') : null;
+  const heroGrid = heroSec ? heroSec.querySelector('.bg-grid') : null;
+  if(heroStage) FX.push(()=>{
+    const vh = innerHeight, r = heroSec.getBoundingClientRect();
+    if(r.top >= 0) return;
+    const p = clampN(-r.top/(vh*.72), 0, 1);
+    heroStage.style.opacity = (1-p).toFixed(3);
+    heroStage.style.transform = p ? `translate3d(0,${(-p*56).toFixed(1)}px,0)` : '';
+    if(heroGrid) heroGrid.style.opacity = (.7*(1-p)).toFixed(3);
+  });
+
+  /* ---- 十字光标 ---- */
+  if(matchMedia('(pointer:fine)').matches){
+    document.body.classList.add('has-cursor');
+    const cursorEl = document.getElementById('cursor');
+    let cx=innerWidth/2, cy=innerHeight/2, tx=cx, ty=cy, cs=1, ts=1;
+    addEventListener('pointermove', e=>{ tx=e.clientX; ty=e.clientY; }, {passive:true});
+    addEventListener('pointerover', e=>{ ts = e.target.closest('a,button,.lifefield') ? 2.4 : 1; }, {passive:true});
+    FX.push(()=>{
+      cx += (tx-cx)*.22; cy += (ty-cy)*.22; cs += (ts-cs)*.18;
+      cursorEl.style.transform = `translate3d(${(cx-8).toFixed(1)}px,${(cy-8).toFixed(1)}px,0) scale(${cs.toFixed(3)})`;
+    });
+  }
+
   (function loop(){
     if(smoothOn){
       cur += (scrollY - cur)*.1;
@@ -1891,8 +2674,18 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
       const rest = Math.max(0, document.documentElement.scrollHeight - vh - (smoothOn ? cur : scrollY));
       giant.style.transform = `translate3d(0,${Math.min(150, rest*.22).toFixed(1)}px,0)`;
     }
+    for(const f of FX) f();
     requestAnimationFrame(loop);
   })();
+})();
+
+/* ============================================================
+   动效降级：reduce-motion 下 vision 静态呈现
+   ============================================================ */
+(function(){
+  if(!reduceMotion) return;
+  const v = document.getElementById('vision');
+  if(v) v.style.height = '100vh';
 })();
 
 /* ============================================================

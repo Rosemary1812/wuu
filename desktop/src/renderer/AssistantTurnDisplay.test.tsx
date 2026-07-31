@@ -72,14 +72,12 @@ function build(turn: Turn) {
   return display;
 }
 
-function entriesWithChips(display: ReturnType<typeof build>) {
-  return display.entries.filter(
-    (entry) => entry.subagentChipsBefore?.length || entry.subagentChipsAfter?.length,
-  );
+function chipLabels(display: ReturnType<typeof build>): string[] {
+  return display.subagentChips.map((chip) => chip.label);
 }
 
 describe("buildAssistantTurnDisplay subagent chips", () => {
-  it("consolidates all notifications into one chip group at the first host", () => {
+  it("collects every notification into the turn-level chip list", () => {
     const display = build(
       makeTurn("completed", [
         makeNotification("ok_agent_two"),
@@ -88,62 +86,64 @@ describe("buildAssistantTurnDisplay subagent chips", () => {
         makeCommentary("已确认"),
       ]),
     );
-    const hosts = entriesWithChips(display);
-    expect(hosts).toHaveLength(1);
-    expect(hosts[0].kind).toBe("commentary");
-    expect(hosts[0].subagentChipsBefore?.map((chip) => chip.label)).toEqual([
+    expect(chipLabels(display)).toEqual([
       "ok_agent_two 完成了",
       "ok_agent_one 完成了",
     ]);
+    // Chips never live on entries anymore — the fold header is the only
+    // surface, so the message stream gains no extra rows.
+    expect(display.entries.map((entry) => entry.kind)).toEqual([
+      "commentary",
+      "commentary",
+    ]);
   });
 
-  it("anchors to the previous activity entry when a notification follows tools", () => {
+  it("collects chips regardless of the surrounding entry kinds", () => {
     const display = build(
       makeTurn("completed", [makeToolCall(), makeNotification("lint")]),
     );
-    const hosts = entriesWithChips(display);
-    expect(hosts).toHaveLength(1);
-    expect(hosts[0].kind).toBe("activity");
-    expect(hosts[0].subagentChipsAfter?.map((chip) => chip.label)).toEqual([
-      "lint 完成了",
-    ]);
+    expect(chipLabels(display)).toEqual(["lint 完成了"]);
+    expect(display.entries.map((entry) => entry.kind)).toEqual(["activity"]);
   });
 
-  it("never lets a reasoning fold host chips; falls back to a bare chip row", () => {
+  it("keeps reasoning entries free of any chip attachment", () => {
     const display = build(
       makeTurn("completed", [makeReasoning(), makeNotification("lint")]),
     );
-    const reasoning = display.entries[0];
-    expect(reasoning.subagentChipsBefore).toBeUndefined();
-    expect(reasoning.subagentChipsAfter).toBeUndefined();
-    const last = display.entries.at(-1);
-    expect(last?.kind).toBe("subagent_chips");
-    expect(last?.subagentChipsAfter?.map((chip) => chip.label)).toEqual([
-      "lint 完成了",
-    ]);
+    expect(chipLabels(display)).toEqual(["lint 完成了"]);
+    expect(display.entries).toHaveLength(1);
+    expect(display.entries[0].item.type).toBe("reasoning");
   });
 
-  it("renders a notification-only turn as a single bare chip row", () => {
+  it("returns a display for a notification-only turn so the header can host the chips", () => {
     const display = build(
       makeTurn("completed", [makeNotification("one"), makeNotification("two")]),
     );
-    expect(display.entries).toHaveLength(1);
-    expect(display.entries[0].kind).toBe("subagent_chips");
-    expect(display.entries[0].subagentChipsAfter).toHaveLength(2);
+    expect(display.entries).toHaveLength(0);
+    expect(display.subagentChips).toHaveLength(2);
   });
 
-  it("carries chips anchored after text to the text-run tail", () => {
+  it("preserves failed outcomes as structured data", () => {
+    const display = build(
+      makeTurn("completed", [makeNotification("lint", "failed")]),
+    );
+    expect(display.subagentChips).toEqual([
+      { label: "lint 失败了", outcome: "failed" },
+    ]);
+  });
+
+  it("ignores user messages that are not agent handoffs", () => {
     const display = build(
       makeTurn("completed", [
-        makeCommentary("先说一句"),
-        makeNotification("lint"),
-        makeCommentary("继续说"),
+        {
+          id: nextID("user"),
+          type: "user_message",
+          status: "completed",
+          text: "普通用户消息",
+        },
+        makeCommentary("回复"),
       ]),
     );
-    const [first, second] = display.entries;
-    expect(first.subagentChipsAfter).toBeUndefined();
-    expect(second.subagentChipsAfter?.map((chip) => chip.label)).toEqual([
-      "lint 完成了",
-    ]);
+    expect(display.subagentChips).toEqual([]);
   });
 });

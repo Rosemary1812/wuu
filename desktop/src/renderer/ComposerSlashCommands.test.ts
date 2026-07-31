@@ -153,6 +153,80 @@ describe("composer slash commands", () => {
     expect(filterComposerSlashCommands(commands, "internal-only")).toEqual([]);
   });
 
+  it("keeps skills discoverable in the unsearched default view", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      skills: [
+        skill({ name: "project-skill", source: "project" }),
+        skill({ name: "user-skill", source: "user" }),
+        skill({ name: "bundled-skill", source: "bundled" }),
+        skill({ name: "extra-skill", source: "bundled" })
+      ]
+    });
+
+    const visible = filterComposerSlashCommands(commands, "");
+    const visibleSkills = visible.filter((command) => command.kind === "skill");
+
+    // Skills are appended after the built-ins, so a flat limit would always
+    // truncate them away before the user types anything.
+    expect(visibleSkills.map((command) => command.name)).toEqual([
+      "project-skill",
+      "user-skill",
+      "bundled-skill"
+    ]);
+    expect(visible.filter((command) => command.kind !== "skill")).toHaveLength(8);
+  });
+
+  it("keeps the default view stable when no skills are installed", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false
+    });
+
+    expect(filterComposerSlashCommands(commands, "")).toEqual(commands.slice(0, 8));
+  });
+
+  it("summarizes a skill with its own description", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      skills: [skill({ name: "slides", description: "Create slide decks" })]
+    });
+
+    const slides = filterComposerSlashCommands(commands, "slides")[0];
+
+    // The row renders `/name` from `name`, so the title carries the summary
+    // rather than repeating the command.
+    expect(slides?.name).toBe("slides");
+    expect(slides?.title).toBe("Create slide decks");
+  });
+
+  it("falls back to when_to_use when a skill has no description", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      skills: [skill({ name: "release-check", when_to_use: "Before a release" })]
+    });
+
+    expect(commands.find((command) => command.name === "release-check")?.title).toBe(
+      "Before a release"
+    );
+  });
+
+  it("names /skills after the catalog it opens", () => {
+    setActiveLocale("en-US");
+
+    const skills = buildComposerSlashCommands({ running: false }).find((command) => command.name === "skills");
+
+    expect(skills?.action).toBe("open-skills");
+    expect(skills?.title).toBe("Open Skills catalog");
+  });
+
   it("adds /compact as a local action instead of a model prompt", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },

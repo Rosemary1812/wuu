@@ -55,7 +55,6 @@
 .dock-composer-wrap .composer-stack {
   position: relative;
   z-index: 1;
-  transform: translateX(calc(var(--conversation-scrollbar-gutter) / -2));
   pointer-events: auto;
 }
 
@@ -73,8 +72,7 @@
   width: min(
     var(--session-composer-width),
     calc(
-      100% - var(--session-outer-padding-inline) - var(--session-outer-padding-inline) -
-        var(--conversation-scrollbar-gutter)
+      100% - var(--session-outer-padding-inline) - var(--session-outer-padding-inline)
     )
   );
   min-width: 0;
@@ -2127,12 +2125,28 @@
 .slash-command-label {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: baseline;
+  gap: 8px;
   overflow: hidden;
   white-space: nowrap;
 }
 
-.slash-command-title {
+/* Every row leads with the command the user has to type. Only the summary
+   beside it shrinks, so the name identifying the row stays readable. */
+.slash-command-name {
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-summary {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--ink-muted);
@@ -2288,7 +2302,10 @@
 
 .composer-plus-menu {
   width: 100%;
-  max-height: min(420px, calc(100vh - 180px));
+  max-height: min(
+    420px,
+    var(--floating-menu-available-height, calc(100vh - 180px))
+  );
   gap: 1px;
   padding: 7px;
 }

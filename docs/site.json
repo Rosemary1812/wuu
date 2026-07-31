@@ -21,30 +21,45 @@
           ]
         },
         {
-          "title": "配置",
+          "title": "桌面工作",
           "pages": [
+            "zh-cn/desktop/workspaces.md",
+            "zh-cn/desktop/conversations.md",
+            "zh-cn/desktop/workspace-tools.md"
+          ]
+        },
+        {
+          "title": "Wuu 怎样工作",
+          "pages": [
+            "zh-cn/desktop/subagents.md",
+            "zh-cn/reference/agent-command-system.md",
+            "zh-cn/reference/security-model.md"
+          ]
+        },
+        {
+          "title": "个性化",
+          "pages": [
+            "zh-cn/customize/skills.md",
+            "zh-cn/customize/skill-authoring.md",
+            "zh-cn/customize/memory.md",
+            "zh-cn/reference/permissions.md",
             "zh-cn/reference/configuration.md"
           ]
         },
         {
-          "title": "Agent 运行机制",
+          "title": "自动化与集成",
           "pages": [
-            "zh-cn/reference/agent-command-system.md"
-          ]
-        },
-        {
-          "title": "自动化与集成（英文）",
-          "pages": [
-            "en/automation/exec.md",
+            "zh-cn/automation/scheduled-tasks.md",
+            "zh-cn/automation/exec.md",
+            "zh-cn/customize/mcp.md",
             "en/automation/jsonl-events.md",
-            "en/integrations/app-server-protocol.md",
-            "en/integrations/compatibility/claude-code-stream-json.md"
+            "en/integrations/app-server-protocol.md"
           ]
         },
         {
-          "title": "安全",
+          "title": "帮助",
           "pages": [
-            "zh-cn/reference/security-model.md"
+            "zh-cn/help/troubleshooting.md"
           ]
         },
         {
@@ -77,8 +92,7 @@
         {
           "title": "Integrations",
           "pages": [
-            "en/integrations/app-server-protocol.md",
-            "en/integrations/compatibility/claude-code-stream-json.md"
+            "en/integrations/app-server-protocol.md"
           ]
         },
         {

@@ -37,10 +37,9 @@ const (
 type ToolLoadingMode string
 
 const (
-	ToolLoadingAuto          ToolLoadingMode = "auto"
-	ToolLoadingFlat          ToolLoadingMode = "flat"
-	ToolLoadingNative        ToolLoadingMode = "native"
-	ToolLoadingWuuToolSearch ToolLoadingMode = "wuu_tool_search"
+	ToolLoadingAuto   ToolLoadingMode = "auto"
+	ToolLoadingFlat   ToolLoadingMode = "flat"
+	ToolLoadingNative ToolLoadingMode = "native"
 )
 
 // ErrConfigNotFound is returned by LoadFrom when none of the candidate
@@ -375,11 +374,17 @@ type AgentConfig struct {
 	CatwalkAutoupdate bool `json:"catwalk_autoupdate,omitempty"`
 	// ToolLoading controls how Wuu exposes large/deferred tool surfaces.
 	// Empty means "auto": first-party native provider paths use provider
-	// deferred-loading protocol; compatible endpoints use a flat tool list.
-	// Valid: auto, flat, native, wuu_tool_search.
+	// deferred-loading protocol; every other path uses a flat tool list.
+	// Valid: auto, flat, native.
+	//
+	// The retired "wuu_tool_search" / "tool_search" values still parse, but
+	// resolve to auto and print a one-time deprecation notice. Wuu's own
+	// progressive loading rewrote the top-level tools array mid-conversation,
+	// which invalidated the provider prompt cache after the insertion point.
 	ToolLoading ToolLoadingMode `json:"tool_loading,omitempty"`
 	// ToolSearch is a legacy alias kept for older config files. New configs
-	// should use tool_loading.
+	// should use tool_loading. true now means auto, not Wuu progressive
+	// loading, which no longer exists.
 	ToolSearch *bool `json:"tool_search,omitempty"`
 	// ExperimentalDeferredToolBundles enables the provider-native bundle
 	// activation path where successful tools can attach follow-on schemas.
@@ -780,7 +785,7 @@ func (c Config) Validate() error {
 		return errors.New("agent.compact_keep_recent_tokens cannot be negative (use 0 for default)")
 	}
 	if strings.TrimSpace(string(c.Agent.ToolLoading)) != "" && NormalizeToolLoadingMode(c.Agent.ToolLoading) == "" {
-		return errors.New("agent.tool_loading must be one of auto, flat, native, or wuu_tool_search")
+		return errors.New("agent.tool_loading must be one of auto, flat, or native")
 	}
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
@@ -1008,18 +1013,35 @@ func (a AgentConfig) ToolSearchEnabled() bool {
 }
 
 func (a AgentConfig) ToolLoadingPreference() ToolLoadingMode {
-	if strings.TrimSpace(string(a.ToolLoading)) != "" {
+	if raw := strings.TrimSpace(string(a.ToolLoading)); raw != "" {
 		if mode := NormalizeToolLoadingMode(a.ToolLoading); mode != "" {
+			if isRetiredToolLoadingMode(a.ToolLoading) {
+				warnRetiredToolLoadingOnce(raw, fmt.Sprintf(
+					"wuu: agent.tool_loading = %q was removed and now behaves as %q. Wuu's own progressive tool loading rewrote the tools array mid-conversation and invalidated the provider prompt cache. Set agent.tool_loading to auto, flat, or native to silence this notice.",
+					raw, ToolLoadingAuto))
+			}
 			return mode
 		}
 	}
 	if a.ToolSearch != nil {
 		if *a.ToolSearch {
-			return ToolLoadingWuuToolSearch
+			return ToolLoadingAuto
 		}
 		return ToolLoadingFlat
 	}
 	return ToolLoadingAuto
+}
+
+// isRetiredToolLoadingMode reports whether a configured value names the removed
+// Wuu progressive-loading mode. Those spellings still parse so an existing
+// config keeps starting; they resolve to auto.
+func isRetiredToolLoadingMode(mode ToolLoadingMode) bool {
+	switch strings.ToLower(strings.TrimSpace(string(mode))) {
+	case "wuu_tool_search", "tool_search":
+		return true
+	default:
+		return false
+	}
 }
 
 func NormalizeToolLoadingMode(mode ToolLoadingMode) ToolLoadingMode {
@@ -1030,8 +1052,8 @@ func NormalizeToolLoadingMode(mode ToolLoadingMode) ToolLoadingMode {
 		return ToolLoadingFlat
 	case string(ToolLoadingNative):
 		return ToolLoadingNative
-	case string(ToolLoadingWuuToolSearch), "tool_search":
-		return ToolLoadingWuuToolSearch
+	case "wuu_tool_search", "tool_search":
+		return ToolLoadingAuto
 	default:
 		return ""
 	}

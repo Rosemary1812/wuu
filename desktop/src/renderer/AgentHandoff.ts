@@ -134,6 +134,24 @@ export function agentHandoffChipDisplayItems(
   });
 }
 
+// Agent identities a wake notification reports on. TurnGrouping uses these
+// to attribute a wake to the orchestration that spawned the agent; an
+// unparseable envelope yields [] and the caller treats the wake as
+// unattributable rather than guessing.
+export function agentHandoffAgentIDs(item: HandoffItem | undefined): string[] {
+  if (!item || !isAgentHandoffItem(item)) {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const payload of parseAgentHandoffPayloads(item.text)) {
+    const id = stringValue(payload.status?.agent_id);
+    if (id) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 // Completion notifications pile up while the parent agent is mid-turn: the
 // backend joins ≥2 envelopes with "\n\n" (combineAgentCompletionMessages),
 // a string JSON.parse cannot consume as a whole. Each segment is still a

@@ -51,7 +51,13 @@ function renderTip(
 }
 
 describe("ArchiveTip", () => {
-  it("accepts pointer input until dismissal starts", () => {
+  it("stays below the draggable titlebar and accepts pointer input until dismissal starts", () => {
+    expect(archiveTipCSS).toMatch(
+      /\.archive-tip\s*\{[\s\S]*?top:\s*56px;/,
+    );
+    expect(archiveTipCSS).not.toMatch(
+      /@media\s*\(max-width:\s*480px\)[\s\S]*?\.archive-tip\s*\{[^}]*top:/,
+    );
     expect(archiveTipCSS).toMatch(
       /\.archive-tip\s*\{[\s\S]*?pointer-events:\s*auto;/,
     );
