@@ -652,6 +652,12 @@ h1,h2{font-weight:var(--fw-semibold);letter-spacing:.01em;line-height:1.16}
 .growth-word b{font-family:var(--serif);font-weight:600;font-size:clamp(20px,2.2vw,28px);letter-spacing:.04em}
 .growth-word em{font-family:var(--serif-latin);font-style:italic;font-size:14px;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){.growth-cap{display:none}}
+/* 电影感罩层:暗角+顶部天光,胶片颗粒(图由 JS 运行时生成) */
+.fx-vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(118% 88% at 50% 44%,transparent 58%,rgba(28,20,10,.15) 100%),linear-gradient(180deg,rgba(255,246,228,.12),transparent 26%)}
+.fx-grain{position:absolute;inset:-64px;pointer-events:none;animation:fx-grain .8s steps(1,end) infinite}
+@keyframes fx-grain{0%{transform:translate(0,0)}25%{transform:translate(-18px,12px)}50%{transform:translate(14px,-20px)}75%{transform:translate(-10px,-14px)}100%{transform:translate(16px,18px)}}
+@media (prefers-color-scheme:dark){.fx-vig{background:radial-gradient(118% 88% at 50% 44%,transparent 55%,rgba(0,0,0,.42) 100%),linear-gradient(180deg,rgba(255,244,220,.05),transparent 26%)}}
+@media (prefers-reduced-motion:reduce){.fx-grain{animation:none}}
 
 /* 结尾 CTA 单元 */
 .closing-cell .inner{align-items:center;text-align:center;justify-content:center}
@@ -1160,6 +1166,8 @@ body.has-cursor,body.has-cursor a,body.has-cursor button,body.has-cursor .lifefi
       <div class="cell span2 growth-stage reveal" id="growth">
         <div class="growth-stick" id="growth-pin">
           <canvas id="tree-fx" aria-hidden="true"></canvas>
+          <i class="fx-vig" aria-hidden="true"></i>
+          <i class="fx-grain" aria-hidden="true"></i>
           <div class="growth-cap" aria-hidden="true">
             <i id="growth-idx">01 / 04</i>
             <span class="growth-word" id="growth-word"><b id="growth-zh">发芽</b><em id="growth-en">sprout.</em></span>
@@ -1969,7 +1977,16 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
    不对称;长吸引距离+父向延续出柔和曲线;Murray 定律回
    流管径,干粗梢细,粗者更实。随滚动按出生时刻长成,
    开花→结果→散种,种子飘回根的方向。
-   reduceMotion 直接落最终帧。
+   放映方式是电影语法,不是刮刮卡:
+   - 分镜摄影机:微距贴根→跟拍生长前沿→拉远给全貌→
+     失重随种子漂浮;滚动驱动的是镜头,不是树的生命。
+   - 手持感:镜头永不静止,叠加慢速漂移与呼吸变焦。
+   - 三层景深:远景虚化林层(预渲染反向视差)、焦平面
+     的树、前景穿镜孢子;散种期有种子贴着镜头飞过。
+   - 光:生长梢头与初开的花有暖辉,暗角+颗粒在罩层。
+   - 生长有质量:树时以弹簧追逐目标,梢尖带微颤。
+   种子固定——每场放映 identical,但感觉是活的。
+   reduceMotion 直接落最终帧(广角定镜)。
    ============================================================ */
 (function(){
   const canvas = document.getElementById('tree-fx');
@@ -1983,16 +2000,19 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   const hash = i=>{const x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x);};
   function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-  /* 与生命场同一套明暗色板 */
+  /* 与生命场同一套明暗色板;haze 是大气罩染 */
   const PAL = {
-    light:{ink:[34,34,34], accent:[255,61,0]},
-    dark:{ink:[230,228,214], accent:[255,105,56]},
+    light:{ink:[34,34,34], accent:[255,61,0], haze:[246,240,226]},
+    dark:{ink:[230,228,214], accent:[255,105,56], haze:[0,0,0]},
   };
   const darkMq = matchMedia('(prefers-color-scheme: dark)');
   const rgb = c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 
   let W=0, H=0, g=0, raf=null;
   let nodes=[], tips=[], seeds=[], chains=[], sprouts=[], root=null, iters=1, seg=5;
+  /* 电影机:分镜关键帧、跟拍轨迹、预渲染远景、光斑 sprites、前景粒子 */
+  let cam={x:0,y:0,z:1}, camKeys=[], camInit=false, track=[];
+  let bgCv=null, glowSpr=null, dotSpr=null, motes=[], nearSeeds=[];
 
   /* 空间殖民(Runions 2005/2007, jasonwebb 开源实现的忠实移植):
      每个吸引子只影响最近节点,节点被抵达即死亡;受影响的节点
@@ -2094,32 +2114,91 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     for(let k=0;k<7;k++){
       sprouts.push({x:W*(.18+hash(k*13+4)*.68),y:H*.93,at:.9+hash(k*7+2)*.06,ph:hash(k*11)*6.28});
     }
+
+    /* 跟拍轨迹:按出生时刻分桶取生长重心,平滑后就是摄影机的"动作点" */
+    track=[];
+    const BN=56;
+    for(let b=0;b<=BN;b++){
+      const u0=b/BN*G_GROW,u1=(b+1)/BN*G_GROW;
+      /* 按 Murray 管径加权:镜头跟的是"有视觉质量的生长"(主干/粗枝),
+         不被稀疏的梢尖质心带偏 */
+      let sx=0,sy=0,sw=0;
+      for(const nd of nodes){if(nd.bornU>=u0&&nd.bornU<u1){sx+=nd.x*nd.w;sy+=nd.y*nd.w;sw+=nd.w;}}
+      track.push(sw?{x:sx/sw,y:sy/sw}:b?{x:track[b-1].x,y:track[b-1].y}:{x:W*.06,y:H*.5});
+    }
+    for(let s=0;s<2;s++)for(let b=1;b<track.length-1;b++){
+      track[b].x=(track[b-1].x+track[b].x*2+track[b+1].x)/4;
+      track[b].y=(track[b-1].y+track[b].y*2+track[b+1].y)/4;
+    }
+    const tAt=u=>{
+      const f=clamp(u/G_GROW,0,1)*BN, i=Math.min(BN-1,f|0), t=f-i;
+      const a=track[i],b=track[i+1];
+      return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+    };
+    /* 分镜:发芽微距贴根→分枝跟拍前沿→开花拉远全貌→散种失重漂浮。
+       与 warp 的 p→树时映射对齐选点(p=.14→g≈.15,p=.30→g≈.32…) */
+    const t0=tAt(.02),t1=tAt(.15),t2=tAt(.32),t3=tAt(.5);
+    camKeys=[
+      {p:0,   x:t0.x,  y:t0.y,  z:2.6},
+      {p:.14, x:t1.x,  y:t1.y,  z:2.0},
+      {p:.30, x:t2.x,  y:t2.y,  z:1.5},
+      {p:.55, x:t3.x,  y:t3.y,  z:1.1},
+      {p:.78, x:W*.52, y:H*.48, z:.92},
+      {p:1,   x:W*.44, y:H*.55, z:1.06},
+    ];
+    if(!camInit){cam={x:camKeys[0].x,y:camKeys[0].y,z:camKeys[0].z};camInit=true;}
+
+    /* 前景:全年漂浮的孢子(近镜焦外);散种期贴镜飞过的种子 */
+    motes=[];
+    for(let i=0;i<22;i++) motes.push({x:hash(i*3+11)*W*1.5,y:hash(i*5+17)*H*1.2-H*.1,sp:5+hash(i*7+3)*11,s:9+hash(i*11+5)*38,a:.04+hash(i*13+7)*.07,ph:hash(i*17)*6.28});
+    nearSeeds=[];
+    for(let i=0;i<7;i++) nearSeeds.push({x:W*(.35+hash(i*5+31)*.4),y:H*(.25+hash(i*7+41)*.5),sp:W*(.05+hash(i*11+13)*.05),s:13+hash(i*13+3)*16,a:.08+hash(i*17+5)*.06,ph:hash(i*19)*6.28});
   }
 
   function draw(g,now){
     const p=darkMq.matches?PAL.dark:PAL.light;
     ctx.clearRect(0,0,W,H);
-    /* 镜头:从种子的特写缓缓拉远,世界随进度极轻地转——播片感 */
+    /* 手持感:镜头永不静止——慢速漂移+呼吸变焦,你停下手画面也在呼吸 */
+    const cx=cam.x+Math.sin(now*.31)*2.2+Math.sin(now*.083)*3.2;
+    const cy=cam.y+Math.cos(now*.27)*1.8+Math.sin(now*.061)*2.6;
+    const cz=cam.z*(1+Math.sin(now*.11)*.004);
+    const cr=Math.sin(now*.05)*.0038;
+    /* 远景:预渲染的大气+虚化林层,反向小视差——它最远,动得最慢 */
+    if(bgCv){
+      ctx.save();
+      ctx.translate((W/2-cx)*.12,(H/2-cy)*.12);
+      ctx.scale(1.15,1.15);ctx.translate(-W/2,-H/2);
+      ctx.drawImage(bgCv,0,0,W,H);
+      ctx.restore();
+    }
+    /* 焦平面:摄影机对准树 */
     ctx.save();
-    ctx.translate(W*.5,H*.5);ctx.rotate(Math.sin(clamp(g,0,1)*Math.PI)*.012);ctx.translate(-W*.5,-H*.5);
-    const z=1.16-.16*clamp(g/.4,0,1);
-    ctx.translate(W*.04,H*.5);ctx.scale(z,z);ctx.translate(-W*.04,-H*.5);
+    ctx.translate(W/2,H/2);ctx.scale(cz,cz);ctx.rotate(cr);ctx.translate(-cx,-cy);
     ctx.lineCap='round';ctx.lineJoin='round';
+    const glowTips=[];
     /* 枝干:整链一次平滑绘出(过中点二次曲线),链内分块带锥度,
        粗枝先晕一层墨——告别逐段折线的草图感 */
     const win=G_GROW/Math.max(1,iters);
     for(const ch of chains){
       const pts=ch.pts;
-      let full=0,hasP=false,px=0,py=0;
+      let full=0,hasP=false,px=0,py=0,fp=0;
       for(let i=1;i<pts.length;i++){
         const f=clamp((g-pts[i].bornU)/win,0,1);
         if(f>=1){full=i;continue;}
-        if(f>0){full=i-1;hasP=true;px=pts[i-1].x+(pts[i].x-pts[i-1].x)*f;py=pts[i-1].y+(pts[i].y-pts[i-1].y)*f;}
+        if(f>0){full=i-1;hasP=true;fp=f;px=pts[i-1].x+(pts[i].x-pts[i-1].x)*f;py=pts[i-1].y+(pts[i].y-pts[i-1].y)*f;}
         break;
       }
       if(full<1&&!hasP) continue;
       const R=pts.slice(0,full+1);
-      if(hasP) R.push({x:px,y:py,w:R[R.length-1].w});
+      if(hasP){
+        const tp={x:px,y:py,w:R[R.length-1].w};
+        /* 梢尖微颤:正在伸长的尖不是死的,带着生长的犹豫 */
+        const P=R[R.length-1], dx=tp.x-P.x, dy=tp.y-P.y, dl=Math.hypot(dx,dy)||1;
+        const tr=Math.sin(now*6.3+pts[0].x*.13+pts[0].y*.07)*1.6*(1-fp*.7);
+        tp.x+=-dy/dl*tr; tp.y+=dx/dl*tr;
+        R.push(tp);
+        glowTips.push({x:tp.x,y:tp.y,r:seg*6+18,a:.16});
+      }
       /* 风:每条链绕自己的根轻摆,越细摆越大——树是活的 */
       const sway=Math.sin(now*1.15+pts[0].x*.0016+pts[0].y*.0009)*(.003+(1-Math.min(1,pts[0].w/2.8))*.018);
       ctx.save();
@@ -2160,6 +2239,19 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       ctx.beginPath();ctx.ellipse(bx,by,er*(.92+t.wob*.16),er*(1.08-t.wob*.16),t.rot+bs*.9,0,6.2832);ctx.stroke();
       ctx.globalAlpha=.5*bp;ctx.fillStyle=rgb(p.ink);
       ctx.beginPath();ctx.arc(bx,by,.9*bp,0,6.2832);ctx.fill();
+      if(bp<1) glowTips.push({x:bx,y:by,r:26,a:.14*bp*(1-bp*.6)});
+    }
+    /* 光:生长梢头与初开的花笼一层暖辉——发光说明"这里正在发生" */
+    if(glowTips.length&&glowSpr){
+      const norm=Math.min(1,24/glowTips.length);
+      ctx.save();ctx.globalCompositeOperation='lighter';
+      const pulse=.78+.22*Math.sin(now*2.1);
+      for(let i=0;i<glowTips.length;i++){
+        const s=glowTips[i], sz=s.r*(1+.12*Math.sin(now*2.6+i*1.7));
+        ctx.globalAlpha=s.a*norm*pulse;
+        ctx.drawImage(glowSpr,s.x-sz/2,s.y-sz/2,sz,sz);
+      }
+      ctx.restore();
     }
     /* 种子:朱红微粒,翻滚着向左下方飘回根的方向,淡出后错峰重结 */
     for(const sd of seeds){
@@ -2189,7 +2281,84 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
       ctx.stroke();ctx.restore();
     }
     ctx.restore();
+    /* 前景:孢子贴着镜头飘(更大更虚,视差最快);散种期有种子穿镜而过 */
+    ctx.save();
+    ctx.translate(W/2,H/2);ctx.scale(cz*1.45,cz*1.45);ctx.translate(-cx*.8,-cy*.8);
+    if(dotSpr){
+      const span=W*1.5;
+      for(const m of motes){
+        const mx=((m.x-now*m.sp)%span+span)%span-W*.25;
+        const my=m.y+Math.sin(now*.3+m.ph)*20;
+        ctx.globalAlpha=m.a;
+        ctx.drawImage(dotSpr,mx-m.s/2,my-m.s/2,m.s,m.s);
+      }
+    }
+    if(glowSpr&&g>G_SEED){
+      const q=clamp((g-G_SEED)/.06,0,1), loop=W*1.1;
+      for(const sd of nearSeeds){
+        const d=((now*sd.sp+sd.ph*97)%loop+loop)%loop;
+        const sx=sd.x-d*.9, sy=sd.y+d*.28+Math.sin(now*.8+sd.ph)*14;
+        ctx.globalAlpha=sd.a*q;
+        ctx.drawImage(glowSpr,sx-sd.s/2,sy-sd.s/2,sd.s,sd.s);
+      }
+    }
+    ctx.restore();
     ctx.globalAlpha=1;
+  }
+
+  /* 分镜插值:滚动位置 → 机位,smoothstep 过场 */
+  function camAt(p){
+    if(!camKeys.length) return{x:W*.5,y:H*.5,z:1};
+    let i=1;while(i<camKeys.length-1&&p>camKeys[i].p)i++;
+    const a=camKeys[i-1],b=camKeys[i];
+    let t=clamp((p-a.p)/Math.max(1e-6,b.p-a.p),0,1);
+    t=t*t*(3-2*t);
+    return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:a.z+(b.z-a.z)*t};
+  }
+
+  /* 光斑 sprite:暖辉(加色混合用)与焦外墨点各一张 */
+  function makeSprites(){
+    const pal=darkMq.matches?PAL.dark:PAL.light;
+    glowSpr=document.createElement('canvas');glowSpr.width=glowSpr.height=64;
+    let c=glowSpr.getContext('2d');
+    let gr=c.createRadialGradient(32,32,0,32,32,32);
+    gr.addColorStop(0,`rgba(${pal.accent},.6)`);gr.addColorStop(.4,`rgba(${pal.accent},.18)`);gr.addColorStop(1,`rgba(${pal.accent},0)`);
+    c.fillStyle=gr;c.fillRect(0,0,64,64);
+    dotSpr=document.createElement('canvas');dotSpr.width=dotSpr.height=64;
+    c=dotSpr.getContext('2d');
+    gr=c.createRadialGradient(32,32,0,32,32,32);
+    gr.addColorStop(0,`rgba(${pal.ink},.5)`);gr.addColorStop(.55,`rgba(${pal.ink},.16)`);gr.addColorStop(1,`rgba(${pal.ink},0)`);
+    c.fillStyle=gr;c.fillRect(0,0,64,64);
+  }
+
+  /* 远景预渲染:大气罩染+主树剪影的缩放镜像(重度虚化成远处的林),
+     每帧只做一次 drawImage,纵深是便宜的 */
+  function renderBackdrop(){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    bgCv=document.createElement('canvas');bgCv.width=W*dpr;bgCv.height=H*dpr;
+    const b=bgCv.getContext('2d');b.setTransform(dpr,0,0,dpr,0,0);
+    const pal=darkMq.matches?PAL.dark:PAL.light, hz=pal.haze;
+    const lg=b.createLinearGradient(0,0,0,H);
+    lg.addColorStop(0,`rgba(${hz},0)`);lg.addColorStop(.72,`rgba(${hz},.3)`);lg.addColorStop(1,`rgba(${hz},.55)`);
+    b.fillStyle=lg;b.fillRect(0,0,W,H);
+    const rg=b.createRadialGradient(W*.3,H*.28,0,W*.3,H*.28,W*.55);
+    rg.addColorStop(0,`rgba(${hz},.45)`);rg.addColorStop(1,`rgba(${hz},0)`);
+    b.fillStyle=rg;b.fillRect(0,0,W,H);
+    b.lineCap='round';b.lineJoin='round';
+    const silhou=(sx,sy,s,mirror,al,blur)=>{
+      b.save();b.translate(sx,sy);b.scale(mirror?-s:s,s);
+      b.filter=`blur(${blur}px)`;
+      b.strokeStyle=`rgba(${pal.ink},${al})`;
+      for(const ch of chains){
+        const pts=ch.pts;
+        b.beginPath();b.moveTo(pts[0].x,pts[0].y);
+        for(let i=1;i<pts.length-1;i++) b.quadraticCurveTo(pts[i].x,pts[i].y,(pts[i].x+pts[i+1].x)/2,(pts[i].y+pts[i+1].y)/2);
+        b.lineWidth=Math.max(.5,pts[0].w*.8);b.stroke();
+      }
+      b.restore();
+    };
+    silhou(W*.08,H*.66,.5,true,.06,7);
+    silhou(W*1.02,H*.6,.36,false,.05,9);
   }
 
   function resize(){
@@ -2198,7 +2367,9 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     if(W<=0||H<=0) return;
     canvas.width=W*dpr;canvas.height=H*dpr;
     ctx.setTransform(dpr,0,0,dpr,0,0);
-    build();draw(reduceMotion?1:g,performance.now()/1000);
+    build();makeSprites();renderBackdrop();
+    if(reduceMotion&&camKeys.length){const k=camKeys[4];cam={x:k.x,y:k.y,z:k.z};}
+    draw(reduceMotion?1:g,performance.now()/1000);
   }
 
   new ResizeObserver(resize).observe(canvas);
@@ -2212,6 +2383,15 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
   const capWord=document.getElementById('growth-word');
   const capZh=document.getElementById('growth-zh');
   const capEn=document.getElementById('growth-en');
+  /* 胶片颗粒:运行时生成一张噪声贴图喂给罩层,不必随版携带素材 */
+  const grainEl=stage.querySelector('.fx-grain');
+  if(grainEl){
+    const gc=document.createElement('canvas');gc.width=gc.height=96;
+    const gctx=gc.getContext('2d'), id=gctx.createImageData(96,96);
+    for(let i=0;i<id.data.length;i+=4){const v=(Math.random()*255)|0;id.data[i]=id.data[i+1]=id.data[i+2]=v;id.data[i+3]=13;}
+    gctx.putImageData(id,0,0);
+    grainEl.style.backgroundImage=`url(${gc.toDataURL()})`;
+  }
   const ACTS=[['发芽','sprout.'],['分枝','branch.'],['开花','bloom.'],['散种','scatter.']];
   const K=[0,.28,.55,.78,1];                     /* 四幕滚动边界 */
   /* 滚动进度→树时轴:非线性 warp,各幕节奏不同 */
@@ -2239,6 +2419,9 @@ document.querySelectorAll('[data-wu]').forEach((el,i)=>{
     pin.style.transform=`translate3d(0,${y}px,0)`;
     const p=clamp(y/Math.max(1,total),0,1);
     setAct(p>=.78?3:p>=.55?2:p>=.28?1:0);
+    /* 滚动驱动摄影机(弹簧追踪分镜),树时同理由滚动给目标、弹簧给质量 */
+    const ct=camAt(p);
+    cam.x+=(ct.x-cam.x)*.11;cam.y+=(ct.y-cam.y)*.11;cam.z+=(ct.z-cam.z)*.11;
     const target=warp(p);
     g=Math.abs(target-g)<.0005?target:g+(target-g)*.09;
     draw(g,performance.now()/1000);
