@@ -136,9 +136,9 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
     const VELOCITY_DECAY = 0.86;
     const MAX_SPEED = 14;
     const BOUNDS_MARGIN = 40;
-    let alpha = 1;
+    const WARM_UP_TICKS = 180;
+    let alpha = 0.08;
     let stopped = false;
-    let settledFitDone = false;
     userNavigatedRef.current = false;
     const paint = (): void => {
       for (const link of graph.links) {
@@ -154,19 +154,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       }
     };
     paintRef.current = paint;
-    const tick = (): void => {
-      frameRef.current = null;
-      if (stopped) return;
-      const alphaTarget = dragRef.current ? DRAG_ALPHA_TARGET : 0;
-      alpha += (alphaTarget - alpha) * 0.04;
-      if (alpha < ALPHA_FLOOR) alpha = ALPHA_FLOOR;
-      // Once the initial layout has settled, re-fit the camera to the
-      // relaxed positions with a smooth transition — unless the user
-      // already moved the camera.
-      if (!settledFitDone && alpha < 0.06) {
-        settledFitDone = true;
-        if (!userNavigatedRef.current) fitRef.current({ animate: true });
-      }
+    const step = (stepAlpha: number): void => {
       for (let leftIndex = 0; leftIndex < graph.nodes.length; leftIndex++) {
         const left = graph.nodes[leftIndex];
         for (let rightIndex = leftIndex + 1; rightIndex < graph.nodes.length; rightIndex++) {
@@ -178,7 +166,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
           dx /= distance;
           dy /= distance;
           const repulsionStrength = (left.kind === "agent" && right.kind === "agent" ? settingsRef.current.repulsion : settingsRef.current.repulsion * 0.32) * densityScale;
-          const repulsion = (repulsionStrength * alpha) / distanceSquared;
+          const repulsion = (repulsionStrength * stepAlpha) / distanceSquared;
           left.vx -= dx * repulsion;
           left.vy -= dy * repulsion;
           right.vx += dx * repulsion;
@@ -187,7 +175,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
           // contact separate steadily instead of vibrating.
           const overlap = (left.radius + right.radius) * settingsRef.current.nodeScale * densityScale + 16 - distance;
           if (overlap > 0) {
-            const push = overlap * 0.5 * Math.max(alpha, 0.08);
+            const push = overlap * 0.5 * Math.max(stepAlpha, 0.08);
             if (dragRef.current?.node !== left) {
               left.x -= dx * push;
               left.y -= dy * push;
@@ -208,7 +196,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
           ? Math.max(64, (settingsRef.current.linkLength - link.weight * 12) * densityLengthScale)
           : settingsRef.current.linkLength * 0.78 * densityLengthScale;
         const strength = link.kind === "relationship" ? 0.09 : 0.055;
-        const pull = (distance - desiredLength) * strength * alpha;
+        const pull = (distance - desiredLength) * strength * stepAlpha;
         link.source.vx += (dx / distance) * pull;
         link.source.vy += (dy / distance) * pull;
         link.target.vx -= (dx / distance) * pull;
@@ -220,8 +208,8 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
           node.vy = 0;
           continue;
         }
-        node.vx += (GRAPH_WIDTH / 2 - node.x) * settingsRef.current.centerForce * alpha;
-        node.vy += (GRAPH_HEIGHT / 2 - node.y) * settingsRef.current.centerForce * alpha;
+        node.vx += (GRAPH_WIDTH / 2 - node.x) * settingsRef.current.centerForce * stepAlpha;
+        node.vy += (GRAPH_HEIGHT / 2 - node.y) * settingsRef.current.centerForce * stepAlpha;
         // Soft bounds: a gentle push back instead of a hard clamp.
         if (node.x < BOUNDS_MARGIN) node.vx += (BOUNDS_MARGIN - node.x) * 0.04;
         else if (node.x > GRAPH_WIDTH - BOUNDS_MARGIN) node.vx -= (node.x - (GRAPH_WIDTH - BOUNDS_MARGIN)) * 0.04;
@@ -237,6 +225,22 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
         node.x += node.vx;
         node.y += node.vy;
       }
+    };
+    // Relax the deterministic circle layout invisibly before the first
+    // paint, so the camera frames the settled graph exactly once up front
+    // and never needs an automatic refit later.
+    let warmAlpha = 1;
+    for (let warmTick = 0; warmTick < WARM_UP_TICKS; warmTick++) {
+      step(warmAlpha);
+      warmAlpha *= 0.96;
+    }
+    const tick = (): void => {
+      frameRef.current = null;
+      if (stopped) return;
+      const alphaTarget = dragRef.current ? DRAG_ALPHA_TARGET : 0;
+      alpha += (alphaTarget - alpha) * 0.04;
+      if (alpha < ALPHA_FLOOR) alpha = ALPHA_FLOOR;
+      step(alpha);
       paint();
       frameRef.current = window.requestAnimationFrame(tick);
     };

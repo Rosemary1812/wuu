@@ -68,13 +68,16 @@ describe("AgentRelationshipGraph", () => {
       left: 0, top: 0, width: 960, height: 560, right: 960, bottom: 560, x: 0, y: 0, toJSON: () => ({}),
     });
 
-    // First open fits the camera to the content: the 2 agents + 1 room
-    // cluster spans 360x140 world units, so fit clamps to its 1.6 cap and
-    // the reset button shows the live zoom percentage.
+    // First open fits the camera to the pre-relaxed content exactly once:
+    // the viewport scale stays inside the fit clamp and the reset button
+    // shows the matching live percentage.
     const viewport = container.querySelector(".channel-agent-graph-viewport")!;
-    expect(viewport.getAttribute("transform")).toContain("scale(1.6)");
+    const viewportTranslate = translateOf(viewport);
+    const fittedScale = Number(/scale\(([\d.]+)\)/.exec(viewport.getAttribute("transform") ?? "")?.[1]);
+    expect(fittedScale).toBeGreaterThanOrEqual(0.55);
+    expect(fittedScale).toBeLessThanOrEqual(1.6);
     const controls = container.querySelectorAll<HTMLButtonElement>(".channel-agent-graph-controls button");
-    expect(controls[1]?.textContent).toBe("160%");
+    expect(controls[1]?.textContent).toBe(`${Math.round(fittedScale * 100)}%`);
 
     const node = container.querySelector<SVGGElement>('[aria-label="Andy"]')!;
     const clickNode = container.querySelector<SVGGElement>('[aria-label="Le"]')!;
@@ -87,39 +90,45 @@ describe("AgentRelationshipGraph", () => {
     expect(onSelectAgent).toHaveBeenCalledWith(agents[1]);
     expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
 
-    // Andy (world 610,280) sits at viewBox ~(768,280) under the fitted
-    // camera (scale 1.6, translate ~(-208,-168)). Grabbing its centre moves
-    // it with the cursor: viewBox (500,400) -> world (442.5,355).
+    // Grabbing the node's centre moves it with the cursor: a screen-space
+    // delta of (+120,-60) moves the node by delta/scale in world units.
+    const before = translateOf(node);
+    const grabX = before.x * fittedScale + viewportTranslate.x;
+    const grabY = before.y * fittedScale + viewportTranslate.y;
     act(() => {
-      node.dispatchEvent(pointerEvent("pointerdown", 768, 280));
-      node.dispatchEvent(pointerEvent("pointermove", 500, 400));
-      node.dispatchEvent(pointerEvent("pointerup", 500, 400));
+      node.dispatchEvent(pointerEvent("pointerdown", grabX, grabY));
+      node.dispatchEvent(pointerEvent("pointermove", grabX + 120, grabY - 60));
+      node.dispatchEvent(pointerEvent("pointerup", grabX + 120, grabY - 60));
     });
 
     const first = translateOf(node);
-    expect(first.x).toBeCloseTo(442.5, 4);
-    expect(first.y).toBeCloseTo(355, 4);
+    expect(first.x).toBeCloseTo(before.x + 120 / fittedScale, 3);
+    expect(first.y).toBeCloseTo(before.y - 60 / fittedScale, 3);
     expect(Array.from(container.querySelectorAll("line")).some((line) =>
-      Math.abs(Number(line.getAttribute("x1")) - 442.5) < 0.001 || Math.abs(Number(line.getAttribute("x2")) - 442.5) < 0.001
+      Math.abs(Number(line.getAttribute("x1")) - first.x) < 0.01 || Math.abs(Number(line.getAttribute("x2")) - first.x) < 0.01
     )).toBe(true);
 
     // Grabbing off-centre must not snap the node centre to the cursor: the
-    // grab offset (world -7.5,-5) is preserved through the drag.
+    // same screen delta from a (+12,+8) grab point yields the same node
+    // displacement, not a jump to the grab point.
+    const offGrabX = first.x * fittedScale + viewportTranslate.x + 12;
+    const offGrabY = first.y * fittedScale + viewportTranslate.y + 8;
     act(() => {
-      node.dispatchEvent(pointerEvent("pointerdown", 512, 408));
-      node.dispatchEvent(pointerEvent("pointermove", 600, 300));
-      node.dispatchEvent(pointerEvent("pointerup", 600, 300));
+      node.dispatchEvent(pointerEvent("pointerdown", offGrabX, offGrabY));
+      node.dispatchEvent(pointerEvent("pointermove", offGrabX + 60, offGrabY + 40));
+      node.dispatchEvent(pointerEvent("pointerup", offGrabX + 60, offGrabY + 40));
     });
 
     const second = translateOf(node);
-    expect(second.x).toBeCloseTo(497.5, 4);
-    expect(second.y).toBeCloseTo(287.5, 4);
+    expect(second.x).toBeCloseTo(first.x + 60 / fittedScale, 3);
+    expect(second.y).toBeCloseTo(first.y + 40 / fittedScale, 3);
     expect(window.cancelAnimationFrame).not.toHaveBeenCalled();
 
     // Zoom buttons move the percentage.
     act(() => controls[2]?.click());
-    expect(controls[1]?.textContent).toBe("200%");
+    const zoomedScale = Math.min(2.5, fittedScale * 1.25);
+    expect(controls[1]?.textContent).toBe(`${Math.round(zoomedScale * 100)}%`);
     act(() => controls[0]?.click());
-    expect(controls[1]?.textContent).toBe("160%");
+    expect(controls[1]?.textContent).toBe(`${Math.round(fittedScale * 100)}%`);
   });
 });
