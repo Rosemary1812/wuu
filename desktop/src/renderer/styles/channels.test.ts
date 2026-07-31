@@ -84,6 +84,21 @@ describe("channel agent status", () => {
   });
 });
 
+describe("channel long agent messages", () => {
+  it("stacks a bounded preview and an explicit expand control", () => {
+    const card = ruleFor(".channel-message-bubble.long-card");
+    const preview = ruleFor(".channel-message-raw-query");
+    const toggle = ruleFor(".channel-message-expand-toggle");
+
+    expect(card).toMatch(/display:\s*flex/);
+    expect(card).toMatch(/flex-direction:\s*column/);
+    expect(preview).toMatch(/white-space:\s*pre-wrap/);
+    expect(preview).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(toggle).toMatch(/align-self:\s*flex-start/);
+    expect(toggle).toMatch(/background:\s*transparent/);
+  });
+});
+
 describe("channel task board spacing", () => {
   it("uses a compact two-line card rhythm without hidden metadata", () => {
     const board = ruleFor(".channel-task-board");

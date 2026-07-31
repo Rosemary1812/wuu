@@ -646,6 +646,44 @@
   gap: 8px;
 }
 
+.channel-message-bubble.long-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.channel-message-raw-query {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.channel-message-expand-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 5px 0 -2px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.channel-message-expand-toggle:hover,
+.channel-message-expand-toggle:focus-visible {
+  color: var(--text-primary);
+}
+
+.channel-message-expand-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
 .channel-message.own .channel-message-bubble {
   border-radius: 12px 12px 3px 12px;
 }

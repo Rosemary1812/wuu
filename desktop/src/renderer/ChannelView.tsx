@@ -1,4 +1,4 @@
-import { Bot, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
@@ -18,6 +18,7 @@ import {
 } from "./ComposerMessages";
 import { useI18n } from "./i18n";
 import { JumpToLatestPill } from "./JumpToLatestPill";
+import { collapsedLongTextPreview, useLongTextCollapse } from "./LongTextCollapse";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { RichContent } from "./RichContent";
@@ -131,6 +132,41 @@ function ChannelThreadDigest({
         })}
       </span>
     </button>
+  );
+}
+
+function ChannelMessageBody({
+  text,
+  allowCollapse,
+}: {
+  text: string;
+  allowCollapse: boolean;
+}): JSX.Element {
+  const { t } = useI18n();
+  const { collapsible, expanded, toggleExpanded } = useLongTextCollapse(text);
+  const canCollapse = allowCollapse && collapsible;
+  const collapsed = canCollapse && !expanded;
+  const displayedText = collapsed ? collapsedLongTextPreview(text) : text;
+
+  return (
+    <div className={`channel-message-bubble${canCollapse ? ` long-card ${expanded ? "expanded" : "collapsed"}` : ""}`}>
+      {collapsed ? (
+        <div className="channel-message-raw-query">{displayedText}</div>
+      ) : (
+        <RichContent text={displayedText} />
+      )}
+      {canCollapse ? (
+        <button
+          className="channel-message-expand-toggle"
+          type="button"
+          aria-expanded={expanded}
+          onClick={toggleExpanded}
+        >
+          <span>{expanded ? t("common.collapse") : t("common.showMore")}</span>
+          {expanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -870,9 +906,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                     </time>
                   </div>
                   {message.body ? (
-                    <div className="channel-message-bubble">
-                      <RichContent text={message.body} />
-                    </div>
+                    <ChannelMessageBody text={message.body} allowCollapse={!own} />
                   ) : null}
                   {message.images?.length || message.files?.length ? (
                     <ComposerAttachmentStrip
@@ -957,7 +991,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                           <span>{repliedMessage.body}</span>
                         </button>
                       ) : null}
-                      {message.body ? <div className="channel-message-bubble"><RichContent text={message.body} /></div> : null}
+                      {message.body ? <ChannelMessageBody text={message.body} allowCollapse={!own} /> : null}
                       {message.images?.length || message.files?.length ? (
                         <ComposerAttachmentStrip
                           images={(message.images ?? []).map((image, index) => ({ id: `${message.id}-thread-image-${index}`, ...image }))}

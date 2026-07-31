@@ -337,6 +337,79 @@ describe("ChannelView", () => {
     });
   });
 
+  it("collapses long agent messages and restores rich content on demand", async () => {
+    const api = createApi();
+    const longBody = `${Array.from({ length: 16 }, (_, index) => `Line ${index + 1}`).join("\n")}\n**Final detail**`;
+    api.listChannelMessages = vi.fn(async () => ({
+      messages: [{
+        id: "long-message",
+        room_id: "room-1",
+        seq: 1,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: longBody,
+        created_at: "2026-07-23T00:00:00Z",
+      }],
+    }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const bubble = container.querySelector(".channel-message-bubble.long-card");
+    const toggle = bubble?.querySelector<HTMLButtonElement>(".channel-message-expand-toggle");
+    expect(bubble?.classList.contains("collapsed")).toBe(true);
+    expect(bubble?.textContent).not.toContain("Final detail");
+    expect(toggle?.textContent).toContain("显示更多");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+
+    act(() => toggle?.click());
+    expect(bubble?.classList.contains("expanded")).toBe(true);
+    expect(bubble?.querySelector("strong")?.textContent).toBe("Final detail");
+    expect(toggle?.textContent).toContain("收起");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("uses the same long-message collapse inside the thread panel", async () => {
+    const api = createApi();
+    const longReply = Array.from({ length: 16 }, (_, index) => `Thread line ${index + 1}`).join("\n");
+    api.listChannelMessages = vi.fn(async () => ({
+      messages: [{
+        id: "thread-root",
+        room_id: "room-1",
+        seq: 1,
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Please investigate",
+        created_at: "2026-07-23T00:00:00Z",
+      }, {
+        id: "thread-long-reply",
+        room_id: "room-1",
+        seq: 2,
+        thread_id: "thread-root",
+        reply_to: "thread-root",
+        author_type: "agent" as const,
+        author_id: "agent-2",
+        kind: "text" as const,
+        body: longReply,
+        created_at: "2026-07-23T00:01:00Z",
+      }],
+    }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    act(() => container.querySelector<HTMLButtonElement>(".channel-thread-digest")?.click());
+    const panel = container.querySelector(".channel-thread-panel");
+    const replyBubble = panel?.querySelector(".channel-thread-message.agent .channel-message-bubble.long-card");
+    expect(replyBubble?.classList.contains("collapsed")).toBe(true);
+    expect(replyBubble?.textContent).not.toContain("Thread line 16");
+    expect(replyBubble?.querySelector(".channel-message-expand-toggle")?.textContent).toContain("显示更多");
+  });
+
   it("does not issue another bottom scroll when polling returns the same messages", async () => {
     vi.useFakeTimers();
     try {
