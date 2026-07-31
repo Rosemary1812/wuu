@@ -46,13 +46,16 @@ describe("channel message resizing", () => {
 
     expect(view).toMatch(/--channel-content-max-width:\s*1040px/);
     expect(view).toMatch(/--channel-horizontal-gutter:\s*clamp\(16px, 3vw, 40px\)/);
+    expect(view).toMatch(/--channel-avatar-size:\s*30px/);
+    expect(view).toMatch(/--channel-message-column-gap:\s*10px/);
     expect(stream).toMatch(/padding:\s*12px var\(--channel-horizontal-gutter\)/);
     expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 8px/);
     expect(composer).toMatch(/padding:\s*10px var\(--channel-horizontal-gutter\) 12px/);
     expect(composerWrap).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
     expect(message).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
-    expect(message).toMatch(/grid-template-columns:\s*30px minmax\(0, 1fr\)/);
-    expect(ownMessage).toMatch(/grid-template-columns:\s*30px minmax\(0, 1fr\)/);
+    expect(message).toMatch(/grid-template-columns:\s*var\(--channel-avatar-size\) minmax\(0, 1fr\)/);
+    expect(message).toMatch(/gap:\s*var\(--channel-message-column-gap\)/);
+    expect(ownMessage).toMatch(/grid-template-columns:\s*var\(--channel-avatar-size\) minmax\(0, 1fr\)/);
     expect(messageContent).toMatch(/max-width:\s*100%/);
     expect(messageContent).toMatch(/width:\s*100%/);
     expect(ownMessageContent).toMatch(/max-width:\s*100%/);
@@ -71,8 +74,19 @@ describe("channel message resizing", () => {
     expect(content).toMatch(/max-width:\s*100%/);
     expect(digest).toMatch(/display:\s*grid/);
     expect(digest).toMatch(/width:\s*100%/);
+    expect(digest).toMatch(/padding:\s*5px 0 0/);
+    expect(digest).toMatch(/border-top:\s*1px solid var\(--border-subtle\)/);
+    expect(digest).toMatch(/background:\s*transparent/);
     expect(preview).toMatch(/text-overflow:\s*ellipsis/);
     expect(preview).toMatch(/white-space:\s*nowrap/);
+  });
+
+  it("shares one outer axis between thread messages and their composer", () => {
+    const messages = ruleFor(".channel-thread-messages");
+    const composer = ruleFor(".channel-thread-footer .channel-composer");
+
+    expect(messages).toMatch(/padding:\s*14px 12px 12px/);
+    expect(composer).toMatch(/padding:\s*10px 12px 12px/);
   });
 
   it("keeps hover actions out of the vertical reading rhythm", () => {

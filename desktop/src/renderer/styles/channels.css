@@ -70,6 +70,8 @@
   --channel-directory-list-padding: 0 8px;
   --channel-directory-row-padding: 0 9px;
   --channel-directory-row-gap: 8px;
+  --channel-avatar-size: 30px;
+  --channel-message-column-gap: 10px;
   --channel-content-max-width: 1040px;
   --channel-horizontal-gutter: clamp(16px, 3vw, 40px);
   --bg-primary: var(--paper);
@@ -573,14 +575,14 @@
 .channel-message {
   width: min(100%, var(--channel-content-max-width));
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: var(--channel-avatar-size) minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
+  gap: var(--channel-message-column-gap);
   margin: 0 auto 12px;
 }
 
 .channel-message.own {
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: var(--channel-avatar-size) minmax(0, 1fr);
   justify-items: stretch;
 }
 
@@ -706,8 +708,8 @@
 }
 
 .channel-human-avatar {
-  width: 30px;
-  height: 30px;
+  width: var(--channel-avatar-size);
+  height: var(--channel-avatar-size);
   display: block;
   overflow: hidden;
   border-radius: 6px;
@@ -745,18 +747,20 @@
   min-width: 0;
   display: grid;
   gap: 4px;
-  margin-top: 4px;
-  padding: 7px 9px 8px;
+  margin-top: 5px;
+  padding: 5px 0 0;
   border: 0;
-  border-radius: 7px;
-  background: var(--ink-overlay-3);
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
   color: var(--text-primary);
   text-align: left;
 }
 
 .channel-thread-digest:hover,
 .channel-thread-digest:focus-visible {
-  background: var(--ink-overlay-5);
+  background: transparent;
+  color: var(--text-primary);
 }
 
 .channel-thread-digest-heading,
@@ -935,7 +939,7 @@
 }
 
 .channel-thread-footer .channel-composer {
-  padding: 12px 20px 18px;
+  padding: 10px 12px 12px;
 }
 
 .channel-thread-footer .channel-composer .dock-composer-wrap {
