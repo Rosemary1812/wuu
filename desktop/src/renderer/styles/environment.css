@@ -778,10 +778,10 @@
   display: flex;
   flex-direction: column;
   /* Keep the two-pane search surface compact enough to read as a command
-     palette rather than a replacement page. The fluid middle value still
-     grows on larger displays, while the cap preserves visible app context
-     around every side of the dialog. */
-  width: clamp(560px, 58vw, 800px);
+     palette rather than a replacement page. The outer min lets unusually
+     narrow windows shrink safely without a breakpoint that makes the dialog
+     wider again. */
+  width: min(clamp(560px, 58vw, 800px), calc(100vw - 24px));
   max-height: min(560px, calc(100vh - 160px));
   gap: 10px;
   overflow: hidden;
@@ -1184,7 +1184,6 @@
   }
 
   .conversation-search-dialog {
-    width: calc(100vw - 24px);
     max-height: min(560px, calc(100vh - 92px));
     border-radius: var(--radius-lg);
   }
