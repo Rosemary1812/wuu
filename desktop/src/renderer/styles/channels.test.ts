@@ -40,6 +40,22 @@ describe("channel directory alignment", () => {
   });
 });
 
+describe("channel member picker", () => {
+  it("keeps member search and selection in one flat scrollable surface", () => {
+    const search = ruleFor(".channel-member-picker-search");
+    const options = ruleFor(".channel-member-picker-options");
+    const option = ruleFor(".channel-member-picker-option");
+
+    expect(search).toMatch(/border-bottom:\s*1px solid var\(--border-subtle\)/);
+    expect(search).not.toMatch(/background:/);
+    expect(options).toMatch(/max-height:\s*132px/);
+    expect(options).toMatch(/overflow-y:\s*auto/);
+    expect(option).toMatch(/height:\s*43px/);
+    expect(option).toMatch(/background:\s*transparent/);
+    expect(channelsCss).not.toContain(".channel-checkbox-row");
+  });
+});
+
 describe("channel message resizing", () => {
   it("keeps bubble width and horizontal gutters continuous across window sizes", () => {
     const view = ruleFor(".channel-view");

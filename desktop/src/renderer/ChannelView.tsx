@@ -6,6 +6,7 @@ import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
 import { AUTO_FOLLOW_BOTTOM_THRESHOLD_PX, useAutoFollowScrollContainer } from "./AutoFollowScroll";
 import { ChannelComposer } from "./ChannelComposer";
 import { ChannelGroupAvatar } from "./ChannelGroupAvatar";
+import { ChannelMemberPicker } from "./ChannelMemberPicker";
 import { buildComposerAttachments } from "./ComposerDraftState";
 import { ComposerAttachmentStrip } from "./ComposerInputSections";
 import { DefaultAvatarMark } from "./DefaultAvatar";
@@ -1350,7 +1351,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 <span><ImagePlus className="icon" />{t("channels.customGroupAvatar")}</span>
               </button>
             </fieldset>
-            <fieldset><legend>{t("channels.groupMembers")}</legend>{agents.map((agent) => <label className="channel-checkbox-row" key={agent.id}><input type="checkbox" checked={roomAgentIDs.includes(agent.id)} onChange={() => toggleRoomAgent(agent.id)} /><span>{agent.name}</span></label>)}</fieldset>
+            <ChannelMemberPicker agents={agents} selectedAgentIDs={roomAgentIDs} onToggle={toggleRoomAgent} />
           </div>
         )}
       />

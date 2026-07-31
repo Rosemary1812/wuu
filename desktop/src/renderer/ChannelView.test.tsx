@@ -638,7 +638,8 @@ describe("ChannelView", () => {
     expect(document.querySelector(".channel-setup-form select")).toBeNull();
     const name = document.querySelector<HTMLInputElement>('.channel-setup-form input:not([type])');
     act(() => setInputValue(name!, "review"));
-    const agent = document.querySelector<HTMLInputElement>('.channel-setup-form input[type="checkbox"]');
+    expect(document.querySelector('.channel-setup-form input[type="checkbox"]')).toBeNull();
+    const agent = document.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
     act(() => agent?.click());
     const form = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
     await act(async () => form?.requestSubmit());
