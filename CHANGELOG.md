@@ -8,6 +8,16 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.13.1-nightly.1] - 2026-08-01
+
+### Changed
+
+- Enabled group chat in packaged desktop builds so the existing
+  channels, room management, mentions, replies, and collaboration views can be
+  tested as a prerelease.
+- Marked semver prerelease tags as GitHub prereleases instead of promoting them
+  as the latest stable release.
+
 ## [0.13.0] - 2026-08-01
 
 ### Added

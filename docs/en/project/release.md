@@ -26,7 +26,8 @@ wuu uses Semantic Versioning while it is pre-1.0:
 - Minor (`0.X.0`) releases add features or change protocol, configuration,
   stored data, or user-visible behavior in a compatibility-sensitive way.
 - Prereleases such as `0.4.0-rc.1` are used when packaged builds need broader
-  validation before becoming the current release.
+  validation before becoming the current release. Tags with a prerelease suffix
+  are automatically marked as prereleases on GitHub.
 
 The private protocol, remote-core, and mobile packages remain at `0.0.0` until
 they have an independent public release contract.

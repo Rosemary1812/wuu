@@ -55,6 +55,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           NODE_OPTIONS: "--max-old-space-size=4096"
+          VITE_ENABLE_GROUP_CHAT: "true"
 
       - name: Verify packaged app
         run: |
@@ -137,7 +138,13 @@ jobs:
 
           EOF
 
+          release_args=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_args+=(--prerelease)
+          fi
+
           gh release create "$GITHUB_REF_NAME" desktop-release/* \
             --verify-tag \
             --title "wuu ${GITHUB_REF_NAME}" \
-            --notes-file release-notes.md
+            --notes-file release-notes.md \
+            "${release_args[@]}"
