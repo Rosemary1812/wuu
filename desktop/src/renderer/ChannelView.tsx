@@ -1,10 +1,10 @@
 import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
 import { AUTO_FOLLOW_BOTTOM_THRESHOLD_PX, useAutoFollowScrollContainer } from "./AutoFollowScroll";
-import { ChannelComposer } from "./ChannelComposer";
+import { ChannelComposer, type ChannelComposerHandle } from "./ChannelComposer";
 import { ChannelGroupAvatar } from "./ChannelGroupAvatar";
 import { ChannelMemberPicker } from "./ChannelMemberPicker";
 import { buildComposerAttachments } from "./ComposerDraftState";
@@ -36,6 +36,11 @@ const CHANNEL_SPLIT_MAX_WIDTH = 360;
 const CHANNEL_SPLIT_DEFAULT_WIDTH = 208;
 const CHANNEL_SPLIT_COLLAPSED_WIDTH = 44;
 const CHANNEL_SPLIT_WIDTH_STEP = 16;
+const THREAD_PANEL_WIDTH_KEY = "wuu.channels.threadPanelWidth";
+const THREAD_PANEL_MIN_WIDTH = 320;
+const THREAD_PANEL_MAX_WIDTH = 720;
+const THREAD_PANEL_DEFAULT_WIDTH = 420;
+const THREAD_PANEL_WIDTH_STEP = 24;
 
 const AGENT_AVATAR_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
 const AGENT_AVATAR_SIZE = 256;
@@ -79,6 +84,20 @@ function AgentAvatar({ name, avatarKey, avatarImage, status, statusText, compact
   );
 }
 
+function ChannelAuthorName({ name, mentionLabel, onMention }: {
+  name: string;
+  mentionLabel?: string;
+  onMention?: () => void;
+}): JSX.Element {
+  if (!onMention) return <strong>{name}</strong>;
+  return (
+    <button className="channel-author-mention" type="button" aria-label={mentionLabel} onClick={onMention}>
+      <span aria-hidden="true">@</span>
+      {name}
+    </button>
+  );
+}
+
 const CHANNEL_THREAD_DIGEST_MAX_REPLIES = 3;
 
 function ChannelThreadDigest({
@@ -95,9 +114,11 @@ function ChannelThreadDigest({
 
   return (
     <button className="channel-thread-digest" type="button" onClick={onOpen}>
-      <span className="channel-thread-digest-heading">
-        <strong>{t("channels.replyCount", { count: replies.length })}</strong>
-      </span>
+      {replies.length > CHANNEL_THREAD_DIGEST_MAX_REPLIES ? (
+        <span className="channel-thread-digest-heading">
+          <strong>{t("channels.replyCount", { count: replies.length })}</strong>
+        </span>
+      ) : null}
       <span className="channel-thread-digest-rows">
         {visibleReplies.map((reply) => {
           const own = reply.author_type === "human";
@@ -186,6 +207,18 @@ function initialChannelListCollapsed(): boolean {
   return window.localStorage.getItem(CHANNEL_LIST_COLLAPSED_KEY) === "true";
 }
 
+function clampThreadPanelWidth(width: number): number {
+  return Math.min(THREAD_PANEL_MAX_WIDTH, Math.max(THREAD_PANEL_MIN_WIDTH, Math.round(width)));
+}
+
+function initialThreadPanelWidth(): number {
+  const storedValue = window.localStorage.getItem(THREAD_PANEL_WIDTH_KEY);
+  const stored = Number(storedValue);
+  return storedValue !== null && Number.isFinite(stored) && stored >= THREAD_PANEL_MIN_WIDTH
+    ? clampThreadPanelWidth(stored)
+    : THREAD_PANEL_DEFAULT_WIDTH;
+}
+
 function taskStateKey(state?: string): "channels.taskState.open" | "channels.taskState.doing" | "channels.taskState.done" {
   if (state === "doing") return "channels.taskState.doing";
   if (state === "done") return "channels.taskState.done";
@@ -197,7 +230,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
 }): JSX.Element {
-  const { formatDate, t } = useI18n();
+  const { formatDate, locale, t } = useI18n();
   const [agents, setAgents] = useState<NamedAgent[]>([]);
   const [rooms, setRooms] = useState<ChannelRoom[]>([]);
   const [selectedRoomID, setSelectedRoomID] = useState("");
@@ -207,6 +240,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [splitWidth, setSplitWidth] = useState(initialChannelSplitWidth);
   const [listCollapsed, setListCollapsed] = useState(initialChannelListCollapsed);
   const [resizingSplit, setResizingSplit] = useState(false);
+  const [threadWidth, setThreadWidth] = useState(initialThreadPanelWidth);
+  const [resizingThread, setResizingThread] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -235,12 +270,15 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [composerFooterNode, setComposerFooterNode] = useState<HTMLDivElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const composerFooterRef = useRef<HTMLDivElement | null>(null);
+  const roomComposerRef = useRef<ChannelComposerHandle | null>(null);
+  const threadComposerRef = useRef<ChannelComposerHandle | null>(null);
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const roomAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const roomAvatarTargetRef = useRef<string>("");
   const knownMessageIDsRef = useRef<Set<string>>(new Set());
   const sendingTimersRef = useRef<Map<string, number>>(new Map());
   const splitResizeStartRef = useRef({ x: 0, width: CHANNEL_SPLIT_DEFAULT_WIDTH });
+  const threadResizeStartRef = useRef({ x: 0, width: THREAD_PANEL_DEFAULT_WIDTH });
   const messageScroll = useAutoFollowScrollContainer({
     open: section === "rooms" && Boolean(selectedRoomID),
     observeKey: selectedRoomID,
@@ -264,6 +302,21 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     });
   }, []);
 
+  const updateThreadWidth = useCallback((width: number): void => {
+    const nextWidth = clampThreadPanelWidth(width);
+    setThreadWidth(nextWidth);
+    window.localStorage.setItem(THREAD_PANEL_WIDTH_KEY, String(nextWidth));
+  }, []);
+
+  const closeThread = useCallback((): void => {
+    setActiveThreadRootID("");
+    setThreadReplyTargetID("");
+    setThreadBody("");
+    setThreadComposerImages([]);
+    setThreadComposerFiles([]);
+    setResizingThread(false);
+  }, []);
+
   useEffect(() => {
     if (!resizingSplit) return;
     const handlePointerMove = (event: PointerEvent): void => {
@@ -277,6 +330,25 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [resizingSplit, updateSplitWidth]);
+
+  useEffect(() => {
+    if (!resizingThread) return;
+    const handlePointerMove = (event: PointerEvent): void => {
+      const nextWidth = threadResizeStartRef.current.width - (event.clientX - threadResizeStartRef.current.x);
+      if (nextWidth <= THREAD_PANEL_MIN_WIDTH) {
+        closeThread();
+        return;
+      }
+      updateThreadWidth(nextWidth);
+    };
+    const handlePointerUp = (): void => setResizingThread(false);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [closeThread, resizingThread, updateThreadWidth]);
 
   useEffect(() => {
     setActiveThreadRootID("");
@@ -308,6 +380,29 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     }
   }
 
+  function startThreadResize(event: ReactPointerEvent<HTMLButtonElement>): void {
+    event.preventDefault();
+    threadResizeStartRef.current = { x: event.clientX, width: threadWidth };
+    setResizingThread(true);
+  }
+
+  function handleThreadResizeKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      updateThreadWidth(threadWidth + THREAD_PANEL_WIDTH_STEP);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      if (threadWidth - THREAD_PANEL_WIDTH_STEP <= THREAD_PANEL_MIN_WIDTH) closeThread();
+      else updateThreadWidth(threadWidth - THREAD_PANEL_WIDTH_STEP);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      closeThread();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      updateThreadWidth(THREAD_PANEL_MAX_WIDTH);
+    }
+  }
+
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedRoomID),
     [rooms, selectedRoomID],
@@ -319,6 +414,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     () => new Map(agents.map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const selectedRoomAgents = useMemo(() => {
+    const memberIDs = new Set(
+      selectedRoom?.members
+        .filter((member) => member.member_type === "agent")
+        .map((member) => member.member_id) ?? [],
+    );
+    return agents.filter((agent) => memberIDs.has(agent.id));
+  }, [agents, selectedRoom]);
   const messageByID = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -342,6 +445,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     () => activeThreadRootID ? (repliesByThread.get(activeThreadRootID) ?? []) : [],
     [activeThreadRootID, repliesByThread],
   );
+  const threadConversationMessages = useMemo(
+    () => activeThreadRoot ? [activeThreadRoot, ...activeThreadMessages] : [],
+    [activeThreadMessages, activeThreadRoot],
+  );
   const threadScroll = useAutoFollowScrollContainer({
     open: section === "rooms" && Boolean(activeThreadRootID),
     observeKey: `${activeThreadRootID}:${activeThreadMessages.length}`,
@@ -354,6 +461,22 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const activityText = useCallback(
     (status: AgentActivityStatus): string => t(`channels.agentStatus.${status}`),
     [t],
+  );
+  const respondingAgents = useMemo(() => {
+    const roomAgentIDs = new Set(
+      selectedRoom?.members
+        .filter((member) => member.member_type === "agent")
+        .map((member) => member.member_id) ?? [],
+    );
+    return agents
+      .filter((agent) => roomAgentIDs.has(agent.id))
+      .map((agent) => ({ agent, status: activityFor(agent) }))
+      .filter(({ status }) => status !== "idle");
+  }, [activityFor, agents, selectedRoom]);
+  const respondingAgentNames = useMemo(
+    () => new Intl.ListFormat(locale, { style: "short", type: "conjunction" })
+      .format(respondingAgents.map(({ agent }) => agent.name)),
+    [locale, respondingAgents],
   );
   const modelGroups = useMemo<SelectMenuGroup[]>(() => {
     const inherited = initialized ? `${initialized.provider} · ${initialized.model}` : undefined;
@@ -618,14 +741,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     setThreadComposerFiles([]);
   }
 
-  function closeThread(): void {
-    setActiveThreadRootID("");
-    setThreadReplyTargetID("");
-    setThreadBody("");
-    setThreadComposerImages([]);
-    setThreadComposerFiles([]);
-  }
-
   async function sendThreadReply(): Promise<void> {
     const messageBody = threadBody.trim();
     if (!window.wuu || !selectedRoomID || !activeThreadRootID || (!messageBody && threadComposerImages.length === 0 && threadComposerFiles.length === 0) || threadSending) return;
@@ -869,6 +984,42 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             </button>
           ) : null}
         </div> : null}
+        {!listCollapsed ? (
+          <div
+            className="channel-response-status"
+            role="status"
+            aria-live="polite"
+            aria-label={respondingAgents.length > 0
+              ? respondingAgents.map(({ agent, status }) => `${agent.name}: ${activityText(status)}`).join(", ")
+              : undefined}
+          >
+            {respondingAgents.length > 0 ? (
+              <>
+                <span className="channel-response-status-avatars" aria-hidden="true">
+                  {respondingAgents.slice(0, 3).map(({ agent, status }) => (
+                    <span className="channel-response-status-avatar" key={agent.id}>
+                      <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
+                      <i className={`channel-response-status-dot ${status}`} />
+                    </span>
+                  ))}
+                </span>
+                <span className="channel-response-status-copy">
+                  <strong>{respondingAgentNames}</strong>
+                  <span>
+                    {respondingAgents.length === 1
+                      ? activityText(respondingAgents[0].status)
+                      : t("channels.agentsResponding", { count: respondingAgents.length })}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <span className="channel-response-status-empty">
+                <i aria-hidden="true" />
+                {t("channels.noAgentsResponding")}
+              </span>
+            )}
+          </div>
+        ) : null}
         {!listCollapsed ? <button
           className="channel-split-resizer"
           type="button"
@@ -883,28 +1034,46 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         /> : null}
       </aside> : null}
 
-      {section === "rooms" ? <div ref={conversationRef} className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}`}>
+      {section === "rooms" ? <div
+        ref={conversationRef}
+        className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}${resizingThread ? " resizing-thread-split" : ""}`}
+        style={{ "--channel-thread-width": `${threadWidth}px` } as CSSProperties}
+      >
         <div className="channel-room-main">
           {error ? <div className="channel-error" role="alert">{error}</div> : null}
         <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
-          {rootMessages.map((message) => {
+          {rootMessages.map((message, index) => {
             const own = message.author_type === "human";
             const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
             const threadReplies = repliesByThread.get(message.id) ?? [];
+            const previousMessage = rootMessages[index - 1];
+            const previousThreadReplies = previousMessage ? (repliesByThread.get(previousMessage.id) ?? []) : [];
+            const grouped = Boolean(
+              previousMessage
+              && previousMessage.author_type === message.author_type
+              && previousMessage.author_id === message.author_id
+              && previousThreadReplies.length === 0,
+            );
             return (
-              <article className={`channel-message ${own ? "own" : "agent"}`} key={message.id}>
-                {own ? (
+              <article className={`channel-message ${own ? "own" : "agent"}${grouped ? " grouped" : ""}`} key={message.id}>
+                {!grouped && own ? (
                   <span className="channel-human-avatar" aria-hidden="true">
                     <DefaultAvatarMark seed="local-user" />
                   </span>
-                ) : (() => {
+                ) : !grouped ? (() => {
                   const agent = agents.find((candidate) => candidate.id === message.author_id);
                   const status = activityFor(agent);
                   return <AgentAvatar name={author} avatarKey={agent?.avatar_key ?? "abstract-1"} avatarImage={agent?.avatar_image} status={status} statusText={activityText(status)} />;
-                })()}
+                })() : null}
                 <div className={`channel-message-content${threadReplies.length ? " has-thread-digest" : ""}`}>
                   <div className="channel-message-meta">
-                    <strong>{author}</strong>
+                    {!grouped ? (
+                      <ChannelAuthorName
+                        name={author}
+                        mentionLabel={!own ? t("channels.mentionAgent", { name: author }) : undefined}
+                        onMention={!own ? () => roomComposerRef.current?.insertMention(author) : undefined}
+                      />
+                    ) : null}
                     <time dateTime={message.created_at}>
                       {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
                     </time>
@@ -948,12 +1117,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         {selectedRoom ? (
           <div ref={setComposerFooter} className="channel-conversation-footer">
             <ChannelComposer
+              ref={roomComposerRef}
               draft={body}
               placeholder={t("channels.messagePlaceholder")}
               disabled={false}
               sending={sending}
               files={composerFiles}
               images={composerImages}
+              mentionAgents={selectedRoomAgents}
               onChangeDraft={setBody}
               onPasteAttachmentFiles={(files) => void attachMessageFiles(files)}
               onRemoveFile={(id) => setComposerFiles((current) => current.filter((file) => file.id !== id))}
@@ -965,28 +1136,50 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         </div>
         {activeThreadRoot ? (
           <aside className="channel-thread-panel" aria-label={t("channels.thread")}>
-            <button className="channel-thread-close" type="button" onClick={closeThread} aria-label={t("channels.closeThread")}>
-              <X aria-hidden="true" />
-            </button>
+            <button
+              className="channel-thread-resizer"
+              type="button"
+              role="separator"
+              aria-label={t("channels.resizeThread")}
+              aria-orientation="vertical"
+              aria-valuemin={0}
+              aria-valuemax={THREAD_PANEL_MAX_WIDTH}
+              aria-valuenow={threadWidth}
+              onPointerDown={startThreadResize}
+              onKeyDown={handleThreadResizeKeyDown}
+            />
             <div ref={threadScroll.scrollRef} className="channel-thread-messages">
-              {[activeThreadRoot, ...activeThreadMessages].map((message) => {
+              {threadConversationMessages.map((message, index) => {
                 const own = message.author_type === "human";
                 const author = own ? t("channels.you") : (agentNames.get(message.author_id) ?? message.author_id);
                 const repliedMessage = message.reply_to ? messageByID.get(message.reply_to) : undefined;
+                const previousMessage = threadConversationMessages[index - 1];
+                const grouped = Boolean(
+                  previousMessage
+                  && previousMessage.author_type === message.author_type
+                  && previousMessage.author_id === message.author_id
+                  && previousMessage.reply_to === message.reply_to,
+                );
                 return (
-                  <article className={`channel-message channel-thread-message ${own ? "own" : "agent"}`} key={message.id}>
-                    {own ? (
+                  <article className={`channel-message channel-thread-message ${own ? "own" : "agent"}${grouped ? " grouped" : ""}`} key={message.id}>
+                    {!grouped && own ? (
                       <span className="channel-human-avatar" aria-hidden="true">
                         <DefaultAvatarMark seed="local-user" />
                       </span>
-                    ) : (() => {
+                    ) : !grouped ? (() => {
                       const agent = agents.find((candidate) => candidate.id === message.author_id);
                       const status = activityFor(agent);
                       return <AgentAvatar name={author} avatarKey={agent?.avatar_key ?? "abstract-1"} avatarImage={agent?.avatar_image} status={status} statusText={activityText(status)} />;
-                    })()}
+                    })() : null}
                     <div className="channel-message-content">
                       <div className="channel-message-meta">
-                        <strong>{author}</strong>
+                        {!grouped ? (
+                          <ChannelAuthorName
+                            name={author}
+                            mentionLabel={!own ? t("channels.mentionAgent", { name: author }) : undefined}
+                            onMention={!own ? () => threadComposerRef.current?.insertMention(author) : undefined}
+                          />
+                        ) : null}
                         <time dateTime={message.created_at}>
                           {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
                         </time>
@@ -1032,6 +1225,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 </div>
               ) : null}
               <ChannelComposer
+                ref={threadComposerRef}
                 draft={threadBody}
                 placeholder={t("channels.threadPlaceholder")}
                 hideExpandButton
@@ -1039,6 +1233,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 sending={threadSending}
                 files={threadComposerFiles}
                 images={threadComposerImages}
+                mentionAgents={selectedRoomAgents}
                 onChangeDraft={setThreadBody}
                 onPasteAttachmentFiles={(files) => void attachThreadMessageFiles(files)}
                 onRemoveFile={(id) => setThreadComposerFiles((current) => current.filter((file) => file.id !== id))}

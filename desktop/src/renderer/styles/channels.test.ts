@@ -136,6 +136,16 @@ describe("channel message resizing", () => {
     expect(actions).not.toMatch(/position:/);
   });
 
+  it("separates author groups while keeping consecutive messages compact", () => {
+    const message = ruleFor(".channel-message");
+    const groupedMessage = ruleFor(".channel-message.grouped");
+    const groupedContent = ruleFor(".channel-message.grouped .channel-message-content");
+
+    expect(message).toMatch(/margin:\s*0 auto 18px/);
+    expect(groupedMessage).toMatch(/margin-top:\s*-12px/);
+    expect(groupedContent).toMatch(/grid-column:\s*2/);
+  });
+
   it("runs the room scroll surface to the bottom behind a floating composer", () => {
     const roomMain = ruleFor(".channel-room-main");
     const stream = ruleFor(".channel-message-stream");
@@ -156,6 +166,48 @@ describe("channel message resizing", () => {
 describe("channel agent status", () => {
   it("keeps thinking indicators static", () => {
     expect(channelsCss).not.toContain("channel-agent-status-pulse");
+  });
+
+  it("anchors the active response summary below the scrollable room list", () => {
+    const roomList = ruleFor(".channel-room-list");
+    const responseStatus = ruleFor(".channel-response-status");
+    const responseCopy = ruleFor(".channel-response-status-copy");
+    const responseEmpty = ruleFor(".channel-response-status-empty");
+
+    expect(roomList).toMatch(/flex:\s*1/);
+    expect(roomList).toMatch(/overflow:\s*auto/);
+    expect(responseStatus).toMatch(/display:\s*flex/);
+    expect(responseStatus).toMatch(/min-height:\s*46px/);
+    expect(responseStatus).toMatch(/border-top:\s*1px solid var\(--border-subtle\)/);
+    expect(responseStatus).toMatch(/background:\s*transparent/);
+    expect(responseStatus).not.toMatch(/border-radius/);
+    expect(responseCopy).toMatch(/min-width:\s*0/);
+    expect(responseEmpty).toMatch(/color:\s*var\(--text-tertiary\)/);
+  });
+});
+
+describe("channel thread split", () => {
+  it("uses a full-height draggable divider instead of a close button", () => {
+    const conversation = ruleFor(".channel-conversation.thread-open");
+    const resizer = ruleFor(".channel-thread-resizer");
+
+    expect(conversation).toMatch(/var\(--channel-thread-width, 420px\)/);
+    expect(resizer).toMatch(/bottom:\s*0/);
+    expect(resizer).toMatch(/cursor:\s*col-resize/);
+    expect(channelsCss).not.toContain(".channel-thread-close");
+  });
+});
+
+describe("channel mentions", () => {
+  it("shows a blue @ affordance on author hover and a bounded picker", () => {
+    const author = ruleFor(".channel-author-mention");
+    const authorHover = ruleFor(".channel-author-mention:hover,\n.channel-author-mention:focus-visible");
+    const mentionMenu = ruleFor(".channel-mention-menu");
+
+    expect(author).toMatch(/cursor:\s*pointer/);
+    expect(authorHover).toMatch(/color:\s*#2563eb/);
+    expect(mentionMenu).toMatch(/max-height:\s*240px/);
+    expect(mentionMenu).toMatch(/overflow-y:\s*auto/);
   });
 });
 

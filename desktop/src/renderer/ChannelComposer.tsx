@@ -1,6 +1,9 @@
-import { useRef } from "react";
+import { forwardRef, type KeyboardEvent, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
+import type { NamedAgent } from "../shared/protocol";
+import { AgentAvatarMark } from "./AgentAvatarMark";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import { Composer, type CodexModelLoadState } from "./ComposerView";
+import { useI18n } from "./i18n";
 
 const EMPTY_MODEL_STATE: CodexModelLoadState = {
   loading: false,
@@ -10,20 +13,36 @@ const EMPTY_MODEL_STATE: CodexModelLoadState = {
 
 const noop = () => {};
 
-export function ChannelComposer({
-  draft,
-  placeholder,
-  disabled,
-  sending,
-  files,
-  images,
-  hideExpandButton = false,
-  onChangeDraft,
-  onPasteAttachmentFiles,
-  onRemoveFile,
-  onRemoveImage,
-  onSend,
-}: {
+type MentionRange = { start: number; end: number; query: string };
+
+export type ChannelComposerHandle = {
+  insertMention: (name: string) => void;
+};
+
+export function mentionRangeAtCursor(draft: string, cursor: number): MentionRange | null {
+  const beforeCursor = draft.slice(0, cursor);
+  const match = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/u);
+  if (!match) return null;
+  return {
+    start: cursor - match[1].length - 1,
+    end: cursor,
+    query: match[1],
+  };
+}
+
+export function draftWithMention(draft: string, name: string, start: number, end: number): { value: string; cursor: number } {
+  const before = draft.slice(0, start);
+  const after = draft.slice(end);
+  const leadingSpace = before && !/\s$/u.test(before) ? " " : "";
+  const trailingSpace = !after || !/^\s/u.test(after) ? " " : "";
+  const inserted = `${leadingSpace}@${name}${trailingSpace}`;
+  return {
+    value: `${before}${inserted}${after}`,
+    cursor: before.length + inserted.length,
+  };
+}
+
+export const ChannelComposer = forwardRef<ChannelComposerHandle, {
   draft: string;
   placeholder: string;
   disabled: boolean;
@@ -31,18 +50,124 @@ export function ChannelComposer({
   files: ComposerFile[];
   images: ComposerImage[];
   hideExpandButton?: boolean;
+  mentionAgents?: NamedAgent[];
   onChangeDraft: (draft: string) => void;
   onPasteAttachmentFiles: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
   onSend: () => void;
-}): JSX.Element {
+}>(function ChannelComposer({
+  draft,
+  placeholder,
+  disabled,
+  sending,
+  files,
+  images,
+  hideExpandButton = false,
+  mentionAgents = [],
+  onChangeDraft,
+  onPasteAttachmentFiles,
+  onRemoveFile,
+  onRemoveImage,
+  onSend,
+}, ref): JSX.Element {
+  const { t } = useI18n();
   const runtimeRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [mentionRange, setMentionRange] = useState<MentionRange | null>(null);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const matchingAgents = useMemo(() => {
+    if (!mentionRange) return [];
+    const query = mentionRange.query.toLocaleLowerCase();
+    return mentionAgents.filter((agent) => agent.name.toLocaleLowerCase().includes(query));
+  }, [mentionAgents, mentionRange]);
+
+  const textarea = useCallback(
+    () => composerRef.current?.querySelector<HTMLTextAreaElement>("textarea") ?? null,
+    [],
+  );
+
+  const updateMentionRange = useCallback((value: string): void => {
+    const input = textarea();
+    const cursor = input?.selectionStart ?? value.length;
+    const nextRange = mentionRangeAtCursor(value, cursor);
+    setMentionRange(nextRange);
+    setSelectedMentionIndex(0);
+  }, [textarea]);
+
+  const insertMention = useCallback((name: string, range?: MentionRange | null): void => {
+    const input = textarea();
+    const inputFocused = input === document.activeElement;
+    const start = range?.start ?? (inputFocused ? (input?.selectionStart ?? draft.length) : draft.length);
+    const end = range?.end ?? (inputFocused ? (input?.selectionEnd ?? start) : draft.length);
+    const next = draftWithMention(draft, name, start, end);
+    onChangeDraft(next.value);
+    setMentionRange(null);
+    window.requestAnimationFrame(() => {
+      const nextInput = textarea();
+      nextInput?.focus();
+      nextInput?.setSelectionRange(next.cursor, next.cursor);
+    });
+  }, [draft, onChangeDraft, textarea]);
+
+  useImperativeHandle(ref, () => ({ insertMention: (name) => insertMention(name) }), [insertMention]);
+
+  function handleKeyDownCapture(event: KeyboardEvent<HTMLDivElement>): void {
+    if (!mentionRange) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setMentionRange(null);
+      return;
+    }
+    if (matchingAgents.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setSelectedMentionIndex((current) => (current + direction + matchingAgents.length) % matchingAgents.length);
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      insertMention(matchingAgents[selectedMentionIndex]!.name, mentionRange);
+    }
+  }
 
   return (
-    <div className="channel-composer">
+    <div
+      ref={composerRef}
+      className="channel-composer"
+      onClick={() => updateMentionRange(draft)}
+      onKeyUp={(event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
+          updateMentionRange(draft);
+        }
+      }}
+      onKeyDownCapture={handleKeyDownCapture}
+    >
+      {mentionRange ? (
+        <div className="channel-mention-menu" role="listbox" aria-label={t("channels.mentionPicker")}>
+          {matchingAgents.length > 0 ? matchingAgents.map((agent, index) => (
+            <button
+              className={index === selectedMentionIndex ? "selected" : ""}
+              type="button"
+              role="option"
+              aria-selected={index === selectedMentionIndex}
+              key={agent.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation();
+                insertMention(agent.name, mentionRange);
+              }}
+            >
+              <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
+              <span>{agent.name}</span>
+            </button>
+          )) : <span className="channel-mention-menu-empty">{t("channels.noMatchingAgents")}</span>}
+        </div>
+      ) : null}
       <Composer
         variant="dock"
         hideRuntimeControls
@@ -52,7 +177,10 @@ export function ChannelComposer({
         placeholder={placeholder}
         maxLength={4000}
         prompt={draft}
-        setPrompt={onChangeDraft}
+        setPrompt={(value) => {
+          onChangeDraft(value);
+          window.requestAnimationFrame(() => updateMentionRange(value));
+        }}
         files={files}
         images={images}
         queuedMessages={[]}
@@ -106,4 +234,4 @@ export function ChannelComposer({
       />
     </div>
   );
-}
+});

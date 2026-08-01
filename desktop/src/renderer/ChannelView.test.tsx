@@ -246,6 +246,74 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-empty-action")?.textContent).toBe("新建频道");
     expect(container.querySelector(".channel-conversation-footer")).toBeNull();
     expect(container.querySelector(".channel-composer")).toBeNull();
+    expect(container.querySelector(".channel-response-status")?.textContent).toBe("暂无 Agent 响应");
+  });
+
+  it("shows active agents from the selected room in the response status bar", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const status = container.querySelector<HTMLElement>(".channel-response-status");
+    expect(status?.textContent).toContain("Alpha");
+    expect(status?.textContent).toContain("处理中");
+    expect(status?.getAttribute("aria-label")).toBe("Alpha: 处理中");
+    expect(status?.querySelectorAll(".channel-response-status-avatar")).toHaveLength(1);
+    expect(status?.textContent).not.toContain("Beta");
+  });
+
+  it("inserts and focuses a mention when an agent author name is clicked", async () => {
+    const api = createApi();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const author = container.querySelector<HTMLButtonElement>('[aria-label="提及 Alpha"]');
+    const textarea = container.querySelector<HTMLTextAreaElement>(".channel-conversation-footer textarea");
+    expect(author?.querySelector("span")?.textContent).toBe("@");
+    act(() => author?.click());
+
+    expect(textarea?.value).toBe("@Alpha ");
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it("opens and filters the member picker when typing @", async () => {
+    const api = createApi();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(".channel-conversation-footer textarea");
+    act(() => setInputValue(textarea!, "@"));
+    expect(Array.from(container.querySelectorAll(".channel-mention-menu button")).map((button) => button.textContent)).toEqual(["Alpha", "Beta"]);
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      textarea?.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(container.querySelector(".channel-mention-menu button.selected")?.textContent).toBe("Beta");
+    act(() => {
+      textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+      textarea?.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowUp", bubbles: true }));
+    });
+    expect(container.querySelector(".channel-mention-menu button.selected")?.textContent).toBe("Alpha");
+
+    act(() => setInputValue(textarea!, "@Be"));
+    expect(Array.from(container.querySelectorAll(".channel-mention-menu button")).map((button) => button.textContent)).toEqual(["Beta"]);
+    act(() => textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(textarea?.value).toBe("@Beta ");
+    expect(container.querySelector(".channel-mention-menu")).toBeNull();
   });
 
   it("loads rooms, selects a room, and sends a human message", async () => {
@@ -315,6 +383,148 @@ describe("ChannelView", () => {
     expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
   });
 
+  it("groups adjacent messages from the same author without repeating identity", async () => {
+    const api = createApi();
+    api.listChannelMessages = vi.fn(async ({ room_id }) => ({
+      messages: [{
+        id: "message-1",
+        room_id,
+        seq: 1,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "First update",
+        created_at: "2026-07-23T00:00:00Z",
+      }, {
+        id: "message-2",
+        room_id,
+        seq: 2,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "Follow-up update",
+        created_at: "2026-07-23T00:00:30Z",
+      }, {
+        id: "message-3",
+        room_id,
+        seq: 3,
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "New speaker",
+        created_at: "2026-07-23T00:01:00Z",
+      }],
+    }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const renderedMessages = container.querySelectorAll<HTMLElement>(".channel-message-stream > .channel-message");
+    expect(renderedMessages).toHaveLength(3);
+    expect(renderedMessages[0].classList.contains("grouped")).toBe(false);
+    expect(renderedMessages[0].querySelector(".channel-agent-avatar")).not.toBeNull();
+    expect(renderedMessages[0].querySelector(".channel-author-mention")?.textContent).toBe("@Alpha");
+    expect(renderedMessages[1].classList.contains("grouped")).toBe(true);
+    expect(renderedMessages[1].querySelector(".channel-agent-avatar")).toBeNull();
+    expect(renderedMessages[1].querySelector(".channel-author-mention")).toBeNull();
+    expect(renderedMessages[2].classList.contains("grouped")).toBe(false);
+    expect(renderedMessages[2].querySelector(".channel-human-avatar")).not.toBeNull();
+  });
+
+  it("groups a thread root with its preceding author but starts a new group after the digest", async () => {
+    const api = createApi();
+    api.listChannelMessages = vi.fn(async ({ room_id }) => ({
+      messages: [{
+        id: "message-1",
+        room_id,
+        seq: 1,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "Before the thread",
+        created_at: "2026-07-23T00:00:00Z",
+      }, {
+        id: "message-2",
+        room_id,
+        seq: 2,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "Thread root",
+        created_at: "2026-07-23T00:00:30Z",
+      }, {
+        id: "reply-1",
+        room_id,
+        seq: 3,
+        thread_id: "message-2",
+        reply_to: "message-2",
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Thread reply 1",
+        created_at: "2026-07-23T00:00:45Z",
+      }, {
+        id: "reply-2",
+        room_id,
+        seq: 4,
+        thread_id: "message-2",
+        reply_to: "message-2",
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Thread reply 2",
+        created_at: "2026-07-23T00:00:46Z",
+      }, {
+        id: "reply-3",
+        room_id,
+        seq: 5,
+        thread_id: "message-2",
+        reply_to: "message-2",
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Thread reply 3",
+        created_at: "2026-07-23T00:00:47Z",
+      }, {
+        id: "reply-4",
+        room_id,
+        seq: 6,
+        thread_id: "message-2",
+        reply_to: "message-2",
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Thread reply 4",
+        created_at: "2026-07-23T00:00:48Z",
+      }, {
+        id: "message-3",
+        room_id,
+        seq: 7,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "After the thread",
+        created_at: "2026-07-23T00:01:00Z",
+      }],
+    }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const renderedMessages = container.querySelectorAll<HTMLElement>(".channel-message-stream > .channel-message");
+    expect(renderedMessages).toHaveLength(3);
+    expect(renderedMessages[0].classList.contains("grouped")).toBe(false);
+    expect(renderedMessages[1].classList.contains("grouped")).toBe(true);
+    const digest = renderedMessages[1].querySelector(".channel-thread-digest");
+    expect(digest?.textContent).toContain("4 条回复");
+    expect(digest?.querySelectorAll(".channel-thread-digest-row")).toHaveLength(3);
+    expect(digest?.textContent).not.toContain("Thread reply 1");
+    expect(digest?.textContent).toContain("Thread reply 2");
+    expect(renderedMessages[2].classList.contains("grouped")).toBe(false);
+  });
+
   it("opens a thread, keeps replies out of the room stream, and sends a direct reply", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
@@ -323,8 +533,8 @@ describe("ChannelView", () => {
     await settle();
 
     const digest = container.querySelector<HTMLButtonElement>(".channel-thread-digest");
-    expect(digest?.textContent).toContain("1 条回复");
-    expect(digest?.querySelector(".channel-thread-digest-heading svg")).toBeNull();
+    expect(digest?.textContent).not.toContain("1 条回复");
+    expect(digest?.querySelector(".channel-thread-digest-heading")).toBeNull();
     expect(digest?.textContent).toContain("Beta");
     expect(digest?.textContent).toContain("A threaded answer");
     expect(container.querySelector(".channel-message-stream > .channel-message")?.textContent).toContain("A threaded answer");
@@ -333,12 +543,20 @@ describe("ChannelView", () => {
     const panel = container.querySelector<HTMLElement>(".channel-thread-panel");
     expect(panel?.textContent).toContain("A threaded answer");
     expect(panel?.querySelector(".channel-thread-header")).toBeNull();
+    expect(panel?.querySelector(".channel-thread-close")).toBeNull();
+    const threadSeparator = panel?.querySelector<HTMLButtonElement>(".channel-thread-resizer");
+    expect(threadSeparator?.getAttribute("aria-valuenow")).toBe("420");
+    act(() => threadSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+    expect(threadSeparator?.getAttribute("aria-valuenow")).toBe("444");
+    expect(window.localStorage.getItem("wuu.channels.threadPanelWidth")).toBe("444");
     expect(panel?.querySelector(".composer-expand-button")).toBeNull();
+    const textarea = panel?.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => panel?.querySelector<HTMLButtonElement>('[aria-label="提及 Beta"]')?.click());
+    expect(textarea?.value).toBe("@Beta ");
     const replyActions = panel?.querySelectorAll<HTMLButtonElement>(".channel-message-actions button");
     act(() => replyActions?.item(replyActions.length - 1).click());
     expect(panel?.querySelector(".channel-thread-replying")?.textContent).toContain("Beta");
 
-    const textarea = panel?.querySelector<HTMLTextAreaElement>("textarea");
     act(() => setInputValue(textarea!, "Follow-up question"));
     await act(async () => panel?.querySelector<HTMLButtonElement>(".composer-send-button")?.click());
 
@@ -350,6 +568,10 @@ describe("ChannelView", () => {
       images: [],
       files: [],
     });
+
+    act(() => threadSeparator?.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 240 })));
+    expect(container.querySelector(".channel-thread-panel")).toBeNull();
   });
 
   it("collapses long agent messages and restores rich content on demand", async () => {
