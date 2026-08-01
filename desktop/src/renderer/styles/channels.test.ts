@@ -48,9 +48,15 @@ describe("channel member picker", () => {
 
     expect(search).toMatch(/border-bottom:\s*1px solid var\(--border-subtle\)/);
     expect(search).not.toMatch(/background:/);
+    expect(search).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) 16px/);
+    expect(search).toMatch(/gap:\s*9px/);
+    expect(search).toMatch(/padding:\s*0 8px/);
     expect(options).toMatch(/max-height:\s*132px/);
     expect(options).toMatch(/overflow-y:\s*auto/);
     expect(option).toMatch(/height:\s*43px/);
+    expect(option).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) 16px/);
+    expect(option).toMatch(/gap:\s*9px/);
+    expect(option).toMatch(/padding:\s*0 8px/);
     expect(option).toMatch(/background:\s*transparent/);
     expect(channelsCss).not.toContain(".channel-checkbox-row");
   });

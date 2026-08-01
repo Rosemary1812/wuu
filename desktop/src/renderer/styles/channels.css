@@ -1535,12 +1535,17 @@
 
 .channel-member-picker-search {
   height: 36px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   padding: 0 8px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
+}
+
+.channel-member-picker-search > svg {
+  justify-self: center;
 }
 
 .channel-member-picker-search input {
