@@ -318,6 +318,12 @@ func TestNamedAgentRunningWakeUsesPendingHeldTurn(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("named agent turn did not start")
 	}
+	var listed ChannelAgentListResult
+	callChannelRPC(t, server, server.out.(*lockedBuffer), MethodChannelAgentList, nil, &listed)
+	if len(listed.Agents) != 1 || listed.Agents[0].ActivityStatus != "thinking" ||
+		len(listed.Agents[0].ActivityRoomIDs) != 1 || listed.Agents[0].ActivityRoomIDs[0] != room.ID {
+		t.Fatalf("running named agent activity = %#v, want room %q", listed.Agents, room.ID)
+	}
 	if err := server.channelService.ClearWakeOnCheck(context.Background(), credential.Agent.ID); err != nil {
 		t.Fatalf("ClearWakeOnCheck() error = %v", err)
 	}

@@ -500,6 +500,7 @@ export type NamedAgent = {
   autostart: boolean;
   created_at: string;
   activity_status?: "idle" | "thinking";
+  activity_room_ids?: string[];
 };
 
 export type ChannelRoomMember = {

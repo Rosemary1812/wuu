@@ -473,8 +473,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     return agents
       .filter((agent) => roomAgentIDs.has(agent.id))
       .map((agent) => ({ agent, status: activityFor(agent) }))
-      .filter(({ status }) => status !== "idle");
-  }, [activityFor, agents, selectedRoom]);
+      .filter(({ agent, status }) => status === "sending"
+        || (status === "thinking" && agent.activity_room_ids?.includes(selectedRoomID)));
+  }, [activityFor, agents, selectedRoom, selectedRoomID]);
   const respondingAgentNames = useMemo(
     () => new Intl.ListFormat(locale, { style: "short", type: "conjunction" })
       .format(respondingAgents.map(({ agent }) => agent.name)),

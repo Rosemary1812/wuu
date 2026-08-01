@@ -29,6 +29,7 @@ func (s *Server) handleChannelAgentList(ctx context.Context, req Request) error 
 			agents[i].ActivityStatus = "idle"
 			if thread := s.thread(namedAgentSessionID(agents[i])); thread != nil && threadIsRunning(thread) {
 				agents[i].ActivityStatus = "thinking"
+				agents[i].ActivityRoomIDs = namedAgentActivityRoomIDs(thread)
 			}
 		}
 	}

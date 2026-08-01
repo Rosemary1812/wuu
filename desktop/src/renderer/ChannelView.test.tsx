@@ -21,6 +21,7 @@ const agents: NamedAgent[] = [
     autostart: true,
     created_at: "2026-07-23T00:00:00Z",
     activity_status: "thinking",
+    activity_room_ids: ["room-1"],
   },
   {
     id: "agent-2",
@@ -262,6 +263,21 @@ describe("ChannelView", () => {
     expect(status?.getAttribute("aria-label")).toBe("Alpha: 处理中");
     expect(status?.querySelectorAll(".channel-response-status-avatar")).toHaveLength(1);
     expect(status?.textContent).not.toContain("Beta");
+  });
+
+  it("does not show an agent responding in another room", async () => {
+    const crossRoomAgents = agents.map((agent) => agent.id === "agent-1"
+      ? { ...agent, activity_room_ids: ["room-2"] }
+      : agent);
+    const api = createApi();
+    api.bootstrapChannels = vi.fn(async () => ({ agents: crossRoomAgents, rooms }));
+    api.listNamedAgents = vi.fn(async () => ({ agents: crossRoomAgents }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    expect(container.querySelector(".channel-response-status")?.textContent).toBe("暂无 Agent 响应");
   });
 
   it("inserts and focuses a mention when an agent author name is clicked", async () => {

@@ -69,6 +69,7 @@ type NamedAgent struct {
 	Autostart        bool      `json:"autostart"`
 	CreatedAt        time.Time `json:"created_at"`
 	ActivityStatus   string    `json:"activity_status,omitempty"`
+	ActivityRoomIDs  []string  `json:"activity_room_ids,omitempty"`
 }
 
 type AgentCredential struct {

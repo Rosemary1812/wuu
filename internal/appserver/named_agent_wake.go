@@ -207,6 +207,11 @@ func (s *Server) newNamedAgentRuntime(threadID string, agent channels.NamedAgent
 }
 
 func (s *Server) startNamedAgentWakeLocked(agent channels.NamedAgent, th *threadState) error {
+	inbox, err := s.channelService.ListInbox(context.Background(), agent.ID, true)
+	if err != nil {
+		return err
+	}
+	roomIDs := distinctInboxRoomIDs(inbox)
 	permissions, err := s.resolveThreadTurnPermissions(th, nil)
 	if err != nil {
 		return err
@@ -232,6 +237,7 @@ func (s *Server) startNamedAgentWakeLocked(agent channels.NamedAgent, th *thread
 		}
 		return s.holdNamedAgentWake(th.ID, agent.ID)
 	}
+	setNamedAgentActivityRoomIDs(th, roomIDs)
 	launch, accepted := s.reserveBackground(func() {
 		s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
 		s.completeNamedAgentTurn(agent.ID)
@@ -242,6 +248,41 @@ func (s *Server) startNamedAgentWakeLocked(agent channels.NamedAgent, th *thread
 	defer launch.Cancel()
 	launch.Commit()
 	return nil
+}
+
+func distinctInboxRoomIDs(items []channels.InboxItem) []string {
+	seen := make(map[string]struct{}, len(items))
+	roomIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		roomID := strings.TrimSpace(item.RoomID)
+		if roomID == "" {
+			continue
+		}
+		if _, ok := seen[roomID]; ok {
+			continue
+		}
+		seen[roomID] = struct{}{}
+		roomIDs = append(roomIDs, roomID)
+	}
+	return roomIDs
+}
+
+func setNamedAgentActivityRoomIDs(th *threadState, roomIDs []string) {
+	if th == nil {
+		return
+	}
+	th.mu.Lock()
+	th.namedAgentRoomIDs = append(th.namedAgentRoomIDs[:0], roomIDs...)
+	th.mu.Unlock()
+}
+
+func namedAgentActivityRoomIDs(th *threadState) []string {
+	if th == nil {
+		return nil
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	return append([]string(nil), th.namedAgentRoomIDs...)
 }
 
 func (s *Server) completeNamedAgentTurn(agentID string) {

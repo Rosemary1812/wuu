@@ -94,6 +94,7 @@ type threadState struct {
 	activeSteerContextSet  bool
 	steerDocumentOverrides []activeDocumentOverride
 	interrupting           bool
+	namedAgentRoomIDs      []string
 	// Worker-tree freeze (turn/interrupt): while set, agent-completion drains
 	// hold their pending synthetic turns. The next user-initiated turn folds
 	// the whole-tree snapshot into its request (frozenTreeContext) and marks
