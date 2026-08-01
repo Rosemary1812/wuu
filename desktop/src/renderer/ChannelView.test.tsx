@@ -641,6 +641,8 @@ describe("ChannelView", () => {
     expect(document.querySelector('.channel-setup-form input[type="checkbox"]')).toBeNull();
     const agent = document.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
     act(() => agent?.click());
+    expect(agent?.getAttribute("aria-selected")).toBe("true");
+    expect(api.createChannelRoom).not.toHaveBeenCalled();
     const form = document.querySelector<HTMLFormElement>(".sidebar-name-dialog");
     await act(async () => form?.requestSubmit());
 
