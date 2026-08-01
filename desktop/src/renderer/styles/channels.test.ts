@@ -255,8 +255,8 @@ describe("channel mentions", () => {
     expect(mentionOption).toMatch(/grid-template-columns:\s*24px minmax\(0, 1fr\) minmax\(18px, auto\)/);
     expect(mentionOption).toMatch(/border-radius:\s*var\(--radius-sm\)/);
     expect(mentionHover).toMatch(/background:\s*var\(--menu-hover\)/);
-    expect(mentionSelected).toMatch(/background:\s*var\(--surface-2\)/);
-    expect(mentionSelected).toMatch(/box-shadow:\s*inset 2px 0 0 var\(--ink-soft\)/);
+    expect(mentionSelected).toMatch(/background:\s*var\(--menu-hover\)/);
+    expect(mentionSelected).not.toMatch(/box-shadow/);
   });
 });
 

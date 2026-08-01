@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -198,7 +199,7 @@ func TestNamedAgentIdentityIsIndependentAndTokenIsHashed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AuthenticateAgent() error = %v", err)
 	}
-	if got != credential.Agent {
+	if !reflect.DeepEqual(got, credential.Agent) {
 		t.Errorf("AuthenticateAgent() = %#v, want %#v", got, credential.Agent)
 	}
 	if _, err := service.AuthenticateAgent(context.Background(), credential.Agent.ID, "wrong"); !errors.Is(err, ErrUnauthorized) {
