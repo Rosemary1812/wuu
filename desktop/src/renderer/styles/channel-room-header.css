@@ -43,9 +43,20 @@
   padding: 1px 8px;
   white-space: nowrap;
 }
+/* The status widget's base rule comes from its old home (the pane bottom
+   bar), where `flex: 0 0 46px` meant a 46px-tall row. Inside the header's
+   horizontal flex that same basis becomes a 46px WIDTH and clips the copy
+   to just the avatar stack. Re-anchor it for the header: natural width,
+   no pane chrome. */
 .channel-room-header .channel-response-status {
   margin-left: auto;
+  flex: 0 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
   min-width: 0;
+  padding: 0;
+  border-top: 0;
 }
 .channel-room-header-actions {
   display: flex;
