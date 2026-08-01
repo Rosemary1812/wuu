@@ -323,7 +323,9 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    expect(container.querySelector(".channel-response-status")?.textContent).toBe("暂无 Agent 响应");
+    // Idle rooms show no status widget at all instead of a permanent
+    // "nothing happening" placeholder.
+    expect(container.querySelector(".channel-response-status")).toBeNull();
   });
 
   it("inserts and focuses a mention when an agent author name is clicked", async () => {

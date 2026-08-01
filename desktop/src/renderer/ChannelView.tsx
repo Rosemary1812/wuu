@@ -1027,40 +1027,31 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                 <h2>{selectedRoom.name}</h2>
                 <span className="channel-room-scope">{t("channels.globalScope")}</span>
               </div>
-              <div
-                className="channel-response-status"
-                role="status"
-                aria-live="polite"
-                aria-label={respondingAgents.length > 0
-                  ? respondingAgents.map(({ agent, status }) => `${agent.name}: ${activityText(status)}`).join(", ")
-                  : undefined}
-              >
-                {respondingAgents.length > 0 ? (
-                  <>
-                    <span className="channel-response-status-avatars" aria-hidden="true">
-                      {respondingAgents.slice(0, 3).map(({ agent, status }) => (
-                        <span className="channel-response-status-avatar" key={agent.id}>
-                          <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
-                          <i className={`channel-response-status-dot ${status}`} />
-                        </span>
-                      ))}
-                    </span>
-                    <span className="channel-response-status-copy">
-                      <strong>{respondingAgentNames}</strong>
-                      <span>
-                        {respondingAgents.length === 1
-                          ? activityText(respondingAgents[0].status)
-                          : t("channels.agentsResponding", { count: respondingAgents.length })}
+              {respondingAgents.length > 0 ? (
+                <div
+                  className="channel-response-status"
+                  role="status"
+                  aria-live="polite"
+                  aria-label={respondingAgents.map(({ agent, status }) => `${agent.name}: ${activityText(status)}`).join(", ")}
+                >
+                  <span className="channel-response-status-avatars" aria-hidden="true">
+                    {respondingAgents.slice(0, 3).map(({ agent, status }) => (
+                      <span className="channel-response-status-avatar" key={agent.id}>
+                        <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
+                        <i className={`channel-response-status-dot ${status}`} />
                       </span>
-                    </span>
-                  </>
-                ) : (
-                  <span className="channel-response-status-empty">
-                    <i aria-hidden="true" />
-                    {t("channels.noAgentsResponding")}
+                    ))}
                   </span>
-                )}
-              </div>
+                  <span className="channel-response-status-copy">
+                    <strong>{respondingAgentNames}</strong>
+                    <span>
+                      {respondingAgents.length === 1
+                        ? activityText(respondingAgents[0].status)
+                        : t("channels.agentsResponding", { count: respondingAgents.length })}
+                    </span>
+                  </span>
+                </div>
+              ) : null}
               <div className="channel-room-header-actions">
                 <button
                   className="icon-button"
