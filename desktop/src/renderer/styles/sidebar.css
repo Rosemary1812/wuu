@@ -807,8 +807,11 @@
   white-space: nowrap;
 }
 
-/* 协作 section rows reuse the .thread-row anatomy (32px height, hover,
- * active states) but drop the toggle column: icon | name | unread badge. */
+/* 协作 section rows reuse the full session-row anatomy
+ * (.sidebar-session-row + .thread-row-main + .thread-row-title: 30px height,
+ * vertical centering, hover/active states all inherited) and only add a
+ * trailing column for the unread badge. Second-level items carry no icon:
+ * the empty status column keeps their text on the session title axis. */
 .sidebar-collab-list {
   display: grid;
   gap: 1px;
@@ -816,22 +819,9 @@
 
 .sidebar-room-row {
   grid-template-columns:
-    var(--sidebar-tree-icon-col)
+    var(--sidebar-session-status-col)
     minmax(0, 1fr)
     auto;
-}
-
-.sidebar-room-icon {
-  grid-column: 1;
-  justify-self: center;
-}
-
-.sidebar-room-name {
-  grid-column: 2;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .sidebar-room-row .channel-room-unread {

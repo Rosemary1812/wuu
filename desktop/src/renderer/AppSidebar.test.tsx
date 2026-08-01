@@ -312,10 +312,34 @@ describe("AppSidebar 协作 section", () => {
     expect(roomRows).toHaveLength(2);
     // Active room is in the canvas — its badge is intentionally absent.
     expect(roomRows[0]?.querySelector(".channel-room-unread")).toBeNull();
-    expect(roomRows[0]?.getAttribute("aria-current")).toBe("page");
+    expect(roomRows[0]?.querySelector(".thread-row-main")?.getAttribute("aria-current")).toBe("page");
     expect(
       roomRows[1]?.querySelector(".channel-room-unread")?.textContent,
     ).toBe("99+");
+  });
+
+  it("reuses the session-row anatomy for second-level rows", () => {
+    renderSidebar({
+      groupChatEnabled: true,
+      channelRooms: [collabRoom("room-1", "产品体验")],
+    });
+
+    // Same outer/inner structure as session rows: height, vertical
+    // centering, hover/active and title truncation all come from the shared
+    // .sidebar-session-row + .thread-row-main + .thread-row-title classes.
+    const row = container.querySelector(".sidebar-room-row");
+    expect(row?.classList.contains("thread-row")).toBe(true);
+    expect(row?.classList.contains("sidebar-session-row")).toBe(true);
+    expect(row?.querySelector(".thread-row-main > .thread-row-title")?.textContent).toBe("产品体验");
+    // Second-level items carry no icon of their own.
+    expect(row?.querySelector("svg")).toBeNull();
+
+    // The row override only adds the badge column; height and centering must
+    // stay owned by the shared session-row rules.
+    const roomRowRule = sidebarCSS.match(/\.sidebar-room-row\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(roomRowRule).not.toMatch(/height|align-items|padding/);
+    expect(sidebarCSS).toMatch(/\.sidebar-session-row\s*\{[^}]*height:\s*30px/);
+    expect(sidebarCSS).toMatch(/\.thread-row-main\s*\{[^}]*align-items:\s*center/);
   });
 
   it("selects a room through the provided handler", () => {
@@ -326,32 +350,48 @@ describe("AppSidebar 协作 section", () => {
       onSelectChannelRoom: (roomID) => selections.push(roomID),
     });
 
-    const row = container.querySelector<HTMLButtonElement>(".sidebar-room-row");
+    const row = container.querySelector<HTMLButtonElement>(".sidebar-room-row .thread-row-main");
     act(() => row?.click());
 
     expect(selections).toEqual(["room-1"]);
   });
 
-  it("opens the agents and tasks canvases and marks the active one", () => {
+  it("opens the tasks canvas from the 协作 section and marks it active", () => {
     let opened = "";
     renderSidebar({
       groupChatEnabled: true,
       activeChannelSection: "tasks",
-      onOpenChannelAgents: () => { opened = "agents"; },
       onOpenChannelTasks: () => { opened = "tasks"; },
     });
 
-    const entries = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".sidebar-collab-entry"),
+    const entry = container.querySelector<HTMLButtonElement>(
+      ".sidebar-collab-entry .thread-row-main",
     );
-    expect(entries).toHaveLength(2);
-    expect(entries[0]?.getAttribute("aria-current")).toBeNull();
-    expect(entries[1]?.getAttribute("aria-current")).toBe("page");
+    expect(entry?.getAttribute("aria-current")).toBe("page");
 
-    act(() => entries[0]?.click());
-    expect(opened).toBe("agents");
-    act(() => entries[1]?.click());
+    act(() => entry?.click());
     expect(opened).toBe("tasks");
+  });
+
+  it("offers Agents as a top-level nav item next to 自动化 and 技能", () => {
+    let opened = "";
+    renderSidebar({
+      groupChatEnabled: true,
+      activeChannelSection: "agents",
+      onOpenChannelAgents: () => { opened = "agents"; },
+    });
+
+    // Global agents live in the primary nav, not under 协作: an agent is a
+    // workspace-wide actor, not a leaf of any single room group.
+    const agentsNav = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".nav-item"),
+    ).find((item) => item.textContent === "Agents");
+    expect(agentsNav).not.toBeNull();
+    expect(agentsNav?.getAttribute("aria-current")).toBe("page");
+    expect(container.querySelector(".sidebar-collab-list")?.textContent).not.toContain("Agents");
+
+    act(() => agentsNav?.click());
+    expect(opened).toBe("agents");
   });
 
   it("surfaces the aggregate unread dot on the collapsed section header", () => {

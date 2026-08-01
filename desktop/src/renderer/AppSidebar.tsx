@@ -2,7 +2,6 @@ import {
   AlarmClock,
   Archive,
   ChevronRight,
-  ClipboardList,
   Clock,
   CornerDownRight,
   FileText,
@@ -489,6 +488,18 @@ export function AppSidebar({
             <Search className="icon-lg" />
             <span>{t("sidebar.searchConversations")}</span>
           </button>
+          {groupChatEnabled ? (
+            <button
+              className="nav-item"
+              type="button"
+              aria-current={activeChannelSection === "agents" ? "page" : undefined}
+              onClick={onOpenChannelAgents}
+              disabled={!state.initialized}
+            >
+              <UsersRound className="icon-lg" />
+              <span>{t("channels.agents")}</span>
+            </button>
+          ) : null}
           <button
             className="nav-item"
             onClick={onOpenAutomationsTab}
@@ -634,15 +645,18 @@ export function AppSidebar({
                         const isActiveRoom = room.id === activeChannelRoomID;
                         const unread = room.unread_count ?? 0;
                         return (
-                          <button
+                          <div
                             key={room.id}
-                            className={`thread-row sidebar-room-row${isActiveRoom ? " active" : ""}`}
-                            type="button"
-                            aria-current={isActiveRoom ? "page" : undefined}
-                            onClick={() => onSelectChannelRoom?.(room.id)}
+                            className={`thread-row sidebar-session-row sidebar-room-row${isActiveRoom ? " active" : ""}`}
                           >
-                            <Hash className="icon sidebar-room-icon" aria-hidden="true" />
-                            <span className="sidebar-room-name">{room.name}</span>
+                            <button
+                              className="thread-row-main"
+                              type="button"
+                              aria-current={isActiveRoom ? "page" : undefined}
+                              onClick={() => onSelectChannelRoom?.(room.id)}
+                            >
+                              <span className="thread-row-title">{room.name}</span>
+                            </button>
                             {!isActiveRoom && unread > 0 ? (
                               <span
                                 className="channel-room-unread"
@@ -651,27 +665,21 @@ export function AppSidebar({
                                 {formatChannelUnreadCount(unread)}
                               </span>
                             ) : null}
-                          </button>
+                          </div>
                         );
                       })}
-                      <button
-                        className={`thread-row sidebar-room-row sidebar-collab-entry${activeChannelSection === "agents" ? " active" : ""}`}
-                        type="button"
-                        aria-current={activeChannelSection === "agents" ? "page" : undefined}
-                        onClick={onOpenChannelAgents}
+                      <div
+                        className={`thread-row sidebar-session-row sidebar-room-row sidebar-collab-entry${activeChannelSection === "tasks" ? " active" : ""}`}
                       >
-                        <UsersRound className="icon sidebar-room-icon" aria-hidden="true" />
-                        <span className="sidebar-room-name">{t("channels.agents")}</span>
-                      </button>
-                      <button
-                        className={`thread-row sidebar-room-row sidebar-collab-entry${activeChannelSection === "tasks" ? " active" : ""}`}
-                        type="button"
-                        aria-current={activeChannelSection === "tasks" ? "page" : undefined}
-                        onClick={onOpenChannelTasks}
-                      >
-                        <ClipboardList className="icon sidebar-room-icon" aria-hidden="true" />
-                        <span className="sidebar-room-name">{t("channels.tasks")}</span>
-                      </button>
+                        <button
+                          className="thread-row-main"
+                          type="button"
+                          aria-current={activeChannelSection === "tasks" ? "page" : undefined}
+                          onClick={onOpenChannelTasks}
+                        >
+                          <span className="thread-row-title">{t("channels.tasks")}</span>
+                        </button>
+                      </div>
                     </div>
                   </SidebarSection>
                 </div>
