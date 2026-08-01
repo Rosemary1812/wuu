@@ -263,13 +263,13 @@ describe("channel mentions", () => {
 describe("channel long agent messages", () => {
   it("stacks a bounded preview and an explicit expand control", () => {
     const card = ruleFor(".channel-message-bubble.long-card");
-    const preview = ruleFor(".channel-message-raw-query");
+    const preview = ruleFor(".channel-message-bubble.long-card.collapsed .rich-content");
     const toggle = ruleFor(".channel-message-expand-toggle");
 
     expect(card).toMatch(/display:\s*flex/);
     expect(card).toMatch(/flex-direction:\s*column/);
-    expect(preview).toMatch(/white-space:\s*pre-wrap/);
-    expect(preview).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(preview).toMatch(/max-height:\s*20\.3em/);
+    expect(preview).toMatch(/overflow:\s*hidden/);
     expect(toggle).toMatch(/align-self:\s*flex-start/);
     expect(toggle).toMatch(/background:\s*transparent/);
   });

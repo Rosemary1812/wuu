@@ -646,7 +646,7 @@ describe("ChannelView", () => {
 
   it("collapses long agent messages and restores rich content on demand", async () => {
     const api = createApi();
-    const longBody = `${Array.from({ length: 16 }, (_, index) => `Line ${index + 1}`).join("\n")}\n**Final detail**`;
+    const longBody = `**First detail**\n${Array.from({ length: 16 }, (_, index) => `Line ${index + 1}`).join("\n")}\n**Final detail**`;
     api.listChannelMessages = vi.fn(async () => ({
       messages: [{
         id: "long-message",
@@ -667,13 +667,14 @@ describe("ChannelView", () => {
     const bubble = container.querySelector(".channel-message-bubble.long-card");
     const toggle = bubble?.querySelector<HTMLButtonElement>(".channel-message-expand-toggle");
     expect(bubble?.classList.contains("collapsed")).toBe(true);
-    expect(bubble?.textContent).not.toContain("Final detail");
+    expect(bubble?.querySelector(".channel-message-raw-query")).toBeNull();
+    expect(Array.from(bubble?.querySelectorAll("strong") ?? []).map((node) => node.textContent)).toEqual(["First detail", "Final detail"]);
     expect(toggle?.textContent).toContain("显示更多");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
 
     act(() => toggle?.click());
     expect(bubble?.classList.contains("expanded")).toBe(true);
-    expect(bubble?.querySelector("strong")?.textContent).toBe("Final detail");
+    expect(Array.from(bubble?.querySelectorAll("strong") ?? []).at(-1)?.textContent).toBe("Final detail");
     expect(toggle?.textContent).toContain("收起");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
   });
@@ -713,7 +714,8 @@ describe("ChannelView", () => {
     const panel = container.querySelector(".channel-thread-panel");
     const replyBubble = panel?.querySelector(".channel-thread-message.agent .channel-message-bubble.long-card");
     expect(replyBubble?.classList.contains("collapsed")).toBe(true);
-    expect(replyBubble?.textContent).not.toContain("Thread line 16");
+    expect(replyBubble?.querySelector(".rich-content")).not.toBeNull();
+    expect(replyBubble?.querySelector(".channel-message-raw-query")).toBeNull();
     expect(replyBubble?.querySelector(".channel-message-expand-toggle")?.textContent).toContain("显示更多");
   });
 
@@ -1065,6 +1067,59 @@ describe("ChannelView", () => {
       room_id: "room-1",
       title: "Investigate flaky build",
       owner_id: "agent-1",
+    });
+  });
+
+  it("cascades task owner choices from the selected room", async () => {
+    const scopedRooms: ChannelRoom[] = [
+      {
+        ...rooms[0],
+        members: [rooms[0].members[0]],
+      },
+      {
+        ...rooms[1],
+        members: [{
+          room_id: "room-2",
+          member_type: "agent",
+          member_id: "agent-2",
+          joined_at: "2026-07-23T00:00:00Z",
+        }],
+      },
+    ];
+    const api = createApi();
+    api.bootstrapChannels = vi.fn(async () => ({ agents, rooms: scopedRooms }));
+    api.listChannelRooms = vi.fn(async () => ({ rooms: scopedRooms }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="tasks" />));
+    await settle();
+
+    act(() => container.querySelector<HTMLButtonElement>(".channel-management-primary")?.click());
+    const roomSelect = document.querySelector<HTMLButtonElement>('button[aria-label="频道"]');
+    const ownerSelect = document.querySelector<HTMLButtonElement>('button[aria-label="负责人"]');
+    expect(roomSelect?.textContent).toContain("general");
+    expect(ownerSelect?.textContent).toContain("Alpha");
+
+    act(() => roomSelect?.click());
+    const researchOption = document.querySelector<HTMLButtonElement>('[role="menuitemradio"][data-value="room-2"]');
+    act(() => researchOption?.click());
+    await settle();
+
+    expect(ownerSelect?.textContent).toContain("Beta");
+    act(() => ownerSelect?.click());
+    expect(document.querySelector('[role="menuitemradio"][data-value="agent-2"]')).not.toBeNull();
+    expect(document.querySelector('[role="menuitemradio"][data-value="agent-1"]')).toBeNull();
+    act(() => ownerSelect?.click());
+
+    const title = document.querySelector<HTMLInputElement>(".channel-setup-form input");
+    act(() => setInputValue(title!, "Review research"));
+    await act(async () => document.querySelector<HTMLFormElement>(".sidebar-name-dialog")?.requestSubmit());
+
+    expect(api.createChannelTask).toHaveBeenCalledWith({
+      room_id: "room-2",
+      title: "Review research",
+      owner_id: "agent-2",
     });
   });
 });

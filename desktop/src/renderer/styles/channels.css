@@ -789,11 +789,9 @@
   flex-direction: column;
 }
 
-.channel-message-raw-query {
-  min-width: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+.channel-message-bubble.long-card.collapsed .rich-content {
+  max-height: 20.3em;
+  overflow: hidden;
 }
 
 .channel-message-expand-toggle {

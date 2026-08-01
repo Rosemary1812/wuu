@@ -20,7 +20,7 @@ import {
 } from "./ComposerMessages";
 import { useI18n } from "./i18n";
 import { JumpToLatestPill } from "./JumpToLatestPill";
-import { collapsedLongTextPreview, useLongTextCollapse } from "./LongTextCollapse";
+import { useLongTextCollapse } from "./LongTextCollapse";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { RichContent } from "./RichContent";
@@ -178,16 +178,10 @@ function ChannelMessageBody({
   const { t } = useI18n();
   const { collapsible, expanded, toggleExpanded } = useLongTextCollapse(text);
   const canCollapse = allowCollapse && collapsible;
-  const collapsed = canCollapse && !expanded;
-  const displayedText = collapsed ? collapsedLongTextPreview(text) : text;
 
   return (
     <div className={`channel-message-bubble${canCollapse ? ` long-card ${expanded ? "expanded" : "collapsed"}` : ""}`}>
-      {collapsed ? (
-        <div className="channel-message-raw-query">{displayedText}</div>
-      ) : (
-        <RichContent text={displayedText} />
-      )}
+      <RichContent text={text} />
       {canCollapse ? (
         <button
           className="channel-message-expand-toggle"
@@ -436,6 +430,26 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     );
     return agents.filter((agent) => memberIDs.has(agent.id));
   }, [agents, selectedRoom]);
+  const taskRoom = useMemo(
+    () => rooms.find((room) => room.id === (taskRoomID || selectedRoomID)),
+    [rooms, selectedRoomID, taskRoomID],
+  );
+  const taskOwnerAgents = useMemo(() => {
+    const memberIDs = new Set(
+      taskRoom?.members
+        .filter((member) => member.member_type === "agent")
+        .map((member) => member.member_id) ?? [],
+    );
+    return agents.filter((agent) => memberIDs.has(agent.id));
+  }, [agents, taskRoom]);
+  useEffect(() => {
+    if (setupPanel !== "task") return;
+    setTaskOwnerID((current) => (
+      taskOwnerAgents.some((agent) => agent.id === current)
+        ? current
+        : (taskOwnerAgents[0]?.id ?? "")
+    ));
+  }, [setupPanel, taskOwnerAgents]);
   const messageByID = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -1393,10 +1407,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             <button
               className="channel-management-primary"
               type="button"
-              disabled={!selectedRoom || agents.length === 0}
+              disabled={!selectedRoom || selectedRoomAgents.length === 0}
               onClick={() => {
                 setTaskRoomID(selectedRoomID || rooms[0]?.id || "");
-                setTaskOwnerID(agents[0]?.id ?? "");
+                setTaskOwnerID(selectedRoomAgents[0]?.id ?? "");
                 setSetupPanel("task");
               }}
             >
@@ -1643,7 +1657,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
         content={<div className="channel-setup-form">
           <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.taskTitle")}</span><input className="sidebar-name-dialog-input" value={taskTitle} onChange={(event) => setTaskTitle(event.currentTarget.value)} autoFocus /></label>
           <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.taskRoomLabel")}</span><SelectMenu value={taskRoomID || selectedRoomID} onChange={setTaskRoomID} options={rooms.map((room) => ({ value: room.id, label: `# ${room.name}` }))} ariaLabel={t("channels.taskRoomLabel")} flip /></label>
-          <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.taskOwnerLabel")}</span><SelectMenu value={taskOwnerID} onChange={setTaskOwnerID} options={agents.map((agent) => ({ value: agent.id, label: agent.name }))} ariaLabel={t("channels.taskOwnerLabel")} flip /></label>
+          <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.taskOwnerLabel")}</span><SelectMenu value={taskOwnerID} onChange={setTaskOwnerID} options={taskOwnerAgents.map((agent) => ({ value: agent.id, label: agent.name }))} ariaLabel={t("channels.taskOwnerLabel")} flip /></label>
         </div>}
       />
     </section>
