@@ -154,8 +154,10 @@ export const ChannelComposer = forwardRef<ChannelComposerHandle, {
               className={index === selectedMentionIndex ? "selected" : ""}
               type="button"
               role="option"
+              aria-label={agent.name}
               aria-selected={index === selectedMentionIndex}
               key={agent.id}
+              onMouseEnter={() => setSelectedMentionIndex(index)}
               onMouseDown={(event) => event.preventDefault()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -163,7 +165,11 @@ export const ChannelComposer = forwardRef<ChannelComposerHandle, {
               }}
             >
               <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
-              <span>{agent.name}</span>
+              <span className="channel-mention-name">{agent.name}</span>
+              <span className="channel-mention-meta" aria-hidden="true">
+                {agent.model_override ? <span className="channel-mention-model">{agent.model_override}</span> : null}
+                <kbd className="channel-mention-key">↵</kbd>
+              </span>
             </button>
           )) : <span className="channel-mention-menu-empty">{t("channels.noMatchingAgents")}</span>}
         </div>

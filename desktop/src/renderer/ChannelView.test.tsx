@@ -286,6 +286,12 @@ describe("ChannelView", () => {
 
   it("opens and filters the member picker when typing @", async () => {
     const api = createApi();
+    const mentionAgents = [agents[0], { ...agents[1], model_override: "gpt-5.3-codex" }];
+    api.bootstrapChannels = vi.fn(async () => ({
+      agents: mentionAgents,
+      rooms,
+    }));
+    api.listNamedAgents = vi.fn(async () => ({ agents: mentionAgents }));
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       callback(0);
       return 1;
@@ -297,20 +303,22 @@ describe("ChannelView", () => {
 
     const textarea = container.querySelector<HTMLTextAreaElement>(".channel-conversation-footer textarea");
     act(() => setInputValue(textarea!, "@"));
-    expect(Array.from(container.querySelectorAll(".channel-mention-menu button")).map((button) => button.textContent)).toEqual(["Alpha", "Beta"]);
+    expect(Array.from(container.querySelectorAll(".channel-mention-name")).map((name) => name.textContent)).toEqual(["Alpha", "Beta"]);
+    expect(container.querySelector(".channel-mention-model")?.textContent).toBe("gpt-5.3-codex");
+    expect(container.querySelector(".channel-mention-menu button.selected .channel-mention-key")?.textContent).toBe("↵");
     act(() => {
       textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
       textarea?.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowDown", bubbles: true }));
     });
-    expect(container.querySelector(".channel-mention-menu button.selected")?.textContent).toBe("Beta");
+    expect(container.querySelector(".channel-mention-menu button.selected .channel-mention-name")?.textContent).toBe("Beta");
     act(() => {
       textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
       textarea?.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowUp", bubbles: true }));
     });
-    expect(container.querySelector(".channel-mention-menu button.selected")?.textContent).toBe("Alpha");
+    expect(container.querySelector(".channel-mention-menu button.selected .channel-mention-name")?.textContent).toBe("Alpha");
 
     act(() => setInputValue(textarea!, "@Be"));
-    expect(Array.from(container.querySelectorAll(".channel-mention-menu button")).map((button) => button.textContent)).toEqual(["Beta"]);
+    expect(Array.from(container.querySelectorAll(".channel-mention-name")).map((name) => name.textContent)).toEqual(["Beta"]);
     act(() => textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
     expect(textarea?.value).toBe("@Beta ");
     expect(container.querySelector(".channel-mention-menu")).toBeNull();

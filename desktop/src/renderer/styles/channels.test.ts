@@ -224,11 +224,30 @@ describe("channel mentions", () => {
     const author = ruleFor(".channel-author-mention");
     const authorHover = ruleFor(".channel-author-mention:hover,\n.channel-author-mention:focus-visible");
     const mentionMenu = ruleFor(".channel-mention-menu");
+    const mentionOption = ruleFor(".channel-mention-menu button");
+    const mentionHover = ruleFor(".channel-mention-menu button:hover");
+    const mentionSelected = ruleFor(".channel-mention-menu button.selected");
 
     expect(author).toMatch(/cursor:\s*pointer/);
     expect(authorHover).toMatch(/color:\s*#2563eb/);
     expect(mentionMenu).toMatch(/max-height:\s*240px/);
     expect(mentionMenu).toMatch(/overflow-y:\s*auto/);
+    expect(mentionMenu).toMatch(/min-width:\s*min\(220px/);
+    expect(mentionMenu).toMatch(/max-width:\s*min\(320px/);
+    expect(mentionMenu).toMatch(/gap:\s*1px/);
+    expect(mentionMenu).toMatch(/padding:\s*6px/);
+    expect(mentionMenu).toMatch(/border:\s*1px solid var\(--menu-border\)/);
+    expect(mentionMenu).toMatch(/border-radius:\s*var\(--menu-radius\)/);
+    expect(mentionMenu).toMatch(/background:\s*var\(--menu-bg\)/);
+    expect(mentionMenu).toMatch(/box-shadow:\s*var\(--menu-shadow\)/);
+    expect(mentionMenu).toMatch(/backdrop-filter:\s*blur\(16px\)/);
+    expect(mentionMenu).toMatch(/animation:\s*menu-enter/);
+    expect(mentionOption).toMatch(/height:\s*34px/);
+    expect(mentionOption).toMatch(/grid-template-columns:\s*24px minmax\(0, 1fr\) minmax\(18px, auto\)/);
+    expect(mentionOption).toMatch(/border-radius:\s*var\(--radius-sm\)/);
+    expect(mentionHover).toMatch(/background:\s*var\(--menu-hover\)/);
+    expect(mentionSelected).toMatch(/background:\s*var\(--surface-2\)/);
+    expect(mentionSelected).toMatch(/box-shadow:\s*inset 2px 0 0 var\(--ink-soft\)/);
   });
 });
 
