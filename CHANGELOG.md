@@ -8,6 +8,32 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.13.1-nightly.2] - 2026-08-01
+
+### Added
+
+- Added agent activity snapshots to the collaboration graph: hovering an agent
+  shows its effective model, recent attributable file changes, language mix,
+  and token usage.
+- Added persisted unread counts to the channel list.
+
+### Changed
+
+- Simplified the agent preview card and mention selection styling to a quiet,
+  flat treatment.
+- Grouped nearby consecutive channel messages from the same author under one
+  identity header.
+
+### Fixed
+
+- Accepted large attachment requests so sending multiple images no longer
+  fails silently.
+- Preserved Markdown rendering in collapsed long channel messages.
+- Disabled runtime slash commands in channel composers.
+- Cascaded task owner candidates to the selected room's agent members.
+- Scoped agent response status to its room, and kept the mention picker,
+  avatar validation, and room setup controls aligned.
+
 ## [0.13.1-nightly.1] - 2026-08-01
 
 ### Changed
