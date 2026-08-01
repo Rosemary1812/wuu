@@ -2884,6 +2884,15 @@ func TestServerConfigCodexModels(t *testing.T) {
 	rt.StreamRunner.Model = "gpt-5.5"
 	rt.StreamRunner.Effort = "xhigh"
 
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	defer func() {
+		select {
+		case <-releaseRequest:
+		default:
+			close(releaseRequest)
+		}
+	}()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/models" {
 			t.Fatalf("path = %q, want /models", r.URL.Path)
@@ -2891,6 +2900,8 @@ func TestServerConfigCodexModels(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Fatalf("Authorization = %q", got)
 		}
+		close(requestStarted)
+		<-releaseRequest
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 		  "models": [
@@ -2926,6 +2937,19 @@ func TestServerConfigCodexModels(t *testing.T) {
 	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/codex/models"}`)); err != nil {
 		t.Fatalf("config/codex/models: %v", err)
 	}
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Codex model request did not start")
+	}
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"update-while-loading","method":"config/model/update","params":{"provider":"openai-codex","model":"gpt-5.5","variant":"xhigh"}}`)); err != nil {
+		t.Fatalf("config/model/update while models load: %v", err)
+	}
+	if responseByID(t, parseOutput(t, out.String()), "update-while-loading")["result"] == nil {
+		t.Fatal("model update was blocked behind Codex model discovery")
+	}
+	close(releaseRequest)
+	srv.backgroundWG.Wait()
 
 	result := remarshal[ConfigCodexModelsResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
 	if result.Provider != "openai-codex" || result.Model != "gpt-5.5" || result.Effort != "xhigh" {

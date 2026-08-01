@@ -767,7 +767,18 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 	case MethodConfigGeneralUpdate:
 		return s.handleConfigGeneralUpdate(req)
 	case MethodConfigCodexModels:
-		return s.handleConfigCodexModels(ctx, req)
+		// Model discovery performs an external Codex request. Keep it off the
+		// serial stdio dispatch loop so unrelated local mutations, especially a
+		// model selection made from the same menu, are not queued behind network
+		// latency. Response writes and the model cache are independently locked.
+		if !s.startBackground(func() {
+			if err := s.handleConfigCodexModels(ctx, req); err != nil {
+				log.Printf("wuu: config/codex/models: %v", err)
+			}
+		}) {
+			return s.writeResponse(req.ID, nil, errServerClosed)
+		}
+		return nil
 	case MethodConfigProviderRemove:
 		return s.handleConfigProviderRemove(req)
 	case MethodSkillList:

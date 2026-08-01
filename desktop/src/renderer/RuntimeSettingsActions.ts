@@ -470,23 +470,6 @@ export function createRuntimeSettingsActions(
         error: "",
         models: result.models,
       });
-      deps.setAppState((current) => {
-        if (
-          !current.initialized ||
-          current.initialized.provider !== result.provider
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          initialized: {
-            ...current.initialized,
-            model: result.model,
-            effort: result.effort ?? "",
-            variant: result.variant ?? "",
-          },
-        };
-      });
     } catch (error) {
       deps.setCodexModels({
         provider,

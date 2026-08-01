@@ -598,7 +598,7 @@ describe("createRuntimeSettingsActions", () => {
     expect(api.updateAdvancedSettings).toHaveBeenCalledTimes(1);
   });
 
-  it("loads Codex models once and patches the active initialized model", async () => {
+  it("loads Codex models once without rewriting the active selection", async () => {
     const api = installWuuApi();
     const harness = buildActions();
 
@@ -609,7 +609,7 @@ describe("createRuntimeSettingsActions", () => {
     expect(harness.getCodexModels().models).toEqual([
       { slug: "gpt-5.1", supported_in_api: true },
     ]);
-    expect(harness.getAppState().initialized?.model).toBe("gpt-5.1");
+    expect(harness.getAppState().initialized?.model).toBe("gpt-5");
   });
 
   it("toggles the Codex runtime menu and closes sibling menus", () => {
