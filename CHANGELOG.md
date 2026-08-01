@@ -8,6 +8,23 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-01
+
+### Added
+
+- Added a desktop Automations center with workspace-bound creation,
+  project-bound tasks, friendly schedule controls, and a responsive resizable
+  detail pane.
+- Expanded group chat with room renaming and dissolution, dynamic group
+  avatars, a dedicated room details sidebar, a searchable member picker, and a
+  continuously arranged collaboration graph.
+- Added richer channel conversations with current-room `@` mentions, active
+  Agent response status, compact consecutive messages, reply previews, and a
+  resizable thread panel.
+- Added searchable localized time zones, unified hover tooltips, an embedded
+  browser proxy, and confirmable AI-generated commit messages to the desktop
+  app.
+
 ### Changed
 
 - `unconfined` permission mode now lifts only the path boundary and keeps a
@@ -31,6 +48,11 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 - Slash command rows now lead with the command to type (`/review`) and carry a
   short summary beside it, so built-in commands and skills read the same way.
+
+- Subagent wake and completion updates now merge into quieter turn-level groups
+  so delegated work stays readable without fragmenting the conversation.
+- Channel and automation catalog layouts now share a denser, more consistent
+  reading axis and simpler detail surfaces.
 
 ### Removed
 
@@ -59,6 +81,14 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 - Fixed a white screen on the Automations tab when no automation records
   existed, caused by the Go app-server returning `null` for an empty task list
   while the renderer called `.some()` on it.
+- Fixed interrupted and replayed subagent completion handling, stale child
+  status after restart, and several orchestration recovery paths.
+- Fixed Codex model discovery blocking or overwriting a model selection made
+  while the model list was still loading.
+- Fixed channel composer, status, member-picker, message-flow, and empty-room
+  layout regressions across narrow and resized views.
+- Fixed paused automation drafts, responsive automation details, stale preload
+  settings, off-screen desktop menus, and unclickable toast actions.
 
 ## [0.12.2] - 2026-07-25
 
