@@ -882,6 +882,11 @@ describe("ChannelView", () => {
     const newRoomButton = container.querySelector<HTMLButtonElement>('button[aria-label="新建频道"]');
     act(() => newRoomButton?.click());
     expect(document.querySelector(".channel-setup-form select")).toBeNull();
+    const avatarPreview = document.querySelector<HTMLButtonElement>(".channel-room-avatar-preview");
+    const avatarMedia = avatarPreview?.querySelector(".channel-room-avatar-media");
+    expect(avatarMedia?.querySelector(".channel-group-avatar-grid, .channel-group-avatar-image")).not.toBeNull();
+    expect(avatarMedia?.querySelector(".channel-room-avatar-badge")?.getAttribute("aria-hidden")).toBe("true");
+    expect(avatarPreview?.querySelector(".channel-room-avatar-label")?.textContent).toBe("自定义群头像");
     const name = document.querySelector<HTMLInputElement>('.channel-setup-form input:not([type])');
     act(() => setInputValue(name!, "review"));
     expect(document.querySelector('.channel-setup-form input[type="checkbox"]')).toBeNull();

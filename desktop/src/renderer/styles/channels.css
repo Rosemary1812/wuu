@@ -1537,6 +1537,16 @@
 }
 
 .channel-setup-form {
+  --bg-primary: var(--paper);
+  --bg-secondary: var(--surface-1);
+  --surface-raised: var(--surface-2);
+  --surface-hover: var(--surface-2);
+  --border-subtle: var(--hairline);
+  --border-default: var(--hairline-strong);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-tertiary: var(--ink-tertiary);
+
   display: grid;
   gap: 14px;
 }
@@ -1751,14 +1761,15 @@
 .channel-member-picker-control {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
 }
 
 .channel-member-picker-search {
   height: 36px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  grid-template-columns: 48px minmax(0, 1fr) 16px;
   align-items: center;
   gap: 9px;
   padding: 0 8px;
@@ -1767,7 +1778,7 @@
 }
 
 .channel-member-picker-search > svg {
-  justify-self: start;
+  justify-self: center;
 }
 
 .channel-member-picker-search input {
@@ -1801,7 +1812,7 @@
   min-width: 0;
   height: 43px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  grid-template-columns: 48px minmax(0, 1fr) 16px;
   align-items: center;
   gap: 9px;
   padding: 0 8px;
@@ -1816,13 +1827,14 @@
 .channel-member-picker-option:focus-visible,
 .channel-member-picker-option[aria-selected="true"] {
   outline: 0;
-  background: var(--ink-overlay-4);
+  background: var(--surface-hover);
 }
 
 .channel-member-picker-avatar {
   width: 28px;
   height: 28px;
   display: block;
+  justify-self: center;
   overflow: hidden;
   border-radius: 7px;
 }
@@ -2028,26 +2040,50 @@
 
 .channel-room-avatar-preview {
   width: max-content;
-  display: flex;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 0;
+  gap: 9px;
+  padding: 0 8px;
   border: 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: 12px;
 }
 
-.channel-room-avatar-preview > .channel-group-avatar-grid,
-.channel-room-avatar-preview > .channel-group-avatar-image {
+.channel-room-avatar-media {
+  position: relative;
   width: 48px;
   height: 48px;
-  flex: 0 0 48px;
+  display: block;
+}
+
+.channel-room-avatar-media > .channel-group-avatar-grid,
+.channel-room-avatar-media > .channel-group-avatar-image {
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
 }
 
-.channel-room-avatar-preview > span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.channel-room-avatar-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg-primary);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.channel-room-avatar-badge .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.channel-room-avatar-label {
+  min-width: 0;
 }

@@ -1536,22 +1536,25 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 aria-label={t("channels.customGroupAvatar")}
                 onClick={() => chooseRoomAvatar("")}
               >
-                <ChannelGroupAvatar
-                  room={{
-                    id: editingRoomID || "new-room",
-                    kind: "channel",
-                    name: roomName,
-                    avatar_image: roomAvatarImage || undefined,
-                    created_by: "local-user",
-                    created_at: "",
-                    members: [
-                      { room_id: editingRoomID || "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
-                      ...roomAgentIDs.map((agentID) => ({ room_id: editingRoomID || "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
-                    ],
-                  }}
-                  agents={agents}
-                />
-                <span><ImagePlus className="icon" />{t("channels.customGroupAvatar")}</span>
+                <span className="channel-room-avatar-media">
+                  <ChannelGroupAvatar
+                    room={{
+                      id: editingRoomID || "new-room",
+                      kind: "channel",
+                      name: roomName,
+                      avatar_image: roomAvatarImage || undefined,
+                      created_by: "local-user",
+                      created_at: "",
+                      members: [
+                        { room_id: editingRoomID || "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
+                        ...roomAgentIDs.map((agentID) => ({ room_id: editingRoomID || "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
+                      ],
+                    }}
+                    agents={agents}
+                  />
+                  <span className="channel-room-avatar-badge" aria-hidden="true"><ImagePlus className="icon" /></span>
+                </span>
+                <span className="channel-room-avatar-label">{t("channels.customGroupAvatar")}</span>
               </button>
             </fieldset>
             <ChannelMemberPicker agents={agents} selectedAgentIDs={roomAgentIDs} onToggle={toggleRoomAgent} />

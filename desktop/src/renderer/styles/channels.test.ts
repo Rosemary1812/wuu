@@ -42,29 +42,46 @@ describe("channel directory alignment", () => {
 
 describe("channel member picker", () => {
   it("keeps member search and selection in one flat scrollable surface", () => {
+    const setupForm = ruleFor(".channel-setup-form");
     const control = ruleFor(".channel-member-picker-control");
     const search = ruleFor(".channel-member-picker-search");
     const searchIcon = ruleFor(".channel-member-picker-search > svg");
     const options = ruleFor(".channel-member-picker-options");
     const option = ruleFor(".channel-member-picker-option");
+    const optionState = ruleFor('.channel-member-picker-option:hover,\n.channel-member-picker-option:focus-visible,\n.channel-member-picker-option[aria-selected="true"]');
+    const avatar = ruleFor(".channel-member-picker-avatar");
+    const avatarPreview = ruleFor(".channel-room-avatar-preview");
+    const avatarBadge = ruleFor(".channel-room-avatar-badge");
 
-    expect(control).toMatch(/border:\s*1px solid var\(--border-default\)/);
+    expect(setupForm).toMatch(/--bg-secondary:\s*var\(--surface-1\)/);
+    expect(setupForm).toMatch(/--surface-hover:\s*var\(--surface-2\)/);
+    expect(setupForm).toMatch(/--border-subtle:\s*var\(--hairline\)/);
+    expect(setupForm).toMatch(/--text-secondary:\s*var\(--ink-soft\)/);
+    expect(control).toMatch(/border:\s*1px solid var\(--border-subtle\)/);
     expect(control).toMatch(/border-radius:\s*var\(--radius-sm\)/);
     expect(control).toMatch(/overflow:\s*hidden/);
+    expect(control).toMatch(/background:\s*var\(--bg-secondary\)/);
     expect(search).toMatch(/border-bottom:\s*1px solid var\(--border-subtle\)/);
     expect(search).not.toMatch(/background:/);
-    expect(search).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) 16px/);
+    expect(search).toMatch(/grid-template-columns:\s*48px minmax\(0, 1fr\) 16px/);
     expect(search).toMatch(/gap:\s*9px/);
     expect(search).toMatch(/padding:\s*0 8px/);
-    expect(searchIcon).toMatch(/justify-self:\s*start/);
+    expect(searchIcon).toMatch(/justify-self:\s*center/);
     expect(options).toMatch(/max-height:\s*132px/);
     expect(options).toMatch(/overflow-y:\s*auto/);
     expect(option).toMatch(/height:\s*43px/);
-    expect(option).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) 16px/);
+    expect(option).toMatch(/grid-template-columns:\s*48px minmax\(0, 1fr\) 16px/);
     expect(option).toMatch(/gap:\s*9px/);
     expect(option).toMatch(/padding:\s*0 8px/);
     expect(option).toMatch(/border-radius:\s*0/);
     expect(option).toMatch(/background:\s*transparent/);
+    expect(optionState).toMatch(/background:\s*var\(--surface-hover\)/);
+    expect(avatar).toMatch(/justify-self:\s*center/);
+    expect(avatarPreview).toMatch(/grid-template-columns:\s*48px minmax\(0, 1fr\)/);
+    expect(avatarPreview).toMatch(/gap:\s*9px/);
+    expect(avatarPreview).toMatch(/padding:\s*0 8px/);
+    expect(avatarBadge).toMatch(/position:\s*absolute/);
+    expect(avatarBadge).toMatch(/background:\s*var\(--surface-raised\)/);
     expect(channelsCss).not.toContain(".channel-checkbox-row");
   });
 });
