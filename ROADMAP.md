@@ -11,28 +11,21 @@ designs and progress. See the [changelog](CHANGELOG.md) for shipped work.
 
 ## Current focus
 
-- **Make background work and interruption predictable.** Background commands
-  and processes that survive an app-server restart currently have conflicting
+- **Make background-work lifecycles predictable.** Background commands and
+  processes that survive an app-server restart currently have conflicting
   ownership and recovery rules, making it hard to know whether work is still
-  alive or controllable. Interrupting a response can also delete messages the
-  user already queued. We want one clear lifecycle that preserves user intent.
-  ([#157](https://github.com/blueberrycongee/wuu/issues/157),
-  [#31](https://github.com/blueberrycongee/wuu/issues/31))
+  alive or controllable. We want one clear lifecycle.
+  ([#157](https://github.com/blueberrycongee/wuu/issues/157))
 
-- **Make changes and command history easier to review.** Patch results currently
-  serve the model, desktop UI, and durable audit history in one payload, even
-  though each needs different detail. Command output is also difficult to revisit
-  after a turn. We want compact model feedback alongside a complete user-facing
-  record in the change and terminal workspaces.
-  ([#151](https://github.com/blueberrycongee/wuu/issues/151),
-  [#103](https://github.com/blueberrycongee/wuu/issues/103))
+- **Make background commands easier to review.** Command output can now be
+  revisited in the terminal workspace, but the environment panel still cannot
+  list live background processes for the current session or open their terminal
+  resources directly.
+  ([#103](https://github.com/blueberrycongee/wuu/issues/103))
 
-- **Close gaps in everyday desktop workflows.** Files cannot be dragged into the
-  composer, scheduled tasks have no central management screen, and the environment
-  panel does not show enough upstream, PR, or CI state.
-  ([#130](https://github.com/blueberrycongee/wuu/issues/130),
-  [#135](https://github.com/blueberrycongee/wuu/issues/135),
-  [#57](https://github.com/blueberrycongee/wuu/issues/57))
+- **Complete repository state in the environment panel.** The environment panel
+  still does not show enough upstream, PR, or CI state.
+  ([#57](https://github.com/blueberrycongee/wuu/issues/57))
 
 - **Keep model support current and usage understandable.** The bundled model
   catalog is fixed at build time, so new or corrected model information requires
@@ -61,17 +54,7 @@ designs and progress. See the [changelog](CHANGELOG.md) for shipped work.
 
 ## Exploring
 
-These problems are important, but the solutions are not scheduled:
-
-- **Repository knowledge is fragmented** across code, docs, issues,
-  conversations, and people's memory, so humans and agents repeatedly reconstruct
-  the same context. Explore a shared codebase knowledge workspace.
-  ([#36](https://github.com/blueberrycongee/wuu/issues/36))
-
-- **Chat-shaped multi-agent collaboration breaks down as the group grows.** Agents
-  compete to write, produce overlapping wall-of-text replies, and confuse group
-  chats with task threads. Explore task-graph collaboration with named agents.
-  ([#138](https://github.com/blueberrycongee/wuu/issues/138))
+This problem is important, but the solution is not scheduled:
 
 - **The embedded webview cannot reuse a user's existing browser profile and
   limits deeper agent integration.** Explore a fuller browser surface with

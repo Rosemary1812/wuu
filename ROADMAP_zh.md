@@ -10,24 +10,17 @@ wuu 仍处于 1.0 之前。当前最重要的事情，是先让已有的编码�
 
 ## 当前重点
 
-- **让后台工作和中断行为可以预期。** 后台命令与需要跨 app-server 重启存活的进程目前
-  使用互相冲突的归属和恢复规则，用户不容易判断任务是否还活着、是否还能控制。中断当前
-  回复还可能删除已经排好的后续消息。我们希望把它们收敛成一套清楚的生命周期，并保留
-  用户已经表达的意图。
-  ([#157](https://github.com/blueberrycongee/wuu/issues/157)、
-  [#31](https://github.com/blueberrycongee/wuu/issues/31))
+- **让后台工作的生命周期可以预期。** 后台命令与需要跨 app-server 重启存活的进程目前
+  使用互相冲突的归属和恢复规则，用户不容易判断任务是否还活着、是否还能控制。我们希望
+  把它们收敛成一套清楚的生命周期。
+  ([#157](https://github.com/blueberrycongee/wuu/issues/157))
 
-- **让改动和命令记录更容易复查。** Patch 结果目前用同一份内容同时服务模型、桌面界面和
-  持久审计，但三者需要的详细程度并不相同；一个 turn 结束后，命令输出也不方便重新查看。
-  我们希望给模型简洁反馈，同时在变更和终端工作区保留完整、方便检查的记录。
-  ([#151](https://github.com/blueberrycongee/wuu/issues/151)、
-  [#103](https://github.com/blueberrycongee/wuu/issues/103))
+- **让后台命令更容易复查。** 命令输出已经可以在终端工作区重新查看，但环境面板还不能
+  展示当前会话仍存活的后台进程，也不能直接跳转到对应终端资源。
+  ([#103](https://github.com/blueberrycongee/wuu/issues/103))
 
-- **补齐桌面端日常工作中的缺口。** 文件目前不能直接拖进输入框；定时任务已有后端能力，
-  却没有集中管理界面；环境面板也看不全 upstream、PR 和 CI 状态。
-  ([#130](https://github.com/blueberrycongee/wuu/issues/130)、
-  [#135](https://github.com/blueberrycongee/wuu/issues/135)、
-  [#57](https://github.com/blueberrycongee/wuu/issues/57))
+- **补齐环境面板中的仓库状态。** 环境面板目前仍看不全 upstream、PR 和 CI 状态。
+  ([#57](https://github.com/blueberrycongee/wuu/issues/57))
 
 - **让模型支持保持更新，也让消耗说得明白。** 内置模型目录在构建时固定，新模型或修正
   信息必须等下一个 wuu 版本。模型服务返回的 token 总量也不能说明哪些请求部分产生了
@@ -50,15 +43,7 @@ wuu 仍处于 1.0 之前。当前最重要的事情，是先让已有的编码�
 
 ## 探索方向
 
-这些问题值得解决，但方案还没有排期：
-
-- **仓库知识散落在代码、文档、issue、对话和人的记忆里，**导致人和 Agent 不断重复理解
-  同一套上下文。探索一个双方都能使用的代码库知识空间。
-  ([#36](https://github.com/blueberrycongee/wuu/issues/36))
-
-- **聊天式多 Agent 协作在参与者变多后容易失效。** Agent 会竞争写入、产生重复的大段回复，
-  也容易混淆群聊和任务 thread。探索基于任务图和具名 Agent 的协作方式。
-  ([#138](https://github.com/blueberrycongee/wuu/issues/138))
+这个问题值得解决，但方案还没有排期：
 
 - **当前内置 webview 无法复用用户已有的浏览器资料，也限制了更深的 Agent 集成。**探索带有
   明确凭据和权限控制的完整浏览器工作面。
