@@ -207,6 +207,10 @@ type LoopConfig struct {
 	InferenceWorkloadProfile providers.InferenceWorkloadProfile
 	// Temperature is the sampling temperature; 0 means provider default.
 	Temperature float64
+	// MediaInput is the admission policy for user-supplied media on every
+	// request this loop builds. Unprobed (auto) kinds are refined from the
+	// process-local probe cache at request build time.
+	MediaInput providers.MediaInputPolicy
 	// MaxSteps caps the number of model round-trips per Run. Zero means
 	// unlimited; positive values act as a runaway safety net.
 	MaxSteps int

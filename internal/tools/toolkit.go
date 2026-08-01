@@ -302,6 +302,15 @@ func (t *Toolkit) SetImageInputSupported(supported bool) {
 	t.env.ImageInputSupported = &supported
 }
 
+// SetImageInputState installs the three-valued image-input admission state
+// ("supported"/"unsupported"/"auto") for rich tool-result projection.
+func (t *Toolkit) SetImageInputState(state string) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ImageInputState = state
+}
+
 // SetNativeDeferredToolDiscovery configures whether ordinary tool results may
 // attach provider-native discovered schemas. When false, tool_search remains
 // the only path that loads deferred schemas into the current tool surface.

@@ -132,6 +132,28 @@ func TestNamedAgentChatToolsAreIsolatedAndRoundTrip(t *testing.T) {
 		t.Fatalf("non-vision chat_read exposed image data: %#v", omittedRead.Content)
 	}
 
+	// The three-valued state wins over the boolean: "auto" attaches media
+	// even when the boolean says false, because the provider request
+	// boundary now probes unknown models with a safe strip-and-retry.
+	kit.SetImageInputState("auto")
+	autoRead, err := kit.ExecuteResult(ctx, providers.ToolCall{Name: "chat_read", Arguments: `{"room_id":"` + room.ID + `","after_seq":0,"limit":10}`})
+	if err != nil {
+		t.Fatalf("auto-state chat_read error = %v", err)
+	}
+	if len(autoRead.Content) != 2 || autoRead.Content[1].Type != toolresult.ContentTypeImage {
+		t.Fatalf("auto-state chat_read should attach images: %#v", autoRead.Content)
+	}
+	// Explicit "unsupported" strips media even when the boolean allows it.
+	kit.SetImageInputState("unsupported")
+	kit.SetImageInputSupported(true)
+	strippedRead, err := kit.ExecuteResult(ctx, providers.ToolCall{Name: "chat_read", Arguments: `{"room_id":"` + room.ID + `","after_seq":0,"limit":10}`})
+	if err != nil {
+		t.Fatalf("unsupported-state chat_read error = %v", err)
+	}
+	if len(strippedRead.Content) != 2 || strippedRead.Content[1].Text != "[1 image omitted: unsupported]" {
+		t.Fatalf("unsupported-state chat_read should strip images: %#v", strippedRead.Content)
+	}
+
 	heldJSON, err := kit.Execute(ctx, providers.ToolCall{Name: "chat_send", Arguments: `{"room_id":"` + room.ID + `","kind":"text","body":"stale answer","basis_seq":1}`})
 	if err != nil {
 		t.Fatalf("stale chat_send error = %v", err)

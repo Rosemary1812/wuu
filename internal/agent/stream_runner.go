@@ -40,7 +40,11 @@ type StreamRunner struct {
 	SystemPromptSections []SystemPromptSectionInfo
 	MaxSteps             int
 	Temperature          float64
-	OnEvent              StreamCallback
+	// MediaInput is the admission policy for user-supplied media, resolved
+	// from the session's model capabilities. Zero value means fully
+	// unprobed (auto), preserving legacy pass-through behavior.
+	MediaInput providers.MediaInputPolicy
+	OnEvent    StreamCallback
 
 	// OnUsage, when non-nil, is invoked once per LLM round-trip with
 	// the per-call token counts reported by the provider. This mirrors
@@ -269,6 +273,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		InferenceOperationKind:   operationKind,
 		InferenceWorkloadProfile: workloadProfile,
 		Temperature:              r.Temperature,
+		MediaInput:               r.MediaInput,
 		MaxSteps:                 r.MaxSteps,
 		MaxContextTokens:         maxCtx,
 		MaxInputTokens:           r.MaxInputTokens,

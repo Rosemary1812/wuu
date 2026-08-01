@@ -649,6 +649,7 @@ func NewSession(opts Options) (*Session, error) {
 		SystemPromptSections:        baseSystemPromptSections,
 		MaxSteps:                    cfg.Agent.MaxSteps,
 		Temperature:                 cfg.Agent.Temperature,
+		MediaInput:                  mediaInputPolicyFromCapabilities(mainRole.Capabilities),
 		Effort:                      mainRole.LegacyEffort,
 		Variant:                     mainRole.Variant,
 		ProviderOptions:             modelvariant.CloneOptions(mainRole.ProviderOptions),
@@ -1162,6 +1163,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetBrowserTabs(browserTabs)
 		kit.SetImageInputSupported(s.ModelRoles.Main.Capabilities.ImageInput)
+		kit.SetImageInputState(s.ModelRoles.Main.Capabilities.ImageInputState)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
 		fileScopeExtras := []string{artifactDir}
 		if s.MemdirEnabled {
@@ -1350,6 +1352,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		SystemPromptSections:        append([]agent.SystemPromptSectionInfo(nil), base.SystemPromptSections...),
 		MaxSteps:                    base.MaxSteps,
 		Temperature:                 base.Temperature,
+		MediaInput:                  base.MediaInput,
 		OnEvent:                     base.OnEvent,
 		OnUsage:                     base.OnUsage,
 		OnTokenUsage:                base.OnTokenUsage,
@@ -1481,6 +1484,15 @@ func systemPromptWithFreshMemdirIndex(promptText string, sections []agent.System
 	}
 	updated := promptText[:start] + section + promptText[end:]
 	return updated, updateSectionInfo(sections, "memdir", section)
+}
+
+// mediaInputPolicyFromCapabilities maps resolved model capabilities onto the
+// request media admission policy. Empty legacy states normalize to auto.
+func mediaInputPolicyFromCapabilities(caps modelroles.Capabilities) providers.MediaInputPolicy {
+	return providers.MediaInputPolicy{
+		Image: providers.NormalizeMediaInputState(providers.MediaInputState(caps.ImageInputState)),
+		File:  providers.NormalizeMediaInputState(providers.MediaInputState(caps.FileInputState)),
+	}
 }
 
 func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)) func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) {

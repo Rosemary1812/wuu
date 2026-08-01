@@ -161,6 +161,44 @@ func TestResolveUsesCatalogToolAndMediaCapabilities(t *testing.T) {
 	if !roles.Main.Capabilities.Tools || !roles.Main.Capabilities.ImageInput || !roles.Main.Capabilities.FileInput {
 		t.Fatalf("o3 should expose tool and media capabilities: %+v", roles.Main.Capabilities)
 	}
+	if roles.Main.Capabilities.ImageInputState != "supported" || roles.Main.Capabilities.FileInputState != "supported" {
+		t.Fatalf("o3 media states should be explicit supported: %+v", roles.Main.Capabilities)
+	}
+}
+
+func TestResolveMediaInputStates(t *testing.T) {
+	resolveStates := func(t *testing.T, model string) (string, string) {
+		t.Helper()
+		cfg := config.Config{
+			DefaultProvider: "openai",
+			Providers: map[string]config.ProviderConfig{
+				"openai": {
+					Type:    "openai",
+					BaseURL: "https://api.openai.com/v1",
+					Model:   model,
+				},
+			},
+		}
+		roles, err := Resolve(cfg, ResolveOptions{})
+		if err != nil {
+			t.Fatalf("Resolve %s: %v", model, err)
+		}
+		return roles.Main.Capabilities.ImageInputState, roles.Main.Capabilities.FileInputState
+	}
+
+	// Catalog model with modality data that excludes image/pdf input:
+	// explicitly unsupported, not unknown.
+	imageState, fileState := resolveStates(t, "text-embedding-3-large")
+	if imageState != "unsupported" {
+		t.Fatalf("embedding model image state = %q, want unsupported", imageState)
+	}
+
+	// Unknown model without catalog modality data: auto, so the provider
+	// request boundary probes it once instead of guessing.
+	imageState, fileState = resolveStates(t, "wuu-test-unknown-model")
+	if imageState != "auto" || fileState != "auto" {
+		t.Fatalf("unknown model states = %q/%q, want auto/auto", imageState, fileState)
+	}
 }
 
 func TestResolveAliasProducesCompleteSelection(t *testing.T) {

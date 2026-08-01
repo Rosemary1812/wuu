@@ -371,7 +371,7 @@ func buildAnthropicRequest(req providers.ChatRequest, maxTokens int, stream bool
 }
 
 func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, stream bool, support anthropicToolSearchSupport) (anthropicRequest, error) {
-	prepared, err := providers.PrepareMessagesForProviderRequest(req.Provider, req.Model, req.Messages)
+	prepared, err := providers.PrepareMessagesForProviderRequestWithPolicy(req.Provider, req.Model, req.Messages, req.MediaInput)
 	if err != nil {
 		return anthropicRequest{}, err
 	}

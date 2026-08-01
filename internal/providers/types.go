@@ -325,6 +325,11 @@ type ChatRequest struct {
 	// form. Used for mechanical closing turns (e.g. forcing agent_report on
 	// requires_report workers); the tool must be present in Tools.
 	ForceToolName string
+	// MediaInput is the resolved admission policy for user-supplied media on
+	// this request. Provider adapters apply it at the shared request
+	// boundary (see ProjectMediaForPolicy); it is request metadata and must
+	// never be serialized on the wire.
+	MediaInput MediaInputPolicy
 }
 
 // ChatResponse is the normalized response from providers.

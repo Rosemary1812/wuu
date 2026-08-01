@@ -18,6 +18,16 @@ func PrepareMessagesForModelRequest(model string, msgs []ChatMessage) ([]ChatMes
 // provider-native state. Provider adapters should prefer this entry point
 // whenever ChatRequest.Provider is available.
 func PrepareMessagesForProviderRequest(provider, model string, msgs []ChatMessage) ([]ChatMessage, error) {
+	return PrepareMessagesForProviderRequestWithPolicy(provider, model, msgs, MediaInputPolicy{})
+}
+
+// PrepareMessagesForProviderRequestWithPolicy is PrepareMessagesForProviderRequest
+// plus media admission: media kinds the policy marks unsupported are stripped
+// and replaced by a short marker before any other transform runs, so every
+// downstream validation sees the same message shape the provider will see.
+// Auto and supported kinds pass through unchanged.
+func PrepareMessagesForProviderRequestWithPolicy(provider, model string, msgs []ChatMessage, policy MediaInputPolicy) ([]ChatMessage, error) {
+	msgs = ProjectMediaForPolicy(msgs, policy)
 	repaired, err := RepairAndValidateToolCallHistory(msgs)
 	if err != nil {
 		return nil, err

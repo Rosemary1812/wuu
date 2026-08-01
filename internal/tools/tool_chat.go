@@ -106,6 +106,13 @@ func (t *ChatReadTool) ExecuteResult(ctx context.Context, argsJSON string) (tool
 	parts := make([]toolresult.ContentPart, 0, 1)
 	omittedImages := 0
 	imageInputSupported := t.env.ImageInputSupported == nil || *t.env.ImageInputSupported
+	// The three-valued state, when installed by the runtime, wins over the
+	// boolean: only explicit "unsupported" strips media here. Auto attaches
+	// media and relies on the provider request boundary to probe the model
+	// once and retry stripped on an explicit rejection.
+	if state := strings.TrimSpace(t.env.ImageInputState); state != "" {
+		imageInputSupported = state != "unsupported"
+	}
 	for messageIndex := range payload.Messages {
 		message := &payload.Messages[messageIndex]
 		for imageIndex := range message.Images {

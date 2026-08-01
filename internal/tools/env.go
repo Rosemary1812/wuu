@@ -235,6 +235,12 @@ type Env struct {
 	// capability. Nil preserves the legacy behavior for standalone toolkits
 	// that have not been configured by a runtime.
 	ImageInputSupported *bool
+	// ImageInputState is the three-valued admission state behind
+	// ImageInputSupported: "supported"/"unsupported" from catalog evidence,
+	// "auto" when unknown. Auto attaches media and lets the provider request
+	// boundary probe it once with a safe strip-and-retry fallback. Empty
+	// means unset and falls back to the boolean.
+	ImageInputState string
 	// GitAttributionDisabled is the opt-out bit for WUU's commit trailer.
 	// The zero value intentionally means enabled so ordinary toolkits inherit
 	// the product default without extra initialization.

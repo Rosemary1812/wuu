@@ -370,6 +370,7 @@ func RunToolLoop(
 			Model:                       cfg.Model,
 			Messages:                    requestMessages,
 			Temperature:                 cfg.Temperature,
+			MediaInput:                  providers.ResolveMediaInputPolicy(cfg.ProviderName, cfg.Model, cfg.MediaInput),
 			Operation:                   operation,
 			MaxTokens:                   currentMaxTokens,
 			StepIndex:                   stepIdx,
