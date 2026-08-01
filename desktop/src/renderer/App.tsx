@@ -1801,6 +1801,21 @@ export function App(): JSX.Element {
     previewingLaunch,
     initialized: Boolean(state.initialized),
   });
+  const activeManagementTabID = showingManagementCatalog
+    ? currentSessionTab?.id
+    : undefined;
+  useLayoutEffect(() => {
+    if (!activeManagementTabID) {
+      return;
+    }
+    // Catalogs reuse the conversation scroll viewport. Reset it when entering
+    // a catalog tab so the previous conversation's offset cannot hide the
+    // catalog title above the visible area.
+    const scrollRegion = conversationScrollRef.current;
+    if (scrollRegion) {
+      scrollRegion.scrollTop = 0;
+    }
+  }, [activeManagementTabID, conversationScrollRef]);
   const conversationRailScrollContainer = useCallback((): HTMLElement | null => {
     if (splitConversation) {
       return splitPaneRefs.current[state.activePane] ?? null;
