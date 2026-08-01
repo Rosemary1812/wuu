@@ -807,32 +807,6 @@
   white-space: nowrap;
 }
 
-.nav-item > .channel-nav-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.channel-nav-label > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.channel-mention-badge {
-  min-width: 18px;
-  height: 18px;
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  border-radius: 999px;
-  padding: 0 5px;
-  background: var(--wuu-accent);
-  color: white;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* 协作 section rows reuse the .thread-row anatomy (32px height, hover,
  * active states) but drop the toggle column: icon | name | unread badge. */
 .sidebar-collab-list {
