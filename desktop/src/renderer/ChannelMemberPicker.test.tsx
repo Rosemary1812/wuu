@@ -38,8 +38,11 @@ describe("ChannelMemberPicker", () => {
     act(() => root?.render(<ChannelMemberPicker agents={agents} selectedAgentIDs={["agent-2"]} onToggle={onToggle} />));
 
     const listbox = container.querySelector('[role="listbox"]');
+    const control = container.querySelector(".channel-member-picker-control");
     const options = container.querySelectorAll<HTMLButtonElement>('[role="option"]');
     expect(listbox?.getAttribute("aria-multiselectable")).toBe("true");
+    expect(control?.contains(listbox)).toBe(true);
+    expect(control?.querySelector('input[type="search"]')).not.toBeNull();
     expect(options).toHaveLength(4);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(options[1]?.getAttribute("aria-selected")).toBe("true");

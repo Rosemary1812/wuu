@@ -57,54 +57,56 @@ export function ChannelMemberPicker({
         <span id="channel-member-picker-label">{t("channels.groupMembers")}</span>
         <span>{t("channels.selectedMembers", { count: selectedAgentIDs.length })}</span>
       </div>
-      <label className="channel-member-picker-search">
-        <Search className="icon" aria-hidden="true" />
-        <input
-          type="search"
-          value={query}
-          placeholder={t("channels.searchAgents")}
-          aria-label={t("channels.searchAgents")}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown" && visibleAgents.length > 0) {
-              event.preventDefault();
-              focusOption(0);
-            }
-          }}
-        />
-      </label>
-      <div
-        className="channel-member-picker-options"
-        role="listbox"
-        aria-labelledby="channel-member-picker-label"
-        aria-multiselectable="true"
-      >
-        {visibleAgents.length === 0 ? (
-          <div className="channel-member-picker-empty">{t(query ? "channels.noMatchingAgents" : "channels.noAgents")}</div>
-        ) : visibleAgents.map((agent, index) => {
-          const selected = selectedAgentIDs.includes(agent.id);
-          return (
-            <button
-              className="channel-member-picker-option"
-              type="button"
-              role="option"
-              aria-selected={selected}
-              key={agent.id}
-              ref={(node) => { optionRefs.current[index] = node; }}
-              onClick={() => onToggle(agent.id)}
-              onKeyDown={(event) => handleOptionKeyDown(event, index)}
-            >
-              <span className="channel-member-picker-avatar" aria-hidden="true">
-                <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
-              </span>
-              <span className="channel-member-picker-identity">
-                <strong>{agent.name}</strong>
-                <small>{agent.model_override || t("channels.inheritModel")}</small>
-              </span>
-              {selected ? <Check className="channel-member-picker-check icon" aria-hidden="true" /> : null}
-            </button>
-          );
-        })}
+      <div className="channel-member-picker-control">
+        <label className="channel-member-picker-search">
+          <Search className="icon" aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            placeholder={t("channels.searchAgents")}
+            aria-label={t("channels.searchAgents")}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" && visibleAgents.length > 0) {
+                event.preventDefault();
+                focusOption(0);
+              }
+            }}
+          />
+        </label>
+        <div
+          className="channel-member-picker-options"
+          role="listbox"
+          aria-labelledby="channel-member-picker-label"
+          aria-multiselectable="true"
+        >
+          {visibleAgents.length === 0 ? (
+            <div className="channel-member-picker-empty">{t(query ? "channels.noMatchingAgents" : "channels.noAgents")}</div>
+          ) : visibleAgents.map((agent, index) => {
+            const selected = selectedAgentIDs.includes(agent.id);
+            return (
+              <button
+                className="channel-member-picker-option"
+                type="button"
+                role="option"
+                aria-selected={selected}
+                key={agent.id}
+                ref={(node) => { optionRefs.current[index] = node; }}
+                onClick={() => onToggle(agent.id)}
+                onKeyDown={(event) => handleOptionKeyDown(event, index)}
+              >
+                <span className="channel-member-picker-avatar" aria-hidden="true">
+                  <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
+                </span>
+                <span className="channel-member-picker-identity">
+                  <strong>{agent.name}</strong>
+                  <small>{agent.model_override || t("channels.inheritModel")}</small>
+                </span>
+                {selected ? <Check className="channel-member-picker-check icon" aria-hidden="true" /> : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

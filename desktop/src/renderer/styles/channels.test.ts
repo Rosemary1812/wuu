@@ -42,11 +42,15 @@ describe("channel directory alignment", () => {
 
 describe("channel member picker", () => {
   it("keeps member search and selection in one flat scrollable surface", () => {
+    const control = ruleFor(".channel-member-picker-control");
     const search = ruleFor(".channel-member-picker-search");
     const searchIcon = ruleFor(".channel-member-picker-search > svg");
     const options = ruleFor(".channel-member-picker-options");
     const option = ruleFor(".channel-member-picker-option");
 
+    expect(control).toMatch(/border:\s*1px solid var\(--border-subtle\)/);
+    expect(control).toMatch(/border-radius:\s*var\(--radius-sm\)/);
+    expect(control).toMatch(/overflow:\s*hidden/);
     expect(search).toMatch(/border-bottom:\s*1px solid var\(--border-subtle\)/);
     expect(search).not.toMatch(/background:/);
     expect(search).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) 16px/);
@@ -59,6 +63,7 @@ describe("channel member picker", () => {
     expect(option).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) 16px/);
     expect(option).toMatch(/gap:\s*9px/);
     expect(option).toMatch(/padding:\s*0 8px/);
+    expect(option).toMatch(/border-radius:\s*0/);
     expect(option).toMatch(/background:\s*transparent/);
     expect(channelsCss).not.toContain(".channel-checkbox-row");
   });
