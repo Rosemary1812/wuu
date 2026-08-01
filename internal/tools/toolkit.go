@@ -293,6 +293,15 @@ func (t *Toolkit) SetChatAgent(client *channels.AgentClient) {
 	t.setActiveProfileForSurface(t.ActiveProfile(), modelprofile.SurfaceNamedAgent)
 }
 
+// SetImageInputSupported installs the active model's resolved image-input
+// capability for rich tool-result projection.
+func (t *Toolkit) SetImageInputSupported(supported bool) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ImageInputSupported = &supported
+}
+
 // SetNativeDeferredToolDiscovery configures whether ordinary tool results may
 // attach provider-native discovered schemas. When false, tool_search remains
 // the only path that loads deferred schemas into the current tool surface.

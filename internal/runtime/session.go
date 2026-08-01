@@ -1161,6 +1161,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetSessionDir(artifactDir)
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetBrowserTabs(browserTabs)
+		kit.SetImageInputSupported(s.ModelRoles.Main.Capabilities.ImageInput)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
 		fileScopeExtras := []string{artifactDir}
 		if s.MemdirEnabled {

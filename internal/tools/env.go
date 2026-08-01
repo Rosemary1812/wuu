@@ -231,6 +231,10 @@ type Env struct {
 	// schemas discovered by ordinary tool results without requiring an
 	// explicit tool_search call first.
 	NativeDeferredToolDiscovery bool
+	// ImageInputSupported is the active model's resolved image-input
+	// capability. Nil preserves the legacy behavior for standalone toolkits
+	// that have not been configured by a runtime.
+	ImageInputSupported *bool
 	// GitAttributionDisabled is the opt-out bit for WUU's commit trailer.
 	// The zero value intentionally means enabled so ordinary toolkits inherit
 	// the product default without extra initialization.

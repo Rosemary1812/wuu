@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -103,15 +104,24 @@ func (t *ChatReadTool) ExecuteResult(ctx context.Context, argsJSON string) (tool
 		return toolresult.Result{}, err
 	}
 	parts := make([]toolresult.ContentPart, 0, 1)
+	omittedImages := 0
+	imageInputSupported := t.env.ImageInputSupported == nil || *t.env.ImageInputSupported
 	for messageIndex := range payload.Messages {
 		message := &payload.Messages[messageIndex]
 		for imageIndex := range message.Images {
 			image := &message.Images[imageIndex]
-			parts = append(parts, toolresult.ContentPart{
-				Type: toolresult.ContentTypeImage, Data: image.Data, MIMEType: image.MediaType,
-				Name: message.ID + "-image",
-			})
+			if imageInputSupported {
+				parts = append(parts, toolresult.ContentPart{
+					Type: toolresult.ContentTypeImage, Data: image.Data, MIMEType: image.MediaType,
+					Name: message.ID + "-image",
+				})
+			} else {
+				omittedImages++
+			}
 			image.Data = ""
+		}
+		if !imageInputSupported {
+			message.Images = nil
 		}
 		for fileIndex := range message.Files {
 			file := &message.Files[fileIndex]
@@ -127,6 +137,16 @@ func (t *ChatReadTool) ExecuteResult(ctx context.Context, argsJSON string) (tool
 		return toolresult.Result{}, err
 	}
 	parts = append([]toolresult.ContentPart{{Type: toolresult.ContentTypeText, Text: projection}}, parts...)
+	if omittedImages > 0 {
+		label := "image"
+		if omittedImages != 1 {
+			label = "images"
+		}
+		parts = append(parts, toolresult.ContentPart{
+			Type: toolresult.ContentTypeText,
+			Text: fmt.Sprintf("[%d %s omitted: unsupported]", omittedImages, label),
+		})
+	}
 	return toolresult.Result{Content: parts}, nil
 }
 

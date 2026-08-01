@@ -120,6 +120,18 @@ func TestNamedAgentChatToolsAreIsolatedAndRoundTrip(t *testing.T) {
 		t.Fatalf("rich chat_read messages = %#v", read.Messages)
 	}
 
+	kit.SetImageInputSupported(false)
+	omittedRead, err := kit.ExecuteResult(ctx, providers.ToolCall{Name: "chat_read", Arguments: `{"room_id":"` + room.ID + `","after_seq":0,"limit":10}`})
+	if err != nil {
+		t.Fatalf("non-vision chat_read error = %v", err)
+	}
+	if len(omittedRead.Content) != 2 || omittedRead.Content[0].Type != toolresult.ContentTypeText || omittedRead.Content[1].Text != "[1 image omitted: unsupported]" {
+		t.Fatalf("non-vision chat_read content = %#v", omittedRead.Content)
+	}
+	if strings.Contains(omittedRead.Content[0].Text, "aW1hZ2U=") || strings.Contains(omittedRead.Content[0].Text, `"images"`) || omittedRead.Content[1].Type == toolresult.ContentTypeImage {
+		t.Fatalf("non-vision chat_read exposed image data: %#v", omittedRead.Content)
+	}
+
 	heldJSON, err := kit.Execute(ctx, providers.ToolCall{Name: "chat_send", Arguments: `{"room_id":"` + room.ID + `","kind":"text","body":"stale answer","basis_seq":1}`})
 	if err != nil {
 		t.Fatalf("stale chat_send error = %v", err)
