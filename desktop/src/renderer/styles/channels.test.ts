@@ -48,7 +48,7 @@ describe("channel member picker", () => {
     const options = ruleFor(".channel-member-picker-options");
     const option = ruleFor(".channel-member-picker-option");
 
-    expect(control).toMatch(/border:\s*1px solid var\(--border-subtle\)/);
+    expect(control).toMatch(/border:\s*1px solid var\(--border-default\)/);
     expect(control).toMatch(/border-radius:\s*var\(--radius-sm\)/);
     expect(control).toMatch(/overflow:\s*hidden/);
     expect(search).toMatch(/border-bottom:\s*1px solid var\(--border-subtle\)/);
