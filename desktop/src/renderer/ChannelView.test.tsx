@@ -442,6 +442,27 @@ describe("ChannelView", () => {
     expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
   });
 
+  it("treats slash-prefixed channel messages as plain text without opening commands", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(".channel-composer textarea");
+    act(() => setInputValue(textarea!, "/compact"));
+
+    expect(document.querySelector(".slash-command-menu")).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>(".channel-composer .composer-send-button")?.click());
+    expect(api.sendChannelMessage).toHaveBeenCalledWith({
+      room_id: "room-1",
+      body: "/compact",
+      images: [],
+      files: [],
+    });
+  });
+
   it("groups adjacent messages from the same author without repeating identity", async () => {
     const api = createApi();
     api.listChannelMessages = vi.fn(async ({ room_id }) => ({

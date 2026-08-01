@@ -180,6 +180,7 @@ export const ChannelComposer = forwardRef<ChannelComposerHandle, {
         hidePlusButton
         hidePermissionControl
         hideExpandButton={hideExpandButton}
+        slashCommandsEnabled={false}
         placeholder={placeholder}
         maxLength={4000}
         prompt={draft}

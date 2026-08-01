@@ -193,6 +193,7 @@ export function Composer({
   placeholder,
   maxLength,
   textOnly = false,
+  slashCommandsEnabled = true,
   slashCommandsOverride,
   onResetSideThread,
 }: {
@@ -293,6 +294,9 @@ export function Composer({
   // unsupported attachment, slash-command, and permission affordances
   // are removed.
   textOnly?: boolean;
+  // Some shared composer surfaces accept attachments and rich input but do
+  // not own the main-conversation runtime commands (for example Channels).
+  slashCommandsEnabled?: boolean;
   placeholder?: string;
   maxLength?: number;
   // Replaces the built-in main-conversation command list with a
@@ -424,8 +428,9 @@ export function Composer({
       : hasAttachments
         ? t("composer.addDescription")
         : t("composer.placeholder"));
-  const slashDraft =
-    textOnly && !slashCommandsOverride ? undefined : parseComposerSlashDraft(prompt);
+  const slashDraft = slashCommandsEnabled && !(textOnly && !slashCommandsOverride)
+    ? parseComposerSlashDraft(prompt)
+    : undefined;
   const slashQuery = slashDraft?.query ?? "";
   const slashSkillContextKey = activeContext ? composerRuntimeContextKey(activeContext) : "";
   const slashSkillCountKey = initialized?.extension_trust?.main_session?.skills?.count ?? 0;
@@ -470,7 +475,7 @@ export function Composer({
   }, [visibleSlashCommands]);
 
   useEffect(() => {
-    if (!slashRuntimeReady || readOnly || textOnly) {
+    if (!slashCommandsEnabled || !slashRuntimeReady || readOnly || textOnly) {
       setSlashSkills([]);
       return;
     }
@@ -492,7 +497,7 @@ export function Composer({
         }
       }
     }
-  }, [readOnly, slashRuntimeReady, slashSkillContextKey, slashSkillCountKey, textOnly]);
+  }, [readOnly, slashCommandsEnabled, slashRuntimeReady, slashSkillContextKey, slashSkillCountKey, textOnly]);
 
   useEffect(() => {
     if (readOnly) {
