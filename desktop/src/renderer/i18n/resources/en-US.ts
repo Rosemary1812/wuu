@@ -201,6 +201,8 @@ export const enUS = {
   "channels.unreadMentions": "{count} unread mentions",
   "sidebar.pinned": "Pinned",
   "sidebar.agents": "Agents",
+  "sidebar.collaboration": "Collaboration",
+  "sidebar.collaborationEmpty": "No channels yet",
   "sidebar.conversations": "Conversations",
   "sidebar.settings": "Settings",
   "sidebar.expandSection": "Expand {section}",

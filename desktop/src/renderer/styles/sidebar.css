@@ -833,6 +833,37 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 协作 section rows reuse the .thread-row anatomy (32px height, hover,
+ * active states) but drop the toggle column: icon | name | unread badge. */
+.sidebar-collab-list {
+  display: grid;
+  gap: 1px;
+}
+
+.sidebar-room-row {
+  grid-template-columns:
+    var(--sidebar-tree-icon-col)
+    minmax(0, 1fr)
+    auto;
+}
+
+.sidebar-room-icon {
+  grid-column: 1;
+  justify-self: center;
+}
+
+.sidebar-room-name {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-room-row .channel-room-unread {
+  grid-column: 3;
+}
+
 .nav-item:hover,
 .project-row:hover,
 .thread-row:hover {

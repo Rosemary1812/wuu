@@ -206,6 +206,32 @@ describe("ChannelView", () => {
     expect(formatChannelUnreadCount(100)).toBe("99+");
   });
 
+  it("honors controlled room selection and reports selection changes upward", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    const selections: string[] = [];
+    root = createRoot(container);
+    act(() => root?.render(
+      <ChannelView
+        selectedRoomID="room-2"
+        onSelectRoom={(roomID) => selections.push(roomID)}
+      />,
+    ));
+    await settle();
+
+    // Controlled value wins over the internal auto-select-first fallback.
+    expect(api.listChannelMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ room_id: "room-2" }),
+    );
+
+    // Clicking another room reports upward; the parent owns the switch.
+    const roomRow = Array.from(
+      container.querySelectorAll<HTMLElement>(".channel-room-row"),
+    ).find((row) => row.textContent?.includes("general"));
+    act(() => roomRow?.querySelector<HTMLButtonElement>(".channel-room-select")?.click());
+    expect(selections).toContain("room-1");
+  });
+
   it("uses WeChat-style centered rows for one through nine members", () => {
     expect(Array.from({ length: 10 }, (_, index) => groupAvatarRowSizes(index))).toEqual([
       [1], [1], [2], [1, 2], [2, 2], [2, 3], [3, 3], [1, 3, 3], [2, 3, 3], [3, 3, 3],

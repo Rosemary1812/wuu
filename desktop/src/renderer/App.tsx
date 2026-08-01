@@ -13,6 +13,7 @@ import {
 import type {
   ActivitySession,
   Agent,
+  ChannelRoom,
   DesktopProject,
   InitializeResult,
   InputFile,
@@ -512,6 +513,11 @@ export function App(): JSX.Element {
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [channelSection, setChannelSection] = useState<ChannelSection>("rooms");
   const [channelMentionCount, setChannelMentionCount] = useState(0);
+  // Rooms (with per-room unread counts) live at the App level so the unified
+  // sidebar and the channel canvas share one source of truth; selection is
+  // controlled here and passed into ChannelView.
+  const [channelRooms, setChannelRooms] = useState<ChannelRoom[]>([]);
+  const [selectedChannelRoomID, setSelectedChannelRoomID] = useState("");
   const previousChannelMentionCount = useRef<number | null>(null);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
@@ -556,6 +562,32 @@ export function App(): JSX.Element {
       window.clearInterval(timer);
     };
   }, [channelsOpen, state.initialized, t]);
+
+  // Poll the room list so the sidebar 协作 section always shows current
+  // unread counts, independent of whether the channel canvas is open.
+  useEffect(() => {
+    if (!ENABLE_GROUP_CHAT || !window.wuu || !state.initialized) {
+      setChannelRooms([]);
+      return;
+    }
+    let active = true;
+    const refresh = async (): Promise<void> => {
+      try {
+        const result = await window.wuu!.listChannelRooms();
+        if (active) {
+          setChannelRooms(result.rooms ?? []);
+        }
+      } catch (reason) {
+        console.warn("channel rooms refresh failed", reason);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [state.initialized]);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const {
@@ -662,6 +694,37 @@ export function App(): JSX.Element {
     toggleSidebar,
     workspaceRightPanelDockableWithoutSidebar,
   ]);
+  // Single entry point for showing the channel canvas: closes competing
+  // panels and clears the mention badge. Used by the legacy 群聊 nav item,
+  // the sidebar 协作 section entries, and room selection.
+  const openChannelsView = useCallback((): void => {
+    setProjectMenuOpen(false);
+    setRuntimeMenuOpen(false);
+    setCodexRuntimeMenu(null);
+    setEnvironmentPanelOpen(false);
+    setRightPanelOpenWithMotion(false);
+    setChannelsOpen(true);
+    setChannelMentionCount(0);
+    closeSidebarDrawer();
+  }, [closeSidebarDrawer, setRightPanelOpenWithMotion]);
+  const selectChannelRoom = useCallback((roomID: string): void => {
+    setSelectedChannelRoomID(roomID);
+    setChannelSection("rooms");
+    // Optimistically clear the room's unread badge; ChannelView persists the
+    // read cursor via markChannelRoomRead and the next poll confirms.
+    setChannelRooms((current) =>
+      current.map((room) => (room.id === roomID ? { ...room, unread_count: 0 } : room)),
+    );
+    openChannelsView();
+  }, [openChannelsView]);
+  const openChannelAgentsView = useCallback((): void => {
+    setChannelSection("agents");
+    openChannelsView();
+  }, [openChannelsView]);
+  const openChannelTasksView = useCallback((): void => {
+    setChannelSection("tasks");
+    openChannelsView();
+  }, [openChannelsView]);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
@@ -3989,16 +4052,13 @@ export function App(): JSX.Element {
             groupChatEnabled={ENABLE_GROUP_CHAT}
             channelsOpen={channelsOpen}
             channelMentionCount={channelMentionCount}
-            onOpenChannels={() => {
-              setProjectMenuOpen(false);
-              setRuntimeMenuOpen(false);
-              setCodexRuntimeMenu(null);
-              setEnvironmentPanelOpen(false);
-              setRightPanelOpenWithMotion(false);
-              setChannelsOpen(true);
-              setChannelMentionCount(0);
-              closeSidebarDrawer();
-            }}
+            channelRooms={channelRooms}
+            activeChannelRoomID={channelsOpen && channelSection === "rooms" ? selectedChannelRoomID : undefined}
+            activeChannelSection={channelsOpen ? channelSection : null}
+            onSelectChannelRoom={selectChannelRoom}
+            onOpenChannelAgents={openChannelAgentsView}
+            onOpenChannelTasks={openChannelTasksView}
+            onOpenChannels={openChannelsView}
             onToggleConversationSearch={toggleConversationSearch}
             onSeedConversationFixture={seedConversationFixture}
             onSeedAgentTreeDemo={seedAgentTreeDemo}
@@ -4162,7 +4222,7 @@ export function App(): JSX.Element {
                 </nav>
               </div>
             </header>
-            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} />
+            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} selectedRoomID={selectedChannelRoomID} onSelectRoom={setSelectedChannelRoomID} />
           </>
         ) : (
           <>

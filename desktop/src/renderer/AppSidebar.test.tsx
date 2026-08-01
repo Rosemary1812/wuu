@@ -4,7 +4,7 @@ import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DesktopProject, InitializeResult } from "../shared/protocol";
+import type { ChannelRoom, DesktopProject, InitializeResult } from "../shared/protocol";
 import { AppSidebar } from "./AppSidebar";
 import {
   initialState,
@@ -68,6 +68,32 @@ interface RenderOptions {
   state?: AppState;
   groupChatEnabled?: boolean;
   channelMentionCount?: number;
+  channelRooms?: ChannelRoom[];
+  activeChannelRoomID?: string;
+  activeChannelSection?: "rooms" | "agents" | "tasks" | null;
+  collapsedSidebarSectionIDs?: Set<string>;
+  onSelectChannelRoom?: (roomID: string) => void;
+  onOpenChannelAgents?: () => void;
+  onOpenChannelTasks?: () => void;
+}
+
+function collabRoom(id: string, name: string, unreadCount = 0): ChannelRoom {
+  return {
+    id,
+    kind: "channel",
+    name,
+    created_by: "local-user",
+    created_at: "2026-01-01T00:00:00Z",
+    members: [
+      {
+        room_id: id,
+        member_type: "human",
+        member_id: "local-user",
+        joined_at: "2026-01-01T00:00:00Z",
+      },
+    ],
+    unread_count: unreadCount,
+  };
 }
 
 function renderSidebar({
@@ -83,6 +109,13 @@ function renderSidebar({
   },
   groupChatEnabled = false,
   channelMentionCount,
+  channelRooms = [],
+  activeChannelRoomID,
+  activeChannelSection = null,
+  collapsedSidebarSectionIDs = new Set(),
+  onSelectChannelRoom,
+  onOpenChannelAgents,
+  onOpenChannelTasks,
 }: RenderOptions = {}): void {
   act(() => {
     root = createRoot(container);
@@ -94,7 +127,7 @@ function renderSidebar({
         activeThreadID={undefined}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
-        collapsedSidebarSectionIDs={new Set()}
+        collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
         expandedSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
         projectMenuOpen={false}
@@ -107,6 +140,12 @@ function renderSidebar({
         onOpenSkillsTab={() => {}}
         groupChatEnabled={groupChatEnabled}
         channelMentionCount={channelMentionCount}
+        channelRooms={channelRooms}
+        activeChannelRoomID={activeChannelRoomID}
+        activeChannelSection={activeChannelSection}
+        onSelectChannelRoom={onSelectChannelRoom}
+        onOpenChannelAgents={onOpenChannelAgents}
+        onOpenChannelTasks={onOpenChannelTasks}
         onOpenChannels={() => {}}
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
@@ -246,5 +285,88 @@ describe("AppSidebar layout", () => {
       SCRATCH_PSEUDO_PROJECT_ID,
       "project-1",
     ]);
+  });
+});
+
+describe("AppSidebar 协作 section", () => {
+  it("is hidden when the group chat flag is off", () => {
+    renderSidebar({ channelRooms: [collabRoom("room-1", "产品体验", 2)] });
+
+    expect(container.textContent).not.toContain("协作");
+    expect(container.querySelector(".sidebar-room-row")).toBeNull();
+  });
+
+  it("lists rooms with 99+-capped unread badges, hidden for the active room", () => {
+    renderSidebar({
+      groupChatEnabled: true,
+      channelRooms: [
+        collabRoom("room-1", "产品体验", 3),
+        collabRoom("room-2", "基础功能", 250),
+      ],
+      activeChannelRoomID: "room-1",
+    });
+
+    const rows = Array.from(
+      container.querySelectorAll<HTMLElement>(".sidebar-room-row"),
+    );
+    const roomRows = rows.filter((row) => !row.classList.contains("sidebar-collab-entry"));
+    expect(roomRows).toHaveLength(2);
+    // Active room is in the canvas — its badge is intentionally absent.
+    expect(roomRows[0]?.querySelector(".channel-room-unread")).toBeNull();
+    expect(roomRows[0]?.getAttribute("aria-current")).toBe("page");
+    expect(
+      roomRows[1]?.querySelector(".channel-room-unread")?.textContent,
+    ).toBe("99+");
+  });
+
+  it("selects a room through the provided handler", () => {
+    const selections: string[] = [];
+    renderSidebar({
+      groupChatEnabled: true,
+      channelRooms: [collabRoom("room-1", "产品体验")],
+      onSelectChannelRoom: (roomID) => selections.push(roomID),
+    });
+
+    const row = container.querySelector<HTMLButtonElement>(".sidebar-room-row");
+    act(() => row?.click());
+
+    expect(selections).toEqual(["room-1"]);
+  });
+
+  it("opens the agents and tasks canvases and marks the active one", () => {
+    let opened = "";
+    renderSidebar({
+      groupChatEnabled: true,
+      activeChannelSection: "tasks",
+      onOpenChannelAgents: () => { opened = "agents"; },
+      onOpenChannelTasks: () => { opened = "tasks"; },
+    });
+
+    const entries = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".sidebar-collab-entry"),
+    );
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.getAttribute("aria-current")).toBeNull();
+    expect(entries[1]?.getAttribute("aria-current")).toBe("page");
+
+    act(() => entries[0]?.click());
+    expect(opened).toBe("agents");
+    act(() => entries[1]?.click());
+    expect(opened).toBe("tasks");
+  });
+
+  it("surfaces the aggregate unread dot on the collapsed section header", () => {
+    renderSidebar({
+      groupChatEnabled: true,
+      channelRooms: [collabRoom("room-1", "产品体验", 5)],
+      collapsedSidebarSectionIDs: new Set(["__wuu_collab__"]),
+    });
+
+    const header = container.querySelector<HTMLElement>(
+      ".collab-section .sidebar-section-row",
+    );
+    expect(header?.classList.contains("has-unread")).toBe(true);
+    // Collapsed body keeps room rows unmounted, so no badge leaks out.
+    expect(container.querySelector(".channel-room-unread")).toBeNull();
   });
 });

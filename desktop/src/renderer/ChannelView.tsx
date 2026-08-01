@@ -231,16 +231,28 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange }: {
+export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
+  // Optional controlled room selection. App.tsx drives this so the unified
+  // sidebar can select rooms; when absent the view manages selection
+  // internally (tests and standalone usage).
+  selectedRoomID?: string;
+  onSelectRoom?: (roomID: string) => void;
 }): JSX.Element {
   const { formatDate, locale, t } = useI18n();
   const [agents, setAgents] = useState<NamedAgent[]>([]);
   const [agentInsights, setAgentInsights] = useState<Record<string, ChannelAgentInsight>>({});
   const [rooms, setRooms] = useState<ChannelRoom[]>([]);
-  const [selectedRoomID, setSelectedRoomID] = useState("");
+  const [internalSelectedRoomID, setInternalSelectedRoomID] = useState("");
+  const selectedRoomID = controlledRoomID ?? internalSelectedRoomID;
+  const setSelectedRoomID = useCallback((value: string | ((current: string) => string)): void => {
+    const base = controlledRoomID ?? internalSelectedRoomID;
+    const next = typeof value === "function" ? value(base) : value;
+    setInternalSelectedRoomID(next);
+    if (next !== base) onSelectRoom?.(next);
+  }, [controlledRoomID, internalSelectedRoomID, onSelectRoom]);
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [trackedTasks, setTrackedTasks] = useState<ChannelMessage[]>([]);
   const [setupPanel, setSetupPanel] = useState<SetupPanel>(null);

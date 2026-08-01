@@ -2,6 +2,7 @@ import {
   AlarmClock,
   Archive,
   ChevronRight,
+  ClipboardList,
   Clock,
   CornerDownRight,
   FileText,
@@ -18,6 +19,7 @@ import {
   Plus,
   Search,
   Settings,
+  UsersRound,
   Wrench,
 } from "lucide-react";
 import {
@@ -49,8 +51,9 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { DesktopProject } from "../shared/protocol";
+import type { ChannelRoom, DesktopProject } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
+import { formatChannelUnreadCount } from "./ChannelView";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
@@ -67,6 +70,14 @@ import { useI18n } from "./i18n";
  *   can be reordered with real projects.
  */
 export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
+
+/**
+ * Fixed-position 协作 (group chat) section. Like the pinned section it is
+ * intentionally NOT part of the reorderable `sectionOrder` — it always sits
+ * between 置顶 and the workspace group so the sidebar anatomy stays
+ * predictable regardless of how the user reorders projects.
+ */
+export const SIDEBAR_SECTION_COLLAB = "__wuu_collab__";
 
 /**
  * Reconcile the persisted sidebar section order against the current
@@ -271,6 +282,12 @@ export function AppSidebar({
   groupChatEnabled = false,
   channelsOpen,
   channelMentionCount,
+  channelRooms = [],
+  activeChannelRoomID,
+  activeChannelSection = null,
+  onSelectChannelRoom,
+  onOpenChannelAgents,
+  onOpenChannelTasks,
   onOpenChannels,
   onToggleConversationSearch,
   onSeedConversationFixture,
@@ -325,6 +342,17 @@ export function AppSidebar({
   groupChatEnabled?: boolean;
   channelsOpen?: boolean;
   channelMentionCount?: number;
+  // Unified 协作 section: the room list (with per-room unread counts) is
+  // polled at the App level and passed down so the sidebar and the channel
+  // canvas never disagree about what needs attention.
+  channelRooms?: ChannelRoom[];
+  activeChannelRoomID?: string;
+  // Which channel canvas is on screen, or null when channels are closed —
+  // drives the Agents / 任务 entry row highlights.
+  activeChannelSection?: "rooms" | "agents" | "tasks" | null;
+  onSelectChannelRoom?: (roomID: string) => void;
+  onOpenChannelAgents?: () => void;
+  onOpenChannelTasks?: () => void;
   onOpenChannels?: () => void;
   onToggleConversationSearch: () => void;
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
@@ -409,6 +437,13 @@ export function AppSidebar({
   const pinnedRows = pinnedThreads;
   const pinnedCollapsed = collapsedSidebarSectionIDs.has(
     SIDEBAR_SECTION_PINNED,
+  );
+  const collabCollapsed = collapsedSidebarSectionIDs.has(
+    SIDEBAR_SECTION_COLLAB,
+  );
+  const collabUnreadTotal = channelRooms.reduce(
+    (sum, room) => sum + (room.unread_count ?? 0),
+    0,
   );
   const functionalGroups = ([{
     id: "workspace" as const,
@@ -578,6 +613,87 @@ export function AppSidebar({
                       onRename={onRenameThread}
                       
                     />
+                  </SidebarSection>
+                </div>
+              </div>
+            </section>
+          ) : null}
+          {groupChatEnabled ? (
+            <section
+              className="sidebar-functional-group collab-functional-group"
+              aria-label={t("sidebar.collaboration")}
+            >
+              <div className="sidebar-functional-group-body">
+                <div className="collab-section">
+                  <SidebarSection
+                    expanded={!collabCollapsed}
+                    iconKind="collab"
+                    CollapsedIcon={Hash}
+                    ExpandedIcon={Hash}
+                    label={t("sidebar.collaboration")}
+                    ariaLabel={t(collabCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.collaboration") })}
+                    title={t(collabCollapsed ? "sidebar.expandSection" : "sidebar.collapseSection", { section: t("sidebar.collaboration") })}
+                    unread={collabCollapsed && collabUnreadTotal > 0}
+                    onToggle={() =>
+                      onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_COLLAB)
+                    }
+                    newItemButton={
+                      <button
+                        className="sidebar-row-icon-button project-row-new-thread"
+                        type="button"
+                        aria-label={t("channels.newRoom")}
+                        title={t("channels.newRoom")}
+                        onClick={onOpenChannels}
+                      >
+                        <Plus className="icon" />
+                      </button>
+                    }
+                    emptyNote={t("sidebar.collaborationEmpty")}
+                  >
+                    <div className="sidebar-collab-list">
+                      {channelRooms.map((room) => {
+                        const isActiveRoom = room.id === activeChannelRoomID;
+                        const unread = room.unread_count ?? 0;
+                        return (
+                          <button
+                            key={room.id}
+                            className={`thread-row sidebar-room-row${isActiveRoom ? " active" : ""}`}
+                            type="button"
+                            aria-current={isActiveRoom ? "page" : undefined}
+                            onClick={() => onSelectChannelRoom?.(room.id)}
+                          >
+                            <Hash className="icon sidebar-room-icon" aria-hidden="true" />
+                            <span className="sidebar-room-name">{room.name}</span>
+                            {!isActiveRoom && unread > 0 ? (
+                              <span
+                                className="channel-room-unread"
+                                aria-label={t("channels.unreadMessages", { count: unread })}
+                              >
+                                {formatChannelUnreadCount(unread)}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                      <button
+                        className={`thread-row sidebar-room-row sidebar-collab-entry${activeChannelSection === "agents" ? " active" : ""}`}
+                        type="button"
+                        aria-current={activeChannelSection === "agents" ? "page" : undefined}
+                        onClick={onOpenChannelAgents}
+                      >
+                        <UsersRound className="icon sidebar-room-icon" aria-hidden="true" />
+                        <span className="sidebar-room-name">{t("channels.agents")}</span>
+                      </button>
+                      <button
+                        className={`thread-row sidebar-room-row sidebar-collab-entry${activeChannelSection === "tasks" ? " active" : ""}`}
+                        type="button"
+                        aria-current={activeChannelSection === "tasks" ? "page" : undefined}
+                        onClick={onOpenChannelTasks}
+                      >
+                        <ClipboardList className="icon sidebar-room-icon" aria-hidden="true" />
+                        <span className="sidebar-room-name">{t("channels.tasks")}</span>
+                      </button>
+                    </div>
                   </SidebarSection>
                 </div>
               </div>

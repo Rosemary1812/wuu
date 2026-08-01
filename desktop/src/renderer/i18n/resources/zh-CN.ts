@@ -199,6 +199,8 @@ export const zhCN = {
   "channels.unreadMentions": "{count} 条未读提及",
   "sidebar.pinned": "置顶",
   "sidebar.agents": "Agents",
+  "sidebar.collaboration": "协作",
+  "sidebar.collaborationEmpty": "还没有频道",
   "sidebar.conversations": "对话",
   "sidebar.settings": "设置",
   "sidebar.expandSection": "展开{section}",
