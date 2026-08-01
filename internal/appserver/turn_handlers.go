@@ -4115,7 +4115,13 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 	}, res.ContextTokens); err != nil {
 		return err
 	}
-	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(indexHistory), threadPreview(indexHistory))
+	if err := session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(indexHistory), threadPreview(indexHistory)); err != nil {
+		return err
+	}
+	if strings.TrimSpace(th.NamedAgentID) != "" {
+		s.invalidateChannelAgentInsights()
+	}
+	return nil
 }
 
 func (s *Server) persistFailedTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool, providerName, model string, historyBaselineSeq int) error {

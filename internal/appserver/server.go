@@ -155,8 +155,10 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
-	settingsUsageMu    sync.Mutex
-	settingsUsageCache *settingsUsageCacheEntry
+	settingsUsageMu           sync.Mutex
+	settingsUsageCache        *settingsUsageCacheEntry
+	channelAgentInsightsMu    sync.Mutex
+	channelAgentInsightsCache *channelAgentInsightsCacheEntry
 
 	// clientCalls is the pending table for server-initiated requests over the
 	// negotiated reverse-RPC channel. Keyed by the
@@ -788,6 +790,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleChannelBootstrap(ctx, req)
 	case MethodChannelAgentList:
 		return s.handleChannelAgentList(ctx, req)
+	case MethodChannelAgentInsights:
+		return s.handleChannelAgentInsights(ctx, req)
 	case MethodChannelAgentCreate:
 		return s.handleChannelAgentCreate(ctx, req)
 	case MethodChannelAgentUpdate:

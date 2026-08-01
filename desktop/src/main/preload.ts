@@ -255,6 +255,7 @@ const api: WuuDesktopApi = {
   updateAutomation: (params) => ipcRenderer.invoke("wuu:automation-update", params),
   removeAutomation: (id: string) => ipcRenderer.invoke("wuu:automation-remove", id),
   listNamedAgents: () => ipcRenderer.invoke("wuu:channel-agent-list"),
+  getNamedAgentInsights: () => ipcRenderer.invoke("wuu:channel-agent-insights"),
   bootstrapChannels: () => ipcRenderer.invoke("wuu:channel-bootstrap"),
   createNamedAgent: (params: ChannelAgentCreateParams) =>
     ipcRenderer.invoke("wuu:channel-agent-create", params),

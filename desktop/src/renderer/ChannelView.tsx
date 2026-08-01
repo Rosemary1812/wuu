@@ -1,6 +1,6 @@
 import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
+import type { ChannelAgentInsight, ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
 import { AUTO_FOLLOW_BOTTOM_THRESHOLD_PX, useAutoFollowScrollContainer } from "./AutoFollowScroll";
@@ -237,6 +237,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
 }): JSX.Element {
   const { formatDate, locale, t } = useI18n();
   const [agents, setAgents] = useState<NamedAgent[]>([]);
+  const [agentInsights, setAgentInsights] = useState<Record<string, ChannelAgentInsight>>({});
   const [rooms, setRooms] = useState<ChannelRoom[]>([]);
   const [selectedRoomID, setSelectedRoomID] = useState("");
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
@@ -604,6 +605,26 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!window.wuu || typeof window.wuu.getNamedAgentInsights !== "function" || section !== "agents") return;
+    let active = true;
+    const refresh = (): void => {
+      void window.wuu!.getNamedAgentInsights().then((result) => {
+        if (!active) return;
+        setAgentInsights(Object.fromEntries((result.insights ?? []).map((insight) => [insight.agent_id, insight])));
+      }).catch(() => {
+        // Activity statistics are an enhancement; the relationship graph and
+        // agent management remain usable if historical aggregation fails.
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [section]);
 
   useEffect(() => {
     if (selectedRoomID) markRoomRead(selectedRoomID);
@@ -1348,6 +1369,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             <AgentRelationshipGraph
               agents={agents}
               rooms={rooms}
+              insights={agentInsights}
+              inheritedProvider={initialized?.provider}
+              inheritedModel={initialized?.model}
               onSelectAgent={editAgent}
               ariaLabel={t("channels.relationshipGraph")}
               zoomInLabel={t("channels.zoomIn")}

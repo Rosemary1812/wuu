@@ -31,6 +31,7 @@ const (
 	MethodSkillList            = "skill/list"
 	MethodChannelBootstrap     = "channel/bootstrap"
 	MethodChannelAgentList     = "channel/agent/list"
+	MethodChannelAgentInsights = "channel/agent/insights"
 	MethodChannelAgentCreate   = "channel/agent/create"
 	MethodChannelAgentUpdate   = "channel/agent/update"
 	MethodChannelAgentDelete   = "channel/agent/delete"
@@ -2051,6 +2052,31 @@ type SettingsUsageResponse struct {
 
 type ChannelAgentListResult struct {
 	Agents []channels.NamedAgent `json:"agents"`
+}
+
+type ChannelAgentLanguageUsage struct {
+	Name  string  `json:"name"`
+	Lines int     `json:"lines"`
+	Share float64 `json:"share"`
+}
+
+type ChannelAgentInsight struct {
+	AgentID            string                      `json:"agent_id"`
+	WindowDays         int                         `json:"window_days"`
+	FilesChanged       int                         `json:"files_changed"`
+	Additions          int                         `json:"additions"`
+	Deletions          int                         `json:"deletions"`
+	InputTokens        int                         `json:"input_tokens"`
+	OutputTokens       int                         `json:"output_tokens"`
+	LastActiveAt       string                      `json:"last_active_at,omitempty"`
+	Workspace          string                      `json:"workspace,omitempty"`
+	Languages          []ChannelAgentLanguageUsage `json:"languages"`
+	AttributionPartial bool                        `json:"attribution_partial"`
+}
+
+type ChannelAgentInsightsResult struct {
+	GeneratedAt string                `json:"generated_at"`
+	Insights    []ChannelAgentInsight `json:"insights"`
 }
 
 type ChannelBootstrapResult = channels.BootstrapResult

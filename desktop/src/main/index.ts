@@ -43,6 +43,7 @@ import type {
   ChannelAgentDeleteResult,
   ChannelBootstrapResult,
   ChannelAgentListResult,
+  ChannelAgentInsightsResult,
   ChannelAgentStartParams,
   ChannelAgentStartResult,
   ChannelMessageListParams,
@@ -1443,6 +1444,9 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("wuu:channel-agent-list", (event) =>
     appServerRequest<ChannelAgentListResult>(event, "channel/agent/list"),
+  );
+  ipcMain.handle("wuu:channel-agent-insights", (event) =>
+    appServerRequest<ChannelAgentInsightsResult>(event, "channel/agent/insights"),
   );
   ipcMain.handle("wuu:channel-bootstrap", (event) =>
     appServerRequest<ChannelBootstrapResult>(event, "channel/bootstrap"),

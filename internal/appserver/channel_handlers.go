@@ -50,6 +50,9 @@ func (s *Server) handleChannelAgentCreate(ctx context.Context, req Request) erro
 	credential, err := s.channelService.CreateNamedAgent(ctx, channels.CreateNamedAgentParams{
 		Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride, Autostart: true,
 	})
+	if err == nil {
+		s.invalidateChannelAgentInsights()
+	}
 	return s.writeResponse(req.ID, ChannelAgentCreateResult{Agent: credential.Agent}, err)
 }
 
@@ -92,6 +95,9 @@ func (s *Server) handleChannelAgentUpdate(ctx context.Context, req Request) erro
 			_, _ = session.SetRuntimeSelection(s.rt.SessionDir, thread.ID, selection)
 		}
 	}
+	if err == nil {
+		s.invalidateChannelAgentInsights()
+	}
 	return s.writeResponse(req.ID, ChannelAgentUpdateResult{Agent: agent}, err)
 }
 
@@ -104,6 +110,9 @@ func (s *Server) handleChannelAgentDelete(ctx context.Context, req Request) erro
 		return s.writeResponse(req.ID, nil, err)
 	}
 	err := s.channelService.DeleteNamedAgent(ctx, params.AgentID)
+	if err == nil {
+		s.invalidateChannelAgentInsights()
+	}
 	return s.writeResponse(req.ID, ChannelAgentDeleteResult{Deleted: err == nil}, err)
 }
 

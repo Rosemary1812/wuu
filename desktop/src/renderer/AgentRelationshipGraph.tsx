@@ -1,6 +1,6 @@
-import { Settings2 } from "lucide-react";
+import { Activity, Braces, Clock3, Cpu, FileCode2, FolderGit2, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import type { ChannelRoom, NamedAgent } from "../shared/protocol";
+import type { ChannelAgentInsight, ChannelRoom, NamedAgent } from "../shared/protocol";
 import { AgentAvatarMark } from "./AgentAvatarMark";
 import { useI18n } from "./i18n";
 
@@ -95,9 +95,87 @@ function buildGraph(agents: NamedAgent[], rooms: ChannelRoom[]): { nodes: GraphN
   return { nodes, links: [...relationships.values(), ...links] };
 }
 
-export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel, zoomInLabel, zoomOutLabel, resetViewLabel }: {
+function relativeActivity(value: string | undefined, locale: string, t: ReturnType<typeof useI18n>["t"]): string {
+  if (!value) return t("channels.agentPreviewNoActivity");
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return t("channels.agentPreviewNoActivity");
+  const elapsedMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
+  if (elapsedMinutes < 1) return t("channels.agentPreviewJustNow");
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
+  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, "minute");
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  if (elapsedHours < 24) return formatter.format(-elapsedHours, "hour");
+  return formatter.format(-Math.round(elapsedHours / 24), "day");
+}
+
+function AgentPreviewCard({ agent, insight, rooms, inheritedProvider, inheritedModel, onPointerEnter, onPointerLeave }: {
+  agent: NamedAgent;
+  insight?: ChannelAgentInsight;
+  rooms: ChannelRoom[];
+  inheritedProvider?: string;
+  inheritedModel?: string;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+}): JSX.Element {
+  const { formatNumber, locale, t } = useI18n();
+  const activeRooms = rooms.filter((room) => room.members.some((member) => member.member_type === "agent" && member.member_id === agent.id));
+  const inherited = !agent.model_override;
+  const provider = agent.provider_override || inheritedProvider || t("settings.unknownProvider");
+  const model = agent.model_override || inheritedModel || t("settings.unknownModel");
+  const status = agent.activity_status === "thinking" ? "thinking" : "idle";
+  const compact = (value: number): string => formatNumber(value, { notation: "compact", maximumFractionDigits: 1 });
+
+  return (
+    <aside className="channel-agent-preview-card" data-testid="channel-agent-preview-card" aria-live="polite" onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      <div className="channel-agent-preview-kicker">
+        <Activity aria-hidden="true" /><span>{t("channels.agentPreview")}</span><span className={`channel-agent-preview-live ${status}`} />
+      </div>
+      <header className="channel-agent-preview-header">
+        <div className="channel-agent-preview-avatar"><AgentAvatarMark avatarKey={agent.avatar_key || "abstract-1"} avatarImage={agent.avatar_image} /></div>
+        <div className="channel-agent-preview-identity">
+          <strong>{agent.name}</strong>
+          <span><Clock3 aria-hidden="true" />{status === "thinking" ? t("channels.agentStatus.thinking") : relativeActivity(insight?.last_active_at, locale, t)}</span>
+        </div>
+        <span className={`channel-agent-preview-status ${status}`}>{t(`channels.agentStatus.${status}`)}</span>
+      </header>
+      <div className="channel-agent-preview-model">
+        <Cpu aria-hidden="true" />
+        <div><span>{provider}</span><strong title={model}>{model}</strong></div>
+        <small>{inherited ? t("channels.agentPreviewInherited") : t("channels.agentPreviewOverride")}</small>
+      </div>
+      {insight ? (
+        <>
+          <div className="channel-agent-preview-metrics">
+            <div><FileCode2 aria-hidden="true" /><span>{t("channels.agentPreviewFiles")}</span><strong>{formatNumber(insight.files_changed)}</strong></div>
+            <div><Braces aria-hidden="true" /><span>{t("channels.agentPreviewChanges")}</span><strong><i>+{compact(insight.additions)}</i><em>−{compact(insight.deletions)}</em></strong></div>
+            <div><Activity aria-hidden="true" /><span>{t("channels.agentPreviewTokens")}</span><strong>{compact(insight.input_tokens + insight.output_tokens)}</strong></div>
+          </div>
+          <section className="channel-agent-preview-languages">
+            <div className="channel-agent-preview-section-title"><span>{t("channels.agentPreviewLanguages")}</span><small>{t("channels.agentPreviewWindow", { count: insight.window_days })}</small></div>
+            {insight.languages.length > 0 ? insight.languages.map((language, index) => (
+              <div className="channel-agent-preview-language" key={language.name}>
+                <span>{language.name}</span><div><i data-rank={index} style={{ width: `${Math.max(4, language.share * 100)}%` }} /></div><strong>{formatNumber(language.share, { style: "percent", maximumFractionDigits: 0 })}</strong>
+              </div>
+            )) : <div className="channel-agent-preview-empty">{t("channels.agentPreviewNoChanges")}</div>}
+          </section>
+        </>
+      ) : <div className="channel-agent-preview-loading" aria-label={t("channels.agentPreviewLoading")}><i /><i /><i /></div>}
+      <footer className="channel-agent-preview-footer">
+        <FolderGit2 aria-hidden="true" />
+        <div><strong>{insight?.workspace || t("channels.agentPreviewNoWorkspace")}</strong><span>{activeRooms.slice(0, 2).map((room) => `# ${room.name}`).join(" · ") || t("channels.agentPreviewNoChannels")}</span></div>
+        {activeRooms.length > 2 ? <small>+{activeRooms.length - 2}</small> : null}
+      </footer>
+      {insight?.attribution_partial ? <p className="channel-agent-preview-note">{t("channels.agentPreviewAttribution")}</p> : null}
+    </aside>
+  );
+}
+
+export function AgentRelationshipGraph({ agents, rooms, insights, inheritedProvider, inheritedModel, onSelectAgent, ariaLabel, zoomInLabel, zoomOutLabel, resetViewLabel }: {
   agents: NamedAgent[];
   rooms: ChannelRoom[];
+  insights?: Record<string, ChannelAgentInsight>;
+  inheritedProvider?: string;
+  inheritedModel?: string;
   onSelectAgent: (agent: NamedAgent) => void;
   ariaLabel: string;
   zoomInLabel: string;
@@ -106,6 +184,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
 }): JSX.Element {
   const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [previewAgentID, setPreviewAgentID] = useState("");
   const [settings, setSettings] = useState({ repulsion: 2800, linkLength: 136, centerForce: 0.015, nodeScale: 1, showLabels: true });
   const [zoomPercent, setZoomPercent] = useState(100);
   const settingsRef = useRef(settings);
@@ -126,6 +205,42 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   const paintRef = useRef<() => void>(() => undefined);
   const dragRef = useRef<{ node: GraphNode; pointerID: number; moved: boolean; downClientX: number; downClientY: number; offsetX: number; offsetY: number } | null>(null);
   const panRef = useRef<{ pointerID: number; x: number; y: number; originX: number; originY: number } | null>(null);
+  const previewShowTimerRef = useRef<number | null>(null);
+  const previewHideTimerRef = useRef<number | null>(null);
+  const previewAgent = agents.find((agent) => agent.id === previewAgentID);
+  const activeNodeIDs = useMemo(() => {
+    if (!previewAgentID) return new Set<string>();
+    const selectedID = `agent:${previewAgentID}`;
+    const ids = new Set<string>([selectedID]);
+    for (const link of graph.links) {
+      if (link.source.id === selectedID) ids.add(link.target.id);
+      if (link.target.id === selectedID) ids.add(link.source.id);
+    }
+    return ids;
+  }, [graph, previewAgentID]);
+
+  function clearPreviewTimer(ref: { current: number | null }): void {
+    if (ref.current !== null) window.clearTimeout(ref.current);
+    ref.current = null;
+  }
+
+  function showPreview(agentID: string, immediate = false): void {
+    clearPreviewTimer(previewHideTimerRef);
+    clearPreviewTimer(previewShowTimerRef);
+    if (immediate) setPreviewAgentID(agentID);
+    else previewShowTimerRef.current = window.setTimeout(() => setPreviewAgentID(agentID), 140);
+  }
+
+  function schedulePreviewHide(): void {
+    clearPreviewTimer(previewShowTimerRef);
+    clearPreviewTimer(previewHideTimerRef);
+    previewHideTimerRef.current = window.setTimeout(() => setPreviewAgentID(""), 180);
+  }
+
+  useEffect(() => () => {
+    clearPreviewTimer(previewShowTimerRef);
+    clearPreviewTimer(previewHideTimerRef);
+  }, []);
 
   useEffect(() => {
     // Obsidian-style force simulation: the loop never stops, it cools toward
@@ -397,6 +512,7 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
   }
 
   function handlePointerDown(event: ReactPointerEvent<SVGGElement>, node: GraphNode): void {
+    if (node.kind === "agent") showPreview(node.id.slice("agent:".length), true);
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = worldPointFromEvent(event);
     dragRef.current = {
@@ -466,17 +582,24 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
       >
         <g className="channel-agent-graph-viewport" ref={viewportElementRef}>
           <g className="channel-agent-graph-links">
-            {graph.links.map((link) => <line className={link.kind} key={link.id} ref={(element) => { if (element) linkRefs.current.set(link.id, element); }} />)}
+            {graph.links.map((link) => {
+              const active = previewAgentID && (link.source.id === `agent:${previewAgentID}` || link.target.id === `agent:${previewAgentID}`);
+              return <line className={`${link.kind}${previewAgentID ? (active ? " is-active" : " is-muted") : ""}`} key={link.id} ref={(element) => { if (element) linkRefs.current.set(link.id, element); }} />;
+            })}
           </g>
           <g className="channel-agent-graph-nodes">
         {graph.nodes.map((node) => (
           <g
-            className={`channel-agent-graph-node ${node.kind}`}
+            className={`channel-agent-graph-node ${node.kind}${previewAgentID ? (activeNodeIDs.has(node.id) ? " is-active" : " is-muted") : ""}`}
             key={node.id}
             ref={(element) => { if (element) nodeRefs.current.set(node.id, element); }}
             role={node.kind === "agent" ? "button" : undefined}
             tabIndex={node.kind === "agent" ? 0 : undefined}
             aria-label={node.kind === "agent" ? node.label : undefined}
+            onPointerEnter={() => { if (node.kind === "agent") showPreview(node.id.slice("agent:".length)); }}
+            onPointerLeave={() => { if (node.kind === "agent") schedulePreviewHide(); }}
+            onFocus={() => { if (node.kind === "agent") showPreview(node.id.slice("agent:".length), true); }}
+            onBlur={() => { if (node.kind === "agent") schedulePreviewHide(); }}
             onPointerDown={(event) => handlePointerDown(event, node)}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -506,6 +629,17 @@ export function AgentRelationshipGraph({ agents, rooms, onSelectAgent, ariaLabel
           </g>
         </g>
       </svg>
+      {previewAgent ? (
+        <AgentPreviewCard
+          agent={previewAgent}
+          insight={insights?.[previewAgent.id]}
+          rooms={rooms}
+          inheritedProvider={inheritedProvider}
+          inheritedModel={inheritedModel}
+          onPointerEnter={() => clearPreviewTimer(previewHideTimerRef)}
+          onPointerLeave={schedulePreviewHide}
+        />
+      ) : null}
       {settingsOpen ? (
         <aside className="channel-agent-graph-settings">
           <strong>{t("channels.graphSettings")}</strong>

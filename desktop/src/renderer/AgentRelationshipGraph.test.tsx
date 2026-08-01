@@ -131,4 +131,55 @@ describe("AgentRelationshipGraph", () => {
     act(() => controls[0]?.click());
     expect(controls[1]?.textContent).toBe(`${Math.round(fittedScale * 100)}%`);
   });
+
+  it("shows a focused agent snapshot with activity metrics and highlights its relationships", () => {
+    const agents = [
+      { id: "agent-1", name: "Galileo", avatar_key: "abstract-1", activity_status: "idle" },
+      { id: "agent-2", name: "Qin", avatar_key: "abstract-2", activity_status: "thinking" },
+    ] as NamedAgent[];
+    const rooms = [{
+      id: "room-1",
+      name: "product",
+      members: agents.map((agent) => ({ member_type: "agent" as const, member_id: agent.id })),
+    }] as ChannelRoom[];
+
+    act(() => root.render(
+      <AgentRelationshipGraph
+        agents={agents}
+        rooms={rooms}
+        insights={{
+          "agent-1": {
+            agent_id: "agent-1",
+            window_days: 7,
+            files_changed: 12,
+            additions: 386,
+            deletions: 94,
+            input_tokens: 12000,
+            output_tokens: 3200,
+            workspace: "wuu",
+            languages: [{ name: "TypeScript", lines: 480, share: 1 }],
+            attribution_partial: true,
+          },
+        }}
+        inheritedProvider="openai"
+        inheritedModel="gpt-5.2"
+        onSelectAgent={vi.fn()}
+        ariaLabel="Relationship graph"
+        zoomInLabel="Zoom in"
+        zoomOutLabel="Zoom out"
+        resetViewLabel="Reset"
+      />,
+    ));
+
+    const node = container.querySelector<SVGGElement>('[aria-label="Galileo"]')!;
+    act(() => node.focus());
+    const card = container.querySelector<HTMLElement>('[data-testid="channel-agent-preview-card"]')!;
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain("Galileo");
+    expect(card.textContent).toContain("gpt-5.2");
+    expect(card.textContent).toContain("TypeScript");
+    expect(card.textContent).toContain("386");
+    expect(container.querySelectorAll(".channel-agent-graph-node.is-active").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(".channel-agent-graph-links .is-active").length).toBeGreaterThan(0);
+  });
 });

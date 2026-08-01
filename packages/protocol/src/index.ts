@@ -540,6 +540,21 @@ export type ChannelMessage = {
 };
 
 export type ChannelAgentListResult = { agents: NamedAgent[] };
+export type ChannelAgentLanguageUsage = { name: string; lines: number; share: number };
+export type ChannelAgentInsight = {
+  agent_id: string;
+  window_days: number;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  input_tokens: number;
+  output_tokens: number;
+  last_active_at?: string;
+  workspace?: string;
+  languages: ChannelAgentLanguageUsage[];
+  attribution_partial: boolean;
+};
+export type ChannelAgentInsightsResult = { generated_at: string; insights: ChannelAgentInsight[] };
 export type ChannelBootstrapResult = { agents: NamedAgent[]; rooms: ChannelRoom[] };
 export type ChannelAgentCreateParams = {
   name: string;
@@ -2187,6 +2202,7 @@ export type WuuDesktopApi = {
   updateAutomation: (params: AutomationUpdateParams) => Promise<AutomationUpdateResult>;
   removeAutomation: (id: string) => Promise<{ ok: boolean }>;
   listNamedAgents: () => Promise<ChannelAgentListResult>;
+  getNamedAgentInsights: () => Promise<ChannelAgentInsightsResult>;
   bootstrapChannels: () => Promise<ChannelBootstrapResult>;
   createNamedAgent: (params: ChannelAgentCreateParams) => Promise<ChannelAgentCreateResult>;
   updateNamedAgent: (params: ChannelAgentUpdateParams) => Promise<ChannelAgentUpdateResult>;
