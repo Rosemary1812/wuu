@@ -1,4 +1,4 @@
-import { Activity, Braces, Clock3, Cpu, FileCode2, FolderGit2, Settings2 } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import type { ChannelAgentInsight, ChannelRoom, NamedAgent } from "../shared/protocol";
 import { AgentAvatarMark } from "./AgentAvatarMark";
@@ -108,64 +108,56 @@ function relativeActivity(value: string | undefined, locale: string, t: ReturnTy
   return formatter.format(-Math.round(elapsedHours / 24), "day");
 }
 
-function AgentPreviewCard({ agent, insight, rooms, inheritedProvider, inheritedModel, onPointerEnter, onPointerLeave }: {
+function AgentPreviewCard({ agent, insight, inheritedProvider, inheritedModel, onPointerEnter, onPointerLeave }: {
   agent: NamedAgent;
   insight?: ChannelAgentInsight;
-  rooms: ChannelRoom[];
   inheritedProvider?: string;
   inheritedModel?: string;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
 }): JSX.Element {
   const { formatNumber, locale, t } = useI18n();
-  const activeRooms = rooms.filter((room) => room.members.some((member) => member.member_type === "agent" && member.member_id === agent.id));
-  const inherited = !agent.model_override;
   const provider = agent.provider_override || inheritedProvider || t("settings.unknownProvider");
   const model = agent.model_override || inheritedModel || t("settings.unknownModel");
   const status = agent.activity_status === "thinking" ? "thinking" : "idle";
   const compact = (value: number): string => formatNumber(value, { notation: "compact", maximumFractionDigits: 1 });
+  const percent = (value: number): string => formatNumber(value, { style: "percent", maximumFractionDigits: 0 });
+  const statParts: JSX.Element[] = [];
+  if (insight) {
+    if (insight.files_changed > 0) {
+      statParts.push(<span key="files"><strong>{formatNumber(insight.files_changed)}</strong> {t("channels.agentPreviewFiles")}</span>);
+      statParts.push(<span key="diff"><i>+{compact(insight.additions)}</i><em>−{compact(insight.deletions)}</em></span>);
+    }
+    const tokens = insight.input_tokens + insight.output_tokens;
+    if (tokens > 0) {
+      statParts.push(<span key="tokens"><strong>{compact(tokens)}</strong> {t("channels.agentPreviewTokens")}</span>);
+    }
+  }
+  const languages = insight?.languages.slice(0, 3) ?? [];
 
   return (
     <aside className="channel-agent-preview-card" data-testid="channel-agent-preview-card" aria-live="polite" onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-      <div className="channel-agent-preview-kicker">
-        <Activity aria-hidden="true" /><span>{t("channels.agentPreview")}</span><span className={`channel-agent-preview-live ${status}`} />
-      </div>
       <header className="channel-agent-preview-header">
         <div className="channel-agent-preview-avatar"><AgentAvatarMark avatarKey={agent.avatar_key || "abstract-1"} avatarImage={agent.avatar_image} /></div>
-        <div className="channel-agent-preview-identity">
-          <strong>{agent.name}</strong>
-          <span><Clock3 aria-hidden="true" />{status === "thinking" ? t("channels.agentStatus.thinking") : relativeActivity(insight?.last_active_at, locale, t)}</span>
-        </div>
-        <span className={`channel-agent-preview-status ${status}`}>{t(`channels.agentStatus.${status}`)}</span>
+        <span className="channel-agent-preview-activity">{status === "thinking" ? t("channels.agentStatus.thinking") : relativeActivity(insight?.last_active_at, locale, t)}</span>
+        <span className={`channel-agent-preview-dot ${status}`} role="img" aria-label={t(`channels.agentStatus.${status}`)} />
       </header>
-      <div className="channel-agent-preview-model">
-        <Cpu aria-hidden="true" />
-        <div><span>{provider}</span><strong title={model}>{model}</strong></div>
-        <small>{inherited ? t("channels.agentPreviewInherited") : t("channels.agentPreviewOverride")}</small>
-      </div>
+      <p className="channel-agent-preview-model" title={`${provider} · ${model}`}>
+        <strong>{model}</strong>
+        <span>{provider}</span>
+      </p>
       {insight ? (
-        <>
-          <div className="channel-agent-preview-metrics">
-            <div><FileCode2 aria-hidden="true" /><span>{t("channels.agentPreviewFiles")}</span><strong>{formatNumber(insight.files_changed)}</strong></div>
-            <div><Braces aria-hidden="true" /><span>{t("channels.agentPreviewChanges")}</span><strong><i>+{compact(insight.additions)}</i><em>−{compact(insight.deletions)}</em></strong></div>
-            <div><Activity aria-hidden="true" /><span>{t("channels.agentPreviewTokens")}</span><strong>{compact(insight.input_tokens + insight.output_tokens)}</strong></div>
-          </div>
-          <section className="channel-agent-preview-languages">
-            <div className="channel-agent-preview-section-title"><span>{t("channels.agentPreviewLanguages")}</span><small>{t("channels.agentPreviewWindow", { count: insight.window_days })}</small></div>
-            {insight.languages.length > 0 ? insight.languages.map((language, index) => (
-              <div className="channel-agent-preview-language" key={language.name}>
-                <span>{language.name}</span><div><i data-rank={index} style={{ width: `${Math.max(4, language.share * 100)}%` }} /></div><strong>{formatNumber(language.share, { style: "percent", maximumFractionDigits: 0 })}</strong>
-              </div>
-            )) : <div className="channel-agent-preview-empty">{t("channels.agentPreviewNoChanges")}</div>}
-          </section>
-        </>
-      ) : <div className="channel-agent-preview-loading" aria-label={t("channels.agentPreviewLoading")}><i /><i /><i /></div>}
-      <footer className="channel-agent-preview-footer">
-        <FolderGit2 aria-hidden="true" />
-        <div><strong>{insight?.workspace || t("channels.agentPreviewNoWorkspace")}</strong><span>{activeRooms.slice(0, 2).map((room) => `# ${room.name}`).join(" · ") || t("channels.agentPreviewNoChannels")}</span></div>
-        {activeRooms.length > 2 ? <small>+{activeRooms.length - 2}</small> : null}
-      </footer>
-      {insight?.attribution_partial ? <p className="channel-agent-preview-note">{t("channels.agentPreviewAttribution")}</p> : null}
+        <div className="channel-agent-preview-body">
+          <span className="channel-agent-preview-window">{t("channels.agentPreviewWindow", { count: insight.window_days })}</span>
+          {statParts.length > 0 ? <p className="channel-agent-preview-stats">{statParts}</p> : <p className="channel-agent-preview-empty">{t("channels.agentPreviewNoChanges")}</p>}
+          {languages.length > 0 ? (
+            <div className="channel-agent-preview-languages">
+              <div className="channel-agent-preview-langbar">{languages.map((language, index) => <i key={language.name} data-rank={index} style={{ width: `${Math.max(3, language.share * 100)}%` }} />)}</div>
+              <span>{languages.map((language) => `${language.name} ${percent(language.share)}`).join(" · ")}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : <div className="channel-agent-preview-loading" aria-label={t("channels.agentPreviewLoading")}><i /><i /></div>}
     </aside>
   );
 }
@@ -633,7 +625,6 @@ export function AgentRelationshipGraph({ agents, rooms, insights, inheritedProvi
         <AgentPreviewCard
           agent={previewAgent}
           insight={insights?.[previewAgent.id]}
-          rooms={rooms}
           inheritedProvider={inheritedProvider}
           inheritedModel={inheritedModel}
           onPointerEnter={() => clearPreviewTimer(previewHideTimerRef)}

@@ -175,7 +175,7 @@ describe("AgentRelationshipGraph", () => {
     act(() => node.focus());
     const card = container.querySelector<HTMLElement>('[data-testid="channel-agent-preview-card"]')!;
     expect(card).not.toBeNull();
-    expect(card.textContent).toContain("Galileo");
+    expect(card.textContent).not.toContain("Galileo");
     expect(card.textContent).toContain("gpt-5.2");
     expect(card.textContent).toContain("TypeScript");
     expect(card.textContent).toContain("386");
