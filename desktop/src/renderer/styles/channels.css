@@ -280,13 +280,17 @@
 
 .channel-response-status {
   box-sizing: border-box;
+  height: 46px;
   min-height: 46px;
+  max-height: 46px;
   min-width: 0;
+  flex: 0 0 46px;
   display: flex;
   align-items: center;
   gap: 9px;
+  overflow: hidden;
   margin: 0;
-  padding: 10px 12px 11px;
+  padding: 7px 12px 8px;
   border-top: 1px solid var(--border-subtle);
   background: transparent;
   color: var(--text-primary);

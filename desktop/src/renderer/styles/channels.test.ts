@@ -194,7 +194,11 @@ describe("channel agent status", () => {
     expect(roomList).toMatch(/flex:\s*1/);
     expect(roomList).toMatch(/overflow:\s*auto/);
     expect(responseStatus).toMatch(/display:\s*flex/);
+    expect(responseStatus).toMatch(/(?:^|\n)\s*height:\s*46px/);
     expect(responseStatus).toMatch(/min-height:\s*46px/);
+    expect(responseStatus).toMatch(/max-height:\s*46px/);
+    expect(responseStatus).toMatch(/flex:\s*0 0 46px/);
+    expect(responseStatus).toMatch(/overflow:\s*hidden/);
     expect(responseStatus).toMatch(/border-top:\s*1px solid var\(--border-subtle\)/);
     expect(responseStatus).toMatch(/background:\s*transparent/);
     expect(responseStatus).not.toMatch(/border-radius/);
