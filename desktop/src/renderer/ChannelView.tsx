@@ -10,6 +10,7 @@ import { ChannelMemberPicker } from "./ChannelMemberPicker";
 import { buildComposerAttachments } from "./ComposerDraftState";
 import { ComposerAttachmentStrip } from "./ComposerInputSections";
 import { DefaultAvatarMark } from "./DefaultAvatar";
+import { FieldError } from "./FieldError";
 import {
   awaitComposerImages,
   inputFilesFromComposer,
@@ -258,6 +259,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
   const [agentName, setAgentName] = useState("");
   const [agentAvatarKey, setAgentAvatarKey] = useState<string>(() => randomAgentAvatarKey());
   const [agentAvatarImage, setAgentAvatarImage] = useState("");
+  const [agentAvatarError, setAgentAvatarError] = useState("");
   const [agentModel, setAgentModel] = useState("");
   const [editingAgentID, setEditingAgentID] = useState("");
   const [roomName, setRoomName] = useState("");
@@ -834,6 +836,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     setAgentName(agent.name);
     setAgentAvatarKey(agent.avatar_key);
     setAgentAvatarImage(agent.avatar_image ?? "");
+    setAgentAvatarError("");
     setAgentModel(agent.provider_override && agent.model_override ? `${agent.provider_override}\u0000${agent.model_override}` : "");
     setSetupPanel("agent");
   }
@@ -844,6 +847,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     setAgentName("");
     setAgentAvatarKey(randomAgentAvatarKey());
     setAgentAvatarImage("");
+    setAgentAvatarError("");
     setAgentModel("");
   }
 
@@ -1261,6 +1265,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                     setAgentName("");
                     setAgentAvatarKey(randomAgentAvatarKey());
                     setAgentAvatarImage("");
+                    setAgentAvatarError("");
                     setAgentModel("");
                     setSetupPanel("agent");
                   }}
@@ -1406,7 +1411,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   key={avatarKey}
                   aria-label={t("channels.chooseAvatar", { index: index + 1 })}
                   aria-pressed={agentAvatarKey === avatarKey}
-                  onClick={() => { setAgentAvatarKey(avatarKey); setAgentAvatarImage(""); }}
+                  onClick={() => { setAgentAvatarKey(avatarKey); setAgentAvatarImage(""); setAgentAvatarError(""); }}
                 >
                   <AgentAvatarMark avatarKey={avatarKey} />
                 </button>
@@ -1416,6 +1421,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 type="button"
                 aria-label={t("channels.customAvatar")}
                 aria-pressed={Boolean(agentAvatarImage)}
+                aria-invalid={Boolean(agentAvatarError)}
+                aria-describedby={agentAvatarError ? "channel-agent-avatar-error" : undefined}
                 onClick={() => agentAvatarInputRef.current?.click()}
               >
                 {agentAvatarImage
@@ -1431,14 +1438,15 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                   const input = event.currentTarget;
                   const file = input.files?.[0];
                   if (!file) return;
-                  setError("");
+                  setAgentAvatarError("");
                   void squareAvatarImageFromFile(file)
                     .then(setAgentAvatarImage)
-                    .catch(() => setError(t("channels.invalidAvatarImage")))
+                    .catch(() => setAgentAvatarError(t("channels.invalidAvatarImage")))
                     .finally(() => { input.value = ""; });
                 }}
               />
             </div>
+            <FieldError id="channel-agent-avatar-error">{agentAvatarError}</FieldError>
           </fieldset>
           <label className="sidebar-name-dialog-field">
             <span className="sidebar-name-dialog-label">{t("channels.model")}</span>

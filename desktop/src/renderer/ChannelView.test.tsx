@@ -847,6 +847,30 @@ describe("ChannelView", () => {
     expect(api.deleteNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
   });
 
+  it("keeps invalid avatar feedback beside the avatar control", async () => {
+    Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="agents" />));
+    await settle();
+
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="新建 Agent"]')?.click());
+    const input = document.querySelector<HTMLInputElement>(".channel-avatar-file-input");
+    expect(input).not.toBeNull();
+    const oversizedImage = new File(["image"], "avatar.png", { type: "image/png" });
+    Object.defineProperty(oversizedImage, "size", { configurable: true, value: 10 * 1024 * 1024 + 1 });
+    Object.defineProperty(input!, "files", { configurable: true, value: [oversizedImage] });
+
+    await act(async () => input?.dispatchEvent(new Event("change", { bubbles: true })));
+
+    const dialog = document.querySelector(".sidebar-name-dialog");
+    const alert = dialog?.querySelector<HTMLElement>("#channel-agent-avatar-error");
+    const avatarButton = dialog?.querySelector<HTMLButtonElement>('button[aria-label="选择自定义头像图片"]');
+    expect(alert?.textContent).toBe("请选择不超过 10 MB 的 PNG、JPEG 或 WebP 图片。");
+    expect(avatarButton?.getAttribute("aria-invalid")).toBe("true");
+    expect(avatarButton?.getAttribute("aria-describedby")).toBe(alert?.id);
+    expect(container.querySelector(".channel-error")).toBeNull();
+  });
+
   it("creates only a channel with selected agents", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });

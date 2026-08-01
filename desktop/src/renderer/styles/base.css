@@ -660,3 +660,17 @@ button:disabled {
 .rich-content b {
   font-weight: var(--weight-medium);
 }
+
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+
+.field-error > svg {
+  margin-top: 1px;
+}
