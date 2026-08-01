@@ -1,5 +1,16 @@
 /* Room canvas header. Lives in its own file while channels.css has
    parallel in-flight edits; merge into channels.css once that lands. */
+
+/* The rooms canvas lost its directory pane: like .channel-mode-tasks it is
+   a single-column view. channels.css still defaults .channel-view to
+   `208px minmax(0, 1fr)` from the deleted pane; this override (imported
+   after channels.css) flips rooms to full-width until the base default can
+   be corrected in channels.css itself. The agents canvas keeps its pane and
+   sets explicit two columns via inline style, which wins over this rule. */
+.channel-mode-rooms {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .channel-room-header {
   display: flex;
   align-items: center;
