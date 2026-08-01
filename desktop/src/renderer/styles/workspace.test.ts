@@ -200,6 +200,18 @@ describe("workspace document turn glass", () => {
       ".workspace-document-composer .document-composer-wrap .composer-frame",
     );
   });
+
+  it("does not move an expanded result drawer when the pointer crosses its edge", () => {
+    expect(workspaceCss).toContain(
+      ".workspace-document-turn-drawer:not(.expanded):hover,",
+    );
+    expect(workspaceCss).toContain(
+      ".workspace-document-turn-drawer:not(.expanded):focus-within",
+    );
+    expect(workspaceCss).not.toMatch(
+      /\.workspace-document-turn-drawer:hover[\s\S]*?translate:\s*0 -2px/,
+    );
+  });
 });
 
 describe("workspace readonly file preview", () => {

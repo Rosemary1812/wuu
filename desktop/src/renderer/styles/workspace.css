@@ -1063,8 +1063,8 @@ html.resizing-workspace-file-split * {
   box-shadow: 0 -10px 34px color-mix(in srgb, var(--ink) 11%, transparent);
 }
 
-.workspace-document-turn-drawer:hover,
-.workspace-document-turn-drawer:focus-within {
+.workspace-document-turn-drawer:not(.expanded):hover,
+.workspace-document-turn-drawer:not(.expanded):focus-within {
   z-index: 3;
   translate: 0 -2px;
   border-color: color-mix(in srgb, var(--ink) 14%, transparent);
