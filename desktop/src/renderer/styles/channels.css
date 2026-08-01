@@ -1112,6 +1112,10 @@
   padding: 0;
 }
 
+.conversation-pane.environment-panel-reserved .channel-composer .dock-composer-wrap {
+  padding-right: 0;
+}
+
 .channel-composer .dock-composer-wrap .composer-stack {
   width: 100%;
   transform: none;

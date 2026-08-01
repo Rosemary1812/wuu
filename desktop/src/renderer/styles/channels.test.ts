@@ -101,6 +101,7 @@ describe("channel message resizing", () => {
     const stream = ruleFor(".channel-message-stream");
     const composer = ruleFor(".channel-composer");
     const composerWrap = ruleFor(".channel-composer .dock-composer-wrap");
+    const reservedComposerWrap = ruleFor(".conversation-pane.environment-panel-reserved .channel-composer .dock-composer-wrap");
     const message = ruleFor(".channel-message");
     const ownMessage = ruleFor(".channel-message.own");
     const messageContent = ruleFor(".channel-message-content");
@@ -115,6 +116,7 @@ describe("channel message resizing", () => {
     expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 8px/);
     expect(composer).toMatch(/padding:\s*10px var\(--channel-horizontal-gutter\) 12px/);
     expect(composerWrap).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
+    expect(reservedComposerWrap).toMatch(/padding-right:\s*0/);
     expect(message).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
     expect(message).toMatch(/grid-template-columns:\s*var\(--channel-avatar-size\) minmax\(0, 1fr\)/);
     expect(message).toMatch(/gap:\s*var\(--channel-message-column-gap\)/);
