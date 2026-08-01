@@ -280,8 +280,6 @@ export function AppSidebar({
   onOpenAutomationsTab,
   onOpenSkillsTab,
   groupChatEnabled = false,
-  channelsOpen,
-  channelMentionCount,
   channelRooms = [],
   activeChannelRoomID,
   activeChannelSection = null,
@@ -341,8 +339,6 @@ export function AppSidebar({
   onOpenAutomationsTab: () => void;
   onOpenSkillsTab: () => void;
   groupChatEnabled?: boolean;
-  channelsOpen?: boolean;
-  channelMentionCount?: number;
   // Unified 协作 section: the room list (with per-room unread counts) is
   // polled at the App level and passed down so the sidebar and the channel
   // canvas never disagree about what needs attention.
@@ -482,25 +478,6 @@ export function AppSidebar({
             <MessageSquarePlus className="icon-lg" />
             <span>{t("sidebar.newConversation")}</span>
           </button>
-          {groupChatEnabled ? (
-            <button
-              className="nav-item"
-              type="button"
-              aria-current={channelsOpen ? "page" : undefined}
-              onClick={onOpenChannels}
-              disabled={!state.initialized}
-            >
-              <Hash className="icon-lg" />
-              <span className="channel-nav-label">
-                <span>{t("sidebar.groupChat")}</span>
-                {channelMentionCount ? (
-                  <span className="channel-mention-badge" aria-label={t("channels.unreadMentions", { count: channelMentionCount })}>
-                    {channelMentionCount > 99 ? "99+" : channelMentionCount}
-                  </span>
-                ) : null}
-              </span>
-            </button>
-          ) : null}
           <button
             className="nav-item conversation-search-trigger"
             type="button"

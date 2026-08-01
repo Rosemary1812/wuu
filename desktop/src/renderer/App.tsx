@@ -512,13 +512,11 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [channelSection, setChannelSection] = useState<ChannelSection>("rooms");
-  const [channelMentionCount, setChannelMentionCount] = useState(0);
   // Rooms (with per-room unread counts) live at the App level so the unified
   // sidebar and the channel canvas share one source of truth; selection is
   // controlled here and passed into ChannelView.
   const [channelRooms, setChannelRooms] = useState<ChannelRoom[]>([]);
   const [selectedChannelRoomID, setSelectedChannelRoomID] = useState("");
-  const previousChannelMentionCount = useRef<number | null>(null);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
   const {
@@ -529,39 +527,6 @@ export function App(): JSX.Element {
     refreshCodexPets,
     updateCodexPets,
   } = useSettingsRuntimeState({ settingsOpen });
-
-  useEffect(() => {
-    if (!ENABLE_GROUP_CHAT || !window.wuu || !state.initialized) {
-      setChannelMentionCount(0);
-      return;
-    }
-    let active = true;
-    const refresh = async (): Promise<void> => {
-      try {
-        if (channelsOpen) {
-          await window.wuu.ackChannelHumanMentions();
-          if (active) {
-            previousChannelMentionCount.current = 0;
-            setChannelMentionCount(0);
-          }
-          return;
-        }
-        const result = await window.wuu.getChannelHumanMentionStatus();
-        if (active) {
-          previousChannelMentionCount.current = result.count;
-          setChannelMentionCount(result.count);
-        }
-      } catch (reason) {
-        console.warn("channel mention refresh failed", reason);
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 2_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [channelsOpen, state.initialized, t]);
 
   // Poll the room list so the sidebar 协作 section always shows current
   // unread counts, independent of whether the channel canvas is open.
@@ -704,7 +669,6 @@ export function App(): JSX.Element {
     setEnvironmentPanelOpen(false);
     setRightPanelOpenWithMotion(false);
     setChannelsOpen(true);
-    setChannelMentionCount(0);
     closeSidebarDrawer();
   }, [closeSidebarDrawer, setRightPanelOpenWithMotion]);
   const selectChannelRoom = useCallback((roomID: string): void => {
@@ -4058,8 +4022,6 @@ export function App(): JSX.Element {
               openAutomationsTab();
             }}
             groupChatEnabled={ENABLE_GROUP_CHAT}
-            channelsOpen={channelsOpen}
-            channelMentionCount={channelMentionCount}
             channelRooms={channelRooms}
             activeChannelRoomID={channelsOpen && channelSection === "rooms" ? selectedChannelRoomID : undefined}
             activeChannelSection={channelsOpen ? channelSection : null}

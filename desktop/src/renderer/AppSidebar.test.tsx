@@ -67,7 +67,6 @@ interface RenderOptions {
   sectionOrder?: string[];
   state?: AppState;
   groupChatEnabled?: boolean;
-  channelMentionCount?: number;
   channelRooms?: ChannelRoom[];
   activeChannelRoomID?: string;
   activeChannelSection?: "rooms" | "agents" | "tasks" | null;
@@ -108,7 +107,6 @@ function renderSidebar({
     },
   },
   groupChatEnabled = false,
-  channelMentionCount,
   channelRooms = [],
   activeChannelRoomID,
   activeChannelSection = null,
@@ -139,7 +137,6 @@ function renderSidebar({
         onOpenAutomationsTab={() => {}}
         onOpenSkillsTab={() => {}}
         groupChatEnabled={groupChatEnabled}
-        channelMentionCount={channelMentionCount}
         channelRooms={channelRooms}
         activeChannelRoomID={activeChannelRoomID}
         activeChannelSection={activeChannelSection}
@@ -177,10 +174,12 @@ describe("AppSidebar layout", () => {
     expect(container.textContent).not.toContain("群聊");
   });
 
-  it("shows the unread human mention badge on group chat", () => {
-    renderSidebar({ groupChatEnabled: true, channelMentionCount: 3 });
+  it("replaces the legacy group chat nav item with the 协作 section", () => {
+    renderSidebar({ groupChatEnabled: true });
 
-    expect(container.querySelector(".channel-mention-badge")?.textContent).toBe("3");
+    const navLabels = Array.from(container.querySelectorAll(".nav-item")).map((item) => item.textContent);
+    expect(navLabels).not.toContain("群聊");
+    expect(container.querySelector(".channel-mention-badge")).toBeNull();
   });
 
   it("defines a hover edge drawer for the collapsed sidebar", () => {
