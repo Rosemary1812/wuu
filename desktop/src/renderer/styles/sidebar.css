@@ -826,6 +826,10 @@
 
 .sidebar-room-row .channel-room-unread {
   grid-column: 3;
+  /* Match the session unread dot (info blue) rather than the accent red:
+   * at the App level unread rooms are the same signal class as unread
+   * sessions. The count stays inside the pill. */
+  background: var(--sidebar-session-status-unread-bg);
 }
 
 .nav-item:hover,
