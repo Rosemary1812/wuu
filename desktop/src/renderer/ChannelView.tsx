@@ -42,6 +42,7 @@ const THREAD_PANEL_MIN_WIDTH = 320;
 const THREAD_PANEL_MAX_WIDTH = 720;
 const THREAD_PANEL_DEFAULT_WIDTH = 420;
 const THREAD_PANEL_WIDTH_STEP = 24;
+const CHANNEL_MESSAGE_GROUP_WINDOW_MS = 3 * 60 * 1000;
 
 const AGENT_AVATAR_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
 const AGENT_AVATAR_SIZE = 256;
@@ -49,6 +50,12 @@ const AGENT_AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 export function formatChannelUnreadCount(count: number): string {
   return count > 99 ? "99+" : String(Math.max(0, count));
+}
+
+function canGroupChannelMessages(previous: ChannelMessage | undefined, current: ChannelMessage): boolean {
+  if (!previous || previous.author_type !== current.author_type || previous.author_id !== current.author_id) return false;
+  const elapsed = Date.parse(current.created_at) - Date.parse(previous.created_at);
+  return Number.isFinite(elapsed) && elapsed >= 0 && elapsed <= CHANNEL_MESSAGE_GROUP_WINDOW_MS;
 }
 
 async function squareAvatarImageFromFile(file: File): Promise<string> {
@@ -1111,9 +1118,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
             const previousMessage = rootMessages[index - 1];
             const previousThreadReplies = previousMessage ? (repliesByThread.get(previousMessage.id) ?? []) : [];
             const grouped = Boolean(
-              previousMessage
-              && previousMessage.author_type === message.author_type
-              && previousMessage.author_id === message.author_id
+              canGroupChannelMessages(previousMessage, message)
               && previousThreadReplies.length === 0,
             );
             return (
@@ -1136,9 +1141,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                         onMention={!own ? () => roomComposerRef.current?.insertMention(author) : undefined}
                       />
                     ) : null}
-                    <time dateTime={message.created_at}>
+                    {!grouped ? <time dateTime={message.created_at}>
                       {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
-                    </time>
+                    </time> : null}
                     <div className="channel-message-actions">
                       <button type="button" onClick={() => openThread(message)}>
                         <Reply aria-hidden="true" />
@@ -1217,9 +1222,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                 const repliedMessage = message.reply_to ? messageByID.get(message.reply_to) : undefined;
                 const previousMessage = threadConversationMessages[index - 1];
                 const grouped = Boolean(
-                  previousMessage
-                  && previousMessage.author_type === message.author_type
-                  && previousMessage.author_id === message.author_id
+                  canGroupChannelMessages(previousMessage, message)
                   && previousMessage.reply_to === message.reply_to,
                 );
                 return (
@@ -1242,9 +1245,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
                             onMention={!own ? () => threadComposerRef.current?.insertMention(author) : undefined}
                           />
                         ) : null}
-                        <time dateTime={message.created_at}>
+                        {!grouped ? <time dateTime={message.created_at}>
                           {formatDate(message.created_at, { hour: "2-digit", minute: "2-digit" })}
-                        </time>
+                        </time> : null}
                         <div className="channel-message-actions">
                           <button type="button" onClick={() => setThreadReplyTargetID(message.id)}>
                             <Reply aria-hidden="true" />

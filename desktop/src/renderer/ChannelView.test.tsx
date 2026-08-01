@@ -462,16 +462,25 @@ describe("ChannelView", () => {
         author_id: "agent-1",
         kind: "text" as const,
         body: "Follow-up update",
-        created_at: "2026-07-23T00:00:30Z",
+        created_at: "2026-07-23T00:03:00Z",
       }, {
         id: "message-3",
         room_id,
         seq: 3,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "Later update",
+        created_at: "2026-07-23T00:06:01Z",
+      }, {
+        id: "message-4",
+        room_id,
+        seq: 4,
         author_type: "human" as const,
         author_id: "human",
         kind: "text" as const,
         body: "New speaker",
-        created_at: "2026-07-23T00:01:00Z",
+        created_at: "2026-07-23T00:05:00Z",
       }],
     }));
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
@@ -480,15 +489,17 @@ describe("ChannelView", () => {
     await settle();
 
     const renderedMessages = container.querySelectorAll<HTMLElement>(".channel-message-stream > .channel-message");
-    expect(renderedMessages).toHaveLength(3);
+    expect(renderedMessages).toHaveLength(4);
     expect(renderedMessages[0].classList.contains("grouped")).toBe(false);
     expect(renderedMessages[0].querySelector(".channel-agent-avatar")).not.toBeNull();
     expect(renderedMessages[0].querySelector(".channel-author-mention")?.textContent).toBe("@Alpha");
     expect(renderedMessages[1].classList.contains("grouped")).toBe(true);
     expect(renderedMessages[1].querySelector(".channel-agent-avatar")).toBeNull();
     expect(renderedMessages[1].querySelector(".channel-author-mention")).toBeNull();
+    expect(renderedMessages[1].querySelector("time")).toBeNull();
     expect(renderedMessages[2].classList.contains("grouped")).toBe(false);
-    expect(renderedMessages[2].querySelector(".channel-human-avatar")).not.toBeNull();
+    expect(renderedMessages[2].querySelector(".channel-agent-avatar")).not.toBeNull();
+    expect(renderedMessages[3].querySelector(".channel-human-avatar")).not.toBeNull();
   });
 
   it("groups a thread root with its preceding author but starts a new group after the digest", async () => {
