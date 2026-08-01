@@ -486,6 +486,43 @@ func createAppserverTestRoom(t *testing.T, service *channels.Service, agents ...
 	return room
 }
 
+func TestChannelRoomListReportsUnreadAndReadRPCClearsIt(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+
+	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{Name: "Alpha"})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent() error = %v", err)
+	}
+	var createdRoom ChannelRoomCreateResult
+	callChannelRPC(t, server, out, MethodChannelRoomCreate, ChannelRoomCreateParams{
+		Name: "Unread", AgentIDs: []string{credential.Agent.ID},
+	}, &createdRoom)
+	if _, err := server.channelService.SendAgent(context.Background(), channels.AgentSendParams{
+		RoomID: createdRoom.Room.ID, AgentID: credential.Agent.ID, Token: credential.Token, Body: "new message", BasisSeq: 0,
+	}); err != nil {
+		t.Fatalf("SendAgent() error = %v", err)
+	}
+
+	var listed ChannelRoomListResult
+	callChannelRPC(t, server, out, MethodChannelRoomList, nil, &listed)
+	if len(listed.Rooms) != 1 || listed.Rooms[0].UnreadCount != 1 {
+		t.Fatalf("listed rooms = %#v, want one unread message", listed.Rooms)
+	}
+	var read ChannelRoomReadResult
+	callChannelRPC(t, server, out, MethodChannelRoomRead, ChannelRoomReadParams{RoomID: createdRoom.Room.ID}, &read)
+	if !read.Read {
+		t.Fatal("room read result is false")
+	}
+	callChannelRPC(t, server, out, MethodChannelRoomList, nil, &listed)
+	if len(listed.Rooms) != 1 || listed.Rooms[0].UnreadCount != 0 {
+		t.Fatalf("listed rooms after read = %#v, want zero unread", listed.Rooms)
+	}
+}
+
 func attachNamedAgentTestToolkit(t *testing.T, rt *runtime.Session) {
 	t.Helper()
 	kit, err := tools.New(rt.RootDir)

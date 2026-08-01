@@ -47,6 +47,10 @@ const AGENT_AVATAR_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
 const AGENT_AVATAR_SIZE = 256;
 const AGENT_AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
+export function formatChannelUnreadCount(count: number): string {
+  return count > 99 ? "99+" : String(Math.max(0, count));
+}
+
 async function squareAvatarImageFromFile(file: File): Promise<string> {
   if (!AGENT_AVATAR_TYPES.has(file.type) || file.size === 0 || file.size > AGENT_AVATAR_SOURCE_MAX_BYTES) throw new Error("invalid-avatar-image");
   const bitmap = await createImageBitmap(file);
@@ -510,6 +514,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     );
   }, []);
 
+  const markRoomRead = useCallback((roomID: string): void => {
+    if (!roomID || !window.wuu) return;
+    setRooms((current) => current.map((room) => room.id === roomID ? { ...room, unread_count: 0 } : room));
+    void window.wuu.markChannelRoomRead({ room_id: roomID }).catch((reason: unknown) => {
+      setError(String(reason));
+    });
+  }, []);
+
   const refreshMessages = useCallback(async (roomID: string): Promise<void> => {
     if (!window.wuu || !roomID) {
       setMessages([]);
@@ -574,8 +586,13 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
     if (!window.wuu) return;
     let active = true;
     const refresh = (): void => {
-      void window.wuu!.listNamedAgents().then((result) => {
-        if (active) setAgents(result.agents ?? []);
+      void Promise.all([
+        window.wuu!.listNamedAgents(),
+        window.wuu!.listChannelRooms(),
+      ]).then(([agentResult, roomResult]) => {
+        if (!active) return;
+        setAgents(agentResult.agents ?? []);
+        setRooms(roomResult.rooms ?? []);
       }).catch((reason: unknown) => {
         if (active) setError(String(reason));
       });
@@ -587,6 +604,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedRoomID) markRoomRead(selectedRoomID);
+  }, [markRoomRead, selectedRoomID]);
 
   useEffect(() => {
     if (!selectedRoomID) {
@@ -953,10 +974,25 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange }:
               <span className="channel-directory-avatar channel-room-avatar">
                 <ChannelGroupAvatar room={room} agents={agents} />
               </span>
-              <button className="channel-directory-identity channel-room-select" type="button" onClick={() => setSelectedRoomID(room.id)}>
+              <button
+                className="channel-directory-identity channel-room-select"
+                type="button"
+                onClick={() => {
+                  if (selectedRoomID && selectedRoomID !== room.id) markRoomRead(selectedRoomID);
+                  setSelectedRoomID(room.id);
+                }}
+              >
                 <span className="channel-room-name">{room.name}</span>
                 <span className="channel-room-members">{t("channels.memberCount", { count: room.members.length })}</span>
               </button>
+              {room.id !== selectedRoomID && (room.unread_count ?? 0) > 0 ? (
+                <span
+                  className="channel-room-unread"
+                  aria-label={t("channels.unreadMessages", { count: room.unread_count ?? 0 })}
+                >
+                  {formatChannelUnreadCount(room.unread_count ?? 0)}
+                </span>
+              ) : null}
               <button
                 className="icon-button channel-directory-settings channel-room-details-toggle"
                 type="button"

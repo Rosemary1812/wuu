@@ -16,6 +16,9 @@ func (s *Server) handleChannelBootstrap(ctx context.Context, req Request) error 
 		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
 	}
 	result, err := s.channelService.EnsureBootstrap(ctx, localChannelHumanID)
+	if err == nil {
+		err = s.attachLocalHumanUnreadCounts(ctx, result.Rooms)
+	}
 	return s.writeResponse(req.ID, ChannelBootstrapResult(result), err)
 }
 
@@ -141,7 +144,25 @@ func (s *Server) handleChannelRoomList(ctx context.Context, req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
 	}
 	rooms, err := s.channelService.ListRooms(ctx)
+	if err == nil {
+		err = s.attachLocalHumanUnreadCounts(ctx, rooms)
+	}
 	return s.writeResponse(req.ID, ChannelRoomListResult{Rooms: rooms}, err)
+}
+
+func (s *Server) attachLocalHumanUnreadCounts(ctx context.Context, rooms []channels.Room) error {
+	counts, err := s.channelService.HumanRoomUnreadStatus(ctx, localChannelHumanID)
+	if err != nil {
+		return err
+	}
+	byRoom := make(map[string]int, len(counts))
+	for _, count := range counts {
+		byRoom[count.RoomID] = count.UnreadCount
+	}
+	for index := range rooms {
+		rooms[index].UnreadCount = byRoom[rooms[index].ID]
+	}
+	return nil
 }
 
 func (s *Server) handleChannelRoomCreate(ctx context.Context, req Request) error {
@@ -216,6 +237,18 @@ func (s *Server) handleChannelRoomDelete(ctx context.Context, req Request) error
 	}
 	err := s.channelService.DeleteRoom(ctx, params.RoomID)
 	return s.writeResponse(req.ID, ChannelRoomDeleteResult{Deleted: err == nil}, err)
+}
+
+func (s *Server) handleChannelRoomRead(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelRoomReadParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	err := s.channelService.MarkHumanRoomRead(ctx, params.RoomID, localChannelHumanID)
+	return s.writeResponse(req.ID, ChannelRoomReadResult{Read: err == nil}, err)
 }
 
 func (s *Server) handleChannelMessageList(ctx context.Context, req Request) error {

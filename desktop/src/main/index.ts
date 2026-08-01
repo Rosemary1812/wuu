@@ -55,6 +55,8 @@ import type {
   ChannelRoomUpdateResult,
   ChannelRoomDeleteParams,
   ChannelRoomDeleteResult,
+  ChannelRoomReadParams,
+  ChannelRoomReadResult,
   ChannelRoomListResult,
   ChannelTaskCreateParams,
   ChannelTaskCreateResult,
@@ -1468,6 +1470,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:channel-room-delete", (event, params: ChannelRoomDeleteParams) =>
     appServerRequest<ChannelRoomDeleteResult>(event, "channel/room/delete", params),
+  );
+  ipcMain.handle("wuu:channel-room-read", (event, params: ChannelRoomReadParams) =>
+    appServerRequest<ChannelRoomReadResult>(event, "channel/room/read", params),
   );
   ipcMain.handle("wuu:channel-message-list", (event, params: ChannelMessageListParams) =>
     appServerRequest<ChannelMessageListResult>(event, "channel/message/list", params),

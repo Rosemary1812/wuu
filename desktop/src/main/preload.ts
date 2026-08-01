@@ -12,6 +12,7 @@ import {
   type ChannelRoomCreateParams,
   type ChannelRoomUpdateParams,
   type ChannelRoomDeleteParams,
+  type ChannelRoomReadParams,
   type ChannelTaskCreateParams,
   type ChannelTaskUpdateParams,
   type MessageFlowFontSize,
@@ -270,6 +271,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:channel-room-update", params),
   deleteChannelRoom: (params: ChannelRoomDeleteParams) =>
     ipcRenderer.invoke("wuu:channel-room-delete", params),
+  markChannelRoomRead: (params: ChannelRoomReadParams) =>
+    ipcRenderer.invoke("wuu:channel-room-read", params),
   listChannelMessages: (params: ChannelMessageListParams) =>
     ipcRenderer.invoke("wuu:channel-message-list", params),
   sendChannelMessage: (params: ChannelMessageSendParams) =>

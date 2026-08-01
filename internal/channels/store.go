@@ -845,11 +845,9 @@ func (s *Service) CreateRoom(ctx context.Context, params CreateRoomParams) (Room
 			room.ID, member.MemberType, member.MemberID, toMillis(member.JoinedAt)); err != nil {
 			return Room{}, fmt.Errorf("insert room member: %w", err)
 		}
-		if member.MemberType == MemberAgent {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO room_cursors (room_id, member_type, member_id, last_read_seq) VALUES (?, ?, ?, 0)`, room.ID, string(member.MemberType), member.MemberID); err != nil {
-				return Room{}, fmt.Errorf("initialize room cursor: %w", err)
-			}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO room_cursors (room_id, member_type, member_id, last_read_seq) VALUES (?, ?, ?, 0)`, room.ID, string(member.MemberType), member.MemberID); err != nil {
+			return Room{}, fmt.Errorf("initialize room cursor: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

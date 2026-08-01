@@ -149,6 +149,7 @@ export const enUS = {
   "channels.addMember": "Add member",
   "channels.removeMember": "Remove {name}",
   "channels.memberCount": "{count} members",
+  "channels.unreadMessages": "{count} unread messages",
   "channels.status": "Status",
   "channels.agentStatus.idle": "Online",
   "channels.agentStatus.thinking": "Working",

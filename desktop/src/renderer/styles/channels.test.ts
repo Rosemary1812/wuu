@@ -14,6 +14,9 @@ describe("channel directory alignment", () => {
     const directoryRow = ruleFor(".channel-directory-row");
     const directoryIdentity = ruleFor(".channel-directory-identity");
     const directorySettings = ruleFor(".channel-directory-settings");
+    const roomRow = ruleFor(".channel-room-row");
+    const unreadBadge = ruleFor(".channel-room-unread");
+    const roomSettings = ruleFor(".channel-room-row .channel-directory-settings");
     const agentWorkspace = ruleFor(".channel-agent-workspace");
     const agentIdentity = ruleFor(".channel-agent-directory-identity");
 
@@ -26,6 +29,12 @@ describe("channel directory alignment", () => {
     expect(directoryRow).toMatch(/border-radius:\s*var\(--channel-directory-row-radius\)/);
     expect(directoryIdentity).toMatch(/min-width:\s*0/);
     expect(directorySettings).toMatch(/width:\s*28px/);
+    expect(roomRow).toMatch(/grid-template-columns:\s*34px minmax\(0, 1fr\) auto 28px/);
+    expect(unreadBadge).toMatch(/min-width:\s*18px/);
+    expect(unreadBadge).toMatch(/background:\s*var\(--wuu-accent\)/);
+    expect(unreadBadge).toMatch(/border:\s*0/);
+    expect(unreadBadge).not.toMatch(/box-shadow/);
+    expect(roomSettings).toMatch(/grid-column:\s*4/);
     expect(agentWorkspace).toMatch(/display:\s*contents/);
     expect(agentIdentity).not.toMatch(/grid-template-columns/);
     expect(channelsCss).not.toContain("channel-agent-directory-actions");

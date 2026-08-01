@@ -147,6 +147,7 @@ export const zhCN = {
   "channels.addMember": "新增成员",
   "channels.removeMember": "移除 {name}",
   "channels.memberCount": "{count} 位成员",
+  "channels.unreadMessages": "{count} 条未读消息",
   "channels.status": "状态",
   "channels.agentStatus.idle": "在线",
   "channels.agentStatus.thinking": "处理中",

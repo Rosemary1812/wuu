@@ -518,6 +518,7 @@ export type ChannelRoom = {
   created_by: string;
   created_at: string;
   members: ChannelRoomMember[];
+  unread_count?: number;
 };
 
 export type ChannelMessage = {
@@ -570,6 +571,8 @@ export type ChannelRoomUpdateParams = {
 export type ChannelRoomUpdateResult = { room: ChannelRoom };
 export type ChannelRoomDeleteParams = { room_id: string };
 export type ChannelRoomDeleteResult = { deleted: boolean };
+export type ChannelRoomReadParams = { room_id: string };
+export type ChannelRoomReadResult = { read: boolean };
 export type ChannelMessageListParams = {
   room_id: string;
   after_seq?: number;
@@ -2193,6 +2196,7 @@ export type WuuDesktopApi = {
   createChannelRoom: (params: ChannelRoomCreateParams) => Promise<ChannelRoomCreateResult>;
   updateChannelRoom: (params: ChannelRoomUpdateParams) => Promise<ChannelRoomUpdateResult>;
   deleteChannelRoom: (params: ChannelRoomDeleteParams) => Promise<ChannelRoomDeleteResult>;
+  markChannelRoomRead: (params: ChannelRoomReadParams) => Promise<ChannelRoomReadResult>;
   listChannelMessages: (params: ChannelMessageListParams) => Promise<ChannelMessageListResult>;
   sendChannelMessage: (params: ChannelMessageSendParams) => Promise<ChannelMessageSendResult>;
   createChannelTask: (params: ChannelTaskCreateParams) => Promise<ChannelTaskCreateResult>;

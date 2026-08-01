@@ -115,6 +115,7 @@ type Room struct {
 	CreatedBy   string       `json:"created_by"`
 	CreatedAt   time.Time    `json:"created_at"`
 	Members     []RoomMember `json:"members"`
+	UnreadCount int          `json:"unread_count"`
 }
 
 type CreateRoomParams struct {
@@ -391,6 +392,11 @@ type HumanMentionItem struct {
 }
 
 type HumanMentionCount struct {
+	RoomID      string `json:"room_id"`
+	UnreadCount int    `json:"unread_count"`
+}
+
+type HumanRoomUnreadCount struct {
 	RoomID      string `json:"room_id"`
 	UnreadCount int    `json:"unread_count"`
 }

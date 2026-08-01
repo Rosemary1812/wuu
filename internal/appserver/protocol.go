@@ -39,6 +39,7 @@ const (
 	MethodChannelRoomCreate    = "channel/room/create"
 	MethodChannelRoomUpdate    = "channel/room/update"
 	MethodChannelRoomDelete    = "channel/room/delete"
+	MethodChannelRoomRead      = "channel/room/read"
 	MethodChannelMessageList   = "channel/message/list"
 	MethodChannelMessageSend   = "channel/message/send"
 	MethodChannelTaskCreate    = "channel/task/create"
@@ -2126,6 +2127,14 @@ type ChannelRoomDeleteParams struct {
 }
 type ChannelRoomDeleteResult struct {
 	Deleted bool `json:"deleted"`
+}
+
+type ChannelRoomReadParams struct {
+	RoomID string `json:"room_id"`
+}
+
+type ChannelRoomReadResult struct {
+	Read bool `json:"read"`
 }
 
 type ChannelMessageListParams struct {

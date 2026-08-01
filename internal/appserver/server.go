@@ -804,6 +804,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleChannelRoomUpdate(ctx, req)
 	case MethodChannelRoomDelete:
 		return s.handleChannelRoomDelete(ctx, req)
+	case MethodChannelRoomRead:
+		return s.handleChannelRoomRead(ctx, req)
 	case MethodChannelMessageList:
 		return s.handleChannelMessageList(ctx, req)
 	case MethodChannelMessageSend:

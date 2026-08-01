@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelRoom, NamedAgent, WuuDesktopApi } from "../shared/protocol";
 import { graphDensityScale } from "./AgentRelationshipGraph";
 import { groupAvatarRowSizes } from "./ChannelGroupAvatar";
-import { ChannelView } from "./ChannelView";
+import { ChannelView, formatChannelUnreadCount } from "./ChannelView";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -66,6 +66,7 @@ function createApi(): Partial<WuuDesktopApi> {
     deleteNamedAgent: vi.fn(async () => ({ deleted: true })),
     startNamedAgent: vi.fn(async () => ({ agent: agents[0] })),
     listChannelRooms: vi.fn(async () => ({ rooms })),
+    markChannelRoomRead: vi.fn(async () => ({ read: true })),
     createChannelRoom: vi.fn(async (params) => ({ room: { ...rooms[1], name: params.name } })),
     updateChannelRoom: vi.fn(async (params) => ({ room: { ...rooms[0], avatar_image: params.avatar_image } })),
     deleteChannelRoom: vi.fn(async () => ({ deleted: true })),
@@ -199,6 +200,12 @@ afterEach(() => {
 });
 
 describe("ChannelView", () => {
+  it("caps channel unread counts at 99+", () => {
+    expect(formatChannelUnreadCount(1)).toBe("1");
+    expect(formatChannelUnreadCount(99)).toBe("99");
+    expect(formatChannelUnreadCount(100)).toBe("99+");
+  });
+
   it("uses WeChat-style centered rows for one through nine members", () => {
     expect(Array.from({ length: 10 }, (_, index) => groupAvatarRowSizes(index))).toEqual([
       [1], [1], [2], [1, 2], [2, 2], [2, 3], [3, 3], [1, 3, 3], [2, 3, 3], [3, 3, 3],
@@ -239,6 +246,7 @@ describe("ChannelView", () => {
   it("does not show a conversation composer without a selected room", async () => {
     const api = createApi();
     api.bootstrapChannels = vi.fn(async () => ({ agents, rooms: [] }));
+    api.listChannelRooms = vi.fn(async () => ({ rooms: [] }));
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
     root = createRoot(container);
     act(() => root?.render(<ChannelView />));
@@ -248,6 +256,33 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-conversation-footer")).toBeNull();
     expect(container.querySelector(".channel-composer")).toBeNull();
     expect(container.querySelector(".channel-response-status")?.textContent).toBe("暂无 Agent 响应");
+  });
+
+  it("shows unread counts on inactive channels and clears them when selected", async () => {
+    const unreadRooms = [
+      { ...rooms[0], unread_count: 0 },
+      { ...rooms[1], unread_count: 120 },
+    ];
+    const api = createApi();
+    api.bootstrapChannels = vi.fn(async () => ({ agents, rooms: unreadRooms }));
+    api.listChannelRooms = vi.fn(async () => ({ rooms: unreadRooms }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const unread = container.querySelector<HTMLElement>(".channel-room-unread");
+    expect(unread?.textContent).toBe("99+");
+    expect(unread?.getAttribute("aria-label")).toBe("120 条未读消息");
+    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
+      .find((button) => button.textContent?.includes("research"));
+    await act(async () => {
+      research?.click();
+      await Promise.resolve();
+    });
+
+    expect(api.markChannelRoomRead).toHaveBeenCalledWith({ room_id: "room-2" });
+    expect(container.querySelector(".channel-room-unread")).toBeNull();
   });
 
   it("shows active agents from the selected room in the response status bar", async () => {
