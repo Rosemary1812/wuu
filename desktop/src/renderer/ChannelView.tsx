@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChannelAgentInsight, ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
@@ -231,7 +231,7 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom }: {
+export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, newRoomRequest }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
@@ -240,6 +240,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   // internally (tests and standalone usage).
   selectedRoomID?: string;
   onSelectRoom?: (roomID: string) => void;
+  // Incremented by the parent (sidebar ＋ button) to request the new-room
+  // dialog; the dialog itself stays inside this view.
+  newRoomRequest?: number;
 }): JSX.Element {
   const { formatDate, locale, t } = useI18n();
   const [agents, setAgents] = useState<NamedAgent[]>([]);
@@ -369,6 +372,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [closeThread, resizingThread, updateThreadWidth]);
+
+  useEffect(() => {
+    if (newRoomRequest) openNewRoom();
+  }, [newRoomRequest]);
 
   useEffect(() => {
     setActiveThreadRootID("");
@@ -1004,63 +1011,76 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
 
   return (
     <section
-      className={`channel-view channel-mode-${section}${listCollapsed && section !== "tasks" ? " channel-list-collapsed" : ""}${resizingSplit ? " resizing-channel-split" : ""}`}
+      className={`channel-view channel-mode-${section}${listCollapsed && section === "agents" ? " channel-list-collapsed" : ""}${resizingSplit ? " resizing-channel-split" : ""}`}
       aria-label={t("channels.title")}
-      style={section !== "tasks" ? { gridTemplateColumns: `${listCollapsed ? CHANNEL_SPLIT_COLLAPSED_WIDTH : splitWidth}px minmax(0, 1fr)` } : undefined}
+      style={section === "agents" ? { gridTemplateColumns: `${listCollapsed ? CHANNEL_SPLIT_COLLAPSED_WIDTH : splitWidth}px minmax(0, 1fr)` } : undefined}
     >
-      {section === "rooms" ? <aside className={`channel-list-pane${listCollapsed ? " collapsed" : ""}`}>
-        <div className="channel-pane-heading">
-          {!listCollapsed ? <span>{t("channels.rooms")}</span> : null}
-          <div className="channel-heading-actions">
-            <button className="icon-button channel-list-collapse-toggle" type="button" aria-label={t(listCollapsed ? "channels.expandList" : "channels.collapseList")} aria-expanded={!listCollapsed} onClick={toggleListCollapsed}>
-              {listCollapsed ? <PanelLeftOpen className="icon" /> : <PanelLeftClose className="icon" />}
-            </button>
-            {!listCollapsed ? (
-              <button className="icon-button" type="button" aria-label={t("channels.newRoom")} onClick={openNewRoom}>
-                <Plus className="icon" />
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {!listCollapsed ? <div className="channel-room-list channel-directory-list">
-          {rooms.map((room) => (
-            <div className={`channel-directory-row channel-room-row${room.id === selectedRoomID ? " active" : ""}`} key={room.id}>
-              <span className="channel-directory-avatar channel-room-avatar">
-                <ChannelGroupAvatar room={room} agents={agents} />
-              </span>
-              <button
-                className="channel-directory-identity channel-room-select"
-                type="button"
-                onClick={() => {
-                  if (selectedRoomID && selectedRoomID !== room.id) markRoomRead(selectedRoomID);
-                  setSelectedRoomID(room.id);
-                }}
+      {section === "rooms" ? <div
+        ref={conversationRef}
+        className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}${resizingThread ? " resizing-thread-split" : ""}`}
+        style={{ "--channel-thread-width": `${threadWidth}px` } as CSSProperties}
+      >
+        <div className="channel-room-main">
+          {selectedRoom ? (
+            <header className="channel-room-header">
+              <div className="channel-room-header-title">
+                <h2>{selectedRoom.name}</h2>
+                <span className="channel-room-scope">{t("channels.globalScope")}</span>
+              </div>
+              <div
+                className="channel-response-status"
+                role="status"
+                aria-live="polite"
+                aria-label={respondingAgents.length > 0
+                  ? respondingAgents.map(({ agent, status }) => `${agent.name}: ${activityText(status)}`).join(", ")
+                  : undefined}
               >
-                <span className="channel-room-name">{room.name}</span>
-                <span className="channel-room-members">{t("channels.memberCount", { count: room.members.length })}</span>
-              </button>
-              {room.id !== selectedRoomID && (room.unread_count ?? 0) > 0 ? (
-                <span
-                  className="channel-room-unread"
-                  aria-label={t("channels.unreadMessages", { count: room.unread_count ?? 0 })}
+                {respondingAgents.length > 0 ? (
+                  <>
+                    <span className="channel-response-status-avatars" aria-hidden="true">
+                      {respondingAgents.slice(0, 3).map(({ agent, status }) => (
+                        <span className="channel-response-status-avatar" key={agent.id}>
+                          <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
+                          <i className={`channel-response-status-dot ${status}`} />
+                        </span>
+                      ))}
+                    </span>
+                    <span className="channel-response-status-copy">
+                      <strong>{respondingAgentNames}</strong>
+                      <span>
+                        {respondingAgents.length === 1
+                          ? activityText(respondingAgents[0].status)
+                          : t("channels.agentsResponding", { count: respondingAgents.length })}
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <span className="channel-response-status-empty">
+                    <i aria-hidden="true" />
+                    {t("channels.noAgentsResponding")}
+                  </span>
+                )}
+              </div>
+              <div className="channel-room-header-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={t("channels.manageRoom", { name: selectedRoom.name })}
+                  aria-haspopup="dialog"
+                  onClick={() => editRoom(selectedRoom)}
                 >
-                  {formatChannelUnreadCount(room.unread_count ?? 0)}
-                </span>
-              ) : null}
-              <button
-                className="icon-button channel-directory-settings channel-room-details-toggle"
-                type="button"
-                aria-label={t("channels.manageRoom", { name: room.name })}
-                aria-haspopup="dialog"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  editRoom(room);
-                }}
-              >
-                <MoreHorizontal className="icon" />
+                  <Settings2 className="icon" />
+                </button>
+              </div>
+            </header>
+          ) : null}
+          {!loading && rooms.length === 0 ? (
+            <div className="channel-room-main-empty">
+              <button className="channel-empty-action" type="button" onClick={openNewRoom}>
+                {t("channels.newRoom")}
               </button>
             </div>
-          ))}
+          ) : null}
           <input
             ref={roomAvatarInputRef}
             className="channel-avatar-file-input"
@@ -1073,68 +1093,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
               void updateRoomAvatarFromFile(file).finally(() => { input.value = ""; });
             }}
           />
-          {!loading && rooms.length === 0 ? (
-            <button className="channel-empty-action" type="button" onClick={openNewRoom}>
-              {t("channels.newRoom")}
-            </button>
-          ) : null}
-        </div> : null}
-        {!listCollapsed ? (
-          <div
-            className="channel-response-status"
-            role="status"
-            aria-live="polite"
-            aria-label={respondingAgents.length > 0
-              ? respondingAgents.map(({ agent, status }) => `${agent.name}: ${activityText(status)}`).join(", ")
-              : undefined}
-          >
-            {respondingAgents.length > 0 ? (
-              <>
-                <span className="channel-response-status-avatars" aria-hidden="true">
-                  {respondingAgents.slice(0, 3).map(({ agent, status }) => (
-                    <span className="channel-response-status-avatar" key={agent.id}>
-                      <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
-                      <i className={`channel-response-status-dot ${status}`} />
-                    </span>
-                  ))}
-                </span>
-                <span className="channel-response-status-copy">
-                  <strong>{respondingAgentNames}</strong>
-                  <span>
-                    {respondingAgents.length === 1
-                      ? activityText(respondingAgents[0].status)
-                      : t("channels.agentsResponding", { count: respondingAgents.length })}
-                  </span>
-                </span>
-              </>
-            ) : (
-              <span className="channel-response-status-empty">
-                <i aria-hidden="true" />
-                {t("channels.noAgentsResponding")}
-              </span>
-            )}
-          </div>
-        ) : null}
-        {!listCollapsed ? <button
-          className="channel-split-resizer"
-          type="button"
-          role="separator"
-          aria-label={t("channels.resizeList")}
-          aria-orientation="vertical"
-          aria-valuemin={CHANNEL_SPLIT_MIN_WIDTH}
-          aria-valuemax={CHANNEL_SPLIT_MAX_WIDTH}
-          aria-valuenow={splitWidth}
-          onPointerDown={startSplitResize}
-          onKeyDown={handleSplitResizeKeyDown}
-        /> : null}
-      </aside> : null}
-
-      {section === "rooms" ? <div
-        ref={conversationRef}
-        className={`channel-conversation${activeThreadRoot ? " thread-open" : ""}${resizingThread ? " resizing-thread-split" : ""}`}
-        style={{ "--channel-thread-width": `${threadWidth}px` } as CSSProperties}
-      >
-        <div className="channel-room-main">
           {error ? <div className="channel-error" role="alert">{error}</div> : null}
         <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
           {rootMessages.map((message, index) => {

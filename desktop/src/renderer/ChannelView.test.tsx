@@ -206,15 +206,14 @@ describe("ChannelView", () => {
     expect(formatChannelUnreadCount(100)).toBe("99+");
   });
 
-  it("honors controlled room selection and reports selection changes upward", async () => {
+  it("honors controlled room selection without an in-canvas room list", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
-    const selections: string[] = [];
     root = createRoot(container);
     act(() => root?.render(
       <ChannelView
         selectedRoomID="room-2"
-        onSelectRoom={(roomID) => selections.push(roomID)}
+        onSelectRoom={() => undefined}
       />,
     ));
     await settle();
@@ -224,12 +223,10 @@ describe("ChannelView", () => {
       expect.objectContaining({ room_id: "room-2" }),
     );
 
-    // Clicking another room reports upward; the parent owns the switch.
-    const roomRow = Array.from(
-      container.querySelectorAll<HTMLElement>(".channel-room-row"),
-    ).find((row) => row.textContent?.includes("general"));
-    act(() => roomRow?.querySelector<HTMLButtonElement>(".channel-room-select")?.click());
-    expect(selections).toContain("room-1");
+    // Room switching lives in the app sidebar; the canvas renders a header
+    // for the selected room and no room directory of its own.
+    expect(container.querySelector(".channel-room-header")?.textContent).toContain("research");
+    expect(container.querySelector(".channel-room-row")).toBeNull();
   });
 
   it("uses WeChat-style centered rows for one through nine members", () => {
@@ -244,11 +241,11 @@ describe("ChannelView", () => {
     expect(graphDensityScale(10_000)).toBe(0.68);
   });
 
-  it("collapses the room and agent lists with one persistent control", async () => {
+  it("collapses the agent directory with a persistent control", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
+    act(() => root?.render(<ChannelView section="agents" />));
     await settle();
 
     const collapse = container.querySelector<HTMLButtonElement>('[aria-label="收起列表"]');
@@ -256,13 +253,10 @@ describe("ChannelView", () => {
     act(() => collapse?.click());
 
     expect(container.querySelector(".channel-view")?.classList.contains("channel-list-collapsed")).toBe(true);
-    expect(container.querySelector(".channel-room-list")).toBeNull();
-    expect(container.querySelector('[aria-label="展开列表"]')).not.toBeNull();
-    expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("true");
-
-    act(() => root?.render(<ChannelView section="agents" />));
     expect(container.querySelector(".channel-agent-directory-list")).toBeNull();
     expect(container.querySelector(".channel-agent-graph-pane")).not.toBeNull();
+    expect(container.querySelector('[aria-label="展开列表"]')).not.toBeNull();
+    expect(window.localStorage.getItem("wuu.channels.listCollapsed")).toBe("true");
 
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="展开列表"]')?.click());
     expect(container.querySelector(".channel-agent-directory-list")).not.toBeNull();
@@ -281,10 +275,10 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-empty-action")?.textContent).toBe("新建频道");
     expect(container.querySelector(".channel-conversation-footer")).toBeNull();
     expect(container.querySelector(".channel-composer")).toBeNull();
-    expect(container.querySelector(".channel-response-status")?.textContent).toBe("暂无 Agent 响应");
+    expect(container.querySelector(".channel-room-header")).toBeNull();
   });
 
-  it("shows unread counts on inactive channels and clears them when selected", async () => {
+  it("marks the selected room as read", async () => {
     const unreadRooms = [
       { ...rooms[0], unread_count: 0 },
       { ...rooms[1], unread_count: 120 },
@@ -294,21 +288,12 @@ describe("ChannelView", () => {
     api.listChannelRooms = vi.fn(async () => ({ rooms: unreadRooms }));
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
+    act(() => root?.render(<ChannelView selectedRoomID="room-2" />));
     await settle();
 
-    const unread = container.querySelector<HTMLElement>(".channel-room-unread");
-    expect(unread?.textContent).toBe("99+");
-    expect(unread?.getAttribute("aria-label")).toBe("120 条未读消息");
-    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
-      .find((button) => button.textContent?.includes("research"));
-    await act(async () => {
-      research?.click();
-      await Promise.resolve();
-    });
-
+    // Unread badges live in the app sidebar; the canvas persists the read
+    // cursor for whichever room the parent selects.
     expect(api.markChannelRoomRead).toHaveBeenCalledWith({ room_id: "room-2" });
-    expect(container.querySelector(".channel-room-unread")).toBeNull();
   });
 
   it("shows active agents from the selected room in the response status bar", async () => {
@@ -435,10 +420,11 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-agent-status-card")?.textContent).toBe("处理中");
     expect(container.querySelector(".channel-agent-status-card strong")).toBeNull();
     const firstRoomRow = container.querySelector(".channel-room-row");
-    expect(firstRoomRow?.textContent).toContain("2 位成员");
-    expect(firstRoomRow?.querySelectorAll(".channel-group-avatar-cell")).toHaveLength(2);
-    expect(firstRoomRow?.querySelector(".channel-directory-settings")).not.toBeNull();
-    const detailsToggle = container.querySelector<HTMLButtonElement>(".channel-room-details-toggle");
+    expect(firstRoomRow).toBeNull();
+    const roomHeader = container.querySelector(".channel-room-header");
+    expect(roomHeader?.textContent).toContain("general");
+    expect(roomHeader?.textContent).toContain("全局协作");
+    const detailsToggle = roomHeader?.querySelector<HTMLButtonElement>('button[aria-label="管理 general"]');
     expect(detailsToggle).not.toBeNull();
     act(() => detailsToggle?.click());
     const detailsDialog = document.querySelector(".sidebar-name-dialog");
@@ -451,9 +437,7 @@ describe("ChannelView", () => {
       .find((button) => button.textContent === "取消");
     act(() => cancelDetails?.click());
     expect(document.querySelector(".sidebar-name-dialog")).toBeNull();
-    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
-      .find((button) => button.textContent?.includes("research"));
-    act(() => research?.click());
+    act(() => root?.render(<ChannelView selectedRoomID="room-2" />));
     await settle();
     expect(api.listChannelMessages).toHaveBeenCalledWith({ room_id: "room-2", limit: 500 });
 
@@ -854,24 +838,24 @@ describe("ChannelView", () => {
     }
   });
 
-  it("shares a nonzero resizable sidebar width between rooms and agents", async () => {
+  it("resizes the agents directory pane and persists the width", async () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
     root = createRoot(container);
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    const separator = container.querySelector<HTMLButtonElement>(".channel-split-resizer");
-    expect(separator?.getAttribute("aria-valuenow")).toBe("208");
-    act(() => separator?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
-
-    expect(separator?.getAttribute("aria-valuenow")).toBe("224");
-    expect(window.localStorage.getItem("wuu.channels.splitPaneWidth")).toBe("224");
-    expect(container.querySelector<HTMLElement>(".channel-view")?.style.gridTemplateColumns).toBe("224px minmax(0, 1fr)");
+    // The rooms canvas is single-column now; no pane, no resizer.
+    expect(container.querySelector(".channel-split-resizer")).toBeNull();
+    expect(container.querySelector<HTMLElement>(".channel-view")?.style.gridTemplateColumns).toBe("");
 
     act(() => root?.render(<ChannelView section="agents" />));
     await settle();
     const agentSeparator = container.querySelector<HTMLButtonElement>(".channel-split-resizer");
+    expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("208");
+    act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("224");
+    expect(window.localStorage.getItem("wuu.channels.splitPaneWidth")).toBe("224");
     expect(container.querySelector<HTMLElement>(".channel-view")?.style.gridTemplateColumns).toBe("224px minmax(0, 1fr)");
     expect(container.querySelector<HTMLElement>(".channel-agent-workspace")?.style.gridTemplateColumns).toBe("");
     const agentRow = container.querySelector(".channel-agent-directory-row");
@@ -995,11 +979,9 @@ describe("ChannelView", () => {
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
+    act(() => root?.render(<ChannelView newRoomRequest={1} />));
     await settle();
 
-    const newRoomButton = container.querySelector<HTMLButtonElement>('button[aria-label="新建频道"]');
-    act(() => newRoomButton?.click());
     expect(document.querySelector(".channel-setup-form select")).toBeNull();
     const avatarPreview = document.querySelector<HTMLButtonElement>(".channel-room-avatar-preview");
     const avatarMedia = avatarPreview?.querySelector(".channel-room-avatar-media");
@@ -1026,12 +1008,7 @@ describe("ChannelView", () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
     root = createRoot(container);
-    act(() => root?.render(<ChannelView />));
-    await settle();
-
-    const research = Array.from(container.querySelectorAll<HTMLButtonElement>(".channel-room-select"))
-      .find((button) => button.textContent?.includes("research"));
-    act(() => research?.click());
+    act(() => root?.render(<ChannelView selectedRoomID="room-2" />));
     await settle();
     const manageResearch = container.querySelector<HTMLButtonElement>('button[aria-label="管理 research"]');
     expect(manageResearch).not.toBeNull();

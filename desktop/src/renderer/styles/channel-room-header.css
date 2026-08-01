@@ -1,0 +1,54 @@
+/* Room canvas header. Lives in its own file while channels.css has
+   parallel in-flight edits; merge into channels.css once that lands. */
+.channel-room-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--border-weak);
+  flex-shrink: 0;
+}
+.channel-room-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.channel-room-header-title h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.channel-room-scope {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-weak);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.channel-room-header .channel-response-status {
+  margin-left: auto;
+  min-width: 0;
+}
+.channel-room-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.channel-room-main-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+}
+.channel-section-label {
+  font-size: 13px;
+  font-weight: 600;
+}

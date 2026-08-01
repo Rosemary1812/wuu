@@ -163,6 +163,7 @@ export const enUS = {
   "channels.agentStatus.sending": "Just spoke",
   "channels.agentsResponding": "{count} agents responding",
   "channels.noAgentsResponding": "No agents responding",
+  "channels.globalScope": "Global collaboration",
   "channels.you": "You",
   "channels.empty": "No messages yet",
   "channels.messagePlaceholder": "Send a message",

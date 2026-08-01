@@ -725,6 +725,14 @@ export function App(): JSX.Element {
     setChannelSection("tasks");
     openChannelsView();
   }, [openChannelsView]);
+  // Sidebar ＋ asks ChannelView to open its new-room dialog; the counter
+  // pattern keeps the dialog (and its form state) inside ChannelView.
+  const [newRoomRequest, setNewRoomRequest] = useState(0);
+  const openNewChannelRoom = useCallback((): void => {
+    setChannelSection("rooms");
+    openChannelsView();
+    setNewRoomRequest((count) => count + 1);
+  }, [openChannelsView]);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
@@ -4059,6 +4067,7 @@ export function App(): JSX.Element {
             onOpenChannelAgents={openChannelAgentsView}
             onOpenChannelTasks={openChannelTasksView}
             onOpenChannels={openChannelsView}
+            onCreateChannelRoom={openNewChannelRoom}
             onToggleConversationSearch={toggleConversationSearch}
             onSeedConversationFixture={seedConversationFixture}
             onSeedAgentTreeDemo={seedAgentTreeDemo}
@@ -4207,22 +4216,14 @@ export function App(): JSX.Element {
                     <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
                   </button>
                 ) : null}
-                <nav className="channel-mode-tabs" aria-label={t("channels.title")}>
-                  {(["rooms", "agents", "tasks"] as const).map((mode) => (
-                    <button
-                      className={channelSection === mode ? "active" : ""}
-                      type="button"
-                      key={mode}
-                      aria-current={channelSection === mode ? "page" : undefined}
-                      onClick={() => setChannelSection(mode)}
-                    >
-                      {t(mode === "rooms" ? "channels.rooms" : mode === "agents" ? "channels.agents" : "channels.tasks")}
-                    </button>
-                  ))}
-                </nav>
+                {channelSection === "rooms" ? null : (
+                  <span className="channel-section-label">
+                    {t(channelSection === "agents" ? "channels.agents" : "channels.tasks")}
+                  </span>
+                )}
               </div>
             </header>
-            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} selectedRoomID={selectedChannelRoomID} onSelectRoom={setSelectedChannelRoomID} />
+            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} selectedRoomID={selectedChannelRoomID} onSelectRoom={setSelectedChannelRoomID} newRoomRequest={newRoomRequest} />
           </>
         ) : (
           <>

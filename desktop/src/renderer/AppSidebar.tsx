@@ -289,6 +289,7 @@ export function AppSidebar({
   onOpenChannelAgents,
   onOpenChannelTasks,
   onOpenChannels,
+  onCreateChannelRoom,
   onToggleConversationSearch,
   onSeedConversationFixture,
   onSeedAgentTreeDemo,
@@ -354,6 +355,7 @@ export function AppSidebar({
   onOpenChannelAgents?: () => void;
   onOpenChannelTasks?: () => void;
   onOpenChannels?: () => void;
+  onCreateChannelRoom?: () => void;
   onToggleConversationSearch: () => void;
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
   onSeedAgentTreeDemo: () => void;
@@ -643,7 +645,7 @@ export function AppSidebar({
                         type="button"
                         aria-label={t("channels.newRoom")}
                         title={t("channels.newRoom")}
-                        onClick={onOpenChannels}
+                        onClick={onCreateChannelRoom ?? onOpenChannels}
                       >
                         <Plus className="icon" />
                       </button>
