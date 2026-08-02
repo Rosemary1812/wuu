@@ -81,9 +81,6 @@ var (
 func Providers() ([]Provider, error) {
 	loadOnce.Do(func() {
 		loadErr = json.Unmarshal(catalogJSON, &loaded)
-		if loadErr == nil {
-			applyBuiltinCatalogOverrides(&loaded)
-		}
 	})
 	if loadErr != nil {
 		return nil, loadErr
@@ -220,7 +217,10 @@ func EnrichProvider(providerName string, provider config.ProviderConfig, modelID
 		}
 		return providerName, provider
 	}
-	return catalogProvider.ID, MergeProvider(provider, catalogProvider, modelIDs...)
+	return catalogProvider.ID, applyProviderCompatibilityDefaults(
+		catalogProvider.ID,
+		MergeProvider(provider, catalogProvider, modelIDs...),
+	)
 }
 
 func catalogProviderModelsByID(providerID string, modelIDs ...string) (Provider, bool) {

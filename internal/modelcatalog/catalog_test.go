@@ -115,7 +115,7 @@ func TestEnrichProviderInheritsKnownOpenAIModelForCompatibleGateway(t *testing.T
 	if !ok {
 		t.Fatalf("selected model metadata missing: %+v", enriched.Models)
 	}
-	if model.Name != "GPT-5.6 Sol" || model.Family != "gpt" || model.ReleaseDate != "2026-07-09" {
+	if model.Name != "GPT-5.6 Sol" || model.Family != "gpt-sol" || model.ReleaseDate != "2026-07-09" {
 		t.Fatalf("unexpected selected model identity: %+v", model)
 	}
 	if model.Reasoning == nil || !*model.Reasoning {
@@ -179,8 +179,8 @@ func TestCatalogSnapshotMatchesOpenCodeDefaultVisibleCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Providers: %v", err)
 	}
-	if len(providers) != 145 {
-		t.Fatalf("provider count = %d, want 145", len(providers))
+	if len(providers) != 178 {
+		t.Fatalf("provider count = %d, want 178", len(providers))
 	}
 
 	modelCount := 0
@@ -199,23 +199,21 @@ func TestCatalogSnapshotMatchesOpenCodeDefaultVisibleCounts(t *testing.T) {
 			}
 		}
 	}
-	if modelCount != 5212 {
-		t.Fatalf("model count = %d, want 5212", modelCount)
+	if modelCount != 5821 {
+		t.Fatalf("model count = %d, want 5821", modelCount)
 	}
 }
 
-func TestKimiK3BuiltinCatalogOverride(t *testing.T) {
+func TestKimiK3UsesUpstreamCatalogAndProviderCompatibility(t *testing.T) {
 	provider, ok := ProviderByID("kimi-for-coding")
 	if !ok {
 		t.Fatal("expected Kimi For Coding provider")
 	}
-	if provider.API != "https://api.kimi.com/coding/" || provider.NPM != "@ai-sdk/anthropic" {
+	if provider.API != "https://api.kimi.com/coding/v1" || provider.NPM != "@ai-sdk/anthropic" {
 		t.Fatalf("unexpected Kimi provider transport: %+v", provider)
 	}
-	if provider.Headers["User-Agent"] != "KimiCLI/1.5" ||
-		provider.ModelOptions["force_adaptive_thinking"] != true ||
-		provider.ModelOptions["anthropic_default_betas"] != false {
-		t.Fatalf("unexpected Kimi provider defaults: options=%+v headers=%+v", provider.ModelOptions, provider.Headers)
+	if len(provider.Headers) != 0 || len(provider.ModelOptions) != 0 {
+		t.Fatalf("raw catalog must not contain Wuu transport defaults: options=%+v headers=%+v", provider.ModelOptions, provider.Headers)
 	}
 	var k3 Model
 	for _, model := range provider.Models {
@@ -230,18 +228,18 @@ func TestKimiK3BuiltinCatalogOverride(t *testing.T) {
 	if k3.Limit == nil || k3.Limit.Context != 1_048_576 || k3.Limit.Output != 131_072 {
 		t.Fatalf("unexpected K3 limits: %+v", k3.Limit)
 	}
-	if got := reasoningEfforts(k3); !equalStrings(got, []string{"max"}) {
+	if got := reasoningEfforts(k3); !equalStrings(got, []string{"low", "high", "max"}) {
 		t.Fatalf("unexpected K3 efforts: %v", got)
 	}
-	if k3.DefaultVariant != "max" || len(k3.Variants) != 1 || k3.Variants["max"] == nil {
-		t.Fatalf("unexpected K3 variants: default=%q variants=%+v", k3.DefaultVariant, k3.Variants)
+	if k3.DefaultVariant != "" || len(k3.Variants) != 0 {
+		t.Fatalf("K3 must use upstream reasoning options without Wuu variants: default=%q variants=%+v", k3.DefaultVariant, k3.Variants)
 	}
 
 	ruleName, enriched := EnrichProvider("kimi-for-coding", config.ProviderConfig{
 		Type:  "anthropic",
 		Model: "k3",
 	}, "k3")
-	if ruleName != "kimi-for-coding" || enriched.BaseURL != "https://api.kimi.com/coding/" {
+	if ruleName != "kimi-for-coding" || enriched.BaseURL != "https://api.kimi.com/coding/v1" {
 		t.Fatalf("unexpected enriched K3 provider: rule=%q provider=%+v", ruleName, enriched)
 	}
 	model := enriched.Models["k3"]
@@ -257,18 +255,42 @@ func TestKimiK3BuiltinCatalogOverride(t *testing.T) {
 	}
 }
 
+func TestGrokEffortsComeFromUpstreamCatalog(t *testing.T) {
+	provider, ok := ProviderByID("xai")
+	if !ok {
+		t.Fatal("expected xAI provider")
+	}
+	want := map[string][]string{
+		"grok-4.3":                   {"none", "low", "medium", "high"},
+		"grok-4.20-multi-agent-0309": {"low", "medium", "high", "xhigh"},
+	}
+	for _, model := range provider.Models {
+		efforts, exists := want[model.ID]
+		if !exists {
+			continue
+		}
+		if got := reasoningEfforts(model); !equalStrings(got, efforts) {
+			t.Fatalf("%s efforts = %v, want %v", model.ID, got, efforts)
+		}
+		delete(want, model.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing upstream Grok models: %v", want)
+	}
+}
+
 func TestKimiProviderDefaultsApplyWithoutK3ModelOverrides(t *testing.T) {
 	_, enriched := EnrichProvider("kimi-for-coding", config.ProviderConfig{
 		Type:  "anthropic",
-		Model: "k2p7",
-	}, "k2p7")
+		Model: "kimi-for-coding",
+	}, "kimi-for-coding")
 
-	model := enriched.Models["k2p7"]
+	model := enriched.Models["kimi-for-coding"]
 	if model.Options["force_adaptive_thinking"] != true || model.Options["anthropic_default_betas"] != false {
 		t.Fatalf("unexpected Kimi provider options: %+v", model.Options)
 	}
 	if _, exists := model.Options["allow_empty_signature"]; exists {
-		t.Fatalf("K3-only empty signature option leaked to k2p7: %+v", model.Options)
+		t.Fatalf("K3-only empty signature option leaked to generic Kimi model: %+v", model.Options)
 	}
 	if enriched.Headers["User-Agent"] != "KimiCLI/1.5" {
 		t.Fatalf("unexpected Kimi provider headers: %+v", enriched.Headers)
@@ -435,7 +457,6 @@ func TestMatchProviderDisambiguatesDuplicateEndpointByName(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "firepass", want: "firepass"},
 		{name: "fireworks-ai", want: "fireworks-ai"},
 	} {
 		provider, ok := MatchProvider(tc.name, config.ProviderConfig{

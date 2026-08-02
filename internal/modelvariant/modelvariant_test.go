@@ -9,19 +9,19 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 )
 
-func TestKimiK3UsesExplicitMaxVariant(t *testing.T) {
+func TestKimiK3UsesUpstreamEffortVariants(t *testing.T) {
 	providerName, provider := modelcatalog.EnrichProvider("kimi-for-coding", config.ProviderConfig{
 		Type:  "anthropic",
 		Model: "k3",
 	}, "k3")
 
 	variants := SummariesForProvider(providerName, provider, "k3")
-	if got := variantIDs(variants); len(got) != 1 || got[0] != "max" {
-		t.Fatalf("K3 variants = %v, want [max]", got)
+	if got := strings.Join(variantIDs(variants), ","); got != "low,high,max" {
+		t.Fatalf("K3 variants = %s, want low,high,max", got)
 	}
-	selection := ResolveForProvider(providerName, provider, "k3", "", "")
+	selection := ResolveForProvider(providerName, provider, "k3", "max", "")
 	if selection.Variant != "max" {
-		t.Fatalf("K3 default variant = %q, want max", selection.Variant)
+		t.Fatalf("K3 selected variant = %q, want max", selection.Variant)
 	}
 	if selection.ProviderOptions["effort"] != "max" || selection.ProviderOptions["allow_empty_signature"] != true || selection.ProviderOptions["thinking_replay"] != "full" {
 		t.Fatalf("unexpected K3 provider options: %+v", selection.ProviderOptions)
@@ -35,15 +35,15 @@ func TestKimiK3UsesExplicitMaxVariant(t *testing.T) {
 func TestKimiProviderDefaultsUseAdaptiveThinking(t *testing.T) {
 	providerName, provider := modelcatalog.EnrichProvider("kimi-for-coding", config.ProviderConfig{
 		Type:  "anthropic",
-		Model: "k2p7",
-	}, "k2p7")
+		Model: "k3-256k",
+	}, "k3-256k")
 
-	variants := SummariesForProvider(providerName, provider, "k2p7")
-	if got := strings.Join(variantIDs(variants), ","); got != "low,medium,high" {
-		t.Fatalf("Kimi k2p7 variants = %s, want low,medium,high", got)
+	variants := SummariesForProvider(providerName, provider, "k3-256k")
+	if got := strings.Join(variantIDs(variants), ","); got != "low,high,max" {
+		t.Fatalf("Kimi k3-256k variants = %s, want low,high,max", got)
 	}
-	selection := ResolveForProvider(providerName, provider, "k2p7", "medium", "")
-	if selection.ProviderOptions["effort"] != "medium" || selection.ProviderOptions["force_adaptive_thinking"] != true {
+	selection := ResolveForProvider(providerName, provider, "k3-256k", "high", "")
+	if selection.ProviderOptions["effort"] != "high" || selection.ProviderOptions["force_adaptive_thinking"] != true {
 		t.Fatalf("unexpected Kimi provider options: %+v", selection.ProviderOptions)
 	}
 	thinking, ok := selection.ProviderOptions["thinking"].(map[string]any)
@@ -51,7 +51,7 @@ func TestKimiProviderDefaultsUseAdaptiveThinking(t *testing.T) {
 		t.Fatalf("unexpected Kimi adaptive thinking: %+v", selection.ProviderOptions)
 	}
 	if _, exists := selection.ProviderOptions["allow_empty_signature"]; exists {
-		t.Fatalf("K3-only empty signature option leaked to k2p7: %+v", selection.ProviderOptions)
+		t.Fatalf("K3-only empty signature option leaked to k3-256k: %+v", selection.ProviderOptions)
 	}
 }
 
@@ -115,7 +115,7 @@ func TestSummariesUseExplicitXAIReasoningEfforts(t *testing.T) {
 		want  string
 	}{
 		{model: "grok-4.3", want: "none,low,medium,high"},
-		{model: "grok-4.20-multi-agent-0309", want: "low,medium,high"},
+		{model: "grok-4.20-multi-agent-0309", want: "low,medium,high,xhigh"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.model, func(t *testing.T) {

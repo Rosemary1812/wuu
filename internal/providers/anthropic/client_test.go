@@ -3064,7 +3064,7 @@ func TestKimiK3MultiRoundToolReplay(t *testing.T) {
 		Type:  "anthropic",
 		Model: "k3",
 	}, "k3")
-	selection := modelvariant.ResolveForProvider(providerName, provider, "k3", "", "")
+	selection := modelvariant.ResolveForProvider(providerName, provider, "k3", "max", "")
 	model := provider.Models["k3"]
 	if model.Limit == nil {
 		t.Fatal("expected K3 limits")
