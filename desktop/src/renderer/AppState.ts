@@ -1831,7 +1831,7 @@ function createChannelRoomSessionTab(
   roomID: string,
   title: string,
   context: RuntimeContext,
-): SessionTab {
+): Extract<SessionTab, { kind: "channel-room" }> {
   return {
     id: channelRoomSessionTabID(roomID),
     kind: "channel-room",
@@ -1841,7 +1841,9 @@ function createChannelRoomSessionTab(
   };
 }
 
-function createAgentsSessionTab(context: RuntimeContext): SessionTab {
+function createAgentsSessionTab(
+  context: RuntimeContext,
+): Extract<SessionTab, { kind: "agents" }> {
   return {
     id: "agents",
     kind: "agents",
@@ -1850,7 +1852,9 @@ function createAgentsSessionTab(context: RuntimeContext): SessionTab {
   };
 }
 
-function createTasksSessionTab(context: RuntimeContext): SessionTab {
+function createTasksSessionTab(
+  context: RuntimeContext,
+): Extract<SessionTab, { kind: "tasks" }> {
   return {
     id: "tasks",
     kind: "tasks",

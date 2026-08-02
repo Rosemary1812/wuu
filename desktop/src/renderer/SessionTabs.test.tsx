@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext, Thread } from "../shared/protocol";
 import {
+  createChannelRoomSessionTab,
   createDraftSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,
@@ -109,6 +110,7 @@ function renderTabsWith(
   state: AppState,
   onClose: (tabID: string) => void,
   onSelect: (tabID: string) => void = () => {},
+  channelUnreadByRoomID: Record<string, number> = {},
 ): void {
   act(() => {
     root = createRoot(container);
@@ -121,6 +123,7 @@ function renderTabsWith(
             guides: [{ id: "guide-a", text: "guide", images: [], files: [] }],
           },
         }}
+        channelUnreadByRoomID={channelUnreadByRoomID}
         canStartNewThread
         onSelect={onSelect}
         onClose={onClose}
@@ -134,6 +137,33 @@ function renderTabsWith(
 }
 
 describe("SessionTabStrip pending indicators", () => {
+  it("marks an inactive channel room tab unread", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const draft = createDraftSessionTab("draft:active", context);
+    const room = createChannelRoomSessionTab("room-1", "Design review", context);
+
+    renderTabsWith(
+      {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: draft.id,
+        sessionTabs: [draft, room],
+      },
+      () => {},
+      () => {},
+      { "room-1": 2 },
+    );
+
+    const roomTab = Array.from(container.querySelectorAll(".session-tab")).find((tab) =>
+      tab.textContent?.includes("Design review"),
+    );
+    expect(roomTab?.classList.contains("has-unread")).toBe(true);
+  });
+
   it("names the center tablist as conversations rather than generic work objects", () => {
     const context: RuntimeContext = {
       kind: "project",

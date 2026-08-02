@@ -233,6 +233,28 @@ describe("createSessionTabActions", () => {
     expect(harness.selectRuntimeContext).not.toHaveBeenCalled();
   });
 
+  it("ensures and activates a newly opened global channel tab", () => {
+    const context = projectContext();
+    const source = createDraftSessionTab("draft:source", context);
+    const agents = createAgentsSessionTab(context);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: source.id,
+        sessionTabs: [source],
+      },
+    });
+
+    harness.actions.openGlobalSessionTab(agents);
+    harness.actions.openGlobalSessionTab({ ...agents, title: "updated" });
+
+    expect(harness.getAppState().activeSessionTabID).toBe(agents.id);
+    expect(harness.getAppState().sessionTabs.filter((tab) => tab.id === agents.id)).toEqual([
+      { ...agents, title: "updated" },
+    ]);
+  });
+
   it("falls back to a global channel tab without resuming a thread", async () => {
     const context = projectContext();
     const source = createDraftSessionTab("draft:source", context);

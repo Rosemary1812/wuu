@@ -44,6 +44,7 @@ export function SessionTabStrip({
   crossWorkspaceThreads,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
+  channelUnreadByRoomID = {},
   canStartNewThread,
   onSelect,
   onClose,
@@ -56,6 +57,7 @@ export function SessionTabStrip({
   crossWorkspaceThreads?: Thread[];
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
+  channelUnreadByRoomID?: Record<string, number>;
   canStartNewThread: boolean;
   onSelect: (tabID: string) => void;
   onClose: (tabID: string) => void;
@@ -200,14 +202,20 @@ export function SessionTabStrip({
                         ),
                       )
                     : 0;
+                const channelUnread =
+                  tab.kind === "channel-room" &&
+                  (channelUnreadByRoomID[tab.roomID] ?? 0) > 0;
                 const unread =
                   !active &&
-                  !running &&
-                  !pendingSwitch &&
-                  isThreadUnread(
-                    tabThread,
-                    tabThread ? state.lastViewedTurnByThreadID[tabThread.id] : undefined,
-                  );
+                  (channelUnread ||
+                    (!running &&
+                      !pendingSwitch &&
+                      isThreadUnread(
+                        tabThread,
+                        tabThread
+                          ? state.lastViewedTurnByThreadID[tabThread.id]
+                          : undefined,
+                      )));
                 const label = sessionTabLabel(tab, state);
                 const closeLabel = tab.kind === "draft"
                   ? t("tabs.closeNewConversation")
@@ -271,12 +279,14 @@ export function SessionTabStrip({
                 }
                 unread={
                   draggingTab.id !== state.activeSessionTabID &&
-                  draggingTab.kind === "thread" &&
-                  !isThreadRunning(threadForTab(state, draggingTab.threadID)) &&
-                  isThreadUnread(
-                    threadForTab(state, draggingTab.threadID),
-                    state.lastViewedTurnByThreadID[draggingTab.threadID],
-                  )
+                  (draggingTab.kind === "channel-room"
+                    ? (channelUnreadByRoomID[draggingTab.roomID] ?? 0) > 0
+                    : draggingTab.kind === "thread" &&
+                      !isThreadRunning(threadForTab(state, draggingTab.threadID)) &&
+                      isThreadUnread(
+                        threadForTab(state, draggingTab.threadID),
+                        state.lastViewedTurnByThreadID[draggingTab.threadID],
+                      ))
                 }
                 width={draggingTabWidth}
               />

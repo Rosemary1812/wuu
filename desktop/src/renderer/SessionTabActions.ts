@@ -27,6 +27,10 @@ import { translateCurrent } from "./i18n";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type ViewSwitchKind = "thread" | "project" | "runtime";
+type GlobalSessionTab = Extract<
+  SessionTab,
+  { kind: "channel-room" | "agents" | "tasks" }
+>;
 
 export type SessionTabActionsDeps = {
   getAppState: () => AppState;
@@ -48,6 +52,7 @@ export type SessionTabActionsDeps = {
 };
 
 export type SessionTabActions = {
+  openGlobalSessionTab: (tab: GlobalSessionTab) => void;
   selectSessionTab: (tabID: string) => Promise<void>;
   closeSessionTab: (tabID: string) => Promise<void>;
   closeSessionTabs: (tabIDs: string[]) => Promise<void>;
@@ -71,6 +76,36 @@ export function createSessionTabActions(
     }));
   }
 
+  function activateGlobalSessionTab(tab: GlobalSessionTab): void {
+    const outgoingDraft = deps.getPrimaryComposerDraft();
+    deps.cancelViewSwitch();
+    deps.resetSplitComposerDrafts();
+    deps.setAppState((current) => {
+      const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+      return {
+        ...withDraft,
+        secondaryThread: undefined,
+        activePane: "primary",
+        sessionTabs: ensureSessionTab(withDraft.sessionTabs, tab),
+        activeSessionTabID: tab.id,
+        allowThreadAutoActivation: false,
+        running: false,
+        status: "ready",
+      };
+    });
+  }
+
+  function openGlobalSessionTab(tab: GlobalSessionTab): void {
+    if (deps.getAppState().activeSessionTabID === tab.id) {
+      deps.setAppState((current) => ({
+        ...current,
+        sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+      }));
+      return;
+    }
+    activateGlobalSessionTab(tab);
+  }
+
   async function selectSessionTab(tabID: string): Promise<void> {
     const currentState = deps.getAppState();
     const tab = currentState.sessionTabs.find((item) => item.id === tabID);
@@ -92,22 +127,7 @@ export function createSessionTabActions(
       tab.kind === "agents" ||
       tab.kind === "tasks"
     ) {
-      const outgoingDraft = deps.getPrimaryComposerDraft();
-      deps.cancelViewSwitch();
-      deps.resetSplitComposerDrafts();
-      deps.setAppState((current) => {
-        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-        return {
-          ...withDraft,
-          secondaryThread: undefined,
-          activePane: "primary",
-          sessionTabs: ensureSessionTab(withDraft.sessionTabs, tab),
-          activeSessionTabID: tab.id,
-          allowThreadAutoActivation: false,
-          running: false,
-          status: "ready",
-        };
-      });
+      activateGlobalSessionTab(tab);
       return;
     }
 
@@ -584,6 +604,7 @@ export function createSessionTabActions(
   }
 
   return {
+    openGlobalSessionTab,
     selectSessionTab,
     closeSessionTab,
     closeSessionTabs,

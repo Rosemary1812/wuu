@@ -92,7 +92,10 @@ import {
   cloneSessionTabDraft,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
+  createAgentsSessionTab,
+  createChannelRoomSessionTab,
   createDraftSessionTab,
+  createTasksSessionTab,
   emptyComposerDraft,
   ensureSessionTab,
   handleStreamingNotification,
@@ -510,13 +513,11 @@ export function App(): JSX.Element {
   });
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [channelsOpen, setChannelsOpen] = useState(false);
-  const [channelSection, setChannelSection] = useState<ChannelSection>("rooms");
+  const [newRoomRequest, setNewRoomRequest] = useState(0);
   // Rooms (with per-room unread counts) live at the App level so the unified
   // sidebar and the channel canvas share one source of truth; selection is
   // controlled here and passed into ChannelView.
   const [channelRooms, setChannelRooms] = useState<ChannelRoom[]>([]);
-  const [selectedChannelRoomID, setSelectedChannelRoomID] = useState("");
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
   const {
@@ -634,7 +635,6 @@ export function App(): JSX.Element {
     workspaceRightPanelDockableWithoutSidebar,
   ]);
   const revealConversationFromFocusedWorkspace = useCallback((): void => {
-    setChannelsOpen(false);
     if (!rightPanelGlobalized) {
       return;
     }
@@ -659,47 +659,11 @@ export function App(): JSX.Element {
     toggleSidebar,
     workspaceRightPanelDockableWithoutSidebar,
   ]);
-  // Single entry point for showing the channel canvas: closes competing
-  // panels and clears the mention badge. Used by the legacy 群聊 nav item,
-  // the sidebar 协作 section entries, and room selection.
-  const openChannelsView = useCallback((): void => {
-    setProjectMenuOpen(false);
-    setRuntimeMenuOpen(false);
-    setCodexRuntimeMenu(null);
-    setEnvironmentPanelOpen(false);
-    setRightPanelOpenWithMotion(false);
-    setChannelsOpen(true);
-    closeSidebarDrawer();
-  }, [closeSidebarDrawer, setRightPanelOpenWithMotion]);
   const clearChannelRoomUnread = useCallback((roomID: string): void => {
     setChannelRooms((current) =>
       current.map((room) => (room.id === roomID ? { ...room, unread_count: 0 } : room)),
     );
   }, []);
-  const selectChannelRoom = useCallback((roomID: string): void => {
-    setSelectedChannelRoomID(roomID);
-    setChannelSection("rooms");
-    // Optimistically clear the room's unread badge; ChannelView persists the
-    // read cursor via markChannelRoomRead and the next poll confirms.
-    clearChannelRoomUnread(roomID);
-    openChannelsView();
-  }, [clearChannelRoomUnread, openChannelsView]);
-  const openChannelAgentsView = useCallback((): void => {
-    setChannelSection("agents");
-    openChannelsView();
-  }, [openChannelsView]);
-  const openChannelTasksView = useCallback((): void => {
-    setChannelSection("tasks");
-    openChannelsView();
-  }, [openChannelsView]);
-  // Sidebar ＋ asks ChannelView to open its new-room dialog; the counter
-  // pattern keeps the dialog (and its form state) inside ChannelView.
-  const [newRoomRequest, setNewRoomRequest] = useState(0);
-  const openNewChannelRoom = useCallback((): void => {
-    setChannelSection("rooms");
-    openChannelsView();
-    setNewRoomRequest((count) => count + 1);
-  }, [openChannelsView]);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
@@ -849,6 +813,24 @@ export function App(): JSX.Element {
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const draftSessionTabCounterRef = useRef(0);
   const currentSessionTab = activeSessionTab(state);
+  const channelSection: ChannelSection | null =
+    currentSessionTab?.kind === "channel-room"
+      ? "rooms"
+      : currentSessionTab?.kind === "agents"
+        ? "agents"
+        : currentSessionTab?.kind === "tasks"
+          ? "tasks"
+          : null;
+  const channelsOpen = channelSection !== null;
+  const selectedChannelRoomID =
+    currentSessionTab?.kind === "channel-room" ? currentSessionTab.roomID : "";
+  const channelUnreadByRoomID = useMemo(
+    () =>
+      Object.fromEntries(
+        channelRooms.map((room) => [room.id, room.unread_count ?? 0]),
+      ),
+    [channelRooms],
+  );
   const [skillsAssistantDraft, setSkillsAssistantDraft] = useState("");
   const [skillsAssistantThreadID, setSkillsAssistantThreadID] = useState<string>();
   const [skillsAssistantStatus, setSkillsAssistantStatus] = useState("");
@@ -1719,6 +1701,12 @@ export function App(): JSX.Element {
     ? t("skills.title")
     : showingAutomationsCatalog
       ? t("automations.title")
+    : currentSessionTab?.kind === "channel-room"
+      ? currentSessionTab.title
+      : currentSessionTab?.kind === "agents"
+        ? t("channels.agents")
+        : currentSessionTab?.kind === "tasks"
+          ? t("channels.tasks")
     : resolveLocalizedText(activeThread?.preview ?? "") ||
       t("tabs.newConversation");
   const popOutWindowTitle =
@@ -2738,6 +2726,7 @@ export function App(): JSX.Element {
   }, [activateThread, revealConversationFromFocusedWorkspace]);
 
   const {
+    openGlobalSessionTab,
     selectSessionTab,
     closeSessionTab,
     closeSessionTabs,
@@ -2762,6 +2751,60 @@ export function App(): JSX.Element {
     loadRuntime,
     selectRuntimeContext,
   });
+
+  function prepareChannelTab(): void {
+    setProjectMenuOpen(false);
+    setRuntimeMenuOpen(false);
+    setCodexRuntimeMenu(null);
+    setEnvironmentPanelOpen(false);
+    setRightPanelOpenWithMotion(false);
+    closeSidebarDrawer();
+  }
+
+  function selectChannelRoom(roomID: string): void {
+    const context = appStateRef.current.activeContext;
+    const room = channelRooms.find((candidate) => candidate.id === roomID);
+    if (!context || !room) {
+      return;
+    }
+    openGlobalSessionTab(createChannelRoomSessionTab(room.id, room.name, context));
+    clearChannelRoomUnread(room.id);
+    prepareChannelTab();
+  }
+
+  function openChannelAgentsView(): void {
+    const context = appStateRef.current.activeContext;
+    if (!context) {
+      return;
+    }
+    openGlobalSessionTab(createAgentsSessionTab(context));
+    prepareChannelTab();
+  }
+
+  function openChannelTasksView(): void {
+    const context = appStateRef.current.activeContext;
+    if (!context) {
+      return;
+    }
+    openGlobalSessionTab(createTasksSessionTab(context));
+    prepareChannelTab();
+  }
+
+  function openChannelsView(): void {
+    const room =
+      channelRooms.find((candidate) => candidate.id === selectedChannelRoomID) ??
+      channelRooms[0];
+    if (room) {
+      selectChannelRoom(room.id);
+      return;
+    }
+    openChannelAgentsView();
+  }
+
+  function openNewChannelRoom(): void {
+    openChannelsView();
+    setNewRoomRequest((count) => count + 1);
+  }
 
   function focusHeroAfter(
     action: Promise<void | boolean>,
@@ -4017,17 +4060,15 @@ export function App(): JSX.Element {
               startNewThreadWithComposerFocus();
             }}
             onOpenSkillsTab={() => {
-              setChannelsOpen(false);
               openSkillsTab();
             }}
             onOpenAutomationsTab={() => {
-              setChannelsOpen(false);
               openAutomationsTab();
             }}
             groupChatEnabled={ENABLE_GROUP_CHAT}
             channelRooms={channelRooms}
-            activeChannelRoomID={channelsOpen && channelSection === "rooms" ? selectedChannelRoomID : undefined}
-            activeChannelSection={channelsOpen ? channelSection : null}
+            activeChannelRoomID={channelSection === "rooms" ? selectedChannelRoomID : undefined}
+            activeChannelSection={channelSection}
             onSelectChannelRoom={selectChannelRoom}
             onOpenChannelAgents={openChannelAgentsView}
             onOpenChannelTasks={openChannelTasksView}
@@ -4181,14 +4222,31 @@ export function App(): JSX.Element {
                     <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
                   </button>
                 ) : null}
-                {channelSection === "rooms" ? null : (
-                  <span className="channel-section-label">
-                    {t(channelSection === "agents" ? "channels.agents" : "channels.tasks")}
-                  </span>
-                )}
+                <ConversationTitleContent
+                  state={state}
+                  crossWorkspaceThreads={sidebarThreads}
+                  sessionTabsVisible={sessionTabsVisible}
+                  pendingSwitchThreadID={visiblePendingThreadID}
+                  pendingComposerMessagesByThread={pendingComposerMessagesByThread}
+                  channelUnreadByRoomID={channelUnreadByRoomID}
+                  activeTitle={activeTitle}
+                  onSelectSessionTab={(tabID) => void selectSessionTab(tabID)}
+                  onCloseSessionTab={(tabID) => void closeSessionTab(tabID)}
+                  onCloseSessionTabs={(tabIDs) => void closeSessionTabs(tabIDs)}
+                  onPopOutSessionTab={(tabID) => void popOutSessionTab(tabID)}
+                  onStartNewThread={startNewThreadWithComposerFocus}
+                  onReorderSessionTabs={reorderSessionTabs}
+                />
               </div>
             </header>
-            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} selectedRoomID={selectedChannelRoomID} onSelectRoom={setSelectedChannelRoomID} onRoomRead={clearChannelRoomUnread} newRoomRequest={newRoomRequest} />
+            <ChannelView
+              initialized={sessionRuntime ?? state.initialized}
+              section={channelSection ?? "rooms"}
+              selectedRoomID={selectedChannelRoomID}
+              onSelectRoom={selectChannelRoom}
+              onRoomRead={clearChannelRoomUnread}
+              newRoomRequest={newRoomRequest}
+            />
           </>
         ) : (
           <>
@@ -4219,6 +4277,7 @@ export function App(): JSX.Element {
               sessionTabsVisible={sessionTabsVisible}
               pendingSwitchThreadID={visiblePendingThreadID}
               pendingComposerMessagesByThread={pendingComposerMessagesByThread}
+              channelUnreadByRoomID={channelUnreadByRoomID}
               activeTitle={activeTitle}
               onSelectSessionTab={(tabID) => void selectSessionTab(tabID)}
               onCloseSessionTab={(tabID) => void closeSessionTab(tabID)}

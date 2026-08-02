@@ -235,6 +235,7 @@ export type ConversationTitleContentProps = {
   sessionTabsVisible: boolean;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
+  channelUnreadByRoomID?: Record<string, number>;
   activeTitle: string;
   onSelectSessionTab: (tabID: string) => void;
   onCloseSessionTab: (tabID: string) => void;
@@ -250,6 +251,7 @@ export function ConversationTitleContent({
   sessionTabsVisible,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
+  channelUnreadByRoomID,
   activeTitle,
   onSelectSessionTab,
   onCloseSessionTab,
@@ -265,6 +267,7 @@ export function ConversationTitleContent({
         crossWorkspaceThreads={crossWorkspaceThreads}
         pendingSwitchThreadID={pendingSwitchThreadID}
         pendingComposerMessagesByThread={pendingComposerMessagesByThread}
+        channelUnreadByRoomID={channelUnreadByRoomID}
         canStartNewThread={Boolean(state.activeContext)}
         onSelect={onSelectSessionTab}
         onClose={onCloseSessionTab}
