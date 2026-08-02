@@ -68,6 +68,51 @@ func TestThreadExecutionLeaseExcludesContendersAndKeepsSidecar(t *testing.T) {
 	}
 }
 
+func TestThreadExecutionResetTargetsOnlyCurrentLease(t *testing.T) {
+	sessDir := t.TempDir()
+	threadID := "resettable-thread"
+
+	requested, err := RequestThreadExecutionReset(sessDir, threadID)
+	if err != nil {
+		t.Fatalf("reset idle thread: %v", err)
+	}
+	if requested {
+		t.Fatal("idle thread must not publish a reset")
+	}
+
+	first, acquired, err := TryAcquireThreadExecutionLease(sessDir, threadID)
+	if err != nil || !acquired || first == nil {
+		t.Fatalf("first acquire = lease %v, acquired %v, err %v", first, acquired, err)
+	}
+	requested, err = RequestThreadExecutionReset(sessDir, threadID)
+	if err != nil {
+		t.Fatalf("request live reset: %v", err)
+	}
+	if !requested {
+		t.Fatal("live owner should receive a reset request")
+	}
+	reset, err := first.ResetRequested()
+	if err != nil || !reset {
+		t.Fatalf("first lease reset = %v, err %v", reset, err)
+	}
+	if err := first.Release(); err != nil {
+		t.Fatalf("release first lease: %v", err)
+	}
+
+	second, acquired, err := TryAcquireThreadExecutionLease(sessDir, threadID)
+	if err != nil || !acquired || second == nil {
+		t.Fatalf("second acquire = lease %v, acquired %v, err %v", second, acquired, err)
+	}
+	defer second.Release()
+	reset, err = second.ResetRequested()
+	if err != nil {
+		t.Fatalf("read second reset state: %v", err)
+	}
+	if reset {
+		t.Fatal("reset for the prior owner must not cancel a successor")
+	}
+}
+
 func TestThreadExecutionLeaseReleasedWhenHolderProcessExits(t *testing.T) {
 	sessDir := t.TempDir()
 	threadID := "process-owned-thread"

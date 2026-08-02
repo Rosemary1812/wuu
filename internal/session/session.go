@@ -1134,6 +1134,11 @@ func migrateSchema(db *sql.DB) error {
 		 ON execution_runs(thread_id) WHERE status IN ('accepted', 'running')`,
 		`CREATE INDEX IF NOT EXISTS idx_execution_runs_runtime
 		 ON execution_runs(runtime_id, status, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS thread_execution_resets (
+			thread_id    TEXT PRIMARY KEY,
+			generation   INTEGER NOT NULL DEFAULT 0,
+			requested_at INTEGER NOT NULL DEFAULT 0
+		)`,
 		`CREATE TABLE IF NOT EXISTS execution_run_turns (
 				run_id          TEXT NOT NULL,
 				thread_id       TEXT NOT NULL,
