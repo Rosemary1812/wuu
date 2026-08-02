@@ -2434,6 +2434,7 @@ function SettingsUsagePage({
   const { locale, t, formatNumber } = useI18n();
   const formatUsageValue = (value: number, options?: Intl.NumberFormatOptions): string =>
     Number.isFinite(value) ? formatNumber(value, options) : "—";
+  const formatCompactUsageValue = (value: number): string => formatCompactUsageNumber(value, locale);
   const heatmap = usage ? buildUsageHeatmap(usage.days) : [];
   const skillUsage = (usage?.skill_usage ?? []).filter(
     (skill) => skill && typeof skill.name === "string" && skill.name.trim(),
@@ -2540,11 +2541,11 @@ function SettingsUsagePage({
             const total = usageTokenTotal(day);
             const height = maxTrendTotal > 0 && total > 0 ? Math.max(3, (total / maxTrendTotal) * 100) : 0;
             return (
-              <Tooltip content={formatUsageDayTitle(day, t, formatUsageValue)} key={day.date}>
+              <Tooltip content={formatUsageDayTitle(day, t, formatCompactUsageValue)} key={day.date}>
                 <span
                   className="settings-usage-trend-day"
                   role="listitem"
-                  aria-label={formatUsageDayTitle(day, t, formatUsageValue)}
+                  aria-label={formatUsageDayTitle(day, t, formatCompactUsageValue)}
                 >
                   <i style={{ height: `${height}%` }} />
                 </span>
@@ -2587,12 +2588,12 @@ function SettingsUsagePage({
           } as CSSProperties}
         >
           {heatmap.map((day) => (
-            <Tooltip content={formatHeatmapTitle(day, t, formatUsageValue)} key={day.date}>
+            <Tooltip content={formatHeatmapTitle(day, t, formatCompactUsageValue)} key={day.date}>
               <span
                 className="settings-usage-heatmap-cell"
                 data-level={day.level}
                 role="gridcell"
-                aria-label={formatHeatmapTitle(day, t, formatUsageValue)}
+                aria-label={formatHeatmapTitle(day, t, formatCompactUsageValue)}
               />
             </Tooltip>
           ))}
@@ -2658,7 +2659,7 @@ function SettingsUsagePage({
                   <div className="settings-model-chart-bar" aria-hidden="true">
                     <span style={{ width: `${width}%` }} />
                   </div>
-                  <Tooltip content={formatUsageValue(model.total)}>
+                  <Tooltip content={formatCompactUsageValue(model.total)}>
                     <span className="settings-model-chart-share">{formatPercent(share)}</span>
                   </Tooltip>
                 </div>

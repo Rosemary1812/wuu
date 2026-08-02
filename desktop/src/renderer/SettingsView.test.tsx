@@ -1252,10 +1252,10 @@ describe("SettingsView About section", () => {
       ],
       days: heatmapDates.map((date, index) => ({
         date,
-        input_tokens: (index + 1) * 100,
+        input_tokens: (index + 1) * 100_000,
         output_tokens: 0,
-        cache_creation_tokens: 20,
-        cache_read_tokens: 50,
+        cache_creation_tokens: 20_000,
+        cache_read_tokens: 50_000,
         cache_hit_rate: 0.5,
         turns: 1,
         agents: 0,
@@ -1305,11 +1305,14 @@ describe("SettingsView About section", () => {
     expect(trend?.querySelectorAll(".settings-usage-trend-day")).toHaveLength(30);
     expect(
       trend?.querySelector<HTMLElement>(`[aria-label^="${heatmapDates.at(-1)}"]`)?.getAttribute("aria-label"),
-    ).toContain("总计 470");
+    ).toContain("总计 470k");
     const modelChartRows = container.querySelectorAll(".settings-model-chart-row");
     expect(modelChartRows).toHaveLength(1);
     expect(modelChartRows[0]?.textContent).toContain("fake-model");
     expect(modelChartRows[0]?.textContent).toContain("100%");
+    expect(
+      await hoverTooltipText(modelChartRows[0]?.querySelector<HTMLElement>(".settings-model-chart-share") ?? null),
+    ).toBe("1.3k");
     const heatmap = container.querySelector(".settings-usage-heatmap");
     expect(heatmap).not.toBeNull();
     expect(heatmap?.getAttribute("aria-label")).toBe("每日用量热力图");
@@ -1320,6 +1323,9 @@ describe("SettingsView About section", () => {
           ?.getAttribute("data-level"),
       ),
     ).toEqual(["1", "2", "3", "4"]);
+    expect(
+      heatmap?.querySelector<HTMLElement>(`[aria-label^="${heatmapDates.at(-1)}"]`)?.getAttribute("aria-label"),
+    ).toContain("输入 400k");
   });
 });
 
