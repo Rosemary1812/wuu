@@ -89,6 +89,9 @@ export function SessionTabStrip({
   const draggingTab = draggingTabID
     ? state.sessionTabs.find((tab) => tab.id === draggingTabID)
     : undefined;
+  const activeTab = state.sessionTabs.find((tab) => tab.id === state.activeSessionTabID);
+  const showNewThreadButton =
+    !activeTab || activeTab.kind === "thread" || activeTab.kind === "draft";
 
   function startDrag(event: DragStartEvent): void {
     setDraggingTabID(String(event.active.id));
@@ -294,17 +297,19 @@ export function SessionTabStrip({
           </DragOverlay>
         </DndContext>
       </div>
-      <button
-        ref={newTabButtonRef}
-        className="icon-button workspace-panel-add session-tab-new"
-        type="button"
-        aria-label={t("tabs.newConversation")}
-        title={t("tabs.newConversation")}
-        disabled={!canStartNewThread}
-        onClick={onNewThread}
-      >
-        <Plus className="icon-lg" />
-      </button>
+      {showNewThreadButton ? (
+        <button
+          ref={newTabButtonRef}
+          className="icon-button workspace-panel-add session-tab-new"
+          type="button"
+          aria-label={t("tabs.newConversation")}
+          title={t("tabs.newConversation")}
+          disabled={!canStartNewThread}
+          onClick={onNewThread}
+        >
+          <Plus className="icon-lg" />
+        </button>
+      ) : null}
       {tabContextMenu ? (
         <ThreadContextMenu
           x={tabContextMenu.x}

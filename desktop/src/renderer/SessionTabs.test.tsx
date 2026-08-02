@@ -403,6 +403,44 @@ describe("SessionTabStrip pending indicators", () => {
   });
 });
 
+describe("SessionTabStrip new conversation affordance", () => {
+  it("hides the tab-strip plus while a channel room is active", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const room = createChannelRoomSessionTab("room-1", "Design review", context);
+
+    renderTabs({
+      ...initialState,
+      activeContext: context,
+      activeSessionTabID: room.id,
+      sessionTabs: [room],
+    });
+
+    expect(container.querySelector(".session-tab-new")).toBeNull();
+  });
+
+  it("keeps the tab-strip plus while a conversation draft is active", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const draft = createDraftSessionTab("draft:active", context);
+
+    renderTabs({
+      ...initialState,
+      activeContext: context,
+      activeSessionTabID: draft.id,
+      sessionTabs: [draft],
+    });
+
+    expect(container.querySelector(".session-tab-new")).not.toBeNull();
+  });
+});
+
 describe("SessionTabStrip layout styles", () => {
   it("keeps the new-conversation glyph compact inside its 18px icon box", () => {
     renderTabs(initialState);
