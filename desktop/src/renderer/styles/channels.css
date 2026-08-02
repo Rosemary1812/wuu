@@ -2197,16 +2197,6 @@
   text-overflow: ellipsis;
 }
 
-.channel-room-scope {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-weak);
-  border-radius: 999px;
-  padding: 1px 8px;
-  white-space: nowrap;
-}
-
 /* The status widget pushes to the header's trailing edge and shrinks freely
    on narrow canvases. */
 .channel-room-header .channel-response-status {

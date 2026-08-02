@@ -1120,7 +1120,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
             <header className="channel-room-header">
               <div className="channel-room-header-title">
                 <h2>{selectedRoom.name}</h2>
-                <span className="channel-room-scope">{t("channels.globalScope")}</span>
               </div>
               {respondingAgents.length > 0 ? (
                 <div

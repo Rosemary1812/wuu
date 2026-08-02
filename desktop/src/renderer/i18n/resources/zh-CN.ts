@@ -159,7 +159,6 @@ export const zhCN = {
   "channels.agentStatus.thinking": "处理中",
   "channels.agentStatus.sending": "刚刚发言",
   "channels.agentsResponding": "{count} 个 Agent 正在响应",
-  "channels.globalScope": "全局协作",
   "channels.you": "你",
   "channels.empty": "还没有消息",
   "channels.messagePlaceholder": "发送消息",

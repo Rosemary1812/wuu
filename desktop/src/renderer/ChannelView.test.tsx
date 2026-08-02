@@ -488,7 +488,7 @@ describe("ChannelView", () => {
     expect(firstRoomRow).toBeNull();
     const roomHeader = container.querySelector(".channel-room-header");
     expect(roomHeader?.textContent).toContain("general");
-    expect(roomHeader?.textContent).toContain("全局协作");
+    expect(roomHeader?.querySelector(".channel-room-scope")).toBeNull();
     const detailsToggle = roomHeader?.querySelector<HTMLButtonElement>('button[aria-label="管理 general"]');
     expect(detailsToggle).not.toBeNull();
     act(() => detailsToggle?.click());
