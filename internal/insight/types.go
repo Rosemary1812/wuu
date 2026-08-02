@@ -81,8 +81,8 @@ type TokenUsageRow struct {
 
 // SkillUsage is one load_skill invocation aggregated across session history.
 type SkillUsage struct {
-	Name  string
-	Count int
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 type UsageScan struct {
