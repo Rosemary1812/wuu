@@ -385,6 +385,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const roomAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const roomAvatarTargetRef = useRef<string>("");
+  const savedRoomNameRef = useRef("");
   const knownMessageIDsRef = useRef<Set<string>>(new Set());
   const markedMessageSeqByRoomRef = useRef<Map<string, number>>(new Map());
   const visibleRoomIDRef = useRef("");
@@ -1075,17 +1076,40 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       .filter((member) => member.member_type === "agent")
       .map((member) => member.member_id));
     setRoomAvatarImage(room.avatar_image ?? "");
+    savedRoomNameRef.current = room.name;
     closeRoomMemberMode();
     setSetupPanel("room");
   }
 
   function closeRoomPanel(): void {
+    if (editingRoomID) void persistRoomName();
     setSetupPanel(null);
     setEditingRoomID("");
     setRoomName("");
     setRoomAgentIDs([]);
     setRoomAvatarImage("");
     closeRoomMemberMode();
+  }
+
+  async function persistRoomName(): Promise<void> {
+    const name = roomName.trim();
+    if (!window.wuu || !editingRoomID || !name || name === savedRoomNameRef.current) return;
+    const previousName = savedRoomNameRef.current;
+    savedRoomNameRef.current = name;
+    setError("");
+    try {
+      const result = await window.wuu.updateChannelRoom({
+        room_id: editingRoomID,
+        name,
+        agent_ids: roomAgentIDs,
+      });
+      setRooms((current) => current.map((candidate) => candidate.id === editingRoomID ? result.room : candidate));
+      setRoomName(result.room.name);
+      savedRoomNameRef.current = result.room.name;
+    } catch (reason) {
+      savedRoomNameRef.current = previousName;
+      setError(String(reason));
+    }
   }
 
   async function submitRoomMemberChange(): Promise<void> {
@@ -1102,7 +1126,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     try {
       const result = await window.wuu.updateChannelRoom({
         room_id: editingRoomID,
-        name: room.name,
+        name: roomName.trim() || room.name,
         agent_ids: nextAgentIDs,
       });
       setRooms((current) => current.map((candidate) => candidate.id === editingRoomID ? result.room : candidate));
@@ -1663,6 +1687,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         cancelLabel={t("channels.cancel")}
         submitDisabled={roomMemberMode ? roomMemberSelectionIDs.length === 0 || updatingRoomMembers : !roomName.trim()}
         variant={editingRoomID ? "drawer" : "default"}
+        hideActions={Boolean(editingRoomID && !roomMemberMode)}
         content={editingRoomID && roomMemberMode ? (
           <div className="channel-room-member-flow">
             <p>{t(roomMemberMode === "add" ? "channels.addAgentsHint" : "channels.removeAgentsHint")}</p>
@@ -1744,6 +1769,13 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                   className="sidebar-name-dialog-input"
                   value={roomName}
                   onChange={(event) => setRoomName(event.currentTarget.value)}
+                  onBlur={() => {
+                    if (!roomName.trim()) {
+                      setRoomName(savedRoomNameRef.current);
+                      return;
+                    }
+                    void persistRoomName();
+                  }}
                 />
               </label>
             </section>

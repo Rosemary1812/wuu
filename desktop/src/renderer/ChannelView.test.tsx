@@ -495,6 +495,19 @@ describe("ChannelView", () => {
     const detailsDialog = document.querySelector(".sidebar-name-dialog");
     expect(detailsDialog?.textContent).toContain("群聊详情");
     expect(detailsDialog?.textContent).toContain("群成员");
+    expect(detailsDialog?.querySelector(".sidebar-name-dialog-actions")).toBeNull();
+    const roomNameInput = detailsDialog?.querySelector<HTMLInputElement>(".channel-room-settings-section input");
+    act(() => {
+      setInputValue(roomNameInput!, "renamed group");
+      roomNameInput?.focus();
+      roomNameInput?.blur();
+    });
+    await settle();
+    expect(api.updateChannelRoom).toHaveBeenCalledWith({
+      room_id: "room-1",
+      name: "renamed group",
+      agent_ids: ["agent-1", "agent-2"],
+    });
     expect(container.querySelector(".channel-conversation")?.classList.contains("details-open")).toBe(false);
     expect(container.querySelector(".channel-room-main")).not.toBeNull();
     expect(container.querySelector(".channel-conversation-heading")).toBeNull();
@@ -1160,11 +1173,13 @@ describe("ChannelView", () => {
     expect(detailsDialog?.textContent).not.toContain("群公告");
     expect(detailsDialog?.querySelectorAll(".channel-room-member-card")).toHaveLength(0);
     expect(detailsDialog?.textContent).toContain("危险操作");
+    expect(detailsDialog?.querySelector(".sidebar-name-dialog-actions")).toBeNull();
     const addMemberTrigger = Array.from(detailsDialog?.querySelectorAll<HTMLButtonElement>(".channel-room-member-action") ?? [])
       .find((button) => button.textContent?.includes("新增成员"));
     expect(addMemberTrigger).not.toBeNull();
     act(() => addMemberTrigger?.click());
     expect(detailsDialog?.textContent).toContain("添加 Agent");
+    expect(detailsDialog?.querySelector(".sidebar-name-dialog-actions")).not.toBeNull();
     expect(detailsDialog?.querySelector(".select-menu")).toBeNull();
     const addAgent = detailsDialog?.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
     expect(addAgent).not.toBeNull();

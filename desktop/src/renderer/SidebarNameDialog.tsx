@@ -33,6 +33,7 @@ export interface SidebarNameDialogProps {
     onClick: () => void;
   };
   variant?: "default" | "drawer";
+  hideActions?: boolean;
 }
 
 // Shared floating name dialog for the sidebar flows that need a single text
@@ -56,6 +57,7 @@ export function SidebarNameDialog({
   submitDisabled,
   destructiveAction,
   variant = "default",
+  hideActions = false,
 }: SidebarNameDialogProps): ReactElement | null {
   const [closing, setClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
@@ -152,7 +154,7 @@ export function SidebarNameDialog({
             onFocus={(event) => event.currentTarget.select()}
           />
         </label>}
-        <div className="sidebar-name-dialog-actions">
+        {!hideActions ? <div className="sidebar-name-dialog-actions">
           {destructiveAction ? (
             <button className="sidebar-name-dialog-destructive" type="button" onClick={destructiveAction.onClick}>
               {destructiveAction.label}
@@ -165,7 +167,7 @@ export function SidebarNameDialog({
           <button type="submit" disabled={submitDisabled ?? title.trim().length === 0}>
             {submitLabel}
           </button>
-        </div>
+        </div> : null}
       </form>
     </div>,
     document.body,
