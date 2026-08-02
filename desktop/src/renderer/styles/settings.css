@@ -1174,9 +1174,11 @@
 .settings-usage-chart,
 .settings-model-chart {
   min-width: 0;
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
-  padding: 16px;
+}
+
+.settings-model-chart {
+  border-top: 1px solid var(--hairline-soft);
+  padding-top: 24px;
 }
 
 .settings-usage-chart-header {
@@ -1646,11 +1648,6 @@
  * moved with the content column: at the column's own 640px cap the full
  * table always fits. */
 @container settings-usage (max-width: 520px) {
-  .settings-usage-chart,
-  .settings-model-chart {
-    padding: 14px;
-  }
-
   .settings-usage-trend {
     gap: 2px;
     height: 112px;
