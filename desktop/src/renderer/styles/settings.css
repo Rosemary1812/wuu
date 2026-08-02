@@ -1171,6 +1171,141 @@
   font-size: var(--font-sm);
 }
 
+.settings-usage-chart,
+.settings-model-chart {
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  padding: 16px;
+}
+
+.settings-usage-chart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.settings-usage-chart-header p {
+  margin: 4px 0 0;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+}
+
+.settings-usage-chart-header > span {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-usage-trend {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(2px, 1fr));
+  align-items: end;
+  gap: 4px;
+  height: 132px;
+  border-bottom: 1px solid var(--hairline-soft);
+  background: repeating-linear-gradient(
+    to top,
+    transparent 0,
+    transparent 32px,
+    var(--hairline-soft) 33px
+  );
+}
+
+.settings-usage-trend-day {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  min-width: 0;
+  cursor: default;
+}
+
+.settings-usage-trend-day i {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  border-radius: 2px 2px 0 0;
+  background: var(--settings-heatmap-level-4);
+  transition: height 180ms var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+}
+
+.settings-usage-trend-day:hover i {
+  opacity: 0.72;
+}
+
+.settings-usage-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  color: var(--ink-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-model-chart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-model-chart-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(120px, 1.7fr) 44px;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-model-chart-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-model-chart-label strong,
+.settings-model-chart-label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-model-chart-label strong {
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+}
+
+.settings-model-chart-label small {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+}
+
+.settings-model-chart-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.settings-model-chart-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--settings-heatmap-level-4);
+  transition: width 180ms var(--ease-out);
+}
+
+.settings-model-chart-share {
+  display: block;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .settings-usage-loading {
   gap: 32px;
 }
@@ -1511,6 +1646,21 @@
  * moved with the content column: at the column's own 640px cap the full
  * table always fits. */
 @container settings-usage (max-width: 520px) {
+  .settings-usage-chart,
+  .settings-model-chart {
+    padding: 14px;
+  }
+
+  .settings-usage-trend {
+    gap: 2px;
+    height: 112px;
+  }
+
+  .settings-model-chart-row {
+    grid-template-columns: minmax(100px, 1fr) minmax(80px, 1.3fr) 40px;
+    gap: 10px;
+  }
+
   .settings-usage-table {
     display: block;
     table-layout: auto;

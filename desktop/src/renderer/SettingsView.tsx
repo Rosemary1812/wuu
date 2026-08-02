@@ -2442,6 +2442,17 @@ function SettingsUsagePage({
     const count = Number.isFinite(skill.count) ? Math.max(0, skill.count) : 0;
     return Math.max(max, count);
   }, 0);
+  const usageTrend = buildUsageTrend(usage?.days ?? []);
+  const maxTrendTotal = usageTrend.reduce((max, day) => Math.max(max, usageTokenTotal(day)), 0);
+  const modelChart = (usage?.model_breakdowns ?? []).slice(0, 6).map((model) => ({
+    ...model,
+    total: model.input_tokens + model.output_tokens + model.cache_creation_tokens + model.cache_read_tokens,
+  }));
+  const maxModelTotal = modelChart.reduce((max, model) => Math.max(max, model.total), 0);
+  const allModelTotal = (usage?.model_breakdowns ?? []).reduce(
+    (total, model) => total + model.input_tokens + model.output_tokens + model.cache_creation_tokens + model.cache_read_tokens,
+    0,
+  );
   const heatmapCols = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
 
   // Keep grid height = 7 × cell-size so cells stay square as panel resizes
@@ -2516,6 +2527,39 @@ function SettingsUsagePage({
           <UsageStat label={t("settings.cacheHitRate")} value={formatPercent(usage.metrics.cache_hit_rate)} />
         </div>
       )}
+
+      <section className="settings-usage-chart" aria-labelledby="settings-usage-trend-title">
+        <div className="settings-usage-chart-header">
+          <div>
+            <h2 id="settings-usage-trend-title" className="settings-usage-table-title">
+              {t("settings.usageTrend")}
+            </h2>
+            <p>{t("settings.usageTrendHint")}</p>
+          </div>
+          <span>{t("settings.last30Days")}</span>
+        </div>
+        <div className="settings-usage-trend" role="list" aria-label={t("settings.usageTrend")}>
+          {usageTrend.map((day) => {
+            const total = usageTokenTotal(day);
+            const height = maxTrendTotal > 0 && total > 0 ? Math.max(3, (total / maxTrendTotal) * 100) : 0;
+            return (
+              <Tooltip content={formatUsageDayTitle(day, t, formatUsageValue)} key={day.date}>
+                <span
+                  className="settings-usage-trend-day"
+                  role="listitem"
+                  aria-label={formatUsageDayTitle(day, t, formatUsageValue)}
+                >
+                  <i style={{ height: `${height}%` }} />
+                </span>
+              </Tooltip>
+            );
+          })}
+        </div>
+        <div className="settings-usage-chart-axis" aria-hidden="true">
+          <span>{formatUsageChartDate(usageTrend[0]?.date, locale)}</span>
+          <span>{formatUsageChartDate(usageTrend.at(-1)?.date, locale)}</span>
+        </div>
+      </section>
 
       <div className="settings-heatmap-panel">
         {/* Month labels row */}
@@ -2598,6 +2642,40 @@ function SettingsUsagePage({
           <div className="settings-skill-usage-empty">{t("settings.noSkillUsage")}</div>
         )}
       </section>
+
+      {modelChart.length > 0 ? (
+        <section className="settings-model-chart" aria-labelledby="settings-model-chart-title">
+          <div className="settings-usage-chart-header">
+            <div>
+              <h2 id="settings-model-chart-title" className="settings-usage-table-title">
+                {t("settings.modelDistribution")}
+              </h2>
+              <p>{t("settings.modelDistributionHint")}</p>
+            </div>
+            <span>{t("settings.tokenShare")}</span>
+          </div>
+          <div className="settings-model-chart-list">
+            {modelChart.map((model) => {
+              const width = maxModelTotal > 0 ? Math.max(2, (model.total / maxModelTotal) * 100) : 0;
+              const share = allModelTotal > 0 ? model.total / allModelTotal : 0;
+              return (
+                <div className="settings-model-chart-row" key={`${model.provider}\n${model.model}`}>
+                  <div className="settings-model-chart-label">
+                    <strong>{model.model || t("settings.unknownModel")}</strong>
+                    <small>{model.provider || t("settings.unknownProvider")}</small>
+                  </div>
+                  <div className="settings-model-chart-bar" aria-hidden="true">
+                    <span style={{ width: `${width}%` }} />
+                  </div>
+                  <Tooltip content={formatUsageValue(model.total)}>
+                    <span className="settings-model-chart-share">{formatPercent(share)}</span>
+                  </Tooltip>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {usage.model_breakdowns.length > 0 ? (
           <div className="settings-card settings-usage-table-wrap">
@@ -2916,6 +2994,47 @@ function usageTokenTotal(day: SettingsUsageDay): number {
     Math.max(0, day.cache_creation_tokens) +
     Math.max(0, day.cache_read_tokens)
   );
+}
+
+function buildUsageTrend(days: SettingsUsageDay[], length = 30): SettingsUsageDay[] {
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const end = startOfLocalDay(new Date());
+  return Array.from({ length }, (_, index) => {
+    const date = localDateKey(addDays(end, index - length + 1));
+    return byDate.get(date) ?? {
+      date,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      cache_hit_rate: 0,
+      turns: 0,
+      agents: 0,
+    };
+  });
+}
+
+function formatUsageChartDate(date: string | undefined, locale: string): string {
+  if (!date) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
+}
+
+function formatUsageDayTitle(
+  day: SettingsUsageDay,
+  t: Translate,
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string,
+): string {
+  if (!hasUsageDayData(day)) {
+    return t("settings.noUsageOnDate", { date: day.date });
+  }
+  return t("settings.usageTrendOnDate", {
+    date: day.date,
+    total: formatNumber(usageTokenTotal(day)),
+    input: formatNumber(day.input_tokens + day.cache_read_tokens + day.cache_creation_tokens),
+    output: formatNumber(day.output_tokens),
+  });
 }
 
 function hasUsageDayData(day: SettingsUsageDay): boolean {

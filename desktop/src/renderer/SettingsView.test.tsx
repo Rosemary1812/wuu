@@ -1291,12 +1291,25 @@ describe("SettingsView About section", () => {
     expect(modelInput?.textContent).toBe("1k");
     expect(await hoverTooltipText(modelInput)).toBe("1,000");
     expect(rootText()).toContain("模型使用");
+    expect(rootText()).toContain("Token 用量趋势");
+    expect(rootText()).toContain("最近 30 天");
+    expect(rootText()).toContain("模型用量构成");
     expect(rootText()).toContain("缓存命中率");
     expect(rootText()).toContain("5%");
     expect(container.querySelectorAll(".settings-usage-stat")).toHaveLength(4);
     expect(rootText()).not.toContain("活跃");
     expect(rootText()).toContain("OpenAI API");
     expect(rootText()).not.toContain("最近记录");
+    const trend = container.querySelector(".settings-usage-trend");
+    expect(trend?.getAttribute("aria-label")).toBe("Token 用量趋势");
+    expect(trend?.querySelectorAll(".settings-usage-trend-day")).toHaveLength(30);
+    expect(
+      trend?.querySelector<HTMLElement>(`[aria-label^="${heatmapDates.at(-1)}"]`)?.getAttribute("aria-label"),
+    ).toContain("总计 470");
+    const modelChartRows = container.querySelectorAll(".settings-model-chart-row");
+    expect(modelChartRows).toHaveLength(1);
+    expect(modelChartRows[0]?.textContent).toContain("fake-model");
+    expect(modelChartRows[0]?.textContent).toContain("100%");
     const heatmap = container.querySelector(".settings-usage-heatmap");
     expect(heatmap).not.toBeNull();
     expect(heatmap?.getAttribute("aria-label")).toBe("每日用量热力图");
