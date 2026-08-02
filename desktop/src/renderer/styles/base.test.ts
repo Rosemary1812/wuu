@@ -188,3 +188,16 @@ describe("component :root blocks stay in the shared neutral family", () => {
     }
   });
 });
+
+describe("channel room member dialog", () => {
+  it("sizes to content instead of holding a fixed height", () => {
+    const dialog = environmentCss.match(
+      /\.sidebar-name-dialog\.channel-room-member-dialog\s*\{([^}]*)\}/,
+    )?.[1] ?? "";
+
+    // Short agent lists must not strand the footer below an empty grid
+    // track; long lists still cap and scroll inside the picker options.
+    expect(dialog).toMatch(/max-height:\s*min\(620px/);
+    expect(dialog).not.toMatch(/(?:^|\n)\s*height:/);
+  });
+});

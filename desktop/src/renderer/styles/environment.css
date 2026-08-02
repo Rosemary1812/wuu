@@ -1383,7 +1383,10 @@
 
 .sidebar-name-dialog.channel-room-member-dialog {
   width: min(480px, calc(100vw - 48px));
-  height: min(620px, calc(100vh - 48px));
+  /* Size to content, only capping when the agent list is long: a fixed
+     height stranded the footer below an ocean of empty grid track when
+     just a few agents were listed. */
+  max-height: min(620px, calc(100vh - 48px));
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
