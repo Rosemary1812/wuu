@@ -31,6 +31,7 @@ import type {
   ConfigAdvancedUpdateResult,
   ConfigGeneralUpdateResult,
   ConfigCodexModelsResult,
+  ConfigModelCatalogRefreshResult,
   ConfigModelUpdateResult,
   GitCommitParams,
   GitPullRequestParams,
@@ -1309,6 +1310,12 @@ app.whenReady().then(async () => {
     appServerRequest<ConfigCodexModelsResult>(event, "config/codex/models", {
       provider: provider ?? "",
     }),
+  );
+  ipcMain.handle("wuu:config-model-catalog-refresh", (event) =>
+    appServerRequest<ConfigModelCatalogRefreshResult>(
+      event,
+      "config/model-catalog/refresh",
+    ),
   );
   ipcMain.handle(
     "wuu:config-model-update",

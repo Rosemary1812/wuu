@@ -112,6 +112,7 @@ function renderSettings(props: {
   onCodexPetsUpdate?: (settings: CodexPetSettingsUpdate) => Promise<CodexPetsSnapshot>;
   onSave?: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onRemoveProvider?: (provider: string) => Promise<void>;
+  onRefreshModelCatalog?: () => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onToggleSidebar?: () => void;
@@ -154,6 +155,7 @@ function renderSettings(props: {
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
         onRemoveProvider={props.onRemoveProvider ?? (async () => {})}
+        onRefreshModelCatalog={props.onRefreshModelCatalog ?? (async () => {})}
         onAdvancedSave={props.onAdvancedSave ?? (async () => {})}
         onGeneralSave={props.onGeneralSave ?? (async () => {})}
         onDebugControlsChange={() => {}}
@@ -405,6 +407,42 @@ describe("SettingsView provider configuration", () => {
     expect(rootText()).toContain("Base URL");
     expect(rootText()).toContain("API key 已配置");
     expect(rootText()).toContain("新增服务");
+  });
+
+  it("refreshes the model catalog with a button-only loading state", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    let finishRefresh: (() => void) | undefined;
+    const onRefreshModelCatalog = vi.fn(
+      () => new Promise<void>((resolve) => { finishRefresh = resolve; }),
+    );
+    renderSettings({
+      initialPage: "providers",
+      initialized: baseInitialized(),
+      onRefreshModelCatalog,
+    });
+
+    const button = container.querySelector(
+      '[data-testid="settings-model-catalog-refresh"]',
+    ) as HTMLButtonElement;
+    expect(button.textContent).toContain("更新模型目录");
+    expect(button.disabled).toBe(false);
+
+    act(() => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onRefreshModelCatalog).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain("正在更新");
+
+    await act(async () => {
+      finishRefresh?.();
+      await Promise.resolve();
+    });
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain("更新模型目录");
   });
 
   it("submits a new OpenAI-compatible provider with editable connection fields", async () => {

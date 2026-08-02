@@ -27,6 +27,7 @@ const (
 	MethodConfigAdvancedUpdate = "config/advanced/update"
 	MethodConfigGeneralUpdate  = "config/general/update"
 	MethodConfigCodexModels    = "config/codex/models"
+	MethodConfigCatalogRefresh = "config/model-catalog/refresh"
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
 	MethodChannelBootstrap     = "channel/bootstrap"
@@ -381,6 +382,12 @@ type ConfigReadResult struct {
 	Providers          []ProviderSummary            `json:"providers,omitempty"`
 	AdvancedSettings   AdvancedSettingsSummary      `json:"advanced_settings"`
 	GeneralSettings    GeneralSettingsSummary       `json:"general_settings"`
+}
+
+type ConfigModelCatalogRefreshResult struct {
+	ProviderCount int               `json:"provider_count"`
+	ModelCount    int               `json:"model_count"`
+	Providers     []ProviderSummary `json:"providers"`
 }
 
 type PermissionSummary struct {

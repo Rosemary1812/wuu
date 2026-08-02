@@ -174,7 +174,7 @@ import {
 } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, RefreshCw } from "lucide-react";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
@@ -692,6 +692,13 @@ export function App(): JSX.Element {
   const [checkoutErrorTip, setCheckoutErrorTip] = useState<string | null>(null);
   const dismissCheckoutErrorTip = useCallback(() => {
     setCheckoutErrorTip(null);
+  }, []);
+  const [modelCatalogTip, setModelCatalogTip] = useState<{
+    message: string;
+    isError: boolean;
+  } | null>(null);
+  const dismissModelCatalogTip = useCallback(() => {
+    setModelCatalogTip(null);
   }, []);
   // Mirrors `archiveConfirmSubagentID` (legacy confirm state) for the
   // info-panel subagent rows. The state lives in App rather than the panel
@@ -2578,6 +2585,30 @@ export function App(): JSX.Element {
     setSettingsOpen(true);
   }
 
+  async function refreshModelCatalog(): Promise<void> {
+    setModelCatalogTip(null);
+    try {
+      const result = await window.wuu.refreshModelCatalog();
+      setState((current) =>
+        current.initialized
+          ? {
+              ...current,
+              initialized: { ...current.initialized, providers: result.providers },
+            }
+          : current,
+      );
+      setModelCatalogTip({
+        message: t("settings.modelCatalogUpdated", { count: result.model_count }),
+        isError: false,
+      });
+    } catch {
+      setModelCatalogTip({
+        message: t("settings.modelCatalogUpdateFailed"),
+        isError: true,
+      });
+    }
+  }
+
   function closeProjectMenus(): void {
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
@@ -3985,11 +4016,22 @@ export function App(): JSX.Element {
     />
   ) : null;
 
+  const modelCatalogTipNode = modelCatalogTip ? (
+    <TopNotice
+      message={modelCatalogTip.message}
+      icon={modelCatalogTip.isError ? CircleAlert : RefreshCw}
+      onDismiss={dismissModelCatalogTip}
+      isError={modelCatalogTip.isError}
+      dismissAriaLabel={t("common.closeNotice")}
+    />
+  ) : null;
+
   if (settingsOpen) {
     return (
       <>
         {archiveTipNode}
         {checkoutErrorTipNode}
+        {modelCatalogTipNode}
         <SettingsShellRenderer
           initialized={sessionRuntime}
           initialPage={settingsInitialPage}
@@ -4021,6 +4063,7 @@ export function App(): JSX.Element {
           }}
           onSave={updateRuntimeSettings}
           onRemoveProvider={removeProvider}
+          onRefreshModelCatalog={refreshModelCatalog}
           onAdvancedSave={updateAdvancedSettings}
           onGeneralSave={updateGeneralSettings}
           onCodexPetsRefresh={refreshCodexPets}
@@ -4050,6 +4093,7 @@ export function App(): JSX.Element {
     <>
       {archiveTipNode}
       {checkoutErrorTipNode}
+      {modelCatalogTipNode}
       <ImagePreviewProvider>
         <div ref={appShellRef} className={shellClassName} style={shellStyle}>
           {!poppedOutMode ? (

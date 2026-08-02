@@ -219,6 +219,8 @@ const api: WuuDesktopApi = {
   },
   loadCodexModels: (provider?: string) =>
     ipcRenderer.invoke("wuu:config-codex-models", provider),
+  refreshModelCatalog: () =>
+    ipcRenderer.invoke("wuu:config-model-catalog-refresh"),
   updateRuntimeSettings: (
     provider?: string,
     model?: string,

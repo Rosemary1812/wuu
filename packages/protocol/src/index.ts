@@ -770,6 +770,12 @@ export type ConfigCodexModelsResult = {
   models: CodexModelSummary[];
 };
 
+export type ConfigModelCatalogRefreshResult = {
+  provider_count: number;
+  model_count: number;
+  providers: ProviderSummary[];
+};
+
 export type DesktopProject = {
   id: string;
   name: string;
@@ -2160,6 +2166,7 @@ export type WuuDesktopApi = {
     handler: (event: SpeechRecognitionEvent) => void,
   ) => () => void;
   loadCodexModels: (provider?: string) => Promise<ConfigCodexModelsResult>;
+  refreshModelCatalog: () => Promise<ConfigModelCatalogRefreshResult>;
   // provider/model may be omitted when threadId is set: the server inherits
   // omitted selection fields from the target thread and leaves the workspace
   // defaults for them untouched.

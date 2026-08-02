@@ -116,6 +116,7 @@ export function SettingsView({
   onBack,
   onSave,
   onRemoveProvider,
+  onRefreshModelCatalog,
   onAdvancedSave,
   onGeneralSave,
   onCodexPetsRefresh,
@@ -155,6 +156,7 @@ export function SettingsView({
   onBack: () => void;
   onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onRemoveProvider: (provider: string) => Promise<void>;
+  onRefreshModelCatalog: () => Promise<void>;
   onAdvancedSave: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onCodexPetsRefresh: () => Promise<CodexPetsSnapshot>;
@@ -875,6 +877,7 @@ export function SettingsView({
                 onCommitAPIKey={commitAPIKey}
                 onSubmit={submit}
                 onRemoveProvider={requestRemoveProvider}
+                onRefreshModelCatalog={onRefreshModelCatalog}
                 runningProviderNames={runningProviderNameSet}
                 disabled={addSubmitDisabled}
               />
@@ -1084,6 +1087,7 @@ function SettingsProvidersPage({
   onCommitAPIKey,
   onSubmit,
   onRemoveProvider,
+  onRefreshModelCatalog,
   runningProviderNames,
   disabled
 }: {
@@ -1116,10 +1120,12 @@ function SettingsProvidersPage({
   onCommitAPIKey: () => void;
   onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
   onRemoveProvider?: (provider: string) => Promise<void> | void;
+  onRefreshModelCatalog: () => Promise<void>;
   runningProviderNames: ReadonlySet<string>;
   disabled: boolean;
 }): JSX.Element {
   const { t } = useI18n();
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const reasoningMode = providerModelReasoningMode(selectedProvider, modelDraft);
   const authFieldLabel = t("provider.apiKey");
   // Text fields commit on blur, or on Enter — except while creating a
@@ -1136,6 +1142,28 @@ function SettingsProvidersPage({
     };
   return (
     <SettingsSection testID="settings-providers">
+      <SettingsCard>
+        <SettingsRow
+          title={t("settings.modelCatalog")}
+          description={t("settings.modelCatalogDescription")}
+        >
+          <button
+            className="settings-button"
+            type="button"
+            data-testid="settings-model-catalog-refresh"
+            disabled={catalogRefreshing}
+            onClick={() => {
+              setCatalogRefreshing(true);
+              void onRefreshModelCatalog().finally(() => setCatalogRefreshing(false));
+            }}
+          >
+            <RefreshCw className={`icon${catalogRefreshing ? " settings-spin" : ""}`} />
+            {catalogRefreshing
+              ? t("settings.modelCatalogUpdating")
+              : t("settings.modelCatalogUpdate")}
+          </button>
+        </SettingsRow>
+      </SettingsCard>
       {providers.length > 0 ? (
         <div className="settings-provider-overview" data-testid="settings-provider-overview">
           {providers.map((provider) => (

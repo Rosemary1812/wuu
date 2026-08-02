@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
@@ -72,20 +71,8 @@ type catalogData struct {
 	Providers []Provider `json:"providers"`
 }
 
-var (
-	loadOnce sync.Once
-	loaded   catalogData
-	loadErr  error
-)
-
 func Providers() ([]Provider, error) {
-	loadOnce.Do(func() {
-		loadErr = json.Unmarshal(catalogJSON, &loaded)
-	})
-	if loadErr != nil {
-		return nil, loadErr
-	}
-	return loaded.Providers, nil
+	return catalogProviders()
 }
 
 func ProviderByID(id string) (Provider, bool) {

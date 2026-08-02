@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/credentialstore"
 	"github.com/blueberrycongee/wuu/internal/execution"
 	"github.com/blueberrycongee/wuu/internal/mcp"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -209,6 +210,10 @@ type Server struct {
 	codexModelsMu   sync.Mutex
 	codexModelCache map[string]map[string]config.ProviderModelConfig
 
+	modelCatalogHTTPClient *http.Client
+	modelCatalogCachePath  string
+	modelCatalogURL        string
+
 	// participantSummaryCache memoizes participant store lookups keyed
 	// by participant ID. Ephemeral participants are immutable after
 	// creation, so entries never need invalidation; failed lookups are
@@ -275,6 +280,21 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		clientMethods:                make(map[string]struct{}),
 		runs:                         make(map[string]*runTracker),
 		activeRunByThread:            make(map[string]string),
+		modelCatalogHTTPClient:       httpClient,
+	}
+	if rt != nil {
+		catalogHome := strings.TrimSpace(rt.WuuHome)
+		if catalogHome == "" && strings.TrimSpace(rt.ConfigPath) != "" {
+			catalogHome = filepath.Dir(rt.ConfigPath)
+		}
+		if catalogHome != "" {
+			s.modelCatalogCachePath = filepath.Join(catalogHome, "modelcatalog.json")
+		}
+	}
+	if s.modelCatalogCachePath != "" {
+		if err := modelcatalog.LoadCache(s.modelCatalogCachePath); err != nil {
+			providers.DebugLogf("model catalog cache: %v", err)
+		}
 	}
 	bootOwner := false
 	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
@@ -777,6 +797,15 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		if !s.startBackground(func() {
 			if err := s.handleConfigCodexModels(ctx, req); err != nil {
 				log.Printf("wuu: config/codex/models: %v", err)
+			}
+		}) {
+			return s.writeResponse(req.ID, nil, errServerClosed)
+		}
+		return nil
+	case MethodConfigCatalogRefresh:
+		if !s.startBackground(func() {
+			if err := s.handleConfigModelCatalogRefresh(ctx, req); err != nil {
+				log.Printf("wuu: config/model-catalog/refresh: %v", err)
 			}
 		}) {
 			return s.writeResponse(req.ID, nil, errServerClosed)
