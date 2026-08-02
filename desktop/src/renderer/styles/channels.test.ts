@@ -199,6 +199,7 @@ describe("channel agent status", () => {
     const responseStatus = ruleFor(".channel-response-status");
     const responseCopy = ruleFor(".channel-response-status-copy");
     const headerAnchor = ruleFor(".channel-room-header .channel-response-status");
+    const headerActions = ruleFor(".channel-room-header-actions");
 
     expect(responseStatus).toMatch(/display:\s*flex/);
     expect(responseStatus).toMatch(/gap:\s*9px/);
@@ -208,6 +209,9 @@ describe("channel agent status", () => {
     expect(responseCopy).toMatch(/min-width:\s*0/);
     expect(headerAnchor).toMatch(/margin-left:\s*auto/);
     expect(headerAnchor).toMatch(/min-width:\s*0/);
+    // The gear must stay at the header's trailing edge even when the status
+    // widget is hidden (idle room), so the actions carry their own auto margin.
+    expect(headerActions).toMatch(/margin-left:\s*auto/);
     expect(channelsCss).not.toContain("channel-response-status-empty");
     expect(channelsCss).not.toContain(".channel-room-list");
     expect(channelsCss).not.toContain(".channel-room-row");

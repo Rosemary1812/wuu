@@ -2209,6 +2209,10 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  /* Right-anchor the actions even when the response status is hidden: the
+     status widget carries its own margin-left:auto, so without this the gear
+     collapses against the room title in the common idle case. */
+  margin-left: auto;
 }
 
 .channel-room-main-empty {
