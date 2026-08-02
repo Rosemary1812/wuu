@@ -676,7 +676,8 @@ func TestChat_SendsImageContentParts(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "gpt-test",
+		Model:      "gpt-test",
+		MediaInput: providers.MediaInputPolicy{Image: true},
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "user",
@@ -739,7 +740,8 @@ func TestChat_SendsFileContentParts(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "gpt-test",
+		Model:      "gpt-test",
+		MediaInput: providers.MediaInputPolicy{File: true},
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "user",
@@ -2652,7 +2654,8 @@ func TestResponsesChat_SendsFileContentParts(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "gpt-test",
+		Model:      "gpt-test",
+		MediaInput: providers.MediaInputPolicy{File: true},
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "user",

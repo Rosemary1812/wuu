@@ -1611,7 +1611,8 @@ func TestChat_SendsImageBlocks(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "claude-test",
+		Model:      "claude-test",
+		MediaInput: providers.MediaInputPolicy{Image: true},
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "user",
@@ -1674,7 +1675,8 @@ func TestChat_SendsDocumentBlocks(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "claude-test",
+		Model:      "claude-test",
+		MediaInput: providers.MediaInputPolicy{File: true},
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "user",
