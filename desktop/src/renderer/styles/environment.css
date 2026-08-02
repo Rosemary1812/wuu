@@ -1381,6 +1381,12 @@
   transform-origin: center;
 }
 
+.sidebar-name-dialog.channel-room-member-dialog {
+  width: min(480px, calc(100vw - 48px));
+  height: min(620px, calc(100vh - 48px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .sidebar-name-dialog-drawer {
   width: min(388px, 100vw);
   max-height: none;
@@ -1420,6 +1426,10 @@
 }
 
 .sidebar-name-dialog-overlay-drawer.closing {
+  pointer-events: none;
+}
+
+.sidebar-name-dialog-overlay.backgrounded {
   pointer-events: none;
 }
 

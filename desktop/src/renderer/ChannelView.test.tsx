@@ -1178,13 +1178,18 @@ describe("ChannelView", () => {
       .find((button) => button.textContent?.includes("新增成员"));
     expect(addMemberTrigger).not.toBeNull();
     act(() => addMemberTrigger?.click());
-    expect(detailsDialog?.textContent).toContain("添加 Agent");
-    expect(detailsDialog?.querySelector(".sidebar-name-dialog-actions")).not.toBeNull();
-    expect(detailsDialog?.querySelector(".select-menu")).toBeNull();
-    const addAgent = detailsDialog?.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
+    const memberDialog = document.querySelector<HTMLFormElement>(".channel-room-member-dialog");
+    expect(memberDialog?.textContent).toContain("添加 Agent");
+    expect(memberDialog?.classList.contains("sidebar-name-dialog-drawer")).toBe(false);
+    expect(document.querySelectorAll('.sidebar-name-dialog[role="dialog"]')).toHaveLength(2);
+    expect(memberDialog?.querySelector(".sidebar-name-dialog-actions")).not.toBeNull();
+    expect(memberDialog?.querySelector(".select-menu")).toBeNull();
+    expect(detailsDialog?.getAttribute("aria-hidden")).toBe("true");
+    expect(detailsDialog?.textContent).toContain("群聊详情");
+    const addAgent = memberDialog?.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
     expect(addAgent).not.toBeNull();
     act(() => addAgent?.click());
-    const saveButton = detailsDialog?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const saveButton = memberDialog?.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(saveButton?.textContent).toBe("添加（1）");
     await act(async () => saveButton?.click());
 
@@ -1194,7 +1199,8 @@ describe("ChannelView", () => {
       agent_ids: ["agent-1"],
     });
 
-    expect(document.querySelector(".sidebar-name-dialog")?.textContent).toContain("群聊详情");
+    expect(document.querySelector(".channel-room-member-dialog")).toBeNull();
+    expect(document.querySelector(".sidebar-name-dialog-drawer")?.textContent).toContain("群聊详情");
     const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
     const deleteButton = document.querySelector<HTMLButtonElement>(".channel-room-danger-zone button");
     expect(deleteButton?.textContent).toBe("删除频道");
@@ -1223,17 +1229,18 @@ describe("ChannelView", () => {
     const manageMembers = Array.from(detailsDialog?.querySelectorAll<HTMLButtonElement>(".channel-room-member-action") ?? [])
       .find((button) => button.textContent?.includes("管理成员"));
     act(() => manageMembers?.click());
-    expect(detailsDialog?.textContent).toContain("移出 Agent");
-    const removeAlpha = detailsDialog?.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
+    const memberDialog = document.querySelector<HTMLFormElement>(".channel-room-member-dialog");
+    expect(memberDialog?.textContent).toContain("移出 Agent");
+    const removeAlpha = memberDialog?.querySelector<HTMLButtonElement>('.channel-member-picker-option[role="option"]');
     act(() => removeAlpha?.click());
 
     const confirmRemove = vi.spyOn(window, "confirm").mockReturnValue(false);
-    await act(async () => document.querySelector<HTMLFormElement>(".sidebar-name-dialog")?.requestSubmit());
+    await act(async () => memberDialog?.requestSubmit());
     expect(confirmRemove).toHaveBeenCalledWith("从当前群聊移出选中的 1 位 Agent？Agent 及其保存的状态不会被删除。");
     expect(api.updateChannelRoom).not.toHaveBeenCalled();
 
     confirmRemove.mockReturnValue(true);
-    await act(async () => document.querySelector<HTMLFormElement>(".sidebar-name-dialog")?.requestSubmit());
+    await act(async () => memberDialog?.requestSubmit());
 
     expect(api.updateChannelRoom).toHaveBeenCalledWith({
       room_id: "room-1",

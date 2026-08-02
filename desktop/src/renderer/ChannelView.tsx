@@ -1669,38 +1669,22 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         open={setupPanel === "room"}
         title={roomName}
         onTitleChange={setRoomName}
-        onSubmit={() => void (roomMemberMode ? submitRoomMemberChange() : submitRoom())}
-        onClose={roomMemberMode ? closeRoomMemberMode : closeRoomPanel}
-        dialogTitle={t(roomMemberMode === "add"
-          ? "channels.addAgents"
-          : roomMemberMode === "remove"
-            ? "channels.removeAgents"
-            : editingRoomID ? "channels.roomDetails" : "channels.newRoom")}
+        onSubmit={() => void submitRoom()}
+        onClose={closeRoomPanel}
+        dialogTitle={t(editingRoomID ? "channels.roomDetails" : "channels.newRoom")}
         dialogTitleId="channel-room-dialog-title"
         fieldLabel={t("channels.name")}
         fieldAriaLabel={t("channels.name")}
         placeholder={t("channels.newRoom")}
         icon={MessageCircle}
-        submitLabel={roomMemberMode
-          ? t(roomMemberMode === "add" ? "channels.addSelectedMembers" : "channels.removeSelectedMembers", { count: roomMemberSelectionIDs.length })
-          : t(editingRoomID ? "channels.save" : "channels.create")}
+        submitLabel={t(editingRoomID ? "channels.save" : "channels.create")}
         cancelLabel={t("channels.cancel")}
-        submitDisabled={roomMemberMode ? roomMemberSelectionIDs.length === 0 || updatingRoomMembers : !roomName.trim()}
+        submitDisabled={!roomName.trim()}
         variant={editingRoomID ? "drawer" : "default"}
-        hideActions={Boolean(editingRoomID && !roomMemberMode)}
-        content={editingRoomID && roomMemberMode ? (
-          <div className="channel-room-member-flow">
-            <p>{t(roomMemberMode === "add" ? "channels.addAgentsHint" : "channels.removeAgentsHint")}</p>
-            <ChannelMemberPicker
-              agents={roomMemberMode === "add"
-                ? agents.filter((agent) => !roomAgentIDs.includes(agent.id))
-                : agents.filter((agent) => roomAgentIDs.includes(agent.id))}
-              selectedAgentIDs={roomMemberSelectionIDs}
-              onToggle={toggleRoomMemberSelection}
-              label={t(roomMemberMode === "add" ? "channels.availableAgents" : "channels.currentAgents")}
-            />
-          </div>
-        ) : editingRoomID ? (
+        hideActions={Boolean(editingRoomID)}
+        closeOnEscape={!roomMemberMode}
+        backgrounded={Boolean(roomMemberMode)}
+        content={editingRoomID ? (
           <div className="channel-room-details-form">
             {selectedRoom ? (
               <section className="channel-room-identity" aria-label={t("channels.groupOverview")}>
@@ -1822,6 +1806,36 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
             <ChannelMemberPicker agents={agents} selectedAgentIDs={roomAgentIDs} onToggle={toggleRoomAgent} />
           </div>
         )}
+      />
+      <SidebarNameDialog
+        open={Boolean(editingRoomID && roomMemberMode)}
+        title=""
+        onTitleChange={() => undefined}
+        onSubmit={() => void submitRoomMemberChange()}
+        onClose={closeRoomMemberMode}
+        dialogTitle={t(roomMemberMode === "remove" ? "channels.removeAgents" : "channels.addAgents")}
+        dialogTitleId="channel-room-member-dialog-title"
+        fieldLabel={t("channels.groupMembers")}
+        fieldAriaLabel={t("channels.groupMembers")}
+        placeholder=""
+        icon={roomMemberMode === "remove" ? UserMinus : Plus}
+        submitLabel={t(roomMemberMode === "remove" ? "channels.removeSelectedMembers" : "channels.addSelectedMembers", { count: roomMemberSelectionIDs.length })}
+        cancelLabel={t("channels.cancel")}
+        submitDisabled={roomMemberSelectionIDs.length === 0 || updatingRoomMembers}
+        dialogClassName="channel-room-member-dialog"
+        content={roomMemberMode ? (
+          <div className="channel-room-member-flow">
+            <p>{t(roomMemberMode === "add" ? "channels.addAgentsHint" : "channels.removeAgentsHint")}</p>
+            <ChannelMemberPicker
+              agents={roomMemberMode === "add"
+                ? agents.filter((agent) => !roomAgentIDs.includes(agent.id))
+                : agents.filter((agent) => roomAgentIDs.includes(agent.id))}
+              selectedAgentIDs={roomMemberSelectionIDs}
+              onToggle={toggleRoomMemberSelection}
+              label={t(roomMemberMode === "add" ? "channels.availableAgents" : "channels.currentAgents")}
+            />
+          </div>
+        ) : null}
       />
       <SidebarNameDialog
         open={setupPanel === "task"}

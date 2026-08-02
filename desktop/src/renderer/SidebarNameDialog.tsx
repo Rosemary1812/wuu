@@ -34,6 +34,9 @@ export interface SidebarNameDialogProps {
   };
   variant?: "default" | "drawer";
   hideActions?: boolean;
+  closeOnEscape?: boolean;
+  backgrounded?: boolean;
+  dialogClassName?: string;
 }
 
 // Shared floating name dialog for the sidebar flows that need a single text
@@ -58,6 +61,9 @@ export function SidebarNameDialog({
   destructiveAction,
   variant = "default",
   hideActions = false,
+  closeOnEscape = true,
+  backgrounded = false,
+  dialogClassName = "",
 }: SidebarNameDialogProps): ReactElement | null {
   const [closing, setClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
@@ -86,7 +92,7 @@ export function SidebarNameDialog({
   }, []);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !closeOnEscape) {
       return;
     }
     function handleKeyDown(event: KeyboardEvent): void {
@@ -98,7 +104,7 @@ export function SidebarNameDialog({
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, requestClose]);
+  }, [closeOnEscape, open, requestClose]);
 
   if (!open) {
     return null;
@@ -120,13 +126,14 @@ export function SidebarNameDialog({
 
   return createPortal(
     <div
-      className={`conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}${closing ? " closing" : ""}`}
+      className={`conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}${closing ? " closing" : ""}${backgrounded ? " backgrounded" : ""}`}
       onPointerDown={handleOverlayPointerDown}
     >
       <form
-        className={`conversation-search-dialog sidebar-name-dialog${variant === "drawer" ? " sidebar-name-dialog-drawer" : ""}${closing ? " closing" : ""}`}
+        className={`conversation-search-dialog sidebar-name-dialog${variant === "drawer" ? " sidebar-name-dialog-drawer" : ""}${closing ? " closing" : ""}${backgrounded ? " backgrounded" : ""}${dialogClassName ? ` ${dialogClassName}` : ""}`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={backgrounded ? undefined : "true"}
+        aria-hidden={backgrounded || undefined}
         aria-labelledby={dialogTitleId}
         onAnimationEnd={handleDrawerAnimationEnd}
         onSubmit={(event) => {
