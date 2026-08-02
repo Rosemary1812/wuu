@@ -671,16 +671,19 @@ export function App(): JSX.Element {
     setChannelsOpen(true);
     closeSidebarDrawer();
   }, [closeSidebarDrawer, setRightPanelOpenWithMotion]);
+  const clearChannelRoomUnread = useCallback((roomID: string): void => {
+    setChannelRooms((current) =>
+      current.map((room) => (room.id === roomID ? { ...room, unread_count: 0 } : room)),
+    );
+  }, []);
   const selectChannelRoom = useCallback((roomID: string): void => {
     setSelectedChannelRoomID(roomID);
     setChannelSection("rooms");
     // Optimistically clear the room's unread badge; ChannelView persists the
     // read cursor via markChannelRoomRead and the next poll confirms.
-    setChannelRooms((current) =>
-      current.map((room) => (room.id === roomID ? { ...room, unread_count: 0 } : room)),
-    );
+    clearChannelRoomUnread(roomID);
     openChannelsView();
-  }, [openChannelsView]);
+  }, [clearChannelRoomUnread, openChannelsView]);
   const openChannelAgentsView = useCallback((): void => {
     setChannelSection("agents");
     openChannelsView();
@@ -4185,7 +4188,7 @@ export function App(): JSX.Element {
                 )}
               </div>
             </header>
-            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} selectedRoomID={selectedChannelRoomID} onSelectRoom={setSelectedChannelRoomID} newRoomRequest={newRoomRequest} />
+            <ChannelView initialized={sessionRuntime ?? state.initialized} section={channelSection} onSectionChange={setChannelSection} selectedRoomID={selectedChannelRoomID} onSelectRoom={setSelectedChannelRoomID} onRoomRead={clearChannelRoomUnread} newRoomRequest={newRoomRequest} />
           </>
         ) : (
           <>

@@ -286,6 +286,18 @@ describe("ChannelView", () => {
     const api = createApi();
     api.bootstrapChannels = vi.fn(async () => ({ agents, rooms: unreadRooms }));
     api.listChannelRooms = vi.fn(async () => ({ rooms: unreadRooms }));
+    api.listChannelMessages = vi.fn(async ({ room_id }) => ({
+      messages: [{
+        id: "selected-room-message",
+        room_id,
+        seq: 1,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "Visible message",
+        created_at: "2026-07-23T00:00:00Z",
+      }],
+    }));
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
     root = createRoot(container);
     act(() => root?.render(<ChannelView selectedRoomID="room-2" />));
@@ -294,6 +306,57 @@ describe("ChannelView", () => {
     // Unread badges live in the app sidebar; the canvas persists the read
     // cursor for whichever room the parent selects.
     expect(api.markChannelRoomRead).toHaveBeenCalledWith({ room_id: "room-2" });
+  });
+
+  it("marks newly polled messages read while their room stays visible", async () => {
+    vi.useFakeTimers();
+    try {
+      const firstMessage = {
+        id: "visible-1",
+        room_id: "room-1",
+        seq: 1,
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Already visible",
+        created_at: "2026-07-23T00:00:00Z",
+      };
+      const secondMessage = {
+        ...firstMessage,
+        id: "visible-2",
+        seq: 2,
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        body: "Arrived while visible",
+        created_at: "2026-07-23T00:00:01Z",
+      };
+      const api = createApi();
+      api.listChannelMessages = vi.fn()
+        .mockResolvedValueOnce({ messages: [firstMessage] })
+        .mockResolvedValue({ messages: [firstMessage, secondMessage] });
+      const onRoomRead = vi.fn();
+      Object.defineProperty(window, "wuu", { configurable: true, value: api });
+      root = createRoot(container);
+      act(() => root?.render(
+        <ChannelView selectedRoomID="room-1" onRoomRead={onRoomRead} />,
+      ));
+      await settle();
+
+      expect(api.markChannelRoomRead).toHaveBeenCalledTimes(1);
+      expect(onRoomRead).toHaveBeenCalledTimes(1);
+      vi.mocked(api.markChannelRoomRead!).mockClear();
+      onRoomRead.mockClear();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+
+      expect(api.markChannelRoomRead).toHaveBeenCalledTimes(1);
+      expect(api.markChannelRoomRead).toHaveBeenCalledWith({ room_id: "room-1" });
+      expect(onRoomRead).toHaveBeenCalledWith("room-1");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows active agents from the selected room in the response status bar", async () => {
@@ -786,7 +849,8 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    act(() => container.querySelector<HTMLButtonElement>(".channel-thread-digest-open")?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".channel-thread-digest-open")?.click());
+    await settle();
     const panel = container.querySelector(".channel-thread-panel");
     const replyBubble = panel?.querySelector(".channel-thread-message.agent .channel-message-bubble.long-card");
     expect(replyBubble?.classList.contains("collapsed")).toBe(true);

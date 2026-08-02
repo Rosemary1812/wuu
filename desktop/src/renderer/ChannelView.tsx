@@ -290,7 +290,7 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, newRoomRequest }: {
+export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, newRoomRequest }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
@@ -299,6 +299,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   // internally (tests and standalone usage).
   selectedRoomID?: string;
   onSelectRoom?: (roomID: string) => void;
+  onRoomRead?: (roomID: string) => void;
   // Incremented by the parent (sidebar ＋ button) to request the new-room
   // dialog; the dialog itself stays inside this view.
   newRoomRequest?: number;
@@ -358,6 +359,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const roomAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const roomAvatarTargetRef = useRef<string>("");
   const knownMessageIDsRef = useRef<Set<string>>(new Set());
+  const markedMessageSeqByRoomRef = useRef<Map<string, number>>(new Map());
+  const visibleRoomIDRef = useRef("");
+  visibleRoomIDRef.current = section === "rooms" ? selectedRoomID : "";
   const sendingTimersRef = useRef<Map<string, number>>(new Map());
   const splitResizeStartRef = useRef({ x: 0, width: CHANNEL_SPLIT_DEFAULT_WIDTH });
   const threadResizeStartRef = useRef({ x: 0, width: THREAD_PANEL_DEFAULT_WIDTH });
@@ -614,13 +618,20 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     );
   }, []);
 
-  const markRoomRead = useCallback((roomID: string): void => {
+  const markRoomRead = useCallback((roomID: string, latestMessageSeq: number): void => {
     if (!roomID || !window.wuu) return;
+    const markedSeq = markedMessageSeqByRoomRef.current.get(roomID) ?? 0;
+    if (latestMessageSeq <= markedSeq) return;
+    markedMessageSeqByRoomRef.current.set(roomID, latestMessageSeq);
     setRooms((current) => current.map((room) => room.id === roomID ? { ...room, unread_count: 0 } : room));
+    onRoomRead?.(roomID);
     void window.wuu.markChannelRoomRead({ room_id: roomID }).catch((reason: unknown) => {
+      if (markedMessageSeqByRoomRef.current.get(roomID) === latestMessageSeq) {
+        markedMessageSeqByRoomRef.current.delete(roomID);
+      }
       setError(String(reason));
     });
-  }, []);
+  }, [onRoomRead]);
 
   const refreshMessages = useCallback(async (roomID: string): Promise<void> => {
     if (!window.wuu || !roomID) {
@@ -628,6 +639,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       return;
     }
     const result = await window.wuu.listChannelMessages({ room_id: roomID, limit: 500 });
+    if (visibleRoomIDRef.current !== roomID) return;
     const nextMessages = result.messages ?? [];
     const known = knownMessageIDsRef.current;
     if (known.size > 0) {
@@ -650,7 +662,12 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     }
     knownMessageIDsRef.current = new Set(nextMessages.map((message) => message.id));
     setMessages(nextMessages);
-  }, []);
+    const latestMessageSeq = nextMessages.reduce(
+      (latest, message) => Math.max(latest, message.seq),
+      0,
+    );
+    if (latestMessageSeq > 0) markRoomRead(roomID, latestMessageSeq);
+  }, [markRoomRead]);
 
   const refreshTrackedTasks = useCallback(async (): Promise<void> => {
     if (!window.wuu || rooms.length === 0) {
@@ -726,11 +743,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   }, [section]);
 
   useEffect(() => {
-    if (selectedRoomID) markRoomRead(selectedRoomID);
-  }, [markRoomRead, selectedRoomID]);
-
-  useEffect(() => {
-    if (!selectedRoomID) {
+    if (section !== "rooms" || !selectedRoomID) {
       setMessages([]);
       return;
     }
@@ -748,7 +761,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       active = false;
       window.clearInterval(timer);
     };
-  }, [refreshMessages, selectedRoomID]);
+  }, [refreshMessages, section, selectedRoomID]);
 
   useEffect(() => () => {
     for (const timer of sendingTimersRef.current.values()) window.clearTimeout(timer);
