@@ -30,9 +30,21 @@ func (s *Server) handleChannelAgentList(ctx context.Context, req Request) error 
 	if err == nil {
 		for i := range agents {
 			agents[i].ActivityStatus = "idle"
-			if thread := s.thread(namedAgentSessionID(agents[i])); thread != nil && threadIsRunning(thread) {
+			threadID := namedAgentSessionID(agents[i])
+			if thread := s.thread(threadID); thread != nil && threadIsRunning(thread) {
 				agents[i].ActivityStatus = "thinking"
 				agents[i].ActivityRoomIDs = namedAgentActivityRoomIDs(thread)
+				continue
+			}
+			if s.rt != nil {
+				active, activeErr := session.ThreadExecutionActive(s.rt.SessionDir, threadID)
+				if activeErr != nil {
+					err = activeErr
+					break
+				}
+				if active {
+					agents[i].ActivityStatus = "thinking"
+				}
 			}
 		}
 	}

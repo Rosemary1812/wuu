@@ -143,6 +143,39 @@ func RequestThreadExecutionReset(sessDir, threadID string) (bool, error) {
 	return true, nil
 }
 
+// ThreadExecutionActive reports whether any app-server currently owns the
+// durable thread. It intentionally exposes only coarse availability, not owner
+// identity or detailed execution phase.
+func ThreadExecutionActive(sessDir, threadID string) (bool, error) {
+	sessDir = strings.TrimSpace(sessDir)
+	threadID = strings.TrimSpace(threadID)
+	if sessDir == "" {
+		return false, errors.New("session directory is required")
+	}
+	if threadID == "" {
+		return false, errors.New("thread id is required")
+	}
+	path := threadExecutionLeasePath(sessDir, threadID)
+	file, err := securefs.OpenFile(path, os.O_CREATE|os.O_RDWR, securefs.FileMode)
+	if err != nil {
+		return false, fmt.Errorf("open thread execution lease: %w", err)
+	}
+	acquired, err := tryLockThreadExecutionFile(file)
+	if err != nil {
+		_ = file.Close()
+		return false, fmt.Errorf("probe thread execution lease: %w", err)
+	}
+	if !acquired {
+		_ = file.Close()
+		return true, nil
+	}
+	releaseErr := errors.Join(unlockThreadExecutionFile(file), file.Close())
+	if releaseErr != nil {
+		return false, fmt.Errorf("release thread execution probe: %w", releaseErr)
+	}
+	return false, nil
+}
+
 // ResetRequested reports whether a reset was published after this lease was
 // admitted. A later owner snapshots the newer generation and is unaffected.
 func (l *ThreadExecutionLease) ResetRequested() (bool, error) {

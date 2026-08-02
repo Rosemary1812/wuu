@@ -320,6 +320,32 @@ func TestChannelAgentResetRequestsTheCurrentThreadOwner(t *testing.T) {
 	}
 }
 
+func TestChannelAgentListSeesAnOwnerInAnotherAppServer(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	attachNamedAgentTestToolkit(t, rt)
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{
+		Name: "Alpha", Autostart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent() error = %v", err)
+	}
+	owner, acquired, err := session.TryAcquireThreadExecutionLease(rt.SessionDir, namedAgentSessionID(credential.Agent))
+	if err != nil || !acquired || owner == nil {
+		t.Fatalf("owner lease = %v, acquired %v, err %v", owner, acquired, err)
+	}
+	defer owner.Release()
+
+	var listed ChannelAgentListResult
+	callChannelRPC(t, server, out, MethodChannelAgentList, nil, &listed)
+	if len(listed.Agents) != 1 || listed.Agents[0].ActivityStatus != "thinking" {
+		t.Fatalf("cross-process agent activity = %#v", listed.Agents)
+	}
+}
+
 func TestChannelAgentResetClearsStaleWakeWithoutDroppingInbox(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")

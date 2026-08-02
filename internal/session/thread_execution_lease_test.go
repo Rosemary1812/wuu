@@ -84,6 +84,10 @@ func TestThreadExecutionResetTargetsOnlyCurrentLease(t *testing.T) {
 	if err != nil || !acquired || first == nil {
 		t.Fatalf("first acquire = lease %v, acquired %v, err %v", first, acquired, err)
 	}
+	active, err := ThreadExecutionActive(sessDir, threadID)
+	if err != nil || !active {
+		t.Fatalf("active probe = %v, err %v", active, err)
+	}
 	requested, err = RequestThreadExecutionReset(sessDir, threadID)
 	if err != nil {
 		t.Fatalf("request live reset: %v", err)
@@ -97,6 +101,10 @@ func TestThreadExecutionResetTargetsOnlyCurrentLease(t *testing.T) {
 	}
 	if err := first.Release(); err != nil {
 		t.Fatalf("release first lease: %v", err)
+	}
+	active, err = ThreadExecutionActive(sessDir, threadID)
+	if err != nil || active {
+		t.Fatalf("idle probe = %v, err %v", active, err)
 	}
 
 	second, acquired, err := TryAcquireThreadExecutionLease(sessDir, threadID)
