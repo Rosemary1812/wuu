@@ -69,30 +69,23 @@ type Selection struct {
 }
 
 type Capabilities struct {
-	Chat              bool   `json:"chat"`
-	Responses         bool   `json:"responses,omitempty"`
-	Tools             bool   `json:"tools"`
-	ToolCalling       string `json:"tool_calling,omitempty"`
-	StructuredOutput  bool   `json:"structured_output"`
-	Streaming         bool   `json:"streaming"`
-	StreamingToolArgs bool   `json:"streaming_tool_args,omitempty"`
-	FreeformTool      bool   `json:"freeform_tool,omitempty"`
-	ParallelToolCalls bool   `json:"parallel_tool_calls,omitempty"`
-	SystemRole        bool   `json:"system_role"`
-	DeveloperRole     bool   `json:"developer_role,omitempty"`
-	Reasoning         bool   `json:"reasoning"`
-	ContextWindow     int    `json:"context_window,omitempty"`
-	InputLimit        int    `json:"input_limit,omitempty"`
-	OutputLimit       int    `json:"output_limit,omitempty"`
-	ImageInput        bool   `json:"image_input,omitempty"`
-	FileInput         bool   `json:"file_input,omitempty"`
-	// ImageInputState and FileInputState carry the three-valued admission
-	// state behind the booleans: "supported" or "unsupported" when the
-	// catalog/config has modality evidence, "auto" (empty in legacy data)
-	// when it does not. Auto means the capability is probed against the
-	// real provider once and then cached; see providers.MediaInputPolicy.
-	ImageInputState          string   `json:"image_input_state,omitempty"`
-	FileInputState           string   `json:"file_input_state,omitempty"`
+	Chat                     bool     `json:"chat"`
+	Responses                bool     `json:"responses,omitempty"`
+	Tools                    bool     `json:"tools"`
+	ToolCalling              string   `json:"tool_calling,omitempty"`
+	StructuredOutput         bool     `json:"structured_output"`
+	Streaming                bool     `json:"streaming"`
+	StreamingToolArgs        bool     `json:"streaming_tool_args,omitempty"`
+	FreeformTool             bool     `json:"freeform_tool,omitempty"`
+	ParallelToolCalls        bool     `json:"parallel_tool_calls,omitempty"`
+	SystemRole               bool     `json:"system_role"`
+	DeveloperRole            bool     `json:"developer_role,omitempty"`
+	Reasoning                bool     `json:"reasoning"`
+	ContextWindow            int      `json:"context_window,omitempty"`
+	InputLimit               int      `json:"input_limit,omitempty"`
+	OutputLimit              int      `json:"output_limit,omitempty"`
+	ImageInput               bool     `json:"image_input,omitempty"`
+	FileInput                bool     `json:"file_input,omitempty"`
 	PromptCache              bool     `json:"prompt_cache,omitempty"`
 	CacheGranularity         string   `json:"cache_granularity,omitempty"`
 	ProtocolFamily           string   `json:"protocol_family,omitempty"`
@@ -404,13 +397,9 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 	}
 	imageInput := false
 	fileInput := false
-	imageInputState := "auto"
-	fileInputState := "auto"
 	if modelCfg.Modalities != nil {
 		imageInput = containsString(modelCfg.Modalities.Input, "image")
 		fileInput = containsString(modelCfg.Modalities.Input, "pdf")
-		imageInputState = mediaInputStateFromEvidence(imageInput)
-		fileInputState = mediaInputStateFromEvidence(fileInput)
 	}
 	inputLimit := 0
 	outputLimit := profile.Context.MaxOutputTokens
@@ -442,8 +431,6 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 		OutputLimit:              outputLimit,
 		ImageInput:               imageInput,
 		FileInput:                fileInput,
-		ImageInputState:          imageInputState,
-		FileInputState:           fileInputState,
 		PromptCache:              profile.Context.SupportsPromptCache,
 		CacheGranularity:         cacheGranularity,
 		ProtocolFamily:           protocolFamily(providerName, provider),
@@ -458,17 +445,6 @@ func containsString(values []string, needle string) bool {
 		}
 	}
 	return false
-}
-
-// mediaInputStateFromEvidence converts explicit modality evidence into the
-// three-valued admission state. It is only called when the catalog/config
-// actually carries modality data; the no-data case stays "auto" at the call
-// site.
-func mediaInputStateFromEvidence(supported bool) string {
-	if supported {
-		return "supported"
-	}
-	return "unsupported"
 }
 
 func behaviorFromProfile(profile modelprofile.Profile) Behavior {

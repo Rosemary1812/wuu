@@ -188,7 +188,6 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 				return
 			}
 			if sawDone && err == nil {
-				RecordMediaInputSuccess(req.Provider, req.Model, req.MediaInput, req.Messages)
 				if journalErr := attempt.Complete(InferenceOutcomeSucceeded, NormalizedFailure{}); journalErr != nil {
 					r.send(ctx, out, StreamEvent{Type: EventError, Error: journalErr})
 				}
@@ -206,36 +205,6 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 			}
 		}
 		failure := NormalizeFailure(err)
-		// Media admission probe: when the policy still has unprobed (auto)
-		// media kinds and the provider explicitly rejected the media payload
-		// before emitting any output, strip the media once and replay the
-		// request immediately. The downgrade is cached so later requests skip
-		// the probe. Only a whitelisted unsupported-media failure qualifies,
-		// and only while nothing has been forwarded — after output starts,
-		// replaying would risk duplicating generation and spend.
-		if forwardedEvents == 0 && req.MediaInput.HasAuto() && IsUnsupportedMediaFailure(failure) {
-			if hasImages, hasFiles := messagesContainMedia(req.Messages); hasImages || hasFiles {
-				if journalErr := attempt.Complete(InferenceOutcomeFailed, failure); journalErr != nil {
-					r.send(ctx, out, StreamEvent{Type: EventError, Error: journalErr})
-					return
-				}
-				// Cache evidence only for the media kinds this request
-				// actually carried: the rejection proves nothing about
-				// absent kinds (e.g. an image rejection must not pin the
-				// model's PDF support to unsupported).
-				probed := MediaInputPolicy{}
-				if hasImages && NormalizeMediaInputState(req.MediaInput.Image) == MediaInputAuto {
-					probed.Image = MediaInputAuto
-				}
-				if hasFiles && NormalizeMediaInputState(req.MediaInput.File) == MediaInputAuto {
-					probed.File = MediaInputAuto
-				}
-				RecordMediaInputUnsupported(req.Provider, req.Model, probed)
-				req.MediaInput = req.MediaInput.DowngradeUnsupported()
-				req.Messages = ProjectMediaForPolicy(req.Messages, req.MediaInput)
-				continue
-			}
-		}
 		plan := PlanRecovery(failure)
 		canRetry := ctx.Err() == nil && attempt.Ordinal < maxAttempts && streamRecoverySupported(r.inner, plan)
 		if canRetry && r.replayGuard != nil {

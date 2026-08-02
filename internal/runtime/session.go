@@ -1163,7 +1163,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetBrowserTabs(browserTabs)
 		kit.SetImageInputSupported(s.ModelRoles.Main.Capabilities.ImageInput)
-		kit.SetImageInputState(s.ModelRoles.Main.Capabilities.ImageInputState)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
 		fileScopeExtras := []string{artifactDir}
 		if s.MemdirEnabled {
@@ -1487,11 +1486,13 @@ func systemPromptWithFreshMemdirIndex(promptText string, sections []agent.System
 }
 
 // mediaInputPolicyFromCapabilities maps resolved model capabilities onto the
-// request media admission policy. Empty legacy states normalize to auto.
+// request media admission policy. Capabilities carry plain booleans: catalog
+// or user-configured modalities are the only evidence, and models without
+// modality data are treated as text-only.
 func mediaInputPolicyFromCapabilities(caps modelroles.Capabilities) providers.MediaInputPolicy {
 	return providers.MediaInputPolicy{
-		Image: providers.NormalizeMediaInputState(providers.MediaInputState(caps.ImageInputState)),
-		File:  providers.NormalizeMediaInputState(providers.MediaInputState(caps.FileInputState)),
+		Image: caps.ImageInput,
+		File:  caps.FileInput,
 	}
 }
 

@@ -161,13 +161,10 @@ func TestResolveUsesCatalogToolAndMediaCapabilities(t *testing.T) {
 	if !roles.Main.Capabilities.Tools || !roles.Main.Capabilities.ImageInput || !roles.Main.Capabilities.FileInput {
 		t.Fatalf("o3 should expose tool and media capabilities: %+v", roles.Main.Capabilities)
 	}
-	if roles.Main.Capabilities.ImageInputState != "supported" || roles.Main.Capabilities.FileInputState != "supported" {
-		t.Fatalf("o3 media states should be explicit supported: %+v", roles.Main.Capabilities)
-	}
 }
 
-func TestResolveMediaInputStates(t *testing.T) {
-	resolveStates := func(t *testing.T, model string) (string, string) {
+func TestResolveMediaInputCapabilities(t *testing.T) {
+	resolveCaps := func(t *testing.T, model string) (bool, bool) {
 		t.Helper()
 		cfg := config.Config{
 			DefaultProvider: "openai",
@@ -183,21 +180,20 @@ func TestResolveMediaInputStates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Resolve %s: %v", model, err)
 		}
-		return roles.Main.Capabilities.ImageInputState, roles.Main.Capabilities.FileInputState
+		return roles.Main.Capabilities.ImageInput, roles.Main.Capabilities.FileInput
 	}
 
-	// Catalog model with modality data that excludes image/pdf input:
-	// explicitly unsupported, not unknown.
-	imageState, fileState := resolveStates(t, "text-embedding-3-large")
-	if imageState != "unsupported" {
-		t.Fatalf("embedding model image state = %q, want unsupported", imageState)
+	// Catalog model whose modality data excludes image/pdf input: rejected.
+	imageInput, _ := resolveCaps(t, "text-embedding-3-large")
+	if imageInput {
+		t.Fatal("embedding model should not admit image input")
 	}
 
-	// Unknown model without catalog modality data: auto, so the provider
-	// request boundary probes it once instead of guessing.
-	imageState, fileState = resolveStates(t, "wuu-test-unknown-model")
-	if imageState != "auto" || fileState != "auto" {
-		t.Fatalf("unknown model states = %q/%q, want auto/auto", imageState, fileState)
+	// Unknown model without catalog modality data: conservatively text-only,
+	// matching other mature agent runtimes; user configuration can override.
+	imageInput, fileInput := resolveCaps(t, "wuu-test-unknown-model")
+	if imageInput || fileInput {
+		t.Fatalf("unknown model should be text-only, got image=%v file=%v", imageInput, fileInput)
 	}
 }
 
