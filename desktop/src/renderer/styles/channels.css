@@ -1906,10 +1906,6 @@
   line-height: 1.5;
 }
 
-.channel-room-member-flow .channel-member-picker {
-  min-height: 0;
-}
-
 .channel-setup-form .select-menu {
   width: 100%;
 }
@@ -2116,6 +2112,22 @@
   place-items: center;
   color: var(--text-tertiary);
   font-size: 12px;
+}
+
+.channel-room-member-flow .channel-member-picker {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.channel-room-member-flow .channel-member-picker-control {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.channel-room-member-flow .channel-member-picker-options {
+  min-height: 0;
+  max-height: none;
 }
 
 .channel-agent-directory-list {

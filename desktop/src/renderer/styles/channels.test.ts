@@ -109,6 +109,16 @@ describe("channel group details density", () => {
     expect(memberAvatar).toMatch(/width:\s*34px/);
     expect(memberAvatar).toMatch(/height:\s*34px/);
   });
+
+  it("lets the drawer member list use the available height without clipping a row", () => {
+    const picker = ruleFor(".channel-room-member-flow .channel-member-picker");
+    const control = ruleFor(".channel-room-member-flow .channel-member-picker-control");
+    const options = ruleFor(".channel-room-member-flow .channel-member-picker-options");
+
+    expect(picker).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+    expect(control).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+    expect(options).toMatch(/max-height:\s*none/);
+  });
 });
 
 describe("channel message resizing", () => {
