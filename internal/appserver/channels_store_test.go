@@ -378,6 +378,95 @@ func TestChannelAgentResetClearsStaleWakeWithoutDroppingInbox(t *testing.T) {
 	}
 }
 
+func TestChannelAgentResetInterruptsCurrentWakeAndDrainsFollowup(t *testing.T) {
+	client := newBlockingStreamClient("followup done")
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = client
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	attachNamedAgentTestToolkit(t, rt)
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		select {
+		case <-client.release:
+		default:
+			close(client.release)
+		}
+	})
+	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{
+		Name: "Alpha", Autostart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent() error = %v", err)
+	}
+	server.channelService.SetWakeSink(nil)
+	room := createAppserverTestRoom(t, server.channelService, credential.Agent)
+	if _, err := server.channelService.SendHuman(context.Background(), channels.HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "@Alpha first",
+	}); err != nil {
+		t.Fatalf("first SendHuman() error = %v", err)
+	}
+	if err := server.deliverNamedAgentWake(context.Background(), credential.Agent.ID); err != nil {
+		t.Fatalf("first deliverNamedAgentWake() error = %v", err)
+	}
+	select {
+	case <-client.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("named agent turn did not start")
+	}
+	if _, err := server.channelService.SendHuman(context.Background(), channels.HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "@Alpha second",
+	}); err != nil {
+		t.Fatalf("second SendHuman() error = %v", err)
+	}
+	if err := server.deliverNamedAgentWake(context.Background(), credential.Agent.ID); err != nil {
+		t.Fatalf("second deliverNamedAgentWake() error = %v", err)
+	}
+	thread := server.thread(namedAgentSessionID(credential.Agent))
+	thread.mu.Lock()
+	firstTurnID := thread.currentTurn
+	thread.mu.Unlock()
+
+	var reset ChannelAgentResetResult
+	callChannelRPC(t, server, out, MethodChannelAgentReset, ChannelAgentResetParams{AgentID: credential.Agent.ID}, &reset)
+	if !reset.Requested {
+		t.Fatalf("running reset result = %#v", reset)
+	}
+	transitionDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(transitionDeadline) {
+		thread.mu.Lock()
+		currentTurnID := thread.currentTurn
+		thread.mu.Unlock()
+		if currentTurnID != firstTurnID {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	thread.mu.Lock()
+	currentTurnID := thread.currentTurn
+	thread.mu.Unlock()
+	if currentTurnID == firstTurnID {
+		t.Fatal("reset did not interrupt the current named-agent turn")
+	}
+	close(client.release)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		state, stateErr := server.channelService.WakeState(context.Background(), credential.Agent.ID)
+		if stateErr == nil && !state.Outstanding && !state.Pending {
+			inbox, inboxErr := server.channelService.ListInbox(context.Background(), credential.Agent.ID, true)
+			if inboxErr == nil && len(inbox) == 2 {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	state, _ := server.channelService.WakeState(context.Background(), credential.Agent.ID)
+	inbox, _ := server.channelService.ListInbox(context.Background(), credential.Agent.ID, true)
+	t.Fatalf("reset followup did not drain: state %#v, inbox %#v", state, inbox)
+}
+
 func TestNamedAgentRunningWakeUsesPendingHeldTurn(t *testing.T) {
 	client := newBlockingStreamClient("done")
 	rt := newTestRuntime(t, &fakeClient{})
