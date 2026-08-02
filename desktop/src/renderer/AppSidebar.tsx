@@ -644,10 +644,11 @@ export function AppSidebar({
                       {channelRooms.map((room) => {
                         const isActiveRoom = room.id === activeChannelRoomID;
                         const unread = room.unread_count ?? 0;
+                        const hasUnread = !isActiveRoom && unread > 0;
                         return (
                           <div
                             key={room.id}
-                            className={`thread-row sidebar-session-row sidebar-room-row${isActiveRoom ? " active" : ""}`}
+                            className={`thread-row sidebar-session-row sidebar-room-row${isActiveRoom ? " active" : ""}${hasUnread ? " has-unread" : ""}`}
                           >
                             <button
                               className="thread-row-main"
@@ -657,7 +658,7 @@ export function AppSidebar({
                             >
                               <span className="thread-row-title">{room.name}</span>
                             </button>
-                            {!isActiveRoom && unread > 0 ? (
+                            {hasUnread ? (
                               <span
                                 className="channel-room-unread"
                                 aria-label={t("channels.unreadMessages", { count: unread })}

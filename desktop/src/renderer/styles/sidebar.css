@@ -809,27 +809,36 @@
 
 /* 协作 section rows reuse the full session-row anatomy
  * (.sidebar-session-row + .thread-row-main + .thread-row-title: 30px height,
- * vertical centering, hover/active states all inherited) and only add a
- * trailing column for the unread badge. Second-level items carry no icon:
- * the empty status column keeps their text on the session title axis. */
+ * vertical centering, hover/active states all inherited). Second-level items
+ * carry no icon: the status column keeps their text on the session title axis. */
 .sidebar-collab-list {
   display: grid;
   gap: 1px;
 }
 
-.sidebar-room-row {
-  grid-template-columns:
-    var(--sidebar-session-status-col)
-    minmax(0, 1fr)
-    auto;
+.sidebar-room-row.has-unread::before {
+  content: none;
 }
 
 .sidebar-room-row .channel-room-unread {
-  grid-column: 3;
-  /* Match the session unread dot (info blue) rather than the accent red:
-   * at the App level unread rooms are the same signal class as unread
-   * sessions. The count stays inside the pill. */
+  box-sizing: border-box;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 13px;
+  height: 13px;
+  display: inline-grid;
+  place-items: center;
+  justify-self: center;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--radius-pill);
   background: var(--sidebar-session-status-unread-bg);
+  color: white;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  pointer-events: none;
 }
 
 .nav-item:hover,

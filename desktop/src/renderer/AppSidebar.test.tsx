@@ -313,6 +313,7 @@ describe("AppSidebar 协作 section", () => {
     // Active room is in the canvas — its badge is intentionally absent.
     expect(roomRows[0]?.querySelector(".channel-room-unread")).toBeNull();
     expect(roomRows[0]?.querySelector(".thread-row-main")?.getAttribute("aria-current")).toBe("page");
+    expect(roomRows[1]?.classList.contains("has-unread")).toBe(true);
     expect(
       roomRows[1]?.querySelector(".channel-room-unread")?.textContent,
     ).toBe("99+");
@@ -334,12 +335,26 @@ describe("AppSidebar 协作 section", () => {
     // Second-level items carry no icon of their own.
     expect(row?.querySelector("svg")).toBeNull();
 
-    // The row override only adds the badge column; height and centering must
-    // stay owned by the shared session-row rules.
+    // Height and centering stay owned by the shared session-row rules.
     const roomRowRule = sidebarCSS.match(/\.sidebar-room-row\s*\{[^}]*\}/)?.[0] ?? "";
     expect(roomRowRule).not.toMatch(/height|align-items|padding/);
     expect(sidebarCSS).toMatch(/\.sidebar-session-row\s*\{[^}]*height:\s*30px/);
     expect(sidebarCSS).toMatch(/\.thread-row-main\s*\{[^}]*align-items:\s*center/);
+  });
+
+  it("paints the room unread badge with the shared unread-info token", () => {
+    const badgeRule =
+      sidebarCSS.match(/\.sidebar-room-row \.channel-room-unread\s*\{[^}]*\}/)?.[0] ?? "";
+    const unreadDotReplacement =
+      sidebarCSS.match(/\.sidebar-room-row\.has-unread::before\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(badgeRule).toMatch(/background:\s*var\(--sidebar-session-status-unread-bg\)/);
+    expect(badgeRule).toMatch(/grid-column:\s*1/);
+    expect(badgeRule).toMatch(/min-width:\s*13px/);
+    expect(badgeRule).toMatch(/height:\s*13px/);
+    expect(badgeRule).toMatch(/font-size:\s*9px/);
+    expect(badgeRule).not.toMatch(/grid-column:\s*3/);
+    expect(unreadDotReplacement).toMatch(/content:\s*none/);
   });
 
   it("selects a room through the provided handler", () => {
