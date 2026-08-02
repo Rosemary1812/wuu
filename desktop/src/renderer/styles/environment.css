@@ -1386,12 +1386,32 @@
   max-height: none;
   height: 100%;
   box-sizing: border-box;
-  overflow-y: auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   border-left: 1px solid var(--hairline-strong);
   border-radius: 0;
   box-shadow: -18px 0 40px var(--env-shadow-dark-010);
   transform-origin: right center;
   animation: sidebar-name-dialog-drawer-in var(--search-enter-duration) var(--search-motion-easing) both;
+}
+
+.sidebar-name-dialog-overlay-drawer.closing {
+  pointer-events: none;
+}
+
+.sidebar-name-dialog-drawer.closing {
+  animation: sidebar-name-dialog-drawer-out var(--search-exit-duration) var(--ease-in) both;
+}
+
+.sidebar-name-dialog-drawer > :nth-child(2) {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sidebar-name-dialog-drawer > .sidebar-name-dialog-actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
 }
 
 .sidebar-name-dialog-header {

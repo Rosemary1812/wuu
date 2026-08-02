@@ -400,6 +400,18 @@
   }
 }
 
+@keyframes sidebar-name-dialog-drawer-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
 /* The one spinner keyframe. Pair with a duration token:
  * active progress = var(--motion-spin), ambient session skeleton =
  * var(--session-loading-spin-duration). Do not define new spin keyframes. */

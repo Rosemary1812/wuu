@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, UserMinus, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,6 +28,7 @@ import { SidebarNameDialog } from "./SidebarNameDialog";
 import { RichContent } from "./RichContent";
 
 type SetupPanel = "agent" | "room" | "task" | null;
+type RoomMemberMode = "add" | "remove" | null;
 export type ChannelSection = "rooms" | "agents" | "tasks";
 type AgentActivityStatus = "idle" | "thinking" | "sending";
 
@@ -370,6 +371,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [roomAgentIDs, setRoomAgentIDs] = useState<string[]>([]);
   const [roomAvatarImage, setRoomAvatarImage] = useState("");
   const [editingRoomID, setEditingRoomID] = useState("");
+  const [roomMemberMode, setRoomMemberMode] = useState<RoomMemberMode>(null);
+  const [roomMemberSelectionIDs, setRoomMemberSelectionIDs] = useState<string[]>([]);
+  const [updatingRoomMembers, setUpdatingRoomMembers] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
@@ -1037,11 +1041,30 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     );
   }
 
+  function toggleRoomMemberSelection(agentID: string): void {
+    setRoomMemberSelectionIDs((current) =>
+      current.includes(agentID)
+        ? current.filter((candidate) => candidate !== agentID)
+        : [...current, agentID],
+    );
+  }
+
+  function openRoomMemberMode(mode: Exclude<RoomMemberMode, null>): void {
+    setRoomMemberSelectionIDs([]);
+    setRoomMemberMode(mode);
+  }
+
+  function closeRoomMemberMode(): void {
+    setRoomMemberMode(null);
+    setRoomMemberSelectionIDs([]);
+  }
+
   function openNewRoom(): void {
     setEditingRoomID("");
     setRoomName("");
     setRoomAgentIDs([]);
     setRoomAvatarImage("");
+    closeRoomMemberMode();
     setSetupPanel("room");
   }
 
@@ -1052,6 +1075,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       .filter((member) => member.member_type === "agent")
       .map((member) => member.member_id));
     setRoomAvatarImage(room.avatar_image ?? "");
+    closeRoomMemberMode();
     setSetupPanel("room");
   }
 
@@ -1061,6 +1085,35 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     setRoomName("");
     setRoomAgentIDs([]);
     setRoomAvatarImage("");
+    closeRoomMemberMode();
+  }
+
+  async function submitRoomMemberChange(): Promise<void> {
+    if (!window.wuu || !editingRoomID || !roomMemberMode || roomMemberSelectionIDs.length === 0 || updatingRoomMembers) return;
+    const room = rooms.find((candidate) => candidate.id === editingRoomID);
+    if (!room) return;
+    if (roomMemberMode === "remove" && !window.confirm(t("channels.removeMembersConfirm", { count: roomMemberSelectionIDs.length }))) return;
+    const selected = new Set(roomMemberSelectionIDs);
+    const nextAgentIDs = roomMemberMode === "add"
+      ? [...roomAgentIDs, ...roomMemberSelectionIDs.filter((agentID) => !roomAgentIDs.includes(agentID))]
+      : roomAgentIDs.filter((agentID) => !selected.has(agentID));
+    setUpdatingRoomMembers(true);
+    setError("");
+    try {
+      const result = await window.wuu.updateChannelRoom({
+        room_id: editingRoomID,
+        name: room.name,
+        agent_ids: nextAgentIDs,
+      });
+      setRooms((current) => current.map((candidate) => candidate.id === editingRoomID ? result.room : candidate));
+      setRoomAgentIDs(nextAgentIDs);
+      closeRoomMemberMode();
+      await refreshRoomsAndAgents();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setUpdatingRoomMembers(false);
+    }
   }
 
   async function deleteRoom(): Promise<void> {
@@ -1592,47 +1645,55 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         open={setupPanel === "room"}
         title={roomName}
         onTitleChange={setRoomName}
-        onSubmit={() => void submitRoom()}
-        onClose={closeRoomPanel}
-        dialogTitle={t(editingRoomID ? "channels.roomDetails" : "channels.newRoom")}
+        onSubmit={() => void (roomMemberMode ? submitRoomMemberChange() : submitRoom())}
+        onClose={roomMemberMode ? closeRoomMemberMode : closeRoomPanel}
+        dialogTitle={t(roomMemberMode === "add"
+          ? "channels.addAgents"
+          : roomMemberMode === "remove"
+            ? "channels.removeAgents"
+            : editingRoomID ? "channels.roomDetails" : "channels.newRoom")}
         dialogTitleId="channel-room-dialog-title"
         fieldLabel={t("channels.name")}
         fieldAriaLabel={t("channels.name")}
         placeholder={t("channels.newRoom")}
         icon={MessageCircle}
-        submitLabel={t(editingRoomID ? "channels.save" : "channels.create")}
+        submitLabel={roomMemberMode
+          ? t(roomMemberMode === "add" ? "channels.addSelectedMembers" : "channels.removeSelectedMembers", { count: roomMemberSelectionIDs.length })
+          : t(editingRoomID ? "channels.save" : "channels.create")}
         cancelLabel={t("channels.cancel")}
-        submitDisabled={!roomName.trim()}
-        destructiveAction={editingRoomID ? { label: t("channels.deleteRoom"), onClick: () => void deleteRoom() } : undefined}
+        submitDisabled={roomMemberMode ? roomMemberSelectionIDs.length === 0 || updatingRoomMembers : !roomName.trim()}
         variant={editingRoomID ? "drawer" : "default"}
-        content={editingRoomID ? (
+        content={editingRoomID && roomMemberMode ? (
+          <div className="channel-room-member-flow">
+            <p>{t(roomMemberMode === "add" ? "channels.addAgentsHint" : "channels.removeAgentsHint")}</p>
+            <ChannelMemberPicker
+              agents={roomMemberMode === "add"
+                ? agents.filter((agent) => !roomAgentIDs.includes(agent.id))
+                : agents.filter((agent) => roomAgentIDs.includes(agent.id))}
+              selectedAgentIDs={roomMemberSelectionIDs}
+              onToggle={toggleRoomMemberSelection}
+              label={t(roomMemberMode === "add" ? "channels.availableAgents" : "channels.currentAgents")}
+            />
+          </div>
+        ) : editingRoomID ? (
           <div className="channel-room-details-form">
-            <label className="sidebar-name-dialog-field">
-              <span className="sidebar-name-dialog-label">{t("channels.name")}</span>
-              <input
-                className="sidebar-name-dialog-input"
-                value={roomName}
-                onChange={(event) => setRoomName(event.currentTarget.value)}
-                autoFocus
-              />
-            </label>
+            {selectedRoom ? (
+              <section className="channel-room-identity" aria-label={t("channels.groupOverview")}>
+                <span className="channel-room-identity-avatar">
+                  <ChannelGroupAvatar room={selectedRoom} agents={agents} />
+                </span>
+                <span className="channel-room-identity-copy">
+                  <strong>{roomName}</strong>
+                  <span>{t("channels.agentCount", { count: roomAgentIDs.length })}</span>
+                </span>
+              </section>
+            ) : null}
             <section className="channel-room-members-section" aria-labelledby="channel-room-members-title">
               <header className="channel-room-members-header">
                 <div>
                   <h3 id="channel-room-members-title">{t("channels.groupMembers")}</h3>
                   <span>{t("channels.memberCount", { count: roomAgentIDs.length + (roomIncludesCurrentUser ? 1 : 0) })}</span>
                 </div>
-                <SelectMenu
-                  value=""
-                  onChange={(agentID) => toggleRoomAgent(agentID)}
-                  options={agents
-                    .filter((agent) => !roomAgentIDs.includes(agent.id))
-                    .map((agent) => ({ value: agent.id, label: agent.name }))}
-                  placeholder={t("channels.addMember")}
-                  ariaLabel={t("channels.addMember")}
-                  triggerClassName="channel-room-member-add-trigger"
-                  disabled={agents.every((agent) => roomAgentIDs.includes(agent.id))}
-                />
               </header>
               <div className="channel-room-member-grid">
                 {roomIncludesCurrentUser ? (
@@ -1640,23 +1701,58 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                     <span className="channel-room-member-avatar">
                       <DefaultAvatarMark seed="local-user" />
                     </span>
+                    <span className="channel-room-member-name">{t("channels.you")}</span>
                   </div>
                 ) : null}
                 {agents.filter((agent) => roomAgentIDs.includes(agent.id)).map((agent) => (
-                  <button
+                  <div
                     className="channel-room-member-card"
                     key={agent.id}
-                    type="button"
-                    aria-label={t("channels.removeMember", { name: agent.name })}
-                    onClick={() => toggleRoomAgent(agent.id)}
+                    aria-label={agent.name}
                   >
                     <span className="channel-room-member-avatar">
                       <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
                     </span>
-                    <span className="channel-room-member-remove" aria-hidden="true"><X className="icon" /></span>
-                  </button>
+                    <span className="channel-room-member-name">{agent.name}</span>
+                  </div>
                 ))}
+                <button
+                  className="channel-room-member-action"
+                  type="button"
+                  onClick={() => openRoomMemberMode("add")}
+                  disabled={agents.every((agent) => roomAgentIDs.includes(agent.id))}
+                >
+                  <span className="channel-room-member-action-icon" aria-hidden="true"><Plus className="icon" /></span>
+                  <span>{t("channels.addMember")}</span>
+                </button>
+                <button
+                  className="channel-room-member-action"
+                  type="button"
+                  onClick={() => openRoomMemberMode("remove")}
+                  disabled={roomAgentIDs.length === 0}
+                >
+                  <span className="channel-room-member-action-icon" aria-hidden="true"><UserMinus className="icon" /></span>
+                  <span>{t("channels.manageMembers")}</span>
+                </button>
               </div>
+            </section>
+            <section className="channel-room-settings-section" aria-labelledby="channel-room-settings-title">
+              <h3 id="channel-room-settings-title">{t("channels.groupSettings")}</h3>
+              <label className="sidebar-name-dialog-field">
+                <span className="sidebar-name-dialog-label">{t("channels.name")}</span>
+                <input
+                  className="sidebar-name-dialog-input"
+                  value={roomName}
+                  onChange={(event) => setRoomName(event.currentTarget.value)}
+                />
+              </label>
+            </section>
+            <section className="channel-room-danger-zone" aria-labelledby="channel-room-danger-title">
+              <div>
+                <h3 id="channel-room-danger-title">{t("channels.dangerZone")}</h3>
+                <p>{t("channels.deleteRoomHint")}</p>
+              </div>
+              <button type="button" onClick={() => void deleteRoom()}>{t("channels.deleteRoom")}</button>
             </section>
           </div>
         ) : (

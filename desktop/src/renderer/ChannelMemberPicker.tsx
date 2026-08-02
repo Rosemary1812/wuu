@@ -12,10 +12,12 @@ export function ChannelMemberPicker({
   agents,
   selectedAgentIDs,
   onToggle,
+  label,
 }: {
   agents: NamedAgent[];
   selectedAgentIDs: string[];
   onToggle: (agentID: string) => void;
+  label?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -54,7 +56,7 @@ export function ChannelMemberPicker({
   return (
     <section className="channel-member-picker" aria-labelledby="channel-member-picker-label">
       <div className="channel-member-picker-heading">
-        <span id="channel-member-picker-label">{t("channels.groupMembers")}</span>
+        <span id="channel-member-picker-label">{label ?? t("channels.groupMembers")}</span>
         <span>{t("channels.selectedMembers", { count: selectedAgentIDs.length })}</span>
       </div>
       <div className="channel-member-picker-control">

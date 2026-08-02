@@ -1,10 +1,14 @@
 import { type LucideIcon } from "lucide-react";
 import {
+  type AnimationEvent,
   type ChangeEvent,
+  useCallback,
   useEffect,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
+  useRef,
+  useState,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -53,6 +57,32 @@ export function SidebarNameDialog({
   destructiveAction,
   variant = "default",
 }: SidebarNameDialogProps): ReactElement | null {
+  const [closing, setClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const finishClose = useCallback((): void => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    onClose();
+    setClosing(false);
+  }, [onClose]);
+
+  const requestClose = useCallback((): void => {
+    if (closing) return;
+    if (variant !== "drawer") {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    closeTimerRef.current = window.setTimeout(finishClose, 220);
+  }, [closing, finishClose, onClose, variant]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -62,11 +92,11 @@ export function SidebarNameDialog({
         return;
       }
       event.preventDefault();
-      onClose();
+      requestClose();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
   if (!open) {
     return null;
@@ -74,8 +104,12 @@ export function SidebarNameDialog({
 
   function handleOverlayPointerDown(event: MouseEvent<HTMLDivElement>): void {
     if (event.target === event.currentTarget) {
-      onClose();
+      requestClose();
     }
+  }
+
+  function handleDrawerAnimationEnd(event: AnimationEvent<HTMLFormElement>): void {
+    if (closing && event.target === event.currentTarget) finishClose();
   }
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement>): void {
@@ -84,14 +118,15 @@ export function SidebarNameDialog({
 
   return createPortal(
     <div
-      className={`conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}`}
+      className={`conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}${closing ? " closing" : ""}`}
       onPointerDown={handleOverlayPointerDown}
     >
       <form
-        className={`conversation-search-dialog sidebar-name-dialog${variant === "drawer" ? " sidebar-name-dialog-drawer" : ""}`}
+        className={`conversation-search-dialog sidebar-name-dialog${variant === "drawer" ? " sidebar-name-dialog-drawer" : ""}${closing ? " closing" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={dialogTitleId}
+        onAnimationEnd={handleDrawerAnimationEnd}
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit();
@@ -124,7 +159,7 @@ export function SidebarNameDialog({
             </button>
           ) : null}
           {destructiveAction ? <span className="sidebar-name-dialog-action-spacer" aria-hidden="true" /> : null}
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={requestClose}>
             {cancelLabel}
           </button>
           <button type="submit" disabled={submitDisabled ?? title.trim().length === 0}>
