@@ -1678,25 +1678,22 @@
 
 .channel-room-details-form {
   display: grid;
-  gap: 24px;
+  gap: 20px;
 }
 
 .channel-room-identity {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--surface-1);
+  gap: 11px;
+  padding: 2px 0 4px;
 }
 
 .channel-room-identity-avatar {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   overflow: hidden;
-  border-radius: 13px;
+  border-radius: 10px;
 }
 
 .channel-room-identity-avatar .channel-group-avatar-grid,
@@ -1714,7 +1711,7 @@
 .channel-room-identity-copy strong {
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1760,8 +1757,8 @@
 
 .channel-room-member-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px 6px;
 }
 
 .channel-room-member-card,
@@ -1794,8 +1791,8 @@
 
 .channel-room-member-avatar,
 .channel-room-member-action-icon {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1821,8 +1818,8 @@
 }
 
 .channel-room-member-action-icon .icon {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
 }
 
 .channel-room-member-action:hover:not(:disabled) .channel-room-member-action-icon,
@@ -1844,8 +1841,15 @@
 .channel-room-settings-section {
   display: grid;
   gap: 12px;
-  padding-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
+}
+
+.channel-room-settings-section .sidebar-name-dialog-input {
+  height: 40px;
+  border-radius: 9px;
+  font-size: 14px;
+  padding: 0 10px;
 }
 
 .channel-room-settings-section h3,
@@ -1862,7 +1866,7 @@
   justify-content: space-between;
   gap: 16px;
   margin-top: 4px;
-  padding-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -1892,7 +1896,7 @@
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
+  gap: 12px;
 }
 
 .channel-room-member-flow > p {
@@ -2000,11 +2004,11 @@
 }
 
 .channel-member-picker-search {
-  height: 36px;
+  height: 34px;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 16px;
+  grid-template-columns: 38px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
   padding: 0 8px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
@@ -2043,11 +2047,11 @@
 
 .channel-member-picker-option {
   min-width: 0;
-  height: 43px;
+  height: 40px;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 16px;
+  grid-template-columns: 38px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
   padding: 0 8px;
   border: 0;
   border-radius: 0;
@@ -2064,8 +2068,8 @@
 }
 
 .channel-member-picker-avatar {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: block;
   justify-self: center;
   overflow: hidden;

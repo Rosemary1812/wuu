@@ -71,15 +71,16 @@ describe("channel member picker", () => {
     expect(control).toMatch(/background:\s*var\(--bg-secondary\)/);
     expect(search).toMatch(/border-bottom:\s*1px solid var\(--border-subtle\)/);
     expect(search).not.toMatch(/background:/);
-    expect(search).toMatch(/grid-template-columns:\s*48px minmax\(0, 1fr\) 16px/);
-    expect(search).toMatch(/gap:\s*9px/);
+    expect(search).toMatch(/height:\s*34px/);
+    expect(search).toMatch(/grid-template-columns:\s*38px minmax\(0, 1fr\) 16px/);
+    expect(search).toMatch(/gap:\s*6px/);
     expect(search).toMatch(/padding:\s*0 8px/);
     expect(searchIcon).toMatch(/justify-self:\s*center/);
     expect(options).toMatch(/max-height:\s*132px/);
     expect(options).toMatch(/overflow-y:\s*auto/);
-    expect(option).toMatch(/height:\s*43px/);
-    expect(option).toMatch(/grid-template-columns:\s*48px minmax\(0, 1fr\) 16px/);
-    expect(option).toMatch(/gap:\s*9px/);
+    expect(option).toMatch(/height:\s*40px/);
+    expect(option).toMatch(/grid-template-columns:\s*38px minmax\(0, 1fr\) 16px/);
+    expect(option).toMatch(/gap:\s*6px/);
     expect(option).toMatch(/padding:\s*0 8px/);
     expect(option).toMatch(/border-radius:\s*0/);
     expect(option).toMatch(/background:\s*transparent/);
@@ -91,6 +92,22 @@ describe("channel member picker", () => {
     expect(avatarBadge).toMatch(/position:\s*absolute/);
     expect(avatarBadge).toMatch(/background:\s*var\(--surface-raised\)/);
     expect(channelsCss).not.toContain(".channel-checkbox-row");
+  });
+});
+
+describe("channel group details density", () => {
+  it("keeps the group overview and member grid compact", () => {
+    const details = ruleFor(".channel-room-details-form");
+    const identityAvatar = ruleFor(".channel-room-identity-avatar");
+    const memberGrid = ruleFor(".channel-room-member-grid");
+    const memberAvatar = ruleFor(".channel-room-member-avatar,\n.channel-room-member-action-icon");
+
+    expect(details).toMatch(/gap:\s*20px/);
+    expect(identityAvatar).toMatch(/width:\s*40px/);
+    expect(identityAvatar).toMatch(/height:\s*40px/);
+    expect(memberGrid).toMatch(/grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/);
+    expect(memberAvatar).toMatch(/width:\s*34px/);
+    expect(memberAvatar).toMatch(/height:\s*34px/);
   });
 });
 
