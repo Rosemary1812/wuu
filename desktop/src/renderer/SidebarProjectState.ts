@@ -20,6 +20,7 @@ import {
 } from "./AppState";
 import {
   reconcileSidebarSectionOrder,
+  SIDEBAR_SECTION_COLLAB,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
@@ -411,9 +412,12 @@ export function useSidebarProjectState({
   }
 
   function toggleSidebarSectionCollapsed(sectionID: string): void {
-    // Pinned is a pure manual sidebar section:
+    // Fixed sections are pure manual sidebar sections:
     // expanded ⇔ !collapsedSidebarSectionIDs.has(id).
-    if (sectionID === SIDEBAR_SECTION_PINNED) {
+    if (
+      sectionID === SIDEBAR_SECTION_PINNED ||
+      sectionID === SIDEBAR_SECTION_COLLAB
+    ) {
       setCollapsedSidebarSectionIDs((current) => {
         if (!current.has(sectionID)) {
           return new Set(current).add(sectionID);

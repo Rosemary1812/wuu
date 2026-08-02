@@ -6,6 +6,7 @@ import {
   SCRATCH_PSEUDO_PROJECT_ID,
 } from "./AppState";
 import {
+  SIDEBAR_SECTION_COLLAB,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
 import {
@@ -129,7 +130,7 @@ describe("useSidebarProjectState", () => {
     ]);
   });
 
-  it("toggles pseudo sections without starting project loading", async () => {
+  it("toggles fixed pseudo sections with one click", async () => {
     const hook = await renderSidebarProjectState();
 
     act(() => {
@@ -141,6 +142,17 @@ describe("useSidebarProjectState", () => {
       hook.get().toggleSidebarSectionCollapsed(SIDEBAR_SECTION_PINNED);
     });
     expect(hook.get().collapsedSidebarSectionIDs.has(SIDEBAR_SECTION_PINNED)).toBe(false);
+
+    act(() => {
+      hook.get().toggleSidebarSectionCollapsed(SIDEBAR_SECTION_COLLAB);
+    });
+    expect(hook.get().collapsedSidebarSectionIDs.has(SIDEBAR_SECTION_COLLAB)).toBe(true);
+    expect(hook.get().expandedSidebarSectionIDs.has(SIDEBAR_SECTION_COLLAB)).toBe(false);
+
+    act(() => {
+      hook.get().toggleSidebarSectionCollapsed(SIDEBAR_SECTION_COLLAB);
+    });
+    expect(hook.get().collapsedSidebarSectionIDs.has(SIDEBAR_SECTION_COLLAB)).toBe(false);
   });
 
   it("mirrors active project threads into the sidebar cache", async () => {
