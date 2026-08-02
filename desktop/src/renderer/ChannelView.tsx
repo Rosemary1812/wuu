@@ -290,7 +290,7 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, newRoomRequest }: {
+export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, composerDraft, onComposerDraftChange, newRoomRequest }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
@@ -300,6 +300,16 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   selectedRoomID?: string;
   onSelectRoom?: (roomID: string) => void;
   onRoomRead?: (roomID: string) => void;
+  composerDraft?: {
+    prompt: string;
+    images: ComposerImage[];
+    files: ComposerFile[];
+  };
+  onComposerDraftChange?: (draft: {
+    prompt: string;
+    images: ComposerImage[];
+    files: ComposerFile[];
+  }) => void;
   // Incremented by the parent (sidebar ＋ button) to request the new-room
   // dialog; the dialog itself stays inside this view.
   newRoomRequest?: number;
@@ -328,15 +338,28 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [sendingAgentIDs, setSendingAgentIDs] = useState<Set<string>>(() => new Set());
-  const [body, setBody] = useState("");
-  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
-  const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
+  const [body, setBody] = useState(composerDraft?.prompt ?? "");
+  const [composerImages, setComposerImages] = useState<ComposerImage[]>(
+    composerDraft?.images ?? [],
+  );
+  const [composerFiles, setComposerFiles] = useState<ComposerFile[]>(
+    composerDraft?.files ?? [],
+  );
   const [activeThreadRootID, setActiveThreadRootID] = useState("");
   const [threadReplyTargetID, setThreadReplyTargetID] = useState("");
   const [threadBody, setThreadBody] = useState("");
   const [threadSending, setThreadSending] = useState(false);
   const [threadComposerImages, setThreadComposerImages] = useState<ComposerImage[]>([]);
   const [threadComposerFiles, setThreadComposerFiles] = useState<ComposerFile[]>([]);
+
+  useEffect(() => {
+    if (!selectedRoomID) return;
+    onComposerDraftChange?.({
+      prompt: body,
+      images: composerImages,
+      files: composerFiles,
+    });
+  }, [body, composerFiles, composerImages, onComposerDraftChange, selectedRoomID]);
   const [agentName, setAgentName] = useState("");
   const [agentAvatarKey, setAgentAvatarKey] = useState<string>(() => randomAgentAvatarKey());
   const [agentAvatarImage, setAgentAvatarImage] = useState("");

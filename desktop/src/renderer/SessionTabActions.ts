@@ -96,14 +96,25 @@ export function createSessionTabActions(
   }
 
   function openGlobalSessionTab(tab: GlobalSessionTab): void {
-    if (deps.getAppState().activeSessionTabID === tab.id) {
+    const currentState = deps.getAppState();
+    const existing = currentState.sessionTabs.find((candidate) => candidate.id === tab.id);
+    const target =
+      tab.kind === "channel-room" && existing?.kind === "channel-room"
+        ? {
+            ...tab,
+            prompt: existing.prompt,
+            images: existing.images,
+            files: existing.files,
+          }
+        : tab;
+    if (currentState.activeSessionTabID === target.id) {
       deps.setAppState((current) => ({
         ...current,
-        sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+        sessionTabs: ensureSessionTab(current.sessionTabs, target),
       }));
       return;
     }
-    activateGlobalSessionTab(tab);
+    activateGlobalSessionTab(target);
   }
 
   async function selectSessionTab(tabID: string): Promise<void> {

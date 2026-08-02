@@ -517,6 +517,34 @@ describe("ChannelView", () => {
     expect(api.sendChannelMessage).toHaveBeenCalledWith({ room_id: "room-2", body: "Ask Alpha", images: [], files: [] });
   });
 
+  it("restores and publishes the active room tab draft", async () => {
+    const api = createApi();
+    const onComposerDraftChange = vi.fn();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        <ChannelView
+          selectedRoomID="room-1"
+          composerDraft={{ prompt: "unfinished", images: [], files: [] }}
+          onComposerDraftChange={onComposerDraftChange}
+        />,
+      );
+    });
+    await settle();
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(".channel-composer textarea");
+    expect(textarea?.value).toBe("unfinished");
+    act(() => setInputValue(textarea!, "continue later"));
+    await settle();
+
+    expect(onComposerDraftChange).toHaveBeenLastCalledWith({
+      prompt: "continue later",
+      images: [],
+      files: [],
+    });
+  });
+
   it("treats slash-prefixed channel messages as plain text without opening commands", async () => {
     const api = createApi();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });

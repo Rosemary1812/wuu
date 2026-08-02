@@ -1,6 +1,7 @@
 import type {
   Agent,
   AppServerNotification,
+  ChannelRoom,
   DesktopProject,
   GitStatusResult,
   InitializeResult,
@@ -114,6 +115,9 @@ type SessionTab =
       context: RuntimeContext;
       roomID: string;
       title: string;
+      prompt: string;
+      images: ComposerImage[];
+      files: ComposerFile[];
     }
   | {
       id: string;
@@ -1838,6 +1842,9 @@ function createChannelRoomSessionTab(
     context,
     roomID,
     title,
+    prompt: "",
+    images: [],
+    files: [],
   };
 }
 
@@ -1865,6 +1872,67 @@ function createTasksSessionTab(
 
 function channelRoomSessionTabID(roomID: string): string {
   return `channel-room:${roomID}`;
+}
+
+function reconcileChannelRoomSessionTabs(
+  state: AppState,
+  rooms: ChannelRoom[],
+): AppState {
+  const roomsByID = new Map(rooms.map((room) => [room.id, room]));
+  let changed = false;
+  let sessionTabs = state.sessionTabs.reduce<SessionTab[]>((nextTabs, tab) => {
+    if (tab.kind !== "channel-room") {
+      nextTabs.push(tab);
+      return nextTabs;
+    }
+    const room = roomsByID.get(tab.roomID);
+    if (!room) {
+      changed = true;
+      return nextTabs;
+    }
+    if (tab.title === room.name) {
+      nextTabs.push(tab);
+      return nextTabs;
+    }
+    changed = true;
+    nextTabs.push({ ...tab, title: room.name });
+    return nextTabs;
+  }, []);
+  if (!changed) {
+    return state;
+  }
+  if (
+    !state.activeSessionTabID ||
+    sessionTabs.some((tab) => tab.id === state.activeSessionTabID)
+  ) {
+    return { ...state, sessionTabs };
+  }
+
+  const removedIndex = state.sessionTabs.findIndex(
+    (tab) => tab.id === state.activeSessionTabID,
+  );
+  if (sessionTabs.length === 0 && state.activeContext) {
+    sessionTabs = [
+      createDraftSessionTab(
+        draftSessionTabIDForContext(state.activeContext),
+        state.activeContext,
+      ),
+    ];
+  }
+  const fallbackTab =
+    sessionTabs[Math.min(Math.max(removedIndex, 0), sessionTabs.length - 1)];
+  return {
+    ...state,
+    sessionTabs,
+    activeSessionTabID: fallbackTab?.id,
+    secondaryThread: undefined,
+    activePane: "primary",
+    allowThreadAutoActivation: fallbackTab?.kind === "thread",
+    running:
+      fallbackTab?.kind === "thread"
+        ? isThreadRunning(threadForTab(state, fallbackTab.threadID))
+        : false,
+  };
 }
 
 function threadSessionTabID(threadID: string): string {
@@ -3237,6 +3305,7 @@ export {
   projectThreadSummaries,
   queryTextForUserItem,
   queryTextsForThread,
+  reconcileChannelRoomSessionTabs,
   reduceNotification,
   reduceServerEvent,
   resolveComposerRunningAction,

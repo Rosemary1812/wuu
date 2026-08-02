@@ -255,6 +255,32 @@ describe("createSessionTabActions", () => {
     ]);
   });
 
+  it("preserves a room draft when the same room is opened again", () => {
+    const context = projectContext();
+    const source = createDraftSessionTab("draft:source", context);
+    const room = {
+      ...createChannelRoomSessionTab("room-1", "Old title", context),
+      prompt: "unfinished message",
+    };
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: source.id,
+        sessionTabs: [source, room],
+      },
+    });
+
+    harness.actions.openGlobalSessionTab(
+      createChannelRoomSessionTab("room-1", "New title", context),
+    );
+
+    expect(harness.getAppState().sessionTabs.find((tab) => tab.id === room.id)).toMatchObject({
+      title: "New title",
+      prompt: "unfinished message",
+    });
+  });
+
   it("falls back to a global channel tab without resuming a thread", async () => {
     const context = projectContext();
     const source = createDraftSessionTab("draft:source", context);

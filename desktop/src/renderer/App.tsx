@@ -112,6 +112,7 @@ import {
   SCRATCH_PSEUDO_PROJECT_ID,
   scratchThreadSummaries,
   queryTextsForThread,
+  reconcileChannelRoomSessionTabs,
   reduceServerEvent,
   resolveComposerRunningAction,
   requireThread,
@@ -518,6 +519,7 @@ export function App(): JSX.Element {
   // sidebar and the channel canvas share one source of truth; selection is
   // controlled here and passed into ChannelView.
   const [channelRooms, setChannelRooms] = useState<ChannelRoom[]>([]);
+  const [channelRoomsLoaded, setChannelRoomsLoaded] = useState(false);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
   const {
@@ -534,14 +536,17 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!ENABLE_GROUP_CHAT || !window.wuu || !state.initialized) {
       setChannelRooms([]);
+      setChannelRoomsLoaded(false);
       return;
     }
+    setChannelRoomsLoaded(false);
     let active = true;
     const refresh = async (): Promise<void> => {
       try {
         const result = await window.wuu!.listChannelRooms();
         if (active) {
           setChannelRooms(result.rooms ?? []);
+          setChannelRoomsLoaded(true);
         }
       } catch (reason) {
         console.warn("channel rooms refresh failed", reason);
@@ -822,8 +827,17 @@ export function App(): JSX.Element {
           ? "tasks"
           : null;
   const channelsOpen = channelSection !== null;
-  const selectedChannelRoomID =
+  const activeChannelRoomID =
     currentSessionTab?.kind === "channel-room" ? currentSessionTab.roomID : "";
+  const lastSelectedChannelRoomIDRef = useRef("");
+  if (activeChannelRoomID) {
+    lastSelectedChannelRoomIDRef.current = activeChannelRoomID;
+  }
+  const selectedChannelRoomID =
+    activeChannelRoomID ||
+    (channelRooms.some((room) => room.id === lastSelectedChannelRoomIDRef.current)
+      ? lastSelectedChannelRoomIDRef.current
+      : channelRooms[0]?.id ?? "");
   const channelUnreadByRoomID = useMemo(
     () =>
       Object.fromEntries(
@@ -831,6 +845,13 @@ export function App(): JSX.Element {
       ),
     [channelRooms],
   );
+
+  useEffect(() => {
+    if (!channelRoomsLoaded) {
+      return;
+    }
+    setState((current) => reconcileChannelRoomSessionTabs(current, channelRooms));
+  }, [channelRooms, channelRoomsLoaded]);
   const [skillsAssistantDraft, setSkillsAssistantDraft] = useState("");
   const [skillsAssistantThreadID, setSkillsAssistantThreadID] = useState<string>();
   const [skillsAssistantStatus, setSkillsAssistantStatus] = useState("");
@@ -2772,6 +2793,35 @@ export function App(): JSX.Element {
     prepareChannelTab();
   }
 
+  function updateChannelRoomDraft(
+    roomID: string,
+    draft: ComposerDraftState,
+  ): void {
+    setState((current) => {
+      let changed = false;
+      const sessionTabs = current.sessionTabs.map((tab) => {
+        if (tab.kind !== "channel-room" || tab.roomID !== roomID) {
+          return tab;
+        }
+        if (
+          tab.prompt === draft.prompt &&
+          tab.images === draft.images &&
+          tab.files === draft.files
+        ) {
+          return tab;
+        }
+        changed = true;
+        return {
+          ...tab,
+          prompt: draft.prompt,
+          images: draft.images,
+          files: draft.files,
+        };
+      });
+      return changed ? { ...current, sessionTabs } : current;
+    });
+  }
+
   function openChannelAgentsView(): void {
     const context = appStateRef.current.activeContext;
     if (!context) {
@@ -4240,11 +4290,26 @@ export function App(): JSX.Element {
               </div>
             </header>
             <ChannelView
+              key={currentSessionTab?.id}
               initialized={sessionRuntime ?? state.initialized}
               section={channelSection ?? "rooms"}
               selectedRoomID={selectedChannelRoomID}
               onSelectRoom={selectChannelRoom}
               onRoomRead={clearChannelRoomUnread}
+              composerDraft={
+                currentSessionTab?.kind === "channel-room"
+                  ? {
+                      prompt: currentSessionTab.prompt,
+                      images: currentSessionTab.images,
+                      files: currentSessionTab.files,
+                    }
+                  : undefined
+              }
+              onComposerDraftChange={
+                currentSessionTab?.kind === "channel-room"
+                  ? (draft) => updateChannelRoomDraft(currentSessionTab.roomID, draft)
+                  : undefined
+              }
               newRoomRequest={newRoomRequest}
             />
           </>
