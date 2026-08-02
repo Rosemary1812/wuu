@@ -148,6 +148,40 @@ func (s *Server) handleChannelAgentStart(ctx context.Context, req Request) error
 	return s.writeResponse(req.ID, ChannelAgentStartResult{Agent: agent, WakeState: state, Started: started, ThreadID: thread.ID}, nil)
 }
 
+func (s *Server) handleChannelAgentReset(ctx context.Context, req Request) error {
+	if s == nil || s.channelService == nil || s.rt == nil {
+		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))
+	}
+	var params ChannelAgentResetParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	agent, err := s.channelService.GetNamedAgent(ctx, params.AgentID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	threadID := namedAgentSessionID(agent)
+	requested, err := session.RequestThreadExecutionReset(s.rt.SessionDir, threadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !requested {
+		// No owner will complete this wake. Normalize stale queue ownership while
+		// retaining inbox rows; the next explicit start or mention can consume them.
+		if err := s.channelService.ClearWakeOnCheck(ctx, agent.ID); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		_, _, _, _ = s.removeHeldUserTurn(threadID, namedAgentWakeID(agent.ID))
+	}
+	state, err := s.channelService.WakeState(ctx, agent.ID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, ChannelAgentResetResult{
+		Agent: agent, WakeState: state, Requested: requested, ThreadID: threadID,
+	}, nil)
+}
+
 func (s *Server) handleChannelRoomList(ctx context.Context, req Request) error {
 	if s == nil || s.channelService == nil {
 		return s.writeResponse(req.ID, nil, errors.New("channels service is unavailable"))

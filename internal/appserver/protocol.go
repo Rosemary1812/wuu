@@ -36,6 +36,7 @@ const (
 	MethodChannelAgentUpdate   = "channel/agent/update"
 	MethodChannelAgentDelete   = "channel/agent/delete"
 	MethodChannelAgentStart    = "channel/agent/start"
+	MethodChannelAgentReset    = "channel/agent/reset"
 	MethodChannelRoomList      = "channel/room/list"
 	MethodChannelRoomCreate    = "channel/room/create"
 	MethodChannelRoomUpdate    = "channel/room/update"
@@ -2120,6 +2121,17 @@ type ChannelAgentStartResult struct {
 	Agent     channels.NamedAgent `json:"agent"`
 	WakeState channels.WakeState  `json:"wake_state"`
 	Started   bool                `json:"started"`
+	ThreadID  string              `json:"thread_id"`
+}
+
+type ChannelAgentResetParams struct {
+	AgentID string `json:"agent_id"`
+}
+
+type ChannelAgentResetResult struct {
+	Agent     channels.NamedAgent `json:"agent"`
+	WakeState channels.WakeState  `json:"wake_state"`
+	Requested bool                `json:"requested"`
 	ThreadID  string              `json:"thread_id"`
 }
 

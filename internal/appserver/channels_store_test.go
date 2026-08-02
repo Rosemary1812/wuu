@@ -289,6 +289,69 @@ func TestNonAutostartNamedAgentWakeLoadsExistingPersistedSession(t *testing.T) {
 	}
 }
 
+func TestChannelAgentResetRequestsTheCurrentThreadOwner(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	attachNamedAgentTestToolkit(t, rt)
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{
+		Name: "Alpha", Autostart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent() error = %v", err)
+	}
+	threadID := namedAgentSessionID(credential.Agent)
+	owner, acquired, err := session.TryAcquireThreadExecutionLease(rt.SessionDir, threadID)
+	if err != nil || !acquired || owner == nil {
+		t.Fatalf("owner lease = %v, acquired %v, err %v", owner, acquired, err)
+	}
+	defer owner.Release()
+
+	var reset ChannelAgentResetResult
+	callChannelRPC(t, server, out, MethodChannelAgentReset, ChannelAgentResetParams{AgentID: credential.Agent.ID}, &reset)
+	if !reset.Requested || reset.ThreadID != threadID || reset.Agent.ID != credential.Agent.ID {
+		t.Fatalf("reset result = %#v", reset)
+	}
+	requested, err := owner.ResetRequested()
+	if err != nil || !requested {
+		t.Fatalf("owner reset requested = %v, err %v", requested, err)
+	}
+}
+
+func TestChannelAgentResetClearsStaleWakeWithoutDroppingInbox(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	attachNamedAgentTestToolkit(t, rt)
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{
+		Name: "Alpha", Autostart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateNamedAgent() error = %v", err)
+	}
+	server.channelService.SetWakeSink(nil)
+	room := createAppserverTestRoom(t, server.channelService, credential.Agent)
+	if _, err := server.channelService.SendHuman(context.Background(), channels.HumanSendParams{
+		RoomID: room.ID, HumanID: "human-1", Body: "@Alpha queued",
+	}); err != nil {
+		t.Fatalf("SendHuman() error = %v", err)
+	}
+
+	var reset ChannelAgentResetResult
+	callChannelRPC(t, server, out, MethodChannelAgentReset, ChannelAgentResetParams{AgentID: credential.Agent.ID}, &reset)
+	if reset.Requested || reset.WakeState.Outstanding || reset.WakeState.Pending {
+		t.Fatalf("idle reset result = %#v", reset)
+	}
+	inbox, err := server.channelService.ListInbox(context.Background(), credential.Agent.ID, true)
+	if err != nil || len(inbox) != 1 {
+		t.Fatalf("preserved inbox = %#v, err %v", inbox, err)
+	}
+}
+
 func TestNamedAgentRunningWakeUsesPendingHeldTurn(t *testing.T) {
 	client := newBlockingStreamClient("done")
 	rt := newTestRuntime(t, &fakeClient{})
