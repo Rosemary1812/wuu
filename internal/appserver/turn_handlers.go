@@ -222,6 +222,12 @@ func (s *Server) ensureThreadRuntimeAfterAdmission(th *threadState) (*runtime.Th
 	if err != nil || threadRuntime == nil {
 		return threadRuntime, err
 	}
+	if err := s.refreshThreadGitAttribution(threadRuntime); err != nil {
+		// Attribution is metadata, not a reason to block the user's turn when a
+		// concurrently edited or test-only config cannot be reloaded. Preserve
+		// the toolkit's last known setting and surface the diagnostic instead.
+		providers.DebugLogf("refresh thread git attribution: %v", err)
+	}
 	if threadRuntime.StreamRunner != nil && threadRuntime.StreamRunner.ToolLedger != nil {
 		if err := threadRuntime.StreamRunner.ToolLedger.Reconcile(context.Background()); err != nil {
 			return nil, fmt.Errorf("recover tool ledger for thread %q: %w", th.ID, err)
@@ -245,6 +251,24 @@ func (s *Server) ensureThreadRuntimeAfterAdmission(th *threadState) (*runtime.Th
 		threadRuntime.StreamRunner.SynchronizeConversationUsage(history, s.latestRetainedContextTokens(threadID))
 	}
 	return threadRuntime, nil
+}
+
+// refreshThreadGitAttribution closes a cross-runtime consistency gap for the
+// global attribution toggle. Desktop workspaces and persistent named agents
+// can outlive the app-server instance that changed the shared config file, so
+// their cloned toolkits may carry a stale opt-out bit indefinitely. Reload the
+// effective setting at turn admission, before any tool can create a commit;
+// worker toolkits spawned by this turn then inherit the refreshed value.
+func (s *Server) refreshThreadGitAttribution(threadRuntime *runtime.ThreadRuntime) error {
+	if s == nil || s.rt == nil || threadRuntime == nil || threadRuntime.Toolkit == nil {
+		return nil
+	}
+	cfg, _, err := s.rt.LoadEffectiveConfig()
+	if err != nil {
+		return fmt.Errorf("refresh git attribution setting: %w", err)
+	}
+	threadRuntime.Toolkit.SetGitAttributionEnabled(cfg.Agent.GitAttributionEnabledValue())
+	return nil
 }
 
 func (s *Server) handleThreadCompactStart(ctx context.Context, req Request) error {

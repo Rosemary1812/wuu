@@ -582,6 +582,13 @@ func (t *Toolkit) SetGitAttributionEnabled(enabled bool) {
 	t.env.GitAttributionDisabled = !enabled
 }
 
+// GitAttributionEnabled reports the effective commit-attribution state carried
+// by this toolkit. Runtime owners use it to verify that long-lived thread
+// toolkits have caught up with the persisted general setting.
+func (t *Toolkit) GitAttributionEnabled() bool {
+	return t != nil && t.env != nil && t.env.gitAttributionEnabled()
+}
+
 func (t *Toolkit) isToolDisabled(name string) bool {
 	if len(t.disabledTools) == 0 {
 		return false
