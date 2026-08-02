@@ -101,30 +101,7 @@ func CollectSkillUsage(sessDir string) ([]SkillUsage, error) {
 		if err != nil {
 			continue
 		}
-		for _, rec := range records {
-			if !strings.EqualFold(strings.TrimSpace(rec.Role), "assistant") {
-				continue
-			}
-			var calls []toolCallRec
-			if err := json.Unmarshal(rec.ToolCalls, &calls); err != nil {
-				continue
-			}
-			for _, call := range calls {
-				if strings.TrimSpace(call.Name) != "load_skill" {
-					continue
-				}
-				var args struct {
-					Name string `json:"name"`
-				}
-				if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-					continue
-				}
-				name := strings.TrimSpace(args.Name)
-				if name != "" {
-					counts[name]++
-				}
-			}
-		}
+		collectSkillUsage(records, counts)
 	}
 	out := make([]SkillUsage, 0, len(counts))
 	for name, count := range counts {
@@ -153,6 +130,7 @@ func CollectUsageScan(sessDir string) (UsageScan, error) {
 		if err != nil {
 			continue
 		}
+		collectSkillUsage(records, counts)
 		for _, rec := range records {
 			if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") && strings.TrimSpace(rec.Content) == "token_usage" {
 				rows = append(rows, TokenUsageRow{
@@ -160,24 +138,6 @@ func CollectUsageScan(sessDir string) (UsageScan, error) {
 					InputTokens: rec.InputTokens, OutputTokens: rec.OutputTokens,
 					CacheCreationTokens: rec.CacheCreationTokens, CacheReadTokens: rec.CacheReadTokens,
 				})
-			}
-			if !strings.EqualFold(strings.TrimSpace(rec.Role), "assistant") {
-				continue
-			}
-			var calls []toolCallRec
-			if err := json.Unmarshal(rec.ToolCalls, &calls); err != nil {
-				continue
-			}
-			for _, call := range calls {
-				if strings.TrimSpace(call.Name) != "load_skill" {
-					continue
-				}
-				var args struct {
-					Name string `json:"name"`
-				}
-				if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil && strings.TrimSpace(args.Name) != "" {
-					counts[strings.TrimSpace(args.Name)]++
-				}
 			}
 		}
 	}
@@ -192,6 +152,86 @@ func CollectUsageScan(sessDir string) (UsageScan, error) {
 		return skills[i].Name < skills[j].Name
 	})
 	return UsageScan{TokenRows: rows, Skills: skills}, nil
+}
+
+// collectSkillUsage prefers assistant tool-call arguments, which preserve the
+// requested skill name even when execution fails. Provider checkpoints and
+// history compaction can retain a tool result after dropping its assistant
+// call, so unmatched load_skill results are also decoded as a fallback.
+func collectSkillUsage(records []sessionstore.HistoryRecord, counts map[string]int) {
+	seenCallIDs := make(map[string]struct{})
+	for _, rec := range records {
+		switch strings.ToLower(strings.TrimSpace(rec.Role)) {
+		case "assistant":
+			var calls []toolCallRec
+			if err := json.Unmarshal(rec.ToolCalls, &calls); err != nil {
+				continue
+			}
+			for _, call := range calls {
+				if !isLoadSkillTool(call.Name) {
+					continue
+				}
+				name := skillNameFromArguments(call.Arguments)
+				if name == "" {
+					continue
+				}
+				callID := strings.TrimSpace(call.ID)
+				if callID != "" {
+					if _, seen := seenCallIDs[callID]; seen {
+						continue
+					}
+					seenCallIDs[callID] = struct{}{}
+				}
+				counts[name]++
+			}
+		case "tool":
+			if !isLoadSkillTool(rec.Name) {
+				continue
+			}
+			callID := strings.TrimSpace(rec.ToolCallID)
+			if callID != "" {
+				if _, seen := seenCallIDs[callID]; seen {
+					continue
+				}
+				seenCallIDs[callID] = struct{}{}
+			}
+			if name := skillNameFromResult(rec.Content); name != "" {
+				counts[name]++
+			}
+		}
+	}
+}
+
+func isLoadSkillTool(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	for _, separator := range []string{".", "/", ":"} {
+		if index := strings.LastIndex(normalized, separator); index >= 0 {
+			normalized = normalized[index+len(separator):]
+		}
+	}
+	return normalized == "load_skill"
+}
+
+func skillNameFromArguments(arguments string) string {
+	var args struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(args.Name)
+}
+
+func skillNameFromResult(content string) string {
+	var result struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(result.Metadata.Name)
 }
 
 func scanSessions(sessDir string, sessions []sessionstore.Session, maxSessions int) ([]SessionMeta, error) {

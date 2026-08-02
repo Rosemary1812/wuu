@@ -9817,6 +9817,20 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	}
 }
 
+func TestInvalidateSettingsUsageClearsCachedSnapshot(t *testing.T) {
+	srv := &Server{
+		settingsUsageCache: &settingsUsageCacheEntry{
+			expiresAt: time.Now().Add(time.Hour),
+		},
+	}
+
+	srv.invalidateSettingsUsage()
+
+	if srv.settingsUsageCache != nil {
+		t.Fatal("expected settings usage cache to be cleared")
+	}
+}
+
 func TestSettingsUsageModelBreakdownsSkipZeroUsageBuckets(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	now := time.Now().UTC()

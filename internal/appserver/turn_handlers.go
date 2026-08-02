@@ -4120,6 +4120,7 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 	if err := session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(indexHistory), threadPreview(indexHistory)); err != nil {
 		return err
 	}
+	s.invalidateSettingsUsage()
 	if strings.TrimSpace(th.NamedAgentID) != "" {
 		s.invalidateChannelAgentInsights()
 	}
@@ -4130,17 +4131,30 @@ func (s *Server) persistFailedTurnResultLocked(th *threadState, res agent.LoopRe
 	if th.PersistHistory {
 		return s.persistTurnResultLocked(th, res, rewriteHistory, providerName, model, historyBaselineSeq)
 	}
-	return appendTokenUsage(s.rt.SessionDir, th.ID, providerName, model, providers.TokenUsage{
+	if err := appendTokenUsage(s.rt.SessionDir, th.ID, providerName, model, providers.TokenUsage{
 		InputTokens:         res.InputTokens,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
-	}, res.ContextTokens)
+	}, res.ContextTokens); err != nil {
+		return err
+	}
+	s.invalidateSettingsUsage()
+	return nil
 }
 
 type settingsUsageCacheEntry struct {
 	response  SettingsUsageResponse
 	expiresAt time.Time
+}
+
+func (s *Server) invalidateSettingsUsage() {
+	if s == nil {
+		return
+	}
+	s.settingsUsageMu.Lock()
+	s.settingsUsageCache = nil
+	s.settingsUsageMu.Unlock()
 }
 
 // handleSettingsUsage returns the aggregated token usage snapshot for

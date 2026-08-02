@@ -158,6 +158,54 @@ func TestScanSessionsAggregatesModelBreakdowns(t *testing.T) {
 
 }
 
+func TestCollectUsageScanCountsSkillCallsAcrossPersistedShapes(t *testing.T) {
+	dir := t.TempDir()
+	sessionID := "usage-skills"
+	if _, err := sessionstore.CreateWithMetadata(dir, sessionID, ""); err != nil {
+		t.Fatal(err)
+	}
+	writeInsightSessionRecords(t, dir, sessionID, []memoryRecord{
+		{
+			Role: "assistant",
+			ToolCalls: []toolCallRec{
+				{ID: "call-review", Name: "functions.load_skill", Arguments: `{"name":"review"}`},
+			},
+		},
+		{
+			Role:       "tool",
+			Name:       "load_skill",
+			ToolCallID: "call-review",
+			Content:    `{"metadata":{"name":"review"}}`,
+		},
+		{
+			// Provider checkpoints can retain the tool result without the
+			// assistant call that originally carried its arguments.
+			Role:       "tool",
+			Name:       "functions/load_skill",
+			ToolCallID: "call-commit",
+			Content:    `{"metadata":{"name":"commit"}}`,
+		},
+		{
+			Role:       "tool",
+			Name:       "load_skill",
+			ToolCallID: "call-malformed",
+			Content:    `not-json`,
+		},
+	})
+
+	scan, err := CollectUsageScan(dir)
+	if err != nil {
+		t.Fatalf("CollectUsageScan: %v", err)
+	}
+	if len(scan.Skills) != 2 {
+		t.Fatalf("expected two skill buckets, got %+v", scan.Skills)
+	}
+	if scan.Skills[0] != (SkillUsage{Name: "commit", Count: 1}) ||
+		scan.Skills[1] != (SkillUsage{Name: "review", Count: 1}) {
+		t.Fatalf("unexpected skill usage: %+v", scan.Skills)
+	}
+}
+
 func writeInsightSessionRecords(t *testing.T, sessDir, id string, records []memoryRecord) {
 	t.Helper()
 
