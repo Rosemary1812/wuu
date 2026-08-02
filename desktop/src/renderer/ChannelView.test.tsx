@@ -677,6 +677,45 @@ describe("ChannelView", () => {
     expect(container.querySelector(".channel-thread-panel")).toBeNull();
   });
 
+  it("renders thread digest bodies as non-interactive Markdown text", async () => {
+    const api = createApi();
+    api.listChannelMessages = vi.fn(async ({ room_id }) => ({
+      messages: [{
+        id: "message-markdown",
+        room_id,
+        seq: 1,
+        author_type: "human" as const,
+        author_id: "human",
+        kind: "text" as const,
+        body: "Root message",
+        created_at: "2026-07-23T00:00:00Z",
+      }, {
+        id: "reply-markdown",
+        room_id,
+        seq: 2,
+        thread_id: "message-markdown",
+        reply_to: "message-markdown",
+        author_type: "agent" as const,
+        author_id: "agent-1",
+        kind: "text" as const,
+        body: "**Bold** with `inline()` and [docs](https://example.com)\n\n- first\n- second\n\n```ts\nconst value = 1\n```",
+        created_at: "2026-07-23T00:00:01Z",
+      }],
+    }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const preview = container.querySelector<HTMLElement>(".channel-thread-digest-preview");
+    const previewText = preview?.textContent?.replace(/\s+/g, " ").trim();
+    expect(previewText).toContain("Bold with inline() and docs");
+    expect(previewText).toContain("first second");
+    expect(previewText).toContain("const value = 1");
+    expect(previewText).not.toMatch(/\*\*|`|\]\(https:\/\//);
+    expect(preview?.querySelector("a, input")).toBeNull();
+  });
+
   it("collapses long agent messages and restores rich content on demand", async () => {
     const api = createApi();
     const longBody = `**First detail**\n${Array.from({ length: 16 }, (_, index) => `Line ${index + 1}`).join("\n")}\n**Final detail**`;

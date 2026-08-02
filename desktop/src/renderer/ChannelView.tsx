@@ -1,5 +1,7 @@
 import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChannelAgentInsight, ChannelMessage, ChannelRoom, InitializeResult, NamedAgent } from "../shared/protocol";
 import { AGENT_AVATAR_KEYS, AgentAvatarMark, randomAgentAvatarKey } from "./AgentAvatarMark";
 import { AgentRelationshipGraph } from "./AgentRelationshipGraph";
@@ -112,6 +114,47 @@ function ChannelAuthorName({ name, mentionLabel, onMention }: {
 
 const CHANNEL_THREAD_DIGEST_MAX_REPLIES = 3;
 
+const CHANNEL_THREAD_PREVIEW_COMPONENTS = {
+  a({ children }) { return <>{children}</>; },
+  blockquote({ children }) { return <>{children} </>; },
+  br() { return <> </>; },
+  code({ children }) { return <>{children}</>; },
+  del({ children }) { return <>{children}</>; },
+  em({ children }) { return <>{children}</>; },
+  h1({ children }) { return <>{children} </>; },
+  h2({ children }) { return <>{children} </>; },
+  h3({ children }) { return <>{children} </>; },
+  h4({ children }) { return <>{children} </>; },
+  h5({ children }) { return <>{children} </>; },
+  h6({ children }) { return <>{children} </>; },
+  hr() { return <> </>; },
+  img({ alt }) { return <>{alt ?? ""}</>; },
+  input() { return null; },
+  li({ children }) { return <>{children} </>; },
+  ol({ children }) { return <>{children}</>; },
+  p({ children }) { return <>{children} </>; },
+  pre({ children }) { return <>{children} </>; },
+  strong({ children }) { return <>{children}</>; },
+  table({ children }) { return <>{children} </>; },
+  tbody({ children }) { return <>{children}</>; },
+  td({ children }) { return <>{children} </>; },
+  th({ children }) { return <>{children} </>; },
+  thead({ children }) { return <>{children}</>; },
+  tr({ children }) { return <>{children} </>; },
+  ul({ children }) { return <>{children}</>; },
+} satisfies Components;
+
+function ChannelThreadMarkdownPreview({ text }: { text: string }): JSX.Element {
+  return (
+    <ReactMarkdown
+      components={CHANNEL_THREAD_PREVIEW_COMPONENTS}
+      remarkPlugins={[remarkGfm]}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+}
+
 function ChannelThreadDigest({
   replies,
   agents,
@@ -138,8 +181,8 @@ function ChannelThreadDigest({
             ? undefined
             : agents.find((candidate) => candidate.id === reply.author_id);
           const author = own ? t("channels.you") : (agent?.name ?? reply.author_id);
-          const preview = reply.body.trim().replace(/\s+/g, " ")
-            || reply.files?.[0]?.filename
+          const markdownPreview = reply.body.trim();
+          const fallbackPreview = reply.files?.[0]?.filename
             || (reply.images?.length
               ? t("appState.images", { count: reply.images.length })
               : "");
@@ -156,7 +199,11 @@ function ChannelThreadDigest({
                 )}
               </span>
               <strong>{author}</strong>
-              <span className="channel-thread-digest-preview">{preview}</span>
+              <span className="channel-thread-digest-preview">
+                {markdownPreview ? (
+                  <ChannelThreadMarkdownPreview text={markdownPreview} />
+                ) : fallbackPreview}
+              </span>
               <time dateTime={reply.created_at}>
                 {formatDate(reply.created_at, { hour: "2-digit", minute: "2-digit" })}
               </time>
