@@ -92,56 +92,13 @@
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
-  background: var(--bg-primary);
-}
-
-.channel-mode-tasks {
   grid-template-columns: minmax(0, 1fr);
+  background: var(--bg-primary);
 }
 
 .channel-title-block {
   display: flex;
   overflow: visible;
-}
-
-.channel-mode-tabs {
-  align-self: stretch;
-  display: flex;
-  align-items: stretch;
-  gap: 22px;
-  -webkit-app-region: no-drag;
-}
-
-.channel-mode-tabs button {
-  position: relative;
-  min-width: 36px;
-  border: 0;
-  padding: 0 2px;
-  background: transparent;
-  color: var(--ink-muted);
-  font: inherit;
-  font-size: 13px;
-}
-
-.channel-mode-tabs button:hover {
-  color: var(--ink);
-}
-
-.channel-mode-tabs button.active {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.channel-mode-tabs button.active::after {
-  position: absolute;
-  right: 1px;
-  bottom: 0;
-  left: 1px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--ink);
-  content: "";
 }
 
 .channel-list-pane {
@@ -271,28 +228,13 @@
   gap: 2px;
 }
 
-.channel-room-list {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: var(--channel-directory-list-padding);
-}
-
 .channel-response-status {
-  box-sizing: border-box;
-  height: 46px;
-  min-height: 46px;
-  max-height: 46px;
   min-width: 0;
-  flex: 0 0 46px;
   display: flex;
   align-items: center;
   gap: 9px;
   overflow: hidden;
   margin: 0;
-  padding: 7px 12px 8px;
-  border-top: 1px solid var(--border-subtle);
-  background: transparent;
   color: var(--text-primary);
 }
 
@@ -362,34 +304,6 @@
   font-size: 11px;
 }
 
-.channel-response-status-empty {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.channel-response-status-empty i {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--border-default);
-}
-
-.channel-agent-list-pane,
-.channel-task-list-pane {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 0 8px;
-}
-
 .channel-tracked-task {
   width: 100%;
   display: grid;
@@ -438,8 +352,6 @@
   font-size: 12px;
 }
 
-.channel-room-row,
-.channel-agent-button,
 .channel-empty-action {
   width: 100%;
   border: 0;
@@ -447,37 +359,6 @@
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
-}
-
-.channel-room-row,
-.channel-agent-button {
-  height: var(--channel-directory-row-height);
-  display: flex;
-  align-items: center;
-  gap: var(--channel-directory-row-gap);
-  padding: var(--channel-directory-row-padding);
-}
-
-.channel-agent-row {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  border-radius: 7px;
-}
-
-.channel-agent-row:hover {
-  background: var(--surface-hover);
-}
-
-.channel-agent-row .channel-agent-button {
-  min-width: 0;
-}
-
-.channel-agent-row .channel-agent-button > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .channel-agent-avatar {
@@ -578,17 +459,6 @@
 .channel-agent-edit:focus-visible,
 .channel-agent-delete:focus-visible {
   opacity: 1;
-}
-
-.channel-room-row:hover,
-.channel-agent-button:hover,
-.channel-room-row.active {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.channel-room-row.active {
-  font-weight: 600;
 }
 
 .channel-empty-action {
@@ -2117,7 +1987,6 @@
   font-size: 12px;
 }
 
-.channel-room-list,
 .channel-agent-directory-list {
   display: grid;
   align-content: start;
@@ -2134,10 +2003,6 @@
   gap: var(--channel-directory-row-gap);
   padding: var(--channel-directory-row-padding);
   border-radius: var(--channel-directory-row-radius);
-}
-
-.channel-room-row {
-  grid-template-columns: 34px minmax(0, 1fr) auto 28px;
 }
 
 .channel-directory-row:hover,
@@ -2173,70 +2038,9 @@
   opacity: 0.45;
 }
 
-.channel-room-unread {
-  grid-column: 3;
-  min-width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
-  padding: 0 5px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--wuu-accent);
-  color: white;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--weight-semibold);
-  line-height: 1;
-}
-
-.channel-room-row .channel-directory-settings {
-  grid-column: 4;
-}
-
 .channel-directory-row:hover .channel-directory-settings,
 .channel-directory-row:focus-within .channel-directory-settings {
   opacity: 1;
-}
-
-.channel-room-select {
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-}
-
-.channel-room-avatar {
-  overflow: hidden;
-  border-radius: 8px;
-}
-
-.channel-room-select {
-  flex: 1;
-  display: grid;
-  gap: 2px;
-  text-align: left;
-}
-
-.channel-room-name,
-.channel-room-members {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.channel-room-name {
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.25;
-}
-
-.channel-room-members {
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
 }
 
 .channel-group-avatar-grid,
@@ -2343,4 +2147,69 @@
 
 .channel-room-avatar-label {
   min-width: 0;
+}
+
+/* Room canvas header (rooms section chrome; agents/tasks canvases keep their
+   own headers). The rooms canvas is single-column like tasks — .channel-view
+   defaults to one column and only the agents canvas sets two columns inline. */
+.channel-room-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--border-weak);
+  flex-shrink: 0;
+}
+
+.channel-room-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.channel-room-header-title h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-room-scope {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-weak);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+/* The status widget pushes to the header's trailing edge and shrinks freely
+   on narrow canvases. */
+.channel-room-header .channel-response-status {
+  margin-left: auto;
+  min-width: 0;
+}
+
+.channel-room-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.channel-room-main-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+}
+
+.channel-section-label {
+  font-size: 13px;
+  font-weight: 600;
 }

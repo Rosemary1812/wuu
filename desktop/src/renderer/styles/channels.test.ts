@@ -9,19 +9,16 @@ function ruleFor(selector: string): string {
 }
 
 describe("channel directory alignment", () => {
-  it("uses one directory structure for rooms and agents", () => {
-    const directoryLists = ruleFor(".channel-room-list,\n.channel-agent-directory-list");
+  it("uses one directory structure for the agents pane", () => {
     const directoryRow = ruleFor(".channel-directory-row");
     const directoryIdentity = ruleFor(".channel-directory-identity");
     const directorySettings = ruleFor(".channel-directory-settings");
-    const roomRow = ruleFor(".channel-room-row");
-    const unreadBadge = ruleFor(".channel-room-unread");
-    const roomSettings = ruleFor(".channel-room-row .channel-directory-settings");
     const agentWorkspace = ruleFor(".channel-agent-workspace");
     const agentIdentity = ruleFor(".channel-agent-directory-identity");
 
-    expect(directoryLists).toMatch(/padding:\s*var\(--channel-directory-list-padding\)/);
-    expect(directoryLists).toMatch(/gap:\s*3px/);
+    expect(channelsCss).toMatch(
+      /\.channel-agent-directory-list \{\s*display:\s*grid;[^}]*gap:\s*3px;[^}]*padding:\s*var\(--channel-directory-list-padding\)/,
+    );
     expect(directoryRow).toMatch(/height:\s*var\(--channel-directory-row-height\)/);
     expect(directoryRow).toMatch(/grid-template-columns:\s*34px minmax\(0, 1fr\) 28px/);
     expect(directoryRow).toMatch(/gap:\s*var\(--channel-directory-row-gap\)/);
@@ -29,24 +26,26 @@ describe("channel directory alignment", () => {
     expect(directoryRow).toMatch(/border-radius:\s*var\(--channel-directory-row-radius\)/);
     expect(directoryIdentity).toMatch(/min-width:\s*0/);
     expect(directorySettings).toMatch(/width:\s*28px/);
-    expect(roomRow).toMatch(/grid-template-columns:\s*34px minmax\(0, 1fr\) auto 28px/);
-    expect(unreadBadge).toMatch(/min-width:\s*18px/);
-    expect(unreadBadge).toMatch(/background:\s*var\(--wuu-accent\)/);
-    expect(unreadBadge).toMatch(/border:\s*0/);
-    expect(unreadBadge).not.toMatch(/box-shadow/);
-    expect(roomSettings).toMatch(/grid-column:\s*4/);
     expect(agentWorkspace).toMatch(/display:\s*contents/);
     expect(agentIdentity).not.toMatch(/grid-template-columns/);
     expect(channelsCss).not.toContain("channel-agent-directory-actions");
   });
 
-  it("aligns the empty room action with the pane heading", () => {
-    const roomList = ruleFor(".channel-room-list");
+  it("defaults the canvas to a single column", () => {
+    const view = ruleFor(".channel-view");
 
-    expect(roomList).toMatch(/padding:\s*var\(--channel-directory-list-padding\)/);
-    expect(channelsCss).toContain("--channel-directory-list-padding: 0 8px");
+    expect(view).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+    expect(channelsCss).not.toContain("208px minmax(0, 1fr)");
+  });
+
+  it("centers the empty rooms state and keeps its action aligned", () => {
+    const emptyState = ruleFor(".channel-room-main-empty");
+
+    expect(emptyState).toMatch(/display:\s*flex/);
+    expect(emptyState).toMatch(/justify-content:\s*center/);
     expect(channelsCss).toMatch(/\.channel-empty-action\s*\{\s*padding:\s*10px 8px/);
   });
+
 });
 
 describe("channel member picker", () => {
@@ -196,25 +195,22 @@ describe("channel agent status", () => {
     expect(channelsCss).not.toContain("channel-agent-status-pulse");
   });
 
-  it("anchors the active response summary below the scrollable room list", () => {
-    const roomList = ruleFor(".channel-room-list");
+  it("keeps the status widget free of its old pane-footer chrome", () => {
     const responseStatus = ruleFor(".channel-response-status");
     const responseCopy = ruleFor(".channel-response-status-copy");
-    const responseEmpty = ruleFor(".channel-response-status-empty");
+    const headerAnchor = ruleFor(".channel-room-header .channel-response-status");
 
-    expect(roomList).toMatch(/flex:\s*1/);
-    expect(roomList).toMatch(/overflow:\s*auto/);
     expect(responseStatus).toMatch(/display:\s*flex/);
-    expect(responseStatus).toMatch(/(?:^|\n)\s*height:\s*46px/);
-    expect(responseStatus).toMatch(/min-height:\s*46px/);
-    expect(responseStatus).toMatch(/max-height:\s*46px/);
-    expect(responseStatus).toMatch(/flex:\s*0 0 46px/);
-    expect(responseStatus).toMatch(/overflow:\s*hidden/);
-    expect(responseStatus).toMatch(/border-top:\s*1px solid var\(--border-subtle\)/);
-    expect(responseStatus).toMatch(/background:\s*transparent/);
-    expect(responseStatus).not.toMatch(/border-radius/);
+    expect(responseStatus).toMatch(/gap:\s*9px/);
+    expect(responseStatus).not.toMatch(/height:\s*46px/);
+    expect(responseStatus).not.toMatch(/flex:\s*0 0 46px/);
+    expect(responseStatus).not.toMatch(/border-top/);
     expect(responseCopy).toMatch(/min-width:\s*0/);
-    expect(responseEmpty).toMatch(/color:\s*var\(--text-tertiary\)/);
+    expect(headerAnchor).toMatch(/margin-left:\s*auto/);
+    expect(headerAnchor).toMatch(/min-width:\s*0/);
+    expect(channelsCss).not.toContain("channel-response-status-empty");
+    expect(channelsCss).not.toContain(".channel-room-list");
+    expect(channelsCss).not.toContain(".channel-room-row");
   });
 });
 
