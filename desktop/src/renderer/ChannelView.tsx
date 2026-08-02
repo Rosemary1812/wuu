@@ -159,16 +159,24 @@ function ChannelThreadDigest({
   replies,
   agents,
   onOpen,
+  onMention,
 }: {
   replies: ChannelMessage[];
   agents: NamedAgent[];
   onOpen: () => void;
+  onMention: (name: string) => void;
 }): JSX.Element {
   const { formatDate, t } = useI18n();
   const visibleReplies = replies.slice(-CHANNEL_THREAD_DIGEST_MAX_REPLIES);
 
   return (
-    <button className="channel-thread-digest" type="button" onClick={onOpen}>
+    <div className="channel-thread-digest">
+      <button
+        className="channel-thread-digest-open"
+        type="button"
+        aria-label={t("channels.replyCount", { count: replies.length })}
+        onClick={onOpen}
+      />
       {replies.length > CHANNEL_THREAD_DIGEST_MAX_REPLIES ? (
         <span className="channel-thread-digest-heading">
           <strong>{t("channels.replyCount", { count: replies.length })}</strong>
@@ -198,7 +206,11 @@ function ChannelThreadDigest({
                   />
                 )}
               </span>
-              <strong>{author}</strong>
+              <ChannelAuthorName
+                name={author}
+                mentionLabel={!own ? t("channels.mentionAgent", { name: author }) : undefined}
+                onMention={!own ? () => onMention(author) : undefined}
+              />
               <span className="channel-thread-digest-preview">
                 {markdownPreview ? (
                   <ChannelThreadMarkdownPreview text={markdownPreview} />
@@ -211,7 +223,7 @@ function ChannelThreadDigest({
           );
         })}
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -1188,6 +1200,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                       replies={threadReplies}
                       agents={agents}
                       onOpen={() => openThread(message)}
+                      onMention={(name) => roomComposerRef.current?.insertMention(name)}
                     />
                   ) : null}
                 </div>

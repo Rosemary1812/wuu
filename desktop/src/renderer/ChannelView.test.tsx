@@ -635,13 +635,17 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    const digest = container.querySelector<HTMLButtonElement>(".channel-thread-digest");
+    const digest = container.querySelector<HTMLElement>(".channel-thread-digest");
     expect(digest?.textContent).not.toContain("1 条回复");
     expect(digest?.querySelector(".channel-thread-digest-heading")).toBeNull();
     expect(digest?.textContent).toContain("Beta");
     expect(digest?.textContent).toContain("A threaded answer");
     expect(container.querySelector(".channel-message-stream > .channel-message")?.textContent).toContain("A threaded answer");
-    act(() => digest?.click());
+    const roomTextarea = container.querySelector<HTMLTextAreaElement>(".channel-conversation-footer textarea");
+    act(() => digest?.querySelector<HTMLButtonElement>('[aria-label="提及 Beta"]')?.click());
+    expect(roomTextarea?.value).toBe("@Beta ");
+    expect(container.querySelector(".channel-thread-panel")).toBeNull();
+    act(() => digest?.querySelector<HTMLButtonElement>(".channel-thread-digest-open")?.click());
 
     const panel = container.querySelector<HTMLElement>(".channel-thread-panel");
     expect(panel?.textContent).toContain("A threaded answer");
@@ -782,7 +786,7 @@ describe("ChannelView", () => {
     act(() => root?.render(<ChannelView />));
     await settle();
 
-    act(() => container.querySelector<HTMLButtonElement>(".channel-thread-digest")?.click());
+    act(() => container.querySelector<HTMLButtonElement>(".channel-thread-digest-open")?.click());
     const panel = container.querySelector(".channel-thread-panel");
     const replyBubble = panel?.querySelector(".channel-thread-message.agent .channel-message-bubble.long-card");
     expect(replyBubble?.classList.contains("collapsed")).toBe(true);

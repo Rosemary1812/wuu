@@ -766,6 +766,7 @@
 }
 
 .channel-thread-digest {
+  position: relative;
   width: 100%;
   min-width: 0;
   display: grid;
@@ -780,17 +781,34 @@
   text-align: left;
 }
 
-.channel-thread-digest:hover,
-.channel-thread-digest:focus-visible {
+.channel-thread-digest-open {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.channel-thread-digest-open:hover,
+.channel-thread-digest-open:focus-visible {
   background: transparent;
   color: var(--text-primary);
 }
 
 .channel-thread-digest-heading,
 .channel-thread-digest-row {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   display: flex;
   align-items: center;
+  pointer-events: none;
+}
+
+.channel-thread-digest-row .channel-author-mention {
+  pointer-events: auto;
 }
 
 .channel-thread-digest-heading {
@@ -823,7 +841,8 @@
   height: 100%;
 }
 
-.channel-thread-digest-row > strong {
+.channel-thread-digest-row > strong,
+.channel-thread-digest-row > .channel-author-mention {
   flex: 0 0 auto;
   font-size: 12px;
 }
