@@ -2204,6 +2204,13 @@
   min-width: 0;
 }
 
+/* Only one element may hold the auto margin: two auto margins split the free
+   space and strand the status widget in the middle. When the status is
+   present it absorbs the space, so the actions following it drop theirs. */
+.channel-room-header .channel-response-status + .channel-room-header-actions {
+  margin-left: 0;
+}
+
 .channel-room-header-actions {
   display: flex;
   align-items: center;
