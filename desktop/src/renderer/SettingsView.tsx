@@ -2530,12 +2530,9 @@ function SettingsUsagePage({
 
       <section className="settings-usage-chart" aria-labelledby="settings-usage-trend-title">
         <div className="settings-usage-chart-header">
-          <div>
-            <h2 id="settings-usage-trend-title" className="settings-usage-table-title">
-              {t("settings.usageTrend")}
-            </h2>
-            <p>{t("settings.usageTrendHint")}</p>
-          </div>
+          <h2 id="settings-usage-trend-title" className="settings-usage-table-title">
+            {t("settings.usageTrend")}
+          </h2>
           <span>{t("settings.last30Days")}</span>
         </div>
         <div className="settings-usage-trend" role="list" aria-label={t("settings.usageTrend")}>
@@ -2611,12 +2608,9 @@ function SettingsUsagePage({
 
       <section className="settings-skill-usage" aria-labelledby="settings-skill-usage-title">
         <div className="settings-skill-usage-header">
-          <div>
-            <h2 id="settings-skill-usage-title" className="settings-usage-table-title">
-              {t("settings.skillUsage")}
-            </h2>
-            <p className="settings-skill-usage-subtitle">{t("settings.skillUsageHint")}</p>
-          </div>
+          <h2 id="settings-skill-usage-title" className="settings-usage-table-title">
+            {t("settings.skillUsage")}
+          </h2>
           <span className="settings-skill-usage-count">{t("settings.skillUsageCount")}</span>
         </div>
         {skillUsage.length ? (
@@ -2646,12 +2640,9 @@ function SettingsUsagePage({
       {modelChart.length > 0 ? (
         <section className="settings-model-chart" aria-labelledby="settings-model-chart-title">
           <div className="settings-usage-chart-header">
-            <div>
-              <h2 id="settings-model-chart-title" className="settings-usage-table-title">
-                {t("settings.modelDistribution")}
-              </h2>
-              <p>{t("settings.modelDistributionHint")}</p>
-            </div>
+            <h2 id="settings-model-chart-title" className="settings-usage-table-title">
+              {t("settings.modelDistribution")}
+            </h2>
             <span>{t("settings.tokenShare")}</span>
           </div>
           <div className="settings-model-chart-list">

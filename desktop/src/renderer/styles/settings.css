@@ -1189,12 +1189,6 @@
   margin-bottom: 18px;
 }
 
-.settings-usage-chart-header p {
-  margin: 4px 0 0;
-  color: var(--ink-muted);
-  font-size: var(--font-xs);
-}
-
 .settings-usage-chart-header > span {
   flex: none;
   color: var(--ink-faint);
@@ -1373,12 +1367,6 @@
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
-}
-
-.settings-skill-usage-subtitle {
-  margin: 5px 0 0;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
 }
 
 .settings-skill-usage-count {
