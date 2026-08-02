@@ -8,6 +8,31 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.13.1-nightly.3] - 2026-08-02
+
+### Added
+
+- Added collaboration rooms, global Agents, and room tasks to the unified
+  sidebar and session-tab workflow.
+- Added reset support for running named agents, including cross-process wake
+  recovery.
+
+### Changed
+
+- Simplified the channel canvas to a single-column conversation layout and
+  moved numeric room unread counts onto the sidebar session-status axis.
+- Unified provider media admission so text-only agents no longer receive image
+  inputs they cannot process.
+
+### Fixed
+
+- Kept rooms read while they remain visible, preventing a message received in
+  the active room from appearing unread after switching away.
+- Preserved clean Markdown reply summaries and allowed their author controls to
+  mention agents without accidentally opening the thread.
+- Kept channel-room tab context, composer alignment, response status, and agent
+  activity accurate across layout and app-server changes.
+
 ## [0.13.1-nightly.2] - 2026-08-01
 
 ### Added
