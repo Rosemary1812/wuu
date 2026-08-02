@@ -107,6 +107,25 @@ type SessionTab =
       kind: "automations";
       context: RuntimeContext;
       title: string;
+    }
+  | {
+      id: string;
+      kind: "channel-room";
+      context: RuntimeContext;
+      roomID: string;
+      title: string;
+    }
+  | {
+      id: string;
+      kind: "agents";
+      context: RuntimeContext;
+      title: string;
+    }
+  | {
+      id: string;
+      kind: "tasks";
+      context: RuntimeContext;
+      title: string;
     };
 
 type AppState = {
@@ -1808,6 +1827,42 @@ function createAutomationsSessionTab(context: RuntimeContext): SessionTab {
   };
 }
 
+function createChannelRoomSessionTab(
+  roomID: string,
+  title: string,
+  context: RuntimeContext,
+): SessionTab {
+  return {
+    id: channelRoomSessionTabID(roomID),
+    kind: "channel-room",
+    context,
+    roomID,
+    title,
+  };
+}
+
+function createAgentsSessionTab(context: RuntimeContext): SessionTab {
+  return {
+    id: "agents",
+    kind: "agents",
+    context,
+    title: "agents",
+  };
+}
+
+function createTasksSessionTab(context: RuntimeContext): SessionTab {
+  return {
+    id: "tasks",
+    kind: "tasks",
+    context,
+    title: "tasks",
+  };
+}
+
+function channelRoomSessionTabID(roomID: string): string {
+  return `channel-room:${roomID}`;
+}
+
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
 }
@@ -2078,7 +2133,7 @@ function sessionTabDraftForThreadID(
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
-  if (tab.kind === "skills" || tab.kind === "automations") {
+  if (tab.kind !== "draft" && tab.kind !== "thread") {
     return emptyComposerDraft();
   }
   return {
@@ -2131,6 +2186,15 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   }
   if (tab.kind === "automations") {
     return t("automations.title");
+  }
+  if (tab.kind === "agents") {
+    return t("channels.agents");
+  }
+  if (tab.kind === "tasks") {
+    return t("channels.tasks");
+  }
+  if (tab.kind === "channel-room") {
+    return tab.title || t("channels.rooms");
   }
   return threadDisplayTitle(
     threadForTab(state, tab.threadID),
@@ -3135,9 +3199,13 @@ export {
   conversationPaneThreadsByID,
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
+  channelRoomSessionTabID,
+  createAgentsSessionTab,
   createAutomationsSessionTab,
+  createChannelRoomSessionTab,
   createDraftSessionTab,
   createSkillsSessionTab,
+  createTasksSessionTab,
   createThreadSessionTab,
   draftSessionTabForContext,
   draftSessionTabIDForContext,

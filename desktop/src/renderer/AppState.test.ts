@@ -20,8 +20,12 @@ import {
   conversationPaneThreadsByID,
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
+  channelRoomSessionTabID,
+  createAgentsSessionTab,
+  createChannelRoomSessionTab,
   createDraftSessionTab,
   createSkillsSessionTab,
+  createTasksSessionTab,
   createThreadSessionTab,
   sessionTabLabel,
   handleStreamingNotification,
@@ -379,7 +383,7 @@ function sessionTabPrompt(
   tabID: string,
 ): string | undefined {
   const tab = tabs.find((candidate) => candidate.id === tabID);
-  if (!tab || tab.kind === "skills" || tab.kind === "automations") {
+  if (!tab || tab.kind !== "draft" && tab.kind !== "thread") {
     return undefined;
   }
   return tab.prompt;
@@ -3116,6 +3120,22 @@ describe("sessionTabLabel (draft tabs read as their workspace)", () => {
       cwd: "/repo/orphaned-dir",
     });
     expect(sessionTabLabel(tab, state)).toBe("orphaned-dir");
+  });
+
+  it("gives each channel room a stable tab identity and its room title", () => {
+    const context: RuntimeContext = { kind: "no_project", cwd: "/scratch" };
+    const tab = createChannelRoomSessionTab("room-1", "Design review", context);
+
+    expect(tab.id).toBe(channelRoomSessionTabID("room-1"));
+    expect(tab.id).toBe("channel-room:room-1");
+    expect(sessionTabLabel(tab, state)).toBe("Design review");
+  });
+
+  it("labels the singleton Agents and Tasks tabs", () => {
+    const context: RuntimeContext = { kind: "no_project", cwd: "/scratch" };
+
+    expect(sessionTabLabel(createAgentsSessionTab(context), state)).toBe("Agents");
+    expect(sessionTabLabel(createTasksSessionTab(context), state)).toBe("任务");
   });
 });
 

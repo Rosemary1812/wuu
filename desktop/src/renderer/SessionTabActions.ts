@@ -86,7 +86,31 @@ export function createSessionTabActions(
       }
       return;
     }
-    
+
+    if (
+      tab.kind === "channel-room" ||
+      tab.kind === "agents" ||
+      tab.kind === "tasks"
+    ) {
+      const outgoingDraft = deps.getPrimaryComposerDraft();
+      deps.cancelViewSwitch();
+      deps.resetSplitComposerDrafts();
+      deps.setAppState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        return {
+          ...withDraft,
+          secondaryThread: undefined,
+          activePane: "primary",
+          sessionTabs: ensureSessionTab(withDraft.sessionTabs, tab),
+          activeSessionTabID: tab.id,
+          allowThreadAutoActivation: false,
+          running: false,
+          status: "ready",
+        };
+      });
+      return;
+    }
+
     const sameContext = sameRuntimeContext(
       tab.context,
       currentState.activeContext,
@@ -299,6 +323,26 @@ export function createSessionTabActions(
       activeSessionTabID: fallbackTab.id,
     }));
     
+    if (
+      fallbackTab.kind === "channel-room" ||
+      fallbackTab.kind === "agents" ||
+      fallbackTab.kind === "tasks"
+    ) {
+      deps.cancelViewSwitch();
+      deps.resetSplitComposerDrafts();
+      deps.setAppState((current) => ({
+        ...current,
+        sessionTabs: current.sessionTabs,
+        activeSessionTabID: fallbackTab.id,
+        secondaryThread: undefined,
+        activePane: "primary",
+        allowThreadAutoActivation: false,
+        running: false,
+        status: "ready",
+      }));
+      return;
+    }
+
     if (fallbackTab.kind === "skills" || fallbackTab.kind === "automations") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
