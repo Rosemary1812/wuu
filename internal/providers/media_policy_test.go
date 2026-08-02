@@ -263,6 +263,11 @@ func TestReliableStreamStripsMediaOnceOnExplicitRejection(t *testing.T) {
 	if resolved.Image != MediaInputUnsupported {
 		t.Fatalf("probe result not cached: %+v", resolved)
 	}
+	// The rejected request carried no file, so the model's PDF support must
+	// stay unprobed — a rejection proves nothing about absent media kinds.
+	if resolved.File != MediaInputAuto {
+		t.Fatalf("absent file kind must stay auto, got %+v", resolved)
+	}
 }
 
 func TestReliableStreamDoesNotStripOnNonWhitelistedFailure(t *testing.T) {

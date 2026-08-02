@@ -219,7 +219,18 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 					r.send(ctx, out, StreamEvent{Type: EventError, Error: journalErr})
 					return
 				}
-				RecordMediaInputUnsupported(req.Provider, req.Model, req.MediaInput)
+				// Cache evidence only for the media kinds this request
+				// actually carried: the rejection proves nothing about
+				// absent kinds (e.g. an image rejection must not pin the
+				// model's PDF support to unsupported).
+				probed := MediaInputPolicy{}
+				if hasImages && NormalizeMediaInputState(req.MediaInput.Image) == MediaInputAuto {
+					probed.Image = MediaInputAuto
+				}
+				if hasFiles && NormalizeMediaInputState(req.MediaInput.File) == MediaInputAuto {
+					probed.File = MediaInputAuto
+				}
+				RecordMediaInputUnsupported(req.Provider, req.Model, probed)
 				req.MediaInput = req.MediaInput.DowngradeUnsupported()
 				req.Messages = ProjectMediaForPolicy(req.Messages, req.MediaInput)
 				continue

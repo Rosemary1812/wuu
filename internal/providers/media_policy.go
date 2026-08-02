@@ -168,13 +168,12 @@ func ResolveMediaInputPolicy(provider, model string, policy MediaInputPolicy) Me
 }
 
 // RecordMediaInputUnsupported caches unsupported evidence for the media
-// kinds that were still auto on this request. Called after the provider
-// explicitly rejected media and the strip-and-retry succeeded or was armed.
+// kinds the caller marks auto in the probe argument. The argument must name
+// exactly the kinds the rejected request actually carried: a rejection
+// tells us nothing about media kinds that were not present, so they must
+// stay uncached. Only kinds set to MediaInputAuto in policy are recorded;
+// zero values mean "not part of this probe".
 func RecordMediaInputUnsupported(provider, model string, policy MediaInputPolicy) {
-	// The caller's policy uses zero values for unprobed kinds; normalize
-	// first so they register as auto for the raw-constant comparison below.
-	policy.Image = NormalizeMediaInputState(policy.Image)
-	policy.File = NormalizeMediaInputState(policy.File)
 	recordProbedMediaCapability(provider, model, policy, MediaInputUnsupported)
 }
 
