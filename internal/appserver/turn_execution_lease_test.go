@@ -144,6 +144,56 @@ func TestServerThreadExecutionLeaseReleasesBeforeTerminalNotification(t *testing
 	}
 }
 
+func TestServerAppliesCrossProcessThreadExecutionReset(t *testing.T) {
+	client := newBlockingStreamClient("must not complete")
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() {
+		select {
+		case <-client.release:
+		default:
+			close(client.release)
+		}
+	})
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+	start := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"block until reset"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(start)); err != nil {
+		t.Fatalf("start turn: %v", err)
+	}
+	select {
+	case <-client.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider did not start")
+	}
+
+	requested, err := session.RequestThreadExecutionReset(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("request reset: %v", err)
+	}
+	if !requested {
+		t.Fatal("running turn was reported idle")
+	}
+	waitForMethod(t, out, NotificationTurnError)
+
+	lease, acquired, err := session.TryAcquireThreadExecutionLease(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("acquire after reset: %v", err)
+	}
+	if !acquired || lease == nil {
+		t.Fatal("reset did not release thread execution ownership")
+	}
+	if err := lease.Release(); err != nil {
+		t.Fatalf("release verification lease: %v", err)
+	}
+}
+
 func TestServerThreadExecutionLeaseGuardsAllTurnEntrypoints(t *testing.T) {
 	client := &fakeClient{response: providers.ChatResponse{Content: "must not run"}}
 	rt := newTestRuntime(t, client)

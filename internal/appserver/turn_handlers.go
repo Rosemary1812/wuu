@@ -1549,6 +1549,8 @@ func frozenWorkerTreeBlock(pending []agentCompletionTurn, frozen []agentcontrol.
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
+	stopResetWatch := s.watchThreadExecutionReset(ctx, th, turnID)
+	defer stopResetWatch()
 	requestContext := cloneContextSegments(turnRuntime.RequestContext)
 	requestContext = append(requestContext, activeDocumentRequestContext(turnRuntime.ActiveDocument)...)
 	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, requestContext)
