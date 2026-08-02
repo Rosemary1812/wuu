@@ -308,6 +308,27 @@ describe("ChannelView", () => {
     expect(api.markChannelRoomRead).toHaveBeenCalledWith({ room_id: "room-2" });
   });
 
+  it("keeps one view mounted and restores cached messages synchronously across rooms", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+
+    act(() => root?.render(<ChannelView selectedRoomID="room-1" />));
+    await settle();
+    const view = container.querySelector(".channel-view");
+    expect(container.textContent).toContain("Hello from Alpha");
+
+    act(() => root?.render(<ChannelView selectedRoomID="room-2" />));
+    await settle();
+    expect(container.querySelector(".channel-view")).toBe(view);
+    expect(container.textContent).not.toContain("Hello from Alpha");
+
+    act(() => root?.render(<ChannelView selectedRoomID="room-1" />));
+    expect(container.querySelector(".channel-view")).toBe(view);
+    expect(container.textContent).toContain("Hello from Alpha");
+    await settle();
+  });
+
   it("marks newly polled messages read while their room stays visible", async () => {
     vi.useFakeTimers();
     try {
@@ -558,6 +579,43 @@ describe("ChannelView", () => {
       images: [],
       files: [],
     });
+  });
+
+  it("hydrates the next room draft without publishing the previous room draft", async () => {
+    const api = createApi();
+    const onComposerDraftChange = vi.fn();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        <ChannelView
+          selectedRoomID="room-1"
+          composerDraft={{ prompt: "room one draft", images: [], files: [] }}
+          onComposerDraftChange={onComposerDraftChange}
+        />,
+      );
+    });
+    await settle();
+    onComposerDraftChange.mockClear();
+
+    act(() => {
+      root?.render(
+        <ChannelView
+          selectedRoomID="room-2"
+          composerDraft={{ prompt: "room two draft", images: [], files: [] }}
+          onComposerDraftChange={onComposerDraftChange}
+        />,
+      );
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>(".channel-composer textarea")?.value)
+      .toBe("room two draft");
+    expect(onComposerDraftChange).not.toHaveBeenCalledWith({
+      prompt: "room one draft",
+      images: [],
+      files: [],
+    });
+    await settle();
   });
 
   it("treats slash-prefixed channel messages as plain text without opening commands", async () => {

@@ -4290,7 +4290,6 @@ export function App(): JSX.Element {
               </div>
             </header>
             <ChannelView
-              key={currentSessionTab?.id}
               initialized={sessionRuntime ?? state.initialized}
               section={channelSection ?? "rooms"}
               selectedRoomID={selectedChannelRoomID}

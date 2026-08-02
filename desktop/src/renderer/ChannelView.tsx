@@ -327,7 +327,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     setInternalSelectedRoomID(next);
     if (next !== base) onSelectRoom?.(next);
   }, [controlledRoomID, internalSelectedRoomID, onSelectRoom]);
-  const [messages, setMessages] = useState<ChannelMessage[]>([]);
+  const [messagesByRoomID, setMessagesByRoomID] = useState<Record<string, ChannelMessage[]>>({});
+  const [loadedRoomIDs, setLoadedRoomIDs] = useState<Set<string>>(() => new Set());
+  const messages = messagesByRoomID[selectedRoomID] ?? [];
   const [trackedTasks, setTrackedTasks] = useState<ChannelMessage[]>([]);
   const [setupPanel, setSetupPanel] = useState<SetupPanel>(null);
   const [splitWidth, setSplitWidth] = useState(initialChannelSplitWidth);
@@ -353,8 +355,24 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [threadComposerImages, setThreadComposerImages] = useState<ComposerImage[]>([]);
   const [threadComposerFiles, setThreadComposerFiles] = useState<ComposerFile[]>([]);
 
+  const composerRoomIDRef = useRef(selectedRoomID);
+  const skipComposerPublishRef = useRef(false);
+  useLayoutEffect(() => {
+    if (composerRoomIDRef.current === selectedRoomID) return;
+    composerRoomIDRef.current = selectedRoomID;
+    skipComposerPublishRef.current = true;
+    setBody(composerDraft?.prompt ?? "");
+    setComposerImages(composerDraft?.images ?? []);
+    setComposerFiles(composerDraft?.files ?? []);
+    setActiveThreadRootID("");
+  }, [composerDraft, selectedRoomID]);
+
   useEffect(() => {
     if (!selectedRoomID) return;
+    if (skipComposerPublishRef.current) {
+      skipComposerPublishRef.current = false;
+      return;
+    }
     onComposerDraftChange?.({
       prompt: body,
       images: composerImages,
@@ -386,7 +404,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const roomAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const roomAvatarTargetRef = useRef<string>("");
   const savedRoomNameRef = useRef("");
-  const knownMessageIDsRef = useRef<Set<string>>(new Set());
+  const messagesByRoomIDRef = useRef<Map<string, ChannelMessage[]>>(new Map());
   const markedMessageSeqByRoomRef = useRef<Map<string, number>>(new Map());
   const visibleRoomIDRef = useRef("");
   visibleRoomIDRef.current = section === "rooms" ? selectedRoomID : "";
@@ -662,14 +680,18 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   }, [onRoomRead]);
 
   const refreshMessages = useCallback(async (roomID: string): Promise<void> => {
-    if (!window.wuu || !roomID) {
-      setMessages([]);
-      return;
-    }
+    if (!window.wuu || !roomID) return;
     const result = await window.wuu.listChannelMessages({ room_id: roomID, limit: 500 });
-    if (visibleRoomIDRef.current !== roomID) return;
     const nextMessages = result.messages ?? [];
-    const known = knownMessageIDsRef.current;
+    const previousMessages = messagesByRoomIDRef.current.get(roomID) ?? [];
+    messagesByRoomIDRef.current.set(roomID, nextMessages);
+    setMessagesByRoomID((current) => ({ ...current, [roomID]: nextMessages }));
+    setLoadedRoomIDs((current) => {
+      if (current.has(roomID)) return current;
+      return new Set(current).add(roomID);
+    });
+    if (visibleRoomIDRef.current !== roomID) return;
+    const known = new Set(previousMessages.map((message) => message.id));
     if (known.size > 0) {
       for (const message of nextMessages) {
         if (message.author_type !== "agent" || known.has(message.id)) continue;
@@ -688,8 +710,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         sendingTimersRef.current.set(agentID, timer);
       }
     }
-    knownMessageIDsRef.current = new Set(nextMessages.map((message) => message.id));
-    setMessages(nextMessages);
     const latestMessageSeq = nextMessages.reduce(
       (latest, message) => Math.max(latest, message.seq),
       0,
@@ -771,12 +791,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   }, [section]);
 
   useEffect(() => {
-    if (section !== "rooms" || !selectedRoomID) {
-      setMessages([]);
-      return;
-    }
-    knownMessageIDsRef.current = new Set();
-    setMessages([]);
+    if (section !== "rooms" || !selectedRoomID) return;
     let active = true;
     const refresh = (): void => {
       void refreshMessages(selectedRoomID).catch((reason: unknown) => {
@@ -1148,8 +1163,18 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       const roomID = editingRoomID;
       await window.wuu.deleteChannelRoom({ room_id: roomID });
       closeRoomPanel();
+      messagesByRoomIDRef.current.delete(roomID);
+      setMessagesByRoomID((current) => {
+        const next = { ...current };
+        delete next[roomID];
+        return next;
+      });
+      setLoadedRoomIDs((current) => {
+        const next = new Set(current);
+        next.delete(roomID);
+        return next;
+      });
       if (selectedRoomID === roomID) {
-        setMessages([]);
         setActiveThreadRootID("");
       }
       await refreshRoomsAndAgents();
@@ -1319,7 +1344,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
               </article>
             );
           })}
-          {!loading && selectedRoom && rootMessages.length === 0 ? (
+          {!loading && loadedRoomIDs.has(selectedRoomID) && selectedRoom && rootMessages.length === 0 ? (
             <div className="channel-stream-empty">{t("channels.empty")}</div>
           ) : null}
         </div>
