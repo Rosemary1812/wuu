@@ -2041,41 +2041,9 @@
   --menu-enter-y: -4px;
 }
 
-.slash-command-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 35;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  width: 100%;
-  max-height: min(
-    480px,
-    var(--slash-command-available-height, calc(100dvh - 190px))
-  );
-  overflow: hidden;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: var(--radius-lg);
-  background: var(--composer-slash-menu-bg);
-  box-shadow: var(--composer-slash-menu-shadow);
-  padding: 5px;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  transform-origin: bottom center;
-  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
-}
-
-.hero-composer-wrap .slash-command-menu {
-  top: auto;
-  bottom: calc(100% + 10px);
-  transform-origin: bottom center;
-}
-
 .slash-command-list {
   display: grid;
   gap: 1px;
-  overflow-y: auto;
-  padding-right: 2px;
 }
 
 .slash-command-item {

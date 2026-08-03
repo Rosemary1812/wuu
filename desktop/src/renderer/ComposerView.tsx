@@ -546,47 +546,6 @@ export function Composer({
     list.scrollTop = list.scrollHeight;
   }, [activeCollapsedPromptBlocks.length]);
 
-  useLayoutEffect(() => {
-    const shell = composerShellRef.current;
-    if (!shell || !slashMenuOpen) {
-      shell?.style.removeProperty("--slash-command-available-height");
-      return;
-    }
-
-    const updateAvailableHeight = (): void => {
-      const menuGap = variant === "hero" ? 10 : 8;
-      const titlebar =
-        shell.closest(".conversation-pane")?.querySelector<HTMLElement>(":scope > .titlebar") ??
-        document.querySelector<HTMLElement>(".titlebar");
-      const menuTopGutter = 8;
-      const safeTop = (titlebar?.getBoundingClientRect().bottom ?? 0) + menuTopGutter;
-      const availableHeight = Math.max(
-        0,
-        Math.floor(shell.getBoundingClientRect().top - menuGap - safeTop)
-      );
-      shell.style.setProperty("--slash-command-available-height", `${availableHeight}px`);
-    };
-
-    updateAvailableHeight();
-    window.addEventListener("resize", updateAvailableHeight);
-    const resizeObserver = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(updateAvailableHeight);
-    resizeObserver?.observe(shell);
-    const titlebar =
-      shell.closest(".conversation-pane")?.querySelector<HTMLElement>(":scope > .titlebar") ??
-      document.querySelector<HTMLElement>(".titlebar");
-    if (titlebar) {
-      resizeObserver?.observe(titlebar);
-    }
-
-    return () => {
-      window.removeEventListener("resize", updateAvailableHeight);
-      resizeObserver?.disconnect();
-      shell.style.removeProperty("--slash-command-available-height");
-    };
-  }, [slashMenuOpen, variant]);
-
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
@@ -934,9 +893,22 @@ export function Composer({
       {topAccessory ? <div className="composer-top-accessory">{topAccessory}</div> : null}
       <div className="composer-shell" ref={composerShellRef}>
         {slashMenuOpen ? (
-          <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label={t("composer.slashCommands")}>
-            {visibleSlashCommands.length > 0 ? (
-              <>
+          <FloatingMenuPortal
+            anchorRef={composerShellRef}
+            owner="composer-slash"
+            placement="above"
+            align="left"
+            offset={variant === "hero" ? 10 : 8}
+            width={320}
+            matchAnchorWidth
+          >
+            <div
+              className="composer-context-menu composer-plus-menu slash-command-menu"
+              id={slashMenuID}
+              role="listbox"
+              aria-label={t("composer.slashCommands")}
+            >
+              {visibleSlashCommands.length > 0 ? (
                 <div className="slash-command-list scrollbar-hidden">
                   {visibleSlashCommands.map((command, index) => {
                     const selected = index === selectedSlashIndex;
@@ -983,11 +955,11 @@ export function Composer({
                     );
                   })}
                 </div>
-              </>
-            ) : (
-              <div className="slash-command-empty">{t("composer.noMatchingCommand", { query: slashQuery })}</div>
-            )}
-          </div>
+              ) : (
+                <div className="slash-command-empty">{t("composer.noMatchingCommand", { query: slashQuery })}</div>
+              )}
+            </div>
+          </FloatingMenuPortal>
         ) : null}
         <ComposerGoalStrip
           summary={goalSummary ?? null}

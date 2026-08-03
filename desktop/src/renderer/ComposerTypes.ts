@@ -18,6 +18,7 @@ export type FloatingMenuOwner =
   | "composer-focus"
   | "composer-goal"
   | "composer-plus"
+  | "composer-slash"
   | "codex-runtime"
   | "composer-query-history"
   | "minute-clock"

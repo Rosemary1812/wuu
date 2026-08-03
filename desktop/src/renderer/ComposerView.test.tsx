@@ -59,7 +59,7 @@ afterEach(() => {
   container.remove();
   document.body
     .querySelectorAll(
-      "[data-floating-menu-owner=\"composer-access\"], [data-floating-menu-owner=\"composer-focus\"], [data-floating-menu-owner=\"composer-plus\"], [data-floating-menu-owner=\"composer-token-gauge\"]",
+      "[data-floating-menu-owner=\"composer-access\"], [data-floating-menu-owner=\"composer-focus\"], [data-floating-menu-owner=\"composer-plus\"], [data-floating-menu-owner=\"composer-slash\"], [data-floating-menu-owner=\"composer-token-gauge\"]",
     )
     .forEach((element) => element.remove());
 });
@@ -1016,7 +1016,7 @@ describe("Composer send control", () => {
     expect(onToggleUltra).toHaveBeenCalledWith(true);
   });
 
-  it("keeps the slash command menu outside the clipped visual frame", () => {
+  it("renders the slash command menu through the same floating panel as the plus menu", () => {
     renderComposer({
       variant: "dock",
       prompt: "/",
@@ -1024,13 +1024,19 @@ describe("Composer send control", () => {
 
     const shell = container.querySelector(".composer-shell");
     const frame = container.querySelector(".composer-frame");
-    const slashMenu = container.querySelector(".slash-command-menu");
+    const slashLayer = document.body.querySelector<HTMLElement>(
+      '[data-floating-menu-owner="composer-slash"]',
+    );
+    const slashMenu = slashLayer?.querySelector(".slash-command-menu");
 
     expect(shell).not.toBeNull();
     expect(frame).not.toBeNull();
     expect(slashMenu).not.toBeNull();
-    expect(shell?.contains(slashMenu)).toBe(true);
-    expect(frame?.contains(slashMenu)).toBe(false);
+    expect(shell?.contains(slashMenu ?? null)).toBe(false);
+    expect(frame?.contains(slashMenu ?? null)).toBe(false);
+    expect(slashLayer?.classList.contains("floating-menu-layer")).toBe(true);
+    expect(slashMenu?.classList.contains("composer-context-menu")).toBe(true);
+    expect(slashMenu?.classList.contains("composer-plus-menu")).toBe(true);
   });
 
   it("places the caret after a command inserted from the plus menu", async () => {
@@ -1053,52 +1059,21 @@ describe("Composer send control", () => {
     expect(textarea?.selectionEnd).toBe(8);
   });
 
-  it("resizes the slash command menu with its composer and available viewport height", () => {
-    let shellTop = 320;
-    const titlebar = document.createElement("header");
-    titlebar.className = "titlebar";
-    document.body.appendChild(titlebar);
-    const rectSpy = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function (this: HTMLElement) {
-        const isShell = this.classList.contains("composer-shell");
-        const top = isShell ? shellTop : 0;
-        const bottom = this.classList.contains("titlebar") ? 64 : top;
-        return {
-          bottom,
-          height: 0,
-          left: 0,
-          right: 0,
-          top,
-          width: 0,
-          x: 0,
-          y: top,
-          toJSON: () => ({}),
-        };
-      });
+  it("shares the plus menu width and available-height contract", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "/",
+    });
 
-    try {
-      renderComposer({
-        variant: "dock",
-        prompt: "/",
-      });
-
-      const shell = container.querySelector<HTMLElement>(".composer-shell");
-      expect(shell?.style.getPropertyValue("--slash-command-available-height")).toBe("240px");
-
-      shellTop = 220;
-      act(() => window.dispatchEvent(new Event("resize")));
-      expect(shell?.style.getPropertyValue("--slash-command-available-height")).toBe("140px");
-
-      shellTop = 70;
-      act(() => window.dispatchEvent(new Event("resize")));
-      expect(shell?.style.getPropertyValue("--slash-command-available-height")).toBe("0px");
-      expect(composerCSS).toMatch(/\.slash-command-menu\s*{[^}]*width:\s*100%;/s);
-      expect(composerCSS).toContain("var(--slash-command-available-height");
-    } finally {
-      rectSpy.mockRestore();
-      titlebar.remove();
-    }
+    const slashLayer = document.body.querySelector<HTMLElement>(
+      '[data-floating-menu-owner="composer-slash"]',
+    );
+    expect(slashLayer).not.toBeNull();
+    expect(composerCSS).toMatch(/\.composer-plus-menu\s*{[^}]*width:\s*100%;/s);
+    expect(composerCSS).toMatch(
+      /\.composer-plus-menu\s*{[^}]*max-height:\s*min\([^}]*var\(--floating-menu-available-height/s,
+    );
+    expect(composerCSS).not.toContain("--slash-command-available-height");
   });
 
   it("keeps the slash command title visible at every composer width", () => {
@@ -1425,7 +1400,7 @@ describe("Composer send control", () => {
       await Promise.resolve();
     });
 
-    const skillButton = container.querySelector<HTMLButtonElement>(
+    const skillButton = document.body.querySelector<HTMLButtonElement>(
       '.slash-command-item[data-command-name="slides"]',
     );
     expect(skillButton).not.toBeUndefined();
@@ -1456,7 +1431,7 @@ describe("Composer send control", () => {
       await Promise.resolve();
     });
 
-    const skillRow = container.querySelector<HTMLButtonElement>(
+    const skillRow = document.body.querySelector<HTMLButtonElement>(
       '.slash-command-item[data-command-name="slides"]',
     );
 
@@ -1475,7 +1450,7 @@ describe("Composer send control", () => {
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
     });
 
-    const reviewRow = container.querySelector<HTMLButtonElement>(
+    const reviewRow = document.body.querySelector<HTMLButtonElement>(
       '.slash-command-item[data-command-name="review"]',
     );
 
@@ -1597,7 +1572,7 @@ describe("Composer send control", () => {
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
     });
 
-    const side = container.querySelector<HTMLButtonElement>(
+    const side = document.body.querySelector<HTMLButtonElement>(
       '.slash-command-item[data-command-name="side"]',
     );
     expect(side?.disabled).toBe(true);

@@ -81,7 +81,9 @@ describe("SideThreadComposer", () => {
     renderComposer({ draft: "/reset", onReset, onSend });
 
     const items = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-floating-menu-owner="composer-slash"] .slash-command-item',
+      ),
     );
     expect(items.map((item) => item.textContent)).toHaveLength(1);
     expect(items[0]?.textContent).toContain("重置侧聊");
