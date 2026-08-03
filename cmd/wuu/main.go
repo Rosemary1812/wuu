@@ -17,6 +17,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/authstorage"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
 	"github.com/blueberrycongee/wuu/internal/execution"
@@ -1249,6 +1250,14 @@ func runDebugAppServerSend(args []string) error {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("method is required"))
 	}
 	method := strings.TrimSpace(remaining[0])
+	if method == appserver.MethodChannelMessageSend {
+		if agentID := strings.TrimSpace(os.Getenv(channels.NamedAgentIDEnv)); agentID != "" {
+			return wuuexec.WithExitCode(
+				wuuexec.ExitInvalidInput,
+				fmt.Errorf("%s is human-only and cannot send as named agent %q; use chat_send so the message keeps the agent identity", method, agentID),
+			)
+		}
+	}
 	params, err := parseDebugJSONParams(remaining[1:])
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)

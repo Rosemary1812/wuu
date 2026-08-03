@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -466,6 +467,12 @@ func runDebugChannelInspect(args []string) error {
 }
 
 func runDebugChannelSend(args []string) error {
+	if agentID := strings.TrimSpace(os.Getenv(channels.NamedAgentIDEnv)); agentID != "" {
+		return wuuexec.WithExitCode(
+			wuuexec.ExitInvalidInput,
+			fmt.Errorf("debug channel send is human-only and cannot send as named agent %q; use chat_send so the message keeps the agent identity", agentID),
+		)
+	}
 	fs := flag.NewFlagSet("debug channel send", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cfg := addDebugAppServerFlags(fs)

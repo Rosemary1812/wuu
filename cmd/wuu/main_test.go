@@ -20,6 +20,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/authstorage"
+	"github.com/blueberrycongee/wuu/internal/channels"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
@@ -2279,6 +2280,36 @@ func TestRunDebugChannelSendWaitsForAgentReply(t *testing.T) {
 	}
 	if !client.shutdown {
 		t.Fatal("debug channel client should be shut down")
+	}
+}
+
+func TestRunDebugChannelSendRejectsNamedAgentIdentity(t *testing.T) {
+	t.Setenv(channels.NamedAgentIDEnv, "agent-andy")
+	client := &fakeDebugAppServerClient{}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	err := runDebugChannelSend([]string{"--room", "room-1", "completed"})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput || !strings.Contains(err.Error(), "use chat_send") {
+		t.Fatalf("runDebugChannelSend() error = %v", err)
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("human channel RPC was called from named-agent context: %+v", client.calls)
+	}
+}
+
+func TestRunDebugAppServerSendRejectsNamedAgentHumanMessage(t *testing.T) {
+	t.Setenv(channels.NamedAgentIDEnv, "agent-andy")
+	client := &fakeDebugAppServerClient{}
+	restore := installDebugAppServerClientOverride(t, client)
+	defer restore()
+
+	err := runDebugAppServerSend([]string{appserver.MethodChannelMessageSend, `{"room_id":"room-1","body":"completed"}`})
+	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput || !strings.Contains(err.Error(), "use chat_send") {
+		t.Fatalf("runDebugAppServerSend() error = %v", err)
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("human channel RPC was called from named-agent context: %+v", client.calls)
 	}
 }
 

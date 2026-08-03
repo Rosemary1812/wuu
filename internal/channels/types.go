@@ -8,6 +8,10 @@ const (
 	DraftExpiry     = 24 * time.Hour
 	MinReminderDur  = time.Minute
 	ThreadStreakCap = 6
+	// NamedAgentIDEnv marks subprocesses launched by a named-agent tool
+	// runtime. Human-only CLI entrypoints use it to avoid attributing an
+	// agent-authored channel message to the local user.
+	NamedAgentIDEnv = "WUU_NAMED_AGENT_ID"
 )
 
 type RoomKind string
