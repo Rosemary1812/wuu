@@ -1526,10 +1526,12 @@
   background: var(--stream-cursor-color);
 }
 
-/* Fence-final messages carry no inline cursor slot; the sibling cursor
- * keeps the settle-stable DOM presence at zero flow height so no blank
- * paragraph survives under the card after the fade. */
+/* Block-final messages carry no inline cursor slot (for example a closed
+ * fence or prose ending in blank lines). The sibling cursor keeps the
+ * settle-stable DOM presence at zero flow height so no blank paragraph
+ * survives after the content. */
 .stream-cursor-block-tail {
+  position: absolute;
   display: block;
   width: 0;
   height: 0;

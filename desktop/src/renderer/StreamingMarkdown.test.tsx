@@ -102,7 +102,7 @@ function unmount(): void {
 
 afterEach(() => {
   unmount();
-  for (const itemID of ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10"]) {
+  for (const itemID of ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "s12", "s13"]) {
     streamTextStore.clearItem("turn", itemID);
   }
 });
@@ -177,6 +177,26 @@ describe("StreamingMarkdown", () => {
     expect(surface.querySelector(".rich-paragraph")).toBeNull();
     const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
     expect(cursor?.classList.contains("stream-cursor-block-tail")).toBe(true);
+  });
+
+  it("leaves no trailing cursor paragraph when settled prose ends in blank lines", () => {
+    const key = streamTextKey("turn", "s13", "text");
+    const text = "好的，当前在 `main` 分支。我现在启动 dev 环境。\n\n";
+    streamTextStore.seed(key, text);
+    mount({ streamKey: key, initialText: text, isLive: false, phase: "commentary" });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    const paragraphs = surface.querySelectorAll(".rich-paragraph");
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0].textContent).toBe("好的，当前在 main 分支。我现在启动 dev 环境。");
+
+    const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
+    expect(cursor?.classList.contains("stream-cursor-block-tail")).toBe(true);
+    expect(cursor?.parentElement).toBe(surface);
+    const blockTailRule = turnsCSS.match(
+      /\.stream-cursor-block-tail\s*\{([\s\S]*?)\n\}/,
+    )?.[1] ?? "";
+    expect(blockTailRule).toContain("position: absolute;");
   });
 
   it("renders the visible text as markdown during streaming", async () => {

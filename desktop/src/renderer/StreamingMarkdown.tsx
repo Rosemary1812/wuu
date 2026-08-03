@@ -261,14 +261,18 @@ export function StreamingMarkdown({
   // the raw `**` in the rendered message. The text renderer removes this
   // parsing-only boundary before it reaches the DOM.
   //
-  // Exception: a tail ending in a closed fence has no inline slot for the
-  // sentinel. Placed on its own line after the closer it parses as a
-  // trailing paragraph, which then survives settle as a permanent blank
-  // block between the card and the action bar. The cursor renders as a
-  // zero-flow-height sibling instead — same settle-stable DOM slot, no
-  // reserved vertical space.
-  const tailEndsWithFence = showCursor && endsWithFenceCloser(split.tail);
-  const tailText = showCursor && !tailEndsWithFence
+  // Some completed blocks have no inline tail for the sentinel. A closed
+  // fence is one example; prose ending in blank lines is another because the
+  // complete paragraph has already moved into `split.blocks`. Appending the
+  // sentinel to either tail parses it as a new empty paragraph, leaving a
+  // permanent blank row after a historical message. Keep the cursor as the
+  // existing zero-flow-height sibling in both cases — same settle-stable DOM
+  // slot, no reserved vertical space.
+  const cursorNeedsBlockTail = showCursor && (
+    endsWithFenceCloser(split.tail) ||
+    (split.blocks.length > 0 && split.tail.trim().length === 0)
+  );
+  const tailText = showCursor && !cursorNeedsBlockTail
     ? `${split.tail}${CURSOR_MARKDOWN_BOUNDARY}${CURSOR_SENTINEL}`
     : split.tail;
 
@@ -299,7 +303,7 @@ export function StreamingMarkdown({
         renderText={cursorTextRenderer}
         renderMermaid={renderMermaid}
       />
-      {tailEndsWithFence ? (
+      {cursorNeedsBlockTail ? (
         <span
           className={`${CURSOR_CLASS_NAME} ${CURSOR_BLOCK_TAIL_CLASS_NAME}`}
           aria-hidden="true"
