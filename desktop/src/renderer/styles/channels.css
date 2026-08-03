@@ -72,8 +72,14 @@
   --channel-directory-row-gap: 8px;
   --channel-avatar-size: 30px;
   --channel-message-column-gap: 10px;
-  --channel-content-max-width: 1040px;
-  --channel-horizontal-gutter: clamp(16px, 3vw, 40px);
+  /* Match the workspace message flow's 2px optical inset around its composer. */
+  --channel-content-max-width: calc(
+    var(--session-composer-width) - var(--conversation-flow-optical-inset) -
+      var(--conversation-flow-optical-inset)
+  );
+  --channel-horizontal-gutter: calc(
+    var(--session-outer-padding-inline) + var(--conversation-flow-optical-inset)
+  );
   --bg-primary: var(--paper);
   --bg-secondary: var(--surface-1);
   --surface-raised: var(--surface-2);
@@ -890,7 +896,24 @@
 
 .channel-composer {
   position: relative;
-  padding: 10px var(--channel-horizontal-gutter) 12px;
+  /* Match the workspace shell's available-width calculation and clearance. */
+  width: min(100%, var(--session-composer-width));
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 72px) 24px;
+}
+
+.channel-conversation-footer .channel-composer {
+  /* Leave the available width intact and let the shared .composer-stack apply
+     the session's responsive width formula. Constraining both layers would
+     subtract the session gutters twice when the room pane gets narrow. */
+  width: 100%;
+  padding: 0 0 24px;
+}
+
+.channel-composer .dock-composer-wrap {
+  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .channel-mention-menu {
@@ -1004,18 +1027,13 @@
 }
 
 .channel-composer .dock-composer-wrap {
-  width: min(100%, var(--channel-content-max-width));
+  width: 100%;
   margin: 0 auto;
   padding: 0;
 }
 
 .conversation-pane.environment-panel-reserved .channel-composer .dock-composer-wrap {
   padding-right: 0;
-}
-
-.channel-composer .dock-composer-wrap .composer-stack {
-  width: 100%;
-  transform: none;
 }
 
 .channel-thread-panel {
@@ -1110,10 +1128,6 @@
 
 .channel-thread-footer {
   background: var(--bg-primary);
-}
-
-.channel-thread-footer .channel-composer {
-  padding: 10px 12px 12px;
 }
 
 .channel-thread-footer .channel-mention-menu {

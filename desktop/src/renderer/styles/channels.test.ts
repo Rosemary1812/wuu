@@ -126,6 +126,7 @@ describe("channel message resizing", () => {
     const view = ruleFor(".channel-view");
     const stream = ruleFor(".channel-message-stream");
     const composer = ruleFor(".channel-composer");
+    const roomComposer = ruleFor(".channel-conversation-footer .channel-composer");
     const composerWrap = ruleFor(".channel-composer .dock-composer-wrap");
     const reservedComposerWrap = ruleFor(".conversation-pane.environment-panel-reserved .channel-composer .dock-composer-wrap");
     const message = ruleFor(".channel-message");
@@ -134,14 +135,17 @@ describe("channel message resizing", () => {
     const ownMessageContent = ruleFor(".channel-message.own .channel-message-content");
     const messageBubble = ruleFor(".channel-message-bubble");
 
-    expect(view).toMatch(/--channel-content-max-width:\s*1040px/);
-    expect(view).toMatch(/--channel-horizontal-gutter:\s*clamp\(16px, 3vw, 40px\)/);
+    expect(view).toMatch(/--channel-content-max-width:\s*calc\([\s\S]*var\(--session-composer-width\)[\s\S]*var\(--conversation-flow-optical-inset\)[\s\S]*var\(--conversation-flow-optical-inset\)/);
+    expect(view).toMatch(/--channel-horizontal-gutter:\s*calc\([\s\S]*var\(--session-outer-padding-inline\)[\s\S]*var\(--conversation-flow-optical-inset\)/);
     expect(view).toMatch(/--channel-avatar-size:\s*30px/);
     expect(view).toMatch(/--channel-message-column-gap:\s*10px/);
     expect(stream).toMatch(/padding:\s*12px var\(--channel-horizontal-gutter\)/);
     expect(stream).toMatch(/--channel-composer-height,[\s\S]*?--conversation-composer-min-height, 100px[\s\S]*?\+ 30px[\s\S]*?\+ 8px/);
-    expect(composer).toMatch(/padding:\s*10px var\(--channel-horizontal-gutter\) 12px/);
-    expect(composerWrap).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
+    expect(composer).toMatch(/padding:\s*0 clamp\(20px, 4vw, 72px\) 24px/);
+    expect(roomComposer).toMatch(/width:\s*100%/);
+    expect(roomComposer).toMatch(/padding:\s*0 0 24px/);
+    expect(channelsCss).not.toContain(".channel-conversation-footer .channel-composer .composer-stack");
+    expect(composerWrap).toMatch(/width:\s*100%/);
     expect(reservedComposerWrap).toMatch(/padding-right:\s*0/);
     expect(message).toMatch(/width:\s*min\(100%, var\(--channel-content-max-width\)\)/);
     expect(message).toMatch(/grid-template-columns:\s*var\(--channel-avatar-size\) minmax\(0, 1fr\)/);
@@ -175,10 +179,10 @@ describe("channel message resizing", () => {
 
   it("shares one outer axis between thread messages and their composer", () => {
     const messages = ruleFor(".channel-thread-messages");
-    const composer = ruleFor(".channel-thread-footer .channel-composer");
+    const composer = ruleFor(".channel-composer");
 
     expect(messages).toMatch(/padding:\s*14px 12px 12px/);
-    expect(composer).toMatch(/padding:\s*10px 12px 12px/);
+    expect(composer).toMatch(/padding:\s*0 clamp\(20px, 4vw, 72px\) 24px/);
   });
 
   it("keeps the room visible beside replies in narrow windows", () => {
