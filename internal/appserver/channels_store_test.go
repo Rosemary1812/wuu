@@ -262,7 +262,7 @@ func TestNamedAgentWakeAutostartCreatesIsolatedSession(t *testing.T) {
 	}
 }
 
-func TestEnsureNamedAgentThreadRebuildsNamedRuntimeAfterLoad(t *testing.T) {
+func TestEnsureNamedAgentThreadReplacesOrdinaryRuntimeAfterLoad(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
 	attachNamedAgentTestToolkit(t, rt)
@@ -277,9 +277,7 @@ func TestEnsureNamedAgentThreadRebuildsNamedRuntimeAfterLoad(t *testing.T) {
 		t.Fatalf("ensureNamedAgentThreadLocked() error = %v", err)
 	}
 	staleRuntime := th.execRuntime
-	th.execRuntime = nil
 	th.NamedAgentID = ""
-	releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: staleRuntime})
 
 	loaded, err := server.ensureNamedAgentThreadLocked(credential.Agent)
 	if err != nil {
@@ -287,6 +285,9 @@ func TestEnsureNamedAgentThreadRebuildsNamedRuntimeAfterLoad(t *testing.T) {
 	}
 	if loaded != th || loaded.execRuntime == nil || loaded.NamedAgentID != credential.Agent.ID {
 		t.Fatalf("rebuilt named agent thread = %#v", loaded)
+	}
+	if loaded.execRuntime == staleRuntime {
+		t.Fatal("ordinary restored runtime was reused without named-agent identity")
 	}
 	wantTools := map[string]bool{
 		"chat_check": false, "chat_read": false, "chat_send": false,

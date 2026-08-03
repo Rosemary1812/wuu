@@ -83,10 +83,11 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 		if th.Source != "" && th.Source != namedAgentSessionSource+agent.ID {
 			return nil, fmt.Errorf("session %q is not owned by named agent %q", threadID, agent.ID)
 		}
+		needsNamedAgentRuntime := th.execRuntime == nil || th.NamedAgentID != agent.ID
 		th.NamedAgentID = agent.ID
 		th.Source = namedAgentSessionSource + agent.ID
 		th.CWD = filepath.Dir(agent.MemoryDir)
-		if th.execRuntime == nil {
+		if needsNamedAgentRuntime {
 			selection := runtime.ThreadModelSelection{
 				Provider: th.ModelProvider, Model: th.Model, Variant: th.ModelVariant,
 				Effort: th.ModelEffort, PermissionMode: th.PermissionMode,
@@ -98,9 +99,13 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 			if err != nil {
 				return nil, err
 			}
+			staleRuntime := th.execRuntime
 			th.execRuntime = threadRuntime
 			if len(th.History) > 0 && strings.EqualFold(strings.TrimSpace(th.History[0].Role), "system") {
 				th.History[0].Content = threadRuntime.StreamRunner.SystemPrompt
+			}
+			if staleRuntime != nil {
+				releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: staleRuntime})
 			}
 		}
 		return th, nil
