@@ -2046,82 +2046,8 @@
   gap: 1px;
 }
 
-.slash-command-item {
-  display: grid;
-  min-height: 32px;
-  grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink);
-  padding: 0 9px 0 8px;
-  text-align: left;
-}
-
-.slash-command-item:hover:not(:disabled),
 .slash-command-item.selected:not(:disabled) {
   background: var(--menu-hover);
-}
-
-.slash-command-item:active:not(:disabled) {
-  transform: scale(0.992);
-}
-
-.slash-command-item:disabled {
-  opacity: 0.45;
-}
-
-.slash-command-icon {
-  display: grid;
-  width: var(--icon-size);
-  height: var(--icon-size);
-  place-items: center;
-  color: var(--ink-tertiary);
-}
-
-.slash-command-icon .icon {
-  width: 14px;
-  height: 14px;
-}
-
-.slash-command-item:hover:not(:disabled) .slash-command-icon,
-.slash-command-item.selected:not(:disabled) .slash-command-icon {
-  color: var(--ink-muted);
-}
-
-.slash-command-label {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-/* Every row leads with the command the user has to type. Only the summary
-   beside it shrinks, so the name identifying the row stays readable. */
-.slash-command-name {
-  flex: 0 0 auto;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slash-command-summary {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: var(--font-ui);
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .slash-command-meta {
@@ -2137,18 +2063,6 @@
   line-height: 18px;
   padding: 14px 12px 15px;
   text-align: center;
-}
-
-@container composer-shell (max-width: 460px) {
-  .slash-command-item {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 7px;
-    padding-inline: 9px;
-  }
-
-  .slash-command-icon {
-    display: none;
-  }
 }
 
 .mention-menu {

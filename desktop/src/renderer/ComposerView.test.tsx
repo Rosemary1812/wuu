@@ -1076,26 +1076,6 @@ describe("Composer send control", () => {
     expect(composerCSS).not.toContain("--slash-command-available-height");
   });
 
-  it("keeps the slash command title visible at every composer width", () => {
-    expect(composerCSS).toMatch(
-      /\.composer-shell\s*{[^}]*container:\s*composer-shell\s*\/\s*inline-size;/s,
-    );
-
-    const iconCollapse = composerCSS.indexOf(
-      "@container composer-shell (max-width: 460px)",
-    );
-
-    expect(iconCollapse).toBeGreaterThan(-1);
-    expect(composerCSS).toMatch(
-      /@container composer-shell \(max-width: 460px\)[\s\S]*?\.slash-command-icon\s*{[^}]*display:\s*none;/,
-    );
-    // No 360px breakpoint should hide the title, since the title is the only
-    // text in each row and hiding it would leave an empty menu.
-    expect(composerCSS).not.toMatch(
-      /@container composer-shell \(max-width: 360px\)/,
-    );
-  });
-
   it("shows the hero project selector inside the composer toolbar", () => {
     renderComposer({
       variant: "hero",
@@ -1441,7 +1421,6 @@ describe("Composer send control", () => {
     expect(skillRow?.querySelector(".slash-command-summary")?.textContent).toBe(
       "Create slide decks",
     );
-    expect(composerCSS).toContain(".slash-command-summary");
   });
 
   it("leads every built-in row with the command the user types", () => {
@@ -1456,20 +1435,21 @@ describe("Composer send control", () => {
 
     expect(reviewRow?.querySelector(".slash-command-name")?.textContent).toBe("/review");
     expect(reviewRow?.querySelector(".slash-command-summary")?.textContent).toBe("审查当前更改");
-    // The name column must not shrink, so a long summary never truncates the
-    // command the user has to type.
-    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*flex:\s*0 0 auto;/s);
+    expect(reviewRow?.querySelector(".composer-plus-menu-item-title")).not.toBeNull();
+    expect(reviewRow?.querySelector(".composer-plus-menu-item-desc")).not.toBeNull();
   });
 
-  it("shares the plus menu typography contract for slash command rows", () => {
-    // The command name and summary use the same title/description roles as the
-    // plus menu so the two surfaces read as one consistent menu system.
-    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*color:\s*var\(--ink\);/s);
-    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*font-size:\s*var\(--font-ui\);/s);
-    expect(composerCSS).toMatch(/\.slash-command-name\s*{[^}]*font-weight:\s*var\(--weight-medium\);/s);
-    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*color:\s*var\(--ink-muted\);/s);
-    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*font-size:\s*var\(--font-ui\);/s);
-    expect(composerCSS).toMatch(/\.slash-command-summary\s*{[^}]*font-weight:\s*400;/s);
+  it("uses the plus menu row structure for slash commands", () => {
+    renderComposer({ prompt: "/" });
+
+    const reviewRow = document.body.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="review"]',
+    );
+    expect(reviewRow?.children).toHaveLength(3);
+    expect(reviewRow?.children[0]?.tagName).toBe("svg");
+    expect(reviewRow?.children[1]?.classList.contains("composer-plus-menu-item-title")).toBe(true);
+    expect(reviewRow?.children[2]?.classList.contains("composer-plus-menu-item-desc")).toBe(true);
+    expect(reviewRow?.querySelector(".slash-command-label")).toBeNull();
   });
 
   it("sends an exact slash command with arguments on Enter", () => {

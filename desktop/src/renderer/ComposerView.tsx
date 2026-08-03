@@ -938,17 +938,18 @@ export function Composer({
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => applySlashCommand(command, slashDraft)}
                         >
-                          <span className="slash-command-icon" aria-hidden="true">
-                            <SlashCommandIcon command={command} />
+                          <SlashCommandIcon command={command} />
+                          <span className="composer-plus-menu-item-title slash-command-name">
+                            /{command.name}
                           </span>
-                          <span className="slash-command-label">
-                            <span className="slash-command-name">/{command.name}</span>
-                            {command.title ? (
-                              <span className="slash-command-summary">{command.title}</span>
-                            ) : null}
-                          </span>
-                          {command.disabledReason ? (
-                            <span className="slash-command-meta">{command.disabledReason}</span>
+                          {command.disabledReason || command.title ? (
+                            <span
+                              className={`composer-plus-menu-item-desc ${
+                                command.disabledReason ? "slash-command-meta" : "slash-command-summary"
+                              }`}
+                            >
+                              {command.disabledReason ?? command.title}
+                            </span>
                           ) : null}
                         </button>
                       </Tooltip>
