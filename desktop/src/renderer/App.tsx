@@ -524,6 +524,8 @@ export function App(): JSX.Element {
     useState<SettingsPage>("providers");
   const {
     settingsUsage,
+    settingsUsageLoading,
+    settingsUsageError,
     codexPets,
     codexPetsLoading,
     codexPetsError,
@@ -4038,6 +4040,8 @@ export function App(): JSX.Element {
           running={viewContextSwitchPending}
           runningProviderNames={runningProviderNames}
           usage={settingsUsage}
+          usageLoading={settingsUsageLoading}
+          usageError={settingsUsageError}
           codexPets={codexPets}
           codexPetsLoading={codexPetsLoading}
           codexPetsError={codexPetsError}

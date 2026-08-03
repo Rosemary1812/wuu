@@ -331,6 +331,8 @@ export const zhCN = {
   "settings.unknownProvider": "（未知服务）",
   "settings.unknownModel": "（未知模型）",
   "settings.noUsage": "暂无用量记录",
+  "settings.usageUnsupported": "当前桌面进程无法加载用量信息，请重启应用完成更新。",
+  "settings.usageLoadFailed": "无法加载用量信息，请稍后重试。",
   "settings.noUsageOnDate": "{date}：暂无用量",
   "settings.usageOnDate": "{date}\n输入 {input} · 输出 {output} · 命中 {rate}",
   "remote.relaySection": "中继与开关",

@@ -102,6 +102,8 @@ export function SettingsView({
   initialPage,
   running,
   usage,
+  usageLoading = false,
+  usageError = "",
   runningProviderNames,
   showDebugControlsSetting,
   debugControlsEnabled,
@@ -142,6 +144,8 @@ export function SettingsView({
   initialPage?: SettingsPage;
   running: boolean;
   usage?: SettingsUsageResponse;
+  usageLoading?: boolean;
+  usageError?: string;
   runningProviderNames?: readonly string[];
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
@@ -962,6 +966,8 @@ export function SettingsView({
             ) : (
               <SettingsUsagePage
                 usage={usage}
+                loading={usageLoading}
+                error={usageError}
               />
             )}
           </div>
@@ -2455,9 +2461,13 @@ function formatArchiveTime(
 /* -------------------------------------------------------------------------- */
 
 function SettingsUsagePage({
-  usage
+  usage,
+  loading,
+  error,
 }: {
   usage: SettingsUsageResponse | undefined;
+  loading: boolean;
+  error: string;
 }): JSX.Element {
   const { locale, t, formatNumber } = useI18n();
   const formatUsageValue = (value: number, options?: Intl.NumberFormatOptions): string =>
@@ -2527,10 +2537,19 @@ function SettingsUsagePage({
       }
     }
   }
-  if (!usage) {
+  if (loading) {
     return (
       <div className="settings-usage-page settings-usage-loading" data-testid="settings-usage" aria-busy="true">
         <SettingsUsageSkeleton />
+      </div>
+    );
+  }
+  if (!usage) {
+    return (
+      <div className="settings-usage-page" data-testid="settings-usage">
+        <div className="settings-empty" role={error ? "alert" : undefined}>
+          {error || t("settings.noUsage")}
+        </div>
       </div>
     );
   }

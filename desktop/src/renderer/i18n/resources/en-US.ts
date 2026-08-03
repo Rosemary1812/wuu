@@ -333,6 +333,8 @@ export const enUS = {
   "settings.unknownProvider": "(Unknown provider)",
   "settings.unknownModel": "(Unknown model)",
   "settings.noUsage": "No usage records",
+  "settings.usageUnsupported": "This desktop process cannot load usage information. Restart the app to update it.",
+  "settings.usageLoadFailed": "Usage information could not be loaded. Please try again later.",
   "settings.noUsageOnDate": "{date}: No usage",
   "settings.usageOnDate": "{date}\nInput {input} · Output {output} · Hit {rate}",
   "remote.relaySection": "Relay and access",

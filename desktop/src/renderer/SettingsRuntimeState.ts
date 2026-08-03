@@ -8,6 +8,8 @@ import { translateCurrent } from "./i18n";
 
 export type SettingsRuntimeState = {
   settingsUsage: SettingsUsageResponse | undefined;
+  settingsUsageLoading: boolean;
+  settingsUsageError: string;
   codexPets: CodexPetsSnapshot | undefined;
   codexPetsLoading: boolean;
   codexPetsError: string;
@@ -29,6 +31,8 @@ export function useSettingsRuntimeState({
   const [settingsUsage, setSettingsUsage] = useState<
     SettingsUsageResponse | undefined
   >(undefined);
+  const [settingsUsageLoading, setSettingsUsageLoading] = useState(false);
+  const [settingsUsageError, setSettingsUsageError] = useState("");
   const [codexPets, setCodexPets] = useState<CodexPetsSnapshot | undefined>();
   const [codexPetsLoading, setCodexPetsLoading] = useState(true);
   const [codexPetsError, setCodexPetsError] = useState("");
@@ -88,14 +92,20 @@ export function useSettingsRuntimeState({
   useEffect(() => {
     if (!settingsOpen) {
       setSettingsUsage(undefined);
+      setSettingsUsageLoading(false);
+      setSettingsUsageError("");
       return;
     }
     const api = window.wuu as Partial<typeof window.wuu>;
     if (typeof api.getSettingsUsage !== "function") {
       setSettingsUsage(undefined);
+      setSettingsUsageLoading(false);
+      setSettingsUsageError(translateCurrent("settings.usageUnsupported"));
       return;
     }
     let cancelled = false;
+    setSettingsUsageLoading(true);
+    setSettingsUsageError("");
     void api
       .getSettingsUsage()
       .then((response) => {
@@ -109,6 +119,12 @@ export function useSettingsRuntimeState({
           return;
         }
         setSettingsUsage(undefined);
+        setSettingsUsageError(translateCurrent("settings.usageLoadFailed"));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSettingsUsageLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -153,6 +169,8 @@ export function useSettingsRuntimeState({
 
   return {
     settingsUsage,
+    settingsUsageLoading,
+    settingsUsageError,
     codexPets,
     codexPetsLoading,
     codexPetsError,

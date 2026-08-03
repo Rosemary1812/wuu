@@ -150,10 +150,14 @@ describe("useSettingsRuntimeState", () => {
 
     expect(getSettingsUsage).toHaveBeenCalledTimes(1);
     expect(hook.get().settingsUsage?.total_sessions).toBe(12);
+    expect(hook.get().settingsUsageLoading).toBe(false);
+    expect(hook.get().settingsUsageError).toBe("");
 
     await hook.rerender(false);
 
     expect(hook.get().settingsUsage).toBeUndefined();
+    expect(hook.get().settingsUsageLoading).toBe(false);
+    expect(hook.get().settingsUsageError).toBe("");
   });
 
   it("keeps the app usable when a stale preload does not expose settings usage", async () => {
@@ -165,6 +169,8 @@ describe("useSettingsRuntimeState", () => {
     const hook = await renderSettingsRuntimeState(true);
 
     expect(hook.get().settingsUsage).toBeUndefined();
+    expect(hook.get().settingsUsageLoading).toBe(false);
+    expect(hook.get().settingsUsageError).toBe("当前桌面进程无法加载用量信息，请重启应用完成更新。");
     expect(hook.get().codexPetsLoading).toBe(false);
   });
 

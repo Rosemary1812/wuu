@@ -104,6 +104,8 @@ function emptyCodexPetsSnapshot(overrides: Partial<CodexPetsSnapshot> = {}): Cod
 function renderSettings(props: {
   initialized: InitializeResult | undefined;
   usage?: SettingsUsageResponse;
+  usageLoading?: boolean;
+  usageError?: string;
   initialPage?: SettingsPage;
   runningProviderNames?: string[];
   codexPets?: CodexPetsSnapshot;
@@ -134,6 +136,8 @@ function renderSettings(props: {
         initialPage={props.initialPage ?? "general"}
         running={false}
         usage={props.usage}
+        usageLoading={props.usageLoading}
+        usageError={props.usageError}
         runningProviderNames={props.runningProviderNames}
         codexPets={props.codexPets ?? emptyCodexPetsSnapshot()}
         codexPetsLoading={props.codexPetsLoading ?? false}
@@ -1364,6 +1368,22 @@ describe("SettingsView About section", () => {
     expect(
       heatmap?.querySelector<HTMLElement>(`[aria-label^="${heatmapDates.at(-1)}"]`)?.getAttribute("aria-label"),
     ).toContain("输入 400k");
+  });
+
+  it("does not leave the usage skeleton visible after a load failure", () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const rendered = renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "usage",
+      usageError: "无法加载用量信息，请稍后重试。",
+    });
+
+    expect(rendered.rootText()).toContain("无法加载用量信息，请稍后重试。");
+    expect(container.querySelector(".settings-usage-skeleton-stats")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("无法加载用量信息，请稍后重试。");
   });
 });
 
