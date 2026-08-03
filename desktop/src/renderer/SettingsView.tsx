@@ -2774,17 +2774,55 @@ function SettingsUsageSkeleton(): JSX.Element {
   return (
     <>
       <div className="settings-usage-skeleton-stats" aria-hidden="true">
-        {[0, 1, 2, 3].map((item) => <span className="settings-usage-skeleton-line" key={item} />)}
+        {[0, 1, 2, 3].map((item) => (
+          <div className="settings-usage-skeleton-stat" key={item}>
+            <span className={`settings-usage-skeleton-line settings-usage-skeleton-stat-value settings-usage-skeleton-stat-value-${item}`} />
+            <span className="settings-usage-skeleton-line settings-usage-skeleton-stat-label" />
+          </div>
+        ))}
       </div>
+      <section className="settings-usage-skeleton-chart" aria-hidden="true">
+        <div className="settings-usage-skeleton-chart-header">
+          <span className="settings-usage-skeleton-line settings-usage-skeleton-heading" />
+          <span className="settings-usage-skeleton-line settings-usage-skeleton-period" />
+        </div>
+        <div className="settings-usage-skeleton-trend">
+          {[28, 42, 34, 58, 48, 72, 38, 64, 52, 82, 46, 68, 36, 56, 76, 44, 62, 50, 88, 54, 70, 40, 60, 78, 48, 66, 36, 74, 52, 68].map((height, index) => (
+            <i className="settings-usage-skeleton-trend-day" key={index} style={{ height: `${height}%` }} />
+          ))}
+        </div>
+        <div className="settings-usage-skeleton-axis">
+          <span className="settings-usage-skeleton-line" />
+          <span className="settings-usage-skeleton-line" />
+        </div>
+      </section>
       <div className="settings-usage-skeleton-heatmap" aria-hidden="true">
-        <span className="settings-usage-skeleton-line settings-usage-skeleton-heading" />
+        <div className="settings-usage-skeleton-months">
+          {[0, 1, 2, 3].map((item) => <span className="settings-usage-skeleton-line" key={item} />)}
+        </div>
         <div className="settings-usage-skeleton-grid">
-          {Array.from({ length: 28 }, (_, index) => <i key={index} />)}
+          {Array.from({ length: 84 }, (_, index) => <i key={index} />)}
+        </div>
+        <div className="settings-usage-skeleton-legend">
+          <span className="settings-usage-skeleton-line" />
+          <span className="settings-usage-skeleton-line" />
         </div>
       </div>
-      <div className="settings-usage-skeleton-list" aria-hidden="true">
+      <section className="settings-usage-skeleton-list" aria-hidden="true">
+        <div className="settings-usage-skeleton-list-header">
+          <span className="settings-usage-skeleton-line settings-usage-skeleton-heading" />
+          <span className="settings-usage-skeleton-line settings-usage-skeleton-period" />
+        </div>
+        {[0, 1, 2, 3].map((item) => (
+          <div className="settings-usage-skeleton-row" key={item}>
+            <span className="settings-usage-skeleton-line" />
+            <span className="settings-usage-skeleton-line" />
+            <span className="settings-usage-skeleton-line" />
+          </div>
+        ))}
+      </section>
+      <div className="settings-usage-skeleton-footer" aria-hidden="true">
         <span className="settings-usage-skeleton-line settings-usage-skeleton-heading" />
-        {[0, 1, 2, 3].map((item) => <span className="settings-usage-skeleton-row" key={item} />)}
       </div>
     </>
   );

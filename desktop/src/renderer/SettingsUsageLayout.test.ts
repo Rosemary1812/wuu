@@ -37,4 +37,12 @@ describe("settings usage responsive layout", () => {
     expect(cssRule(".settings-usage-number")).toMatch(/max-width:\s*100%;/);
     expect(cssRule(".settings-usage-number")).toMatch(/text-overflow:\s*ellipsis;/);
   });
+
+  it("uses a shared shimmer for the usage skeleton instead of isolated gray blocks", () => {
+    expect(settingsCSS).toMatch(/@keyframes settings-usage-skeleton-shimmer/);
+    expect(settingsCSS).toMatch(
+      /\.settings-usage-skeleton-line,[\s\S]*?background:\s*linear-gradient[\s\S]*?background-size:\s*200%\s+100%/,
+    );
+    expect(cssRule(".settings-usage-skeleton-grid")).toMatch(/grid-template-rows:\s*repeat\(7/);
+  });
 });
