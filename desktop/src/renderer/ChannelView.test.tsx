@@ -1268,9 +1268,9 @@ describe("ChannelView", () => {
     expect(resetButton?.textContent).toBe("重置 Agent");
     await act(async () => resetButton?.click());
 
-    expect(confirmReset).toHaveBeenCalledWith("重置“Alpha”？这会停止当前执行并清理待唤醒状态；Agent 配置、会话和收件箱会保留。");
+    expect(confirmReset).toHaveBeenCalledWith("重置“Alpha”？这会停止当前执行并清空 Agent 的会话上下文；收件箱、长期记忆和 Agent 配置会保留。");
     expect(api.resetNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
-    expect(document.querySelector('[role="status"]')?.textContent).toBe("已请求重置，Agent 正在停止当前执行。");
+    expect(document.querySelector('[role="status"]')?.textContent).toBe("已请求重置，Agent 正在停止当前执行并清空会话上下文。");
   });
 
   it("keeps invalid avatar feedback beside the avatar control", async () => {
