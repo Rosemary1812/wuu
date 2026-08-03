@@ -491,6 +491,7 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 }
 
 func TestToolkit_ReadFileBySymbolAndContext(t *testing.T) {
+	t.Skip("legacy selector test retained only for historical coverage")
 	t.Skip("symbol selectors were removed; use grep_repo and offset/limit")
 	root := t.TempDir()
 	kit, err := New(root)

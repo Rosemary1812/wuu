@@ -798,9 +798,7 @@ func readFileByteWindow(ctx context.Context, env *Env, resolved, displayPath str
 			nextRange["end_offset"] = endOffset
 		}
 		continuation["next"] = map[string]any{
-			"path":            displayPath,
-			"byte_range":      nextRange,
-			"expected_sha256": contentSHA,
+			"continuation": encodeReadFileByteContinuation(displayPath, offset+consumed, limit, endOffset, contentSHA),
 		}
 	}
 	result["continuation"] = continuation
