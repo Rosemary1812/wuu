@@ -31,6 +31,12 @@ export interface SidebarNameDialogProps {
   destructiveAction?: {
     label: string;
     onClick: () => void;
+    disabled?: boolean;
+  };
+  secondaryAction?: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
   };
   variant?: "default" | "drawer";
   hideActions?: boolean;
@@ -59,6 +65,7 @@ export function SidebarNameDialog({
   content,
   submitDisabled,
   destructiveAction,
+  secondaryAction,
   variant = "default",
   hideActions = false,
   closeOnEscape = true,
@@ -163,11 +170,16 @@ export function SidebarNameDialog({
         </label>}
         {!hideActions ? <div className="sidebar-name-dialog-actions">
           {destructiveAction ? (
-            <button className="sidebar-name-dialog-destructive" type="button" onClick={destructiveAction.onClick}>
+            <button className="sidebar-name-dialog-destructive" type="button" disabled={destructiveAction.disabled} onClick={destructiveAction.onClick}>
               {destructiveAction.label}
             </button>
           ) : null}
-          {destructiveAction ? <span className="sidebar-name-dialog-action-spacer" aria-hidden="true" /> : null}
+          {secondaryAction ? (
+            <button className="sidebar-name-dialog-secondary" type="button" disabled={secondaryAction.disabled} onClick={secondaryAction.onClick}>
+              {secondaryAction.label}
+            </button>
+          ) : null}
+          {destructiveAction || secondaryAction ? <span className="sidebar-name-dialog-action-spacer" aria-hidden="true" /> : null}
           <button type="button" onClick={requestClose}>
             {cancelLabel}
           </button>

@@ -531,6 +531,14 @@
   font-size: 12px;
 }
 
+.channel-agent-reset-status {
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 12px;
+}
+
 .channel-message-stream {
   grid-row: 3;
   min-height: 0;

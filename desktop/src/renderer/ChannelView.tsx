@@ -387,6 +387,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [agentModel, setAgentModel] = useState("");
   const [agentEffort, setAgentEffort] = useState("");
   const [editingAgentID, setEditingAgentID] = useState("");
+  const [resettingAgentID, setResettingAgentID] = useState("");
+  const [agentResetStatus, setAgentResetStatus] = useState("");
   const [roomName, setRoomName] = useState("");
   const [roomAgentIDs, setRoomAgentIDs] = useState<string[]>([]);
   const [roomAvatarImage, setRoomAvatarImage] = useState("");
@@ -1047,6 +1049,22 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     }
   }
 
+  async function resetAgent(agentID: string): Promise<void> {
+    if (!window.wuu) return;
+    if (!window.confirm(t("channels.resetAgentConfirm", { name: agentName.trim() }))) return;
+    setError("");
+    setAgentResetStatus("");
+    setResettingAgentID(agentID);
+    try {
+      const result = await window.wuu.resetNamedAgent({ agent_id: agentID });
+      setAgentResetStatus(t(result.requested ? "channels.resetAgentRequested" : "channels.resetAgentIdle"));
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setResettingAgentID("");
+    }
+  }
+
   function editAgent(agent: NamedAgent): void {
     setEditingAgentID(agent.id);
     setAgentName(agent.name);
@@ -1055,6 +1073,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     setAgentAvatarError("");
     setAgentModel(agent.provider_override && agent.model_override ? `${agent.provider_override}\u0000${agent.model_override}` : "");
     setAgentEffort(agent.effort_override ?? "");
+    setAgentResetStatus("");
     setSetupPanel("agent");
   }
 
@@ -1067,6 +1086,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     setAgentAvatarError("");
     setAgentModel("");
     setAgentEffort("");
+    setAgentResetStatus("");
   }
 
   function toggleRoomAgent(agentID: string): void {
@@ -1650,10 +1670,20 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         icon={Bot}
         submitLabel={editingAgentID ? t("channels.save") : t("channels.create")}
         cancelLabel={t("channels.cancel")}
-        submitDisabled={!agentName.trim()}
-        destructiveAction={editingAgentID ? { label: t("channels.deleteAgent"), onClick: () => void deleteAgent(editingAgentID) } : undefined}
+        submitDisabled={!agentName.trim() || Boolean(resettingAgentID)}
+        destructiveAction={editingAgentID ? {
+          label: t("channels.deleteAgent"),
+          disabled: Boolean(resettingAgentID),
+          onClick: () => void deleteAgent(editingAgentID),
+        } : undefined}
+        secondaryAction={editingAgentID ? {
+          label: t(resettingAgentID === editingAgentID ? "channels.resettingAgent" : "channels.resetAgent"),
+          disabled: Boolean(resettingAgentID),
+          onClick: () => void resetAgent(editingAgentID),
+        } : undefined}
         content={<div className="channel-setup-form">
           {error ? <div className="channel-error" role="alert">{error}</div> : null}
+          {agentResetStatus ? <div className="channel-agent-reset-status" role="status">{agentResetStatus}</div> : null}
           <label className="sidebar-name-dialog-field">
             <span className="sidebar-name-dialog-label">{t("channels.name")}</span>
             <input className="sidebar-name-dialog-input" value={agentName} onChange={(event) => setAgentName(event.currentTarget.value)} autoFocus />

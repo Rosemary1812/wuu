@@ -65,6 +65,17 @@ function createApi(): Partial<WuuDesktopApi> {
     updateNamedAgent: vi.fn(async (params) => ({ agent: { ...agents[0], name: params.name } })),
     deleteNamedAgent: vi.fn(async () => ({ deleted: true })),
     startNamedAgent: vi.fn(async () => ({ agent: agents[0] })),
+    resetNamedAgent: vi.fn(async () => ({
+      agent: agents[0],
+      wake_state: {
+        agent_id: "agent-1",
+        outstanding: false,
+        pending: false,
+        updated_at: "2026-07-23T00:00:00Z",
+      },
+      requested: true,
+      thread_id: "channel-agent-agent-1",
+    })),
     listChannelRooms: vi.fn(async () => ({ rooms })),
     markChannelRoomRead: vi.fn(async () => ({ read: true })),
     createChannelRoom: vi.fn(async (params) => ({ room: { ...rooms[1], name: params.name } })),
@@ -1240,6 +1251,26 @@ describe("ChannelView", () => {
     await act(async () => deleteButton?.click());
     expect(confirmDelete).toHaveBeenCalledWith("删除“Alpha”？该 Agent 将从所有频道移除，其保存的状态也会被删除。");
     expect(api.deleteNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
+  });
+
+  it("resets an agent from the shared settings dialog", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="agents" />));
+    await settle();
+
+    const settingsButton = container.querySelector<HTMLButtonElement>('.channel-agent-directory-row button[aria-label="编辑 Agent"]');
+    act(() => settingsButton?.click());
+
+    const confirmReset = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const resetButton = document.querySelector<HTMLButtonElement>(".sidebar-name-dialog-secondary");
+    expect(resetButton?.textContent).toBe("重置 Agent");
+    await act(async () => resetButton?.click());
+
+    expect(confirmReset).toHaveBeenCalledWith("重置“Alpha”？这会停止当前执行并清理待唤醒状态；Agent 配置、会话和收件箱会保留。");
+    expect(api.resetNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
+    expect(document.querySelector('[role="status"]')?.textContent).toBe("已请求重置，Agent 正在停止当前执行。");
   });
 
   it("keeps invalid avatar feedback beside the avatar control", async () => {

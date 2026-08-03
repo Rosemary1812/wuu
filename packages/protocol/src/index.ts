@@ -572,6 +572,19 @@ export type ChannelAgentDeleteParams = { agent_id: string };
 export type ChannelAgentDeleteResult = { deleted: boolean };
 export type ChannelAgentStartParams = { agent_id: string };
 export type ChannelAgentStartResult = { agent: NamedAgent };
+export type ChannelAgentWakeState = {
+  agent_id: string;
+  outstanding: boolean;
+  pending: boolean;
+  updated_at: string;
+};
+export type ChannelAgentResetParams = { agent_id: string };
+export type ChannelAgentResetResult = {
+  agent: NamedAgent;
+  wake_state: ChannelAgentWakeState;
+  requested: boolean;
+  thread_id: string;
+};
 export type ChannelRoomListResult = { rooms: ChannelRoom[] };
 export type ChannelRoomCreateParams = {
   name: string;
@@ -2217,6 +2230,7 @@ export type WuuDesktopApi = {
   updateNamedAgent: (params: ChannelAgentUpdateParams) => Promise<ChannelAgentUpdateResult>;
   deleteNamedAgent: (params: ChannelAgentDeleteParams) => Promise<ChannelAgentDeleteResult>;
   startNamedAgent: (params: ChannelAgentStartParams) => Promise<ChannelAgentStartResult>;
+  resetNamedAgent: (params: ChannelAgentResetParams) => Promise<ChannelAgentResetResult>;
   listChannelRooms: () => Promise<ChannelRoomListResult>;
   createChannelRoom: (params: ChannelRoomCreateParams) => Promise<ChannelRoomCreateResult>;
   updateChannelRoom: (params: ChannelRoomUpdateParams) => Promise<ChannelRoomUpdateResult>;

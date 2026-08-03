@@ -47,6 +47,8 @@ import type {
   ChannelAgentInsightsResult,
   ChannelAgentStartParams,
   ChannelAgentStartResult,
+  ChannelAgentResetParams,
+  ChannelAgentResetResult,
   ChannelMessageListParams,
   ChannelMessageListResult,
   ChannelMessageSendParams,
@@ -1469,6 +1471,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:channel-agent-start", (event, params: ChannelAgentStartParams) =>
     appServerRequest<ChannelAgentStartResult>(event, "channel/agent/start", params),
+  );
+  ipcMain.handle("wuu:channel-agent-reset", (event, params: ChannelAgentResetParams) =>
+    appServerRequest<ChannelAgentResetResult>(event, "channel/agent/reset", params),
   );
   ipcMain.handle("wuu:channel-room-list", (event) =>
     appServerRequest<ChannelRoomListResult>(event, "channel/room/list"),

@@ -7,6 +7,7 @@ import {
   type ChannelAgentUpdateParams,
   type ChannelAgentDeleteParams,
   type ChannelAgentStartParams,
+  type ChannelAgentResetParams,
   type ChannelMessageListParams,
   type ChannelMessageSendParams,
   type ChannelRoomCreateParams,
@@ -267,6 +268,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:channel-agent-delete", params),
   startNamedAgent: (params: ChannelAgentStartParams) =>
     ipcRenderer.invoke("wuu:channel-agent-start", params),
+  resetNamedAgent: (params: ChannelAgentResetParams) =>
+    ipcRenderer.invoke("wuu:channel-agent-reset", params),
   listChannelRooms: () => ipcRenderer.invoke("wuu:channel-room-list"),
   createChannelRoom: (params: ChannelRoomCreateParams) =>
     ipcRenderer.invoke("wuu:channel-room-create", params),
