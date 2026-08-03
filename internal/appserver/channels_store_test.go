@@ -179,7 +179,8 @@ func TestNamedAgentWakeAutostartCreatesIsolatedSession(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
 	attachNamedAgentTestToolkit(t, rt)
-	server := NewWithCredentialStore(rt, &lockedBuffer{}, nil, nil)
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
 	t.Cleanup(server.Close)
 	credential, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{
 		Name: "Alpha", Autostart: true,
@@ -219,6 +220,24 @@ func TestNamedAgentWakeAutostartCreatesIsolatedSession(t *testing.T) {
 	}
 	if metadata.Source != namedAgentSessionSource+credential.Agent.ID {
 		t.Fatalf("named agent session source = %q", metadata.Source)
+	}
+	var listed ThreadListResult
+	callChannelRPC(t, server, out, MethodThreadList, ThreadListParams{
+		CWD: filepath.Dir(credential.Agent.MemoryDir),
+	}, &listed)
+	for _, thread := range listed.Threads {
+		if thread.ID == threadID {
+			t.Fatalf("named agent session leaked into thread/list: %#v", thread)
+		}
+	}
+	var searched ThreadSearchResult
+	callChannelRPC(t, server, out, MethodThreadSearch, ThreadSearchParams{
+		Query: credential.Agent.Name,
+	}, &searched)
+	for _, result := range searched.Results {
+		if result.Thread.ID == threadID {
+			t.Fatalf("named agent session leaked into thread/search: %#v", result)
+		}
 	}
 
 	offline, err := server.channelService.CreateNamedAgent(context.Background(), channels.CreateNamedAgentParams{Name: "Offline"})

@@ -83,6 +83,9 @@ func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
 		if sess.ArchivedAt != nil {
 			continue
 		}
+		if isNamedAgentSessionSource(sess.Source) {
+			continue
+		}
 		entry := threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
 		history, err := loadChatMessages(s.rt.SessionDir, sess.ID)
 		if err != nil {
@@ -106,6 +109,10 @@ func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
 			continue
 		}
 		if thread.ReadOnly {
+			continue
+		}
+		if isNamedAgentSessionSource(thread.Source) {
+			delete(sourcesByID, thread.ID)
 			continue
 		}
 		if thread.Archived {

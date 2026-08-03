@@ -623,6 +623,10 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	}, nil
 }
 
+func isNamedAgentSessionSource(source string) bool {
+	return strings.HasPrefix(strings.TrimSpace(source), namedAgentSessionSource)
+}
+
 func (s *Server) handleThreadList(req Request) error {
 	var params ThreadListParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -670,6 +674,9 @@ func (s *Server) handleThreadList(req Request) error {
 		if sess.ArchivedAt != nil {
 			continue
 		}
+		if isNamedAgentSessionSource(sess.Source) {
+			continue
+		}
 		if _, isAgentThread := agentThreadIDs[sess.ID]; isAgentThread {
 			continue
 		}
@@ -686,6 +693,10 @@ func (s *Server) handleThreadList(req Request) error {
 			continue
 		}
 		if thread.ReadOnly {
+			continue
+		}
+		if isNamedAgentSessionSource(thread.Source) {
+			delete(entries, thread.ID)
 			continue
 		}
 		if thread.Archived {
@@ -737,6 +748,9 @@ func (s *Server) handleThreadListArchived(req Request) error {
 		if sess.ArchivedAt == nil {
 			continue
 		}
+		if isNamedAgentSessionSource(sess.Source) {
+			continue
+		}
 		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
 	}
 
@@ -750,6 +764,10 @@ func (s *Server) handleThreadListArchived(req Request) error {
 			continue
 		}
 		if thread.ReadOnly {
+			continue
+		}
+		if isNamedAgentSessionSource(thread.Source) {
+			delete(entries, thread.ID)
 			continue
 		}
 		if !thread.Archived {
