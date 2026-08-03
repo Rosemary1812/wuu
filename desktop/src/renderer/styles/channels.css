@@ -1130,11 +1130,7 @@
 
 @media (max-width: 820px) {
   .channel-conversation.thread-open {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .channel-conversation.thread-open .channel-room-main {
-    display: none;
+    grid-template-columns: minmax(0, 1fr) clamp(260px, 42%, var(--channel-thread-width, 420px));
   }
 
   .channel-thread-panel {

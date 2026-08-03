@@ -181,6 +181,15 @@ describe("channel message resizing", () => {
     expect(composer).toMatch(/padding:\s*10px 12px 12px/);
   });
 
+  it("keeps the room visible beside replies in narrow windows", () => {
+    expect(channelsCss).toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.channel-conversation\.thread-open\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) clamp\(260px, 42%, var\(--channel-thread-width, 420px\)\)/,
+    );
+    expect(channelsCss).not.toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.channel-conversation\.thread-open \.channel-room-main\s*\{[^}]*display:\s*none/,
+    );
+  });
+
   it("keeps hover actions out of the vertical reading rhythm", () => {
     const meta = ruleFor(".channel-message-meta");
     const actions = ruleFor(".channel-message-actions");
