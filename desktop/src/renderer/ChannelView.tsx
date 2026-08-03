@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, UserMinus, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -29,7 +29,7 @@ import { RichContent } from "./RichContent";
 import { effortLabel, providerModelEffortOptions } from "./RuntimeHelpers";
 
 type SetupPanel = "agent" | "room" | "task" | null;
-type RoomMemberMode = "add" | "remove" | null;
+type RoomMemberMode = "add" | null;
 export type ChannelSection = "rooms" | "agents" | "tasks";
 type AgentActivityStatus = "idle" | "thinking" | "sending";
 
@@ -1174,11 +1174,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     if (!window.wuu || !editingRoomID || !roomMemberMode || roomMemberSelectionIDs.length === 0 || updatingRoomMembers) return;
     const room = rooms.find((candidate) => candidate.id === editingRoomID);
     if (!room) return;
-    if (roomMemberMode === "remove" && !window.confirm(t("channels.removeMembersConfirm", { count: roomMemberSelectionIDs.length }))) return;
-    const selected = new Set(roomMemberSelectionIDs);
-    const nextAgentIDs = roomMemberMode === "add"
-      ? [...roomAgentIDs, ...roomMemberSelectionIDs.filter((agentID) => !roomAgentIDs.includes(agentID))]
-      : roomAgentIDs.filter((agentID) => !selected.has(agentID));
+    const nextAgentIDs = [...roomAgentIDs, ...roomMemberSelectionIDs.filter((agentID) => !roomAgentIDs.includes(agentID))];
     setUpdatingRoomMembers(true);
     setError("");
     try {
@@ -1190,6 +1186,31 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       setRooms((current) => current.map((candidate) => candidate.id === editingRoomID ? result.room : candidate));
       setRoomAgentIDs(nextAgentIDs);
       closeRoomMemberMode();
+      await refreshRoomsAndAgents();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setUpdatingRoomMembers(false);
+    }
+  }
+
+  async function removeRoomMember(agentID: string): Promise<void> {
+    if (!window.wuu || !editingRoomID || updatingRoomMembers) return;
+    const room = rooms.find((candidate) => candidate.id === editingRoomID);
+    const agent = agents.find((candidate) => candidate.id === agentID);
+    if (!room) return;
+    if (!window.confirm(t("channels.removeMemberConfirm", { name: agent?.name ?? agentID }))) return;
+    const nextAgentIDs = roomAgentIDs.filter((candidate) => candidate !== agentID);
+    setUpdatingRoomMembers(true);
+    setError("");
+    try {
+      const result = await window.wuu.updateChannelRoom({
+        room_id: editingRoomID,
+        name: roomName.trim() || room.name,
+        agent_ids: nextAgentIDs,
+      });
+      setRooms((current) => current.map((candidate) => candidate.id === editingRoomID ? result.room : candidate));
+      setRoomAgentIDs(nextAgentIDs);
       await refreshRoomsAndAgents();
     } catch (reason) {
       setError(String(reason));
@@ -1674,85 +1695,95 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         submitLabel={editingAgentID ? t("channels.save") : t("channels.create")}
         cancelLabel={t("channels.cancel")}
         submitDisabled={!agentName.trim() || Boolean(resettingAgentID)}
-        destructiveAction={editingAgentID ? {
-          label: t("channels.deleteAgent"),
-          disabled: Boolean(resettingAgentID),
-          onClick: () => void deleteAgent(editingAgentID),
-        } : undefined}
-        secondaryAction={editingAgentID ? {
-          label: t(resettingAgentID === editingAgentID ? "channels.resettingAgent" : "channels.resetAgent"),
-          disabled: Boolean(resettingAgentID),
-          onClick: () => void resetAgent(editingAgentID),
-        } : undefined}
         content={<div className="channel-setup-form">
           {error ? <div className="channel-error" role="alert">{error}</div> : null}
           {agentResetStatus ? <div className="channel-agent-reset-status" role="status">{agentResetStatus}</div> : null}
-          <label className="sidebar-name-dialog-field">
-            <span className="sidebar-name-dialog-label">{t("channels.name")}</span>
-            <input className="sidebar-name-dialog-input" value={agentName} onChange={(event) => setAgentName(event.currentTarget.value)} autoFocus />
-          </label>
+          <div className="channel-identity-row">
+            <button
+              className="channel-identity-avatar-button"
+              type="button"
+              aria-label={t("channels.customAvatar")}
+              aria-invalid={Boolean(agentAvatarError)}
+              aria-describedby={agentAvatarError ? "channel-agent-avatar-error" : undefined}
+              onClick={() => agentAvatarInputRef.current?.click()}
+            >
+              <AgentAvatarMark avatarKey={agentAvatarKey} avatarImage={agentAvatarImage} />
+              <span className="channel-identity-avatar-badge" aria-hidden="true"><ImagePlus className="icon" /></span>
+            </button>
+            <label className="channel-form-field">
+              <span>{t("channels.name")}</span>
+              <input value={agentName} onChange={(event) => setAgentName(event.currentTarget.value)} autoFocus placeholder="Andy" />
+            </label>
+          </div>
+          <FieldError id="channel-agent-avatar-error">{agentAvatarError}</FieldError>
+          <input
+            ref={agentAvatarInputRef}
+            className="channel-avatar-file-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              if (!file) return;
+              setAgentAvatarError("");
+              void squareAvatarImageFromFile(file)
+                .then(setAgentAvatarImage)
+                .catch(() => setAgentAvatarError(t("channels.invalidAvatarImage")))
+                .finally(() => { input.value = ""; });
+            }}
+          />
           <fieldset className="channel-avatar-picker">
             <legend>{t("channels.avatar")}</legend>
             <div>
               {AGENT_AVATAR_KEYS.map((avatarKey, index) => (
                 <button
-                  className={agentAvatarKey === avatarKey ? "active" : ""}
+                  className={agentAvatarKey === avatarKey && !agentAvatarImage ? "active" : ""}
                   type="button"
                   key={avatarKey}
                   aria-label={t("channels.chooseAvatar", { index: index + 1 })}
-                  aria-pressed={agentAvatarKey === avatarKey}
+                  aria-pressed={agentAvatarKey === avatarKey && !agentAvatarImage}
                   onClick={() => { setAgentAvatarKey(avatarKey); setAgentAvatarImage(""); setAgentAvatarError(""); }}
                 >
                   <AgentAvatarMark avatarKey={avatarKey} />
                 </button>
               ))}
-              <button
-                className={`channel-custom-avatar${agentAvatarImage ? " active" : ""}`}
-                type="button"
-                aria-label={t("channels.customAvatar")}
-                aria-pressed={Boolean(agentAvatarImage)}
-                aria-invalid={Boolean(agentAvatarError)}
-                aria-describedby={agentAvatarError ? "channel-agent-avatar-error" : undefined}
-                onClick={() => agentAvatarInputRef.current?.click()}
-              >
-                {agentAvatarImage
-                  ? <AgentAvatarMark avatarKey={agentAvatarKey} avatarImage={agentAvatarImage} />
-                  : <ImagePlus className="icon" />}
-              </button>
-              <input
-                ref={agentAvatarInputRef}
-                className="channel-avatar-file-input"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(event) => {
-                  const input = event.currentTarget;
-                  const file = input.files?.[0];
-                  if (!file) return;
-                  setAgentAvatarError("");
-                  void squareAvatarImageFromFile(file)
-                    .then(setAgentAvatarImage)
-                    .catch(() => setAgentAvatarError(t("channels.invalidAvatarImage")))
-                    .finally(() => { input.value = ""; });
-                }}
-              />
             </div>
-            <FieldError id="channel-agent-avatar-error">{agentAvatarError}</FieldError>
           </fieldset>
-          <label className="sidebar-name-dialog-field">
-            <span className="sidebar-name-dialog-label">{t("channels.model")}</span>
-            <SelectMenu value={agentModel} onChange={selectAgentModel} groups={modelGroups} ariaLabel={t("channels.model")} flip />
-          </label>
-          {agentModel && agentEffortOptions.length > 1 ? (
-            <label className="sidebar-name-dialog-field">
-              <span className="sidebar-name-dialog-label">{t("channels.effort")}</span>
-              <SelectMenu
-                value={agentEffort}
-                onChange={setAgentEffort}
-                options={agentEffortOptions.map((effort) => ({ value: effort, label: effortLabel(effort) }))}
-                ariaLabel={t("channels.effort")}
-                flip
-              />
+          <div className="channel-form-section">
+            <label className="channel-form-field">
+              <span>{t("channels.model")}</span>
+              <SelectMenu value={agentModel} onChange={selectAgentModel} groups={modelGroups} ariaLabel={t("channels.model")} flip />
             </label>
+            {agentModel && agentEffortOptions.length > 1 ? (
+              <div className="channel-form-field">
+                <span id="channel-agent-effort-label">{t("channels.effort")}</span>
+                <div className="channel-effort-picker" role="radiogroup" aria-labelledby="channel-agent-effort-label">
+                  {agentEffortOptions.map((effort) => (
+                    <button
+                      className="channel-effort-chip"
+                      type="button"
+                      role="radio"
+                      key={effort}
+                      aria-checked={agentEffort === effort}
+                      aria-pressed={agentEffort === effort}
+                      onClick={() => setAgentEffort(effort)}
+                    >
+                      {effortLabel(effort)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          {editingAgentID ? (
+            <div className="channel-form-danger-row">
+              <button type="button" disabled={Boolean(resettingAgentID)} onClick={() => void resetAgent(editingAgentID)}>
+                {t(resettingAgentID === editingAgentID ? "channels.resettingAgent" : "channels.resetAgent")}
+              </button>
+              <button className="danger" type="button" disabled={Boolean(resettingAgentID)} onClick={() => void deleteAgent(editingAgentID)}>
+                {t("channels.deleteAgent")}
+              </button>
+            </div>
           ) : null}
         </div>}
       />
@@ -1795,44 +1826,44 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                   <span>{t("channels.memberCount", { count: roomAgentIDs.length + (roomIncludesCurrentUser ? 1 : 0) })}</span>
                 </div>
               </header>
-              <div className="channel-room-member-grid">
+              <div className="channel-room-member-list">
                 {roomIncludesCurrentUser ? (
-                  <div className="channel-room-member-card current" aria-label={t("channels.you")}>
+                  <div className="channel-room-member-row current" aria-label={t("channels.you")}>
                     <span className="channel-room-member-avatar">
                       <DefaultAvatarMark seed="local-user" />
                     </span>
-                    <span className="channel-room-member-name">{t("channels.you")}</span>
+                    <span className="channel-room-member-identity">
+                      <strong>{t("channels.you")}</strong>
+                    </span>
                   </div>
                 ) : null}
                 {agents.filter((agent) => roomAgentIDs.includes(agent.id)).map((agent) => (
-                  <div
-                    className="channel-room-member-card"
-                    key={agent.id}
-                    aria-label={agent.name}
-                  >
+                  <div className="channel-room-member-row" key={agent.id}>
                     <span className="channel-room-member-avatar">
                       <AgentAvatarMark avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} />
                     </span>
-                    <span className="channel-room-member-name">{agent.name}</span>
+                    <span className="channel-room-member-identity">
+                      <strong>{agent.name}</strong>
+                    </span>
+                    <button
+                      className="channel-room-member-remove"
+                      type="button"
+                      aria-label={t("channels.removeMember", { name: agent.name })}
+                      disabled={updatingRoomMembers}
+                      onClick={() => void removeRoomMember(agent.id)}
+                    >
+                      <X className="icon" aria-hidden="true" />
+                    </button>
                   </div>
                 ))}
                 <button
-                  className="channel-room-member-action"
+                  className="channel-room-member-add"
                   type="button"
                   onClick={() => openRoomMemberMode("add")}
                   disabled={agents.every((agent) => roomAgentIDs.includes(agent.id))}
                 >
-                  <span className="channel-room-member-action-icon" aria-hidden="true"><Plus className="icon" /></span>
+                  <Plus className="icon" aria-hidden="true" />
                   <span>{t("channels.addMember")}</span>
-                </button>
-                <button
-                  className="channel-room-member-action"
-                  type="button"
-                  onClick={() => openRoomMemberMode("remove")}
-                  disabled={roomAgentIDs.length === 0}
-                >
-                  <span className="channel-room-member-action-icon" aria-hidden="true"><UserMinus className="icon" /></span>
-                  <span>{t("channels.manageMembers")}</span>
                 </button>
               </div>
             </section>
@@ -1864,36 +1895,35 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
           </div>
         ) : (
           <div className="channel-setup-form">
-            <label className="sidebar-name-dialog-field"><span className="sidebar-name-dialog-label">{t("channels.name")}</span><input className="sidebar-name-dialog-input" value={roomName} onChange={(event) => setRoomName(event.currentTarget.value)} autoFocus /></label>
-            <fieldset className="channel-room-avatar-picker">
-              <legend>{t("channels.groupAvatar")}</legend>
+            <div className="channel-identity-row">
               <button
-                className="channel-room-avatar-preview"
+                className="channel-identity-avatar-button"
                 type="button"
                 aria-label={t("channels.customGroupAvatar")}
                 onClick={() => chooseRoomAvatar("")}
               >
-                <span className="channel-room-avatar-media">
-                  <ChannelGroupAvatar
-                    room={{
-                      id: editingRoomID || "new-room",
-                      kind: "channel",
-                      name: roomName,
-                      avatar_image: roomAvatarImage || undefined,
-                      created_by: "local-user",
-                      created_at: "",
-                      members: [
-                        { room_id: editingRoomID || "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
-                        ...roomAgentIDs.map((agentID) => ({ room_id: editingRoomID || "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
-                      ],
-                    }}
-                    agents={agents}
-                  />
-                  <span className="channel-room-avatar-badge" aria-hidden="true"><ImagePlus className="icon" /></span>
-                </span>
-                <span className="channel-room-avatar-label">{t("channels.customGroupAvatar")}</span>
+                <ChannelGroupAvatar
+                  room={{
+                    id: editingRoomID || "new-room",
+                    kind: "channel",
+                    name: roomName,
+                    avatar_image: roomAvatarImage || undefined,
+                    created_by: "local-user",
+                    created_at: "",
+                    members: [
+                      { room_id: editingRoomID || "new-room", member_type: "human", member_id: "local-user", joined_at: "" },
+                      ...roomAgentIDs.map((agentID) => ({ room_id: editingRoomID || "new-room", member_type: "agent" as const, member_id: agentID, joined_at: "" })),
+                    ],
+                  }}
+                  agents={agents}
+                />
+                <span className="channel-identity-avatar-badge" aria-hidden="true"><ImagePlus className="icon" /></span>
               </button>
-            </fieldset>
+              <label className="channel-form-field">
+                <span>{t("channels.name")}</span>
+                <input value={roomName} onChange={(event) => setRoomName(event.currentTarget.value)} autoFocus placeholder={t("channels.newRoom")} />
+              </label>
+            </div>
             <ChannelMemberPicker agents={agents} selectedAgentIDs={roomAgentIDs} onToggle={toggleRoomAgent} />
           </div>
         )}
@@ -1904,26 +1934,24 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         onTitleChange={() => undefined}
         onSubmit={() => void submitRoomMemberChange()}
         onClose={closeRoomMemberMode}
-        dialogTitle={t(roomMemberMode === "remove" ? "channels.removeAgents" : "channels.addAgents")}
+        dialogTitle={t("channels.addAgents")}
         dialogTitleId="channel-room-member-dialog-title"
         fieldLabel={t("channels.groupMembers")}
         fieldAriaLabel={t("channels.groupMembers")}
         placeholder=""
-        icon={roomMemberMode === "remove" ? UserMinus : Plus}
-        submitLabel={t(roomMemberMode === "remove" ? "channels.removeSelectedMembers" : "channels.addSelectedMembers", { count: roomMemberSelectionIDs.length })}
+        icon={Plus}
+        submitLabel={t("channels.addSelectedMembers", { count: roomMemberSelectionIDs.length })}
         cancelLabel={t("channels.cancel")}
         submitDisabled={roomMemberSelectionIDs.length === 0 || updatingRoomMembers}
         dialogClassName="channel-room-member-dialog"
         content={roomMemberMode ? (
           <div className="channel-room-member-flow">
-            <p>{t(roomMemberMode === "add" ? "channels.addAgentsHint" : "channels.removeAgentsHint")}</p>
+            <p>{t("channels.addAgentsHint")}</p>
             <ChannelMemberPicker
-              agents={roomMemberMode === "add"
-                ? agents.filter((agent) => !roomAgentIDs.includes(agent.id))
-                : agents.filter((agent) => roomAgentIDs.includes(agent.id))}
+              agents={agents.filter((agent) => !roomAgentIDs.includes(agent.id))}
               selectedAgentIDs={roomMemberSelectionIDs}
               onToggle={toggleRoomMemberSelection}
-              label={t(roomMemberMode === "add" ? "channels.availableAgents" : "channels.currentAgents")}
+              label={t("channels.availableAgents")}
             />
           </div>
         ) : null}
