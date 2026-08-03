@@ -312,6 +312,13 @@
   overflow: hidden;
 }
 
+/* Keep the tab rail's available width stable when the active surface does
+ * not support creating a conversation (for example, a channel room). */
+.session-tab-new-slot {
+  width: 30px;
+  height: 30px;
+}
+
 .session-tab-list-shell {
   min-width: 0;
   max-width: 100%;

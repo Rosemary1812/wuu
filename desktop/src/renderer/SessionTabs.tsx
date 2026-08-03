@@ -297,19 +297,21 @@ export function SessionTabStrip({
           </DragOverlay>
         </DndContext>
       </div>
-      {showNewThreadButton ? (
-        <button
-          ref={newTabButtonRef}
-          className="icon-button workspace-panel-add session-tab-new"
-          type="button"
-          aria-label={t("tabs.newConversation")}
-          title={t("tabs.newConversation")}
-          disabled={!canStartNewThread}
-          onClick={onNewThread}
-        >
-          <Plus className="icon-lg" />
-        </button>
-      ) : null}
+      <div className="session-tab-new-slot">
+        {showNewThreadButton ? (
+          <button
+            ref={newTabButtonRef}
+            className="icon-button workspace-panel-add session-tab-new"
+            type="button"
+            aria-label={t("tabs.newConversation")}
+            title={t("tabs.newConversation")}
+            disabled={!canStartNewThread}
+            onClick={onNewThread}
+          >
+            <Plus className="icon-lg" />
+          </button>
+        ) : null}
+      </div>
       {tabContextMenu ? (
         <ThreadContextMenu
           x={tabContextMenu.x}

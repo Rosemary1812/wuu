@@ -404,7 +404,7 @@ describe("SessionTabStrip pending indicators", () => {
 });
 
 describe("SessionTabStrip new conversation affordance", () => {
-  it("hides the tab-strip plus while a channel room is active", () => {
+  it("hides the tab-strip plus while preserving its slot for a channel room", () => {
     const context: RuntimeContext = {
       kind: "project",
       project_id: "project-1",
@@ -420,6 +420,7 @@ describe("SessionTabStrip new conversation affordance", () => {
     });
 
     expect(container.querySelector(".session-tab-new")).toBeNull();
+    expect(container.querySelector(".session-tab-new-slot")).not.toBeNull();
   });
 
   it("keeps the tab-strip plus while a conversation draft is active", () => {
@@ -468,6 +469,7 @@ describe("SessionTabStrip layout styles", () => {
     const titleBlockRule = cssRule(".title-block");
     const titleActionsRule = cssRule(".title-actions");
     const tabStripRule = cssRule(".session-tab-strip");
+    const newTabSlotRule = cssRule(".session-tab-new-slot");
     const tabListShellRule = cssRule(".session-tab-list-shell");
     const tabScrollRule = cssRule(".session-tab-scroll");
     const tabRule = cssRule(".session-tab");
@@ -490,6 +492,8 @@ describe("SessionTabStrip layout styles", () => {
       "grid-template-columns: minmax(0, 1fr) max-content;",
     );
     expect(tabStripRule).toContain("overflow: hidden;");
+    expect(newTabSlotRule).toContain("width: 30px;");
+    expect(newTabSlotRule).toContain("height: 30px;");
     expect(tabListShellRule).toContain("min-width: 0;");
     expect(tabListShellRule).toContain("max-width: 100%;");
     expect(tabListShellRule).toContain("overflow: hidden;");
@@ -580,7 +584,8 @@ describe("SessionTabStrip layout styles", () => {
     expect(directChildren).toHaveLength(2);
     expect(directChildren[0]?.classList.contains("session-tab-list-shell")).toBe(true);
     expect(directChildren[0]?.querySelector(".session-tab-scroll")).not.toBeNull();
-    expect(directChildren[1]?.classList.contains("session-tab-new")).toBe(true);
+    expect(directChildren[1]?.classList.contains("session-tab-new-slot")).toBe(true);
+    expect(directChildren[1]?.querySelector(".session-tab-new")).not.toBeNull();
   });
 });
 
