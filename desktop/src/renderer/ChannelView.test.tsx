@@ -395,6 +395,39 @@ describe("ChannelView", () => {
     expect(status?.textContent).not.toContain("Beta");
   });
 
+  it("keeps an active room member visible when cross-server activity has no room scope", async () => {
+    const unscopedAgent: NamedAgent = {
+      ...agents[1],
+      id: "agent-3",
+      name: "Gamma",
+      activity_status: "thinking",
+      activity_room_ids: undefined,
+    };
+    const activeAgents = [...agents, unscopedAgent];
+    const activeRooms = rooms.map((room) => room.id === "room-1"
+      ? {
+          ...room,
+          members: [
+            ...room.members,
+            { room_id: room.id, member_type: "agent" as const, member_id: unscopedAgent.id, joined_at: "2026-07-23T00:00:00Z" },
+          ],
+        }
+      : room);
+    const api = createApi();
+    api.bootstrapChannels = vi.fn(async () => ({ agents: activeAgents, rooms: activeRooms }));
+    api.listNamedAgents = vi.fn(async () => ({ agents: activeAgents }));
+    api.listChannelRooms = vi.fn(async () => ({ rooms: activeRooms }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView />));
+    await settle();
+
+    const status = container.querySelector<HTMLElement>(".channel-response-status");
+    expect(status?.textContent).toContain("Alpha");
+    expect(status?.textContent).toContain("Gamma");
+    expect(status?.querySelectorAll(".channel-response-status-avatar")).toHaveLength(2);
+  });
+
   it("does not show an agent responding in another room", async () => {
     const crossRoomAgents = agents.map((agent) => agent.id === "agent-1"
       ? { ...agent, activity_room_ids: ["room-2"] }

@@ -629,8 +629,15 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     return agents
       .filter((agent) => roomAgentIDs.has(agent.id))
       .map((agent) => ({ agent, status: activityFor(agent) }))
-      .filter(({ agent, status }) => status === "sending"
-        || (status === "thinking" && agent.activity_room_ids?.includes(selectedRoomID)));
+      .filter(({ agent, status }) => {
+        if (status === "sending") return true;
+        if (status !== "thinking") return false;
+        const activityRoomIDs = agent.activity_room_ids;
+        // Activity observed through another app-server is intentionally coarse
+        // and has no room IDs. Keep an active room member visible unless the
+        // backend explicitly scopes that activity to a different room.
+        return !activityRoomIDs?.length || activityRoomIDs.includes(selectedRoomID);
+      });
   }, [activityFor, agents, selectedRoom, selectedRoomID]);
   const respondingAgentNames = useMemo(
     () => new Intl.ListFormat(locale, { style: "short", type: "conjunction" })
