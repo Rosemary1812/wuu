@@ -5,6 +5,7 @@ import {
   Brain,
   Check,
   Folder,
+  Hash,
   KeyRound,
   Plug,
   PlugZap,
@@ -62,6 +63,11 @@ export type ArchivedSessionView = {
   updated_at: string;
   archive_project_id?: string;
   archive_project_name?: string;
+};
+export type ArchivedRoomView = {
+  id: string;
+  name: string;
+  created_at: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { ENABLE_REMOTE_CONTROL, ENABLE_VOICE_INPUT } from "./FeatureFlags";
@@ -127,7 +133,9 @@ export function SettingsView({
   onSidebarResizeStart,
   onSidebarSeparatorKey,
   archivedThreads,
+  archivedRooms,
   onUnarchiveThread,
+  onUnarchiveRoom,
   // The settings rail shares the main sidebar's state and handlers wholesale:
   // same persisted width + collapse flag, same drag-to-collapse resize
   // session, same toggle motion. `activeSessionTabID` is forwarded so the
@@ -170,7 +178,9 @@ export function SettingsView({
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   // 归档页只读侧边栏归档清单 + 恢复回调。列表为空时渲染空态卡片。
   archivedThreads?: readonly ArchivedSessionView[];
+  archivedRooms?: readonly ArchivedRoomView[];
   onUnarchiveThread: (thread: ArchivedSessionView) => void;
+  onUnarchiveRoom?: (room: ArchivedRoomView) => void;
   sidebarCollapsed: boolean;
   sidebarAnimating: boolean;
   onToggleSidebar: () => void;
@@ -961,7 +971,9 @@ export function SettingsView({
             ) : activePage === "archive" ? (
               <SettingsArchivePage
                 archivedThreads={archivedThreads ?? []}
-                onUnarchive={onUnarchiveThread}
+                archivedRooms={archivedRooms ?? []}
+                onUnarchiveThread={onUnarchiveThread}
+                onUnarchiveRoom={onUnarchiveRoom ?? (() => {})}
               />
             ) : (
               <SettingsUsagePage
@@ -2296,10 +2308,14 @@ function SettingsGeneralPage({
 
 function SettingsArchivePage({
   archivedThreads,
-  onUnarchive,
+  archivedRooms,
+  onUnarchiveThread,
+  onUnarchiveRoom,
 }: {
   archivedThreads: readonly ArchivedSessionView[];
-  onUnarchive: (thread: ArchivedSessionView) => void;
+  archivedRooms: readonly ArchivedRoomView[];
+  onUnarchiveThread: (thread: ArchivedSessionView) => void;
+  onUnarchiveRoom: (room: ArchivedRoomView) => void;
 }): JSX.Element {
   const { t, formatDate } = useI18n();
   const [query, setQuery] = useState("");
@@ -2307,6 +2323,10 @@ function SettingsArchivePage({
   const sortedThreads = useMemo(
     () => [...archivedThreads].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
     [archivedThreads],
+  );
+  const sortedRooms = useMemo(
+    () => [...archivedRooms].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    [archivedRooms],
   );
   const projectOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -2343,7 +2363,14 @@ function SettingsArchivePage({
     }
     return Array.from(grouped, ([projectID, group]) => ({ projectID, ...group }));
   }, [projectFilter, query, sortedThreads, t]);
-  const noMatches = sortedThreads.length > 0 && groups.length === 0;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredRooms = sortedRooms.filter(
+    (room) =>
+      projectFilter === "all" &&
+      (!normalizedQuery || room.name.toLocaleLowerCase().includes(normalizedQuery)),
+  );
+  const archivedItemCount = sortedThreads.length + sortedRooms.length;
+  const noMatches = archivedItemCount > 0 && groups.length === 0 && filteredRooms.length === 0;
 
   return (
     <div className="settings-archive-page">
@@ -2368,11 +2395,11 @@ function SettingsArchivePage({
           flip
         />
       </div>
-      {sortedThreads.length === 0 || noMatches ? (
+      {archivedItemCount === 0 || noMatches ? (
         <div className="settings-archive-empty" role="status">
           <Archive className="settings-archive-empty-icon" aria-hidden="true" />
           <p className="settings-archive-empty-title">
-            {noMatches ? t("settings.noArchiveMatches") : t("settings.noArchivedConversations")}
+            {noMatches ? t("settings.noArchiveMatches") : t("settings.noArchivedItems")}
           </p>
           {noMatches ? null : (
             <p className="settings-archive-empty-hint">
@@ -2382,6 +2409,40 @@ function SettingsArchivePage({
         </div>
       ) : (
         <div className="settings-archive-groups" aria-label={t("settings.archivedList")}>
+          {filteredRooms.length > 0 ? (
+            <section className="settings-archive-group" data-archive-kind="rooms">
+              <header className="settings-archive-group-header">
+                <div className="settings-archive-group-name">
+                  <Hash className="icon" aria-hidden="true" />
+                  <span>{t("settings.archivedRooms")}</span>
+                </div>
+                <span className="settings-archive-group-count">
+                  {t("settings.roomCount", { count: filteredRooms.length })}
+                </span>
+              </header>
+              <div className="settings-archive-list">
+                {filteredRooms.map((room) => (
+                  <div className="settings-archive-row" key={room.id}>
+                    <div className="settings-archive-row-copy">
+                      <TruncatedText className="settings-archive-title" text={room.name} />
+                      <time className="settings-archive-time" dateTime={room.created_at}>
+                        {formatArchiveTime(room.created_at, formatDate)}
+                      </time>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-button settings-archive-restore"
+                      aria-label={t("settings.restoreRoom", { title: room.name })}
+                      onClick={() => onUnarchiveRoom(room)}
+                    >
+                      <Archive className="icon-sm" aria-hidden="true" />
+                      {t("settings.restore")}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
           {groups.map((group) => (
             <section className="settings-archive-group" key={group.projectID}>
               <header className="settings-archive-group-header">
@@ -2408,7 +2469,7 @@ function SettingsArchivePage({
                         type="button"
                         className="settings-button settings-archive-restore"
                         aria-label={t("settings.restoreConversation", { title })}
-                        onClick={() => onUnarchive(thread)}
+                        onClick={() => onUnarchiveThread(thread)}
                       >
                         <Archive className="icon-sm" aria-hidden="true" />
                         {t("settings.restore")}

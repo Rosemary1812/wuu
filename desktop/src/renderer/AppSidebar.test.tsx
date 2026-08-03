@@ -68,10 +68,13 @@ interface RenderOptions {
   state?: AppState;
   groupChatEnabled?: boolean;
   channelRooms?: ChannelRoom[];
+  pinnedChannelRooms?: ChannelRoom[];
   activeChannelRoomID?: string;
   activeChannelSection?: "rooms" | "agents" | "tasks" | null;
   collapsedSidebarSectionIDs?: Set<string>;
   onSelectChannelRoom?: (roomID: string) => void;
+  onToggleChannelRoomPinned?: (room: ChannelRoom) => void;
+  onArchiveChannelRoom?: (room: ChannelRoom) => void;
   onOpenChannelAgents?: () => void;
   onOpenChannelTasks?: () => void;
 }
@@ -108,10 +111,13 @@ function renderSidebar({
   },
   groupChatEnabled = false,
   channelRooms = [],
+  pinnedChannelRooms = [],
   activeChannelRoomID,
   activeChannelSection = null,
   collapsedSidebarSectionIDs = new Set(),
   onSelectChannelRoom,
+  onToggleChannelRoomPinned,
+  onArchiveChannelRoom,
   onOpenChannelAgents,
   onOpenChannelTasks,
 }: RenderOptions = {}): void {
@@ -138,9 +144,12 @@ function renderSidebar({
         onOpenSkillsTab={() => {}}
         groupChatEnabled={groupChatEnabled}
         channelRooms={channelRooms}
+        pinnedChannelRooms={pinnedChannelRooms}
         activeChannelRoomID={activeChannelRoomID}
         activeChannelSection={activeChannelSection}
         onSelectChannelRoom={onSelectChannelRoom}
+        onToggleChannelRoomPinned={onToggleChannelRoomPinned}
+        onArchiveChannelRoom={onArchiveChannelRoom}
         onOpenChannelAgents={onOpenChannelAgents}
         onOpenChannelTasks={onOpenChannelTasks}
         onOpenChannels={() => {}}
@@ -333,7 +342,7 @@ describe("AppSidebar 协作 section", () => {
     expect(row?.classList.contains("sidebar-session-row")).toBe(true);
     expect(row?.querySelector(".thread-row-main > .thread-row-title")?.textContent).toBe("产品体验");
     // Second-level items carry no icon of their own.
-    expect(row?.querySelector("svg")).toBeNull();
+    expect(row?.querySelector(".thread-row-main svg")).toBeNull();
 
     // Height and centering stay owned by the shared session-row rules.
     const roomRowRule = sidebarCSS.match(/\.sidebar-room-row\s*\{[^}]*\}/)?.[0] ?? "";
@@ -371,21 +380,43 @@ describe("AppSidebar 协作 section", () => {
     expect(selections).toEqual(["room-1"]);
   });
 
-  it("opens the tasks canvas from the 协作 section and marks it active", () => {
-    let opened = "";
+  it("reuses pin and archive hover actions for rooms", () => {
+    const actions: string[] = [];
+    const room = collabRoom("room-1", "产品体验");
+    renderSidebar({
+      groupChatEnabled: true,
+      channelRooms: [room],
+      onToggleChannelRoomPinned: (selected) => actions.push(`pin:${selected.id}`),
+      onArchiveChannelRoom: (selected) => actions.push(`archive:${selected.id}`),
+    });
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      '[data-room-id="room-1"] .thread-row-actions button',
+    );
+    act(() => buttons[0]?.click());
+    act(() => buttons[1]?.click());
+
+    expect(actions).toEqual(["pin:room-1", "archive:room-1"]);
+  });
+
+  it("shows pinned rooms in the global pinned section", () => {
+    renderSidebar({
+      groupChatEnabled: true,
+      pinnedChannelRooms: [collabRoom("room-1", "产品体验")],
+    });
+
+    const pinnedSection = container.querySelector('[aria-label="置顶"]');
+    expect(pinnedSection?.querySelector('[data-room-id="room-1"]')).not.toBeNull();
+  });
+
+  it("does not show the tasks canvas as a sidebar entry", () => {
     renderSidebar({
       groupChatEnabled: true,
       activeChannelSection: "tasks",
-      onOpenChannelTasks: () => { opened = "tasks"; },
     });
 
-    const entry = container.querySelector<HTMLButtonElement>(
-      ".sidebar-collab-entry .thread-row-main",
-    );
-    expect(entry?.getAttribute("aria-current")).toBe("page");
-
-    act(() => entry?.click());
-    expect(opened).toBe("tasks");
+    expect(container.querySelector(".sidebar-collab-entry")).toBeNull();
+    expect(container.querySelector(".sidebar-collab-list")?.textContent).not.toContain("任务");
   });
 
   it("offers Agents as a top-level nav item next to 自动化 and 技能", () => {

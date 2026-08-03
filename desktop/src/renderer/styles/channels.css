@@ -1666,18 +1666,225 @@
 }
 
 .channel-setup-form {
-  --bg-primary: var(--paper);
-  --bg-secondary: var(--surface-1);
-  --surface-raised: var(--surface-2);
-  --surface-hover: var(--surface-2);
-  --border-subtle: var(--hairline);
-  --border-default: var(--hairline-strong);
-  --text-primary: var(--ink);
-  --text-secondary: var(--ink-soft);
-  --text-tertiary: var(--ink-tertiary);
+  display: grid;
+  gap: 20px;
+}
 
+.channel-form-field {
+  display: grid;
+  gap: 6px;
+}
+
+.channel-form-field > span:first-child {
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.channel-form-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--font-body);
+  padding: 0 10px;
+  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.channel-form-field input::placeholder {
+  color: var(--ink-faint);
+}
+
+.channel-form-field input:focus {
+  border-color: var(--hairline-strong);
+  box-shadow: 0 0 0 3px var(--ink-overlay-8);
+}
+
+.channel-form-section {
   display: grid;
   gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.channel-form-section-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+/* Identity row: a large avatar beside the primary name field. Shared by
+   the agent editor and the new-group dialog so both open on "who is
+   this" before "how is it configured". */
+.channel-identity-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.channel-identity-avatar-button {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  cursor: pointer;
+}
+
+.channel-identity-avatar-button .agent-avatar-mark,
+.channel-identity-avatar-button .channel-group-avatar-grid,
+.channel-identity-avatar-button .channel-group-avatar-image,
+.channel-identity-avatar-button .default-avatar {
+  width: 56px;
+  height: 56px;
+  display: block;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.channel-identity-avatar-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+
+.channel-identity-avatar-button:hover .channel-identity-avatar-badge,
+.channel-identity-avatar-button:focus-visible .channel-identity-avatar-badge {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.channel-identity-avatar-badge .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.channel-identity-row .channel-form-field {
+  min-width: 0;
+}
+
+/* Preset avatar grid: columns follow available width so the picker keeps
+   readable tiles instead of shrinking to fit a fixed column count. */
+.channel-avatar-picker > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 8px;
+}
+
+.channel-avatar-picker button {
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  background: transparent;
+}
+
+.channel-avatar-picker button:hover {
+  background: var(--ink-overlay-4);
+}
+
+.channel-avatar-picker button.active {
+  border-color: var(--ink);
+}
+
+.channel-avatar-picker .agent-avatar-mark {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: var(--radius-xs);
+}
+
+/* Effort chips: the option count and label length are runtime-dependent
+   (model catalogs range from a single toggle to nine reasoning levels,
+   with provider-specific variant IDs of arbitrary length) — a fixed
+   column layout would either crowd short labels or truncate long ones.
+   Wrapping chips size to their own label and grow the field by adding
+   rows, not by shrinking anything. */
+.channel-effort-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.channel-effort-chip {
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  padding: 0 10px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+
+.channel-effort-chip:hover {
+  background: var(--surface-3);
+}
+
+.channel-effort-chip[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.channel-form-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.channel-form-danger-row button {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.channel-form-danger-row button:hover:not(:disabled),
+.channel-form-danger-row button:focus-visible:not(:disabled) {
+  color: var(--ink);
+}
+
+.channel-form-danger-row button.danger {
+  color: var(--danger);
+}
+
+.channel-form-danger-row button.danger:hover:not(:disabled),
+.channel-form-danger-row button.danger:focus-visible:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+}
+
+.channel-form-danger-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .channel-room-details-form {
@@ -1688,16 +1895,16 @@
 .channel-room-identity {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   padding: 2px 0 4px;
 }
 
 .channel-room-identity-avatar {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 
 .channel-room-identity-avatar .channel-group-avatar-grid,
@@ -1714,21 +1921,21 @@
 
 .channel-room-identity-copy strong {
   overflow: hidden;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 650;
+  color: var(--ink);
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .channel-room-identity-copy span {
-  color: var(--text-tertiary);
-  font-size: 12px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
 }
 
 .channel-room-members-section {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .channel-room-members-header {
@@ -1745,9 +1952,9 @@
 .channel-room-members-header h3 {
   min-width: 0;
   margin: 0;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 650;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -1755,48 +1962,62 @@
 .channel-room-members-header span {
   display: block;
   margin-top: 3px;
-  color: var(--text-tertiary);
-  font-size: 12px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
 }
 
-.channel-room-member-grid {
+/* Vertical member list — replaces a 6-column avatar grid that gave each
+   row ~57px, too little to show a name without truncating. A row can
+   host a full name, model label and a hover-revealed remove action. */
+.channel-room-member-list {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px 6px;
+  gap: 1px;
 }
 
-.channel-room-member-card,
-.channel-room-member-action {
+.channel-room-member-row {
+  min-width: 0;
+  height: 44px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.channel-room-member-row.current {
+  color: var(--ink-soft);
+}
+
+.channel-room-member-identity {
   min-width: 0;
   display: grid;
-  justify-items: center;
-  align-content: start;
-  gap: 7px;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
-  padding: 0;
+  gap: 1px;
 }
 
-.channel-room-member-card.current {
-  color: var(--text-secondary);
-}
-
-.channel-room-member-name,
-.channel-room-member-action > span:last-child {
-  width: 100%;
+.channel-room-member-identity strong,
+.channel-room-member-identity small {
   overflow: hidden;
-  font-size: 11px;
-  line-height: 1.2;
-  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.channel-room-member-avatar,
-.channel-room-member-action-icon {
-  width: 34px;
-  height: 34px;
+.channel-room-member-identity strong {
+  color: var(--ink);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+
+.channel-room-member-identity small {
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+}
+
+.channel-room-member-avatar {
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1810,58 +2031,90 @@
   display: block;
 }
 
-.channel-room-member-action {
-  cursor: pointer;
+.channel-room-member-remove {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-tertiary);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
-.channel-room-member-action-icon {
-  border: 1px dashed var(--border-default);
-  background: var(--surface-1);
-  color: var(--text-secondary);
+.channel-room-member-row:hover .channel-room-member-remove,
+.channel-room-member-row:focus-within .channel-room-member-remove {
+  opacity: 1;
+}
+
+.channel-room-member-remove:hover:not(:disabled),
+.channel-room-member-remove:focus-visible:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.channel-room-member-remove .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.channel-room-member-add {
+  min-width: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 12px;
+  font-size: var(--font-body);
+  cursor: pointer;
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
-.channel-room-member-action-icon .icon {
-  width: 15px;
-  height: 15px;
-}
-
-.channel-room-member-action:hover:not(:disabled) .channel-room-member-action-icon,
-.channel-room-member-action:focus-visible:not(:disabled) .channel-room-member-action-icon {
-  border-color: var(--text-tertiary);
+.channel-room-member-add:hover:not(:disabled),
+.channel-room-member-add:focus-visible:not(:disabled) {
+  border-color: var(--ink-tertiary);
   background: var(--surface-2);
-  color: var(--text-primary);
+  color: var(--ink);
 }
 
-.channel-room-member-action:focus-visible {
-  outline: 0;
-}
-
-.channel-room-member-action:disabled {
+.channel-room-member-add:disabled {
   cursor: default;
   opacity: 0.42;
 }
 
+.channel-room-member-add .icon {
+  width: 15px;
+  height: 15px;
+}
+
 .channel-room-settings-section {
   display: grid;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
 }
 
 .channel-room-settings-section .sidebar-name-dialog-input {
-  height: 40px;
-  border-radius: 9px;
-  font-size: 14px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-body);
   padding: 0 10px;
 }
 
 .channel-room-settings-section h3,
 .channel-room-danger-zone h3 {
   margin: 0;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 650;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
 }
 
 .channel-room-danger-zone {
@@ -1870,30 +2123,30 @@
   justify-content: space-between;
   gap: 16px;
   margin-top: 4px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
 }
 
 .channel-room-danger-zone p {
   margin: 4px 0 0;
-  color: var(--text-tertiary);
-  font-size: 11px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
 .channel-room-danger-zone button {
   flex: 0 0 auto;
   border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--danger);
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .channel-room-danger-zone button:hover,
 .channel-room-danger-zone button:focus-visible {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  background: var(--danger-soft);
 }
 
 .channel-room-member-flow {
@@ -1905,8 +2158,8 @@
 
 .channel-room-member-flow > p {
   margin: 0;
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
@@ -1914,51 +2167,14 @@
   width: 100%;
 }
 
-.channel-avatar-picker > div {
-  display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.channel-avatar-picker button {
-  aspect-ratio: 1;
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  padding: 2px;
-  background: transparent;
-}
-
-.channel-avatar-picker button:hover {
-  background: var(--ink-overlay-4);
-}
-
-.channel-avatar-picker button.active {
-  border-color: var(--ink);
-}
-
-.channel-avatar-picker .agent-avatar-mark {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 6px;
-}
-
 .channel-custom-avatar .icon {
   width: 19px;
   height: 19px;
-  color: var(--text-tertiary);
+  color: var(--ink-tertiary);
 }
 
 .channel-avatar-file-input {
   display: none;
-}
-
-.channel-setup-form > label {
-  display: grid;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
 }
 
 .channel-setup-form fieldset {
@@ -1971,8 +2187,9 @@
 
 .channel-setup-form legend {
   margin-bottom: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .channel-member-picker {
@@ -1985,12 +2202,12 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
 }
 
 .channel-member-picker-heading span:last-child {
-  color: var(--text-tertiary);
+  color: var(--ink-tertiary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -1998,20 +2215,20 @@
 .channel-member-picker-control {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
+  background: var(--surface-1);
 }
 
 .channel-member-picker-search {
-  height: 34px;
+  height: 36px;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 16px;
+  grid-template-columns: 34px minmax(0, 1fr) 16px;
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink-tertiary);
 }
 
 .channel-member-picker-search > svg {
@@ -2025,18 +2242,21 @@
   outline: 0;
   padding: 0;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .channel-member-picker-search input::placeholder {
-  color: var(--text-tertiary);
+  color: var(--ink-tertiary);
 }
 
+/* Full roster visible without scrolling for the common case (a handful of
+   agents); clamp against the viewport instead of a fixed cap so the list
+   grows with the window instead of stranding rows behind a 132px sliver. */
 .channel-member-picker-options {
   min-height: 44px;
-  max-height: 132px;
+  max-height: clamp(180px, 42vh, 360px);
   display: grid;
   align-content: start;
   gap: 1px;
@@ -2047,29 +2267,33 @@
 
 .channel-member-picker-option {
   min-width: 0;
-  height: 40px;
+  height: 44px;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 16px;
+  grid-template-columns: 34px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0 8px;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--ink);
   text-align: left;
 }
 
 .channel-member-picker-option:hover,
-.channel-member-picker-option:focus-visible,
+.channel-member-picker-option:focus-visible {
+  outline: 0;
+  background: var(--ink-overlay-4);
+}
+
 .channel-member-picker-option[aria-selected="true"] {
   outline: 0;
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
 
 .channel-member-picker-avatar {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   display: block;
   justify-self: center;
   overflow: hidden;
@@ -2096,26 +2320,26 @@
 }
 
 .channel-member-picker-identity strong {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .channel-member-picker-identity small {
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--ink-tertiary);
+  font-size: 11px;
   font-weight: 400;
 }
 
 .channel-member-picker-check {
-  color: var(--text-secondary);
+  color: var(--ink);
 }
 
 .channel-member-picker-empty {
   min-height: 44px;
   display: grid;
   place-items: center;
-  color: var(--text-tertiary);
-  font-size: 12px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
 }
 
 .channel-room-member-flow .channel-member-picker {

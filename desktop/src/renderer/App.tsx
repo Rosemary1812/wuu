@@ -94,6 +94,7 @@ import {
   conversationPaneThreadsByID,
   createAgentsSessionTab,
   createChannelRoomSessionTab,
+  channelRoomSessionTabID,
   createDraftSessionTab,
   createTasksSessionTab,
   emptyComposerDraft,
@@ -140,6 +141,16 @@ import {
   type SessionTab,
   type ThreadSummary,
 } from "./AppState";
+import {
+  archiveChannelRoomPreference,
+  channelRoomIsPinned,
+  readChannelRoomPreferences,
+  togglePinnedChannelRoom,
+  unarchiveChannelRoomPreference,
+  visibleChannelRooms,
+  writeChannelRoomPreferences,
+  type ChannelRoomPreferences,
+} from "./ChannelRoomPreferences";
 import {
   RIGHT_PANEL_MOTION_MS,
   SIDEBAR_DRAWER_EXIT_MS,
@@ -520,6 +531,8 @@ export function App(): JSX.Element {
   // controlled here and passed into ChannelView.
   const [channelRooms, setChannelRooms] = useState<ChannelRoom[]>([]);
   const [channelRoomsLoaded, setChannelRoomsLoaded] = useState(false);
+  const [channelRoomPreferences, setChannelRoomPreferences] =
+    useState<ChannelRoomPreferences>(readChannelRoomPreferences);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
   const {
@@ -838,29 +851,49 @@ export function App(): JSX.Element {
   const channelsOpen = channelSection !== null;
   const activeChannelRoomID =
     currentSessionTab?.kind === "channel-room" ? currentSessionTab.roomID : "";
+  const activeChannelRooms = useMemo(
+    () => visibleChannelRooms(channelRooms, channelRoomPreferences),
+    [channelRoomPreferences, channelRooms],
+  );
+  const pinnedChannelRooms = useMemo(
+    () =>
+      activeChannelRooms.filter((room) => channelRoomIsPinned(channelRoomPreferences, room.id)),
+    [activeChannelRooms, channelRoomPreferences],
+  );
+  const sidebarChannelRooms = useMemo(
+    () =>
+      activeChannelRooms.filter(
+        (room) => !channelRoomIsPinned(channelRoomPreferences, room.id),
+      ),
+    [activeChannelRooms, channelRoomPreferences],
+  );
+  const archivedChannelRooms = useMemo(
+    () => channelRooms.filter((room) => channelRoomPreferences.archivedRoomIDs.includes(room.id)),
+    [channelRoomPreferences.archivedRoomIDs, channelRooms],
+  );
   const lastSelectedChannelRoomIDRef = useRef("");
   if (activeChannelRoomID) {
     lastSelectedChannelRoomIDRef.current = activeChannelRoomID;
   }
   const selectedChannelRoomID =
     activeChannelRoomID ||
-    (channelRooms.some((room) => room.id === lastSelectedChannelRoomIDRef.current)
+    (activeChannelRooms.some((room) => room.id === lastSelectedChannelRoomIDRef.current)
       ? lastSelectedChannelRoomIDRef.current
-      : channelRooms[0]?.id ?? "");
+      : activeChannelRooms[0]?.id ?? "");
   const channelUnreadByRoomID = useMemo(
     () =>
       Object.fromEntries(
-        channelRooms.map((room) => [room.id, room.unread_count ?? 0]),
+        activeChannelRooms.map((room) => [room.id, room.unread_count ?? 0]),
       ),
-    [channelRooms],
+    [activeChannelRooms],
   );
 
   useEffect(() => {
     if (!channelRoomsLoaded) {
       return;
     }
-    setState((current) => reconcileChannelRoomSessionTabs(current, channelRooms));
-  }, [channelRooms, channelRoomsLoaded]);
+    setState((current) => reconcileChannelRoomSessionTabs(current, activeChannelRooms));
+  }, [activeChannelRooms, channelRoomsLoaded]);
   const [skillsAssistantDraft, setSkillsAssistantDraft] = useState("");
   const [skillsAssistantThreadID, setSkillsAssistantThreadID] = useState<string>();
   const [skillsAssistantStatus, setSkillsAssistantStatus] = useState("");
@@ -2817,7 +2850,7 @@ export function App(): JSX.Element {
 
   function selectChannelRoom(roomID: string): void {
     const context = appStateRef.current.activeContext;
-    const room = channelRooms.find((candidate) => candidate.id === roomID);
+    const room = activeChannelRooms.find((candidate) => candidate.id === roomID);
     if (!context || !room) {
       return;
     }
@@ -2875,8 +2908,8 @@ export function App(): JSX.Element {
 
   function openChannelsView(): void {
     const room =
-      channelRooms.find((candidate) => candidate.id === selectedChannelRoomID) ??
-      channelRooms[0];
+      activeChannelRooms.find((candidate) => candidate.id === selectedChannelRoomID) ??
+      activeChannelRooms[0];
     if (room) {
       selectChannelRoom(room.id);
       return;
@@ -3041,6 +3074,30 @@ export function App(): JSX.Element {
     removeCachedSidebarThread,
     clearThreadPendingComposerMessages,
   });
+
+  function updateChannelRoomPreferences(
+    update: (current: ChannelRoomPreferences) => ChannelRoomPreferences,
+  ): void {
+    setChannelRoomPreferences((current) => {
+      const next = update(current);
+      writeChannelRoomPreferences(next);
+      return next;
+    });
+  }
+
+  function toggleChannelRoomPinnedState(room: ChannelRoom): void {
+    updateChannelRoomPreferences((current) => togglePinnedChannelRoom(current, room.id));
+  }
+
+  function archiveChannelRoom(room: ChannelRoom): void {
+    updateChannelRoomPreferences((current) => archiveChannelRoomPreference(current, room.id));
+    void closeSessionTab(channelRoomSessionTabID(room.id));
+    setArchiveTip({ threadID: room.id, threadTitle: room.name });
+  }
+
+  function unarchiveChannelRoom(room: Pick<ChannelRoom, "id">): void {
+    updateChannelRoomPreferences((current) => unarchiveChannelRoomPreference(current, room.id));
+  }
 
   const {
     updateRuntimeSettings,
@@ -4087,7 +4144,9 @@ export function App(): JSX.Element {
                 archive_project_name: project?.name ?? t("appState.noProject"),
               };
             })}
+          archivedRooms={archivedChannelRooms}
           onUnarchiveThread={(thread) => void unarchiveThread(thread)}
+          onUnarchiveRoom={unarchiveChannelRoom}
         />
       </>
     );
@@ -4164,10 +4223,13 @@ export function App(): JSX.Element {
               openAutomationsTab();
             }}
             groupChatEnabled={ENABLE_GROUP_CHAT}
-            channelRooms={channelRooms}
+            channelRooms={sidebarChannelRooms}
+            pinnedChannelRooms={pinnedChannelRooms}
             activeChannelRoomID={channelSection === "rooms" ? selectedChannelRoomID : undefined}
             activeChannelSection={channelSection}
             onSelectChannelRoom={selectChannelRoom}
+            onToggleChannelRoomPinned={toggleChannelRoomPinnedState}
+            onArchiveChannelRoom={archiveChannelRoom}
             onOpenChannelAgents={openChannelAgentsView}
             onOpenChannelTasks={openChannelTasksView}
             onOpenChannels={openChannelsView}

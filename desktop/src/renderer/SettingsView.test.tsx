@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SettingsView, type ArchivedSessionView, type SettingsPage } from "./SettingsView";
+import {
+  SettingsView,
+  type ArchivedRoomView,
+  type ArchivedSessionView,
+  type SettingsPage,
+} from "./SettingsView";
 import type {
   BuildInfoResult,
   CodexPetsSnapshot,
@@ -123,7 +128,9 @@ function renderSettings(props: {
   // 直接传对象字面量，避免引入 ThreadSummary（它要求 turns/turn_count
   // 等计算字段，测试场景下冗余）。
   archivedThreads?: readonly ArchivedSessionView[];
+  archivedRooms?: readonly ArchivedRoomView[];
   onUnarchiveThread?: (thread: ArchivedSessionView) => void;
+  onUnarchiveRoom?: (room: ArchivedRoomView) => void;
   locale?: "zh-CN" | "en-US";
 }): { about: Element | null; text: () => string; rootText: () => string } {
   if (props.locale) {
@@ -166,7 +173,9 @@ function renderSettings(props: {
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}
         archivedThreads={props.archivedThreads ?? []}
+        archivedRooms={props.archivedRooms ?? []}
         onUnarchiveThread={props.onUnarchiveThread ?? (() => {})}
+        onUnarchiveRoom={props.onUnarchiveRoom ?? (() => {})}
     />
   );
   act(() => {
@@ -1436,7 +1445,7 @@ describe("SettingsView archive page", () => {
       archivedThreads: [],
     });
 
-    expect(container.textContent).toContain("暂无已归档的会话");
+    expect(container.textContent).toContain("暂无已归档的会话或群聊");
     expect(container.querySelector(".settings-archive-empty")).not.toBeNull();
     expect(container.querySelector(".settings-archive-list")).toBeNull();
   });
@@ -1604,5 +1613,29 @@ describe("SettingsView archive page", () => {
 
     expect(onUnarchiveThread).toHaveBeenCalledTimes(1);
     expect(onUnarchiveThread).toHaveBeenCalledWith(target);
+  });
+
+  it("lists archived group chats and restores them independently", () => {
+    const onUnarchiveRoom = vi.fn();
+    const room: ArchivedRoomView = {
+      id: "room-1",
+      name: "设计讨论",
+      created_at: "2026-06-18T12:00:00Z",
+    };
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedRooms: [room],
+      onUnarchiveRoom,
+    });
+
+    const roomGroup = container.querySelector('[data-archive-kind="rooms"]');
+    expect(roomGroup?.textContent).toContain("设计讨论");
+    const restoreButton = roomGroup?.querySelector<HTMLButtonElement>(
+      ".settings-archive-restore",
+    );
+    act(() => restoreButton?.click());
+
+    expect(onUnarchiveRoom).toHaveBeenCalledWith(room);
   });
 });

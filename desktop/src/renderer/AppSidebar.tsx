@@ -78,6 +78,69 @@ export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
  */
 export const SIDEBAR_SECTION_COLLAB = "__wuu_collab__";
 
+function ChannelRoomSidebarRow({
+  room,
+  active,
+  pinned,
+  onSelect,
+  onTogglePinned,
+  onArchive,
+}: {
+  room: ChannelRoom;
+  active: boolean;
+  pinned: boolean;
+  onSelect?: (roomID: string) => void;
+  onTogglePinned?: (room: ChannelRoom) => void;
+  onArchive?: (room: ChannelRoom) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const unread = room.unread_count ?? 0;
+  const hasUnread = !active && unread > 0;
+  return (
+    <div
+      className={`thread-row sidebar-session-row sidebar-room-row${active ? " active" : ""}${hasUnread ? " has-unread" : ""}`}
+      data-room-id={room.id}
+    >
+      <button
+        className="thread-row-main"
+        type="button"
+        aria-current={active ? "page" : undefined}
+        onClick={() => onSelect?.(room.id)}
+      >
+        <span className="thread-row-title">{room.name}</span>
+      </button>
+      {hasUnread ? (
+        <span
+          className="channel-room-unread"
+          aria-label={t("channels.unreadMessages", { count: unread })}
+        >
+          {formatChannelUnreadCount(unread)}
+        </span>
+      ) : null}
+      <div className="thread-row-actions" aria-label={t("channels.roomActions")}>
+        <button
+          className={`sidebar-row-icon-button thread-row-action ${pinned ? "active" : ""}`}
+          type="button"
+          aria-label={t(pinned ? "sidebar.unpin" : "sidebar.pin")}
+          title={t(pinned ? "sidebar.unpin" : "sidebar.pin")}
+          onClick={() => onTogglePinned?.(room)}
+        >
+          <Pin className="icon-sm" />
+        </button>
+        <button
+          className="sidebar-row-icon-button thread-row-action archive"
+          type="button"
+          aria-label={t("sidebar.archiveAction")}
+          title={t("sidebar.archiveAction")}
+          onClick={() => onArchive?.(room)}
+        >
+          <Archive className="icon-sm" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Reconcile the persisted sidebar section order against the current
  * project list. Pure function so it is directly testable.
@@ -280,9 +343,12 @@ export function AppSidebar({
   onOpenSkillsTab,
   groupChatEnabled = false,
   channelRooms = [],
+  pinnedChannelRooms = [],
   activeChannelRoomID,
   activeChannelSection = null,
   onSelectChannelRoom,
+  onToggleChannelRoomPinned,
+  onArchiveChannelRoom,
   onOpenChannelAgents,
   onOpenChannelTasks,
   onOpenChannels,
@@ -342,11 +408,14 @@ export function AppSidebar({
   // polled at the App level and passed down so the sidebar and the channel
   // canvas never disagree about what needs attention.
   channelRooms?: ChannelRoom[];
+  pinnedChannelRooms?: ChannelRoom[];
   activeChannelRoomID?: string;
   // Which channel canvas is on screen, or null when channels are closed —
   // drives the Agents / 任务 entry row highlights.
   activeChannelSection?: "rooms" | "agents" | "tasks" | null;
   onSelectChannelRoom?: (roomID: string) => void;
+  onToggleChannelRoomPinned?: (room: ChannelRoom) => void;
+  onArchiveChannelRoom?: (room: ChannelRoom) => void;
   onOpenChannelAgents?: () => void;
   onOpenChannelTasks?: () => void;
   onOpenChannels?: () => void;
@@ -432,6 +501,7 @@ export function AppSidebar({
     ? sectionHeaderInfoByIDRef.current.get(draggingSectionID)
     : undefined;
   const pinnedRows = pinnedThreads;
+  const hasPinnedRows = pinnedRows.length > 0 || pinnedChannelRooms.length > 0;
   const pinnedCollapsed = collapsedSidebarSectionIDs.has(
     SIDEBAR_SECTION_PINNED,
   );
@@ -571,7 +641,7 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-main scrollbar-hidden">
-          {pinnedRows.length > 0 ? (
+          {hasPinnedRows ? (
             <section
               className="sidebar-functional-group pinned-functional-group"
               aria-label={t("sidebar.pinned")}
@@ -603,6 +673,17 @@ export function AppSidebar({
                       onRename={onRenameThread}
                       
                     />
+                    {pinnedChannelRooms.map((room) => (
+                      <ChannelRoomSidebarRow
+                        key={room.id}
+                        room={room}
+                        active={room.id === activeChannelRoomID}
+                        pinned
+                        onSelect={onSelectChannelRoom}
+                        onTogglePinned={onToggleChannelRoomPinned}
+                        onArchive={onArchiveChannelRoom}
+                      />
+                    ))}
                   </SidebarSection>
                 </div>
               </div>
@@ -641,46 +722,17 @@ export function AppSidebar({
                     emptyNote={t("sidebar.collaborationEmpty")}
                   >
                     <div className="sidebar-collab-list">
-                      {channelRooms.map((room) => {
-                        const isActiveRoom = room.id === activeChannelRoomID;
-                        const unread = room.unread_count ?? 0;
-                        const hasUnread = !isActiveRoom && unread > 0;
-                        return (
-                          <div
-                            key={room.id}
-                            className={`thread-row sidebar-session-row sidebar-room-row${isActiveRoom ? " active" : ""}${hasUnread ? " has-unread" : ""}`}
-                          >
-                            <button
-                              className="thread-row-main"
-                              type="button"
-                              aria-current={isActiveRoom ? "page" : undefined}
-                              onClick={() => onSelectChannelRoom?.(room.id)}
-                            >
-                              <span className="thread-row-title">{room.name}</span>
-                            </button>
-                            {hasUnread ? (
-                              <span
-                                className="channel-room-unread"
-                                aria-label={t("channels.unreadMessages", { count: unread })}
-                              >
-                                {formatChannelUnreadCount(unread)}
-                              </span>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                      <div
-                        className={`thread-row sidebar-session-row sidebar-room-row sidebar-collab-entry${activeChannelSection === "tasks" ? " active" : ""}`}
-                      >
-                        <button
-                          className="thread-row-main"
-                          type="button"
-                          aria-current={activeChannelSection === "tasks" ? "page" : undefined}
-                          onClick={onOpenChannelTasks}
-                        >
-                          <span className="thread-row-title">{t("channels.tasks")}</span>
-                        </button>
-                      </div>
+                      {channelRooms.map((room) => (
+                        <ChannelRoomSidebarRow
+                          key={room.id}
+                          room={room}
+                          active={room.id === activeChannelRoomID}
+                          pinned={false}
+                          onSelect={onSelectChannelRoom}
+                          onTogglePinned={onToggleChannelRoomPinned}
+                          onArchive={onArchiveChannelRoom}
+                        />
+                      ))}
                     </div>
                   </SidebarSection>
                 </div>
