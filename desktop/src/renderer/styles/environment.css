@@ -1559,6 +1559,7 @@
 }
 
 .sidebar-name-dialog-actions .sidebar-name-dialog-destructive {
+  border: 1px solid var(--danger);
   color: var(--danger);
 }
 

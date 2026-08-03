@@ -97,8 +97,8 @@
 }
 
 .channel-title-block {
-  display: flex;
-  overflow: visible;
+  display: grid;
+  overflow: hidden;
 }
 
 .channel-list-pane {

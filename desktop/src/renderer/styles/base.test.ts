@@ -45,6 +45,17 @@ describe("global text selection", () => {
   });
 });
 
+describe("shared dialog destructive action", () => {
+  it("keeps a visible danger boundary instead of relying on text color alone", () => {
+    const destructiveRule = environmentCss.match(
+      /\.sidebar-name-dialog-actions \.sidebar-name-dialog-destructive\s*\{[\s\S]*?\}/,
+    )?.[0] ?? "";
+
+    expect(destructiveRule).toContain("border: 1px solid var(--danger);");
+    expect(destructiveRule).toContain("color: var(--danger);");
+  });
+});
+
 describe("dark theme inline code", () => {
   it("overrides the light message-flow chip instead of leaving a bright surface", () => {
     const darkTheme = themeCss.match(

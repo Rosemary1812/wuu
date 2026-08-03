@@ -292,7 +292,7 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, composerDraft, onComposerDraftChange, newRoomRequest }: {
+export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, composerDraft, onComposerDraftChange, newRoomRequest, onNewRoomRequestHandled }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
@@ -315,6 +315,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   // Incremented by the parent (sidebar ＋ button) to request the new-room
   // dialog; the dialog itself stays inside this view.
   newRoomRequest?: number;
+  onNewRoomRequestHandled?: () => void;
 }): JSX.Element {
   const { formatDate, locale, t } = useI18n();
   const [agents, setAgents] = useState<NamedAgent[]>([]);
@@ -487,7 +488,9 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   }, [closeThread, resizingThread, updateThreadWidth]);
 
   useEffect(() => {
-    if (newRoomRequest) openNewRoom();
+    if (!newRoomRequest) return;
+    openNewRoom();
+    onNewRoomRequestHandled?.();
   }, [newRoomRequest]);
 
   useEffect(() => {

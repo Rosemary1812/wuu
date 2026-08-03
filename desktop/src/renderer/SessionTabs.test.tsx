@@ -22,6 +22,10 @@ const conversationShellCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/conversation-shell.css"),
   "utf8",
 );
+const channelsCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/channels.css"),
+  "utf8",
+);
 
 function cssRule(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -506,6 +510,16 @@ describe("SessionTabStrip layout styles", () => {
     expect(tabRule).toContain("max-width: 236px;");
     expect(closeRule).toContain("width: 24px;");
     expect(closeRule).toContain("flex: 0 0 auto;");
+  });
+
+  it("keeps channel tabs on the shared full-width title grid", () => {
+    const channelTitleBlockRule = channelsCSS.match(
+      /\.channel-title-block\s*\{([\s\S]*?)\n\}/,
+    )?.[1] ?? "";
+
+    expect(channelTitleBlockRule).toContain("display: grid;");
+    expect(channelTitleBlockRule).toContain("overflow: hidden;");
+    expect(channelTitleBlockRule).not.toContain("display: flex;");
   });
 
   it("keeps titlebar controls outside the draggable window region", () => {

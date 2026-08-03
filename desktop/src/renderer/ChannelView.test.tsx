@@ -1299,12 +1299,16 @@ describe("ChannelView", () => {
 
   it("creates only a channel with selected agents", async () => {
     const api = createApi();
+    const onNewRoomRequestHandled = vi.fn();
     Object.defineProperty(window, "wuu", { configurable: true, value: api });
 
     root = createRoot(container);
-    act(() => root?.render(<ChannelView newRoomRequest={1} />));
+    act(() => root?.render(
+      <ChannelView newRoomRequest={1} onNewRoomRequestHandled={onNewRoomRequestHandled} />,
+    ));
     await settle();
 
+    expect(onNewRoomRequestHandled).toHaveBeenCalledOnce();
     expect(document.querySelector(".channel-setup-form select")).toBeNull();
     const avatarPreview = document.querySelector<HTMLButtonElement>(".channel-room-avatar-preview");
     const avatarMedia = avatarPreview?.querySelector(".channel-room-avatar-media");

@@ -4354,6 +4354,7 @@ export function App(): JSX.Element {
                   : undefined
               }
               newRoomRequest={newRoomRequest}
+              onNewRoomRequestHandled={() => setNewRoomRequest(0)}
             />
           </>
         ) : (
