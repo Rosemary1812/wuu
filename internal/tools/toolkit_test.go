@@ -315,7 +315,7 @@ func TestToolkit_WriteFileOverwritesExistingFilesWithoutPriorRead(t *testing.T) 
 	mustWriteFile(t, largePath, largeContent)
 	largeReadResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
-		Arguments: `{"path":"large.txt","range":{"start_line":1,"end_line":1}}`,
+		Arguments: `{"path":"large.txt","offset":1,"limit":1}`,
 	})
 	if err != nil {
 		t.Fatalf("read large.txt: %v", err)
@@ -463,7 +463,7 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 
 	rangeResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
-		Arguments: `{"path":"big.txt","range":{"start_line":42,"end_line":44}}`,
+		Arguments: `{"path":"big.txt","offset":42,"limit":3}`,
 	})
 	if err != nil {
 		t.Fatalf("read_file with range: %v", err)
@@ -488,16 +488,10 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 		}
 	}
 
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_file",
-		Arguments: `{"path":"big.txt","offset":42,"range":{"start_line":42,"end_line":44}}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "either range or offset/limit") {
-		t.Fatalf("expected mixed range and offset rejection, got %v", err)
-	}
 }
 
 func TestToolkit_ReadFileBySymbolAndContext(t *testing.T) {
+	t.Skip("symbol selectors were removed; use grep_repo and offset/limit")
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -614,7 +608,7 @@ func TestToolkit_ReadFileNormalizesProviderFilledEmptySelectors(t *testing.T) {
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
-		Arguments: `{"path":"config.json","offset":1,"limit":3,"range":{"start_line":1,"end_line":3},"symbol":{"name":"","kind":""},"context_lines":0}`,
+		Arguments: `{"path":"config.json","offset":1,"limit":3}`,
 	})
 	if err != nil {
 		t.Fatalf("read_file with provider-filled selectors: %v", err)
@@ -625,7 +619,7 @@ func TestToolkit_ReadFileNormalizesProviderFilledEmptySelectors(t *testing.T) {
 
 	resp, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
-		Arguments: `{"path":"all-zero.json","offset":0,"limit":0,"range":{"start_line":0,"end_line":0},"symbol":{"name":"","kind":""},"context_lines":0}`,
+		Arguments: `{"path":"all-zero.json","offset":0,"limit":0}`,
 	})
 	if err != nil {
 		t.Fatalf("read_file with all-zero provider selectors: %v", err)

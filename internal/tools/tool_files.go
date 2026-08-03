@@ -33,7 +33,7 @@ func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read a workspace file with line numbers. For a focused read, choose exactly one selector: offset/limit, range, symbol, or byte_range; omit unused selector objects. byte_range provides exact continuation through saved artifacts. context_lines can expand line selectors. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
+		Description: "Read a workspace file with line numbers. Use offset and limit for focused line reads. byte_range is reserved for exact continuation through saved artifacts. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -72,40 +72,6 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 					},
 					"required": []string{"offset", "limit"},
 				},
-				"range": map[string]any{
-					"type":        "object",
-					"description": "Inclusive line range to read.",
-					"properties": map[string]any{
-						"start_line": map[string]any{
-							"type":        "integer",
-							"description": "1-based first line to read.",
-						},
-						"end_line": map[string]any{
-							"type":        "integer",
-							"description": "1-based inclusive last line to read.",
-						},
-					},
-					"required": []string{"start_line", "end_line"},
-				},
-				"symbol": map[string]any{
-					"type":        "object",
-					"description": "Read a conservative definition range for a named Go, TypeScript/JavaScript, or Python symbol.",
-					"properties": map[string]any{
-						"name": map[string]any{
-							"type":        "string",
-							"description": "Function, class, type, interface, variable, or constant name to locate.",
-						},
-						"kind": map[string]any{
-							"type":        "string",
-							"description": "Optional expected kind such as function, method, class, type, interface, variable, or constant.",
-						},
-					},
-					"required": []string{"name"},
-				},
-				"context_lines": map[string]any{
-					"type":        "integer",
-					"description": "Surrounding lines to include with a focused read. Max 200.",
-				},
 			},
 			"required": []string{"path"},
 		},
@@ -126,14 +92,6 @@ func (t *ReadFileTool) ValidateInput(argsJSON string) error {
 }
 
 func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	type lineRangeArgs struct {
-		StartLine int `json:"start_line"`
-		EndLine   int `json:"end_line"`
-	}
-	type symbolArgs struct {
-		Name string `json:"name"`
-		Kind string `json:"kind"`
-	}
 	type byteRangeArgs struct {
 		Offset    int `json:"offset"`
 		Limit     int `json:"limit"`
@@ -143,9 +101,6 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		Path           string         `json:"path"`
 		Offset         int            `json:"offset"`
 		Limit          *int           `json:"limit"`
-		Range          *lineRangeArgs `json:"range"`
-		Symbol         *symbolArgs    `json:"symbol"`
-		ContextLines   *int           `json:"context_lines"`
 		ExpectedSHA256 string         `json:"expected_sha256"`
 		ByteRange      *byteRangeArgs `json:"byte_range"`
 	}
@@ -158,32 +113,11 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	// Some provider-compatible decoders materialize every optional schema
 	// property with zero values. Treat those empty selector sentinels as absent
 	// while preserving errors for genuinely conflicting selections.
-	if args.Symbol != nil && strings.TrimSpace(args.Symbol.Name) == "" && strings.TrimSpace(args.Symbol.Kind) == "" {
-		args.Symbol = nil
-	}
-	if args.Range != nil && args.Range.StartLine == 0 && args.Range.EndLine == 0 {
-		args.Range = nil
-	}
 	if args.ByteRange != nil && args.ByteRange.Offset == 0 && args.ByteRange.Limit == 0 {
 		args.ByteRange = nil
 	}
 	if args.Limit != nil && *args.Limit == 0 {
 		args.Limit = nil
-	}
-	if args.Range != nil && args.Limit != nil && args.Offset == args.Range.StartLine &&
-		*args.Limit == args.Range.EndLine-args.Range.StartLine+1 {
-		args.Offset = 0
-		args.Limit = nil
-	}
-	contextLines := 0
-	if args.ContextLines != nil {
-		if *args.ContextLines < 0 {
-			return "", errors.New("read_file context_lines must be non-negative")
-		}
-		if *args.ContextLines > maxReadFileContextLines {
-			return "", fmt.Errorf("read_file context_lines must be <= %d", maxReadFileContextLines)
-		}
-		contextLines = *args.ContextLines
 	}
 
 	resolved, displayPath, managedArtifact, err := t.env.ResolveReadPath(args.Path)
@@ -220,58 +154,15 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		return "", fmt.Errorf("path is a directory: %s. Use list_files to inspect directories or read_file on a file inside it", args.Path)
 	}
 	if args.ByteRange != nil {
-		if args.Symbol != nil || args.Range != nil || args.Offset > 0 || args.Limit != nil || contextLines > 0 {
-			return "", errors.New("read_file accepts byte_range instead of line range, symbol, offset/limit, or context_lines")
+		if args.Offset > 0 || args.Limit != nil {
+			return "", errors.New("read_file accepts byte_range instead of offset/limit")
 		}
 		return readFileByteWindowRedacted(ctx, t.env, resolved, displayPath, args.ByteRange.Offset, args.ByteRange.Limit, args.ByteRange.EndOffset, strings.TrimSpace(args.ExpectedSHA256), info.Size())
 	}
-	if args.Symbol == nil && args.Range == nil && args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
+	if args.Limit == nil && info.Size() > int64(defaultMaxFileBytes) {
 		return "", fmt.Errorf("file too large (%d bytes, max %d). Use offset and limit to read portions", info.Size(), defaultMaxFileBytes)
 	}
 
-	var symbolSelection *readFileSymbolSelection
-	if args.Symbol != nil {
-		if args.Range != nil || args.Offset > 0 || args.Limit != nil {
-			return "", errors.New("read_file accepts symbol instead of range or offset/limit")
-		}
-		symbolContextLines := contextLines
-		if args.ContextLines == nil {
-			symbolContextLines = readFileSymbolDefaultAround
-		}
-		selection, err := findReadFileSymbolRange(resolved, strings.TrimSpace(args.Symbol.Name), strings.TrimSpace(args.Symbol.Kind), symbolContextLines)
-		if err != nil {
-			return "", err
-		}
-		symbolSelection = &selection
-		args.Offset = selection.ContextStartLine
-		rangeLimit := selection.ContextEndLine - selection.ContextStartLine + 1
-		args.Limit = &rangeLimit
-	} else if args.Range != nil {
-		if args.Offset > 0 || args.Limit != nil {
-			return "", errors.New("read_file accepts either range or offset/limit, not both")
-		}
-		if args.Range.StartLine <= 0 {
-			return "", errors.New("read_file range.start_line must be positive")
-		}
-		if args.Range.EndLine < args.Range.StartLine {
-			return "", errors.New("read_file range.end_line must be greater than or equal to range.start_line")
-		}
-		args.Offset = max(1, args.Range.StartLine-contextLines)
-		rangeEnd := args.Range.EndLine + contextLines
-		rangeLimit := rangeEnd - args.Offset + 1
-		args.Limit = &rangeLimit
-	} else if args.Limit != nil && contextLines > 0 {
-		if args.Offset <= 0 {
-			args.Offset = 1
-		}
-		start := max(1, args.Offset-contextLines)
-		end := args.Offset + *args.Limit - 1 + contextLines
-		rangeLimit := end - start + 1
-		args.Offset = start
-		args.Limit = &rangeLimit
-	} else if contextLines > 0 {
-		return "", errors.New("read_file context_lines requires range, symbol, or offset/limit")
-	}
 	if args.Offset <= 0 {
 		args.Offset = 1
 	}
@@ -314,9 +205,6 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 					"message":            "File unchanged since last read. Refer to the earlier read result.",
 					"next_suggestions":   []string{"use the earlier read result as evidence, or request a different offset/limit if more context is needed"},
 				}
-				if symbolSelection != nil {
-					result["symbol"] = symbolSelection.Metadata()
-				}
 				return mustJSON(result)
 			}
 		}
@@ -352,9 +240,6 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"omitted_ranges":     readFileOmittedRanges(readResult.TotalLines, args.Offset, len(readResult.Lines)),
 		"truncated":          args.Offset <= readResult.TotalLines && args.Offset-1+len(readResult.Lines) < readResult.TotalLines,
 		"next_suggestions":   readFileNextSuggestions(readResult.TotalLines, args.Offset, len(readResult.Lines)),
-	}
-	if symbolSelection != nil {
-		result["symbol"] = symbolSelection.Metadata()
 	}
 	return mustJSON(result)
 }
