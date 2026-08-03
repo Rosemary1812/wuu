@@ -265,6 +265,15 @@ describe("channel thread split", () => {
     expect(resizer).toMatch(/cursor:\s*col-resize/);
     expect(channelsCss).not.toContain(".channel-thread-close");
   });
+
+  it("aligns the reply composer with the thread message gutter", () => {
+    const messages = ruleFor(".channel-thread-messages");
+    const composer = ruleFor(".channel-thread-footer .channel-composer");
+
+    expect(messages).toMatch(/padding:\s*14px 12px 12px/);
+    expect(composer).toMatch(/width:\s*100%/);
+    expect(composer).toMatch(/padding:\s*0 12px 24px/);
+  });
 });
 
 describe("channel mentions", () => {
