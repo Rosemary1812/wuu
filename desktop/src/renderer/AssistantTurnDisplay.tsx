@@ -154,12 +154,17 @@ export function buildAssistantTurnDisplay(
 
     sawAssistantWork = true;
 
-    // Empty agent_message items carry no value once the turn is no longer
-    // in flight; drop them so the process fold doesn't show ghost rows.
+    // An agent_message with no visible text is only a transport placeholder.
+    // Never turn it into a layout entry: providers can leave more than one
+    // live placeholder between tool calls, and every empty entry would still
+    // contribute the process list's vertical gap, producing a large blank
+    // block before the next visible activity row. The in-progress turn keeps
+    // the shell and timer mounted on its own; once text reaches the stream
+    // store, the next render inserts the real entry.
     if (item.type === "agent_message") {
       const streaming = isProcessItemLive(item);
       const text = streamFieldValue(turn.id, item, "text");
-      if (text.trim().length === 0 && !streaming) continue;
+      if (text.trim().length === 0) continue;
       const shouldDelayCursor = turnHasReasoning && !firstTextItemRendered;
       firstTextItemRendered = true;
       if (

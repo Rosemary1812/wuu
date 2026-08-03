@@ -287,6 +287,59 @@ describe("assistant turn entries layout", () => {
       display?.entries.filter((e) => e.item.id === "dupe-final"),
     ).toHaveLength(1);
   });
+
+  it("drops live empty message placeholders so they cannot create ghost gaps between process rows", () => {
+    const commentary = makeCommentary("checking the current behavior");
+    const firstTool = makeToolCall("grep");
+    const secondTool = makeToolCall("read_file");
+    const emptyCommentary: ThreadItem = {
+      ...makeLiveUnclassifiedAgentMessage(""),
+      phase: "commentary",
+    };
+    const emptyUnknown = makeLiveUnclassifiedAgentMessage("   ");
+    const reasoning: ThreadItem = {
+      ...makeReasoning("comparing the results"),
+      status: "in_progress",
+    };
+    const turn = makeTurn({
+      status: "in_progress",
+      items: [
+        commentary,
+        firstTool,
+        emptyCommentary,
+        secondTool,
+        emptyUnknown,
+        reasoning,
+      ],
+    });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.entries.map((entry) => entry.kind)).toEqual([
+      "commentary",
+      "process_group",
+    ]);
+    expect(display?.entries[1]?.items?.map((item) => item.id)).toEqual([
+      firstTool.id,
+      secondTool.id,
+      reasoning.id,
+    ]);
+  });
+
+  it("keeps an empty running turn shell without adding an empty answer entry", () => {
+    const emptyFinal: ThreadItem = {
+      ...makeLiveUnclassifiedAgentMessage(""),
+      phase: "final_answer",
+    };
+    const turn = makeTurn({ status: "in_progress", items: [emptyFinal] });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display).toBeDefined();
+    expect(display?.entries).toEqual([]);
+    expect(display?.hasAnswer).toBe(false);
+  });
 });
 
 describe("assistant turn fold header preview", () => {
