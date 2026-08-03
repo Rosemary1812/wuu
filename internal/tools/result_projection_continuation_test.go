@@ -134,7 +134,8 @@ func TestReadFileProjectorPointsAtOnlyOmittedMiddle(t *testing.T) {
 	}
 	m := parseOut(t, out)
 	next := m["continuation"].(map[string]any)["next"].(map[string]any)
-	if next["expected_sha256"] != "file-hash" || int(next["offset"].(float64)) <= 1 || int(next["limit"].(float64)) <= 0 {
+	continuation, err := decodeReadFileContinuation(next["continuation"].(string))
+	if err != nil || continuation.ExpectedSHA256 != "file-hash" || continuation.Offset <= 1 || continuation.Limit <= 0 {
 		t.Fatalf("invalid omitted-middle continuation: %+v", next)
 	}
 }
@@ -164,12 +165,12 @@ func TestBashProjectorExposesRankedNonOverlappingArtifactRanges(t *testing.T) {
 	}
 	for _, value := range ranges {
 		next := value.(map[string]any)["next"].(map[string]any)
-		if next["expected_sha256"] != "shell-hash" {
+		continuation, err := decodeReadFileContinuation(next["continuation"].(string))
+		if err != nil || continuation.ExpectedSHA256 != "shell-hash" {
 			t.Fatalf("bash recovery range is not snapshot-bound: %+v", next)
 		}
-		byteRange := next["byte_range"].(map[string]any)
-		if int(byteRange["end_offset"].(float64)) <= int(byteRange["offset"].(float64)) {
-			t.Fatalf("empty or reversed recovery range: %+v", byteRange)
+		if continuation.ByteOffset == nil || continuation.ByteEndOffset == nil || *continuation.ByteEndOffset <= *continuation.ByteOffset {
+			t.Fatalf("empty or reversed recovery range: %+v", continuation)
 		}
 	}
 }
@@ -181,12 +182,12 @@ func TestGenericProjectionContinuationCoversOnlyOmittedBytes(t *testing.T) {
 	head := m["preview_head"].(string)
 	tail := m["preview_tail"].(string)
 	next := m["continuation"].(map[string]any)["next"].(map[string]any)
-	byteRange := next["byte_range"].(map[string]any)
-	if next["expected_sha256"] == "" {
+	continuation, err := decodeReadFileContinuation(next["continuation"].(string))
+	if err != nil || continuation.ExpectedSHA256 == "" {
 		t.Fatalf("generic continuation is not snapshot-bound: %+v", next)
 	}
-	if int(byteRange["offset"].(float64)) != len(head) || int(byteRange["end_offset"].(float64)) != len(text)-len(tail) {
-		t.Fatalf("generic continuation overlaps preview: head=%d tail=%d range=%+v", len(head), len(tail), byteRange)
+	if continuation.ByteOffset == nil || continuation.ByteEndOffset == nil || *continuation.ByteOffset != len(head) || *continuation.ByteEndOffset != len(text)-len(tail) {
+		t.Fatalf("generic continuation overlaps preview: head=%d tail=%d range=%+v", len(head), len(tail), continuation)
 	}
 }
 
@@ -214,8 +215,8 @@ func TestStructuredGenericProjectionHasSnapshotBoundByteContinuation(t *testing.
 		t.Fatalf("structured result did not use an index envelope: %+v", m)
 	}
 	next := m["continuation"].(map[string]any)["next"].(map[string]any)
-	byteRange := next["byte_range"].(map[string]any)
-	if next["expected_sha256"] == "" || int(byteRange["end_offset"].(float64)) != len(contextual) {
+	continuation, err := decodeReadFileContinuation(next["continuation"].(string))
+	if err != nil || continuation.ExpectedSHA256 == "" || continuation.ByteEndOffset == nil || *continuation.ByteEndOffset != len(contextual) {
 		t.Fatalf("structured continuation is not an exact snapshot range: %+v", next)
 	}
 }

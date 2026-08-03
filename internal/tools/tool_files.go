@@ -33,7 +33,7 @@ func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read a workspace file with line numbers. Use offset and limit for focused line reads. byte_range is reserved for exact continuation through saved artifacts. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
+		Description: "Read a workspace file with line numbers. Use offset and limit for focused line reads. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -49,29 +49,6 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 					"type":        "integer",
 					"description": "Max lines to return. Omit to read the whole file when it fits size limits.",
 				},
-				"expected_sha256": map[string]any{
-					"type":        "string",
-					"description": "Optional full-file SHA-256 from a prior result; rejects a continuation if the file changed.",
-				},
-				"byte_range": map[string]any{
-					"type":        "object",
-					"description": "Read an exact byte window, primarily for stable continuation through saved tool-result artifacts.",
-					"properties": map[string]any{
-						"offset": map[string]any{
-							"type":        "integer",
-							"description": "Zero-based byte offset.",
-						},
-						"limit": map[string]any{
-							"type":        "integer",
-							"description": "Bytes to return, capped at the tool-result preview window.",
-						},
-						"end_offset": map[string]any{
-							"type":        "integer",
-							"description": "Optional exclusive end of a bounded artifact segment.",
-						},
-					},
-					"required": []string{"offset", "limit"},
-				},
 			},
 			"required": []string{"path"},
 		},
@@ -80,12 +57,13 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 
 func (t *ReadFileTool) ValidateInput(argsJSON string) error {
 	var args struct {
-		Path string `json:"path"`
+		Path         string `json:"path"`
+		Continuation string `json:"continuation"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return err
 	}
-	if strings.TrimSpace(args.Path) == "" {
+	if strings.TrimSpace(args.Path) == "" && strings.TrimSpace(args.Continuation) == "" {
 		return errors.New("read_file requires path")
 	}
 	return nil
@@ -99,6 +77,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	}
 	var args struct {
 		Path           string         `json:"path"`
+		Continuation   string         `json:"continuation"`
 		Offset         int            `json:"offset"`
 		Limit          *int           `json:"limit"`
 		ExpectedSHA256 string         `json:"expected_sha256"`
@@ -106,6 +85,26 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
+	}
+	if strings.TrimSpace(args.Continuation) != "" {
+		continuation, err := decodeReadFileContinuation(args.Continuation)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(args.Path) != "" && args.Path != continuation.Path {
+			return "", errors.New("read_file continuation does not match path")
+		}
+		args.Path = continuation.Path
+		if continuation.ByteOffset != nil {
+			args.ByteRange = &byteRangeArgs{Offset: *continuation.ByteOffset, Limit: continuation.Limit}
+			if continuation.ByteEndOffset != nil {
+				args.ByteRange.EndOffset = *continuation.ByteEndOffset
+			}
+		} else {
+			args.Offset = continuation.Offset
+			args.Limit = &continuation.Limit
+		}
+		args.ExpectedSHA256 = continuation.ExpectedSHA256
 	}
 	if strings.TrimSpace(args.Path) == "" {
 		return "", errors.New("read_file requires path")

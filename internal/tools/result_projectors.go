@@ -276,10 +276,7 @@ func projectReadFileResult(rawText string, pc projectorContext) (string, project
 		if omitted > 0 {
 			head := (keep + 1) / 2
 			continuation["next"] = map[string]any{
-				"path":            path,
-				"offset":          startLine + head,
-				"limit":           omitted,
-				"expected_sha256": contentSHA,
+				"continuation": encodeReadFileContinuation(path, startLine+head, omitted, contentSHA),
 			}
 		}
 		candidate["continuation"] = continuation
@@ -453,13 +450,7 @@ func bashProjectionContinuation(m map[string]any, artifactRef, shownStdout, show
 		ranges = append(ranges, map[string]any{
 			"stream": stream.name,
 			"next": map[string]any{
-				"path":            artifactRef,
-				"expected_sha256": fullLogSHA,
-				"byte_range": map[string]any{
-					"offset":     stream.start,
-					"limit":      projectionPreviewBytes,
-					"end_offset": omittedEnd,
-				},
+				"continuation": encodeReadFileByteContinuation(artifactRef, stream.start, projectionPreviewBytes, omittedEnd, fullLogSHA),
 			},
 		})
 	}

@@ -115,13 +115,7 @@ func buildBoundedResultReference(path, contextual string, raw toolresult.Result,
 		continuation := map[string]any{"has_more": hasMore}
 		if hasMore {
 			continuation["next"] = map[string]any{
-				"path":            path,
-				"expected_sha256": contentSHA,
-				"byte_range": map[string]any{
-					"offset":     omittedStart,
-					"limit":      projectionPreviewBytes,
-					"end_offset": omittedEnd,
-				},
+				"continuation": encodeReadFileByteContinuation(path, omittedStart, projectionPreviewBytes, omittedEnd, contentSHA),
 			}
 		}
 		envelope["continuation"] = continuation
@@ -173,13 +167,11 @@ func buildStructuredResultIndex(path string, raw json.RawMessage, contextual str
 		"artifact_ref":        path,
 		"content_sha256":      sha256Hex([]byte(contextual)),
 		"original_characters": len(contextual),
-		"instruction":         "Use continuation.next, then follow each read_file continuation.next to inspect non-overlapping byte windows.",
+		"instruction":         "Use continuation.next to inspect the omitted result without overlap.",
 		"continuation": map[string]any{
 			"has_more": true,
 			"next": map[string]any{
-				"path":            path,
-				"expected_sha256": sha256Hex([]byte(contextual)),
-				"byte_range":      map[string]any{"offset": 0, "limit": projectionPreviewBytes, "end_offset": len(contextual)},
+				"continuation": encodeReadFileByteContinuation(path, 0, projectionPreviewBytes, len(contextual), sha256Hex([]byte(contextual))),
 			},
 		},
 	}
