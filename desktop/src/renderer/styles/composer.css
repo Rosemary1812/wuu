@@ -80,6 +80,10 @@
   margin: 0 auto;
 }
 
+.channel-thread-footer .dock-composer-wrap .composer-stack {
+  width: 100%;
+}
+
 .composer-top-accessory {
   display: flex;
   justify-content: flex-end;
