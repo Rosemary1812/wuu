@@ -201,6 +201,7 @@ export const enUS = {
   "channels.invalidAvatarImage": "Choose a PNG, JPEG, or WebP image up to 10 MB.",
   "channels.chooseAvatar": "Choose avatar {index}",
   "channels.model": "Model",
+  "channels.effort": "Reasoning effort",
   "channels.inheritModel": "Inherit global model",
   "channels.create": "Create",
   "channels.save": "Save",

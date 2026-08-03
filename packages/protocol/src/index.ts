@@ -497,6 +497,7 @@ export type NamedAgent = {
   avatar_image?: string;
   provider_override?: string;
   model_override?: string;
+  effort_override?: string;
   autostart: boolean;
   created_at: string;
   activity_status?: "idle" | "thinking";
@@ -562,6 +563,7 @@ export type ChannelAgentCreateParams = {
   avatar_image?: string;
   provider_override?: string;
   model_override?: string;
+  effort_override?: string;
 };
 export type ChannelAgentCreateResult = { agent: NamedAgent };
 export type ChannelAgentUpdateParams = ChannelAgentCreateParams & { agent_id: string };

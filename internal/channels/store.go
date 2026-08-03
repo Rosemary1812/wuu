@@ -150,6 +150,7 @@ func (s *Service) migrate() error {
 			avatar_image TEXT NOT NULL DEFAULT '',
 			provider_override TEXT,
 			model_override TEXT,
+			effort_override TEXT,
 			token_hash TEXT NOT NULL,
 			autostart INTEGER NOT NULL DEFAULT 0 CHECK (autostart IN (0, 1)),
 			created_at INTEGER NOT NULL
@@ -327,6 +328,7 @@ func (s *Service) ensureLegacyColumns() error {
 		{table: "reminders", name: "created_at", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "named_agents", name: "avatar_key", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "named_agents", name: "avatar_image", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "named_agents", name: "effort_override", definition: "TEXT"},
 		{table: "rooms", name: "avatar_image", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, column := range columns {
@@ -575,6 +577,15 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 	if err != nil {
 		return AgentCredential{}, err
 	}
+	provider := strings.TrimSpace(params.ProviderOverride)
+	model := strings.TrimSpace(params.ModelOverride)
+	effort := strings.TrimSpace(params.EffortOverride)
+	if (provider == "") != (model == "") {
+		return AgentCredential{}, errors.New("named agent provider and model overrides must be set together")
+	}
+	if effort != "" && model == "" {
+		return AgentCredential{}, errors.New("named agent effort override requires a model override")
+	}
 	id, err := randomID("agent", 12)
 	if err != nil {
 		return AgentCredential{}, err
@@ -590,8 +601,9 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 		MemoryDir:        filepath.Join(s.dir, "agents", id, "memory"),
 		AvatarKey:        avatarKey,
 		AvatarImage:      avatarImage,
-		ProviderOverride: strings.TrimSpace(params.ProviderOverride),
-		ModelOverride:    strings.TrimSpace(params.ModelOverride),
+		ProviderOverride: provider,
+		ModelOverride:    model,
+		EffortOverride:   effort,
 		Autostart:        params.Autostart,
 		CreatedAt:        now,
 	}
@@ -610,9 +622,9 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO named_agents (id, name, memory_dir, avatar_key, avatar_image, provider_override, model_override, token_hash, autostart, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		agent.ID, agent.Name, agent.MemoryDir, agent.AvatarKey, agent.AvatarImage, nullableString(agent.ProviderOverride), nullableString(agent.ModelOverride), tokenHash(token), boolInt(agent.Autostart), toMillis(now),
+		INSERT INTO named_agents (id, name, memory_dir, avatar_key, avatar_image, provider_override, model_override, effort_override, token_hash, autostart, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		agent.ID, agent.Name, agent.MemoryDir, agent.AvatarKey, agent.AvatarImage, nullableString(agent.ProviderOverride), nullableString(agent.ModelOverride), nullableString(agent.EffortOverride), tokenHash(token), boolInt(agent.Autostart), toMillis(now),
 	)
 	if err != nil {
 		if isUniqueConstraint(err) {
@@ -637,13 +649,13 @@ func (s *Service) GetNamedAgent(ctx context.Context, id string) (NamedAgent, err
 		return NamedAgent{}, errors.New("named agent id is required")
 	}
 	return scanNamedAgent(s.db.QueryRowContext(ctx, `
-		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), autostart, created_at
+		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), COALESCE(effort_override, ''), autostart, created_at
 		FROM named_agents WHERE id = ?`, id))
 }
 
 func (s *Service) ListNamedAgents(ctx context.Context) ([]NamedAgent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), autostart, created_at
+		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), COALESCE(effort_override, ''), autostart, created_at
 		FROM named_agents ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list named agents: %w", err)
@@ -668,11 +680,15 @@ func (s *Service) UpdateNamedAgent(ctx context.Context, params UpdateNamedAgentP
 	name := strings.TrimSpace(params.Name)
 	provider := strings.TrimSpace(params.ProviderOverride)
 	model := strings.TrimSpace(params.ModelOverride)
+	effort := strings.TrimSpace(params.EffortOverride)
 	if id == "" || name == "" {
 		return NamedAgent{}, errors.New("named agent id and name are required")
 	}
 	if (provider == "") != (model == "") {
 		return NamedAgent{}, errors.New("named agent provider and model overrides must be set together")
+	}
+	if effort != "" && model == "" {
+		return NamedAgent{}, errors.New("named agent effort override requires a model override")
 	}
 	avatarKey, err := normalizeNamedAgentAvatarKey(params.AvatarKey)
 	if err != nil {
@@ -693,8 +709,8 @@ func (s *Service) UpdateNamedAgent(ctx context.Context, params UpdateNamedAgentP
 		}
 	}
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE named_agents SET name = ?, avatar_key = ?, avatar_image = ?, provider_override = ?, model_override = ? WHERE id = ?`,
-		name, avatarKey, avatarImage, nullableString(provider), nullableString(model), id)
+		UPDATE named_agents SET name = ?, avatar_key = ?, avatar_image = ?, provider_override = ?, model_override = ?, effort_override = ? WHERE id = ?`,
+		name, avatarKey, avatarImage, nullableString(provider), nullableString(model), nullableString(effort), id)
 	if err != nil {
 		if isUniqueConstraint(err) {
 			return NamedAgent{}, fmt.Errorf("%w: named agent %q already exists", ErrConflict, name)
@@ -749,9 +765,9 @@ func (s *Service) AuthenticateAgent(ctx context.Context, agentID, token string) 
 	var autostart int
 	var createdAt int64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), autostart, created_at, token_hash
+		SELECT id, name, memory_dir, avatar_key, avatar_image, COALESCE(provider_override, ''), COALESCE(model_override, ''), COALESCE(effort_override, ''), autostart, created_at, token_hash
 		FROM named_agents WHERE id = ?`, agentID,
-	).Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.AvatarKey, &agent.AvatarImage, &agent.ProviderOverride, &agent.ModelOverride, &autostart, &createdAt, &storedHash)
+	).Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.AvatarKey, &agent.AvatarImage, &agent.ProviderOverride, &agent.ModelOverride, &agent.EffortOverride, &autostart, &createdAt, &storedHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return NamedAgent{}, ErrUnauthorized
 	}
@@ -1162,7 +1178,7 @@ func scanNamedAgent(row scanner) (NamedAgent, error) {
 	var agent NamedAgent
 	var autostart int
 	var createdAt int64
-	if err := row.Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.AvatarKey, &agent.AvatarImage, &agent.ProviderOverride, &agent.ModelOverride, &autostart, &createdAt); err != nil {
+	if err := row.Scan(&agent.ID, &agent.Name, &agent.MemoryDir, &agent.AvatarKey, &agent.AvatarImage, &agent.ProviderOverride, &agent.ModelOverride, &agent.EffortOverride, &autostart, &createdAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NamedAgent{}, ErrNotFound
 		}

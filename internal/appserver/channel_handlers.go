@@ -60,7 +60,7 @@ func (s *Server) handleChannelAgentCreate(ctx context.Context, req Request) erro
 		return s.writeResponse(req.ID, nil, err)
 	}
 	credential, err := s.channelService.CreateNamedAgent(ctx, channels.CreateNamedAgentParams{
-		Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride, Autostart: true,
+		Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride, EffortOverride: params.EffortOverride, Autostart: true,
 	})
 	if err == nil {
 		s.invalidateChannelAgentInsights()
@@ -85,13 +85,16 @@ func (s *Server) handleChannelAgentUpdate(ctx context.Context, req Request) erro
 		return s.writeResponse(req.ID, nil, errors.New("named agent cannot be edited while it is running"))
 	}
 	agent, err := s.channelService.UpdateNamedAgent(ctx, channels.UpdateNamedAgentParams{
-		ID: params.AgentID, Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride,
+		ID: params.AgentID, Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride, EffortOverride: params.EffortOverride,
 	})
 	if err == nil && thread != nil {
 		selection := s.currentSessionRuntimeSelection()
 		if agent.ModelOverride != "" {
 			selection.Provider = agent.ProviderOverride
 			selection.Model = agent.ModelOverride
+		}
+		if agent.EffortOverride != "" {
+			selection.Effort = agent.EffortOverride
 		}
 		thread.mu.Lock()
 		oldRuntime := thread.execRuntime

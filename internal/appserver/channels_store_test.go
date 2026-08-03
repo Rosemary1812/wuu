@@ -44,6 +44,42 @@ func TestServerOpensIndependentChannelsStore(t *testing.T) {
 	}
 }
 
+func TestChannelAgentRPCPersistsEffortOverride(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+
+	var created ChannelAgentCreateResult
+	callChannelRPC(t, server, out, MethodChannelAgentCreate, ChannelAgentCreateParams{
+		Name: "Reasoner", ProviderOverride: "openai", ModelOverride: "gpt-reasoner", EffortOverride: "high",
+	}, &created)
+	if created.Agent.EffortOverride != "high" {
+		t.Fatalf("created agent = %#v, want effort override high", created.Agent)
+	}
+
+	var updated ChannelAgentUpdateResult
+	callChannelRPC(t, server, out, MethodChannelAgentUpdate, ChannelAgentUpdateParams{
+		AgentID: created.Agent.ID, Name: created.Agent.Name, ProviderOverride: "openai", ModelOverride: "gpt-reasoner", EffortOverride: "low",
+	}, &updated)
+	if updated.Agent.EffortOverride != "low" {
+		t.Fatalf("updated agent = %#v, want effort override low", updated.Agent)
+	}
+}
+
+func TestNamedAgentRuntimeSelectionAppliesModelAndEffortOverrides(t *testing.T) {
+	agent := channels.NamedAgent{ProviderOverride: "openai", ModelOverride: "gpt-reasoner", EffortOverride: "high"}
+	provider, model, effort := namedAgentModelSelection("default-provider", "default-model", "medium", agent)
+	if provider != "openai" || model != "gpt-reasoner" || effort != "high" {
+		t.Fatalf("named agent runtime selection = (%q, %q, %q)", provider, model, effort)
+	}
+	provider, model, effort = namedAgentModelSelection("default-provider", "default-model", "medium", channels.NamedAgent{})
+	if provider != "default-provider" || model != "default-model" || effort != "medium" {
+		t.Fatalf("inherited runtime selection = (%q, %q, %q)", provider, model, effort)
+	}
+}
+
 func TestChannelHumanRPCsCreateRoomAndSendMessage(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")

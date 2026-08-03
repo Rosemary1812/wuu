@@ -91,10 +91,9 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 				Provider: th.ModelProvider, Model: th.Model, Variant: th.ModelVariant,
 				Effort: th.ModelEffort, PermissionMode: th.PermissionMode,
 			}
-			if model := strings.TrimSpace(agent.ModelOverride); model != "" {
-				selection.Provider = strings.TrimSpace(agent.ProviderOverride)
-				selection.Model = model
-			}
+			selection.Provider, selection.Model, selection.Effort = namedAgentModelSelection(
+				selection.Provider, selection.Model, selection.Effort, agent,
+			)
 			threadRuntime, err := s.newNamedAgentRuntime(threadID, agent, selection)
 			if err != nil {
 				return nil, err
@@ -108,10 +107,9 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 	}
 	agentHome := filepath.Dir(agent.MemoryDir)
 	selection := s.currentSessionRuntimeSelection()
-	if model := strings.TrimSpace(agent.ModelOverride); model != "" {
-		selection.Provider = strings.TrimSpace(agent.ProviderOverride)
-		selection.Model = model
-	}
+	selection.Provider, selection.Model, selection.Effort = namedAgentModelSelection(
+		selection.Provider, selection.Model, selection.Effort, agent,
+	)
 	threadRuntime, err := s.newNamedAgentRuntime(threadID, agent, runtime.ThreadModelSelection{
 		Provider: selection.Provider, Model: selection.Model, Variant: selection.Variant,
 		Effort: selection.Effort, PermissionMode: selection.PermissionMode,
@@ -175,6 +173,17 @@ func (s *Server) ensureNamedAgentThreadLocked(agent channels.NamedAgent) (*threa
 		return existing, nil
 	}
 	return th, nil
+}
+
+func namedAgentModelSelection(provider, model, effort string, agent channels.NamedAgent) (string, string, string) {
+	if override := strings.TrimSpace(agent.ModelOverride); override != "" {
+		provider = strings.TrimSpace(agent.ProviderOverride)
+		model = override
+	}
+	if override := strings.TrimSpace(agent.EffortOverride); override != "" {
+		effort = override
+	}
+	return provider, model, effort
 }
 
 func (s *Server) newNamedAgentRuntime(threadID string, agent channels.NamedAgent, selection runtime.ThreadModelSelection) (*runtime.ThreadRuntime, error) {

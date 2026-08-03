@@ -199,6 +199,7 @@ export const zhCN = {
   "channels.invalidAvatarImage": "请选择不超过 10 MB 的 PNG、JPEG 或 WebP 图片。",
   "channels.chooseAvatar": "选择头像 {index}",
   "channels.model": "模型",
+  "channels.effort": "推理强度",
   "channels.inheritModel": "继承全局模型",
   "channels.create": "创建",
   "channels.save": "保存",

@@ -66,6 +66,7 @@ type NamedAgent struct {
 	AvatarImage      string    `json:"avatar_image,omitempty"`
 	ProviderOverride string    `json:"provider_override,omitempty"`
 	ModelOverride    string    `json:"model_override,omitempty"`
+	EffortOverride   string    `json:"effort_override,omitempty"`
 	Autostart        bool      `json:"autostart"`
 	CreatedAt        time.Time `json:"created_at"`
 	ActivityStatus   string    `json:"activity_status,omitempty"`
@@ -83,6 +84,7 @@ type CreateNamedAgentParams struct {
 	AvatarImage      string
 	ProviderOverride string
 	ModelOverride    string
+	EffortOverride   string
 	Autostart        bool
 }
 
@@ -93,6 +95,7 @@ type UpdateNamedAgentParams struct {
 	AvatarImage      *string
 	ProviderOverride string
 	ModelOverride    string
+	EffortOverride   string
 }
 
 type BootstrapResult struct {

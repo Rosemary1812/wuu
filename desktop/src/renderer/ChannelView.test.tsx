@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChannelRoom, NamedAgent, WuuDesktopApi } from "../shared/protocol";
+import type { ChannelRoom, InitializeResult, NamedAgent, WuuDesktopApi } from "../shared/protocol";
 import { graphDensityScale } from "./AgentRelationshipGraph";
 import { groupAvatarRowSizes } from "./ChannelGroupAvatar";
 import { ChannelView, formatChannelUnreadCount } from "./ChannelView";
@@ -1138,7 +1138,56 @@ describe("ChannelView", () => {
       avatar_image: "",
       provider_override: undefined,
       model_override: undefined,
+      effort_override: undefined,
     });
+  });
+
+  it("persists a selected effort with a named agent model override", async () => {
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    const initialized = {
+      protocol_version: "1",
+      provider: "openai",
+      model: "gpt-default",
+      workspace_root: "/workspace",
+      providers: [{
+        name: "openai",
+        type: "openai",
+        model: "gpt-reasoner",
+        models: [{
+          id: "gpt-reasoner",
+          display_name: "GPT Reasoner",
+          supported_efforts: ["low", "high"],
+          default_effort: "low",
+        }],
+      }],
+    } as InitializeResult;
+
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="agents" initialized={initialized} />));
+    await settle();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="新建 Agent"]')?.click());
+
+    const nameInput = document.querySelector<HTMLInputElement>(".channel-setup-form input:not([type])");
+    act(() => setInputValue(nameInput!, "Reasoner"));
+    act(() => document.querySelector<HTMLButtonElement>('button[aria-label="模型"]')?.click());
+    const modelOption = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'))
+      .find((button) => button.textContent?.includes("GPT Reasoner"));
+    act(() => modelOption?.click());
+    const effortTrigger = document.querySelector<HTMLButtonElement>('button[aria-label="推理强度"]');
+    expect(effortTrigger).not.toBeNull();
+    act(() => effortTrigger?.click());
+    const highOption = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'))
+      .find((button) => button.textContent?.trim() === "高");
+    act(() => highOption?.click());
+    await act(async () => document.querySelector<HTMLFormElement>(".sidebar-name-dialog")?.requestSubmit());
+
+    expect(api.createNamedAgent).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Reasoner",
+      provider_override: "openai",
+      model_override: "gpt-reasoner",
+      effort_override: "high",
+    }));
   });
 
   it("keeps agent deletion inside the shared settings dialog", async () => {

@@ -27,6 +27,12 @@ describe("project sidebar row layout", () => {
     expect(cssRule(".sidebar-row-icon-button")).toMatch(/width:\s*var\(--sidebar-row-action-size,\s*24px\)/);
   });
 
+  it("reveals the collaboration new-room action on hover and keyboard focus", () => {
+    expect(sidebarCSS).toMatch(/\.collab-section:hover \.project-row-new-thread/);
+    expect(sidebarCSS).toMatch(/\.collab-section:focus-within \.project-row-new-thread/);
+    expect(sidebarCSS).toMatch(/[\s\S]*\.collab-section:focus-within \.project-row-new-thread\s*\{[^}]*pointer-events:\s*auto/);
+  });
+
   it("aligns thread list footer text with the navigation body column", () => {
     expect(cssRule(".sidebar-content")).toMatch(/--sidebar-row-control-pad-x:\s*8px/);
     expect(cssRule(".thread-list-footer")).toMatch(

@@ -1269,7 +1269,9 @@
  * stopped matching and the button never appeared (regression fixed per
  * sidebar-groups-andy-workspaces.md §1.2). */
 .project-group:hover .project-row-new-thread,
-.project-group:focus-within .project-row-new-thread {
+.project-group:focus-within .project-row-new-thread,
+.collab-section:hover .project-row-new-thread,
+.collab-section:focus-within .project-row-new-thread {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);

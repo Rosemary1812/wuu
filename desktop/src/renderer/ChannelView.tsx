@@ -26,6 +26,7 @@ import { useLongTextCollapse } from "./LongTextCollapse";
 import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { RichContent } from "./RichContent";
+import { effortLabel, providerModelEffortOptions } from "./RuntimeHelpers";
 
 type SetupPanel = "agent" | "room" | "task" | null;
 type RoomMemberMode = "add" | "remove" | null;
@@ -384,6 +385,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [agentAvatarImage, setAgentAvatarImage] = useState("");
   const [agentAvatarError, setAgentAvatarError] = useState("");
   const [agentModel, setAgentModel] = useState("");
+  const [agentEffort, setAgentEffort] = useState("");
   const [editingAgentID, setEditingAgentID] = useState("");
   const [roomName, setRoomName] = useState("");
   const [roomAgentIDs, setRoomAgentIDs] = useState<string[]>([]);
@@ -651,6 +653,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     }
     return groups;
   }, [initialized, t]);
+  const [agentProviderName, agentModelID] = agentModel.split("\u0000");
+  const agentProvider = initialized?.providers?.find((provider) => provider.name === agentProviderName);
+  const agentEffortOptions = providerModelEffortOptions(agentProvider, agentModelID ?? "", agentEffort);
+
+  function selectAgentModel(value: string): void {
+    setAgentModel(value);
+    setAgentEffort("");
+  }
 
   const refreshRoomsAndAgents = useCallback(async (): Promise<void> => {
     if (!window.wuu) return;
@@ -863,6 +873,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         avatar_image: agentAvatarImage,
         provider_override: providerOverride || undefined,
         model_override: modelOverride || undefined,
+        effort_override: modelOverride && agentEffort ? agentEffort : undefined,
       };
       if (editingAgentID) await window.wuu.updateNamedAgent({ agent_id: editingAgentID, ...params });
       else await window.wuu.createNamedAgent(params);
@@ -1036,6 +1047,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     setAgentAvatarImage(agent.avatar_image ?? "");
     setAgentAvatarError("");
     setAgentModel(agent.provider_override && agent.model_override ? `${agent.provider_override}\u0000${agent.model_override}` : "");
+    setAgentEffort(agent.effort_override ?? "");
     setSetupPanel("agent");
   }
 
@@ -1047,6 +1059,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     setAgentAvatarImage("");
     setAgentAvatarError("");
     setAgentModel("");
+    setAgentEffort("");
   }
 
   function toggleRoomAgent(agentID: string): void {
@@ -1500,6 +1513,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                     setAgentAvatarImage("");
                     setAgentAvatarError("");
                     setAgentModel("");
+                    setAgentEffort("");
                     setSetupPanel("agent");
                   }}
                 >
@@ -1686,8 +1700,20 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
           </fieldset>
           <label className="sidebar-name-dialog-field">
             <span className="sidebar-name-dialog-label">{t("channels.model")}</span>
-            <SelectMenu value={agentModel} onChange={setAgentModel} groups={modelGroups} ariaLabel={t("channels.model")} flip />
+            <SelectMenu value={agentModel} onChange={selectAgentModel} groups={modelGroups} ariaLabel={t("channels.model")} flip />
           </label>
+          {agentModel && agentEffortOptions.length > 1 ? (
+            <label className="sidebar-name-dialog-field">
+              <span className="sidebar-name-dialog-label">{t("channels.effort")}</span>
+              <SelectMenu
+                value={agentEffort}
+                onChange={setAgentEffort}
+                options={agentEffortOptions.map((effort) => ({ value: effort, label: effortLabel(effort) }))}
+                ariaLabel={t("channels.effort")}
+                flip
+              />
+            </label>
+          ) : null}
         </div>}
       />
       <SidebarNameDialog

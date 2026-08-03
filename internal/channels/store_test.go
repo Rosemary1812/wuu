@@ -162,9 +162,10 @@ func TestOpenCreatesIndependentChannelsSchema(t *testing.T) {
 func TestNamedAgentIdentityIsIndependentAndTokenIsHashed(t *testing.T) {
 	service := openTestService(t, nil)
 	credential, err := service.CreateNamedAgent(context.Background(), CreateNamedAgentParams{
-		Name:          "Alpha",
-		ModelOverride: "provider:model",
-		Autostart:     true,
+		Name:             "Alpha",
+		ProviderOverride: "provider",
+		ModelOverride:    "model",
+		Autostart:        true,
 	})
 	if err != nil {
 		t.Fatalf("CreateNamedAgent() error = %v", err)
@@ -509,19 +510,19 @@ func TestNamedAgentModelCanFollowWorkspaceOrUseExplicitProvider(t *testing.T) {
 	service := openTestService(t, nil)
 	created := createTestAgent(t, service, "Andy")
 	updated, err := service.UpdateNamedAgent(ctx, UpdateNamedAgentParams{
-		ID: created.Agent.ID, Name: "Andy", AvatarKey: "abstract-9", ProviderOverride: "anthropic", ModelOverride: "claude-sonnet",
+		ID: created.Agent.ID, Name: "Andy", AvatarKey: "abstract-9", ProviderOverride: "anthropic", ModelOverride: "claude-sonnet", EffortOverride: "high",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.AvatarKey != "abstract-9" || updated.ProviderOverride != "anthropic" || updated.ModelOverride != "claude-sonnet" {
+	if updated.AvatarKey != "abstract-9" || updated.ProviderOverride != "anthropic" || updated.ModelOverride != "claude-sonnet" || updated.EffortOverride != "high" {
 		t.Fatalf("updated = %#v", updated)
 	}
 	inherited, err := service.UpdateNamedAgent(ctx, UpdateNamedAgentParams{ID: created.Agent.ID, Name: "Andy"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inherited.ProviderOverride != "" || inherited.ModelOverride != "" {
+	if inherited.ProviderOverride != "" || inherited.ModelOverride != "" || inherited.EffortOverride != "" {
 		t.Fatalf("inherited = %#v", inherited)
 	}
 	if inherited.AvatarKey != "abstract-9" {
@@ -1073,6 +1074,7 @@ func TestOpenAddsColumnsMissingFromLegacySchema(t *testing.T) {
 		`ALTER TABLE room_messages DROP COLUMN task_title`,
 		`ALTER TABLE reminders DROP COLUMN created_at`,
 		`ALTER TABLE named_agents DROP COLUMN avatar_key`,
+		`ALTER TABLE named_agents DROP COLUMN effort_override`,
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			db.Close()
@@ -1089,7 +1091,7 @@ func TestOpenAddsColumnsMissingFromLegacySchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = upgraded.Close() })
 	upgradedAgent, err := upgraded.GetNamedAgent(ctx, alpha.Agent.ID)
-	if err != nil || upgradedAgent.AvatarKey == "" {
+	if err != nil || upgradedAgent.AvatarKey == "" || upgradedAgent.EffortOverride != "" {
 		t.Fatalf("GetNamedAgent(upgraded) = %#v, err %v", upgradedAgent, err)
 	}
 	if _, err := upgraded.ListMessages(ctx, room.ID, 0, 50); err != nil {
