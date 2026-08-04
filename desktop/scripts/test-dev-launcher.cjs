@@ -8,6 +8,8 @@ const {
   processIDForLaunchToken,
 } = require("./launch-electron-via-open.cjs");
 const {
+  electronInstallerScriptFromManifest,
+  ensureSourceElectronApp,
   helperPathForApp,
   pipHelperPathForApp,
   speechHelperPathForApp,
@@ -150,6 +152,96 @@ assert.equal(
 assert.equal(
   matchingIdentity(identities, "0123456789abcdef0123456789abcdef01234567")?.name,
   DEFAULT_DEV_SIGNING_ID,
+);
+
+// Electron bootstrap for the dev host. The real installer downloads a binary
+// over the network; these tests replace that step with a fake so they verify
+// our decision logic without touching the network or the real Electron.app.
+const realSourceApp = resolve(
+  __dirname,
+  "..",
+  "node_modules",
+  "electron",
+  "dist",
+  "Electron.app",
+);
+
+assert.equal(
+  electronInstallerScriptFromManifest({ bin: { "install-electron": "install.js" } }),
+  "install.js",
+);
+assert.equal(electronInstallerScriptFromManifest({}), "install.js");
+
+// Test 1: source Electron.app already present -> installer not called.
+let installCalls = 0;
+let appExists = true;
+assert.equal(
+  ensureSourceElectronApp({
+    sourceAppExists: () => appExists,
+    installElectron: () => {
+      installCalls += 1;
+      return { status: 0 };
+    },
+    electronVersion: "42.3.0",
+  }),
+  true,
+);
+assert.equal(installCalls, 0);
+
+// Test 2: missing first, then present after install -> installer called once.
+let installCallsTwo = 0;
+let appExistsTwo = false;
+assert.equal(
+  ensureSourceElectronApp({
+    sourceAppExists: () => appExistsTwo,
+    installElectron: () => {
+      installCallsTwo += 1;
+      appExistsTwo = true;
+      return { status: 0 };
+    },
+    electronVersion: "42.3.0",
+  }),
+  true,
+);
+assert.equal(installCallsTwo, 1);
+
+// Test 3: installer reports success but the app is still missing -> clear error.
+assert.throws(
+  () => ensureSourceElectronApp({
+    sourceAppExists: () => false,
+    installElectron: () => ({ status: 0 }),
+    electronVersion: "42.3.0",
+  }),
+  (error) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.includes("still missing"));
+    assert.ok(error.message.includes(realSourceApp));
+    return true;
+  },
+);
+
+// Test 4: installer itself fails -> error keeps the exit status.
+assert.throws(
+  () => ensureSourceElectronApp({
+    sourceAppExists: () => false,
+    installElectron: () => ({ status: 1 }),
+    electronVersion: "42.3.0",
+  }),
+  /status 1/,
+);
+
+// Test 5: an already-current Wuu Dev.app fast-returns before the source
+// Electron.app is ever checked or installed. The source order in
+// prepareDevElectronApp encodes that guarantee: the `return devApp;` short
+// circuit must appear before the `ensureSourceElectronApp(` call.
+const prepareSource = readFileSync(resolve(__dirname, "prepare-dev-electron-app.cjs"), "utf8");
+const fastReturnIndex = prepareSource.indexOf("return devApp;");
+const bootstrapCallIndex = prepareSource.indexOf("ensureSourceElectronApp({ electronVersion });");
+assert.ok(fastReturnIndex >= 0, "fast path return must exist");
+assert.ok(bootstrapCallIndex >= 0, "bootstrap call must exist");
+assert.ok(
+  bootstrapCallIndex > fastReturnIndex,
+  "existing Wuu Dev.app must return before checking/installing source Electron.app",
 );
 
 console.log("dev launcher tests passed");

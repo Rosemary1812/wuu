@@ -7,7 +7,7 @@ const {
   writeFileSync,
 } = require("node:fs");
 const { createHash } = require("node:crypto");
-const { join, resolve } = require("node:path");
+const { dirname, join, resolve } = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const desktopRoot = resolve(__dirname, "..");
@@ -38,6 +38,7 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
   )) return devApp;
 
   console.log(`preparing stable Wuu Dev host for Electron ${electronVersion}...`);
+  ensureSourceElectronApp({ electronVersion });
   mkdirSync(hostRoot, { recursive: true });
   rmSync(devApp, { recursive: true, force: true });
 
@@ -185,7 +186,54 @@ function run(command, args) {
   }
 }
 
+function installedElectronVersion() {
+  return JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
+}
+
+function electronInstallerScriptFromManifest(manifest) {
+  return manifest.bin?.["install-electron"] || "install.js";
+}
+
+function electronInstallerPath() {
+  const manifest = JSON.parse(readFileSync(electronPackagePath, "utf8"));
+  return join(dirname(electronPackagePath), electronInstallerScriptFromManifest(manifest));
+}
+
+function installElectronBinary() {
+  const installerPath = electronInstallerPath();
+  console.log(`running local Electron installer: node ${installerPath}`);
+  return spawnSync(process.execPath, [installerPath], { stdio: "inherit" });
+}
+
+function ensureSourceElectronApp({
+  sourceAppExists = () => existsSync(sourceApp),
+  installElectron = installElectronBinary,
+  electronVersion = installedElectronVersion(),
+} = {}) {
+  if (sourceAppExists()) return true;
+
+  console.log(
+    `Electron ${electronVersion} binary is not downloaded yet; installing before preparing the Wuu Dev host...`,
+  );
+  const result = installElectron();
+  if (result.status !== 0) {
+    throw new Error(
+      `Electron ${electronVersion} install failed with status ${result.status ?? "unknown"}. `
+      + `Run the local installer directly to see the full error: node ${electronInstallerPath()}`,
+    );
+  }
+  if (!sourceAppExists()) {
+    throw new Error(
+      `Electron ${electronVersion} installer finished but ${sourceApp} is still missing; `
+      + "cannot prepare the Wuu Dev host without it.",
+    );
+  }
+  return true;
+}
+
 module.exports = {
+  electronInstallerScriptFromManifest,
+  ensureSourceElectronApp,
   helperPathForApp,
   pipHelperPathForApp,
   speechHelperPathForApp,
