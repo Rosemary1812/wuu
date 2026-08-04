@@ -132,7 +132,7 @@ describe("AgentRelationshipGraph", () => {
     expect(controls[1]?.textContent).toBe(`${Math.round(fittedScale * 100)}%`);
   });
 
-  it("shows a focused agent snapshot with activity metrics and highlights its relationships", () => {
+  it("highlights a focused agent without a floating card and opens details from the node", () => {
     const agents = [
       { id: "agent-1", name: "Galileo", avatar_key: "abstract-1", activity_status: "idle" },
       { id: "agent-2", name: "Qin", avatar_key: "abstract-2", activity_status: "thinking" },
@@ -143,6 +143,7 @@ describe("AgentRelationshipGraph", () => {
       members: agents.map((agent) => ({ member_type: "agent" as const, member_id: agent.id })),
     }] as ChannelRoom[];
 
+    const onSelectAgent = vi.fn();
     act(() => root.render(
       <AgentRelationshipGraph
         agents={agents}
@@ -163,7 +164,7 @@ describe("AgentRelationshipGraph", () => {
         }}
         inheritedProvider="openai"
         inheritedModel="gpt-5.2"
-        onSelectAgent={vi.fn()}
+        onSelectAgent={onSelectAgent}
         ariaLabel="Relationship graph"
         zoomInLabel="Zoom in"
         zoomOutLabel="Zoom out"
@@ -173,13 +174,10 @@ describe("AgentRelationshipGraph", () => {
 
     const node = container.querySelector<SVGGElement>('[aria-label="Galileo"]')!;
     act(() => node.focus());
-    const card = container.querySelector<HTMLElement>('[data-testid="channel-agent-preview-card"]')!;
-    expect(card).not.toBeNull();
-    expect(card.textContent).not.toContain("Galileo");
-    expect(card.textContent).toContain("gpt-5.2");
-    expect(card.textContent).toContain("TypeScript");
-    expect(card.textContent).toContain("386");
+    expect(container.querySelector('[data-testid="channel-agent-preview-card"]')).toBeNull();
     expect(container.querySelectorAll(".channel-agent-graph-node.is-active").length).toBeGreaterThan(0);
     expect(container.querySelectorAll(".channel-agent-graph-links .is-active").length).toBeGreaterThan(0);
+    act(() => node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(onSelectAgent).toHaveBeenCalledWith(agents[0]);
   });
 });

@@ -1120,8 +1120,16 @@ describe("ChannelView", () => {
     expect(agentRow?.querySelector(".channel-directory-identity")?.textContent).toContain("Alpha");
     expect(agentRow?.querySelectorAll(".channel-directory-settings")).toHaveLength(1);
     expect(agentRow?.querySelector(".channel-agent-directory-actions")).toBeNull();
+    const graphEntry = container.querySelector<HTMLButtonElement>(".channel-agent-graph-entry");
+    expect(graphEntry?.getAttribute("aria-current")).toBe("page");
     act(() => agentAvatar?.click());
+    expect(container.querySelector(".channel-agent-detail h2")?.textContent).toBe("Alpha");
+    expect(container.querySelector(".channel-agent-graph-canvas")).toBeNull();
+    const agentSettings = agentRow?.querySelector<HTMLButtonElement>(".channel-directory-settings");
+    act(() => agentSettings?.click());
     expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("编辑 Agent");
+    act(() => graphEntry?.click());
+    expect(container.querySelector(".channel-agent-graph-canvas")).not.toBeNull();
 
     act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("156");

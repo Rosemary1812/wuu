@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, ClipboardList, ImagePlus, MessageCircle, Network, PanelLeftClose, PanelLeftOpen, Plus, Reply, Settings2, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -388,6 +388,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [agentModel, setAgentModel] = useState("");
   const [agentEffort, setAgentEffort] = useState("");
   const [editingAgentID, setEditingAgentID] = useState("");
+  const [selectedAgentID, setSelectedAgentID] = useState("");
   const [resettingAgentID, setResettingAgentID] = useState("");
   const [agentResetStatus, setAgentResetStatus] = useState("");
   const [roomName, setRoomName] = useState("");
@@ -557,6 +558,19 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     () => new Map(agents.map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedAgentID),
+    [agents, selectedAgentID],
+  );
+  const selectedAgentRooms = useMemo(
+    () => selectedAgent ? rooms.filter((room) => room.members.some(
+      (member) => member.member_type === "agent" && member.member_id === selectedAgent.id,
+    )) : [],
+    [rooms, selectedAgent],
+  );
+  useEffect(() => {
+    if (selectedAgentID && !selectedAgent) setSelectedAgentID("");
+  }, [selectedAgent, selectedAgentID]);
   const selectedRoomAgents = useMemo(() => {
     const memberIDs = new Set(
       selectedRoom?.members
@@ -1574,16 +1588,25 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
             </div>
             {!listCollapsed && error ? <div className="channel-error" role="alert">{error}</div> : null}
             {!listCollapsed ? <div className="channel-agent-directory-list channel-directory-list">
+            <button
+              className={`channel-agent-graph-entry${selectedAgentID ? "" : " selected"}`}
+              type="button"
+              aria-current={selectedAgentID ? undefined : "page"}
+              onClick={() => setSelectedAgentID("")}
+            >
+              <Network className="icon" />
+              <span>{t("channels.relationshipGraph")}</span>
+            </button>
             {agents.map((agent) => {
               const status = activityFor(agent);
               const roomCount = rooms.filter((room) => room.members.some((member) => member.member_type === "agent" && member.member_id === agent.id)).length;
               const model = agent.model_override || t("channels.inheritModel");
               return (
-                <div className="channel-directory-row channel-agent-directory-row" key={agent.id}>
-                  <button className="channel-directory-avatar" type="button" aria-label={t("channels.editAgent")} onClick={() => editAgent(agent)}>
+                <div className={`channel-directory-row channel-agent-directory-row${selectedAgentID === agent.id ? " selected" : ""}`} key={agent.id}>
+                  <button className="channel-directory-avatar" type="button" aria-label={t("channels.viewAgent", { name: agent.name })} onClick={() => setSelectedAgentID(agent.id)}>
                     <AgentAvatar name={agent.name} avatarKey={agent.avatar_key} avatarImage={agent.avatar_image} status={status} statusText={activityText(status)} />
                   </button>
-                  <button className="channel-directory-identity channel-agent-directory-identity" type="button" onClick={() => editAgent(agent)}>
+                  <button className="channel-directory-identity channel-agent-directory-identity" type="button" aria-current={selectedAgentID === agent.id ? "page" : undefined} onClick={() => setSelectedAgentID(agent.id)}>
                     <span><strong>{agent.name}</strong><small>{model} · {t("channels.agentRoomCount", { count: roomCount })}</small></span>
                   </button>
                   <button className="icon-button channel-directory-settings" type="button" aria-label={t("channels.editAgent")} onClick={() => editAgent(agent)}><Settings2 className="icon" /></button>
@@ -1606,18 +1629,67 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
             /> : null}
           </aside>
           <div className="channel-agent-graph-pane">
-            <AgentRelationshipGraph
-              agents={agents}
-              rooms={rooms}
-              insights={agentInsights}
-              inheritedProvider={initialized?.provider}
-              inheritedModel={initialized?.model}
-              onSelectAgent={editAgent}
-              ariaLabel={t("channels.relationshipGraph")}
-              zoomInLabel={t("channels.zoomIn")}
-              zoomOutLabel={t("channels.zoomOut")}
-              resetViewLabel={t("channels.resetGraphView")}
-            />
+            {selectedAgent ? (
+              <article className="channel-agent-detail">
+                <header className="channel-agent-detail-header">
+                  <AgentAvatar
+                    name={selectedAgent.name}
+                    avatarKey={selectedAgent.avatar_key}
+                    avatarImage={selectedAgent.avatar_image}
+                    status={activityFor(selectedAgent)}
+                    statusText={activityText(activityFor(selectedAgent))}
+                  />
+                  <div>
+                    <span>{t("channels.agentDetails")}</span>
+                    <h2>{selectedAgent.name}</h2>
+                    <p>{activityText(activityFor(selectedAgent))}</p>
+                  </div>
+                  <button className="channel-management-primary" type="button" onClick={() => editAgent(selectedAgent)}>
+                    <Settings2 className="icon" />
+                    {t("channels.editAgent")}
+                  </button>
+                </header>
+                <div className="channel-agent-detail-grid">
+                  <section>
+                    <h3>{t("channels.agentRuntime")}</h3>
+                    <dl>
+                      <div><dt>{t("channels.provider")}</dt><dd>{selectedAgent.provider_override || initialized?.provider || "—"}</dd></div>
+                      <div><dt>{t("channels.model")}</dt><dd>{selectedAgent.model_override || initialized?.model || t("channels.inheritModel")}</dd></div>
+                      <div><dt>{t("channels.effort")}</dt><dd>{selectedAgent.effort_override || "—"}</dd></div>
+                      <div><dt>{t("channels.agentAutostart")}</dt><dd>{selectedAgent.autostart ? t("channels.enabled") : t("channels.disabled")}</dd></div>
+                    </dl>
+                  </section>
+                  <section>
+                    <h3>{t("channels.agentChannels")}</h3>
+                    {selectedAgentRooms.length ? (
+                      <div className="channel-agent-detail-rooms">
+                        {selectedAgentRooms.map((room) => <span key={room.id}># {room.name}</span>)}
+                      </div>
+                    ) : <p className="channel-agent-detail-empty">{t("channels.agentNoChannels")}</p>}
+                  </section>
+                  <section className="channel-agent-detail-wide">
+                    <h3>{t("channels.agentStorage")}</h3>
+                    <dl>
+                      <div><dt>{t("channels.agentMemoryDirectory")}</dt><dd><code>{selectedAgent.memory_dir}</code></dd></div>
+                      <div><dt>{t("channels.agentCreatedAt")}</dt><dd>{formatDate(selectedAgent.created_at)}</dd></div>
+                    </dl>
+                  </section>
+                </div>
+              </article>
+            ) : (
+              <AgentRelationshipGraph
+                agents={agents}
+                rooms={rooms}
+                insights={agentInsights}
+                inheritedProvider={initialized?.provider}
+                inheritedModel={initialized?.model}
+                onSelectAgent={(agent) => setSelectedAgentID(agent.id)}
+                ariaLabel={t("channels.relationshipGraph")}
+                zoomInLabel={t("channels.zoomIn")}
+                zoomOutLabel={t("channels.zoomOut")}
+                resetViewLabel={t("channels.resetGraphView")}
+              />
+            )}
           </div>
         </div>
       ) : (
