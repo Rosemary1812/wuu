@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { TurnGroupView } from "./TurnGroupView";
 
@@ -13,6 +13,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   act(() => {
     root?.unmount();
   });
@@ -330,6 +331,41 @@ describe("TurnGroupView — awaiting between turns", () => {
     // The wait placeholder and completion share one stable timeline node, so
     // AnimatedProcessText performs its normal in-place text transition.
     expect(completedRow).toBe(waitingRow);
+  });
+
+  it("keeps wall-clock timing when a completed wake has no completed_at yet", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T10:01:00Z"));
+    const spawnTurn = makeTurn(
+      "t1",
+      [userItem("帮我查 X"), spawnItem("research_a"), answerItem("我先派一个子任务。")],
+      {
+        startedAt: "2026-07-29T10:00:00Z",
+        completedAt: "2026-07-29T10:00:12Z",
+        durationMs: 12_000,
+      },
+    );
+    mountGroup([spawnTurn], true);
+    expect(container.querySelector(".turn-process-meta")?.textContent).toBe("1m 0s");
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    const wakeTurn = makeTurn(
+      "t2",
+      [wakeItem("agent-research_a"), answerItem("汇总如下。")],
+      {
+        startedAt: "2026-07-29T10:01:01Z",
+        durationMs: 1_000,
+      },
+    );
+    mountGroup([spawnTurn, wakeTurn], false);
+
+    // Member durations add up to only 13s; the unified orchestration timer
+    // must retain the 62s wall-clock span observed across the subagent wait.
+    expect(container.querySelector(".turn-process-title")?.textContent).toContain(
+      "1 分 2 秒",
+    );
   });
 
   it("publishes a notification-only completion on the original spawn node", () => {

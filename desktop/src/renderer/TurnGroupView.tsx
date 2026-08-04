@@ -1,6 +1,6 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type {
   InputFile,
   InputImage,
@@ -156,6 +156,20 @@ function MergedTurnGroupView({
     ? messageFlowAgentMessageItemID(last)
     : undefined;
 
+  // Some synthetic wake turns settle before their completed_at reaches the
+  // renderer. Preserve the wall-clock edge observed by this mounted
+  // orchestration instead of falling back to the sum of member durations,
+  // which excludes the subagent wait and makes the unified timer jump back.
+  const fallbackStartedAtRef = useRef(Date.now());
+  const sawLiveRef = useRef(live);
+  const fallbackCompletedAtRef = useRef<number | undefined>(undefined);
+  if (live) {
+    sawLiveRef.current = true;
+    fallbackCompletedAtRef.current = undefined;
+  } else if (sawLiveRef.current && fallbackCompletedAtRef.current === undefined) {
+    fallbackCompletedAtRef.current = Date.now();
+  }
+
   // The shell sees a synthetic turn: identity of the first, items of all
   // (turnProgressContent reads running tools / latest item), status and
   // timing of the whole run. Per-item rendering still resolves each
@@ -167,6 +181,11 @@ function MergedTurnGroupView({
       const endMs = parseTurnTimestampMs(last.completed_at);
       if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs) {
         durationMs = endMs - startMs;
+      } else if (sawLiveRef.current && fallbackCompletedAtRef.current !== undefined) {
+        const effectiveStartMs = Number.isFinite(startMs)
+          ? startMs
+          : fallbackStartedAtRef.current;
+        durationMs = Math.max(0, fallbackCompletedAtRef.current - effectiveStartMs);
       } else {
         const sum = turns.reduce(
           (acc, turn) =>
