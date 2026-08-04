@@ -59,6 +59,7 @@ The desktop app includes its own core and does not require a separate CLI. For s
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+wuu --version
 wuu init
 
 wuu exec "fix the failing tests and verify the result"

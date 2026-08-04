@@ -12,7 +12,9 @@ const defaultVersion = "v0.1.0-dev"
 //
 //	go build -ldflags "-X github.com/blueberrycongee/wuu/internal/version.Version=v0.1.0"
 var (
-	Version = defaultVersion
+	// Version is empty unless a build injects it with ldflags. This lets Go
+	// module installs use debug.BuildInfo.Main.Version as their release version.
+	Version = ""
 	Commit  = "none"
 	Date    = "unknown"
 )
@@ -31,8 +33,9 @@ type BuildInfo struct {
 
 // Info returns resolved build metadata from ldflags + Go build info.
 func Info() BuildInfo {
+	linkedVersion := strings.TrimSpace(Version)
 	out := BuildInfo{
-		Version: normalizeVersion(Version),
+		Version: normalizeVersion(linkedVersion),
 		Commit:  strings.TrimSpace(Commit),
 		Date:    strings.TrimSpace(Date),
 	}
@@ -44,6 +47,9 @@ func Info() BuildInfo {
 	}
 
 	if bi, ok := readBuildInfo(); ok && bi != nil {
+		if linkedVersion == "" && isModuleSemver(bi.Main.Version) {
+			out.Version = normalizeVersion(bi.Main.Version)
+		}
 		for _, s := range bi.Settings {
 			switch s.Key {
 			case "vcs.revision":
@@ -103,6 +109,65 @@ func normalizeVersion(v string) string {
 		return "v" + trimmed
 	}
 	return trimmed
+}
+
+// isModuleSemver reports whether v is a valid Go module semantic version.
+// Module versions include the leading "v" required by the Go toolchain.
+func isModuleSemver(v string) bool {
+	if !strings.HasPrefix(v, "v") {
+		return false
+	}
+
+	version := v[1:]
+	coreAndPrerelease, build, hasBuild := strings.Cut(version, "+")
+	if hasBuild && !validSemverIdentifiers(build, false) {
+		return false
+	}
+
+	core, prerelease, hasPrerelease := strings.Cut(coreAndPrerelease, "-")
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if !validSemverNumber(part) {
+			return false
+		}
+	}
+	return !hasPrerelease || validSemverIdentifiers(prerelease, true)
+}
+
+func validSemverNumber(value string) bool {
+	if value == "" || (len(value) > 1 && value[0] == '0') {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validSemverIdentifiers(value string, rejectLeadingZeroNumbers bool) bool {
+	for _, identifier := range strings.Split(value, ".") {
+		if identifier == "" {
+			return false
+		}
+		numeric := true
+		for _, r := range identifier {
+			if (r < '0' || r > '9') && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && r != '-' {
+				return false
+			}
+			if r < '0' || r > '9' {
+				numeric = false
+			}
+		}
+		if rejectLeadingZeroNumbers && numeric && len(identifier) > 1 && identifier[0] == '0' {
+			return false
+		}
+	}
+	return true
 }
 
 // LongString returns a multi-line detailed version output.

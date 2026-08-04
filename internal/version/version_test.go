@@ -6,6 +6,61 @@ import (
 	"testing"
 )
 
+func TestInfo_VersionResolution(t *testing.T) {
+	tests := []struct {
+		name          string
+		linkedVersion string
+		moduleVersion string
+		want          string
+	}{
+		{
+			name:          "ldflags take priority over module version",
+			linkedVersion: "2.0.0-dev",
+			moduleVersion: "v1.2.3",
+			want:          "v2.0.0-dev",
+		},
+		{
+			name:          "module semver is used without ldflags",
+			moduleVersion: "v1.2.3-beta.1+build.7",
+			want:          "v1.2.3-beta.1+build.7",
+		},
+		{
+			name:          "development checkout keeps dev version",
+			moduleVersion: "(devel)",
+			want:          defaultVersion,
+		},
+		{
+			name:          "invalid module version keeps dev version",
+			moduleVersion: "v1.2",
+			want:          defaultVersion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origVersion, origCommit, origDate := Version, Commit, Date
+			origRead := readBuildInfo
+			t.Cleanup(func() {
+				Version, Commit, Date = origVersion, origCommit, origDate
+				readBuildInfo = origRead
+			})
+
+			Version = tt.linkedVersion
+			Commit = "none"
+			Date = "unknown"
+			readBuildInfo = func() (*debug.BuildInfo, bool) {
+				return &debug.BuildInfo{
+					Main: debug.Module{Version: tt.moduleVersion},
+				}, true
+			}
+
+			if got := Info().Version; got != tt.want {
+				t.Fatalf("unexpected resolved version: got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInfo_FallsBackToBuildSettings(t *testing.T) {
 	origVersion, origCommit, origDate := Version, Commit, Date
 	origRead := readBuildInfo
