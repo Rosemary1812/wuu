@@ -3058,7 +3058,7 @@ func TestServerConfigCodexModels(t *testing.T) {
 		    {"slug":"gpt-hidden","visibility":"hide","supported_in_api":true},
 		    {"slug":"spark","display_name":"Spark","supported_in_api":false},
 		    {"slug":"gpt-5.4","display_name":"GPT-5.4","priority":20,"supported_in_api":true},
-		    {"slug":"gpt-5.5","display_name":"GPT-5.5","priority":9,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"xhigh"}],"supported_in_api":true}
+		    {"slug":"gpt-5.5","display_name":"GPT-5.5","priority":9,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"xhigh"},{"effort":"ultra"}],"supported_in_api":true}
 		  ]
 		}`))
 	}))
@@ -3172,14 +3172,14 @@ func TestCachedCodexModelsReplaceCatalogOnlyReasoningLevels(t *testing.T) {
 
 	merged := srv.withCachedCodexModels("openai-codex", provider)
 	model := merged.Models["gpt-5.6-sol"]
-	if got := strings.Join(model.SupportedEfforts, ","); got != "low,medium,high,xhigh,max,ultra" {
+	if got := strings.Join(model.SupportedEfforts, ","); got != "low,medium,high,xhigh,max" {
 		t.Fatalf("supported efforts = %q", got)
 	}
 	if _, ok := model.Variants["none"]; ok {
 		t.Fatalf("catalog-only none variant survived live model merge: %#v", model.Variants)
 	}
-	if _, ok := model.Variants["ultra"]; !ok {
-		t.Fatalf("live ultra variant missing after merge: %#v", model.Variants)
+	if _, ok := model.Variants["ultra"]; ok {
+		t.Fatalf("client-only ultra mode leaked into reasoning variants: %#v", model.Variants)
 	}
 }
 

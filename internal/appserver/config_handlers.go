@@ -2201,7 +2201,7 @@ func codexModelSummaryFromLive(model codex.ModelInfo) CodexModelSummary {
 		Slug:                  model.Slug,
 		DisplayName:           model.DisplayName,
 		DefaultReasoningLevel: model.DefaultReasoningLevel,
-		SupportedReasoning:    append([]string(nil), model.SupportedReasoning...),
+		SupportedReasoning:    normalizedCodexEfforts(model.SupportedReasoning),
 		SupportedInAPI:        model.SupportedInAPI,
 	}
 }
@@ -2275,7 +2275,10 @@ func normalizedCodexEfforts(values []string) []string {
 	out := make([]string, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
+		// Codex uses Ultra as a client-side orchestration mode and downgrades it
+		// to max before making the model request. Wuu does not expose that mode
+		// through the reasoning-effort picker, where sending it verbatim is a 400.
+		if value == "" || strings.EqualFold(value, "ultra") || seen[value] {
 			continue
 		}
 		seen[value] = true
