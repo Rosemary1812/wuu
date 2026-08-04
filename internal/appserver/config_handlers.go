@@ -1848,10 +1848,28 @@ func providerSummariesFromConfig(cfg config.Config, home string) []ProviderSumma
 }
 
 func providerHasAuth(name string, provider config.ProviderConfig, home string) bool {
-	if provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "" {
+	if isCodexProviderType(provider.Type) {
+		if strings.TrimSpace(provider.APIKey) != "" || configuredEnvValue(provider.APIKeyEnv) != "" {
+			return true
+		}
+		source, err := codex.LocalOAuthStatus(home)
+		return err == nil && (source == "wuu-auth-store" || provider.ReuseCodexCredentials)
+	}
+
+	if _, err := providerfactory.ResolveAPIKeyWithHome(provider, name, home); err == nil {
 		return true
 	}
-	if isCodexProviderType(provider.Type) && provider.ReuseCodexCredentials {
+	if !providerUsesAnthropicAuth(provider) {
+		return false
+	}
+	if strings.TrimSpace(provider.AuthToken) != "" {
+		return true
+	}
+	authTokenEnv := strings.TrimSpace(provider.AuthTokenEnv)
+	if authTokenEnv == "" {
+		authTokenEnv = "ANTHROPIC_AUTH_TOKEN"
+	}
+	if configuredEnvValue(authTokenEnv) != "" {
 		return true
 	}
 	store, err := authstorage.ForHome(home)
@@ -1859,8 +1877,26 @@ func providerHasAuth(name string, provider config.ProviderConfig, home string) b
 		return false
 	}
 	credentials, err := store.Get(name)
-	return err == nil && (strings.TrimSpace(credentials.APIKey) != "" ||
-		strings.TrimSpace(credentials.AuthToken) != "" || strings.TrimSpace(credentials.AccessToken) != "")
+	return err == nil && strings.TrimSpace(credentials.AuthToken) != ""
+}
+
+func configuredEnvValue(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv(name))
+}
+
+func providerUsesAnthropicAuth(provider config.ProviderConfig) bool {
+	providerType := strings.ToLower(strings.TrimSpace(provider.Type))
+	providerType = strings.ReplaceAll(providerType, "_", "-")
+	if providerType == "anthropic" || providerType == "claude" || providerType == "anthropic-official" {
+		return true
+	}
+	npm := strings.ToLower(strings.TrimSpace(provider.NPM))
+	npm = strings.TrimPrefix(npm, "npm:")
+	return npm == "@ai-sdk/anthropic"
 }
 
 func providerModelSummaries(providerName string, provider config.ProviderConfig) []ProviderModelSummary {

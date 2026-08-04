@@ -25,10 +25,11 @@ Wuu 把配置分成“用户拥有”和“项目补充”两类。核心原则�
 - `providers`
 - `memory`
 - `agent.model_roles`
+- `agent.model_aliases`
 - `agent.permission_mode`
 
 这些字段分别控制默认提供商、端点与凭据来源、全局记忆发现、后台角色的模型路由，
-以及 Wuu 的本地权限边界。字段名按 JSON 的大小写匹配规则处理，所以换成
+可供 Agent 显式选择的稳定模型别名，以及 Wuu 的本地权限边界。字段名按 JSON 的大小写匹配规则处理，所以换成
 `Providers`、`Memory` 或 `Permission_Mode` 也不会绕过限制。
 
 其他项目行为仍会正常叠加，例如 `agent.append_system_prompt`。项目配置必须符合完整
@@ -107,8 +108,8 @@ spawn，因此不经过 spawn 排队闸门；整合开始时，实际运行数�
 如果旧项目把提供商放在 `.wuu.json` 中：
 
 1. 运行 `wuu init` 创建用户配置。
-2. 把 `default_provider`、`providers`、`memory`、`agent.model_roles` 和
-   `agent.permission_mode` 移到用户配置。
+2. 把 `default_provider`、`providers`、`memory`、`agent.model_roles`、
+   `agent.model_aliases` 和 `agent.permission_mode` 移到用户配置。
 3. 在项目文件中保留真正属于仓库的提示词和其他项目行为。
 
 `WUU_HOME` 可以整体移动用户配置、认证、会话、记忆和日志目录。例如设置

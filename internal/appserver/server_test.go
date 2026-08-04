@@ -962,6 +962,124 @@ func TestProviderSummariesExposeOpenCodeStyleVariants(t *testing.T) {
 	}
 }
 
+func TestProviderHasAuthRequiresAvailableCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("WUU_TEST_MISSING_API_KEY", "")
+	t.Setenv("WUU_TEST_AVAILABLE_API_KEY", "  available-key  ")
+	t.Setenv("WUU_TEST_MISSING_AUTH_TOKEN", "")
+	t.Setenv("WUU_TEST_AVAILABLE_AUTH_TOKEN", "  available-token  ")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+
+	tests := []struct {
+		name     string
+		provider config.ProviderConfig
+		want     bool
+	}{
+		{
+			name: "configured api key env is missing",
+			provider: config.ProviderConfig{
+				Type:      "openai-compatible",
+				APIKeyEnv: "WUU_TEST_MISSING_API_KEY",
+			},
+		},
+		{
+			name: "configured api key env has a value",
+			provider: config.ProviderConfig{
+				Type:      "openai-compatible",
+				APIKeyEnv: "WUU_TEST_AVAILABLE_API_KEY",
+			},
+			want: true,
+		},
+		{
+			name: "configured auth token env is missing",
+			provider: config.ProviderConfig{
+				Type:         "anthropic",
+				AuthTokenEnv: "WUU_TEST_MISSING_AUTH_TOKEN",
+			},
+		},
+		{
+			name: "configured auth token env has a value",
+			provider: config.ProviderConfig{
+				Type:         "anthropic",
+				AuthTokenEnv: "WUU_TEST_AVAILABLE_AUTH_TOKEN",
+			},
+			want: true,
+		},
+		{
+			name: "direct api key is available",
+			provider: config.ProviderConfig{
+				Type:   "openai-compatible",
+				APIKey: "  direct-key  ",
+			},
+			want: true,
+		},
+		{
+			name: "unrelated auth token is not accepted by openai wire",
+			provider: config.ProviderConfig{
+				Type:      "openai-compatible",
+				AuthToken: "token",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := providerHasAuth("provider", tt.provider, home); got != tt.want {
+				t.Fatalf("providerHasAuth() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProviderHasAuthUsesDefaultEnvironmentAndStoredCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OPENAI_API_KEY", "default-openai-key")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+
+	if !providerHasAuth("openai", config.ProviderConfig{Type: "openai"}, home) {
+		t.Fatal("expected the default OpenAI environment variable to be detected")
+	}
+
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("anthropic", authstorage.Credentials{AuthToken: "stored-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if !providerHasAuth("anthropic", config.ProviderConfig{Type: "anthropic"}, home) {
+		t.Fatal("expected the stored Anthropic auth token to be detected")
+	}
+}
+
+func TestProviderHasAuthChecksCodexOAuthAvailability(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("WUU_TEST_MISSING_CODEX_KEY", "")
+	provider := config.ProviderConfig{
+		Type:                  "openai-codex",
+		APIKeyEnv:             "WUU_TEST_MISSING_CODEX_KEY",
+		ReuseCodexCredentials: true,
+	}
+	if providerHasAuth("codex-provider", provider, home) {
+		t.Fatal("credential reuse and an env name must not report unavailable Codex credentials as configured")
+	}
+
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("openai-codex", authstorage.Credentials{AccessToken: "stored-access-token"}); err != nil {
+		t.Fatal(err)
+	}
+	provider.ReuseCodexCredentials = false
+	if !providerHasAuth("codex-provider", provider, home) {
+		t.Fatal("expected Wuu Codex OAuth credentials to be detected without CLI credential reuse")
+	}
+}
+
 func TestProviderSummariesExposeGPT56CatalogForCompatibleGateway(t *testing.T) {
 	cfg := config.Config{
 		DefaultProvider: "gateway",

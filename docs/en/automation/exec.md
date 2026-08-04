@@ -222,10 +222,11 @@ deep-merges project sources in this order: `.wuu.json` (or `wuu.json`),
 scalars and arrays replace.
 
 Normal startup ignores `default_provider`, `providers`, `memory`,
-`agent.model_roles`, and `agent.permission_mode` from every project source,
-with a stderr warning. Those settings stay user-owned because they control
-where credentials and model context are sent, which files outside the workspace
-become model context, and how much local authority the agent receives. This
+`agent.model_roles`, `agent.model_aliases`, and `agent.permission_mode` from
+every project source, with a stderr warning. Those settings stay user-owned
+because they control where credentials and model context are sent, which stable
+model routes agents can select, which files outside the workspace become model
+context, and how much local authority the agent receives. This
 does not disable Wuu's global memory: user-configured memory under `~/.wuu` or
 `WUU_HOME` remains readable and writable. It only stops the repository from
 redirecting that discovery to arbitrary paths. Set `WUU_DEBUG` to log which
