@@ -113,6 +113,18 @@ describe("automation master-detail layout", () => {
     );
     expect(workspaceCss).not.toContain(".automation-detail-pane-divider");
   });
+
+  it("stretches the catalog to the scroll region's full height so the divider spans it", () => {
+    const scrollContent = cssRuleBody(".automations-scroll-region .scroll-region-content");
+    const catalog = cssRuleBody(".automations-catalog");
+
+    // The catalog's own min-height: 100% cannot resolve (the wrapper's height
+    // is indefinite), so the wrapper is a flex column and the catalog grows.
+    expect(scrollContent).toMatch(/display:\s*flex;/);
+    expect(scrollContent).toMatch(/flex-direction:\s*column;/);
+    expect(scrollContent).toMatch(/min-height:\s*100%;/);
+    expect(catalog).toMatch(/flex:\s*1\s+0\s+auto;/);
+  });
 });
 
 describe("workspace right panel chrome", () => {

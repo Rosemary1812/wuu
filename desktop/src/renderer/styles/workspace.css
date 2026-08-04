@@ -2166,6 +2166,11 @@ html.resizing-workspace-terminal-split * {
 
 .automations-scroll-region .scroll-region-content {
   box-sizing: border-box;
+  /* Flex column lets the catalog claim the region's full height; a percentage
+     min-height on the catalog itself cannot resolve because this wrapper's own
+     height is indefinite (it only has min-height: 100%). */
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 100%;
@@ -2175,6 +2180,9 @@ html.resizing-workspace-terminal-split * {
 .automations-catalog {
   display: grid;
   box-sizing: border-box;
+  /* Grow to at least the scroll region's height so the detail resizer's
+     divider line and the detail pane's background span it top to bottom. */
+  flex: 1 0 auto;
   width: 100%;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
