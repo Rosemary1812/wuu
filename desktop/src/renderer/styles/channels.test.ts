@@ -15,6 +15,7 @@ describe("channel directory alignment", () => {
     const directorySettings = ruleFor(".channel-directory-settings");
     const agentWorkspace = ruleFor(".channel-agent-workspace");
     const agentIdentity = ruleFor(".channel-agent-directory-identity");
+    const graphEntry = ruleFor(".channel-agent-graph-entry");
 
     expect(channelsCss).toMatch(
       /\.channel-agent-directory-list \{\s*display:\s*grid;[^}]*gap:\s*3px;[^}]*padding:\s*var\(--channel-directory-list-padding\)/,
@@ -28,6 +29,8 @@ describe("channel directory alignment", () => {
     expect(directorySettings).toMatch(/width:\s*28px/);
     expect(agentWorkspace).toMatch(/display:\s*contents/);
     expect(agentIdentity).not.toMatch(/grid-template-columns/);
+    expect(graphEntry).toMatch(/grid-template-columns:\s*34px minmax\(0, 1fr\) 28px/);
+    expect(graphEntry).toMatch(/gap:\s*var\(--channel-directory-row-gap\)/);
     expect(channelsCss).not.toContain("channel-agent-directory-actions");
   });
 

@@ -1195,9 +1195,10 @@
 .channel-agent-graph-entry {
   min-width: 0;
   height: var(--channel-directory-row-height);
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 10px;
+  gap: var(--channel-directory-row-gap);
   padding: var(--channel-directory-row-padding);
   border: 0;
   border-radius: var(--channel-directory-row-radius);
@@ -1210,6 +1211,7 @@
 .channel-agent-graph-entry .icon {
   width: 20px;
   height: 20px;
+  justify-self: center;
 }
 
 .channel-agent-graph-entry:hover,
