@@ -2061,7 +2061,15 @@ func (s *Server) withCachedCodexModels(providerName string, provider config.Prov
 		out.Models = make(map[string]config.ProviderModelConfig, len(cached))
 	}
 	for id, live := range cached {
-		out.Models[id] = modelcatalog.MergeModelConfig(live, out.Models[id])
+		merged := modelcatalog.MergeModelConfig(live, out.Models[id])
+		// Live Codex model discovery is authoritative for adjustable reasoning
+		// levels. Do not retain catalog-only variants that the official model
+		// response omitted.
+		if len(live.SupportedEfforts) > 0 {
+			merged.SupportedEfforts = append([]string(nil), live.SupportedEfforts...)
+			merged.Variants = codexReasoningVariants(live.SupportedEfforts)
+		}
+		out.Models[id] = merged
 	}
 	return out
 }

@@ -115,7 +115,11 @@ func compatVersionedGPT5ReasoningEfforts(apiID string) ([]string, bool) {
 		return []string{"none", "low", "medium", "high"}, true
 	}
 	if version >= 6 {
-		return []string{"none", "low", "medium", "high", "xhigh", "max"}, true
+		efforts := []string{"low", "medium", "high", "xhigh", "max"}
+		if strings.Contains(apiID, "sol") || strings.Contains(apiID, "terra") {
+			efforts = append(efforts, "ultra")
+		}
+		return efforts, true
 	}
 	return []string{"none", "low", "medium", "high", "xhigh"}, true
 }

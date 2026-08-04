@@ -33,6 +33,8 @@ export function codexEffortLabel(effort: string): string {
       return "Extra high";
     case "max":
       return "Max";
+    case "ultra":
+      return "Ultra";
     default:
       return effort;
   }

@@ -3002,6 +3002,37 @@ func TestServerConfigCodexModels(t *testing.T) {
 	}
 }
 
+func TestCachedCodexModelsReplaceCatalogOnlyReasoningLevels(t *testing.T) {
+	srv := &Server{}
+	srv.cacheCodexModels("openai-codex", []codex.ModelInfo{{
+		Slug:               "gpt-5.6-sol",
+		SupportedReasoning: []string{"low", "medium", "high", "xhigh", "max", "ultra"},
+	}})
+	provider := config.ProviderConfig{
+		Type: "openai-codex",
+		Models: map[string]config.ProviderModelConfig{
+			"gpt-5.6-sol": {
+				SupportedEfforts: []string{"none", "low", "medium", "high", "xhigh", "max"},
+				Variants: map[string]map[string]any{
+					"none": {"reasoningEffort": "none"},
+				},
+			},
+		},
+	}
+
+	merged := srv.withCachedCodexModels("openai-codex", provider)
+	model := merged.Models["gpt-5.6-sol"]
+	if got := strings.Join(model.SupportedEfforts, ","); got != "low,medium,high,xhigh,max,ultra" {
+		t.Fatalf("supported efforts = %q", got)
+	}
+	if _, ok := model.Variants["none"]; ok {
+		t.Fatalf("catalog-only none variant survived live model merge: %#v", model.Variants)
+	}
+	if _, ok := model.Variants["ultra"]; !ok {
+		t.Fatalf("live ultra variant missing after merge: %#v", model.Variants)
+	}
+}
+
 func TestServerConfigProviderRemoveInactive(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	store, err := authstorage.ForHome(os.Getenv("HOME"))

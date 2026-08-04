@@ -26,6 +26,7 @@ describe("codexEffortLabel", () => {
   it("uses canonical English labels in every locale", () => {
     expect(codexEffortLabel("xhigh")).toBe("Extra high");
     expect(codexEffortLabel("max")).toBe("Max");
+    expect(codexEffortLabel("ultra")).toBe("Ultra");
 
     setActiveLocale("en-US");
 
