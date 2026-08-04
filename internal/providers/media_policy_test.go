@@ -20,7 +20,7 @@ func TestProjectMediaForPolicyStripsMediaWithMarker(t *testing.T) {
 		{Role: "user", Content: "", Images: []InputImage{testImage()}},
 		{Role: "assistant", Content: "no media here"},
 	}
-	out := ProjectMediaForPolicy(msgs, MediaInputPolicy{})
+	out := ProjectMediaForPolicy(msgs, MediaInputPolicy{ImageKnown: true, FileKnown: true})
 
 	if len(out[0].Images) != 0 || len(out[0].Files) != 0 {
 		t.Fatalf("media not stripped: %+v", out[0])
@@ -53,8 +53,8 @@ func TestProjectMediaForPolicyAdmittedKindsPassThrough(t *testing.T) {
 	}
 	for name, policy := range map[string]MediaInputPolicy{
 		"both admitted": {Image: true, File: true},
-		"image only":    {Image: true},
-		"file only":     {File: true},
+		"image only":    {Image: true, FileKnown: true},
+		"file only":     {File: true, ImageKnown: true},
 	} {
 		out := ProjectMediaForPolicy(msgs, policy)
 		wantImages, wantFiles := 0, 0
@@ -70,13 +70,29 @@ func TestProjectMediaForPolicyAdmittedKindsPassThrough(t *testing.T) {
 	}
 }
 
+func TestProjectMediaForPolicyUnknownKindsPassThrough(t *testing.T) {
+	t.Parallel()
+	msgs := []ChatMessage{{
+		Role: "user", Content: "inspect this",
+		Images: []InputImage{testImage()}, Files: []InputFile{testFile()},
+	}}
+
+	out := ProjectMediaForPolicy(msgs, MediaInputPolicy{})
+	if len(out[0].Images) != 1 || len(out[0].Files) != 1 {
+		t.Fatalf("unknown media capability must not discard explicit input: %+v", out[0])
+	}
+	if out[0].Content != "inspect this" {
+		t.Fatalf("unknown media capability added an omission marker: %q", out[0].Content)
+	}
+}
+
 func TestPrepareMessagesForProviderRequestWithPolicyStripsBeforeValidation(t *testing.T) {
 	t.Parallel()
 	msgs := []ChatMessage{
 		{Role: "user", Content: "see attached", Images: []InputImage{testImage()}},
 		{Role: "assistant", Content: "ok"},
 	}
-	prepared, err := PrepareMessagesForProviderRequestWithPolicy("p", "m", msgs, MediaInputPolicy{})
+	prepared, err := PrepareMessagesForProviderRequestWithPolicy("p", "m", msgs, MediaInputPolicy{ImageKnown: true})
 	if err != nil {
 		t.Fatalf("prepare failed: %v", err)
 	}

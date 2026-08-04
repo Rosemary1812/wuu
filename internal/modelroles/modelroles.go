@@ -86,6 +86,8 @@ type Capabilities struct {
 	OutputLimit              int      `json:"output_limit,omitempty"`
 	ImageInput               bool     `json:"image_input,omitempty"`
 	FileInput                bool     `json:"file_input,omitempty"`
+	ImageInputKnown          bool     `json:"image_input_known,omitempty"`
+	FileInputKnown           bool     `json:"file_input_known,omitempty"`
 	PromptCache              bool     `json:"prompt_cache,omitempty"`
 	CacheGranularity         string   `json:"cache_granularity,omitempty"`
 	ProtocolFamily           string   `json:"protocol_family,omitempty"`
@@ -397,6 +399,7 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 	}
 	imageInput := false
 	fileInput := false
+	mediaInputKnown := modelCfg.Modalities != nil
 	if modelCfg.Modalities != nil {
 		imageInput = containsString(modelCfg.Modalities.Input, "image")
 		fileInput = containsString(modelCfg.Modalities.Input, "pdf")
@@ -431,6 +434,8 @@ func capabilitiesFromProfile(providerName string, provider config.ProviderConfig
 		OutputLimit:              outputLimit,
 		ImageInput:               imageInput,
 		FileInput:                fileInput,
+		ImageInputKnown:          mediaInputKnown,
+		FileInputKnown:           mediaInputKnown,
 		PromptCache:              profile.Context.SupportsPromptCache,
 		CacheGranularity:         cacheGranularity,
 		ProtocolFamily:           protocolFamily(providerName, provider),

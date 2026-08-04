@@ -164,7 +164,7 @@ func TestResolveUsesCatalogToolAndMediaCapabilities(t *testing.T) {
 }
 
 func TestResolveMediaInputCapabilities(t *testing.T) {
-	resolveCaps := func(t *testing.T, model string) (bool, bool) {
+	resolveCaps := func(t *testing.T, model string) Capabilities {
 		t.Helper()
 		cfg := config.Config{
 			DefaultProvider: "openai",
@@ -180,20 +180,41 @@ func TestResolveMediaInputCapabilities(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Resolve %s: %v", model, err)
 		}
-		return roles.Main.Capabilities.ImageInput, roles.Main.Capabilities.FileInput
+		return roles.Main.Capabilities
 	}
 
 	// Catalog model whose modality data excludes image/pdf input: rejected.
-	imageInput, _ := resolveCaps(t, "text-embedding-3-large")
-	if imageInput {
-		t.Fatal("embedding model should not admit image input")
+	caps := resolveCaps(t, "text-embedding-3-large")
+	if caps.ImageInput || !caps.ImageInputKnown {
+		t.Fatalf("embedding model should explicitly reject image input: %+v", caps)
 	}
 
-	// Unknown model without catalog modality data: conservatively text-only,
-	// matching other mature agent runtimes; user configuration can override.
-	imageInput, fileInput := resolveCaps(t, "wuu-test-unknown-model")
-	if imageInput || fileInput {
-		t.Fatalf("unknown model should be text-only, got image=%v file=%v", imageInput, fileInput)
+	// Unknown means no admission evidence, not explicit text-only. The request
+	// boundary must preserve user media and let the provider decide.
+	caps = resolveCaps(t, "wuu-test-unknown-model")
+	if caps.ImageInput || caps.FileInput || caps.ImageInputKnown || caps.FileInputKnown {
+		t.Fatalf("unknown model should preserve unknown media capability: %+v", caps)
+	}
+}
+
+func TestResolveCodexSubscriptionImageInput(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "openai-codex",
+		Providers: map[string]config.ProviderConfig{
+			"openai-codex": {
+				Type:  "openai-codex",
+				Model: "gpt-5.6-sol",
+			},
+		},
+	}
+
+	roles, err := Resolve(cfg, ResolveOptions{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	caps := roles.Main.Capabilities
+	if !caps.ImageInput || !caps.ImageInputKnown {
+		t.Fatalf("Codex subscription model should explicitly admit image input: %+v", caps)
 	}
 }
 

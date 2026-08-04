@@ -6,18 +6,18 @@ import (
 )
 
 // MediaInputPolicy carries the resolved admission decision for user-supplied
-// media on one request: true attaches the media kind, false strips it at the
-// request boundary and replaces it with a short marker. The decision is a
-// plain boolean by design: catalog or user-configured modalities are the
-// only evidence, and a model without modality data is treated as text-only
-// (conservative), matching the behavior of other mature agent runtimes.
-// User configuration always wins because it feeds the same modalities field.
+// media on one request. A known unsupported kind is stripped at the request
+// boundary and replaced with a short marker. Unknown kinds pass through so a
+// missing catalog entry cannot silently discard media the user explicitly
+// supplied; provider validation remains the authority in that case.
 //
 // The policy is request metadata only: provider clients must never serialize
 // it on the wire.
 type MediaInputPolicy struct {
-	Image bool
-	File  bool
+	Image      bool
+	File       bool
+	ImageKnown bool
+	FileKnown  bool
 }
 
 // MediaOmissionMarker renders the fixed short marker that replaces stripped
@@ -45,18 +45,20 @@ func appendMediaMarker(content string, count int, singular, plural string) strin
 // stored history keeps the original media for UI and for other agents/models
 // that can read it.
 func ProjectMediaForPolicy(msgs []ChatMessage, policy MediaInputPolicy) []ChatMessage {
-	if policy.Image && policy.File {
+	rejectImage := policy.ImageKnown && !policy.Image
+	rejectFile := policy.FileKnown && !policy.File
+	if !rejectImage && !rejectFile {
 		return msgs
 	}
 	out := make([]ChatMessage, len(msgs))
 	copy(out, msgs)
 	for i := range out {
-		if !policy.Image && len(out[i].Images) > 0 {
+		if rejectImage && len(out[i].Images) > 0 {
 			omitted := len(out[i].Images)
 			out[i].Images = nil
 			out[i].Content = appendMediaMarker(out[i].Content, omitted, "image", "images")
 		}
-		if !policy.File && len(out[i].Files) > 0 {
+		if rejectFile && len(out[i].Files) > 0 {
 			omitted := len(out[i].Files)
 			out[i].Files = nil
 			out[i].Content = appendMediaMarker(out[i].Content, omitted, "file", "files")

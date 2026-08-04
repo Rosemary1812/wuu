@@ -1486,13 +1486,14 @@ func systemPromptWithFreshMemdirIndex(promptText string, sections []agent.System
 }
 
 // mediaInputPolicyFromCapabilities maps resolved model capabilities onto the
-// request media admission policy. Capabilities carry plain booleans: catalog
-// or user-configured modalities are the only evidence, and models without
-// modality data are treated as text-only.
+// request media admission policy. Missing modality evidence stays unknown so
+// explicit user media reaches the provider instead of being silently dropped.
 func mediaInputPolicyFromCapabilities(caps modelroles.Capabilities) providers.MediaInputPolicy {
 	return providers.MediaInputPolicy{
-		Image: caps.ImageInput,
-		File:  caps.FileInput,
+		Image:      caps.ImageInput,
+		File:       caps.FileInput,
+		ImageKnown: caps.ImageInputKnown,
+		FileKnown:  caps.FileInputKnown,
 	}
 }
 

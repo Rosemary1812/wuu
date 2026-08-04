@@ -26,6 +26,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
+	"github.com/blueberrycongee/wuu/internal/modelroles"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -3489,5 +3490,20 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	secondGoalPath := statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-b")
 	if first.GoalRuntime.Store().Path() != firstGoalPath || second.GoalRuntime.Store().Path() != secondGoalPath {
 		t.Fatalf("unexpected goal runtime paths: first=%q second=%q", first.GoalRuntime.Store().Path(), second.GoalRuntime.Store().Path())
+	}
+}
+
+func TestMediaInputPolicyFromCapabilitiesPreservesUnknown(t *testing.T) {
+	unknown := mediaInputPolicyFromCapabilities(modelroles.Capabilities{})
+	if unknown.ImageKnown || unknown.FileKnown {
+		t.Fatalf("missing modality evidence must remain unknown: %+v", unknown)
+	}
+
+	unsupported := mediaInputPolicyFromCapabilities(modelroles.Capabilities{
+		ImageInputKnown: true,
+		FileInputKnown:  true,
+	})
+	if !unsupported.ImageKnown || unsupported.Image || !unsupported.FileKnown || unsupported.File {
+		t.Fatalf("explicit unsupported capabilities were not preserved: %+v", unsupported)
 	}
 }
