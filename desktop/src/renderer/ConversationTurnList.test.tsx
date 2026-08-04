@@ -75,7 +75,61 @@ function mountTurns(turns: Turn[], forcedFullTurnIDs?: string[]): void {
   );
 }
 
+function pendingSpawnTurn(): Turn {
+  const turn = makeTurn(1);
+  return {
+    ...turn,
+    items: [
+      ...turn.items.slice(0, 1),
+      {
+        id: "spawn-1",
+        type: "collab_agent_tool_call",
+        name: "spawn_agent",
+        status: "completed",
+        result: JSON.stringify({
+          agent_id: "worker-1",
+          task_name: "sleep_two_minutes",
+          status: "running",
+        }),
+      },
+      ...turn.items.slice(1),
+    ],
+  };
+}
+
 describe("ConversationTurnList", () => {
+  it("routes a single pending spawn turn through the orchestration renderer", () => {
+    const turn = pendingSpawnTurn();
+    render(
+      <ConversationTurnList
+        threadID="thread-1"
+        turns={[turn]}
+        renderTurn={() => <div data-testid="ordinary-turn" />}
+        renderTurnGroup={(turns) => (
+          <div data-testid="orchestration-turn">{turns[0]?.id}</div>
+        )}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="orchestration-turn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="ordinary-turn"]')).toBeNull();
+  });
+
+  it("keeps an ordinary single turn on the ordinary renderer", () => {
+    const turn = makeTurn(1);
+    render(
+      <ConversationTurnList
+        threadID="thread-1"
+        turns={[turn]}
+        renderTurn={() => <div data-testid="ordinary-turn" />}
+        renderTurnGroup={() => <div data-testid="orchestration-turn" />}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="ordinary-turn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="orchestration-turn"]')).toBeNull();
+  });
+
   it("renders all turns fully below the collapse threshold", () => {
     const turns = Array.from(
       { length: TURN_LIST_COLLAPSE_THRESHOLD },
