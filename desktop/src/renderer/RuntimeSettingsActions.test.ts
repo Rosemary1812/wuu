@@ -616,18 +616,18 @@ describe("createRuntimeSettingsActions", () => {
     const api = installWuuApi();
     const harness = buildActions();
 
-    harness.actions.toggleCodexRuntimeMenu("main");
+    harness.actions.toggleCodexRuntimeMenu("model");
 
     expect(harness.getRuntimeMenus()).toEqual({
       runtimeMenuOpen: false,
       accessMenuOpen: false,
       branchMenuOpen: false,
-      codexRuntimeMenu: "main",
+      codexRuntimeMenu: "model",
     });
     expect(api.loadCodexModels).toHaveBeenCalledWith("codex");
   });
 
-  it("closes the model menu immediately while a model update is still queued", async () => {
+  it("keeps the model panel open while a model update is still queued", async () => {
     const api = installWuuApi();
     let resolveUpdate!: (value: {
       provider: string;
@@ -646,7 +646,9 @@ describe("createRuntimeSettingsActions", () => {
     const selection = harness.actions.selectRuntimeModel("codex", "gpt-5.1", "high");
 
     expect(api.updateRuntimeSettings).toHaveBeenCalledTimes(1);
-    expect(harness.getRuntimeMenus().codexRuntimeMenu).toBeNull();
+    // The panel stays open so the user can chain "switch model → tune effort"
+    // in one visit; the picker highlights the selection optimistically.
+    expect(harness.getRuntimeMenus().codexRuntimeMenu).toBe("model");
 
     resolveUpdate({
       provider: "codex",

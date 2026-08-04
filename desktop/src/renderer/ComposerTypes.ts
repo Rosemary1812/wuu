@@ -8,7 +8,11 @@ export type CodexModelLoadState = {
   models: CodexModelSummary[];
 };
 
-export type CodexRuntimeMenu = "main" | "model" | "effort" | null;
+// The runtime picker opens directly into the model panel (search + provider
+// groups + reasoning-effort pills). There is deliberately no intermediate
+// "main" menu anymore: the two orthogonal controls users reach for most —
+// which model, and how hard it should reason — live on one screen.
+export type CodexRuntimeMenu = "model" | null;
 export type ComposerVariant = "dock" | "document" | "hero";
 export type FloatingMenuOwner =
   | "composer-runtime"

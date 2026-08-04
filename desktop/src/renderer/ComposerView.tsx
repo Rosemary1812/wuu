@@ -803,7 +803,9 @@ export function Composer({
         }
         break;
       case "effort":
-        onToggleCodexRuntimeMenu("main");
+        // Reasoning effort now lives inside the model panel (pills under the
+        // selected model), so the slash command opens the same panel.
+        onToggleCodexRuntimeMenu("model");
         break;
       case "settings":
         onOpenSettings();

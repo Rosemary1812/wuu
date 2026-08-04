@@ -1,10 +1,14 @@
 import type { CodexModelSummary, GitStatusResult, InitializeResult, ProviderModelSummary, ProviderSummary } from "../shared/protocol";
 import { translateCurrent as t } from "./i18n";
 
-export function isCodexProvider(initialized: InitializeResult): boolean {
-  const summary = initialized.providers?.find((provider) => provider.name === initialized.provider);
-  const type = (summary?.type ?? initialized.provider).trim().toLowerCase().replaceAll("_", "-");
+export function providerIsCodex(initialized: InitializeResult, providerName: string): boolean {
+  const summary = initialized.providers?.find((provider) => provider.name === providerName);
+  const type = (summary?.type ?? providerName).trim().toLowerCase().replaceAll("_", "-");
   return type === "openai-codex" || type === "codex-subscription" || type === "chatgpt-codex";
+}
+
+export function isCodexProvider(initialized: InitializeResult): boolean {
+  return providerIsCodex(initialized, initialized.provider);
 }
 
 export function displayCodexModelName(model?: CodexModelSummary): string {

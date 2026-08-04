@@ -75,24 +75,51 @@ describe("RuntimePicker", () => {
     };
   }
 
-  it("shows compact Model and Effort rows without unsupported controls", () => {
+  it("opens the model panel from the trigger with a single click", () => {
     const onToggleMenu = vi.fn();
-    renderPicker("main", runtimeWithEffort(), onToggleMenu);
+    renderPicker(null, runtimeWithEffort(), onToggleMenu);
 
-    const menu = document.querySelector<HTMLElement>(".codex-main-menu");
-    const rows = Array.from(menu?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    const trigger = document.querySelector<HTMLButtonElement>(".codex-runtime-trigger");
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger?.textContent).toContain("Claude Sonnet");
+    expect(trigger?.textContent).toContain("Medium");
 
-    expect(rows.map((row) => row.textContent?.trim())).toEqual([
-      "ModelClaude Sonnet",
-      "EffortMedium"
-    ]);
-    expect(menu?.textContent).not.toContain("Speed");
-    expect(menu?.textContent).not.toContain("Advanced");
+    act(() => trigger?.click());
 
-    act(() => rows[0]?.click());
-    act(() => rows[1]?.click());
-    expect(onToggleMenu).toHaveBeenNthCalledWith(1, "model");
-    expect(onToggleMenu).toHaveBeenNthCalledWith(2, "effort");
+    expect(onToggleMenu).toHaveBeenCalledWith("model");
+  });
+
+  it("opens the model panel directly with search, provider groups, and the effort slider", () => {
+    renderPicker("model", runtimeWithEffort());
+
+    const menu = document.querySelector<HTMLElement>(".codex-model-menu");
+    expect(menu).not.toBeNull();
+    // The intermediate main menu is gone.
+    expect(document.querySelector(".codex-main-menu")).toBeNull();
+
+    const search = menu?.querySelector<HTMLInputElement>(".select-menu-search input");
+    expect(search).not.toBeNull();
+    expect(search?.placeholder).toBe("搜索模型");
+
+    const groupLabels = Array.from(menu?.querySelectorAll<HTMLElement>(".codex-model-group-label") ?? []);
+    expect(groupLabels.map((label) => label.textContent)).toEqual(["work"]);
+    const modelItems = Array.from(menu?.querySelectorAll<HTMLButtonElement>(".codex-model-item") ?? []);
+    expect(modelItems.map((item) => item.textContent?.trim())).toEqual(["Claude Sonnet"]);
+    expect(modelItems[0]?.getAttribute("aria-checked")).toBe("true");
+
+    const slider = menu?.querySelector<HTMLInputElement>(".codex-effort-slider");
+    expect(slider?.type).toBe("range");
+    expect(slider?.min).toBe("0");
+    expect(slider?.max).toBe("3");
+    expect(slider?.value).toBe("2");
+    expect(menu?.textContent).toContain("Medium");
+
+    // One visible stop per supported effort level, current level marked.
+    expect(menu?.querySelectorAll(".codex-effort-mark")).toHaveLength(4);
+    expect(menu?.querySelectorAll(".codex-effort-tick")).toHaveLength(4);
+    expect(
+      menu?.querySelector(".codex-effort-mark.selected .codex-effort-mark-label")?.textContent
+    ).toBe("Medium");
   });
 
   it("builds permission labels in the active language", () => {
@@ -104,29 +131,62 @@ describe("RuntimePicker", () => {
     });
   });
 
-  it("hides Effort when the model does not expose reasoning levels", () => {
+  it("hides the effort slider when the model does not expose reasoning levels", () => {
     const initialized = runtimeWithEffort();
     initialized.variant = "";
     initialized.providers![0].models = [{ id: "claude-sonnet", display_name: "Claude Sonnet" }];
 
-    renderPicker("main", initialized);
+    renderPicker("model", initialized);
 
-    const menu = document.querySelector<HTMLElement>(".codex-main-menu");
-    expect(menu?.querySelectorAll("button")).toHaveLength(1);
-    expect(menu?.textContent).toBe("ModelClaude Sonnet");
+    expect(document.querySelector(".codex-effort-slider")).toBeNull();
+    const menu = document.querySelector<HTMLElement>(".codex-model-menu");
+    expect(menu?.querySelectorAll(".codex-model-item")).toHaveLength(1);
   });
 
-  it("keeps effort choices in a dedicated submenu", () => {
+  it("filters models by name or provider through the search box", () => {
+    const initialized = runtimeWithEffort();
+    initialized.providers![0].models = [
+      { id: "claude-sonnet", display_name: "Claude Sonnet", supported_efforts: ["low", "medium", "high"] },
+      { id: "claude-opus", display_name: "Claude Opus", supported_efforts: ["low", "medium", "high"] }
+    ];
+    renderPicker("model", initialized);
+
+    const search = document.querySelector<HTMLInputElement>(".select-menu-search input")!;
+    const setSearchValue = (value: string): void => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(search, value);
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => setSearchValue("opus"));
+
+    const items = Array.from(document.querySelectorAll<HTMLButtonElement>(".codex-model-item"));
+    expect(items.map((item) => item.textContent?.trim())).toEqual(["Claude Opus"]);
+
+    act(() => setSearchValue("no-such-model"));
+    expect(document.querySelector(".composer-menu-empty")?.textContent).toBe("没有匹配的模型");
+  });
+
+  it("previews the dragged effort in the heading and commits once on release", () => {
     const onSelectEffort = vi.fn();
-    renderPicker("effort", runtimeWithEffort(), vi.fn(), onSelectEffort);
+    renderPicker("model", runtimeWithEffort(), vi.fn(), onSelectEffort);
 
-    const choices = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".codex-effort-menu button")
-    );
-    const high = choices.find((choice) => choice.textContent?.trim() === "High");
+    const slider = document.querySelector<HTMLInputElement>(".codex-effort-slider")!;
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(slider, "3");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
 
-    act(() => high?.click());
+    expect(onSelectEffort).toHaveBeenCalledTimes(1);
     expect(onSelectEffort).toHaveBeenCalledWith("high");
+    expect(document.querySelector(".codex-effort-current")?.textContent).toBe("High");
   });
 
   it("flips the model menu below the trigger when the window top has too little room", () => {
@@ -158,7 +218,7 @@ describe("RuntimePicker", () => {
     );
   });
 
-  it("uses the target model default instead of carrying effort across models", () => {
+  it("uses the target model default instead of carrying effort across models, with optimistic highlighting", () => {
     const initialized = runtimeWithEffort();
     initialized.model = "model-a";
     initialized.variant = "max";
@@ -182,11 +242,16 @@ describe("RuntimePicker", () => {
     renderPicker("model", initialized, vi.fn(), vi.fn(), onSelectModel);
 
     const choices = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".codex-model-menu button")
+      document.querySelectorAll<HTMLButtonElement>(".codex-model-menu .codex-model-item")
     );
-    const modelB = choices.find((choice) => choice.textContent?.includes("Model B"));
+    const modelB = choices.find((choice) => choice.textContent?.includes("Model B"))!;
     act(() => modelB?.click());
 
     expect(onSelectModel).toHaveBeenCalledWith("work", "model-b", "medium");
+    // Optimistic in-panel state: the clicked row highlights and the slider
+    // snaps to the target model's default before the stream round-trip.
+    expect(modelB.getAttribute("aria-checked")).toBe("true");
+    const slider = document.querySelector<HTMLInputElement>(".codex-effort-slider");
+    expect(slider?.value).toBe("1");
   });
 });

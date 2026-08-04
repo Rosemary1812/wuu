@@ -508,11 +508,10 @@ export function createRuntimeSettingsActions(
     const nextVariant = deps.variantByModel.has(targetKey)
       ? deps.variantByModel.get(targetKey)
       : variant;
-    // Codex model discovery is served by the same serial app-server stream as
-    // runtime updates. Close the menu on selection rather than waiting for a
-    // potentially in-flight discovery request to finish, otherwise a valid
-    // click appears to do nothing for the duration of the network request.
-    deps.setCodexRuntimeMenu(null);
+    // The model panel stays open after a selection: the row highlight and the
+    // effort pills update optimistically inside the panel, so the user can
+    // chain "switch model → tune effort" in one visit instead of reopening the
+    // picker for every change.
     try {
       await sendRuntimeSelection({ provider, model, variant: nextVariant });
     } catch {
@@ -529,7 +528,7 @@ export function createRuntimeSettingsActions(
     } catch {
       // Failure already surfaced through the status line.
     }
-    deps.setCodexRuntimeMenu(null);
+    // Keep the panel open — see selectRuntimeModel.
   }
 
   async function selectPermissionMode(mode: PermissionMode): Promise<void> {

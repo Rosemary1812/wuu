@@ -3,7 +3,6 @@ import {
   Bug,
   Check,
   ChevronDown,
-  ChevronRight,
   CircleHelp,
   Cpu,
   Eye,
@@ -36,7 +35,7 @@ import {
   Zap,
   type LucideIcon
 } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
 import type {
   CodexModelSummary,
   DesktopProject,
@@ -60,8 +59,8 @@ import {
   codexEffortOptions,
   displayCodexModelName,
   isCodexProvider,
+  providerIsCodex,
   providerModelDisplayName,
-  providerModelReasoningMode,
   providerModelVariantOptions,
   shortCodexModelLabel,
   variantLabel
@@ -158,12 +157,6 @@ export function RuntimePicker({
   const currentCodexModel = codexProvider ? state.models.find((model) => model.slug === initialized.model) : undefined;
   const currentProviderModel = currentProvider?.models?.find((model) => model.id === initialized.model);
   const currentVariant = initialized.variant ?? initialized.effort ?? "";
-  const variantOptions = codexProvider
-    ? codexEffortOptions(currentCodexModel, currentVariant)
-    : providerModelVariantOptions(currentProvider, initialized.model, currentVariant);
-  const reasoningMode = codexProvider
-    ? "levels"
-    : providerModelReasoningMode(currentProvider, initialized.model);
   const placement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   return (
     <div className="codex-runtime-anchor" ref={anchorRef}>
@@ -172,55 +165,20 @@ export function RuntimePicker({
         type="button"
         disabled={running}
         aria-haspopup="menu"
-        aria-expanded={openMenu !== null}
-        onClick={() => onToggleMenu("main")}
+        aria-expanded={openMenu === "model"}
+        onClick={() => onToggleMenu("model")}
       >
         <span>{runtimeTriggerLabel(initialized, currentProviderModel, currentCodexModel)}</span>
         <span className="codex-runtime-effort">{variantLabel(currentVariant)}</span>
         <ChevronDown className="icon" />
       </button>
-      {openMenu === "main" ? (
-        <FloatingMenuPortal
-          anchorRef={anchorRef}
-          owner="codex-runtime"
-          placement={placement}
-          align="right"
-          width={208}
-          flip
-        >
-          <RuntimeMainMenu
-            selectedVariant={currentVariant}
-            options={variantOptions}
-            reasoningMode={reasoningMode}
-            currentLabel={runtimeModelLabel(initialized, currentProviderModel, currentCodexModel)}
-            onOpenEffortMenu={() => onToggleMenu("effort")}
-            onOpenModelMenu={() => onToggleMenu("model")}
-          />
-        </FloatingMenuPortal>
-      ) : null}
-      {openMenu === "effort" ? (
-        <FloatingMenuPortal
-          anchorRef={anchorRef}
-          owner="codex-runtime"
-          placement={placement}
-          align="right"
-          width={172}
-          flip
-        >
-          <RuntimeEffortMenu
-            selectedVariant={currentVariant}
-            options={variantOptions}
-            onSelectEffort={onSelectEffort}
-          />
-        </FloatingMenuPortal>
-      ) : null}
       {openMenu === "model" ? (
         <FloatingMenuPortal
           anchorRef={anchorRef}
           owner="codex-runtime"
           placement={placement}
           align="right"
-          width={286}
+          width={320}
           flip
         >
           <RuntimeModelMenu
@@ -230,68 +188,10 @@ export function RuntimePicker({
             selectedModel={initialized.model}
             selectedVariant={currentVariant}
             onSelectModel={onSelectModel}
+            onSelectEffort={onSelectEffort}
           />
         </FloatingMenuPortal>
       ) : null}
-    </div>
-  );
-}
-
-function RuntimeMainMenu({
-  selectedVariant,
-  options,
-  reasoningMode,
-  currentLabel,
-  onOpenEffortMenu,
-  onOpenModelMenu
-}: {
-  selectedVariant: string;
-  options: string[];
-  reasoningMode: "off" | "toggle" | "levels";
-  currentLabel: string;
-  onOpenEffortMenu: () => void;
-  onOpenModelMenu: () => void;
-}): JSX.Element {
-  const { t } = useI18n();
-  const showEffort = reasoningMode === "levels" && options.length > 1;
-  return (
-    <div className="codex-runtime-menu codex-main-menu" role="menu">
-      <button className="codex-runtime-summary-row" role="menuitem" type="button" onClick={onOpenModelMenu}>
-        <span className="codex-runtime-summary-label">{t("runtime.model")}</span>
-        <span className="codex-runtime-summary-value">{currentLabel}</span>
-        <ChevronRight className="codex-menu-chevron icon-lg" />
-      </button>
-      {showEffort ? (
-        <button className="codex-runtime-summary-row" role="menuitem" type="button" onClick={onOpenEffortMenu}>
-          <span className="codex-runtime-summary-label">{t("runtime.effort")}</span>
-          <span className="codex-runtime-summary-value">{variantLabel(selectedVariant)}</span>
-          <ChevronRight className="codex-menu-chevron icon-lg" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function RuntimeEffortMenu({
-  selectedVariant,
-  options,
-  onSelectEffort
-}: {
-  selectedVariant: string;
-  options: string[];
-  onSelectEffort: (variant: string) => void;
-}): JSX.Element {
-  return (
-    <div className="codex-runtime-menu codex-effort-menu" role="menu">
-      {options.map((variant) => {
-        const selected = variant === selectedVariant;
-        return (
-          <button key={variant || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(variant)}>
-            <span>{variantLabel(variant)}</span>
-            {selected ? <Check className="icon-lg" /> : null}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -302,7 +202,8 @@ function RuntimeModelMenu({
   selectedProvider,
   selectedModel,
   selectedVariant,
-  onSelectModel
+  onSelectModel,
+  onSelectEffort
 }: {
   initialized: InitializeResult;
   state: CodexModelLoadState;
@@ -310,10 +211,25 @@ function RuntimeModelMenu({
   selectedModel: string;
   selectedVariant: string;
   onSelectModel: (provider: string, model: string, variant?: string) => void;
+  onSelectEffort: (variant: string) => void;
 }): JSX.Element {
   const { t } = useI18n();
+  const [query, setQuery] = useState("");
+  // The panel stays open while a selection commits through the app-server
+  // stream, so the highlighted row and the effort pills follow the click
+  // immediately instead of waiting for the round-trip. Once the stream
+  // confirms, the external props become the source of truth again and the
+  // optimistic state is dropped.
+  const [optimistic, setOptimistic] = useState<{ provider: string; model: string; variant: string } | null>(null);
+  // The effort heading follows the slider thumb while dragging, so the level
+  // being aimed at is readable before the commit lands on release.
+  const [previewVariant, setPreviewVariant] = useState<string | null>(null);
+  useEffect(() => {
+    setOptimistic(null);
+    setPreviewVariant(null);
+  }, [selectedProvider, selectedModel, selectedVariant]);
+
   const providers = initialized.providers ?? [];
-  const codexProviderSelected = isCodexProvider(initialized);
   const configuredModels = providers
     .map((provider) => {
       const model = configuredRuntimeModelForProvider(provider, state);
@@ -325,52 +241,244 @@ function RuntimeModelMenu({
       .filter((model) => model.id !== provider.model)
       .map((model) => ({ provider, model }))
   );
+
+  // Group by provider with the configured model first, preserving provider
+  // order. The group header is the provider name — the classification users
+  // actually think in ("Claude is Anthropic's"), unlike a flat configured/
+  // additional split.
+  const groups: RuntimeModelGroup[] = [];
+  const groupByProvider = new Map<string, RuntimeModelGroup>();
+  for (const item of configuredModels) {
+    const group = { provider: item.provider, models: [item.model] };
+    groups.push(group);
+    groupByProvider.set(item.provider.name, group);
+  }
+  for (const item of additionalModels) {
+    const group = groupByProvider.get(item.provider.name);
+    if (group) {
+      group.models.push(item.model);
+    } else {
+      const created = { provider: item.provider, models: [item.model] };
+      groups.push(created);
+      groupByProvider.set(item.provider.name, created);
+    }
+  }
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredGroups = normalizedQuery
+    ? groups
+        .map((group) => ({
+          ...group,
+          models: group.models.filter(
+            (model) =>
+              providerModelDisplayName(model).toLocaleLowerCase().includes(normalizedQuery) ||
+              model.id.toLocaleLowerCase().includes(normalizedQuery) ||
+              group.provider.name.toLocaleLowerCase().includes(normalizedQuery)
+          )
+        }))
+        .filter((group) => group.models.length > 0)
+    : groups;
+
+  // The effort pills act on the model the picker is about to run — the
+  // optimistic target when one is pending, otherwise the committed selection.
+  const effectiveProviderName = optimistic?.provider ?? selectedProvider;
+  const effectiveModelID = optimistic?.model ?? selectedModel;
+  const effectiveVariant = optimistic?.variant ?? selectedVariant;
+  const effectiveProvider = providers.find((provider) => provider.name === effectiveProviderName);
+  const effectiveCodex = providerIsCodex(initialized, effectiveProviderName);
+  const effectiveCodexModel = effectiveCodex
+    ? state.models.find((model) => model.slug === effectiveModelID)
+    : undefined;
+  const effortOptions = effectiveCodex
+    ? codexEffortOptions(effectiveCodexModel, effectiveVariant)
+    : providerModelVariantOptions(effectiveProvider, effectiveModelID, effectiveVariant);
+  const showEffort = effortOptions.length > 1;
+
   return (
     <div className="codex-runtime-menu codex-model-menu" role="menu">
-      <div className="codex-menu-label">{t("runtime.configured")}</div>
-      {codexProviderSelected && state.loading ? <div className="composer-menu-empty">{t("runtime.loadingCodexModels")}</div> : null}
-      {codexProviderSelected && state.error ? (
-        <div className="composer-menu-note warning">
-          <strong>{t("runtime.codexLoginUnavailable")}</strong>
-          <span>{state.error}</span>
-        </div>
-      ) : null}
-      {!state.loading && providers.length === 0 ? (
-        <div className="composer-menu-empty">{t("runtime.noModels")}</div>
-      ) : null}
-      {configuredModels.map(({ provider, model }) => (
-        <RuntimeModelMenuItem
-          key={`configured/${provider.name}/${model.id}`}
-          provider={provider}
-          model={model}
-          selected={provider.name === selectedProvider && model.id === selectedModel}
-          selectedVariant={selectedVariant}
-          onSelectModel={onSelectModel}
+      <label className="select-menu-search">
+        <Search className="select-menu-search-icon icon-lg" />
+        <input
+          type="search"
+          value={query}
+          placeholder={t("runtime.searchModels")}
+          aria-label={t("runtime.searchModels")}
+          onChange={(event) => setQuery(event.currentTarget.value)}
         />
-      ))}
-      {additionalModels.length > 0 ? (
-        <>
-          <div className="codex-menu-separator" />
-          <div className="codex-menu-label">{t("runtime.moreModels")}</div>
-          {additionalModels.map(({ provider, model }) => (
-            <RuntimeModelMenuItem
-              key={`additional/${provider.name}/${model.id}`}
-              provider={provider}
-              model={model}
-              selected={provider.name === selectedProvider && model.id === selectedModel}
-              selectedVariant={selectedVariant}
-              onSelectModel={onSelectModel}
-            />
-          ))}
-        </>
+      </label>
+      <div className="codex-model-groups">
+        {effectiveCodex && state.loading ? <div className="composer-menu-empty">{t("runtime.loadingCodexModels")}</div> : null}
+        {effectiveCodex && state.error ? (
+          <div className="composer-menu-note warning">
+            <strong>{t("runtime.codexLoginUnavailable")}</strong>
+            <span>{state.error}</span>
+          </div>
+        ) : null}
+        {!state.loading && providers.length === 0 ? (
+          <div className="composer-menu-empty">{t("runtime.noModels")}</div>
+        ) : null}
+        {filteredGroups.length === 0 ? (
+          <div className="composer-menu-empty">{t("runtime.noMatchingModels")}</div>
+        ) : null}
+        {filteredGroups.map((group) => (
+          <div className="codex-model-group" key={group.provider.name}>
+            <div className="codex-menu-label codex-model-group-label">{group.provider.name}</div>
+            {group.models.map((model) => (
+              <RuntimeModelMenuItem
+                key={`${group.provider.name}/${model.id}`}
+                provider={group.provider}
+                model={model}
+                selected={group.provider.name === effectiveProviderName && model.id === effectiveModelID}
+                selectedVariant={effectiveVariant}
+                onSelectModel={(provider, model, variant) => {
+                  setOptimistic({ provider, model, variant: variant ?? "" });
+                  onSelectModel(provider, model, variant);
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      {showEffort ? (
+        <div className="codex-effort-section">
+          <div className="codex-menu-label codex-effort-heading">
+            <span>{t("runtime.reasoningEffort")}</span>
+            <span className="codex-effort-current">{variantLabel(previewVariant ?? effectiveVariant)}</span>
+          </div>
+          <EffortSlider
+            options={effortOptions}
+            selectedVariant={effectiveVariant}
+            onPreviewEffort={setPreviewVariant}
+            onSelectEffort={(variant) => {
+              setPreviewVariant(null);
+              setOptimistic((current) =>
+                current
+                  ? { ...current, variant }
+                  : { provider: selectedProvider, model: selectedModel, variant }
+              );
+              onSelectEffort(variant);
+            }}
+          />
+        </div>
       ) : null}
     </div>
   );
 }
 
+// Draggable reasoning-effort slider. The thumb snaps to the discrete levels
+// the model supports; dragging previews the level in the heading above and
+// highlights the stop under the thumb, and the commit fires once on release
+// (or on a keyboard step) instead of once per intermediate position, so
+// tuning never spams the runtime stream.
+function EffortSlider({
+  options,
+  selectedVariant,
+  onPreviewEffort,
+  onSelectEffort
+}: {
+  options: string[];
+  selectedVariant: string;
+  onPreviewEffort: (variant: string | null) => void;
+  onSelectEffort: (variant: string) => void;
+}): JSX.Element {
+  const selectedIndex = Math.max(0, options.indexOf(selectedVariant));
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const pendingIndex = useRef(selectedIndex);
+  const displayIndex = previewIndex ?? selectedIndex;
+
+  useEffect(() => {
+    setPreviewIndex(null);
+  }, [selectedVariant]);
+
+  const previewTo = (index: number | null): void => {
+    setPreviewIndex(index);
+    onPreviewEffort(index === null ? null : options[index]);
+  };
+
+  const commit = (): void => {
+    onPreviewEffort(null);
+    onSelectEffort(options[pendingIndex.current]);
+  };
+
+  const stopPercent = (index: number): number => (index / (options.length - 1)) * 100;
+  const wrapStyle = {
+    "--effort-slider-fill": `${stopPercent(displayIndex)}%`
+  } as CSSProperties;
+
+  return (
+    <div className="codex-effort-slider-wrap" style={wrapStyle}>
+      <div className="codex-effort-track">
+        <span className="codex-effort-rail" aria-hidden="true" />
+        <div className="codex-effort-ticks" aria-hidden="true">
+          {options.map((variant, index) => (
+            <span
+              key={variant || "default"}
+              className={`codex-effort-tick${index <= displayIndex ? " active" : ""}`}
+              style={{ left: `${stopPercent(index)}%` }}
+            />
+          ))}
+        </div>
+        <input
+          className="codex-effort-slider"
+          type="range"
+          min={0}
+          max={options.length - 1}
+          step={1}
+          value={displayIndex}
+          aria-label={translate("runtime.reasoningEffort")}
+          aria-valuetext={variantLabel(options[displayIndex])}
+          onChange={(event) => {
+            const next = Number(event.currentTarget.value);
+            pendingIndex.current = next;
+            previewTo(next);
+          }}
+          onPointerUp={commit}
+          onPointerCancel={commit}
+          onKeyUp={commit}
+          onBlur={() => previewTo(null)}
+        />
+      </div>
+      <div className="codex-effort-marks" aria-hidden="true">
+        {options.map((variant, index) => {
+          // End labels pin to the section's content grid (the same edges the
+          // heading text uses), which buys them the padding as extra room;
+          // middle labels stay centered on their stops.
+          const positionStyle =
+            index === 0
+              ? ({ left: "calc(-1 * var(--effort-stop-inset))" } as CSSProperties)
+              : index === options.length - 1
+                ? ({ right: "calc(-1 * var(--effort-stop-inset))" } as CSSProperties)
+                : ({ left: `${stopPercent(index)}%` } as CSSProperties);
+          return (
+            <span
+              key={variant || "default"}
+              className={`codex-effort-mark${index === displayIndex ? " selected" : ""}`}
+              style={positionStyle}
+            >
+              <span className="codex-effort-mark-label">{effortStopLabel(variant)}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Tick labels sit in the strip's tight slots, so the one long level name
+// keeps its canonical compact spelling; everything else uses the full
+// variantLabel text, matching the heading and the trigger.
+function effortStopLabel(variant: string): string {
+  return variant === "xhigh" ? "XHigh" : variantLabel(variant);
+}
+
 type RuntimeModelOption = {
   provider: ProviderSummary;
   model: ProviderModelSummary;
+};
+
+type RuntimeModelGroup = {
+  provider: ProviderSummary;
+  models: ProviderModelSummary[];
 };
 
 function RuntimeModelMenuItem({
@@ -390,11 +498,14 @@ function RuntimeModelMenuItem({
     ? selectedVariant
     : defaultVariantForRuntimeModel(provider, model);
   return (
-    <button role="menuitem" type="button" onClick={() => onSelectModel(provider.name, model.id, nextVariant)}>
-      <span>
-        <strong>{providerModelDisplayName(model)}</strong>
-        <small>{provider.name}</small>
-      </span>
+    <button
+      className="codex-model-item"
+      role="menuitemradio"
+      type="button"
+      aria-checked={selected}
+      onClick={() => onSelectModel(provider.name, model.id, nextVariant)}
+    >
+      <span className="codex-model-item-name">{providerModelDisplayName(model)}</span>
       {selected ? <Check className="icon-lg" /> : null}
     </button>
   );
@@ -409,17 +520,6 @@ function runtimeTriggerLabel(
     return shortCodexModelLabel(codexModel.slug);
   }
   return shortCodexModelLabel(providerModel?.display_name || initialized.model);
-}
-
-function runtimeModelLabel(
-  initialized: InitializeResult,
-  providerModel?: ProviderModelSummary,
-  codexModel?: CodexModelSummary
-): string {
-  if (codexModel) {
-    return displayCodexModelName(codexModel);
-  }
-  return providerModel?.display_name || initialized.model;
 }
 
 function configuredRuntimeModelForProvider(
