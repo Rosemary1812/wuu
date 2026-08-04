@@ -365,11 +365,13 @@ function RuntimeModelMenu({
   );
 }
 
-// Draggable reasoning-effort slider. The thumb snaps to the discrete levels
-// the model supports; dragging previews the level in the heading above and
-// highlights the stop under the thumb, and the commit fires once on release
-// (or on a keyboard step) instead of once per intermediate position, so
-// tuning never spams the runtime stream.
+// Draggable reasoning-effort slider rendered as a capsule: the inked fill
+// swallows whole segments and the level labels live inside the track, so the
+// control reads as one pill instead of a rail with footnotes. The thumb
+// snaps to the discrete levels the model supports; dragging previews the
+// level in the heading above, and the commit fires once on release (or on a
+// keyboard step) instead of once per intermediate position, so tuning never
+// spams the runtime stream.
 function EffortSlider({
   options,
   selectedVariant,
@@ -384,6 +386,8 @@ function EffortSlider({
   const selectedIndex = Math.max(0, options.indexOf(selectedVariant));
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const pendingIndex = useRef(selectedIndex);
+  const pointerX = useRef<number | null>(null);
+  const capsuleRef = useRef<HTMLDivElement>(null);
   const displayIndex = previewIndex ?? selectedIndex;
 
   useEffect(() => {
@@ -396,28 +400,57 @@ function EffortSlider({
   };
 
   const commit = (): void => {
+    pointerX.current = null;
     onPreviewEffort(null);
     onSelectEffort(options[pendingIndex.current]);
   };
 
-  const stopPercent = (index: number): number => (index / (options.length - 1)) * 100;
-  const wrapStyle = {
-    "--effort-slider-fill": `${stopPercent(displayIndex)}%`
+  // The native range control maps a drag position linearly onto [0, N-1],
+  // which puts its rounding boundaries slightly off the capsule's equal
+  // segments; when a pointer is driving, derive the segment from the
+  // pointer's x position inside the capsule instead.
+  const segmentFromPointer = (): number | null => {
+    const capsule = capsuleRef.current;
+    if (pointerX.current === null || !capsule) {
+      return null;
+    }
+    const rect = capsule.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return null;
+    }
+    const ratio = (pointerX.current - rect.left) / rect.width;
+    if (!Number.isFinite(ratio)) {
+      return null;
+    }
+    return Math.min(options.length - 1, Math.max(0, Math.floor(ratio * options.length)));
+  };
+
+  const capsuleStyle = {
+    "--effort-slider-fill": `${((displayIndex + 1) / options.length) * 100}%`,
+    "--effort-slider-pos": `${((displayIndex + 0.5) / options.length) * 100}%`
   } as CSSProperties;
+  // The top level reads as a charged state: a slow sheen sweeps the fill as
+  // long as the thumb (or the committed value) sits on it.
+  const maxed = displayIndex === options.length - 1;
 
   return (
-    <div className="codex-effort-slider-wrap" style={wrapStyle}>
-      <div className="codex-effort-track">
-        <span className="codex-effort-rail" aria-hidden="true" />
-        <div className="codex-effort-ticks" aria-hidden="true">
-          {options.map((variant, index) => (
+    <div
+      className={`codex-effort-slider-wrap${options.length >= 7 ? " dense" : ""}`}
+      style={capsuleStyle}
+    >
+      <div ref={capsuleRef} className={`codex-effort-capsule${maxed ? " maxed" : ""}`}>
+        <span className="codex-effort-capsule-fill" aria-hidden="true" />
+        <div className="codex-effort-dividers" aria-hidden="true">
+          {options.slice(1).map((variant, index) => (
             <span
-              key={variant || "default"}
-              className={`codex-effort-tick${index <= displayIndex ? " active" : ""}`}
-              style={{ left: `${stopPercent(index)}%` }}
+              key={variant || `default-${index}`}
+              className="codex-effort-divider"
+              style={{ left: `${((index + 1) / options.length) * 100}%` }}
             />
           ))}
         </div>
+        {maxed ? <span className="codex-effort-capsule-sheen" aria-hidden="true" /> : null}
+        <span className="codex-effort-knob" aria-hidden="true" />
         <input
           className="codex-effort-slider"
           type="range"
@@ -427,38 +460,41 @@ function EffortSlider({
           value={displayIndex}
           aria-label={translate("runtime.reasoningEffort")}
           aria-valuetext={variantLabel(options[displayIndex])}
+          onPointerDown={(event) => {
+            pointerX.current = event.clientX;
+          }}
+          onPointerMove={(event) => {
+            pointerX.current = event.clientX;
+          }}
           onChange={(event) => {
-            const next = Number(event.currentTarget.value);
+            const next = segmentFromPointer() ?? Number(event.currentTarget.value);
             pendingIndex.current = next;
             previewTo(next);
           }}
           onPointerUp={commit}
           onPointerCancel={commit}
+          onKeyDown={() => {
+            // Keyboard takes over from the pointer: drop any hovered/dragged
+            // position so arrows step from the committed value instead.
+            pointerX.current = null;
+          }}
           onKeyUp={commit}
-          onBlur={() => previewTo(null)}
+          onBlur={() => {
+            pointerX.current = null;
+            previewTo(null);
+          }}
         />
       </div>
       <div className="codex-effort-marks" aria-hidden="true">
-        {options.map((variant, index) => {
-          // End labels pin to the section's content grid (the same edges the
-          // heading text uses), which buys them the padding as extra room;
-          // middle labels stay centered on their stops.
-          const positionStyle =
-            index === 0
-              ? ({ left: "calc(-1 * var(--effort-stop-inset))" } as CSSProperties)
-              : index === options.length - 1
-                ? ({ right: "calc(-1 * var(--effort-stop-inset))" } as CSSProperties)
-                : ({ left: `${stopPercent(index)}%` } as CSSProperties);
-          return (
-            <span
-              key={variant || "default"}
-              className={`codex-effort-mark${index === displayIndex ? " selected" : ""}`}
-              style={positionStyle}
-            >
-              <span className="codex-effort-mark-label">{effortStopLabel(variant)}</span>
-            </span>
-          );
-        })}
+        {options.map((variant, index) => (
+          <span
+            key={variant || "default"}
+            className={`codex-effort-mark${index === displayIndex ? " selected" : ""}`}
+            style={{ left: `${((index + 0.5) / options.length) * 100}%`, maxWidth: `${100 / options.length}%` }}
+          >
+            <span className="codex-effort-mark-label">{effortStopLabel(variant)}</span>
+          </span>
+        ))}
       </div>
     </div>
   );

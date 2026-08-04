@@ -114,12 +114,22 @@ describe("RuntimePicker", () => {
     expect(slider?.value).toBe("2");
     expect(menu?.textContent).toContain("Medium");
 
-    // One visible stop per supported effort level, current level marked.
+    // One segment per supported effort level inside the capsule, current
+    // level marked; the inked fill covers the segments up to the selection.
     expect(menu?.querySelectorAll(".codex-effort-mark")).toHaveLength(4);
-    expect(menu?.querySelectorAll(".codex-effort-tick")).toHaveLength(4);
     expect(
       menu?.querySelector(".codex-effort-mark.selected .codex-effort-mark-label")?.textContent
     ).toBe("Medium");
+    // Segment dividers split the capsule into one chunk per level.
+    expect(menu?.querySelectorAll(".codex-effort-divider")).toHaveLength(3);
+    const wrap = menu?.querySelector<HTMLElement>(".codex-effort-slider-wrap");
+    expect(wrap?.style.getPropertyValue("--effort-slider-fill")).toBe("75%");
+    expect(wrap?.style.getPropertyValue("--effort-slider-pos")).toBe("62.5%");
+    // The drag pearl sits on the current segment; mid-scale is not charged.
+    const capsule = menu?.querySelector<HTMLElement>(".codex-effort-capsule");
+    expect(capsule?.querySelector(".codex-effort-knob")).not.toBeNull();
+    expect(capsule?.classList.contains("maxed")).toBe(false);
+    expect(capsule?.querySelector(".codex-effort-capsule-sheen")).toBeNull();
   });
 
   it("builds permission labels in the active language", () => {
@@ -187,6 +197,10 @@ describe("RuntimePicker", () => {
     expect(onSelectEffort).toHaveBeenCalledTimes(1);
     expect(onSelectEffort).toHaveBeenCalledWith("high");
     expect(document.querySelector(".codex-effort-current")?.textContent).toBe("High");
+    // Landing on the top level switches on the charged state.
+    const capsule = document.querySelector(".codex-effort-capsule");
+    expect(capsule?.classList.contains("maxed")).toBe(true);
+    expect(capsule?.querySelector(".codex-effort-capsule-sheen")).not.toBeNull();
   });
 
   it("flips the model menu below the trigger when the window top has too little room", () => {

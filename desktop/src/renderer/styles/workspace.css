@@ -96,6 +96,8 @@
   --skill-tag-bundled-bg: rgba(255, 90, 38, 0.12);
   --skill-tag-bundled-fg: #c14a13;
   --codex-runtime-effort-text: #74797d;
+  --codex-effort-sheen: rgba(255, 255, 255, 0.22);
+  --codex-effort-sheen-soft: rgba(255, 255, 255, 0.1);
   --codex-runtime-trigger-icon: #707579;
   --codex-menu-label-text: #9a9ea2;
   --grid-guide-border: rgba(228, 0, 43, 0.42);
@@ -4396,123 +4398,125 @@ html.resizing-workspace-terminal-split * {
   font-weight: var(--weight-semibold);
 }
 
-/* Geometry: the thumb center stops one thumb-radius in from each end of the
-   track, so the tick and label rows are inset by that same radius — every
-   stop, notch and label then lines up exactly with a snap point. */
-.codex-effort-slider-wrap {
-  --effort-track-height: 4px;
-  --effort-thumb-size: 16px;
-  --effort-stop-inset: calc(var(--effort-thumb-size) / 2);
-}
-
-.codex-effort-track {
+/* The capsule: a chunky pill split into equal segments by hairline
+   dividers. The inked fill swallows the segments up to and including the
+   current level, and an oversized paper pearl sits on the current segment —
+   taller than the capsule itself, so the control reads as draggable at a
+   glance. Level labels live below the capsule, each centered on its own
+   segment (segment-center alignment keeps even the end labels inside). */
+.codex-effort-capsule {
   position: relative;
-  height: 24px;
-}
-
-/* Rail and fill are painted by the menu (not the input) so the stacking
-   order can be rail → notches → thumb, letting the notches cut through the
-   inked fill while the knob floats above everything. */
-.codex-effort-rail {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  height: var(--effort-track-height);
+  height: 22px;
+  margin: 5px 0 0;
   border-radius: 999px;
-  background: linear-gradient(
-    to right,
-    var(--ink) 0%,
-    var(--ink) var(--effort-slider-fill, 0%),
-    var(--ink-overlay-12) var(--effort-slider-fill, 0%),
-    var(--ink-overlay-12) 100%
-  );
-  transform: translateY(-50%);
+  background: var(--ink-overlay-6);
 }
 
-/* Stop notches punched through the rail: a shade darker than the resting
-   track ahead of the thumb, cut back to the menu surface once the fill
-   passes them — the macOS stepped-slider read. */
-.codex-effort-ticks {
+.codex-effort-capsule:focus-within {
+  box-shadow: 0 0 0 3px var(--ink-overlay-8);
+}
+
+.codex-effort-capsule-fill {
   position: absolute;
   top: 0;
-  right: var(--effort-stop-inset);
   bottom: 0;
-  left: var(--effort-stop-inset);
+  left: 0;
+  width: var(--effort-slider-fill, 0%);
+  border-radius: 999px;
+  background: var(--ink);
+  transition: width var(--motion-fast) var(--menu-enter-easing);
+}
+
+.codex-effort-dividers {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
 }
 
-.codex-effort-tick {
+.codex-effort-divider {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   width: 2px;
-  height: 6px;
-  border-radius: 1px;
-  background: var(--hairline-strong);
-  transform: translate(-50%, -50%);
-  transition: background var(--motion-fast) var(--menu-enter-easing);
-}
-
-.codex-effort-tick.active {
+  margin-left: -1px;
   background: var(--menu-bg);
 }
 
-.codex-effort-slider {
-  -webkit-appearance: none;
-  appearance: none;
+/* The drag affordance: a paper pearl on the current segment, overhanging
+   the capsule top and bottom. */
+.codex-effort-knob {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  margin: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.codex-effort-slider:focus-visible {
-  outline: 0;
-}
-
-.codex-effort-slider::-webkit-slider-runnable-track {
-  height: var(--effort-track-height);
-  background: transparent;
-}
-
-.codex-effort-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: var(--effort-thumb-size);
-  height: var(--effort-thumb-size);
-  margin-top: calc((var(--effort-track-height) - var(--effort-thumb-size)) / 2);
+  z-index: 2;
+  top: 50%;
+  left: var(--effort-slider-pos, 0%);
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--menu-border);
   border-radius: 50%;
   background: var(--paper);
   box-shadow:
-    0 1px 3px var(--ink-overlay-18),
+    0 1px 4px var(--ink-overlay-18),
     0 0 0 0.5px var(--ink-overlay-6);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
   transition:
-    transform var(--motion-fast) var(--menu-enter-easing),
-    box-shadow var(--motion-fast) var(--menu-enter-easing);
+    left var(--motion-fast) var(--menu-enter-easing),
+    scale var(--motion-fast) var(--menu-enter-easing);
 }
 
-.codex-effort-slider:hover::-webkit-slider-thumb {
-  transform: scale(1.12);
+.codex-effort-capsule:active .codex-effort-knob {
+  scale: 1.08;
 }
 
-.codex-effort-slider:active::-webkit-slider-thumb {
-  transform: scale(1.22);
+/* Reserved for the top level: a slow band of light sweeping the fill, so
+   "max" reads as charged rather than just fully filled. */
+.codex-effort-capsule-sheen {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  pointer-events: none;
 }
 
-.codex-effort-slider:focus-visible::-webkit-slider-thumb {
-  box-shadow:
-    0 1px 3px var(--ink-overlay-18),
-    0 0 0 3px var(--ink-overlay-8);
-  transform: scale(1.12);
+.codex-effort-capsule-sheen::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    var(--codex-effort-sheen-soft) 30%,
+    var(--codex-effort-sheen) 50%,
+    var(--codex-effort-sheen-soft) 70%,
+    transparent 100%
+  );
+  animation: codex-effort-max-sheen 3.4s ease-in-out infinite;
+}
+
+@keyframes codex-effort-max-sheen {
+  0% {
+    transform: translateX(-110%);
+  }
+  55%,
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-effort-capsule-sheen::before {
+    animation: none;
+  }
 }
 
 .codex-effort-marks {
   position: relative;
   height: 13px;
-  margin: 2px var(--effort-stop-inset) 0;
+  margin: 8px 0 0;
   pointer-events: none;
 }
 
@@ -4522,17 +4526,10 @@ html.resizing-workspace-terminal-split * {
   transform: translateX(-50%);
 }
 
-/* End labels anchor to the section padding edges instead of centering on the
-   outer stops, so they can use the padding as room and never spill outside. */
-.codex-effort-mark:first-child,
-.codex-effort-mark:last-child {
-  transform: none;
-}
-
 .codex-effort-mark-label {
   display: block;
-  max-width: 76px;
   overflow: hidden;
+  max-width: 100%;
   color: var(--codex-runtime-effort-text);
   font-size: 10px;
   font-weight: var(--weight-medium);
@@ -4543,17 +4540,50 @@ html.resizing-workspace-terminal-split * {
   transition: color var(--motion-fast) var(--menu-enter-easing);
 }
 
-.codex-effort-mark:first-child .codex-effort-mark-label {
-  text-align: left;
-}
-
-.codex-effort-mark:last-child .codex-effort-mark-label {
-  text-align: right;
+.codex-effort-slider-wrap.dense .codex-effort-mark-label {
+  font-size: 9.5px;
 }
 
 .codex-effort-mark.selected .codex-effort-mark-label {
   color: var(--ink);
   font-weight: var(--weight-semibold);
+}
+
+/* The real control, stretched over the capsule: invisible but fully
+   interactive, so pointer drags, clicks and arrow keys all land here. */
+.codex-effort-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  cursor: grab;
+  opacity: 0;
+}
+
+.codex-effort-slider:active {
+  cursor: grabbing;
+}
+
+.codex-effort-slider:focus-visible {
+  outline: 0;
+}
+
+.codex-effort-slider::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.codex-effort-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 100%;
+  background: transparent;
 }
 
 .hero-composer-wrap .codex-runtime-menu {

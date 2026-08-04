@@ -178,6 +178,8 @@
   --skill-tag-bundled-bg: rgba(255, 90, 38, 0.16);
   --skill-tag-bundled-fg: #ff9166;
   --codex-runtime-effort-text: #8f959a;
+  --codex-effort-sheen: rgba(16, 19, 22, 0.2);
+  --codex-effort-sheen-soft: rgba(16, 19, 22, 0.09);
   --codex-runtime-trigger-icon: #8f959a;
   --codex-menu-label-text: #757b80;
   --split-header-bg: rgba(24, 27, 30, 0.94);
