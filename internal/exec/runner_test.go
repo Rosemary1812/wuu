@@ -794,6 +794,21 @@ func TestClassifySetupErrorReturnsProviderModelExit(t *testing.T) {
 
 func TestRunJSONLEmitsWorkEventFamilies(t *testing.T) {
 	controller := newFakeController(
+		notification(appserver.NotificationReasoningDelta, appserver.ReasoningDeltaNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Delta:    "hidden provider reasoning delta",
+		}),
+		notification(appserver.NotificationReasoningReplace, appserver.ReasoningReplaceNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Text:     "hidden provider reasoning final",
+		}),
+		notification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Delta:    "visible answer",
+		}),
 		notification(appserver.NotificationItemStarted, appserver.ItemStartedNotification{
 			ThreadID: "thread-1",
 			TurnID:   "turn-1",
@@ -848,10 +863,19 @@ func TestRunJSONLEmitsWorkEventFamilies(t *testing.T) {
 	}
 	events := parseJSONLines(t, stdout.String())
 	types := eventTypes(events)
-	for _, want := range []string{"command_started", "command_output_delta", "command_completed", "file_changed", "subagent_started", "subagent_completed"} {
+	for _, want := range []string{"agent_message_delta", "tool_started", "tool_output_delta", "tool_completed", "command_started", "command_output_delta", "command_completed", "file_changed", "subagent_started", "subagent_completed"} {
 		if !containsString(types, want) {
 			t.Fatalf("missing %s in events %#v\n%s", want, types, stdout.String())
 		}
+	}
+	for _, forbidden := range []string{"reasoning_delta", "reasoning_final", "hidden provider reasoning"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("JSONL leaked provider reasoning %q:\n%s", forbidden, stdout.String())
+		}
+	}
+	agentMessage := firstEventOfType(t, events, "agent_message_delta")
+	if agentMessage["delta"] != "visible answer" {
+		t.Fatalf("unexpected agent_message_delta: %+v", agentMessage)
 	}
 	commandStarted := firstEventOfType(t, events, "command_started")
 	if commandStarted["command"] != "go test ./..." {

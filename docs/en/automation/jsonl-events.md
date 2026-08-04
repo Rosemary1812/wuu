@@ -38,8 +38,6 @@ The target event family list is:
 - `turn_started`
 - `agent_message_delta`
 - `agent_message_final`
-- `reasoning_delta`
-- `reasoning_final`
 - `plan_updated`
 - `provider_state`
 - `request_context`
@@ -62,6 +60,9 @@ The target event family list is:
 
 The current `wuu exec` implementation emits these families from app-server
 notifications, app-server client requests, and structured tool results.
+Provider reasoning notifications are intentionally omitted at this automation
+boundary because their payload may contain hidden reasoning. They remain
+available to interactive app-server clients that render the reasoning UI.
 
 ## Event Shapes
 
@@ -259,8 +260,8 @@ omitted.
 
 ### `command_started`
 
-Emitted in addition to `tool_started` for command-like tools such as
-`run_shell`, `run_test`, and managed process tools.
+Emitted in addition to `tool_started` for the `bash` tool. This includes direct
+commands and managed background-process actions.
 
 ```json
 {
@@ -268,9 +269,9 @@ Emitted in addition to `tool_started` for command-like tools such as
   "thread_id": "thread-id",
   "turn_id": "turn-id",
   "item_id": "item-id",
-  "name": "run_shell",
+  "name": "bash",
   "command": "go test ./...",
-  "arguments": "{\"command\":\"go test ./...\"}"
+  "arguments": "{\"action\":\"run\",\"command\":\"go test ./...\",\"purpose\":\"Run Go tests\"}"
 }
 ```
 
@@ -282,7 +283,7 @@ Emitted in addition to `tool_started` for command-like tools such as
   "thread_id": "thread-id",
   "turn_id": "turn-id",
   "item_id": "item-id",
-  "name": "run_shell",
+  "name": "bash",
   "command": "go test ./...",
   "delta": "ok\n"
 }
@@ -296,7 +297,7 @@ Emitted in addition to `tool_started` for command-like tools such as
   "thread_id": "thread-id",
   "turn_id": "turn-id",
   "item_id": "item-id",
-  "name": "run_shell",
+  "name": "bash",
   "command": "go test ./...",
   "status": "completed",
   "error": ""

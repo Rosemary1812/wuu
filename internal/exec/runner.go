@@ -327,18 +327,12 @@ func handleNotification(opts Options, notification Notification, state *runState
 			state.finalMessage = params.Text
 			emitJSON(opts, map[string]any{"type": "agent_message_final", "thread_id": params.ThreadID, "turn_id": params.TurnID, "message": params.Text})
 		}
-	case appserver.NotificationReasoningDelta:
-		var params appserver.ReasoningDeltaNotification
-		if err := decodeNotification(notification, &params); err != nil {
-			return false, err
-		}
-		emitJSON(opts, map[string]any{"type": "reasoning_delta", "thread_id": params.ThreadID, "turn_id": params.TurnID, "delta": params.Delta})
-	case appserver.NotificationReasoningReplace:
-		var params appserver.ReasoningReplaceNotification
-		if err := decodeNotification(notification, &params); err != nil {
-			return false, err
-		}
-		emitJSON(opts, map[string]any{"type": "reasoning_final", "thread_id": params.ThreadID, "turn_id": params.TurnID, "text": params.Text})
+	case appserver.NotificationReasoningDelta, appserver.NotificationReasoningReplace:
+		// App-server reasoning items are the desktop UI surface for provider
+		// thinking. Providers do not reliably distinguish a safe reasoning
+		// summary from hidden chain-of-thought on this notification path, so the
+		// automation boundary must not forward either payload to JSONL.
+		return false, nil
 	case appserver.NotificationItemStarted:
 		var params appserver.ItemStartedNotification
 		if err := decodeNotification(notification, &params); err != nil {
