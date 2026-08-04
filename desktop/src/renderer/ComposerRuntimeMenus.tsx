@@ -405,8 +405,8 @@ function EffortSlider({
     onSelectEffort(options[pendingIndex.current]);
   };
 
-  // Keep pointer snapping aligned with the visible stop positions, including
-  // the two ends of the track.
+  // Each option owns one equal span; the knob and marker sit on that span's
+  // right edge rather than in its center.
   const stopFromPointer = (): number | null => {
     const capsule = capsuleRef.current;
     if (pointerX.current === null || !capsule) {
@@ -420,10 +420,10 @@ function EffortSlider({
     if (!Number.isFinite(ratio)) {
       return null;
     }
-    return Math.min(options.length - 1, Math.max(0, Math.round(ratio * (options.length - 1))));
+    return Math.min(options.length - 1, Math.max(0, Math.floor(ratio * options.length)));
   };
 
-  const stopPosition = options.length > 1 ? (displayIndex / (options.length - 1)) * 100 : 0;
+  const stopPosition = ((displayIndex + 1) / options.length) * 100;
   const capsuleStyle = {
     "--effort-slider-fill": `${stopPosition}%`,
     "--effort-slider-pos": `${stopPosition}%`
@@ -437,11 +437,11 @@ function EffortSlider({
       <div ref={capsuleRef} className={`codex-effort-capsule${maxed ? " maxed" : ""}`}>
         <span className="codex-effort-capsule-fill" aria-hidden="true" />
         <div className="codex-effort-stops" aria-hidden="true">
-          {options.map((variant, index) => (
+          {options.slice(0, -1).map((variant, index) => (
             <span
               key={variant || `default-${index}`}
               className="codex-effort-stop"
-              style={{ left: `${options.length > 1 ? (index / (options.length - 1)) * 100 : 0}%` }}
+              style={{ left: `${((index + 1) / options.length) * 100}%` }}
             />
           ))}
         </div>

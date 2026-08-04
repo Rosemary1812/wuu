@@ -119,10 +119,10 @@ describe("RuntimePicker", () => {
     expect(menu?.querySelector(".codex-effort-marks")).toBeNull();
     expect(menu?.querySelector(".codex-effort-mark")).toBeNull();
     expect(menu?.querySelector(".codex-effort-current")?.textContent).toBe("Medium");
-    expect(menu?.querySelectorAll(".codex-effort-stop")).toHaveLength(4);
+    expect(menu?.querySelectorAll(".codex-effort-stop")).toHaveLength(3);
     const wrap = menu?.querySelector<HTMLElement>(".codex-effort-slider-wrap");
-    expect(wrap?.style.getPropertyValue("--effort-slider-fill")).toBe("66.66666666666666%");
-    expect(wrap?.style.getPropertyValue("--effort-slider-pos")).toBe("66.66666666666666%");
+    expect(wrap?.style.getPropertyValue("--effort-slider-fill")).toBe("75%");
+    expect(wrap?.style.getPropertyValue("--effort-slider-pos")).toBe("75%");
     // The drag pearl sits on the current stop; mid-scale is not charged.
     const capsule = menu?.querySelector<HTMLElement>(".codex-effort-capsule");
     expect(capsule?.querySelector(".codex-effort-knob")).not.toBeNull();
