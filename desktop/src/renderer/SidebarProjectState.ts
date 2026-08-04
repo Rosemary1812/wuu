@@ -45,6 +45,7 @@ export type SidebarProjectStateController = {
   loadProjectThreads: (project: DesktopProject) => Promise<void>;
   cacheSidebarThreads: (threads: Thread[]) => void;
   updateCachedSidebarThread: (thread: Thread) => void;
+  updateCachedSidebarThreadPinned: (threadID: string, pinned: boolean) => void;
   removeCachedSidebarThread: (threadID: string) => void;
   toggleSidebarSectionCollapsed: (sectionID: string) => void;
 };
@@ -393,6 +394,33 @@ export function useSidebarProjectState({
     cacheSidebarThreads([thread]);
   }
 
+  function updateCachedSidebarThreadPinned(threadID: string, pinned: boolean): void {
+    const patch = (threads: Thread[]): Thread[] => {
+      let changed = false;
+      const next = threads.map((thread) => {
+        if (thread.id !== threadID || thread.pinned === pinned) {
+          return thread;
+        }
+        changed = true;
+        return { ...thread, pinned };
+      });
+      return changed ? sortThreads(next) : threads;
+    };
+    setCachedScratchThreads(patch);
+    setProjectThreadsByProjectID((current) => {
+      let changed = false;
+      const next: Record<string, Thread[]> = {};
+      for (const [projectID, projectThreads] of Object.entries(current)) {
+        const patched = patch(projectThreads);
+        if (patched !== projectThreads) {
+          changed = true;
+        }
+        next[projectID] = patched;
+      }
+      return changed ? next : current;
+    });
+  }
+
   function removeCachedSidebarThread(threadID: string): void {
     setCachedScratchThreads((current) =>
       current.filter((thread) => thread.id !== threadID),
@@ -483,6 +511,7 @@ export function useSidebarProjectState({
     loadProjectThreads,
     cacheSidebarThreads,
     updateCachedSidebarThread,
+    updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
     toggleSidebarSectionCollapsed,
   };

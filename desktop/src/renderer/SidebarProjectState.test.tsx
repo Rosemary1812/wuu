@@ -258,6 +258,21 @@ describe("useSidebarProjectState", () => {
     ]);
   });
 
+  it("patches a cached project session pin immediately", async () => {
+    const alpha = project("alpha", "/tmp/alpha");
+    const cached = thread("thread-alpha", alpha.path);
+    const hook = await renderSidebarProjectState({ projects: [alpha] });
+    act(() => {
+      hook.get().cacheSidebarThreads([cached]);
+    });
+
+    act(() => {
+      hook.get().updateCachedSidebarThreadPinned(cached.id, true);
+    });
+
+    expect(hook.get().projectThreadsByProjectID.alpha?.[0]?.pinned).toBe(true);
+  });
+
   it("keeps scratch threads cached for the no-project context", async () => {
     const alpha = project("alpha", "/tmp/alpha");
     const scratchThread = thread("thread-scratch", "/tmp/other");

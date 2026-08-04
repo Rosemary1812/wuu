@@ -31,6 +31,7 @@ export type ThreadMutationActionsDeps = {
   clearPrimaryComposerDraft: () => void;
   resetSplitComposerDrafts: () => void;
   updateCachedSidebarThread: (thread: Thread) => void;
+  updateCachedSidebarThreadPinned: (threadID: string, pinned: boolean) => void;
   removeCachedSidebarThread: (threadID: string) => void;
   clearThreadPendingComposerMessages: (threadID: string) => void;
 };
@@ -117,12 +118,11 @@ export function createThreadMutationActions(
   }
 
   async function toggleThreadPinned(thread: ThreadSummary): Promise<void> {
-    if (!deps.getAppState().activeContext) {
-      return;
-    }
+    const previousPinned = thread.pinned === true;
+    const nextPinned = !previousPinned;
     const localDemoThread = deps.localDemoThreadsRef.current.get(thread.id);
     if (localDemoThread) {
-      const nextThread = { ...localDemoThread, pinned: !thread.pinned };
+      const nextThread = { ...localDemoThread, pinned: nextPinned };
       upsertLocalDemoThread(nextThread);
       deps.setAppState((current) => ({
         ...current,
@@ -136,8 +136,29 @@ export function createThreadMutationActions(
       }));
       return;
     }
+
+    // Pinning is a lightweight sidebar preference. Reflect it immediately so
+    // the row moves between its workspace and the global pinned section on the
+    // click that initiated the mutation, regardless of which tab/context is
+    // currently active. The server result below remains the persisted source
+    // of truth; failures restore the previous value.
+    deps.updateCachedSidebarThreadPinned(thread.id, nextPinned);
+    deps.setAppState((current) => ({
+      ...current,
+      thread:
+        current.thread?.id === thread.id
+          ? { ...current.thread, pinned: nextPinned }
+          : current.thread,
+      secondaryThread:
+        current.secondaryThread?.id === thread.id
+          ? { ...current.secondaryThread, pinned: nextPinned }
+          : current.secondaryThread,
+      threads: current.threads.map((item) =>
+        item.id === thread.id ? { ...item, pinned: nextPinned } : item,
+      ),
+    }));
     try {
-      const result = await window.wuu.pinThread(thread.id, !thread.pinned);
+      const result = await window.wuu.pinThread(thread.id, nextPinned);
       deps.updateCachedSidebarThread(result.thread);
       deps.setAppState((current) => ({
         ...current,
@@ -147,13 +168,27 @@ export function createThreadMutationActions(
           current.secondaryThread?.id === thread.id
             ? result.thread
             : current.secondaryThread,
-        threads:
-          current.activeContext?.cwd === result.thread.cwd
-            ? upsertThread(current.threads, result.thread)
-            : current.threads,
+        threads: current.threads.map((item) =>
+          item.id === result.thread.id ? result.thread : item,
+        ),
         status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
+      deps.updateCachedSidebarThreadPinned(thread.id, previousPinned);
+      deps.setAppState((current) => ({
+        ...current,
+        thread:
+          current.thread?.id === thread.id
+            ? { ...current.thread, pinned: previousPinned }
+            : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? { ...current.secondaryThread, pinned: previousPinned }
+            : current.secondaryThread,
+        threads: current.threads.map((item) =>
+          item.id === thread.id ? { ...item, pinned: previousPinned } : item,
+        ),
+      }));
       setStatus(
         error instanceof Error ? error.message : translateCurrent("thread.pinFailed"),
       );

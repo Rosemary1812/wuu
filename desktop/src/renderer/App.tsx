@@ -500,6 +500,7 @@ export function App(): JSX.Element {
     setSidebarSectionOrder,
     cacheSidebarThreads,
     updateCachedSidebarThread,
+    updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
     toggleSidebarSectionCollapsed,
   } = useSidebarProjectState({
@@ -3065,6 +3066,7 @@ export function App(): JSX.Element {
     resetSplitComposerDrafts: () =>
       setSplitComposerDrafts(initialSplitComposerDrafts()),
     updateCachedSidebarThread,
+    updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
     clearThreadPendingComposerMessages,
   });

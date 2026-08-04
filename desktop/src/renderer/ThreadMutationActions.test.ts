@@ -108,6 +108,7 @@ function buildActions({
   const clearPrimaryComposerDraft = vi.fn();
   const resetSplitComposerDrafts = vi.fn();
   const updateCachedSidebarThread = vi.fn();
+  const updateCachedSidebarThreadPinned = vi.fn();
   const removeCachedSidebarThread = vi.fn();
   const clearThreadPendingComposerMessages = vi.fn();
   const actions = createThreadMutationActions({
@@ -127,6 +128,7 @@ function buildActions({
     clearPrimaryComposerDraft,
     resetSplitComposerDrafts,
     updateCachedSidebarThread,
+    updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
     clearThreadPendingComposerMessages,
   });
@@ -138,6 +140,7 @@ function buildActions({
     clearPrimaryComposerDraft,
     resetSplitComposerDrafts,
     updateCachedSidebarThread,
+    updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
     clearThreadPendingComposerMessages,
   };
@@ -161,12 +164,69 @@ describe("createThreadMutationActions", () => {
     await harness.actions.toggleThreadPinned(summary(base));
 
     expect(api.pinThread).toHaveBeenCalledWith(base.id, true);
+    expect(harness.updateCachedSidebarThreadPinned).toHaveBeenCalledWith(base.id, true);
     expect(harness.updateCachedSidebarThread).toHaveBeenCalledWith({
       ...base,
       pinned: true,
     });
     expect(harness.getAppState().thread?.pinned).toBe(true);
     expect(harness.getAppState().threads[0]?.pinned).toBe(true);
+  });
+
+  it("optimistically pins without an active workspace context", async () => {
+    const base = thread();
+    let resolvePin: ((value: { thread: Thread }) => void) | undefined;
+    const pinThread = vi.fn().mockReturnValue(
+      new Promise<{ thread: Thread }>((resolve) => {
+        resolvePin = resolve;
+      }),
+    );
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { pinThread },
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: undefined,
+        thread: base,
+        threads: [base],
+      },
+    });
+
+    const pending = harness.actions.toggleThreadPinned(summary(base));
+
+    expect(pinThread).toHaveBeenCalledWith(base.id, true);
+    expect(harness.updateCachedSidebarThreadPinned).toHaveBeenCalledWith(base.id, true);
+    expect(harness.getAppState().thread?.pinned).toBe(true);
+    expect(harness.getAppState().threads[0]?.pinned).toBe(true);
+
+    resolvePin?.({ thread: { ...base, pinned: true } });
+    await pending;
+  });
+
+  it("rolls back an optimistic pin when persistence fails", async () => {
+    const base = thread();
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { pinThread: vi.fn().mockRejectedValue(new Error("pin failed")) },
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: undefined,
+        thread: base,
+        threads: [base],
+      },
+    });
+
+    await harness.actions.toggleThreadPinned(summary(base));
+
+    expect(harness.updateCachedSidebarThreadPinned).toHaveBeenNthCalledWith(1, base.id, true);
+    expect(harness.updateCachedSidebarThreadPinned).toHaveBeenNthCalledWith(2, base.id, false);
+    expect(harness.getAppState().thread?.pinned).toBe(false);
+    expect(harness.getAppState().threads[0]?.pinned).toBe(false);
+    expect(toastMocks.showErrorToast).toHaveBeenCalledWith("pin failed");
   });
 
   it("archives the active thread after confirmation and opens a fallback draft", async () => {
