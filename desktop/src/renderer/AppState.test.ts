@@ -279,6 +279,51 @@ function threadWithUserTexts(texts: string[]): Thread {
 }
 
 describe("AppState protocol normalization", () => {
+  it("seeds a running child from a completed spawn item before agent updates arrive", () => {
+    const thread = threadWithUserTexts(["delegate"]);
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread,
+        threads: [thread],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "item/completed",
+          params: {
+            thread_id: thread.id,
+            turn_id: "turn-1",
+            item: {
+              id: "spawn-1",
+              type: "collab_agent_tool_call",
+              name: "spawn_agent",
+              status: "completed",
+              result: JSON.stringify({
+                agent_id: "worker-1",
+                task_name: "review_auth",
+                agent_path: "/root/review_auth",
+                status: "running",
+              }),
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.thread?.child_agents).toEqual([
+      expect.objectContaining({
+        id: "worker-1",
+        task_name: "review_auth",
+        status: "running",
+        parent_id: thread.id,
+      }),
+    ]);
+    expect(isStateActiveThreadRunning(next)).toBe(true);
+  });
+
   it("keeps rendering when an older core starts an empty turn with null items", () => {
     const thread = threadWithUserTexts(["continue"]);
     const next = reduceServerEvent(

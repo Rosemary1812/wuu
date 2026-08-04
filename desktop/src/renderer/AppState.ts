@@ -660,12 +660,22 @@ function reduceNotification(
     case "item/completed": {
       const item = params?.item as ThreadItem | undefined;
       const turnID = params?.turn_id as string | undefined;
+      const threadID = threadIDFromParams(params);
       if (!item || !turnID) {
         return state;
       }
-      return updateThreadByID(state, threadIDFromParams(params), (thread) =>
+      const next = updateThreadByID(state, threadID, (thread) =>
         upsertTurnItem(thread, turnID, item),
       );
+      if (notification.method !== "item/completed") {
+        return next;
+      }
+      const spawned = runningAgentFromSpawnResult(threadID, item);
+      return spawned
+        ? updateThreadByID(next, threadID, (thread) =>
+            upsertThreadChildAgent(thread, spawned),
+          )
+        : next;
     }
     case "item/agentMessage/delta":
       return applyDelta(state, params, "text");
@@ -2867,6 +2877,34 @@ function isDirectChildAgent(threadID: string, agent: Agent): boolean {
     return true;
   }
   return agentPathDepth(agent.agent_path) === 2;
+}
+
+function runningAgentFromSpawnResult(
+  threadID: string | undefined,
+  item: ThreadItem,
+): Agent | undefined {
+  if (!threadID || item.name !== "spawn_agent" || !item.result) {
+    return undefined;
+  }
+  try {
+    const result = JSON.parse(item.result) as Record<string, unknown>;
+    const id = typeof result.agent_id === "string" ? result.agent_id.trim() : "";
+    const status = typeof result.status === "string" ? result.status.trim() : "";
+    if (!id || !agentRunning({ status })) {
+      return undefined;
+    }
+    return {
+      id,
+      status,
+      parent_id: threadID,
+      task_name:
+        typeof result.task_name === "string" ? result.task_name : undefined,
+      agent_path:
+        typeof result.agent_path === "string" ? result.agent_path : undefined,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function agentPathDepth(path: string | undefined): number {

@@ -1,6 +1,6 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
   InputFile,
   InputImage,
@@ -28,10 +28,14 @@ import {
   turnHasAssistantOutput,
 } from "./TurnViewHelpers";
 import { TurnView } from "./TurnView";
-import { turnsHavePendingSubagents } from "./TurnGrouping";
+import {
+  subagentProgressForTurns,
+  turnsHavePendingSubagents,
+} from "./TurnGrouping";
 import type { TurnStreamStatus } from "./AppState";
 import type { SubagentChipDisplay } from "./AgentHandoff";
 import { translateCurrent } from "./i18n";
+import { AnimatedProcessText } from "./ProcessTextMotion";
 
 export type TurnGroupViewProps = {
   /** One orchestration group (TurnGrouping). Length 1 for ordinary turns. */
@@ -133,6 +137,18 @@ function MergedTurnGroupView({
   // The group reads as one live turn while any member runs OR while the
   // orchestration is parked between turns waiting for a completion wake.
   const live = anyMemberInProgress || Boolean(awaiting);
+  const subagentProgress = subagentProgressForTurns(turns);
+  const waitingTailLabel =
+    awaiting && !anyMemberInProgress && !interrupted && subagentProgress.remaining > 0
+      ? subagentProgress.finished > 0
+        ? translateCurrent("process.subagentsProgress", {
+            finished: subagentProgress.finished,
+            remaining: subagentProgress.remaining,
+          })
+        : translateCurrent("process.subagentsWaiting", {
+            remaining: subagentProgress.remaining,
+          })
+      : undefined;
   const closed = !live && !interrupted && last.status === "completed";
   // Only the group's final answer carries the action bar; intermediate
   // answers (the wake-up progress reports) render as plain text.
@@ -235,6 +251,7 @@ function MergedTurnGroupView({
           subagentWaiting={Boolean(awaiting)}
         />
       ) : null}
+      <TransientSubagentWait label={waitingTailLabel} />
       {turns.map((member) => {
         const event = turnEventForTurn(
           member,
@@ -262,6 +279,28 @@ function MergedTurnGroupView({
         <StreamReconnectNotice text={streamStatus.text} />
       ) : null}
     </section>
+  );
+}
+
+function TransientSubagentWait({ label }: { label?: string }): JSX.Element {
+  const [retainedLabel, setRetainedLabel] = useState(label);
+  useEffect(() => {
+    if (label) setRetainedLabel(label);
+  }, [label]);
+
+  return (
+    <div
+      className={`collapsible-details turn-subagent-wait-tail${label ? " expanded" : ""}`}
+      aria-hidden={label ? undefined : "true"}
+    >
+      <div className="collapsible-details-inner">
+        {retainedLabel ? (
+          <div className="process-surface-row is-live-gray turn-subagent-wait-status">
+            <AnimatedProcessText text={retainedLabel} />
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

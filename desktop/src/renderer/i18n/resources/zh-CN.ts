@@ -969,6 +969,7 @@ export const zhCN = {
   "process.finishedIn": "用时 {duration}",
   "process.waitingForSubagents": "子任务仍在运行",
   "process.subagentsDispatched": "已派出 {count} 个 subagent",
+  "process.subagentsWaiting": "仍在等待 {remaining} 个 subagent",
   "process.subagentsProgress": "{finished} 个 subagent 已结束，仍在等待 {remaining} 个",
   "process.subagentsFinished": "{count} 个 subagent 已结束",
   "message.userActions": "用户消息操作",

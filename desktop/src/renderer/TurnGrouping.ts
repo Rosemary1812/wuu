@@ -64,7 +64,18 @@ export function turnHasSpawnAgentCall(turn: Turn): boolean {
 }
 
 export function turnsHavePendingSubagents(turns: Turn[]): boolean {
+  return subagentProgressForTurns(turns).remaining > 0;
+}
+
+export type SubagentTimelineProgress = {
+  total: number;
+  finished: number;
+  remaining: number;
+};
+
+export function subagentProgressForTurns(turns: Turn[]): SubagentTimelineProgress {
   let pending = 0;
+  let finished = 0;
   for (const turn of turns) {
     for (const item of turn.items) {
       if (isSpawnAgentItem(item) && spawnResultIsPending(item.result)) {
@@ -72,14 +83,17 @@ export function turnsHavePendingSubagents(turns: Turn[]): boolean {
         continue;
       }
       if (item.type === "user_message" && isAgentHandoffItem(item)) {
-        pending = Math.max(
-          0,
-          pending - Math.max(1, agentHandoffChipDisplayItems(item).length),
+        const completionCount = Math.max(
+          1,
+          agentHandoffChipDisplayItems(item).length,
         );
+        const resolved = Math.min(pending, completionCount);
+        pending -= resolved;
+        finished += resolved;
       }
     }
   }
-  return pending > 0;
+  return { total: pending + finished, finished, remaining: pending };
 }
 
 /** Agent identities spawned by this turn, read from spawn_agent results. */

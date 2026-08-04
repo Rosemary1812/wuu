@@ -971,6 +971,7 @@ export const enUS = {
   "process.finishedIn": "Finished in {duration}",
   "process.waitingForSubagents": "Subagents are still running",
   "process.subagentsDispatched": "Dispatched {count} subagents",
+  "process.subagentsWaiting": "Waiting for {remaining} subagents",
   "process.subagentsProgress": "{finished} finished, waiting for {remaining}",
   "process.subagentsFinished": "{count} subagents finished",
   "message.userActions": "User message actions",

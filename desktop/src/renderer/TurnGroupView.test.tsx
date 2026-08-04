@@ -141,6 +141,12 @@ function foldToggle(): HTMLElement {
   return el;
 }
 
+function waitTail(): HTMLElement {
+  const el = container.querySelector<HTMLElement>(".turn-subagent-wait-tail");
+  if (!el) throw new Error("expected a subagent wait tail");
+  return el;
+}
+
 describe("TurnGroupView — merged orchestration group", () => {
   it("renders a spawn turn + wake turn as one shell with one action bar", () => {
     const turns = [
@@ -399,6 +405,7 @@ describe("TurnGroupView — awaiting between turns", () => {
       liveWait.compareDocumentPosition(wakeAnswer) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(actionBars()).toHaveLength(0);
+    expect(waitTail().classList.contains("expanded")).toBe(false);
   });
 
   it("updates one three-agent batch row across asynchronous wake turns", async () => {
@@ -414,6 +421,9 @@ describe("TurnGroupView — awaiting between turns", () => {
     const batchRow = container.querySelector<HTMLElement>(".turn-subagent-status");
     expect(batchRow?.textContent).toBe("已派出 3 个 subagent");
     expect(batchRow?.classList.contains("is-live-gray")).toBe(true);
+    expect(foldToggle().getAttribute("aria-expanded")).toBe("false");
+    expect(waitTail().classList.contains("expanded")).toBe(true);
+    expect(waitTail().textContent).toContain("仍在等待 3 个 subagent");
 
     const firstWake = makeTurn("t2", [
       wakeItem("agent-first"),
@@ -425,6 +435,8 @@ describe("TurnGroupView — awaiting between turns", () => {
     });
     expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
     expect(batchRow?.textContent).toContain("1 个 subagent 已结束，仍在等待 2 个");
+    expect(waitTail().classList.contains("expanded")).toBe(true);
+    expect(waitTail().textContent).toContain("1 个 subagent 已结束，仍在等待 2 个");
 
     const secondWake = makeTurn("t3", [
       wakeItem("agent-second"),
@@ -437,6 +449,7 @@ describe("TurnGroupView — awaiting between turns", () => {
     });
     expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
     expect(batchRow?.textContent).toContain("2 个 subagent 已结束，仍在等待 1 个");
+    expect(waitTail().textContent).toContain("2 个 subagent 已结束，仍在等待 1 个");
     expect(actionBars()).toHaveLength(0);
 
     const finalWake = makeTurn("t4", [
@@ -450,6 +463,8 @@ describe("TurnGroupView — awaiting between turns", () => {
     expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
     expect(batchRow?.textContent).toContain("3 个 subagent 已结束");
     expect(batchRow?.classList.contains("is-live-gray")).toBe(false);
+    expect(waitTail().classList.contains("expanded")).toBe(false);
+    expect(waitTail().getAttribute("aria-hidden")).toBe("true");
     expect(actionBars()).toHaveLength(1);
   });
 

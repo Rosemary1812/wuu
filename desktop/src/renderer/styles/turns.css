@@ -1850,6 +1850,10 @@
   gap: var(--conversation-process-detail-gap);
 }
 
+.turn-subagent-wait-tail.expanded {
+  margin-top: var(--conversation-process-detail-gap);
+}
+
 .turn-process-entry {
   position: static;
   display: block;
