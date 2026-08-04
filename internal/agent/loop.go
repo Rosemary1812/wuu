@@ -12,6 +12,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/toolerrors"
 )
 
@@ -629,20 +630,16 @@ func RunToolLoop(
 		// slice (via ContextWithHistory) so tools like spawn_agent can fork
 		// from the parent agent's current history.
 		toolCtx := ContextWithHistory(ctx, messages)
+		if cfg.ToolWaitInterrupt != nil {
+			toolCtx = toolctx.WithWaitInterrupt(toolCtx, cfg.ToolWaitInterrupt())
+		}
 		toolRuntime := result.ToolRuntime
 		if toolRuntime == nil {
 			toolRuntime = NewTurnToolRuntime(ToolRuntimeConfig{Executor: cfg.Tools, StepIndex: stepIdx})
 		}
 		toolRuntime.SetStepIndex(stepIdx)
 		toolRuntime.SetResultCallback(cfg.OnToolResultDetail)
-		orderedToolMessages, toolErr := executeFinalToolCalls(
-			toolCtx,
-			toolRuntime,
-			result.ToolCalls,
-			cfg.OnToolResult,
-			cfg.OnToolBatchRejected,
-			cfg.ToolInterrupt,
-		)
+		orderedToolMessages, toolErr := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult, cfg.OnToolBatchRejected)
 		if toolErr != nil {
 			return LoopResult{
 				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
@@ -862,41 +859,6 @@ func repairLiveToolCallHistory(messages []providers.ChatMessage) ([]providers.Ch
 		return nil, false, err
 	}
 	return repaired, !reflect.DeepEqual(repaired, messages), nil
-}
-
-type finalToolCallResult struct {
-	messages []providers.ChatMessage
-	err      error
-}
-
-func executeFinalToolCalls(
-	ctx context.Context,
-	runtime *TurnToolRuntime,
-	calls []providers.ToolCall,
-	onResult func(providers.ToolCall, string),
-	onRejected func(ToolBatchRejectionInfo),
-	interrupt <-chan struct{},
-) ([]providers.ChatMessage, error) {
-	if interrupt == nil {
-		return runtime.ExecuteFinalCalls(ctx, calls, onResult, onRejected)
-	}
-	done := make(chan finalToolCallResult, 1)
-	go func() {
-		messages, err := runtime.ExecuteFinalCalls(ctx, calls, onResult, onRejected)
-		done <- finalToolCallResult{messages: messages, err: err}
-	}()
-	select {
-	case result := <-done:
-		return result.messages, result.err
-	case <-interrupt:
-		runtime.Cancel()
-		result := <-done
-		return result.messages, result.err
-	case <-ctx.Done():
-		runtime.Cancel()
-		result := <-done
-		return result.messages, result.err
-	}
 }
 
 func newMessagesForReturn(messages []providers.ChatMessage, startLen int, historyRewritten bool) []providers.ChatMessage {

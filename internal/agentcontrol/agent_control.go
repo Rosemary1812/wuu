@@ -875,6 +875,10 @@ type SpawnRequest struct {
 	BaseRepo      string // optional: chain off another worktree (worktree mode only)
 	Synchronous   bool
 	Timeout       time.Duration
+	// WaitInterrupt lets a synchronous caller stop waiting without canceling
+	// the spawned worker. It is used by turn steer to background foreground
+	// subagent work while the parent continues.
+	WaitInterrupt <-chan struct{}
 	// Isolation overrides the worker type's DefaultIsolation when set.
 	// Empty string means "use the type default". Use this from
 	// spawn_agent to opt a normally-inplace worker into a worktree
@@ -942,6 +946,7 @@ type SpawnResult struct {
 	DurationMS      int64    `json:"duration_ms,omitempty"`
 	ResultConsumed  bool     `json:"result_consumed,omitempty"`
 	ConsumedBy      string   `json:"consumed_by,omitempty"`
+	Backgrounded    bool     `json:"backgrounded,omitempty"`
 	NextSteps       []string `json:"next_steps,omitempty"`
 	// ModelAlias records the requested configured alias, if any, for
 	// provenance and diagnostics.
@@ -1329,7 +1334,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	// AgentControl. That keeps worktree paths, persisted thread
 	// metadata, and visible agent IDs aligned.
 	workerCtx := ctx
-	if !req.Synchronous {
+	if !req.Synchronous || req.WaitInterrupt != nil {
 		workerCtx = context.WithoutCancel(ctx)
 	}
 
@@ -1417,7 +1422,40 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 		waitCtx, cancel = context.WithTimeout(ctx, req.Timeout)
 		defer cancel()
 	}
-	snap, err := c.manager.Wait(waitCtx, spawned.ID)
+	var snap subagent.SubAgentSnapshot
+	if req.WaitInterrupt == nil {
+		snap, err = c.manager.Wait(waitCtx, spawned.ID)
+	} else {
+		type waitResult struct {
+			snapshot subagent.SubAgentSnapshot
+			err      error
+		}
+		waitDone := make(chan waitResult, 1)
+		interruptibleWaitCtx, stopWait := context.WithCancel(waitCtx)
+		defer stopWait()
+		go func() {
+			waited, waitErr := c.manager.Wait(interruptibleWaitCtx, spawned.ID)
+			waitDone <- waitResult{snapshot: waited, err: waitErr}
+		}()
+		select {
+		case waited := <-waitDone:
+			snap, err = waited.snapshot, waited.err
+		case <-req.WaitInterrupt:
+			stopWait()
+			waited := <-waitDone
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("wait: %w", ctx.Err())
+			}
+			snap = waited.snapshot
+			if !subagent.IsTerminal(snap.Status) {
+				result.Status = string(snap.Status)
+				result.Backgrounded = true
+				result.NextSteps = spawnResultNextSteps(result.Status, false, result.Isolation, result.AgentPath)
+				return result, nil
+			}
+			err = nil
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("wait: %w", err)
 	}

@@ -9,6 +9,8 @@ type stepIndexKey struct{}
 
 type worktreePathKey struct{}
 
+type waitInterruptKey struct{}
+
 // WithStepIndex annotates tool execution context with the model step that
 // requested the tool. The value is telemetry-only; tools must not branch on it.
 func WithStepIndex(ctx context.Context, stepIndex int) context.Context {
@@ -55,4 +57,26 @@ func WorktreePath(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return path, true
+}
+
+// WithWaitInterrupt exposes a turn-scoped signal that wait-only tools may use
+// to return control to the agent without canceling the work they started.
+// Ordinary tools must ignore it and continue to their normal safe boundary.
+func WithWaitInterrupt(ctx context.Context, interrupt <-chan struct{}) context.Context {
+	if interrupt == nil {
+		return ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, waitInterruptKey{}, interrupt)
+}
+
+// WaitInterrupt returns the optional signal for safely detachable tool waits.
+func WaitInterrupt(ctx context.Context) <-chan struct{} {
+	if ctx == nil {
+		return nil
+	}
+	interrupt, _ := ctx.Value(waitInterruptKey{}).(<-chan struct{})
+	return interrupt
 }

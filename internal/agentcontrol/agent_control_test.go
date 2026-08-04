@@ -2106,6 +2106,69 @@ func TestSpawn_AsyncDetachedFromParentContext(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
+func TestSpawn_SynchronousWaitInterruptBackgroundsWorker(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	client := &blockingStreamClient{started: make(chan struct{}), release: make(chan struct{})}
+	c, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		SessionID:     "sess-interruptible-wait",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
+
+	waitInterrupt := make(chan struct{})
+	resultCh := make(chan *SpawnResult, 1)
+	errorCh := make(chan error, 1)
+	go func() {
+		result, spawnErr := c.Spawn(context.Background(), SpawnRequest{
+			Type:          DefaultSubagentType,
+			TaskName:      "background_on_steer",
+			Description:   "slow",
+			Prompt:        "keep working",
+			Synchronous:   true,
+			WaitInterrupt: waitInterrupt,
+		})
+		resultCh <- result
+		errorCh <- spawnErr
+	}()
+
+	select {
+	case <-client.started:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not enter model request")
+	}
+	close(waitInterrupt)
+	result := <-resultCh
+	if err := <-errorCh; err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if result == nil || !result.Backgrounded || result.Status != string(subagent.StatusRunning) {
+		t.Fatalf("interrupted synchronous wait result = %+v", result)
+	}
+	sa := c.Manager().Get(result.AgentID)
+	if sa == nil || sa.Snapshot().Status != subagent.StatusRunning {
+		t.Fatalf("backgrounded worker did not remain running: %+v", sa)
+	}
+
+	close(client.release)
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	completed, err := c.Manager().Wait(waitCtx, result.AgentID)
+	if err != nil {
+		t.Fatalf("wait for backgrounded worker completion: %v", err)
+	}
+	if completed.Status != subagent.StatusCompleted || completed.Result != "done" {
+		t.Fatalf("backgrounded worker completion = %+v", completed)
+	}
+}
+
 func TestFork_AsyncDetachedFromParentContext(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

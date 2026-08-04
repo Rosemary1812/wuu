@@ -268,7 +268,6 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 		return
 	}
 	run.streamStarted = run.streamStarted || streamStarted
-	canceled := r.canceled
 	if err := r.prepareRunLocked(ctx, run); err != nil {
 		run.state = toolRunRunning
 		run.mu.Unlock()
@@ -290,9 +289,6 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 		base = r.runContext
 	}
 	runCtx, cancel := context.WithCancel(base)
-	if canceled {
-		cancel()
-	}
 	if r.stepIndex != nil {
 		runCtx = toolctx.WithStepIndex(runCtx, *r.stepIndex)
 	}

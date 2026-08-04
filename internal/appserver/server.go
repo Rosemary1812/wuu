@@ -92,6 +92,7 @@ type threadState struct {
 	admissionReserved      bool
 	pendingSteers          []providers.ChatMessage
 	steerWake              chan struct{}
+	steerWakeClosed        bool
 	activeSteerDocument    *ActiveDocument
 	activeSteerContextSet  bool
 	steerDocumentOverrides []activeDocumentOverride

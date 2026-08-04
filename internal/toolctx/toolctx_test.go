@@ -41,3 +41,27 @@ func TestWorktreePathNilContext(t *testing.T) {
 		t.Fatalf("WithWorktreePath(nil, ...) should still bind, got %q, %v", got, ok)
 	}
 }
+
+func TestWaitInterruptRoundTrip(t *testing.T) {
+	interrupt := make(chan struct{})
+	ctx := WithWaitInterrupt(context.Background(), interrupt)
+	if got := WaitInterrupt(ctx); got != interrupt {
+		t.Fatal("WaitInterrupt did not return the bound signal")
+	}
+	close(interrupt)
+	select {
+	case <-WaitInterrupt(ctx):
+	default:
+		t.Fatal("bound wait interrupt did not preserve closure")
+	}
+}
+
+func TestWaitInterruptNilBindingIsNoop(t *testing.T) {
+	base := context.Background()
+	if ctx := WithWaitInterrupt(base, nil); ctx != base {
+		t.Fatal("nil wait interrupt should return the original context")
+	}
+	if got := WaitInterrupt(nil); got != nil {
+		t.Fatal("WaitInterrupt(nil) should return nil")
+	}
+}

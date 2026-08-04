@@ -43,6 +43,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/coder/websocket"
 )
@@ -347,6 +348,37 @@ func (b *blockingToolExecutor) Execute(ctx context.Context, _ providers.ToolCall
 	select {
 	case <-b.release:
 		return `{"ok":true}`, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+type detachableWaitToolExecutor struct {
+	started chan struct{}
+	once    sync.Once
+}
+
+func newDetachableWaitToolExecutor() *detachableWaitToolExecutor {
+	return &detachableWaitToolExecutor{started: make(chan struct{})}
+}
+
+func (d *detachableWaitToolExecutor) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{
+		Name:        "wait_in_background",
+		Description: "wait until a steer safely backgrounds this work",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+	}}
+}
+
+func (d *detachableWaitToolExecutor) Execute(ctx context.Context, _ providers.ToolCall) (string, error) {
+	d.once.Do(func() { close(d.started) })
+	interrupt := toolctx.WaitInterrupt(ctx)
+	if interrupt == nil {
+		return "", errors.New("wait interrupt not configured")
+	}
+	select {
+	case <-interrupt:
+		return `{"status":"running","backgrounded":true}`, nil
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
@@ -5648,7 +5680,7 @@ func TestServerInterruptPersistsPartialTurnMessages(t *testing.T) {
 	}
 }
 
-func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
+func TestServerSteerWaitsForOrdinaryToolSafeBoundary(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{
 			{
@@ -5695,6 +5727,13 @@ func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 	if steerResult.TurnID != started.Turn.ID {
 		t.Fatalf("unexpected steer result: %+v", steerResult)
 	}
+	time.Sleep(50 * time.Millisecond)
+	for _, msg := range parseOutput(t, out.String()) {
+		if msg["method"] == NotificationTurnCompleted {
+			t.Fatal("steer canceled an ordinary blocking tool before its safe boundary")
+		}
+	}
+	close(blockingTool.release)
 
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
 	completed := remarshal[TurnCompletedNotification](t, notificationByMethodForThread(t, msgs, NotificationTurnCompleted, threadID)["params"])
@@ -5725,15 +5764,15 @@ func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 	if !foundSteerInSecondRequest {
 		t.Fatalf("second provider request missing steer: %+v", requests[1].Messages)
 	}
-	var foundCanceledToolResult bool
+	var foundCompletedToolResult bool
 	for _, msg := range requests[1].Messages {
-		if msg.Role == "tool" && msg.ToolCallID == "call_1" && strings.Contains(msg.Content, "context canceled") {
-			foundCanceledToolResult = true
+		if msg.Role == "tool" && msg.ToolCallID == "call_1" && msg.Content == `{"ok":true}` {
+			foundCompletedToolResult = true
 			break
 		}
 	}
-	if !foundCanceledToolResult {
-		t.Fatalf("second provider request missing canceled tool result: %+v", requests[1].Messages)
+	if !foundCompletedToolResult {
+		t.Fatalf("second provider request missing completed tool result: %+v", requests[1].Messages)
 	}
 
 	persisted, err := loadChatMessages(rt.SessionDir, threadID)
@@ -5749,6 +5788,62 @@ func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 	}
 	if !foundPersisted {
 		t.Fatalf("persisted history missing steered input: %+v", persisted)
+	}
+}
+
+func TestServerSteerReleasesDetachableToolWait(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{
+				ToolCalls: []providers.ToolCall{{
+					ID:        "call_1",
+					Name:      "wait_in_background",
+					Arguments: `{}`,
+				}},
+			},
+			{Content: "done after steer"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	detachableTool := newDetachableWaitToolExecutor()
+	rt.StreamRunner.Tools = detachableTool
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	startReq := fmt.Sprintf(`{"id":"2","method":"turn/start","params":{"thread_id":%q,"prompt":"start"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	started := remarshal[TurnStartResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+
+	<-detachableTool.started
+	steerReq := fmt.Sprintf(`{"id":"3","method":"turn/steer","params":{"thread_id":%q,"expected_turn_id":%q,"prompt":"steer now","client_id":"steer-1"}}`, threadID, started.Turn.ID)
+	if err := srv.handleLine(context.Background(), []byte(steerReq)); err != nil {
+		t.Fatalf("turn/steer: %v", err)
+	}
+	waitForMethod(t, out, NotificationTurnCompleted)
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("expected two provider requests, got %d", len(requests))
+	}
+	var foundSteer, foundBackgroundedResult bool
+	for _, msg := range requests[1].Messages {
+		if msg.Role == "user" && msg.Content == "steer now" && msg.ClientID == "steer-1" && msg.Steered {
+			foundSteer = true
+		}
+		if msg.Role == "tool" && msg.ToolCallID == "call_1" && strings.Contains(msg.Content, `"backgrounded":true`) {
+			foundBackgroundedResult = true
+		}
+	}
+	if !foundSteer || !foundBackgroundedResult {
+		t.Fatalf("second provider request missing steer or backgrounded tool result: %+v", requests[1].Messages)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 )
 
 // ---------------------------------------------------------------------------
@@ -162,16 +163,17 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", err
 	}
 	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:         subagentType,
-		TaskName:     taskName,
-		AgentProfile: agentProfile,
-		Description:  description,
-		Prompt:       prompt,
-		ParentID:     strings.TrimSpace(t.env.AgentID),
-		ParentPath:   currentAgentPath(t.env),
-		Isolation:    isolation,
-		ModelAlias:   modelAlias,
-		Synchronous:  !args.RunInBackground && !wt.Background,
+		Type:          subagentType,
+		TaskName:      taskName,
+		AgentProfile:  agentProfile,
+		Description:   description,
+		Prompt:        prompt,
+		ParentID:      strings.TrimSpace(t.env.AgentID),
+		ParentPath:    currentAgentPath(t.env),
+		Isolation:     isolation,
+		ModelAlias:    modelAlias,
+		Synchronous:   !args.RunInBackground && !wt.Background,
+		WaitInterrupt: toolctx.WaitInterrupt(ctx),
 	})
 	if err != nil {
 		return "", err

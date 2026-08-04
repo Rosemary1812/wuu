@@ -256,9 +256,9 @@ type LoopConfig struct {
 	// CompactOnly returns after the forced compact pass instead of sending a
 	// normal provider request. Used for control-plane /compact turns.
 	CompactOnly bool
-	// ToolInterrupt cancels only the currently executing tool batch. The loop
-	// preserves tool-call/result pairing and continues to the next model round.
-	ToolInterrupt <-chan struct{}
+	// ToolWaitInterrupt supplies a turn-scoped signal to wait-only tools that
+	// can safely return while leaving their underlying work alive.
+	ToolWaitInterrupt func() <-chan struct{}
 	// RetainedRequestContext, when set, is the previous run's retained
 	// request-only context (LoopResult.RetainedRequestContext). If it still
 	// matches the incoming durable history it is spliced back into the
