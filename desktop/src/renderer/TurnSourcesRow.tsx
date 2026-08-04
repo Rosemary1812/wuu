@@ -169,7 +169,9 @@ function SourceIcon({
 }
 
 function SourceAvatar({ source }: { source: TurnSource }): JSX.Element {
-  const [failed, setFailed] = useState(false);
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "failed">(
+    "loading",
+  );
   // Google Favicon Service is the de-facto favicon source for chat-
   // style "sources" rows (ChatGPT, Claude web search). It resolves a
   // 32x32 PNG for any host with no API key. If the host has no
@@ -177,8 +179,8 @@ function SourceAvatar({ source }: { source: TurnSource }): JSX.Element {
   // first-letter avatar fallback so the stack still reads as one.
   const faviconURL = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(source.host)}&sz=32`;
   return (
-    <span className="turn-source-avatar" data-failed={failed || undefined}>
-      {failed ? (
+    <span className="turn-source-avatar" data-load-state={loadState}>
+      {loadState === "failed" ? (
         <span className="turn-source-fallback" aria-hidden>
           {source.host[0]?.toUpperCase() ?? "·"}
         </span>
@@ -190,7 +192,8 @@ function SourceAvatar({ source }: { source: TurnSource }): JSX.Element {
           src={faviconURL}
           alt=""
           loading="lazy"
-          onError={() => setFailed(true)}
+          onLoad={() => setLoadState("loaded")}
+          onError={() => setLoadState("failed")}
         />
       )}
     </span>

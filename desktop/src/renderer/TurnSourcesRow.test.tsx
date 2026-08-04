@@ -100,6 +100,18 @@ describe("TurnSourcesRow", () => {
     expect(imgs[1].src).toContain("domain=openai.com");
   });
 
+  it("shows a loading skeleton until the favicon has loaded", () => {
+    const container = mountInto(<TurnSourcesRow sources={sampleSources} />);
+    const avatar = container.querySelector<HTMLElement>(".turn-source-avatar");
+    const img = avatar?.querySelector("img");
+
+    expect(avatar?.dataset.loadState).toBe("loading");
+    act(() => {
+      img?.dispatchEvent(new Event("load"));
+    });
+    expect(avatar?.dataset.loadState).toBe("loaded");
+  });
+
   it("labels the pill with the source count when there is more than one", () => {
     const container = mountInto(<TurnSourcesRow sources={sampleSources} />);
     expect(container.querySelector(".turn-sources-label")?.textContent).toBe(
@@ -232,6 +244,10 @@ describe("TurnSourcesRow", () => {
     act(() => {
       img?.dispatchEvent(new Event("error"));
     });
+    expect(
+      container.querySelector<HTMLElement>(".turn-source-avatar")?.dataset
+        .loadState,
+    ).toBe("failed");
     const fallback = container.querySelector(".turn-source-fallback");
     expect(fallback?.textContent).toBe("A");
     // Once failed, the original <img> is gone.

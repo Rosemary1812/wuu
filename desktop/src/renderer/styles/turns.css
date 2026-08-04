@@ -4554,14 +4554,68 @@ button.turn-sources-pill:focus-visible {
 }
 
 /* Avatar wrapper holds the favicon image (or the first-letter fallback
- * when the favicon 404s). It carries no chrome of its own — that
- * belongs to whichever icon frame wraps it. */
+ * when the favicon 404s). While the network request is pending, a quiet
+ * shimmer keeps the slot from reading as a broken white circle. */
 .turn-source-avatar {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--bg-soft, var(--turn-sources-pill-bg-fallback));
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.turn-source-avatar[data-load-state="loading"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    color-mix(in srgb, var(--ink-muted, #777) 16%, transparent) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: turn-source-avatar-shimmer 1.35s ease-in-out infinite;
+}
+
+/* A search usually returns several hosts at once. Stagger the shimmer
+ * across the stacked slots so they read as one loading cluster instead
+ * of a row of identical indicators flashing in lockstep. Each favicon
+ * still resolves independently and leaves the sequence as soon as it
+ * is ready. */
+.turn-source-icon:nth-child(2) .turn-source-avatar::before {
+  animation-delay: 70ms;
+}
+
+.turn-source-icon:nth-child(3) .turn-source-avatar::before {
+  animation-delay: 140ms;
+}
+
+.turn-source-icon:nth-child(4) .turn-source-avatar::before {
+  animation-delay: 210ms;
+}
+
+.turn-source-icon:nth-child(5) .turn-source-avatar::before {
+  animation-delay: 280ms;
+}
+
+.turn-source-icon:nth-child(6) .turn-source-avatar::before {
+  animation-delay: 350ms;
+}
+
+.turn-source-avatar[data-load-state="loaded"] {
+  background: transparent;
+}
+
+@keyframes turn-source-avatar-shimmer {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 /* Negative margin pulls adjacent icons into the overlap; the
@@ -4607,6 +4661,12 @@ button.turn-sources-pill:focus-visible {
   width: 14px;
   height: 14px;
   display: block;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.turn-source-avatar[data-load-state="loaded"] img {
+  opacity: 1;
 }
 
 /* Hosts whose favicon 404s fall through to a first-letter avatar.
@@ -4714,5 +4774,15 @@ button.turn-sources-pill:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .turn-source-icon {
     transition: none;
+  }
+
+  .turn-source-avatar,
+  .turn-source-avatar img {
+    transition: none;
+  }
+
+  .turn-source-avatar[data-load-state="loading"]::before {
+    animation: none;
+    transform: none;
   }
 }
