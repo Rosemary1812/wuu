@@ -4398,9 +4398,9 @@ html.resizing-workspace-terminal-split * {
   font-weight: var(--weight-semibold);
 }
 
-/* The capsule: a chunky pill split into equal segments by hairline
-   dividers. The inked fill swallows the segments up to and including the
-   current level, and an oversized paper pearl sits on the current segment —
+/* The capsule: a chunky pill with a small dot at each discrete stop. The
+   inked fill ends at the current level, and an oversized paper pearl sits on
+   the current stop —
    taller than the capsule itself, so the control reads as draggable at a
    glance. The pill itself carries no level text: the heading above
    live-shows the current level while dragging. */
@@ -4427,22 +4427,24 @@ html.resizing-workspace-terminal-split * {
   transition: width var(--motion-fast) var(--menu-enter-easing);
 }
 
-.codex-effort-dividers {
+.codex-effort-stops {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.codex-effort-divider {
+.codex-effort-stop {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  margin-left: -1px;
-  background: var(--menu-bg);
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--ink-overlay-12);
+  transform: translate(-50%, -50%);
 }
 
-/* The drag affordance: a paper pearl on the current segment, overhanging
+/* The drag affordance: a paper pearl on the current stop, overhanging
    the capsule top and bottom. */
 .codex-effort-knob {
   position: absolute;

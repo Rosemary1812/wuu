@@ -115,16 +115,15 @@ describe("RuntimePicker", () => {
     expect(menu?.textContent).toContain("Medium");
 
     // The capsule is a bare pill: no level text on it — the heading above
-    // live-shows the current level, and hairline dividers split the stops
-    // into one chunk per level.
+    // live-shows the current level, and small dots mark the available stops.
     expect(menu?.querySelector(".codex-effort-marks")).toBeNull();
     expect(menu?.querySelector(".codex-effort-mark")).toBeNull();
     expect(menu?.querySelector(".codex-effort-current")?.textContent).toBe("Medium");
-    expect(menu?.querySelectorAll(".codex-effort-divider")).toHaveLength(3);
+    expect(menu?.querySelectorAll(".codex-effort-stop")).toHaveLength(4);
     const wrap = menu?.querySelector<HTMLElement>(".codex-effort-slider-wrap");
-    expect(wrap?.style.getPropertyValue("--effort-slider-fill")).toBe("75%");
-    expect(wrap?.style.getPropertyValue("--effort-slider-pos")).toBe("62.5%");
-    // The drag pearl sits on the current segment; mid-scale is not charged.
+    expect(wrap?.style.getPropertyValue("--effort-slider-fill")).toBe("66.66666666666666%");
+    expect(wrap?.style.getPropertyValue("--effort-slider-pos")).toBe("66.66666666666666%");
+    // The drag pearl sits on the current stop; mid-scale is not charged.
     const capsule = menu?.querySelector<HTMLElement>(".codex-effort-capsule");
     expect(capsule?.querySelector(".codex-effort-knob")).not.toBeNull();
     expect(capsule?.classList.contains("maxed")).toBe(false);

@@ -366,7 +366,7 @@ function RuntimeModelMenu({
 }
 
 // Draggable reasoning-effort slider rendered as a bare capsule: the inked
-// fill swallows whole segments, hairline dividers split the stops, and the
+// fill ends at the current stop, small dots mark the discrete levels, and the
 // pill carries no level text — the heading above live-shows the current
 // level while dragging. The thumb snaps to the discrete levels the model
 // supports, and the commit fires once on release (or on a keyboard step)
@@ -405,11 +405,9 @@ function EffortSlider({
     onSelectEffort(options[pendingIndex.current]);
   };
 
-  // The native range control maps a drag position linearly onto [0, N-1],
-  // which puts its rounding boundaries slightly off the capsule's equal
-  // segments; when a pointer is driving, derive the segment from the
-  // pointer's x position inside the capsule instead.
-  const segmentFromPointer = (): number | null => {
+  // Keep pointer snapping aligned with the visible stop positions, including
+  // the two ends of the track.
+  const stopFromPointer = (): number | null => {
     const capsule = capsuleRef.current;
     if (pointerX.current === null || !capsule) {
       return null;
@@ -422,12 +420,13 @@ function EffortSlider({
     if (!Number.isFinite(ratio)) {
       return null;
     }
-    return Math.min(options.length - 1, Math.max(0, Math.floor(ratio * options.length)));
+    return Math.min(options.length - 1, Math.max(0, Math.round(ratio * (options.length - 1))));
   };
 
+  const stopPosition = options.length > 1 ? (displayIndex / (options.length - 1)) * 100 : 0;
   const capsuleStyle = {
-    "--effort-slider-fill": `${((displayIndex + 1) / options.length) * 100}%`,
-    "--effort-slider-pos": `${((displayIndex + 0.5) / options.length) * 100}%`
+    "--effort-slider-fill": `${stopPosition}%`,
+    "--effort-slider-pos": `${stopPosition}%`
   } as CSSProperties;
   // The top level reads as a charged state: a slow sheen sweeps the fill as
   // long as the thumb (or the committed value) sits on it.
@@ -437,12 +436,12 @@ function EffortSlider({
     <div className="codex-effort-slider-wrap" style={capsuleStyle}>
       <div ref={capsuleRef} className={`codex-effort-capsule${maxed ? " maxed" : ""}`}>
         <span className="codex-effort-capsule-fill" aria-hidden="true" />
-        <div className="codex-effort-dividers" aria-hidden="true">
-          {options.slice(1).map((variant, index) => (
+        <div className="codex-effort-stops" aria-hidden="true">
+          {options.map((variant, index) => (
             <span
               key={variant || `default-${index}`}
-              className="codex-effort-divider"
-              style={{ left: `${((index + 1) / options.length) * 100}%` }}
+              className="codex-effort-stop"
+              style={{ left: `${options.length > 1 ? (index / (options.length - 1)) * 100 : 0}%` }}
             />
           ))}
         </div>
@@ -464,7 +463,7 @@ function EffortSlider({
             pointerX.current = event.clientX;
           }}
           onChange={(event) => {
-            const next = segmentFromPointer() ?? Number(event.currentTarget.value);
+            const next = stopFromPointer() ?? Number(event.currentTarget.value);
             pendingIndex.current = next;
             previewTo(next);
           }}
