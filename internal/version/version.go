@@ -12,9 +12,7 @@ const defaultVersion = "v0.1.0-dev"
 //
 //	go build -ldflags "-X github.com/blueberrycongee/wuu/internal/version.Version=v0.1.0"
 var (
-	// Version is empty unless a build injects it with ldflags. This lets Go
-	// module installs use debug.BuildInfo.Main.Version as their release version.
-	Version = ""
+	Version = defaultVersion
 	Commit  = "none"
 	Date    = "unknown"
 )
@@ -47,7 +45,7 @@ func Info() BuildInfo {
 	}
 
 	if bi, ok := readBuildInfo(); ok && bi != nil {
-		if linkedVersion == "" && isModuleSemver(bi.Main.Version) {
+		if linkedVersion == defaultVersion && isModuleSemver(bi.Main.Version) {
 			out.Version = normalizeVersion(bi.Main.Version)
 		}
 		for _, s := range bi.Settings {

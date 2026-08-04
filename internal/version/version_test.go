@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+func TestVersion_DefaultsToDevelopmentVersion(t *testing.T) {
+	if Version != defaultVersion {
+		t.Fatalf("unexpected default Version: got %q want %q", Version, defaultVersion)
+	}
+}
+
 func TestInfo_VersionResolution(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -21,16 +27,19 @@ func TestInfo_VersionResolution(t *testing.T) {
 		},
 		{
 			name:          "module semver is used without ldflags",
+			linkedVersion: defaultVersion,
 			moduleVersion: "v1.2.3-beta.1+build.7",
 			want:          "v1.2.3-beta.1+build.7",
 		},
 		{
 			name:          "development checkout keeps dev version",
+			linkedVersion: defaultVersion,
 			moduleVersion: "(devel)",
 			want:          defaultVersion,
 		},
 		{
 			name:          "invalid module version keeps dev version",
+			linkedVersion: defaultVersion,
 			moduleVersion: "v1.2",
 			want:          defaultVersion,
 		},
