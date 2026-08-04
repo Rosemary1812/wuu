@@ -26,6 +26,7 @@ import (
 const (
 	databaseFileName      = "channels.sqlite3"
 	agentTokenFile        = ".chat-token"
+	agentMemoryIndexFile  = "MEMORY.md"
 	namedAgentAvatarCount = 9
 	maxAgentAvatarBytes   = 512 * 1024
 )
@@ -79,7 +80,32 @@ func Open(dir string, wake WakeSink) (*Service, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := service.ensureNamedAgentMemoryIndexes(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return service, nil
+}
+
+func (s *Service) ensureNamedAgentMemoryIndexes() error {
+	rows, err := s.db.Query(`SELECT memory_dir FROM named_agents`)
+	if err != nil {
+		return fmt.Errorf("list named agent memory directories: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var memoryDir string
+		if err := rows.Scan(&memoryDir); err != nil {
+			return fmt.Errorf("scan named agent memory directory: %w", err)
+		}
+		if err := securefs.PreCreateFile(filepath.Join(memoryDir, agentMemoryIndexFile)); err != nil {
+			return fmt.Errorf("initialize named agent memory index: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate named agent memory directories: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) Close() error {
@@ -609,6 +635,9 @@ func (s *Service) CreateNamedAgent(ctx context.Context, params CreateNamedAgentP
 	}
 	if err := securefs.Mkdir(agent.MemoryDir); err != nil {
 		return AgentCredential{}, fmt.Errorf("create named agent memory directory: %w", err)
+	}
+	if err := securefs.PreCreateFile(filepath.Join(agent.MemoryDir, agentMemoryIndexFile)); err != nil {
+		return AgentCredential{}, fmt.Errorf("initialize named agent memory index: %w", err)
 	}
 	if err := securefs.WriteFileAtomic(filepath.Join(filepath.Dir(agent.MemoryDir), agentTokenFile), []byte(token+"\n")); err != nil {
 		return AgentCredential{}, fmt.Errorf("persist named agent token: %w", err)

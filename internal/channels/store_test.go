@@ -77,6 +77,44 @@ func createTestAgent(t *testing.T, service *Service, name string) AgentCredentia
 	return credential
 }
 
+func TestCreateNamedAgentInitializesMemoryIndex(t *testing.T) {
+	service := openTestService(t, nil)
+	credential := createTestAgent(t, service, "Alpha")
+
+	data, err := os.ReadFile(filepath.Join(credential.Agent.MemoryDir, agentMemoryIndexFile))
+	if err != nil {
+		t.Fatalf("ReadFile(MEMORY.md) error = %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("MEMORY.md = %q, want empty index", data)
+	}
+}
+
+func TestOpenBackfillsMissingNamedAgentMemoryIndex(t *testing.T) {
+	dir := t.TempDir()
+	service, err := Open(dir, nil)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	credential := createTestAgent(t, service, "Alpha")
+	indexPath := filepath.Join(credential.Agent.MemoryDir, agentMemoryIndexFile)
+	if err := os.Remove(indexPath); err != nil {
+		t.Fatalf("Remove(MEMORY.md) error = %v", err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reopened, err := Open(dir, nil)
+	if err != nil {
+		t.Fatalf("reopen service error = %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	if _, err := os.Stat(indexPath); err != nil {
+		t.Fatalf("Stat(backfilled MEMORY.md) error = %v", err)
+	}
+}
+
 func createTestRoom(t *testing.T, service *Service, agents ...AgentCredential) Room {
 	t.Helper()
 	members := make([]RoomMember, 0, len(agents))
