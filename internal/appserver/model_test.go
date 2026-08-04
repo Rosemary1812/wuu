@@ -463,6 +463,22 @@ func TestThreadPreviewSkipsInternalContextMessages(t *testing.T) {
 	}
 }
 
+func TestThreadPreviewSkipsAgentNotificationEnvelope(t *testing.T) {
+	preview := threadPreview([]providers.ChatMessage{
+		{
+			Role:    "user",
+			Name:    "wuu_agent_notification",
+			Content: `{"author":"/root/reviewer","recipient":"/root","content":"<subagent_notification>done</subagent_notification>","trigger_turn":true}`,
+		},
+		{Role: "assistant", Content: "acknowledged"},
+		{Role: "user", Content: "检查分叉后的标题"},
+	})
+
+	if preview != "检查分叉后的标题" {
+		t.Fatalf("preview = %q, want visible user request", preview)
+	}
+}
+
 func TestTurnsFromHistorySkipsHiddenMessages(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
@@ -1503,22 +1504,19 @@ func threadItemPhaseFromProvider(phase providers.MessagePhase) ThreadItemPhase {
 
 func threadPreview(history []providers.ChatMessage) string {
 	for _, msg := range history {
-		if msg.Hidden {
+		if !isThreadTitleUserMessage(msg) {
 			continue
 		}
-		if compact.IsInternalContextMessage(msg) {
-			continue
-		}
-		if msg.Role == "user" && !isToolResultMessage(msg) && strings.TrimSpace(chatMessageDisplayContent(msg)) != "" {
+		if strings.TrimSpace(chatMessageDisplayContent(msg)) != "" {
 			return strings.TrimSpace(chatMessageDisplayContent(msg))
 		}
-		if msg.Role == "user" && !isToolResultMessage(msg) && len(msg.Images) > 0 {
+		if len(msg.Images) > 0 {
 			if len(msg.Images) == 1 {
 				return "[Image #1]"
 			}
 			return fmt.Sprintf("[%d images]", len(msg.Images))
 		}
-		if msg.Role == "user" && !isToolResultMessage(msg) && len(msg.Files) > 0 {
+		if len(msg.Files) > 0 {
 			if len(msg.Files) == 1 {
 				return filePreview(msg.Files[0], 1)
 			}
@@ -1526,6 +1524,20 @@ func threadPreview(history []providers.ChatMessage) string {
 		}
 	}
 	return ""
+}
+
+func isThreadTitleUserMessage(msg providers.ChatMessage) bool {
+	if msg.Hidden || msg.Role != "user" || isToolResultMessage(msg) {
+		return false
+	}
+	if compact.IsInternalContextMessage(msg) {
+		return false
+	}
+	content := chatMessageDisplayContent(msg)
+	return !wuucontext.IsSystemReminder(msg.Name, content) &&
+		!wuucontext.IsAgentNotification(msg.Name, content) &&
+		!wuucontext.IsProcessNotification(msg.Name, content) &&
+		!wuucontext.IsGoalContinuation(msg.Name, content)
 }
 
 func chatMessageDisplayContent(msg providers.ChatMessage) string {

@@ -287,6 +287,19 @@ func TestFirstUserMessageForTitle_RequiresExactlyOneUser(t *testing.T) {
 			want: "real prompt",
 			ok:   true,
 		},
+		{
+			name: "agent notification does not count as user prompt",
+			history: []providers.ChatMessage{
+				{
+					Role:    "user",
+					Name:    "wuu_agent_notification",
+					Content: `{"author":"/root/reviewer","recipient":"/root","content":"<subagent_notification>done</subagent_notification>"}`,
+				},
+				{Role: "user", Content: "real prompt"},
+			},
+			want: "real prompt",
+			ok:   true,
+		},
 	}
 	for _, tc := range cases {
 		got, ok := firstUserMessageForTitle(tc.history, false)
