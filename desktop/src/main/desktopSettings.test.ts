@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getCodexPetScale,
+  getChannelRoomPreferences,
   getCodexPetSettings,
   getCodexPetSize,
   getMainWindowBounds,
@@ -13,6 +14,7 @@ import {
   getLanguagePreference,
   readDesktopSettings,
   setCodexPetSettings,
+  setChannelRoomPreferences,
   setMainWindowBounds,
   setMessageFlowFontSize,
   setThemePreference,
@@ -60,6 +62,23 @@ describe("desktopSettings", () => {
 
   it("defaults the theme preference to system", () => {
     expect(getThemePreference(file)).toBe("system");
+  });
+
+  it("round-trips normalized channel room preferences", () => {
+    setThemePreference("dark", file);
+    setChannelRoomPreferences(
+      {
+        pinnedRoomIDs: ["room-1", "room-2", "room-2"],
+        archivedRoomIDs: ["room-1", "room-1", ""],
+      },
+      file,
+    );
+
+    expect(getChannelRoomPreferences(file)).toEqual({
+      pinnedRoomIDs: ["room-2"],
+      archivedRoomIDs: ["room-1"],
+    });
+    expect(getThemePreference(file)).toBe("dark");
   });
 
   it("defaults and round-trips the language preference", () => {

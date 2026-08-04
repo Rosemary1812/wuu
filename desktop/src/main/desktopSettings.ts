@@ -14,6 +14,7 @@ import {
   isLanguagePreference,
   type CodexPetSettings,
   type CodexPetSize,
+  type ChannelRoomPreferences,
   type MessageFlowFontSize,
   type LanguagePreference,
   type ThemePreference,
@@ -48,6 +49,7 @@ export type DesktopSettings = {
   theme?: ThemePreference;
   language?: LanguagePreference;
   voice_input?: VoiceInputSettings;
+  channel_room_preferences?: ChannelRoomPreferences;
   // User-facing reading size for the message stream, in pixels. The
   // renderer clamps incoming values to MESSAGE_FLOW_FONT_SIZE_RANGE
   // (13–20 step 0.5 default 14) before applying and the IPC boundary
@@ -101,6 +103,21 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
       isMessageFlowFontSize(record.message_flow_font_size)
     ) {
       settings.message_flow_font_size = record.message_flow_font_size;
+    }
+    if (
+      typeof record.channel_room_preferences === "object" &&
+      record.channel_room_preferences !== null &&
+      !Array.isArray(record.channel_room_preferences)
+    ) {
+      const preferences = record.channel_room_preferences as Record<string, unknown>;
+      const archivedRoomIDs = normalizedStringIDs(preferences.archivedRoomIDs);
+      const archived = new Set(archivedRoomIDs);
+      settings.channel_room_preferences = {
+        pinnedRoomIDs: normalizedStringIDs(preferences.pinnedRoomIDs).filter(
+          (id) => !archived.has(id),
+        ),
+        archivedRoomIDs,
+      };
     }
     if (typeof record.codex_pet === "object" && record.codex_pet !== null && !Array.isArray(record.codex_pet)) {
       const codexPet = record.codex_pet as Record<string, unknown>;
@@ -205,6 +222,36 @@ export function setVoiceInputSettings(
       },
     },
     filePath,
+  );
+}
+
+export function getChannelRoomPreferences(
+  filePath?: string,
+): ChannelRoomPreferences | undefined {
+  return readDesktopSettings(filePath).channel_room_preferences;
+}
+
+export function setChannelRoomPreferences(
+  preferences: ChannelRoomPreferences,
+  filePath?: string,
+): ChannelRoomPreferences {
+  const archivedRoomIDs = normalizedStringIDs(preferences.archivedRoomIDs);
+  const archived = new Set(archivedRoomIDs);
+  const next = {
+    pinnedRoomIDs: normalizedStringIDs(preferences.pinnedRoomIDs).filter(
+      (id) => !archived.has(id),
+    ),
+    archivedRoomIDs,
+  };
+  const settings = readDesktopSettings(filePath);
+  writeDesktopSettings({ ...settings, channel_room_preferences: next }, filePath);
+  return next;
+}
+
+function normalizedStringIDs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0)),
   );
 }
 

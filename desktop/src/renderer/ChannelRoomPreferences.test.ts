@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   archiveChannelRoomPreference,
   channelRoomIsArchived,
@@ -15,6 +15,14 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
+const originalWuu = window.wuu;
+afterEach(() => {
+  Object.defineProperty(window, "wuu", {
+    configurable: true,
+    value: originalWuu,
+  });
+});
+
 describe("channel room preferences", () => {
   it("persists personal pin and archive choices", () => {
     const pinned = togglePinnedChannelRoom(emptyChannelRoomPreferences, "room-1");
@@ -24,6 +32,27 @@ describe("channel room preferences", () => {
     const restored = readChannelRoomPreferences();
     expect(channelRoomIsPinned(restored, "room-1")).toBe(false);
     expect(channelRoomIsArchived(restored, "room-1")).toBe(true);
+  });
+
+  it("prefers desktop persistence over origin-bound local storage", () => {
+    window.localStorage.setItem(
+      "wuu.channels.roomPreferences",
+      JSON.stringify({ pinnedRoomIDs: [], archivedRoomIDs: ["stale-room"] }),
+    );
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: {
+        initialChannelRoomPreferences: {
+          pinnedRoomIDs: ["room-2"],
+          archivedRoomIDs: ["room-1"],
+        },
+      },
+    });
+
+    expect(readChannelRoomPreferences()).toEqual({
+      pinnedRoomIDs: ["room-2"],
+      archivedRoomIDs: ["room-1"],
+    });
   });
 
   it("restores archived rooms without pinning them", () => {

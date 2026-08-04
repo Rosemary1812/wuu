@@ -130,6 +130,7 @@ import type {
   SideThreadSendResult,
   VoiceInputSettings,
   VoiceInputSettingsSnapshot,
+  ChannelRoomPreferences,
   VoicePermissionStatus,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
@@ -152,11 +153,13 @@ import {
   getThemePreference,
   getLanguagePreference,
   getVoiceInputSettings,
+  getChannelRoomPreferences,
   setCodexPetSettings,
   setMessageFlowFontSize,
   setThemePreference,
   setLanguagePreference,
   setVoiceInputSettings,
+  setChannelRoomPreferences,
   type MessageFlowFontSize,
   type ThemePreference,
   type LanguagePreference,
@@ -1671,6 +1674,14 @@ app.whenReady().then(async () => {
   ipcMain.on("wuu:voice-input-settings-get-sync", (event) => {
     event.returnValue = getVoiceInputSettings();
   });
+  ipcMain.on("wuu:channel-room-preferences-get-sync", (event) => {
+    event.returnValue = getChannelRoomPreferences();
+  });
+  ipcMain.handle(
+    "wuu:channel-room-preferences-set",
+    (_event, preferences: ChannelRoomPreferences): ChannelRoomPreferences =>
+      setChannelRoomPreferences(preferences),
+  );
   ipcMain.handle(
     "wuu:voice-input-settings-get",
     async (): Promise<VoiceInputSettingsSnapshot> => ({

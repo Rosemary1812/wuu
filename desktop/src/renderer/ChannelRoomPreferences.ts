@@ -1,11 +1,8 @@
-import type { ChannelRoom } from "../shared/protocol";
+import type { ChannelRoom, ChannelRoomPreferences } from "../shared/protocol";
 
 const CHANNEL_ROOM_PREFERENCES_KEY = "wuu.channels.roomPreferences";
 
-export type ChannelRoomPreferences = {
-  pinnedRoomIDs: string[];
-  archivedRoomIDs: string[];
-};
+export type { ChannelRoomPreferences } from "../shared/protocol";
 
 export const emptyChannelRoomPreferences: ChannelRoomPreferences = {
   pinnedRoomIDs: [],
@@ -13,6 +10,10 @@ export const emptyChannelRoomPreferences: ChannelRoomPreferences = {
 };
 
 export function readChannelRoomPreferences(): ChannelRoomPreferences {
+  const persisted = window.wuu?.initialChannelRoomPreferences;
+  if (persisted) {
+    return normalizeChannelRoomPreferences(persisted);
+  }
   try {
     const raw = window.localStorage.getItem(CHANNEL_ROOM_PREFERENCES_KEY);
     if (!raw) {
@@ -31,12 +32,16 @@ export function readChannelRoomPreferences(): ChannelRoomPreferences {
 }
 
 export function writeChannelRoomPreferences(preferences: ChannelRoomPreferences): void {
+  const normalized = normalizeChannelRoomPreferences(preferences);
   try {
-    window.localStorage.setItem(CHANNEL_ROOM_PREFERENCES_KEY, JSON.stringify(preferences));
+    window.localStorage.setItem(CHANNEL_ROOM_PREFERENCES_KEY, JSON.stringify(normalized));
   } catch {
     // A denied/quota-limited storage write should not break the room action;
     // the in-memory preference still applies for the current window.
   }
+  void window.wuu?.updateChannelRoomPreferences?.(normalized).catch((reason: unknown) => {
+    console.warn("channel room preferences persistence failed", reason);
+  });
 }
 
 export function channelRoomIsPinned(
@@ -101,5 +106,16 @@ function normalizedRoomIDs(value: unknown): string[] {
   return Array.from(
     new Set(value.filter((id): id is string => typeof id === "string" && id.trim() !== "")),
   );
+}
+
+function normalizeChannelRoomPreferences(
+  value: Partial<ChannelRoomPreferences>,
+): ChannelRoomPreferences {
+  const archivedRoomIDs = normalizedRoomIDs(value.archivedRoomIDs);
+  const archived = new Set(archivedRoomIDs);
+  return {
+    pinnedRoomIDs: normalizedRoomIDs(value.pinnedRoomIDs).filter((id) => !archived.has(id)),
+    archivedRoomIDs,
+  };
 }
 

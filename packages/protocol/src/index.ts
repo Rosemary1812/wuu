@@ -1956,6 +1956,11 @@ export type VoiceInputSettingsSnapshot = {
   speech_permission: VoicePermissionStatus;
 };
 
+export type ChannelRoomPreferences = {
+  pinnedRoomIDs: string[];
+  archivedRoomIDs: string[];
+};
+
 // The three OS families the desktop shell distinguishes. Anything more
 // exotic collapses to "linux" (native-frame fallback chrome).
 export type DesktopPlatform = "darwin" | "win32" | "linux";
@@ -2297,6 +2302,10 @@ export type WuuDesktopApi = {
   onVoiceInputSettingsChange: (
     handler: (settings: VoiceInputSettings) => void,
   ) => () => void;
+  initialChannelRoomPreferences?: ChannelRoomPreferences;
+  updateChannelRoomPreferences: (
+    preferences: ChannelRoomPreferences,
+  ) => Promise<ChannelRoomPreferences>;
   openVoicePrivacySettings: (
     permission: "microphone" | "speech",
   ) => Promise<{ ok: true }>;

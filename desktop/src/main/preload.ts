@@ -14,6 +14,7 @@ import {
   type ChannelRoomUpdateParams,
   type ChannelRoomDeleteParams,
   type ChannelRoomReadParams,
+  type ChannelRoomPreferences,
   type ChannelTaskCreateParams,
   type ChannelTaskUpdateParams,
   type MessageFlowFontSize,
@@ -69,6 +70,16 @@ const initialVoiceInputSettings = ((): VoiceInputSettings => {
     };
   } catch {
     return { polish_enabled: false, language: "system" };
+  }
+})();
+
+const initialChannelRoomPreferences = ((): ChannelRoomPreferences | undefined => {
+  try {
+    return ipcRenderer.sendSync("wuu:channel-room-preferences-get-sync") as
+      | ChannelRoomPreferences
+      | undefined;
+  } catch {
+    return undefined;
   }
 })();
 
@@ -351,6 +362,7 @@ const api: WuuDesktopApi = {
   initialThemePreference,
   initialLanguagePreference,
   initialVoiceInputSettings,
+  initialChannelRoomPreferences,
   initialSystemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
   getLanguagePreference: () => ipcRenderer.invoke("wuu:language-preference-get"),
   setLanguagePreference: (language: LanguagePreference) =>
@@ -372,6 +384,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:voice-input-settings-get"),
   updateVoiceInputSettings: (settings: VoiceInputSettings) =>
     ipcRenderer.invoke("wuu:voice-input-settings-set", settings),
+  updateChannelRoomPreferences: (preferences: ChannelRoomPreferences) =>
+    ipcRenderer.invoke("wuu:channel-room-preferences-set", preferences),
   onVoiceInputSettingsChange: (
     handler: (settings: VoiceInputSettings) => void,
   ) => {

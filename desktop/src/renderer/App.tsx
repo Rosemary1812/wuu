@@ -532,6 +532,14 @@ export function App(): JSX.Element {
   const [channelRoomsLoaded, setChannelRoomsLoaded] = useState(false);
   const [channelRoomPreferences, setChannelRoomPreferences] =
     useState<ChannelRoomPreferences>(readChannelRoomPreferences);
+  useEffect(() => {
+    // Migrate preferences saved by older builds from origin-bound
+    // localStorage into desktop-settings.json on the first launch.
+    writeChannelRoomPreferences(channelRoomPreferences);
+    // Only the initial snapshot is migrated here; user changes persist in
+    // updateChannelRoomPreferences below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
   const {
