@@ -516,10 +516,16 @@ describe("SessionTabStrip layout styles", () => {
     const channelTitleBlockRule = channelsCSS.match(
       /\.channel-title-block\s*\{([\s\S]*?)\n\}/,
     )?.[1] ?? "";
+    const channelTitleActionsPlaceholderRule = channelsCSS.match(
+      /\.channel-title-actions-placeholder\s*\{([\s\S]*?)\n\}/,
+    )?.[1] ?? "";
 
     expect(channelTitleBlockRule).toContain("display: grid;");
     expect(channelTitleBlockRule).toContain("overflow: hidden;");
     expect(channelTitleBlockRule).not.toContain("display: flex;");
+    expect(channelTitleActionsPlaceholderRule).toContain(
+      "width: calc(30px + 30px + 10px);",
+    );
   });
 
   it("keeps titlebar controls outside the draggable window region", () => {

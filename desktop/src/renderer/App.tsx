@@ -4392,6 +4392,10 @@ export function App(): JSX.Element {
                   onReorderSessionTabs={reorderSessionTabs}
                 />
               </div>
+              <div
+                className="title-actions channel-title-actions-placeholder"
+                aria-hidden="true"
+              />
             </header>
             <ChannelView
               initialized={sessionRuntime ?? state.initialized}

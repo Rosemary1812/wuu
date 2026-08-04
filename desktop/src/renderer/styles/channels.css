@@ -107,6 +107,12 @@
   overflow: hidden;
 }
 
+/* Channel rooms do not expose the environment or workspace-panel controls,
+ * but their shared tab rail must keep the same width as a conversation. */
+.channel-title-actions-placeholder {
+  width: calc(30px + 30px + 10px);
+}
+
 .channel-list-pane {
   position: relative;
   min-width: 0;
