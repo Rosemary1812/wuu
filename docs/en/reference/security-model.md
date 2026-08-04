@@ -16,7 +16,7 @@ Wuu has three permission modes:
 |---|---|---|
 | `standard` | Registered workspace roots | Allowed inside those roots |
 | `read_only` | Registered workspace roots | Denied |
-| `unconfined` | No Wuu workspace restrictions | Allowed where OS permissions permit, but sensitive-file writes are still refused by Wuu |
+| `unconfined` | No Wuu workspace restrictions | Allowed wherever the current OS user has permission |
 
 The default `standard` mode enforces paths and tool rules inside the Wuu
 process. It is **not** a macOS sandbox, container, virtual machine, or separate
@@ -25,20 +25,24 @@ identity, inherited environment, and network stack. The path boundary and hard
 tool guards reduce mistakes, but they are not a security boundary against
 malicious native code or a compromised dependency.
 
-`unconfined` means that Wuu no longer applies its own path boundary. The
-agent can read any file the Wuu process can access and modify most of them,
-including the user's home directory, other repositories, and configuration
-files. Three protections stay on in every mode, however: sensitive paths
-such as `.env`, SSH private keys, and credential configuration cannot be
-written through file tools, nor staged or committed through git; when
-sensitive files are read, common secret patterns are masked before the
-content reaches the model; and the app's own credential files under
-`~/.wuu` (`auth.json`, `credentials.json`, `remote.json`, `phone.json`) are
-never readable or writable in any mode. `unconfined` does not grant
-permissions beyond the current OS user, so file ownership and ACLs, macOS
-privacy controls, System Integrity Protection, read-only filesystems, and any
-container or OS sandbox still apply. Treat `unconfined` as full local authority
-at the current user's privilege level and enable it only for trusted tasks.
+`unconfined` means that Wuu no longer applies its own path boundary. The agent
+can read or modify anything available to the current OS user, including the
+user's home directory, other repositories, and configuration files. Wuu's
+dedicated file tools still refuse writes to known sensitive paths, and its
+structured Git tools still refuse to stage or commit them. The same dedicated
+tools block direct access to Wuu credential files under `~/.wuu` (`auth.json`,
+`credentials.json`, `remote.json`, and `phone.json`). These are tool-specific
+guards, not guarantees about every execution path: arbitrary shell commands,
+scripts, and child processes run with the Wuu process's OS authority and can
+bypass them. Common secret patterns are still masked in tool output in every
+mode, including `unconfined`, but redaction cannot recognize every secret or
+indirect disclosure.
+
+`unconfined` does not grant permissions beyond the current OS user, so file
+ownership and ACLs, macOS privacy controls, System Integrity Protection,
+read-only filesystems, and any container or OS sandbox still apply. Treat it as
+full local authority at the current user's privilege level and enable it only
+for trusted tasks.
 
 In `standard` and `read_only` modes, commands that expose the whole environment,
 read common credential paths, use unsafe Git operations, or perform
