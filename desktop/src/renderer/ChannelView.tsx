@@ -1769,6 +1769,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                           <button
                             className="channel-agent-memory-link"
                             type="button"
+                            title={selectedAgent.memory_dir}
                             onClick={() => {
                               if (onOpenMemoryDirectory) {
                                 onOpenMemoryDirectory(selectedAgent.memory_dir);
@@ -1777,7 +1778,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                               void window.wuu?.revealWorkspaceItem(selectedAgent.memory_dir);
                             }}
                           >
-                            <code>{selectedAgent.memory_dir}</code>
+                            <code>./memory</code>
                           </button>
                         </dd>
                       </div>

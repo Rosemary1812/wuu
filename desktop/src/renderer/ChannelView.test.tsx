@@ -1219,7 +1219,8 @@ describe("ChannelView", () => {
 
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="查看Alpha"]')?.click());
     const memoryLink = container.querySelector<HTMLButtonElement>(".channel-agent-memory-link");
-    expect(memoryLink?.textContent).toBe("/agents/agent-1/memory");
+    expect(memoryLink?.textContent).toBe("./memory");
+    expect(memoryLink?.title).toBe("/agents/agent-1/memory");
     await act(async () => memoryLink?.click());
 
     expect(onOpenMemoryDirectory).toHaveBeenCalledWith("/agents/agent-1/memory");
