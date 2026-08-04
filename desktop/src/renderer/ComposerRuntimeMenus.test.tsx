@@ -30,17 +30,18 @@ describe("RuntimePicker", () => {
     initialized: InitializeResult,
     onToggleMenu = vi.fn(),
     onSelectEffort = vi.fn(),
-    onSelectModel = vi.fn()
+    onSelectModel = vi.fn(),
+    anchorRef = createRef<HTMLDivElement>()
   ): void {
     act(() => {
-      root = createRoot(container);
+      root ??= createRoot(container);
       root.render(
         <RuntimePicker
           variant="dock"
           initialized={initialized}
           state={{ loading: false, error: "", models: [] }}
           openMenu={openMenu}
-          anchorRef={createRef<HTMLDivElement>()}
+          anchorRef={anchorRef}
           running={false}
           onToggleMenu={onToggleMenu}
           onSelectModel={onSelectModel}
@@ -126,6 +127,35 @@ describe("RuntimePicker", () => {
 
     act(() => high?.click());
     expect(onSelectEffort).toHaveBeenCalledWith("high");
+  });
+
+  it("flips the model menu below the trigger when the window top has too little room", () => {
+    const initialized = runtimeWithEffort();
+    const anchorRef = createRef<HTMLDivElement>();
+    renderPicker(null, initialized, vi.fn(), vi.fn(), vi.fn(), anchorRef);
+    vi.spyOn(anchorRef.current as HTMLDivElement, "getBoundingClientRect").mockReturnValue({
+      x: 700,
+      y: 40,
+      top: 40,
+      left: 700,
+      right: 880,
+      bottom: 70,
+      width: 180,
+      height: 30,
+      toJSON: () => ({}),
+    });
+
+    renderPicker("model", initialized, vi.fn(), vi.fn(), vi.fn(), anchorRef);
+
+    const layer = document.querySelector<HTMLElement>(
+      '[data-floating-menu-owner="codex-runtime"]'
+    );
+    expect(layer?.classList.contains("floating-menu-below")).toBe(true);
+    expect(layer?.style.top).toBe("78px");
+    expect(layer?.style.bottom).toBe("");
+    expect(layer?.style.getPropertyValue("--floating-menu-available-height")).toBe(
+      `${window.innerHeight - 86}px`
+    );
   });
 
   it("uses the target model default instead of carrying effort across models", () => {

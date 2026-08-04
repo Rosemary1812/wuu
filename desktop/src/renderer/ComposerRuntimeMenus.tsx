@@ -186,6 +186,7 @@ export function RuntimePicker({
           placement={placement}
           align="right"
           width={208}
+          flip
         >
           <RuntimeMainMenu
             selectedVariant={currentVariant}
@@ -204,6 +205,7 @@ export function RuntimePicker({
           placement={placement}
           align="right"
           width={172}
+          flip
         >
           <RuntimeEffortMenu
             selectedVariant={currentVariant}
@@ -219,6 +221,7 @@ export function RuntimePicker({
           placement={placement}
           align="right"
           width={286}
+          flip
         >
           <RuntimeModelMenu
             initialized={initialized}

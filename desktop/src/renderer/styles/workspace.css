@@ -4315,7 +4315,11 @@ html.resizing-workspace-terminal-split * {
   z-index: 35;
   display: grid;
   width: 236px;
-  max-height: min(340px, calc(100vh - 180px));
+  max-height: min(
+    var(--floating-menu-available-height, 999px),
+    340px,
+    calc(100vh - 180px)
+  );
   gap: 1px;
   overflow-y: auto;
   border: 1px solid var(--menu-border);
