@@ -41,6 +41,9 @@ if (speechBuild.status !== 0) {
 }
 
 const env = { ...process.env };
+// Group chat is part of the local dogfooding experience even while release
+// builds keep the renderer feature behind an explicit Vite flag.
+env.VITE_ENABLE_GROUP_CHAT ??= "true";
 if (process.platform === "darwin") {
   // Keep the stable signed host for macOS permissions, but do not bypass
   // feature gates. CUA is enabled only when the caller explicitly exports
