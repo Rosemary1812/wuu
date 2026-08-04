@@ -49,7 +49,7 @@ wuu skills lint path/to/skill
 wuu skills lint --json path/to/skills-root
 ```
 
-检查通过只说明文件结构和元数据可被识别，不代表工作流内容安全或任务结果正确。
+检查工具验证文件结构和元数据。工作流内容和任务结果仍需人工检查。
 
 ## 与项目指令的区别
 
