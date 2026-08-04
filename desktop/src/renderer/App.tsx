@@ -2094,6 +2094,11 @@ export function App(): JSX.Element {
     }
     openWorkspaceFileTab({ context, path });
   });
+  const openAgentMemoryDirectory = useStableCallback((path: string): void => {
+    setFocusedWorkspaceContext({ kind: "no_project", cwd: path });
+    setRightPanelManualGlobalized(true);
+    openWorkspaceTool("files");
+  });
   const openWorkspaceFileForThread = useStableCallback((thread: Thread, path: string): void => {
     const context = workspacePanelContext(appStateRef.current.activeContext, thread);
     if (!context) {
@@ -4403,6 +4408,7 @@ export function App(): JSX.Element {
               selectedRoomID={selectedChannelRoomID}
               onSelectRoom={selectChannelRoom}
               onRoomRead={clearChannelRoomUnread}
+              onOpenMemoryDirectory={openAgentMemoryDirectory}
               composerDraft={
                 currentSessionTab?.kind === "channel-room"
                   ? {

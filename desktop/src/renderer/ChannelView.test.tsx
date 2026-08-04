@@ -59,6 +59,7 @@ const rooms: ChannelRoom[] = [
 
 function createApi(): Partial<WuuDesktopApi> {
   return {
+    revealWorkspaceItem: vi.fn(async () => undefined),
     bootstrapChannels: vi.fn(async () => ({ agents, rooms })),
     listNamedAgents: vi.fn(async () => ({ agents })),
     createNamedAgent: vi.fn(async (params) => ({ agent: { ...agents[0], name: params.name } })),
@@ -1206,6 +1207,23 @@ describe("ChannelView", () => {
       model_override: undefined,
       effort_override: undefined,
     });
+  });
+
+  it("opens an agent memory directory from its path link", async () => {
+    const api = createApi();
+    const onOpenMemoryDirectory = vi.fn();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="agents" onOpenMemoryDirectory={onOpenMemoryDirectory} />));
+    await settle();
+
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="查看Alpha"]')?.click());
+    const memoryLink = container.querySelector<HTMLButtonElement>(".channel-agent-memory-link");
+    expect(memoryLink?.textContent).toBe("/agents/agent-1/memory");
+    await act(async () => memoryLink?.click());
+
+    expect(onOpenMemoryDirectory).toHaveBeenCalledWith("/agents/agent-1/memory");
+    expect(api.revealWorkspaceItem).not.toHaveBeenCalled();
   });
 
   it("persists a selected effort with a named agent model override", async () => {

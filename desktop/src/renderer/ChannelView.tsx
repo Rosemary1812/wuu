@@ -300,7 +300,7 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, composerDraft, onComposerDraftChange, newRoomRequest, onNewRoomRequestHandled }: {
+export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, onOpenMemoryDirectory, composerDraft, onComposerDraftChange, newRoomRequest, onNewRoomRequestHandled }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
   onSectionChange?: (section: ChannelSection) => void;
@@ -310,6 +310,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   selectedRoomID?: string;
   onSelectRoom?: (roomID: string) => void;
   onRoomRead?: (roomID: string) => void;
+  onOpenMemoryDirectory?: (path: string) => void;
   composerDraft?: {
     prompt: string;
     images: ComposerImage[];
@@ -1762,7 +1763,24 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                   <section className="channel-agent-detail-wide">
                     <h3>{t("channels.agentStorage")}</h3>
                     <dl>
-                      <div><dt>{t("channels.agentMemoryDirectory")}</dt><dd><code>{selectedAgent.memory_dir}</code></dd></div>
+                      <div>
+                        <dt>{t("channels.agentMemoryDirectory")}</dt>
+                        <dd>
+                          <button
+                            className="channel-agent-memory-link"
+                            type="button"
+                            onClick={() => {
+                              if (onOpenMemoryDirectory) {
+                                onOpenMemoryDirectory(selectedAgent.memory_dir);
+                                return;
+                              }
+                              void window.wuu?.revealWorkspaceItem(selectedAgent.memory_dir);
+                            }}
+                          >
+                            <code>{selectedAgent.memory_dir}</code>
+                          </button>
+                        </dd>
+                      </div>
                       <div><dt>{t("channels.agentCreatedAt")}</dt><dd>{formatDate(selectedAgent.created_at)}</dd></div>
                     </dl>
                   </section>

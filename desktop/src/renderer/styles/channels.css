@@ -1425,6 +1425,33 @@
   text-align: right;
 }
 
+.channel-agent-memory-link {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rich-link-color);
+  cursor: pointer;
+  font: inherit;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.channel-agent-memory-link:hover {
+  color: var(--rich-link-hover-color);
+  text-decoration: underline;
+}
+
+.channel-agent-memory-link:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid color-mix(in srgb, var(--rich-link-color) 40%, transparent);
+  outline-offset: 2px;
+}
+
+.channel-agent-memory-link code {
+  color: inherit;
+}
+
 .channel-agent-detail-wide {
   grid-column: 1 / -1;
 }
