@@ -41,6 +41,18 @@ describe("project sidebar row layout", () => {
     expect(cssRule(".thread-list-more")).toMatch(/padding:\s*0 var\(--sidebar-row-control-pad-x\)/);
     expect(cssRule(".thread-list-collapse-btn")).toMatch(/padding:\s*0 var\(--sidebar-row-control-pad-x\)/);
   });
+
+  it("keeps session action hit boxes fixed while hover controls appear", () => {
+    const actions = cssRule(".thread-row-actions");
+    expect(actions).toMatch(/transform:\s*translateY\(-50%\)/);
+    expect(actions).toMatch(/transition:\s*opacity/);
+    expect(actions).not.toMatch(/translate3d/);
+    expect(actions).not.toMatch(/transition:[\s\S]*transform/);
+
+    const forkIcon = cssRule(".thread-row-fork-icon");
+    expect(forkIcon).toMatch(/transition:\s*opacity/);
+    expect(forkIcon).not.toMatch(/transition:[\s\S]*right/);
+  });
 });
 
 describe("globalized right panel chrome", () => {

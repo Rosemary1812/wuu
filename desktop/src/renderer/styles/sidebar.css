@@ -1690,8 +1690,8 @@
  *
  * Layout: by default it sits at `right: var(--sidebar-row-pad-x)` —
  * the same offset as the action overlay, but the actions are hidden
- * by default so there's no visual conflict. On hover, the icon
- * slides left to `right: 62px`, stopping 3px left of the pin button.
+ * by default so there's no visual conflict. On hover, the icon moves
+ * directly to `right: 62px`, stopping 3px left of the pin button.
  * The 3px gap matches the gap the
  * pin/archive pair uses internally, so the three controls read as one
  * rhythmic group on the right edge of the row. The title's own
@@ -1712,9 +1712,11 @@
   opacity: 0.75;
   pointer-events: none;
   z-index: 1;
-  transition:
-    opacity var(--motion-fast) var(--ease-out),
-    right var(--motion-base) var(--ease-out);
+  /* Do not animate the horizontal position. This decorative icon has no hit
+   * target; sliding it across the pin/archive buttons briefly put the visible
+   * glyph over a different clickable box, which made forked rows feel badly
+   * misaligned. */
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .thread-row:hover .thread-row-fork-icon,
@@ -1756,10 +1758,11 @@
   gap: 3px;
   opacity: 0;
   pointer-events: none;
-  transform: translate3d(4px, -50%, 0);
-  transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+  transform: translateY(-50%);
+  /* Keep the button boxes on their final x-axis while they appear. Moving the
+   * whole clickable overlay during hover made fast clicks land beside the
+   * glyph the user was following. */
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 /* When the row is hovered the action icons must read as clearly
@@ -1775,7 +1778,7 @@
 .thread-row:has(.thread-row-action:focus-visible) .thread-row-actions {
   opacity: 1;
   pointer-events: auto;
-  transform: translate3d(0, -50%, 0);
+  transform: translateY(-50%);
 }
 
 @media (prefers-reduced-motion: reduce) {
