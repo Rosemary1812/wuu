@@ -15,7 +15,6 @@ import {
 } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
-import { AnimatedProcessText } from "./ProcessTextMotion";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -23,7 +22,6 @@ import { SystemEventDivider, TurnEventNotice, StreamReconnectNotice } from "./Tu
 import { turnEventForTurn } from "./TurnEvents";
 import { isAgentHandoffItem } from "./AgentHandoff";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
-import { turnHasSpawnAgentCall } from "./TurnGrouping";
 import {
   messageFlowAgentMessageItemID,
   turnAnchorID,
@@ -71,10 +69,12 @@ export function TurnGroupView(props: TurnGroupViewProps): JSX.Element {
   // A single-turn group with no live orchestration renders through the
   // ordinary per-turn path untouched; everything else (merged groups, and
   // the waiting-between-turns state) renders one shell for the whole run.
-  const orchestrationLive =
-    Boolean(awaiting) && turns.some(turnHasSpawnAgentCall);
-  const orchestrationInterrupted =
-    Boolean(interrupted) && turns.some(turnHasSpawnAgentCall);
+  // The live child-agent set is authoritative. Persisted or compacted turn
+  // history may no longer contain the original spawn_agent item, but the
+  // conversation must not expose a completed block while the side panel still
+  // reports work in flight.
+  const orchestrationLive = Boolean(awaiting);
+  const orchestrationInterrupted = Boolean(interrupted);
   if (turns.length === 1 && !orchestrationLive && !orchestrationInterrupted && first) {
     const turn = first;
     return (
@@ -172,7 +172,6 @@ function MergedTurnGroupView({
 
   const display = useMemo(() => mergeTurnDisplays(turns), [turns]);
   const presented = useAssistantTurnPresentation(shellTurn.id, display);
-  const waitingForSubagent = Boolean(awaiting) && !anyMemberInProgress;
 
   const hasMissingReply =
     closed && presented?.missingReplyMessage !== undefined;
@@ -231,6 +230,7 @@ function MergedTurnGroupView({
             onOpenRuns ? () => onOpenRuns(last.id) : undefined
           }
           onCollapseComplete={onCollapseComplete}
+          subagentWaiting={Boolean(awaiting)}
         />
       ) : null}
       {turns.map((member) => {
@@ -251,9 +251,6 @@ function MergedTurnGroupView({
           </Fragment>
         );
       })}
-      {waitingForSubagent || interrupted ? (
-        <SubagentWaitRow live={waitingForSubagent} />
-      ) : null}
       {interrupted ? (
         <SystemEventDivider text={translateCurrent("turn.orchestrationPaused")} />
       ) : null}
@@ -266,24 +263,9 @@ function MergedTurnGroupView({
   );
 }
 
-function SubagentWaitRow({ live }: { live: boolean }): JSX.Element {
-  return (
-    <div
-      className={`turn-orchestration-wait process-surface-row${
-        live ? " is-live-gray" : ""
-      }`}
-      role="status"
-      aria-live={live ? "polite" : undefined}
-    >
-      <AnimatedProcessText
-        text={translateCurrent("process.waitingForSubagents")}
-      />
-    </div>
-  );
-}
-
 function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {
   const entries: TurnEntry[] = [];
+  const unresolvedSpawns: Array<{ entryIndex: number; aliases: string[] }> = [];
   const chips: SubagentChipDisplay[] = [];
   let hasAnswer = false;
   let latestProcessPreview: TurnProcessPreview | undefined;
@@ -293,7 +275,46 @@ function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {
     if (!display) continue;
     lastDisplay = display;
     for (const entry of display.entries) {
-      entries.push({ ...entry, turn });
+      if (isSpawnEntry(entry)) {
+        const { aliases, target } = spawnIdentity(entry.item);
+        entries.push({
+          ...entry,
+          kind: "subagent_status",
+          subagentStatus: {
+            label: translateCurrent("toolActivity.subtaskTarget", { target }),
+            outcome: "updated",
+          },
+          turn,
+        });
+        unresolvedSpawns.push({ entryIndex: entries.length - 1, aliases });
+        continue;
+      }
+      if (entry.kind === "subagent_status" && entry.subagentStatus) {
+        const label = entry.subagentStatus.label;
+        const matchIndex = unresolvedSpawns.findIndex(({ aliases }) =>
+          aliases.some((alias) => alias.length > 0 && label.includes(alias)),
+        );
+        const resolvedIndex = matchIndex >= 0 ? matchIndex : unresolvedSpawns.length === 1 ? 0 : -1;
+        if (resolvedIndex >= 0) {
+          const [resolved] = unresolvedSpawns.splice(resolvedIndex, 1);
+          entries[resolved.entryIndex] = {
+            ...entries[resolved.entryIndex],
+            settled: true,
+            streaming: false,
+            subagentStatus: entry.subagentStatus,
+          };
+          continue;
+        }
+        // Completion is the result of an earlier spawn tool call, never new
+        // assistant content. If projection/compaction removed that spawn,
+        // omit the orphan instead of appending a misleading bottom row.
+        continue;
+      }
+      entries.push({
+        ...entry,
+        position: entry.kind === "subagent_status" ? "process" : entry.position,
+        turn,
+      });
     }
     chips.push(...display.subagentChips);
     hasAnswer = hasAnswer || display.hasAnswer;
@@ -314,4 +335,35 @@ function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {
     missingReplyMessage: lastDisplay.missingReplyMessage,
     latestProcessPreview,
   };
+}
+
+function isSpawnEntry(entry: TurnEntry): boolean {
+  return (
+    (entry.item.type === "tool_call" ||
+      entry.item.type === "collab_agent_tool_call") &&
+    entry.item.name === "spawn_agent"
+  );
+}
+
+function spawnIdentity(item: ThreadItem): { aliases: string[]; target: string } {
+  const aliases: string[] = [];
+  let target = "";
+  for (const [raw, keys] of [
+    [item.result, ["task_name", "name", "agent_id"]],
+    [item.arguments, ["name", "description"]],
+  ] as const) {
+    if (!raw) continue;
+    try {
+      const value = JSON.parse(raw) as Record<string, unknown>;
+      for (const key of keys) {
+        if (typeof value[key] === "string" && value[key]) {
+          aliases.push(value[key]);
+          if (!target) target = value[key];
+        }
+      }
+    } catch {
+      // Malformed tool payloads still render with the generic subtask label.
+    }
+  }
+  return { aliases, target };
 }

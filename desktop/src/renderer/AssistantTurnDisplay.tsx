@@ -40,6 +40,8 @@ export type TurnEntry = {
   streaming: boolean;
   kind: TurnEntryKind;
   count?: number;
+  /** A subagent wake notification rendered as a wait-tool-style timeline row. */
+  subagentStatus?: SubagentChipDisplay;
   /** Origin turn when entries from several turns are merged into one
    *  group display (TurnGroupView). Undefined means "the shell's own
    *  turn" — single-turn displays never set it, so stream-text keys,
@@ -53,7 +55,8 @@ export type TurnEntryKind =
   | "answer"
   | "activity"
   | "process"
-  | "process_group";
+  | "process_group"
+  | "subagent_status";
 
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
@@ -148,6 +151,17 @@ export function buildAssistantTurnDisplay(
       if (chips.length > 0) {
         sawAssistantWork = true;
         collectedChips.push(...chips);
+        for (let chipIndex = 0; chipIndex < chips.length; chipIndex += 1) {
+          entries.push({
+            key: `${item.id}-subagent-status-${chipIndex}`,
+            item,
+            position: "process",
+            settled: true,
+            streaming: false,
+            kind: "subagent_status",
+            subagentStatus: chips[chipIndex],
+          });
+        }
       }
       continue;
     }
@@ -194,9 +208,10 @@ export function buildAssistantTurnDisplay(
       const group: ThreadItem[] = [item];
       let nextIndex = index + 1;
       while (
+        item.name !== "spawn_agent" &&
         nextIndex < turn.items.length &&
-        (turn.items[nextIndex].type === "tool_call" ||
-          turn.items[nextIndex].type === "collab_agent_tool_call")
+        turn.items[nextIndex].type === "tool_call" &&
+        turn.items[nextIndex].name !== "spawn_agent"
       ) {
         group.push(turn.items[nextIndex]);
         nextIndex++;
@@ -348,6 +363,12 @@ function isProcessGroupCandidate(entry: TurnEntry): boolean {
     return false;
   }
   if (entry.kind === "activity") {
+    // A background subagent keeps one stable tool-call row so later wake
+    // notifications can settle that exact row in place. Folding it into an
+    // adjacent operation batch would erase the identity needed for pairing.
+    if (entry.item.name === "spawn_agent") {
+      return false;
+    }
     return true;
   }
   return entry.item.type === "reasoning";

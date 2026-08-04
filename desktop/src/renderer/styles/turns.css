@@ -594,6 +594,10 @@
   color: var(--danger);
 }
 
+.turn-subagent-status-failed {
+  color: var(--danger);
+}
+
 .subagent-chip-list {
   display: inline-flex;
   align-items: baseline;

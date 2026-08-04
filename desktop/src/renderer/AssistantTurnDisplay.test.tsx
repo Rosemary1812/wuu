@@ -76,8 +76,8 @@ function chipLabels(display: ReturnType<typeof build>): string[] {
   return display.subagentChips.map((chip) => chip.label);
 }
 
-describe("buildAssistantTurnDisplay subagent chips", () => {
-  it("collects every notification into the turn-level chip list", () => {
+describe("buildAssistantTurnDisplay subagent timeline", () => {
+  it("keeps every notification in chronological entry order", () => {
     const display = build(
       makeTurn("completed", [
         makeNotification("ok_agent_two"),
@@ -90,12 +90,15 @@ describe("buildAssistantTurnDisplay subagent chips", () => {
       "ok_agent_two 完成了",
       "ok_agent_one 完成了",
     ]);
-    // Chips never live on entries anymore — the fold header is the only
-    // surface, so the message stream gains no extra rows.
     expect(display.entries.map((entry) => entry.kind)).toEqual([
+      "subagent_status",
       "commentary",
+      "subagent_status",
       "commentary",
     ]);
+    expect(display.entries[0].subagentStatus?.label).toBe(
+      "ok_agent_two 完成了",
+    );
   });
 
   it("collects chips regardless of the surrounding entry kinds", () => {
@@ -103,23 +106,30 @@ describe("buildAssistantTurnDisplay subagent chips", () => {
       makeTurn("completed", [makeToolCall(), makeNotification("lint")]),
     );
     expect(chipLabels(display)).toEqual(["lint 完成了"]);
-    expect(display.entries.map((entry) => entry.kind)).toEqual(["activity"]);
+    expect(display.entries.map((entry) => entry.kind)).toEqual([
+      "activity",
+      "subagent_status",
+    ]);
   });
 
-  it("keeps reasoning entries free of any chip attachment", () => {
+  it("places a notification after the preceding reasoning entry", () => {
     const display = build(
       makeTurn("completed", [makeReasoning(), makeNotification("lint")]),
     );
     expect(chipLabels(display)).toEqual(["lint 完成了"]);
-    expect(display.entries).toHaveLength(1);
+    expect(display.entries).toHaveLength(2);
     expect(display.entries[0].item.type).toBe("reasoning");
+    expect(display.entries[1].kind).toBe("subagent_status");
   });
 
-  it("returns a display for a notification-only turn so the header can host the chips", () => {
+  it("returns timeline rows for a notification-only turn", () => {
     const display = build(
       makeTurn("completed", [makeNotification("one"), makeNotification("two")]),
     );
-    expect(display.entries).toHaveLength(0);
+    expect(display.entries.map((entry) => entry.kind)).toEqual([
+      "subagent_status",
+      "subagent_status",
+    ]);
     expect(display.subagentChips).toHaveLength(2);
   });
 

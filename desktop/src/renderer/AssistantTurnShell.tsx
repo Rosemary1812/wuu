@@ -37,7 +37,6 @@ import {
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
-import { SubagentChipList } from "./SubagentChip";
 import type { SubagentChipDisplay } from "./AgentHandoff";
 import { translateCurrent as translate, useI18n } from "./i18n";
 
@@ -53,6 +52,7 @@ export function AssistantTurnShell({
   onForkMessage,
   onOpenRuns,
   onCollapseComplete,
+  subagentWaiting,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -65,6 +65,8 @@ export function AssistantTurnShell({
   onForkMessage?: (turnID: string, itemID: string) => void;
   onOpenRuns?: () => void;
   onCollapseComplete?: () => void;
+  /** Render background orchestration like one synchronous wait tool call. */
+  subagentWaiting?: boolean;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -111,6 +113,12 @@ export function AssistantTurnShell({
       streamFieldValue(entry.turn?.id ?? turn.id, entry.item, "text").trim().length > 0,
   );
   const processCollapseRequested = answerHandoffRequested;
+  const liveSubagentStatusKey = subagentWaiting
+    ? display.entries.findLast(
+        (entry) =>
+          entry.kind === "subagent_status" && entry.subagentStatus?.outcome === "updated",
+      )?.key
+    : undefined;
 
   const className = [
     "assistant-turn-shell",
@@ -132,6 +140,7 @@ export function AssistantTurnShell({
     onForkMessage,
     onOpenRuns,
     onCollapseComplete,
+    liveSubagentStatusKey,
   };
 
   return (
@@ -139,7 +148,7 @@ export function AssistantTurnShell({
       {hasProcess ? (
         <TurnProcessFold
           entries={processEntries}
-          subagentChips={display.subagentChips}
+          processActive={!liveSubagentStatusKey}
           collapseRequested={processCollapseRequested}
           latestPreview={
             answerHandoffRequested ? undefined : display.latestProcessPreview
@@ -171,10 +180,33 @@ export function AssistantTurnShell({
   );
 }
 
+function SubagentStatusRow({
+  display,
+  live,
+}: {
+  display?: SubagentChipDisplay;
+  live: boolean;
+}): JSX.Element {
+  return (
+    <div
+      className={`turn-subagent-status process-surface-row${
+        live ? " is-live-gray" : ""
+      }${display?.outcome === "failed" ? " turn-subagent-status-failed" : ""}`}
+      role="status"
+      aria-live={live ? "polite" : undefined}
+    >
+      <AnimatedProcessText
+        text={display?.label ?? translate("process.waitingForSubagents")}
+      />
+    </div>
+  );
+}
+
 function TurnProcessFold({
   turn,
   entries,
-  subagentChips,
+  processActive,
+  liveSubagentStatusKey,
   collapseRequested,
   latestPreview,
   sources,
@@ -191,9 +223,8 @@ function TurnProcessFold({
 }: {
   turn: Turn;
   entries: TurnEntry[];
-  /** Turn-level subagent notifications, rendered in the header next to
-   *  the elapsed-time label. */
-  subagentChips: SubagentChipDisplay[];
+  processActive: boolean;
+  liveSubagentStatusKey?: string;
   collapseRequested: boolean;
   latestPreview?: TurnProcessPreview;
   sources: ReturnType<typeof collectTurnSources>;
@@ -227,11 +258,17 @@ function TurnProcessFold({
 
   const completedDuration =
     typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
-  const startedAt = parseTurnTimestampMs(turn.started_at);
+  const parsedStartedAt = parseTurnTimestampMs(turn.started_at);
+  // A legacy/recovered in-progress turn can arrive without started_at. Never
+  // present that unknown duration as a frozen "0s"; start a local monotonic
+  // fallback until the next snapshot supplies the persisted timestamp.
+  const fallbackStartedAt = useRef(Date.now()).current;
+  const startedAt = Number.isFinite(parsedStartedAt)
+    ? parsedStartedAt
+    : fallbackStartedAt;
   const liveDuration =
     completedDuration === undefined &&
-    turn.status === "in_progress" &&
-    Number.isFinite(startedAt);
+    turn.status === "in_progress";
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs =
     completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
@@ -297,7 +334,7 @@ function TurnProcessFold({
   const visiblePreview = expanded ? undefined : latestPreview;
   const hasPreview = Boolean(visiblePreview);
   const activeGrayEntryKey =
-    turn.status === "in_progress"
+    processActive && turn.status === "in_progress"
       ? latestActiveGrayProcessEntryKey(entries)
       : undefined;
 
@@ -310,23 +347,17 @@ function TurnProcessFold({
             {part}
           </span>
         ))}
-        {/* Subagent notifications ride the turn chrome: the wake event is
-            this turn's cause, so it sits with the elapsed-time label
-            instead of occupying a message row of its own. Updates are
-            in-place (the aggregated count swaps text), never a layout
-            shift below. */}
-        <SubagentChipList displays={subagentChips} />
       </span>
       {hasPreview ? (
         <span
           className={`turn-process-preview turn-process-preview-${visiblePreview?.kind ?? "process"}${
-            turn.status === "in_progress" ? " is-live" : ""
+            processActive && turn.status === "in_progress" ? " is-live" : ""
           }`}
         >
           <span className="turn-process-live-dot" aria-hidden />
           <LightweightStreamingText
             text={visiblePreview?.text ?? ""}
-            live={turn.status === "in_progress"}
+            live={processActive && turn.status === "in_progress"}
             className="turn-process-preview-text"
           />
         </span>
@@ -385,6 +416,7 @@ return (
                     key={entry.key}
                     entry={entry}
                     activeGray={entry.key === activeGrayEntryKey}
+                    liveSubagentStatusKey={liveSubagentStatusKey}
                     turn={turn}
                     cwd={cwd}
                     onOpenFile={onOpenFile}
@@ -423,6 +455,7 @@ function isGrayProcessEntry(entry: TurnEntry): boolean {
 function EntryRenderer({
   entry,
   activeGray,
+  liveSubagentStatusKey,
   turn,
   cwd,
   onOpenFile,
@@ -435,6 +468,7 @@ function EntryRenderer({
 }: {
   entry: TurnEntry;
   activeGray?: boolean;
+  liveSubagentStatusKey?: string;
   turn: Turn;
   cwd?: string;
   onOpenFile?: (path: string) => void;
@@ -450,6 +484,14 @@ function EntryRenderer({
   // own origin turn: stream-text store keys, fork targets and turn status
   // all belong to the turn the item was produced in, not the shell's.
   const originTurn = entry.turn ?? turn;
+  if (kind === "subagent_status") {
+    return (
+      <SubagentStatusRow
+        display={entry.subagentStatus}
+        live={entry.key === liveSubagentStatusKey}
+      />
+    );
+  }
   if (kind === "activity" || kind === "process_group") {
     return (
       <ProcessSurface

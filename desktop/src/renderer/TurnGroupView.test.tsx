@@ -44,18 +44,22 @@ function wakeItem(agentID: string): ThreadItem {
     id: nextID("wake"),
     type: "user_message",
     name: "wuu_agent_notification",
-    text: `<subagent_notification>{"status":{"agent_id":"${agentID}","status":"completed"}}</subagent_notification>`,
+    text: `<subagent_notification>{"status":{"agent_id":"${agentID}","task_name":"${agentID.replace(/^agent-/, "")}","status":"completed"}}</subagent_notification>`,
   };
 }
 
 function spawnItem(name: string): ThreadItem {
   return {
     id: nextID("spawn"),
-    type: "collab_agent_tool_call",
+    type: "tool_call",
     status: "completed",
     name: "spawn_agent",
     arguments: JSON.stringify({ description: name, run_in_background: true }),
-    result: JSON.stringify({ agent_id: `agent-${name}`, status: "running" }),
+    result: JSON.stringify({
+      agent_id: `agent-${name}`,
+      task_name: name,
+      status: "running",
+    }),
   };
 }
 
@@ -153,10 +157,12 @@ describe("TurnGroupView — merged orchestration group", () => {
     ];
     mountGroup(turns);
 
-    // One section, one process fold, and the wake chip rides the fold header.
+    // One section, one process fold, and the wake status stays in the timeline.
     expect(container.querySelectorAll("section.turn")).toHaveLength(1);
     expect(container.querySelectorAll(".turn-process-fold")).toHaveLength(1);
-    expect(container.querySelector(".subagent-chip")).toBeTruthy();
+    expect(container.querySelector(".turn-subagent-status")?.textContent).toContain(
+      "完成了",
+    );
     // Only the group's final answer carries actions.
     expect(actionBars()).toHaveLength(1);
     // The wall-clock duration spans the wait: 10:00:00 → 10:01:42 = 102s.
@@ -222,20 +228,18 @@ describe("TurnGroupView — awaiting between turns", () => {
     mountGroup(turns, true);
 
     // The turn does not look finished: in_progress status, no action bar,
-    // and one quiet synthetic activity row carries the live shimmer while
+    // and the original spawn tool-call row carries the live shimmer while
     // the real parent turn is parked between subagent wake-ups.
     expect(section().dataset.turnStatus).toBe("in_progress");
     expect(actionBars()).toHaveLength(0);
     expect(foldToggle().getAttribute("aria-expanded")).toBe("false");
-    const waiting = container.querySelector(".turn-orchestration-wait.is-live-gray");
-    expect(waiting?.textContent).toContain("子任务仍在运行");
+    const waiting = container.querySelector(".turn-subagent-status.is-live-gray");
+    expect(waiting?.textContent).toContain("子任务 research_a");
     const shell = container.querySelector(".assistant-turn-shell");
     if (!shell || !waiting) {
-      throw new Error("expected the waiting row after the assistant shell");
+      throw new Error("expected the spawn tool-call status inside the assistant shell");
     }
-    expect(
-      shell.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(shell.contains(waiting)).toBe(true);
     expect(container.querySelector(".turn-process-preview-activity")).toBeNull();
   });
 
@@ -262,8 +266,8 @@ describe("TurnGroupView — awaiting between turns", () => {
 
     expect(section().dataset.turnStatus).toBe("interrupted");
     expect(actionBars()).toHaveLength(0);
-    const waiting = container.querySelector(".turn-orchestration-wait");
-    expect(waiting?.textContent).toContain("子任务仍在运行");
+    const waiting = container.querySelector(".turn-subagent-status");
+    expect(waiting?.textContent).toContain("子任务 research_a");
     expect(waiting?.classList.contains("is-live-gray")).toBe(false);
     expect(container.querySelector(".turn-event-title")?.textContent).toBe("已暂停回答");
   });
@@ -276,6 +280,8 @@ describe("TurnGroupView — awaiting between turns", () => {
     );
     mountGroup([spawnTurn], true);
     expect(section().dataset.turnStatus).toBe("in_progress");
+    const waitingRow = container.querySelector(".turn-subagent-status");
+    expect(waitingRow?.textContent).toContain("子任务 research_a");
 
     const wakeTurn = makeTurn(
       "t2",
@@ -290,6 +296,96 @@ describe("TurnGroupView — awaiting between turns", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
     expect(actionBars()).toHaveLength(1);
-    expect(container.querySelector(".subagent-chip")).toBeTruthy();
+    const completedRow = container.querySelector(".turn-subagent-status");
+    expect(completedRow?.textContent).toContain(
+      "完成了",
+    );
+    // The wait placeholder and completion share one stable timeline node, so
+    // AnimatedProcessText performs its normal in-place text transition.
+    expect(completedRow).toBe(waitingRow);
+  });
+
+  it("publishes a notification-only completion on the original spawn node", () => {
+    const spawnTurn = makeTurn("t1", [
+      userItem("帮我查 X"),
+      spawnItem("research_a"),
+      answerItem("我先等待。"),
+    ]);
+    mountGroup([spawnTurn], true);
+    const spawnRow = container.querySelector(".turn-subagent-status");
+    expect(spawnRow?.textContent).toBe("子任务 research_a");
+
+    const wakeTurn = makeTurn("t2", [wakeItem("agent-research_a")]);
+    mountGroup([spawnTurn, wakeTurn], false);
+
+    const completedRow = container.querySelector(".turn-subagent-status");
+    expect(completedRow).toBe(spawnRow);
+    // AnimatedProcessText briefly keeps the outgoing and incoming copies in
+    // the same node while the replacement slides through.
+    expect(completedRow?.textContent).toContain("research_a 完成了");
+  });
+
+  it("keeps the group live without inventing a bottom status when spawn history is absent", () => {
+    const turns = [
+      makeTurn("t1", [userItem("审计项目"), answerItem("我先等待审计结果。")], {
+        durationMs: 800,
+      }),
+    ];
+
+    mountGroup(turns, true);
+
+    expect(section().dataset.turnStatus).toBe("in_progress");
+    expect(actionBars()).toHaveLength(0);
+    expect(container.querySelector(".turn-subagent-status")).toBeNull();
+  });
+
+  it("updates the completed spawn in place while a peer spawn remains live", () => {
+    const turns = [
+      makeTurn("t1", [
+        userItem("审计项目"),
+        spawnItem("first"),
+        spawnItem("second"),
+        answerItem("等待结果。"),
+      ]),
+      makeTurn(
+        "t2",
+        [wakeItem("agent-first"), answerItem("第一个结果收到，继续等另一个。")],
+        { status: "in_progress" },
+      ),
+    ];
+
+    mountGroup(turns, true);
+
+    const statuses = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-subagent-status"),
+    );
+    expect(statuses.map((status) => status.textContent)).toEqual([
+      "first 完成了",
+      "子任务 second",
+    ]);
+    const completedStatus = statuses.find((status) =>
+      status.textContent?.includes("完成了"),
+    );
+    const liveWait = statuses.find((status) => status.textContent?.includes("子任务 second"));
+    const wakeAnswer = Array.from(container.querySelectorAll(".agent-text")).find(
+      (node) => node.textContent?.includes("第一个结果收到"),
+    );
+    expect(liveWait?.textContent).toContain("子任务 second");
+    expect(liveWait?.classList.contains("is-live-gray")).toBe(true);
+    expect(
+      container.querySelector(
+        ".process-surface-row.is-live-gray:not(.turn-subagent-status)",
+      ),
+    ).toBeNull();
+    if (!completedStatus || !wakeAnswer || !liveWait) {
+      throw new Error("expected paired spawn statuses before the wake-up answer");
+    }
+    expect(
+      completedStatus.compareDocumentPosition(wakeAnswer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      liveWait.compareDocumentPosition(wakeAnswer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(actionBars()).toHaveLength(0);
   });
 });
