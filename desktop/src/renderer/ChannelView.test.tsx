@@ -1123,11 +1123,11 @@ describe("ChannelView", () => {
     expect(container.querySelector<HTMLElement>(".channel-agent-workspace")?.style.gridTemplateColumns).toBe("");
     const agentRow = container.querySelector(".channel-agent-directory-row");
     expect(agentRow?.classList.contains("channel-directory-row")).toBe(true);
-    expect(agentRow?.children).toHaveLength(3);
+    expect(agentRow?.children).toHaveLength(2);
     const agentAvatar = agentRow?.querySelector<HTMLButtonElement>("button.channel-directory-avatar");
     expect(agentAvatar).not.toBeNull();
     expect(agentRow?.querySelector(".channel-directory-identity")?.textContent).toContain("Alpha");
-    expect(agentRow?.querySelectorAll(".channel-directory-settings")).toHaveLength(1);
+    expect(agentRow?.querySelectorAll(".channel-directory-settings")).toHaveLength(0);
     expect(agentRow?.querySelector(".channel-agent-directory-actions")).toBeNull();
     const graphEntry = container.querySelector<HTMLButtonElement>(".channel-agent-graph-entry");
     expect(graphEntry?.getAttribute("aria-current")).toBe("page");
@@ -1143,9 +1143,7 @@ describe("ChannelView", () => {
     act(() => graphEntry?.click());
     await settle();
     expect(api.updateNamedAgent).toHaveBeenCalledWith(expect.objectContaining({ agent_id: "agent-1", name: "Alpha Prime" }));
-    const agentSettings = agentRow?.querySelector<HTMLButtonElement>(".channel-directory-settings");
-    act(() => agentSettings?.click());
-    expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("编辑 Agent");
+    expect(agentRow?.querySelector(".channel-directory-settings")).toBeNull();
     act(() => graphEntry?.click());
     expect(container.querySelector(".channel-agent-graph-canvas")).not.toBeNull();
 
@@ -1317,46 +1315,6 @@ describe("ChannelView", () => {
       model_override: "gpt-reasoner",
       effort_override: "high",
     }));
-  });
-
-  it("keeps agent deletion inside the shared settings dialog", async () => {
-    const api = createApi();
-    Object.defineProperty(window, "wuu", { configurable: true, value: api });
-    root = createRoot(container);
-    act(() => root?.render(<ChannelView section="agents" />));
-    await settle();
-
-    const settingsButton = container.querySelector<HTMLButtonElement>('.channel-agent-directory-row button[aria-label="编辑 Agent"]');
-    act(() => settingsButton?.click());
-    expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("编辑 Agent");
-    expect(container.querySelector('button[aria-label="删除 Agent"]')).toBeNull();
-
-    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const deleteButton = document.querySelector<HTMLButtonElement>(".channel-form-danger-row button.danger");
-    expect(deleteButton?.textContent).toBe("删除 Agent");
-    await act(async () => deleteButton?.click());
-    expect(confirmDelete).toHaveBeenCalledWith("删除“Alpha”？该 Agent 将从所有频道移除，其保存的状态也会被删除。");
-    expect(api.deleteNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
-  });
-
-  it("resets an agent from the shared settings dialog", async () => {
-    const api = createApi();
-    Object.defineProperty(window, "wuu", { configurable: true, value: api });
-    root = createRoot(container);
-    act(() => root?.render(<ChannelView section="agents" />));
-    await settle();
-
-    const settingsButton = container.querySelector<HTMLButtonElement>('.channel-agent-directory-row button[aria-label="编辑 Agent"]');
-    act(() => settingsButton?.click());
-
-    const confirmReset = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const resetButton = document.querySelector<HTMLButtonElement>(".channel-form-danger-row button:not(.danger)");
-    expect(resetButton?.textContent).toBe("重置 Agent");
-    await act(async () => resetButton?.click());
-
-    expect(confirmReset).toHaveBeenCalledWith("重置“Alpha”？这会停止当前执行并清空 Agent 的会话上下文；收件箱、长期记忆和 Agent 配置会保留。");
-    expect(api.resetNamedAgent).toHaveBeenCalledWith({ agent_id: "agent-1" });
-    expect(document.querySelector('[role="status"]')?.textContent).toBe("已请求重置，Agent 正在停止当前执行并清空会话上下文。");
   });
 
   it("keeps invalid avatar feedback beside the avatar control", async () => {

@@ -1108,19 +1108,6 @@ export function ChannelView({ initialized, section = "rooms", archivedRoomIDs = 
     }
   }
 
-  function editAgent(agent: NamedAgent): void {
-    if (selectedAgentID && selectedAgentID !== agent.id) {
-      void saveAgentDetails(selectedAgentID, agentDetailDraftRef.current);
-    }
-    if (selectedAgentID === agent.id) {
-      setEditingAgentID(agent.id);
-      setSetupPanel("agent");
-      return;
-    }
-    loadAgentDraft(agent);
-    setSetupPanel("agent");
-  }
-
   function loadAgentDraft(agent: NamedAgent): void {
     setEditingAgentID(agent.id);
     setAgentName(agent.name);
@@ -1694,7 +1681,6 @@ export function ChannelView({ initialized, section = "rooms", archivedRoomIDs = 
                   <button className="channel-directory-identity channel-agent-directory-identity" type="button" aria-current={selectedAgentID === agent.id ? "page" : undefined} onClick={() => selectAgentDetails(agent)}>
                     <span><strong>{agent.name}</strong><small>{model} · {t("channels.agentRoomCount", { count: roomCount })}</small></span>
                   </button>
-                  <button className="icon-button channel-directory-settings" type="button" aria-label={t("channels.editAgent")} onClick={() => editAgent(agent)}><Settings2 className="icon" /></button>
                 </div>
               );
             })}
