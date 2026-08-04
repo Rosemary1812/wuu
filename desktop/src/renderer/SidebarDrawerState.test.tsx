@@ -51,7 +51,6 @@ async function renderSidebarDrawerState({
       appShellRef,
       sidebarCollapsed: true,
       resizingSidebar: false,
-      activeSessionTabID: "session-a",
       motionMs: 120,
       closeOnWindowResize,
     });

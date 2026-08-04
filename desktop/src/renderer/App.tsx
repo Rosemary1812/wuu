@@ -486,7 +486,6 @@ export function App(): JSX.Element {
     appShellRef,
     sidebarCollapsed: sidebarDrawerMode,
     resizingSidebar,
-    activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
     dockingMotionMs: SIDEBAR_MOTION_MS,
   });
@@ -658,7 +657,6 @@ export function App(): JSX.Element {
     if (!rightPanelGlobalized) {
       return;
     }
-    closeSidebarDrawer();
     setRightPanelManualGlobalized(false);
     if (!rightPanelAutoGlobalized) {
       return;
@@ -671,7 +669,6 @@ export function App(): JSX.Element {
       toggleSidebar();
     }
   }, [
-    closeSidebarDrawer,
     rightPanelAutoGlobalized,
     rightPanelGlobalized,
     setRightPanelOpenWithMotion,
@@ -2845,7 +2842,6 @@ export function App(): JSX.Element {
     setCodexRuntimeMenu(null);
     setEnvironmentPanelOpen(false);
     setRightPanelOpenWithMotion(false);
-    closeSidebarDrawer();
   }
 
   function selectChannelRoom(roomID: string): void {
@@ -4112,13 +4108,11 @@ export function App(): JSX.Element {
           // drag-to-collapse resize session, same toggle motion — so both
           // shells behave identically. The drawer controller runs
           // independently inside the settings shell (its own ref + phase)
-          // and uses the active conversation as its sync key, mirroring how
-          // the main view resets on session-tab swap.
+          // so settings navigation can stay visible until pointer exit.
           sidebarCollapsed={sidebarCollapsed}
           sidebarAnimating={sidebarAnimating}
           onToggleSidebar={toggleSidebar}
           sidebarMotionMs={SIDEBAR_MOTION_MS}
-          activeSessionTabID={activeThreadID ?? ""}
           onBack={() => {
             setSettingsOpen(false);
           }}

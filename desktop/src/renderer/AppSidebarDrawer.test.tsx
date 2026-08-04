@@ -604,33 +604,8 @@ describe("collapsed sidebar hover drawer", () => {
 
     expect(appShell()?.classList.contains("right-panel-open")).toBe(false);
     expect(appShell()?.classList.contains("right-panel-globalized")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
-  });
-
-  it("closes the drawer after a session switch when the pointer no longer hovers it", async () => {
-    installWuuApi([
-      threadFixture(
-        "thread-active",
-        "Already open session",
-        "2026-01-02T00:00:00Z",
-      ),
-      threadFixture(
-        "thread-target",
-        "Session from hover drawer",
-        "2026-01-01T00:00:00Z",
-      ),
-    ]);
-    await renderCollapsedApp();
-    await openDrawerViaHoverZone();
-
-    await clickSidebarSession("Session from hover drawer", {
-      pointerTarget: document.body,
-    });
-
-    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
-    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
-      true,
-    );
   });
 
   it("clears mouse-click focus when a session switch drawer closes after pointer exit", async () => {

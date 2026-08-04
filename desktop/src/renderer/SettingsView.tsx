@@ -138,15 +138,11 @@ export function SettingsView({
   onUnarchiveRoom,
   // The settings rail shares the main sidebar's state and handlers wholesale:
   // same persisted width + collapse flag, same drag-to-collapse resize
-  // session, same toggle motion. `activeSessionTabID` is forwarded so the
-  // drawer hook can reset its hover-open state when the user navigates
-  // between settings pages, mirroring how the main view resets on session
-  // tab swap.
+  // session, same toggle motion.
   sidebarCollapsed,
   sidebarAnimating,
   onToggleSidebar,
   sidebarMotionMs,
-  activeSessionTabID = "",
 }: {
   initialized?: InitializeResult;
   initialPage?: SettingsPage;
@@ -185,7 +181,6 @@ export function SettingsView({
   sidebarAnimating: boolean;
   onToggleSidebar: () => void;
   sidebarMotionMs: number;
-  activeSessionTabID?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const providers = initialized?.providers ?? [];
@@ -699,9 +694,8 @@ export function SettingsView({
   // Mirror the main view's sidebar collapse/hover logic so the settings shell
   // behaves the same way: a persistent `sidebarCollapsed` flag hides the rail
   // and only the left-edge hover zone + the toggle button can reopen it as a
-  // drawer overlay. `activePage` is used as the sync key so navigating between
-  // settings pages resets any in-flight hover timer, just like switching
-  // session tabs in the main view.
+  // drawer overlay. Navigating between settings pages does not close it;
+  // pointer exit and window-level dismissal remain the close signals.
   const fallbackShellRef = useRef<HTMLDivElement>(null);
   const effectiveShellRef = shellRef ?? fallbackShellRef;
   const {
@@ -715,7 +709,6 @@ export function SettingsView({
     appShellRef: effectiveShellRef,
     sidebarCollapsed,
     resizingSidebar,
-    activeSessionTabID: activeSessionTabID || activePage,
     motionMs: SIDEBAR_DRAWER_EXIT_MS,
     dockingMotionMs: SIDEBAR_MOTION_MS,
     closeOnWindowResize: true

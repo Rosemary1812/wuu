@@ -36,7 +36,6 @@ export function useSidebarDrawerState({
   appShellRef,
   sidebarCollapsed,
   resizingSidebar,
-  activeSessionTabID,
   motionMs,
   dockingMotionMs = motionMs,
   hoverOpenDelayMs = SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS,
@@ -45,7 +44,6 @@ export function useSidebarDrawerState({
   appShellRef: RefObject<HTMLDivElement | null>;
   sidebarCollapsed: boolean;
   resizingSidebar: boolean;
-  activeSessionTabID: string;
   motionMs: number;
   dockingMotionMs?: number;
   hoverOpenDelayMs?: number;
@@ -60,7 +58,6 @@ export function useSidebarDrawerState({
   const sidebarPointerPositionRef = useRef<{ x: number; y: number } | null>(
     null,
   );
-  const sidebarDrawerSyncedSessionRef = useRef<string | undefined>(undefined);
   const sidebarDrawerSuppressedRef = useRef(false);
   const sidebarDrawerPointerLeaveTimerRef = useRef<number | undefined>(undefined);
   const sidebarWasCollapsedRef = useRef(sidebarCollapsed);
@@ -463,27 +460,6 @@ export function useSidebarDrawerState({
       active.blur();
     }
   }, [appShellRef, resizingSidebar, sidebarCollapsed]);
-
-  useEffect(() => {
-    const sessionID = activeSessionTabID;
-    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
-      sidebarDrawerSyncedSessionRef.current = sessionID;
-      return;
-    }
-    if (sidebarDrawerSyncedSessionRef.current === sessionID) {
-      return;
-    }
-    sidebarDrawerSyncedSessionRef.current = sessionID;
-    if (sidebarDrawerPointerHovered() === false) {
-      closeSidebarDrawer();
-    }
-  }, [
-    activeSessionTabID,
-    closeSidebarDrawer,
-    sidebarCollapsed,
-    sidebarDrawerPhase,
-    sidebarDrawerPointerHovered,
-  ]);
 
   useEffect(
     () => () => {
