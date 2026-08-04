@@ -4342,7 +4342,7 @@ html.resizing-workspace-terminal-split * {
 
 .codex-model-menu {
   display: flex;
-  width: 320px;
+  width: 280px;
   max-height: min(
     var(--floating-menu-available-height, 999px),
     400px,
