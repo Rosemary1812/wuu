@@ -59,7 +59,7 @@ export function ConversationSearchOverlay({
 
   return (
     <div
-      className={`conversation-search-overlay${state.closing ? " closing" : ""}`}
+      className={`app-modal-backdrop conversation-search-overlay${state.closing ? " closing" : ""}`}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();

@@ -118,6 +118,9 @@ describe("ConversationSearchOverlay", () => {
     });
     mountedRoots.push(root);
 
+    expect(container.querySelector(".conversation-search-overlay")?.classList).toContain(
+      "app-modal-backdrop",
+    );
     expect(container.querySelector(".conversation-search-status")).toBeNull();
     expect(
       container.querySelector(".conversation-search-input-wrap")?.nextElementSibling,

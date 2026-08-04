@@ -424,7 +424,7 @@ describe("ProjectList", () => {
     });
 
     const overlay = document.body.querySelector(
-      ".conversation-search-overlay.sidebar-name-dialog-overlay",
+      ".app-modal-backdrop.conversation-search-overlay.sidebar-name-dialog-overlay",
     );
     expect(overlay).not.toBeNull();
     expect(container.querySelector(".sidebar-name-dialog")).toBeNull();
@@ -512,7 +512,7 @@ describe("ProjectList", () => {
       });
 
       const overlay = document.body.querySelector(
-        ".conversation-search-overlay.sidebar-name-dialog-overlay",
+        ".app-modal-backdrop.conversation-search-overlay.sidebar-name-dialog-overlay",
       );
       expect(overlay).not.toBeNull();
       expect(container.querySelector(".sidebar-name-dialog")).toBeNull();

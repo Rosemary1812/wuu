@@ -137,7 +137,7 @@ export function Modal({
     .filter(Boolean)
     .join(" ");
 
-  const backdropClass = "modal-backdrop environment-modal-backdrop";
+  const backdropClass = "app-modal-backdrop modal-backdrop environment-modal-backdrop";
 
   const panelBody = (
     <>

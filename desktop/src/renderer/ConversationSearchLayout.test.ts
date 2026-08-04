@@ -6,11 +6,12 @@ const environmentCSS = readFileSync(
   resolve(__dirname, "styles/environment.css"),
   "utf-8",
 );
+const baseCSS = readFileSync(resolve(__dirname, "styles/base.css"), "utf-8");
 
-function cssRules(selector: string): string[] {
+function cssRules(selector: string, source = environmentCSS): string[] {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const matches = [
-    ...environmentCSS.matchAll(
+    ...source.matchAll(
       new RegExp(`^[ \\t]*${escapedSelector}\\s*\\{([\\s\\S]*?)\\n[ \\t]*\\}`, "gm"),
     ),
   ];
@@ -20,18 +21,18 @@ function cssRules(selector: string): string[] {
   return matches.map((match) => match[1] ?? "");
 }
 
-function cssRule(selector: string): string {
-  return cssRules(selector)[0] ?? "";
+function cssRule(selector: string, source = environmentCSS): string {
+  return cssRules(selector, source)[0] ?? "";
 }
 
 describe("conversation search shortcut layout", () => {
-  it("shares the standard modal backdrop instead of defining a heavier search blur", () => {
-    const sharedBackdrop = cssRule(".modal-backdrop,\n.conversation-search-overlay");
+  it("uses the standard modal backdrop infrastructure instead of a search-specific blur", () => {
+    const sharedBackdrop = cssRule(".app-modal-backdrop", baseCSS);
 
-    expect(sharedBackdrop).toMatch(/background:\s*var\(--env-modal-overlay-bg\)/);
+    expect(sharedBackdrop).toMatch(/background:\s*var\(--modal-backdrop-bg\)/);
     expect(sharedBackdrop).toMatch(/backdrop-filter:\s*blur\(3px\)/);
-    expect(cssRules(".conversation-search-overlay").at(-1)).not.toMatch(/backdrop-filter/);
-    expect(environmentCSS).not.toContain("--env-search-overlay-bg");
+    expect(cssRule(".conversation-search-overlay")).not.toMatch(/backdrop-filter/);
+    expect(environmentCSS).not.toContain("modal-overlay-bg");
   });
 
   it("keeps the two-pane dialog compact relative to the app window", () => {

@@ -133,7 +133,7 @@ export function SidebarNameDialog({
 
   return createPortal(
     <div
-      className={`conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}${closing ? " closing" : ""}${backgrounded ? " backgrounded" : ""}`}
+      className={`app-modal-backdrop conversation-search-overlay sidebar-name-dialog-overlay${variant === "drawer" ? " sidebar-name-dialog-overlay-drawer" : ""}${closing ? " closing" : ""}${backgrounded ? " backgrounded" : ""}`}
       onPointerDown={handleOverlayPointerDown}
     >
       <form

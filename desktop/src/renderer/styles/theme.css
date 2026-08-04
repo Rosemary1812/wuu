@@ -61,6 +61,7 @@
   --ink-overlay-8: rgba(220, 228, 235, 0.09);
   --ink-overlay-12: rgba(220, 228, 235, 0.13);
   --ink-overlay-18: rgba(220, 228, 235, 0.2);
+  --modal-backdrop-bg: rgba(0, 0, 0, 0.5);
 
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
@@ -217,7 +218,6 @@
   --env-deletions-text: #f0705f;
   --env-archive-confirm-bg: rgba(240, 112, 95, 0.15);
   --env-create-branch-btn-bg: var(--surface-2);
-  --env-modal-overlay-bg: rgba(0, 0, 0, 0.5);
   --env-search-input-text: var(--ink-soft);
   --env-search-input-placeholder: var(--ink-muted);
   --env-search-clear-btn-text: var(--ink-soft);

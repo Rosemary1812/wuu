@@ -8,7 +8,6 @@
   --env-deletions-text: #c42020;
   --env-archive-confirm-bg: rgba(184, 79, 53, 0.1);
   --env-create-branch-btn-bg: var(--surface-2);
-  --env-modal-overlay-bg: rgba(38, 42, 46, 0.24);
   --env-search-input-text: var(--ink-soft);
   --env-search-input-placeholder: var(--ink-muted);
   --env-search-clear-btn-text: var(--ink-soft);
@@ -734,13 +733,6 @@
   border-radius: var(--radius-sm);
   background: var(--env-create-branch-btn-bg);
   padding: 0;
-}
-
-.modal-backdrop,
-.conversation-search-overlay {
-  background: var(--env-modal-overlay-bg);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
 }
 
 .modal-backdrop {
