@@ -33,6 +33,7 @@
           "pages": [
             "zh-cn/desktop/subagents.md",
             "zh-cn/reference/agent-command-system.md",
+            "zh-cn/reference/cli-commands.md",
             "zh-cn/reference/security-model.md"
           ]
         },
