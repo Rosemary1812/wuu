@@ -114,13 +114,12 @@ describe("RuntimePicker", () => {
     expect(slider?.value).toBe("2");
     expect(menu?.textContent).toContain("Medium");
 
-    // One segment per supported effort level inside the capsule, current
-    // level marked; the inked fill covers the segments up to the selection.
-    expect(menu?.querySelectorAll(".codex-effort-mark")).toHaveLength(4);
-    expect(
-      menu?.querySelector(".codex-effort-mark.selected .codex-effort-mark-label")?.textContent
-    ).toBe("Medium");
-    // Segment dividers split the capsule into one chunk per level.
+    // The capsule is a bare pill: no level text on it — the heading above
+    // live-shows the current level, and hairline dividers split the stops
+    // into one chunk per level.
+    expect(menu?.querySelector(".codex-effort-marks")).toBeNull();
+    expect(menu?.querySelector(".codex-effort-mark")).toBeNull();
+    expect(menu?.querySelector(".codex-effort-current")?.textContent).toBe("Medium");
     expect(menu?.querySelectorAll(".codex-effort-divider")).toHaveLength(3);
     const wrap = menu?.querySelector<HTMLElement>(".codex-effort-slider-wrap");
     expect(wrap?.style.getPropertyValue("--effort-slider-fill")).toBe("75%");

@@ -365,13 +365,13 @@ function RuntimeModelMenu({
   );
 }
 
-// Draggable reasoning-effort slider rendered as a capsule: the inked fill
-// swallows whole segments and the level labels live inside the track, so the
-// control reads as one pill instead of a rail with footnotes. The thumb
-// snaps to the discrete levels the model supports; dragging previews the
-// level in the heading above, and the commit fires once on release (or on a
-// keyboard step) instead of once per intermediate position, so tuning never
-// spams the runtime stream.
+// Draggable reasoning-effort slider rendered as a bare capsule: the inked
+// fill swallows whole segments, hairline dividers split the stops, and the
+// pill carries no level text — the heading above live-shows the current
+// level while dragging. The thumb snaps to the discrete levels the model
+// supports, and the commit fires once on release (or on a keyboard step)
+// instead of once per intermediate position, so tuning never spams the
+// runtime stream.
 function EffortSlider({
   options,
   selectedVariant,
@@ -434,10 +434,7 @@ function EffortSlider({
   const maxed = displayIndex === options.length - 1;
 
   return (
-    <div
-      className={`codex-effort-slider-wrap${options.length >= 7 ? " dense" : ""}`}
-      style={capsuleStyle}
-    >
+    <div className="codex-effort-slider-wrap" style={capsuleStyle}>
       <div ref={capsuleRef} className={`codex-effort-capsule${maxed ? " maxed" : ""}`}>
         <span className="codex-effort-capsule-fill" aria-hidden="true" />
         <div className="codex-effort-dividers" aria-hidden="true">
@@ -485,26 +482,8 @@ function EffortSlider({
           }}
         />
       </div>
-      <div className="codex-effort-marks" aria-hidden="true">
-        {options.map((variant, index) => (
-          <span
-            key={variant || "default"}
-            className={`codex-effort-mark${index === displayIndex ? " selected" : ""}`}
-            style={{ left: `${((index + 0.5) / options.length) * 100}%`, maxWidth: `${100 / options.length}%` }}
-          >
-            <span className="codex-effort-mark-label">{effortStopLabel(variant)}</span>
-          </span>
-        ))}
-      </div>
     </div>
   );
-}
-
-// Tick labels sit in the strip's tight slots, so the one long level name
-// keeps its canonical compact spelling; everything else uses the full
-// variantLabel text, matching the heading and the trigger.
-function effortStopLabel(variant: string): string {
-  return variant === "xhigh" ? "XHigh" : variantLabel(variant);
 }
 
 type RuntimeModelOption = {

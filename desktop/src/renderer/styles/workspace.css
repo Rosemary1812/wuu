@@ -4402,8 +4402,8 @@ html.resizing-workspace-terminal-split * {
    dividers. The inked fill swallows the segments up to and including the
    current level, and an oversized paper pearl sits on the current segment —
    taller than the capsule itself, so the control reads as draggable at a
-   glance. Level labels live below the capsule, each centered on its own
-   segment (segment-center alignment keeps even the end labels inside). */
+   glance. The pill itself carries no level text: the heading above
+   live-shows the current level while dragging. */
 .codex-effort-capsule {
   position: relative;
   height: 22px;
@@ -4511,42 +4511,6 @@ html.resizing-workspace-terminal-split * {
   .codex-effort-capsule-sheen::before {
     animation: none;
   }
-}
-
-.codex-effort-marks {
-  position: relative;
-  height: 13px;
-  margin: 8px 0 0;
-  pointer-events: none;
-}
-
-.codex-effort-mark {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-}
-
-.codex-effort-mark-label {
-  display: block;
-  overflow: hidden;
-  max-width: 100%;
-  color: var(--codex-runtime-effort-text);
-  font-size: 10px;
-  font-weight: var(--weight-medium);
-  line-height: 13px;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color var(--motion-fast) var(--menu-enter-easing);
-}
-
-.codex-effort-slider-wrap.dense .codex-effort-mark-label {
-  font-size: 9.5px;
-}
-
-.codex-effort-mark.selected .codex-effort-mark-label {
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
 }
 
 /* The real control, stretched over the capsule: invisible but fully
