@@ -4381,7 +4381,7 @@ html.resizing-workspace-terminal-split * {
 .codex-effort-section {
   flex: 0 0 auto;
   margin: 6px -6px -6px;
-  padding: 10px 14px 12px;
+  padding: 10px 15px 12px;
   border-top: 1px solid var(--menu-border);
   background: var(--menu-bg);
 }
@@ -4407,7 +4407,7 @@ html.resizing-workspace-terminal-split * {
 .codex-effort-capsule {
   position: relative;
   height: 22px;
-  margin: 5px 15px 0;
+  margin: 5px 0 0;
   border-radius: 999px;
   background: var(--ink-overlay-6);
 }
