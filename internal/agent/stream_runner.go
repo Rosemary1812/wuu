@@ -100,6 +100,9 @@ type StreamRunner struct {
 	// during model streaming (before the full response arrives). Off by default
 	// until stabilized.
 	StreamingToolExecution bool
+	// ToolInterrupt cancels the current tool batch without canceling the turn.
+	// The next model round can then consume messages injected by BeforeStep.
+	ToolInterrupt <-chan struct{}
 
 	// BeforeStep, when set, is called at the start of each model
 	// round right before building the provider request. Any returned
@@ -283,6 +286,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		CompactKeepRecentTokens:  r.CompactKeepRecentTokens,
 		ForceInitialCompact:      r.ForceInitialCompact,
 		CompactOnly:              r.CompactOnly,
+		ToolInterrupt:            r.ToolInterrupt,
 		BeforeStep:               beforeStep,
 		BeforeRequestContext:     r.BeforeRequestContext,
 		BeforeRequest:            r.BeforeRequest,

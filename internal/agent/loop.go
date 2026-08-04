@@ -635,7 +635,14 @@ func RunToolLoop(
 		}
 		toolRuntime.SetStepIndex(stepIdx)
 		toolRuntime.SetResultCallback(cfg.OnToolResultDetail)
-		orderedToolMessages, toolErr := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult, cfg.OnToolBatchRejected)
+		orderedToolMessages, toolErr := executeFinalToolCalls(
+			toolCtx,
+			toolRuntime,
+			result.ToolCalls,
+			cfg.OnToolResult,
+			cfg.OnToolBatchRejected,
+			cfg.ToolInterrupt,
+		)
 		if toolErr != nil {
 			return LoopResult{
 				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
@@ -855,6 +862,41 @@ func repairLiveToolCallHistory(messages []providers.ChatMessage) ([]providers.Ch
 		return nil, false, err
 	}
 	return repaired, !reflect.DeepEqual(repaired, messages), nil
+}
+
+type finalToolCallResult struct {
+	messages []providers.ChatMessage
+	err      error
+}
+
+func executeFinalToolCalls(
+	ctx context.Context,
+	runtime *TurnToolRuntime,
+	calls []providers.ToolCall,
+	onResult func(providers.ToolCall, string),
+	onRejected func(ToolBatchRejectionInfo),
+	interrupt <-chan struct{},
+) ([]providers.ChatMessage, error) {
+	if interrupt == nil {
+		return runtime.ExecuteFinalCalls(ctx, calls, onResult, onRejected)
+	}
+	done := make(chan finalToolCallResult, 1)
+	go func() {
+		messages, err := runtime.ExecuteFinalCalls(ctx, calls, onResult, onRejected)
+		done <- finalToolCallResult{messages: messages, err: err}
+	}()
+	select {
+	case result := <-done:
+		return result.messages, result.err
+	case <-interrupt:
+		runtime.Cancel()
+		result := <-done
+		return result.messages, result.err
+	case <-ctx.Done():
+		runtime.Cancel()
+		result := <-done
+		return result.messages, result.err
+	}
 }
 
 func newMessagesForReturn(messages []providers.ChatMessage, startLen int, historyRewritten bool) []providers.ChatMessage {

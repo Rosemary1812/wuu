@@ -91,6 +91,7 @@ type threadState struct {
 	executionLease         *session.ThreadExecutionLease
 	admissionReserved      bool
 	pendingSteers          []providers.ChatMessage
+	steerWake              chan struct{}
 	activeSteerDocument    *ActiveDocument
 	activeSteerContextSet  bool
 	steerDocumentOverrides []activeDocumentOverride

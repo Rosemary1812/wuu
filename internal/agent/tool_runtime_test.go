@@ -519,6 +519,28 @@ func TestTurnToolRuntime_StreamingErrorDoesNotExecuteAgain(t *testing.T) {
 	}
 }
 
+func TestTurnToolRuntime_CancelPreventsFinalRunFromStarting(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{}
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
+	runtime.Cancel()
+
+	msgs, err := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+		{ID: "canceled", Name: "read_file", Arguments: `{"path":"a.go"}`},
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute canceled final call: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].ToolCallID != "canceled" || !strings.Contains(msgs[0].Content, "context canceled") {
+		t.Fatalf("expected paired cancellation result, got %+v", msgs)
+	}
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("canceled runtime executed tools: %+v", calls)
+	}
+}
+
 func TestTurnToolRuntime_CancelsStreamingRunsMissingFromFinalCalls(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

@@ -357,6 +357,7 @@ func (th *threadState) releaseTurnExecutionLocked(turnID string) {
 	th.runningProviderName = ""
 	th.runningModel = ""
 	th.cancel = nil
+	th.steerWake = nil
 	th.activeSteerDocument = nil
 	th.activeSteerContextSet = false
 	th.steerDocumentOverrides = nil

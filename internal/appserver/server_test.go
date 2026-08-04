@@ -5696,7 +5696,6 @@ func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 		t.Fatalf("unexpected steer result: %+v", steerResult)
 	}
 
-	close(blockingTool.release)
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
 	completed := remarshal[TurnCompletedNotification](t, notificationByMethodForThread(t, msgs, NotificationTurnCompleted, threadID)["params"])
 	var foundItem bool
@@ -5725,6 +5724,16 @@ func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 	}
 	if !foundSteerInSecondRequest {
 		t.Fatalf("second provider request missing steer: %+v", requests[1].Messages)
+	}
+	var foundCanceledToolResult bool
+	for _, msg := range requests[1].Messages {
+		if msg.Role == "tool" && msg.ToolCallID == "call_1" && strings.Contains(msg.Content, "context canceled") {
+			foundCanceledToolResult = true
+			break
+		}
+	}
+	if !foundCanceledToolResult {
+		t.Fatalf("second provider request missing canceled tool result: %+v", requests[1].Messages)
 	}
 
 	persisted, err := loadChatMessages(rt.SessionDir, threadID)

@@ -698,6 +698,7 @@ func (s *Server) handleTurnSteer(req Request) error {
 	steerMsg.Steered = true
 	removedQueued := s.removeQueuedUserTurn(params.ThreadID, clientID)
 	th.pendingSteers = append(th.pendingSteers, steerMsg)
+	th.signalSteerWakeLocked()
 	steerDocument := params.ActiveDocument
 	if isHeld {
 		steerDocument = removedTurn.snapshot.ActiveDocument
@@ -718,6 +719,26 @@ func (s *Server) handleTurnSteer(req Request) error {
 		s.notifyHeldUserTurns(params.ThreadID, remaining)
 	}
 	return s.writeResponse(req.ID, TurnSteerResult{TurnID: turnID}, nil)
+}
+
+func (th *threadState) signalSteerWakeLocked() {
+	if th.steerWake == nil {
+		th.steerWake = make(chan struct{}, 1)
+	}
+	select {
+	case th.steerWake <- struct{}{}:
+	default:
+	}
+}
+
+func (th *threadState) drainSteerWakeLocked() {
+	if th.steerWake == nil {
+		return
+	}
+	select {
+	case <-th.steerWake:
+	default:
+	}
 }
 
 func (s *Server) steerAgentCompletion(threadID, resultID string, msg providers.ChatMessage) bool {
@@ -1757,11 +1778,16 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	}
 	turnWorktreePath := ""
 	var frozenTreeContext []agent.ContextSegment
+	var steerWake <-chan struct{}
 	if th != nil {
 		th.mu.Lock()
 		turnWorktreePath = strings.TrimSpace(th.WorktreePath)
 		frozenTreeContext = th.frozenTreeContext
 		th.frozenTreeContext = nil
+		if th.steerWake == nil {
+			th.steerWake = make(chan struct{}, 1)
+		}
+		steerWake = th.steerWake
 		th.mu.Unlock()
 	}
 	if len(frozenTreeContext) > 0 {
@@ -1770,6 +1796,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	baseTurnTools := runner.Tools
 	baseForceInitialCompact := runner.ForceInitialCompact
 	baseCompactOnly := runner.CompactOnly
+	baseToolInterrupt := runner.ToolInterrupt
 	baseBeforeStep := runner.BeforeStep
 	baseBeforeRequestContext := runner.BeforeRequestContext
 	baseOnRequestContext := runner.OnRequestContext
@@ -1783,6 +1810,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			runner.Tools = baseTurnTools
 			runner.ForceInitialCompact = baseForceInitialCompact
 			runner.CompactOnly = baseCompactOnly
+			runner.ToolInterrupt = baseToolInterrupt
 			runner.BeforeStep = baseBeforeStep
 			runner.BeforeRequestContext = baseBeforeRequestContext
 			runner.OnRequestContext = baseOnRequestContext
@@ -1793,6 +1821,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		})
 	}
 	defer restoreRunner()
+	runner.ToolInterrupt = steerWake
 	// Fork-to-worktree step 5: bind the thread's isolated checkout into the
 	// tool execution context. All turn variants funnel through here, so a
 	// worktree-bound thread's file/shell tools switch their execution CWD to
@@ -1967,6 +1996,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		}
 		th.mu.Lock()
 		steers, batch := th.takePendingSteersLocked(turnID, time.Now().UTC())
+		th.drainSteerWakeLocked()
 		th.mu.Unlock()
 		notifyBatch(batch)
 		for _, steer := range steers {
