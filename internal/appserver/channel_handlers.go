@@ -81,9 +81,6 @@ func (s *Server) handleChannelAgentUpdate(ctx context.Context, req Request) erro
 		return s.writeResponse(req.ID, nil, err)
 	}
 	thread := s.thread(namedAgentSessionID(current))
-	if thread != nil && threadIsRunning(thread) {
-		return s.writeResponse(req.ID, nil, errors.New("named agent cannot be edited while it is running"))
-	}
 	agent, err := s.channelService.UpdateNamedAgent(ctx, channels.UpdateNamedAgentParams{
 		ID: params.AgentID, Name: params.Name, AvatarKey: params.AvatarKey, AvatarImage: params.AvatarImage, ProviderOverride: params.ProviderOverride, ModelOverride: params.ModelOverride, EffortOverride: params.EffortOverride,
 	})
@@ -96,14 +93,25 @@ func (s *Server) handleChannelAgentUpdate(ctx context.Context, req Request) erro
 		if agent.EffortOverride != "" {
 			selection.Effort = agent.EffortOverride
 		}
+		var detached detachedThreadRuntime
 		thread.mu.Lock()
-		oldRuntime := thread.execRuntime
-		thread.execRuntime = nil
+		runtimeConfigChanged := current.Name != agent.Name ||
+			thread.ModelProvider != strings.TrimSpace(selection.Provider) ||
+			thread.Model != strings.TrimSpace(selection.Model) ||
+			thread.ModelVariant != strings.TrimSpace(selection.Variant) ||
+			thread.ModelEffort != strings.TrimSpace(selection.Effort)
 		thread.Title = agent.Name
 		applyThreadRuntimeSelection(thread, selection)
+		if runtimeConfigChanged && thread.execRuntime != nil {
+			if thread.running || threadRuntimeHasOutstandingWork(thread.ID, thread.execRuntime) {
+				thread.pendingRuntimeReset = true
+			} else {
+				detached = detachThreadRuntimeLocked(thread)
+			}
+		}
 		thread.mu.Unlock()
-		if oldRuntime != nil {
-			releaseDetachedThreadRuntime(detachedThreadRuntime{runtime: oldRuntime})
+		if detached.runtime != nil || detached.subscription != nil {
+			releaseDetachedThreadRuntime(detached)
 		}
 		if s.rt != nil {
 			_, _ = session.UpdateTitle(s.rt.SessionDir, thread.ID, agent.Name)

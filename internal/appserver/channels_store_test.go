@@ -68,6 +68,50 @@ func TestChannelAgentRPCPersistsEffortOverride(t *testing.T) {
 	}
 }
 
+func TestChannelAgentUpdateDefersRunningRuntimeReset(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(t.TempDir(), ".wuu")
+	attachNamedAgentTestToolkit(t, rt)
+	out := &lockedBuffer{}
+	server := NewWithCredentialStore(rt, out, nil, nil)
+	t.Cleanup(server.Close)
+
+	var created ChannelAgentCreateResult
+	callChannelRPC(t, server, out, MethodChannelAgentCreate, ChannelAgentCreateParams{Name: "Reasoner"}, &created)
+	thread, err := server.ensureNamedAgentThreadLocked(created.Agent)
+	if err != nil {
+		t.Fatalf("ensureNamedAgentThreadLocked() error = %v", err)
+	}
+	originalRuntime := thread.execRuntime
+	thread.mu.Lock()
+	thread.running = true
+	thread.mu.Unlock()
+
+	var updated ChannelAgentUpdateResult
+	callChannelRPC(t, server, out, MethodChannelAgentUpdate, ChannelAgentUpdateParams{
+		AgentID: created.Agent.ID, Name: "Reasoner Next", ProviderOverride: "next-provider", ModelOverride: "next-model", EffortOverride: "high",
+	}, &updated)
+
+	thread.mu.Lock()
+	defer thread.mu.Unlock()
+	thread.running = false
+	if updated.Agent.ModelOverride != "next-model" || updated.Agent.EffortOverride != "high" {
+		t.Fatalf("updated agent = %#v", updated.Agent)
+	}
+	if thread.execRuntime != originalRuntime {
+		t.Fatal("running named agent runtime was replaced before the active turn completed")
+	}
+	if !thread.pendingRuntimeReset {
+		t.Fatal("running named agent update did not defer the runtime reset")
+	}
+	if thread.ModelProvider != "next-provider" || thread.Model != "next-model" || thread.ModelEffort != "high" {
+		t.Fatalf("thread selection = (%q, %q, %q)", thread.ModelProvider, thread.Model, thread.ModelEffort)
+	}
+	if thread.Title != "Reasoner Next" {
+		t.Fatalf("thread title = %q, want Reasoner Next", thread.Title)
+	}
+}
+
 func TestNamedAgentRuntimeSelectionAppliesModelAndEffortOverrides(t *testing.T) {
 	agent := channels.NamedAgent{ProviderOverride: "openai", ModelOverride: "gpt-reasoner", EffortOverride: "high"}
 	provider, model, effort := namedAgentModelSelection("default-provider", "default-model", "medium", agent)
