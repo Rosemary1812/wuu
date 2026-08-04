@@ -34,7 +34,8 @@ work that affects compatibility across shells.
 - Node.js: use Node 22 or newer; `.node-version` matches CI
 - Install repository dependencies: `make setup`
 - Start the desktop development path: `make dev`
-- Run the full local gate: `make ci`
+- Run the cross-platform local gate: `make ci`
+- On macOS, also run `make build-macos` when desktop packaging parity with CI is required
 
 See [the development guide](docs/en/project/development.md) for component commands,
 supported platforms, CI checks, architecture boundaries, and restart behavior.

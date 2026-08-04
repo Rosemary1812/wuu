@@ -42,7 +42,7 @@ xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.a
 - **项目和会话**：在不同仓库之间切换，跨工作区搜索会话，并恢复或派生之前的工作。
 - **文件、改动和终端**：浏览仓库、检查当前 Git diff、预览图片和文档、回看命令输出，不必离开应用。
 - **可见的 Agent 过程**：任务运行时可以看到工具调用、后台进程、委派工作和附件。
-- **不必折腾繁琐的配置文件**：模型服务、权限、技能、记忆和项目规则都可以直接在桌面端管理。
+- **不必折腾繁琐的配置文件**：可以在桌面端管理模型服务、权限、技能和记忆，并查看已加载的项目规则。
 - **开箱即用的完整 Agent 体验**：计划、持久目标、子 Agent、后台任务和持久会话都已内置，无需自行拼装。
 
 ## 开始使用
@@ -55,7 +55,7 @@ xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.a
 
 ## CLI
 
-桌面应用自带 core，不需要另行安装 CLI。如果要在脚本、CI 或非交互任务中使用 wuu，可以通过 Go 安装：
+桌面应用自带 core，不需要另行安装 CLI。如果要在脚本、CI 或非交互任务中使用 wuu，可以通过 Go 安装；模块当前声明使用 Go 1.26.5：
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest

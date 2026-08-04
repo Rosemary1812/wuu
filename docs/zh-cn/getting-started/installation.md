@@ -28,7 +28,7 @@ open /Applications/wuu.app
 
 ## 安装 CLI
 
-CLI 需要本机已有 Go。安装后检查版本：
+CLI 模块当前声明使用 Go 1.26.5。安装后检查版本：
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest

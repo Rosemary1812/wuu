@@ -26,7 +26,7 @@ Run from the repository root:
 | `make check` | Check Go modules/format/vet and TypeScript types |
 | `make test` | Run Go, desktop, remote-core, mobile, and macOS-native tests where supported |
 | `make build` | Build the Go CLI, Electron renderer/main, and mobile web export |
-| `make ci` | Run the same component checks used by required CI jobs |
+| `make ci` | Run the cross-platform check, test, and build gate |
 | `make release-check` | Check release versions and run the Go core and desktop test gates |
 
 Component commands are available when a full run is unnecessary:

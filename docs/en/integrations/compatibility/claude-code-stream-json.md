@@ -62,13 +62,11 @@ Every payload also has a `type` string. Fields listed are exactly the map keys p
 
 | Event `type` | Emit site | Fields |
 |---|---|---|
-| `session_configured` | `runner.go:434-453` (`emitSessionConfigured`, called `runner.go:93`) | `protocol_version`, `provider`, `model`, `effort`, `variant`, `workspace_root`, `permissions`, `tool_policy` |
+| `session_configured` | `emitSessionConfigured` | `protocol_version`, `provider`, `model`, `effort`, `variant`, `ultra`, `max_parallel`, `workspace_root`, `permissions` |
 | `thread_started` / `thread_resumed` / `thread_forked` | `runner.go:455-461` (`emitThreadEvent`); which one chosen at `runner.go:100-107` | `thread_id`, `model`, `provider`, `cwd` |
 | `turn_started` | `runner.go:463-469` | `thread_id`, `turn_id` |
 | `agent_message_delta` | `runner.go:298` | `thread_id`, `turn_id`, `delta` (token-level text; also accumulated into `finalMessage`, `runner.go:297`) |
 | `agent_message_final` | `runner.go:307` (from `AgentMessageReplace`) | `thread_id`, `turn_id`, `message` |
-| `reasoning_delta` | `runner.go:314` | `thread_id`, `turn_id`, `delta` |
-| `reasoning_final` | `runner.go:320` | `thread_id`, `turn_id`, `text` |
 | `tool_started` | `runner.go:474` (`emitItemStarted`) | `thread_id`, `turn_id`, `item_id`, `name`, `arguments` (a JSON **string**) |
 | `tool_output_delta` | `runner.go:339` | `thread_id`, `turn_id`, `item_id`, `delta` |
 | `tool_completed` | `runner.go:492` (`emitItemCompleted`) | `thread_id`, `turn_id`, `item_id`, `name`, `status`, `error` |
@@ -315,7 +313,7 @@ Legend: **=** direct map · **~** needs transform/synthesis · **wuu∅** wuu ha
 | `slash_commands[]`, `agents[]`, `skills[]`, `plugins[]`, `mcp_servers[]` | none at init | wuu∅ |
 | `apiKeySource`, `betas`, `claude_code_version`, `output_style`, `fast_mode_state` | none | wuu∅ (cc-specific) |
 | `session_id`, `uuid` | `thread_id` / none | ~ / wuu∅ |
-| — | `session_configured.provider`, `effort`, `variant`, `protocol_version`, `tool_policy` | cc∅ |
+| — | `session_configured.provider`, `effort`, `variant`, `ultra`, `max_parallel`, `protocol_version` | cc∅ |
 
 ### 3.3 Streaming content
 
@@ -323,7 +321,7 @@ Legend: **=** direct map · **~** needs transform/synthesis · **wuu∅** wuu ha
 |---|---|---|---|
 | Assistant text (incremental) | `agent_message_delta.delta` (`runner.go:298`) | `stream_event` w/ `content_block_delta` (`--include-partial-messages`) | ~ |
 | Assistant text (final/whole) | `agent_message_final.message` (`runner.go:307`) | `assistant.message.content[]` text blocks | ~ (cc ships a full API message; wuu ships plain text) |
-| Reasoning / thinking | `reasoning_delta` / `reasoning_final` (`runner.go:314,320`) | `assistant.message.content[]` `thinking` blocks (+ partial `stream_event`) | ~ |
+| Reasoning / thinking | intentionally omitted from the automation stream | `assistant.message.content[]` `thinking` blocks (+ partial `stream_event`) | wuu∅ |
 | Tool call start | `tool_started` (`runner.go:474`) | `tool_use` block inside `assistant.message.content[]` | ~ (event vs content block) |
 | Tool output (incremental) | `tool_output_delta` (`runner.go:339`) | none as text; final result only | ~ / cc∅ streaming |
 | Tool result (final) | `tool_completed` (`runner.go:492`) | `tool_result` block inside a `user` message | ~ |
@@ -417,9 +415,9 @@ alongside `emitJSON` (`runner.go:978`), keyed off a new `--output-format` value;
 |---|---|---|
 | `system/init` | `session_configured` + `thread_started` (`runner.go:93,106`) | Map `cwd`, `model`, `permissionMode`. Emit `session_id = thread_id`. Fill `tools[]`, `slash_commands[]`, `mcp_servers[]`, `agents[]` with empty arrays or best-effort (wuu doesn't list these at init — see §5.4). Constant `claude_code_version` placeholder, `apiKeySource:"none"`, `betas:[]`. |
 | `user` (prompt echo) | the `--json`-invisible prompt (wuu `TurnInput.Prompt`, `runner.go:123`) | Synthesize one `user` message with `message.content` = prompt text at `turn_started`. wuu currently emits nothing here. |
-| `assistant` | buffer `agent_message_delta` (`runner.go:298`) until `turn_completed`/`agent_message_final`; fold `tool_started` (`runner.go:474`) into `tool_use` content blocks; `reasoning_*` into `thinking` blocks | Reassemble an Anthropic-shaped `message.content[]`. Hard part below (§5.5). |
+| `assistant` | buffer `agent_message_delta` (`runner.go:298`) until `turn_completed`/`agent_message_final`; fold `tool_started` (`runner.go:474`) into `tool_use` content blocks | Reassemble an Anthropic-shaped `message.content[]`. Thinking blocks cannot be synthesized because wuu deliberately omits provider reasoning at the automation boundary. Hard part below (§5.5). |
 | `user` (tool results) | `tool_completed`/`command_completed` (`runner.go:492`) | Emit a `user` message with a `tool_result` block referencing the `tool_use` id. Requires stable id mapping wuu `item_id` → cc `tool_use_id`. |
-| `stream_event` | `agent_message_delta` / `reasoning_delta` | Only if the compat mode also opts into partial messages; wrap each delta as a `content_block_delta` raw event. Straightforward text-wise. |
+| `stream_event` | `agent_message_delta` | Only if the compat mode also opts into partial messages; wrap each text delta as a `content_block_delta` raw event. |
 | `result.subtype` + `result.result` + `is_error` | `result` (`runner.go:963,966`) | Map status→subtype (§5.2); `result.result = final_message`; `is_error = status != "completed"`. |
 | `result.structured_output` | `result.structured_result` (`runner.go:973`) | direct. |
 | `result.num_turns` | count emitted `turn_started` | derivable. |
@@ -485,13 +483,14 @@ tool results come back as `tool_result` blocks in a following `user` message. wu
 emits a flat sequence of token deltas plus separate `tool_started`/`tool_completed` events
 keyed by `item_id`. To synthesize cc's shape the compat writer must:
 
-- buffer deltas and split them into text vs thinking blocks (wuu already separates
-  `agent_message_*` from `reasoning_*`, so this part is tractable),
+- buffer text deltas into text blocks; thinking blocks cannot be reconstructed because
+  wuu omits provider reasoning from its automation stream,
 - convert each `tool_started` into a `tool_use` block with a generated/`item_id`-derived
   `id` and parse `arguments` (a JSON **string**, `runner.go:474`) back into an object,
 - pair each `tool_completed` with a `tool_result` user message referencing that id.
 
-This is mechanical for Anthropic-backed runs. For **non-Anthropic providers** (wuu is
+The text and tool-call conversion is mechanical for Anthropic-backed runs, but thinking
+content remains unavailable. For **non-Anthropic providers** (wuu is
 multi-provider — `--provider openai`, `gpt-5`, etc., `cmd/wuu/main.go:1411`; see
 `provider_state.provider`, `runner.go:920`) the reconstructed `message` is only *shaped
 like* an Anthropic message; block types, id formats, and reasoning representations won't

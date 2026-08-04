@@ -42,7 +42,7 @@ xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.a
 - **Projects and conversations** — switch between repositories, search conversations across workspaces, and resume or fork previous work.
 - **Files, changes, and terminals** — inspect the repository, review the current Git diff, preview images and documents, and revisit command output without leaving the app.
 - **A visual agent timeline** — follow tool calls, background processes, delegated work, and attachments as the task runs.
-- **No configuration-file busywork** — manage model providers, permissions, skills, memory, and project instructions directly from the desktop app.
+- **No configuration-file busywork** — manage model providers, permissions, skills, and memory from the desktop app, and inspect the project instructions it loaded.
 - **A complete agent experience out of the box** — plans, durable goals, subagents, background tasks, and persistent sessions are built in rather than left for you to assemble.
 
 ## Get started
@@ -55,7 +55,7 @@ See the [user guide](docs/en/getting-started/index.md) for provider setup, permi
 
 ## CLI
 
-The desktop app includes its own core and does not require a separate CLI. For scripts, CI, or non-interactive work, install `wuu` with Go:
+The desktop app includes its own core and does not require a separate CLI. For scripts, CI, or non-interactive work, install `wuu` with Go. The module currently declares Go 1.26.5:
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest

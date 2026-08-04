@@ -127,7 +127,7 @@ wuu exec --image screenshot.png "find the UI issue"
 Both flags are repeatable. `--file` currently accepts PDF files only. Relative
 attachment paths are resolved from `--workdir` when it is set, otherwise from
 the current directory. Attachments
-are sent as structured app-server `turn/start` fields, not pasted into the
+are sent as structured app-server `run/start` input fields, not pasted into the
 prompt.
 
 ## Output Modes

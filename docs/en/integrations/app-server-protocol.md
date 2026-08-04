@@ -63,8 +63,8 @@ The protocol version is reported by `initialize` as
 ```text
 initialize
 thread/start or thread/resume
-turn/start
-consume notifications until terminal turn state
+run/start
+consume turn notifications and run/updated until terminal run state
 shutdown
 ```
 
@@ -80,7 +80,7 @@ This is the common subset the text entrypoint exercises end-to-end. The full
 method table lives in `internal/appserver/protocol.go` (every method constant in
 the `Method*` block at the top of that file is a valid JSON-RPC method, with
 siblings like `config/read`, `config/model/update`, `config/general/update`,
-`config/advanced/update`, `config/codex-models`, `config/provider/remove`,
+`config/advanced/update`, `config/codex/models`, `config/provider/remove`,
 `skill/list`, runtime `goal/*` controls and active summary, the rest of the
 `thread/*` methods (`thread/list`, `thread/search`, `thread/pin`,
 `thread/archive`, `thread/edit-message`, `thread/context-composition`,
@@ -183,12 +183,23 @@ Starts a user turn with prompt text and optional attachments. The turn snapshots
 the target thread's persisted model and permission mode at admission. The
 legacy optional `permission_mode` request field must match the thread selection;
 clients change the selection through `config/model/update` before starting the
-turn rather than overriding one turn in isolation.
+turn rather than overriding one turn in isolation. Interactive shells use this
+single-turn interface; `wuu exec` uses `run/start` instead.
+
+`run/start`
+
+Starts the automation lifecycle used by `wuu exec`. The request identifies the
+thread, supplies the prompt and attachments, and may include an output schema.
+Clients consume the resulting `turn/*` notifications and wait for
+`run/updated` to report a terminal Run state.
 
 `turn/interrupt`
 
-Interrupts the active turn. `wuu exec` uses this for Ctrl+C and timeout
-cleanup.
+Interrupts the active turn for single-turn clients.
+
+`run/interrupt`
+
+Interrupts an active Run. `wuu exec` uses this for Ctrl+C and timeout cleanup.
 
 `shutdown`
 
@@ -276,6 +287,8 @@ stdout:
 - `thread/started`
 - `thread/resumed`
 - `thread/updated`
+- `run/started`
+- `run/updated`
 - `turn/started`
 - `turn/queued`
 - `turn/dequeued`
@@ -294,6 +307,10 @@ stdout:
 - `agent/updated`
 - `agent/mailbox`
 - `mcp/status/updated`
+
+Interactive clients may render the reasoning notifications. `wuu exec` receives
+them but deliberately omits their payloads from JSONL because providers do not
+reliably distinguish safe summaries from hidden chain-of-thought.
 
 ## Non-Interactive Client Requests
 

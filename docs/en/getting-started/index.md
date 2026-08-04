@@ -33,7 +33,7 @@ Do not run this command for an app downloaded from an untrusted source.
 
 ### CLI
 
-Install the CLI with Go:
+Install the CLI with Go. The module currently declares Go 1.26.5:
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
@@ -110,8 +110,8 @@ After confirming that wuu sees the right directory, give it one small task with 
 clear result, scope, constraints, and verification command. While it runs, follow
 the tool activity in the conversation. When it finishes:
 
-1. open **Files** or enter `/files` and confirm that only expected files changed;
-2. open **Review** or enter `/diff` and inspect the current Git diff;
+1. open **Files** or enter `/files` to browse or open the project files you need;
+2. open **Review** or enter `/diff` to confirm the changed-file set and inspect the current Git diff;
 3. confirm that the reported tests or build actually ran and passed;
 4. use **Terminal** or `/terminal` when you want to run an independent check.
 

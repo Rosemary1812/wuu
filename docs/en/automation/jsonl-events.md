@@ -76,6 +76,8 @@ Emitted after `initialize` succeeds.
   "protocol_version": "wuu-app-server/v0.1",
   "provider": "openai",
   "model": "gpt-5",
+  "ultra": false,
+  "max_parallel": 5,
   "workspace_root": "/repo",
   "permissions": {}
 }
@@ -83,7 +85,8 @@ Emitted after `initialize` succeeds.
 
 ### `thread_started`
 
-Emitted when a new persistent thread is created.
+Emitted when a new thread is created, including an ephemeral thread. This event
+does not indicate whether the thread is persisted.
 
 ```json
 {

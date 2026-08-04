@@ -46,8 +46,8 @@ wuu exec resume <thread-id> "继续这个会话"
 wuu exec fork <thread-id> "换一种方案尝试"
 ```
 
-`--continue` 是顶层快捷方式；指定会话要使用 `resume <thread-id>`，没有 `--resume`
-参数。`fork` 会保留原会话并创建一个新的分支会话。
+`--continue` 是顶层快捷方式；指定会话既可以使用 `resume <thread-id>`，也可以使用
+`-r <thread-id>` 或 `--resume <thread-id>`。`fork` 会保留原会话并创建一个新的分支会话。
 
 ## 输出 JSONL
 
