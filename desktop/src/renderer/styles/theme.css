@@ -218,7 +218,6 @@
   --env-archive-confirm-bg: rgba(240, 112, 95, 0.15);
   --env-create-branch-btn-bg: var(--surface-2);
   --env-modal-overlay-bg: rgba(0, 0, 0, 0.5);
-  --env-search-overlay-bg: rgba(0, 0, 0, 0.5);
   --env-search-input-text: var(--ink-soft);
   --env-search-input-placeholder: var(--ink-muted);
   --env-search-clear-btn-text: var(--ink-soft);

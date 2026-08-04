@@ -25,6 +25,15 @@ function cssRule(selector: string): string {
 }
 
 describe("conversation search shortcut layout", () => {
+  it("shares the standard modal backdrop instead of defining a heavier search blur", () => {
+    const sharedBackdrop = cssRule(".modal-backdrop,\n.conversation-search-overlay");
+
+    expect(sharedBackdrop).toMatch(/background:\s*var\(--env-modal-overlay-bg\)/);
+    expect(sharedBackdrop).toMatch(/backdrop-filter:\s*blur\(3px\)/);
+    expect(cssRules(".conversation-search-overlay").at(-1)).not.toMatch(/backdrop-filter/);
+    expect(environmentCSS).not.toContain("--env-search-overlay-bg");
+  });
+
   it("keeps the two-pane dialog compact relative to the app window", () => {
     expect(cssRule(".conversation-search-dialog")).toMatch(
       /width:\s*min\(clamp\(560px,\s*58vw,\s*800px\),\s*calc\(100vw\s*-\s*24px\)\)/,
