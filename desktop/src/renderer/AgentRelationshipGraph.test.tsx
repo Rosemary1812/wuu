@@ -33,6 +33,7 @@ describe("AgentRelationshipGraph", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -132,7 +133,8 @@ describe("AgentRelationshipGraph", () => {
     expect(controls[1]?.textContent).toBe(`${Math.round(fittedScale * 100)}%`);
   });
 
-  it("highlights a focused agent without a floating card and opens details from the node", () => {
+  it("shows an agent snapshot on hover and opens details from the node", () => {
+    vi.useFakeTimers();
     const agents = [
       { id: "agent-1", name: "Galileo", avatar_key: "abstract-1", activity_status: "idle" },
       { id: "agent-2", name: "Qin", avatar_key: "abstract-2", activity_status: "thinking" },
@@ -173,8 +175,16 @@ describe("AgentRelationshipGraph", () => {
     ));
 
     const node = container.querySelector<SVGGElement>('[aria-label="Galileo"]')!;
-    act(() => node.focus());
-    expect(container.querySelector('[data-testid="channel-agent-preview-card"]')).toBeNull();
+    act(() => {
+      node.dispatchEvent(pointerEvent("pointerover", 0, 0));
+      vi.advanceTimersByTime(140);
+    });
+    const card = container.querySelector<HTMLElement>('[data-testid="channel-agent-preview-card"]')!;
+    expect(card).not.toBeNull();
+    expect(card.textContent).not.toContain("Galileo");
+    expect(card.textContent).toContain("gpt-5.2");
+    expect(card.textContent).toContain("TypeScript");
+    expect(card.textContent).toContain("386");
     expect(container.querySelectorAll(".channel-agent-graph-node.is-active").length).toBeGreaterThan(0);
     expect(container.querySelectorAll(".channel-agent-graph-links .is-active").length).toBeGreaterThan(0);
     act(() => node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
