@@ -165,28 +165,38 @@ func TestSummariesMatchProviderCompatForOpenAIProvider(t *testing.T) {
 	}
 }
 
-func TestSummariesMatchOfficialGPT56OpenAIEfforts(t *testing.T) {
-	tests := []struct {
-		model string
-		want  string
-	}{
-		{model: "gpt-5.6", want: "low,medium,high,xhigh,max"},
-		{model: "gpt-5.6-sol", want: "low,medium,high,xhigh,max,ultra"},
-		{model: "gpt-5.6-terra", want: "low,medium,high,xhigh,max,ultra"},
-		{model: "gpt-5.6-luna", want: "low,medium,high,xhigh,max"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			provider := config.ProviderConfig{Type: "openai", Model: tt.model}
-			variants := Summaries(provider, tt.model)
-			if got := strings.Join(variantIDs(variants), ","); got != tt.want {
+func TestSummariesIncludeMaxForGPT56OpenAIFallback(t *testing.T) {
+	for _, model := range []string{"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
+		t.Run(model, func(t *testing.T) {
+			provider := config.ProviderConfig{Type: "openai", Model: model}
+			variants := Summaries(provider, model)
+			if got := strings.Join(variantIDs(variants), ","); got != "none,low,medium,high,xhigh,max" {
 				t.Fatalf("variants = %q", got)
 			}
-			options, ok := Options(provider, tt.model, "max")
+			options, ok := Options(provider, model, "max")
 			if !ok || options["reasoningEffort"] != "max" {
 				t.Fatalf("max options = %#v, ok=%v", options, ok)
 			}
 		})
+	}
+}
+
+func TestSummariesUseDeclaredGPT56OpenAIEfforts(t *testing.T) {
+	reasoning := true
+	provider := config.ProviderConfig{
+		Type:  "openai",
+		Model: "gpt-5.6-sol",
+		Models: map[string]config.ProviderModelConfig{
+			"gpt-5.6-sol": {
+				Reasoning:        &reasoning,
+				SupportedEfforts: []string{"low", "medium", "high", "xhigh", "max", "ultra"},
+			},
+		},
+	}
+
+	variants := Summaries(provider, provider.Model)
+	if got := strings.Join(variantIDs(variants), ","); got != "low,medium,high,xhigh,max,ultra" {
+		t.Fatalf("variants = %q", got)
 	}
 }
 

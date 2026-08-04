@@ -279,6 +279,9 @@ func inferredOptionsForProvider(providerName string, provider config.ProviderCon
 		}
 		return compatVariantsFromEfforts(efforts, compatOpenAIProviderVariantOptions)
 	case compatNPMOpenAI, compatNPMBedrockMantle:
+		if efforts := modelReasoningEfforts(provider.Models[model]); len(efforts) > 0 {
+			return compatVariantsFromEfforts(efforts, compatOpenAIProviderVariantOptions)
+		}
 		return compatVariantsFromEfforts(compatReasoningEfforts(apiID, desc.ReleaseDate), compatOpenAIProviderVariantOptions)
 	case compatNPMAnthropic, compatNPMVertexAnthropic:
 		return compatAnthropicVariants(desc, adaptiveEfforts, true)
