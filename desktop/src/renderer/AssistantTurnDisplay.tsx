@@ -206,12 +206,13 @@ export function buildAssistantTurnDisplay(
 
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       const group: ThreadItem[] = [item];
+      const spawnBatch = item.name === "spawn_agent";
       let nextIndex = index + 1;
       while (
-        item.name !== "spawn_agent" &&
         nextIndex < turn.items.length &&
-        turn.items[nextIndex].type === "tool_call" &&
-        turn.items[nextIndex].name !== "spawn_agent"
+        (turn.items[nextIndex].type === "tool_call" ||
+          turn.items[nextIndex].type === "collab_agent_tool_call") &&
+        (turn.items[nextIndex].name === "spawn_agent") === spawnBatch
       ) {
         group.push(turn.items[nextIndex]);
         nextIndex++;

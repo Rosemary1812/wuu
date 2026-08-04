@@ -267,7 +267,11 @@ function MergedTurnGroupView({
 
 function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {
   const entries: TurnEntry[] = [];
-  const unresolvedSpawns: Array<{ entryIndex: number; aliases: string[] }> = [];
+  const spawnBatches: Array<{
+    entryIndex: number;
+    agents: Array<{ aliases: string[]; finished: boolean }>;
+    failed: boolean;
+  }> = [];
   const chips: SubagentChipDisplay[] = [];
   let hasAnswer = false;
   let latestProcessPreview: TurnProcessPreview | undefined;
@@ -278,32 +282,58 @@ function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {
     lastDisplay = display;
     for (const entry of display.entries) {
       if (isSpawnEntry(entry)) {
-        const { aliases, target } = spawnIdentity(entry.item);
+        const spawnItems = entry.items ?? [entry.item];
+        const identities = spawnItems.map(spawnIdentity);
+        const agents = identities.map((identity) => ({
+          aliases: identity.aliases,
+          finished: false,
+        }));
+        const singleTarget = identities[0]?.target ?? "";
         entries.push({
           ...entry,
           kind: "subagent_status",
-          subagentStatus: {
-            label: translateCurrent("toolActivity.subtaskTarget", { target }),
-            outcome: "updated",
-          },
+          subagentStatus:
+            agents.length === 1
+              ? {
+                  label: translateCurrent("toolActivity.subtaskTarget", {
+                    target: singleTarget,
+                  }),
+                  outcome: "updated",
+                }
+              : spawnBatchDisplay(agents.length, 0, false),
           turn,
         });
-        unresolvedSpawns.push({ entryIndex: entries.length - 1, aliases });
+        spawnBatches.push({
+          entryIndex: entries.length - 1,
+          agents,
+          failed: false,
+        });
         continue;
       }
       if (entry.kind === "subagent_status" && entry.subagentStatus) {
         const label = entry.subagentStatus.label;
-        const matchIndex = unresolvedSpawns.findIndex(({ aliases }) =>
-          aliases.some((alias) => alias.length > 0 && label.includes(alias)),
+        const unresolvedAgents = spawnBatches.flatMap((batch) =>
+          batch.agents.flatMap((agent) =>
+            agent.finished ? [] : [{ batch, agent }],
+          ),
         );
-        const resolvedIndex = matchIndex >= 0 ? matchIndex : unresolvedSpawns.length === 1 ? 0 : -1;
-        if (resolvedIndex >= 0) {
-          const [resolved] = unresolvedSpawns.splice(resolvedIndex, 1);
-          entries[resolved.entryIndex] = {
-            ...entries[resolved.entryIndex],
-            settled: true,
+        const matched = unresolvedAgents.find(({ agent }) =>
+          agent.aliases.some((alias) => alias.length > 0 && label.includes(alias)),
+        );
+        const resolved = matched ?? (unresolvedAgents.length === 1 ? unresolvedAgents[0] : undefined);
+        if (resolved) {
+          resolved.agent.finished = true;
+          resolved.batch.failed ||= entry.subagentStatus.outcome === "failed";
+          const finished = resolved.batch.agents.filter((agent) => agent.finished).length;
+          const total = resolved.batch.agents.length;
+          entries[resolved.batch.entryIndex] = {
+            ...entries[resolved.batch.entryIndex],
+            settled: finished === total,
             streaming: false,
-            subagentStatus: entry.subagentStatus,
+            subagentStatus:
+              total === 1
+                ? entry.subagentStatus
+                : spawnBatchDisplay(total, finished, resolved.batch.failed),
           };
           continue;
         }
@@ -340,11 +370,41 @@ function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {
 }
 
 function isSpawnEntry(entry: TurnEntry): boolean {
+  const items = entry.items ?? [entry.item];
   return (
-    (entry.item.type === "tool_call" ||
-      entry.item.type === "collab_agent_tool_call") &&
-    entry.item.name === "spawn_agent"
+    items.length > 0 &&
+    items.every(
+      (item) =>
+        (item.type === "tool_call" || item.type === "collab_agent_tool_call") &&
+        item.name === "spawn_agent",
+    )
   );
+}
+
+function spawnBatchDisplay(
+  total: number,
+  finished: number,
+  failed: boolean,
+): SubagentChipDisplay {
+  if (finished === 0) {
+    return {
+      label: translateCurrent("process.subagentsDispatched", { count: total }),
+      outcome: "updated",
+    };
+  }
+  if (finished < total) {
+    return {
+      label: translateCurrent("process.subagentsProgress", {
+        finished,
+        remaining: total - finished,
+      }),
+      outcome: "updated",
+    };
+  }
+  return {
+    label: translateCurrent("process.subagentsFinished", { count: total }),
+    outcome: failed ? "failed" : "completed",
+  };
 }
 
 function spawnIdentity(item: ThreadItem): { aliases: string[]; target: string } {

@@ -380,33 +380,104 @@ describe("TurnGroupView — awaiting between turns", () => {
     const statuses = Array.from(
       container.querySelectorAll<HTMLElement>(".turn-subagent-status"),
     );
-    expect(statuses.map((status) => status.textContent)).toEqual([
-      "first 完成了",
-      "子任务 second",
-    ]);
-    const completedStatus = statuses.find((status) =>
-      status.textContent?.includes("完成了"),
-    );
-    const liveWait = statuses.find((status) => status.textContent?.includes("子任务 second"));
+    expect(statuses).toHaveLength(1);
+    const liveWait = statuses[0];
     const wakeAnswer = Array.from(container.querySelectorAll(".agent-text")).find(
       (node) => node.textContent?.includes("第一个结果收到"),
     );
-    expect(liveWait?.textContent).toContain("子任务 second");
+    expect(liveWait?.textContent).toContain("1 个 subagent 已结束，仍在等待 1 个");
     expect(liveWait?.classList.contains("is-live-gray")).toBe(true);
     expect(
       container.querySelector(
         ".process-surface-row.is-live-gray:not(.turn-subagent-status)",
       ),
     ).toBeNull();
-    if (!completedStatus || !wakeAnswer || !liveWait) {
-      throw new Error("expected paired spawn statuses before the wake-up answer");
+    if (!wakeAnswer || !liveWait) {
+      throw new Error("expected the batched spawn status before the wake-up answer");
     }
-    expect(
-      completedStatus.compareDocumentPosition(wakeAnswer) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(
       liveWait.compareDocumentPosition(wakeAnswer) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(actionBars()).toHaveLength(0);
+  });
+
+  it("updates one three-agent batch row across asynchronous wake turns", async () => {
+    const parent = makeTurn("t1", [
+      userItem("并行审计"),
+      spawnItem("first"),
+      spawnItem("second"),
+      spawnItem("third"),
+      answerItem("等待并行结果。"),
+    ]);
+    mountGroup([parent], true);
+
+    const batchRow = container.querySelector<HTMLElement>(".turn-subagent-status");
+    expect(batchRow?.textContent).toBe("已派出 3 个 subagent");
+    expect(batchRow?.classList.contains("is-live-gray")).toBe(true);
+
+    const firstWake = makeTurn("t2", [
+      wakeItem("agent-first"),
+      answerItem("第一个结果收到，继续检查。"),
+    ]);
+    mountGroup([parent, firstWake], true);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 160));
+    });
+    expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
+    expect(batchRow?.textContent).toContain("1 个 subagent 已结束，仍在等待 2 个");
+
+    const secondWake = makeTurn("t3", [
+      wakeItem("agent-second"),
+      commandItem(),
+      answerItem("第二个结果也已纳入。"),
+    ]);
+    mountGroup([parent, firstWake, secondWake], true);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 160));
+    });
+    expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
+    expect(batchRow?.textContent).toContain("2 个 subagent 已结束，仍在等待 1 个");
+    expect(actionBars()).toHaveLength(0);
+
+    const finalWake = makeTurn("t4", [
+      wakeItem("agent-third"),
+      answerItem("并行审计完成。"),
+    ]);
+    mountGroup([parent, firstWake, secondWake, finalWake], false);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 160));
+    });
+    expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
+    expect(batchRow?.textContent).toContain("3 个 subagent 已结束");
+    expect(batchRow?.classList.contains("is-live-gray")).toBe(false);
+    expect(actionBars()).toHaveLength(1);
+  });
+
+  it("creates a new batch row when a later wake dispatches more agents", () => {
+    const parent = makeTurn("t1", [
+      userItem("分阶段检查"),
+      spawnItem("first"),
+      spawnItem("second"),
+      answerItem("等待第一批。"),
+    ]);
+    const firstWake = makeTurn("t2", [wakeItem("agent-first")]);
+    const secondWake = makeTurn("t3", [
+      wakeItem("agent-second"),
+      answerItem("第一批结束，启动第二批。"),
+      spawnItem("third"),
+      spawnItem("fourth"),
+      answerItem("等待第二批。"),
+    ]);
+
+    mountGroup([parent, firstWake, secondWake], true);
+
+    const statuses = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-subagent-status"),
+    );
+    expect(statuses).toHaveLength(2);
+    expect(statuses[0]?.textContent).toContain("2 个 subagent 已结束");
+    expect(statuses[0]?.classList.contains("is-live-gray")).toBe(false);
+    expect(statuses[1]?.textContent).toContain("已派出 2 个 subagent");
+    expect(statuses[1]?.classList.contains("is-live-gray")).toBe(true);
   });
 });
