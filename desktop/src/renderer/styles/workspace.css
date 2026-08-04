@@ -4407,7 +4407,7 @@ html.resizing-workspace-terminal-split * {
 .codex-effort-capsule {
   position: relative;
   height: 22px;
-  margin: 5px 18px 0;
+  margin: 5px 15px 0;
   border-radius: 999px;
   background: var(--ink-overlay-6);
 }
