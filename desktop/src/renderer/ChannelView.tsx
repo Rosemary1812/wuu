@@ -31,6 +31,14 @@ import { showErrorToast, toastErrorMessage } from "./Toast";
 
 type SetupPanel = "agent" | "room" | "task" | null;
 type RoomMemberMode = "add" | null;
+
+type AgentDetailDraft = {
+  name: string;
+  avatarKey: string;
+  avatarImage: string;
+  model: string;
+  effort: string;
+};
 export type ChannelSection = "rooms" | "agents" | "tasks";
 type AgentActivityStatus = "idle" | "thinking" | "sending";
 
@@ -301,9 +309,10 @@ function taskStateKey(state?: string): "channels.taskState.open" | "channels.tas
   return "channels.taskState.open";
 }
 
-export function ChannelView({ initialized, section = "rooms", onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, onOpenMemoryDirectory, composerDraft, onComposerDraftChange, newRoomRequest, onNewRoomRequestHandled }: {
+export function ChannelView({ initialized, section = "rooms", archivedRoomIDs = [], onSectionChange, selectedRoomID: controlledRoomID, onSelectRoom, onRoomRead, onOpenMemoryDirectory, composerDraft, onComposerDraftChange, newRoomRequest, onNewRoomRequestHandled }: {
   initialized?: InitializeResult;
   section?: ChannelSection;
+  archivedRoomIDs?: string[];
   onSectionChange?: (section: ChannelSection) => void;
   // Optional controlled room selection. App.tsx drives this so the unified
   // sidebar can select rooms; when absent the view manages selection
@@ -413,6 +422,11 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [taskRoomID, setTaskRoomID] = useState("");
   const [taskOwnerID, setTaskOwnerID] = useState("");
   const [composerFooterNode, setComposerFooterNode] = useState<HTMLDivElement | null>(null);
+  const agentDetailDraftRef = useRef<AgentDetailDraft>({ name: "", avatarKey: "", avatarImage: "", model: "", effort: "" });
+  const selectedAgentIDRef = useRef("");
+  const previousSectionRef = useRef(section);
+  agentDetailDraftRef.current = { name: agentName, avatarKey: agentAvatarKey, avatarImage: agentAvatarImage, model: agentModel, effort: agentEffort };
+  selectedAgentIDRef.current = selectedAgentID;
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const composerFooterRef = useRef<HTMLDivElement | null>(null);
   const roomComposerRef = useRef<ChannelComposerHandle | null>(null);
@@ -575,11 +589,17 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     [agents, selectedAgentID],
   );
   const selectedAgentRooms = useMemo(
-    () => selectedAgent ? rooms.filter((room) => room.members.some(
+    () => selectedAgent ? rooms.filter((room) => !archivedRoomIDs.includes(room.id) && room.members.some(
       (member) => member.member_type === "agent" && member.member_id === selectedAgent.id,
     )) : [],
-    [rooms, selectedAgent],
+    [archivedRoomIDs, rooms, selectedAgent],
   );
+  useEffect(() => {
+    if (previousSectionRef.current === "agents" && section !== "agents" && selectedAgentIDRef.current) {
+      void saveAgentDetails(selectedAgentIDRef.current, agentDetailDraftRef.current);
+    }
+    previousSectionRef.current = section;
+  }, [section]);
   useEffect(() => {
     if (selectedAgentID && !selectedAgent) setSelectedAgentID("");
   }, [selectedAgent, selectedAgentID]);
@@ -1089,6 +1109,14 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   }
 
   function editAgent(agent: NamedAgent): void {
+    if (selectedAgentID && selectedAgentID !== agent.id) {
+      void saveAgentDetails(selectedAgentID, agentDetailDraftRef.current);
+    }
+    if (selectedAgentID === agent.id) {
+      setEditingAgentID(agent.id);
+      setSetupPanel("agent");
+      return;
+    }
     loadAgentDraft(agent);
     setSetupPanel("agent");
   }
@@ -1105,23 +1133,34 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   }
 
   function selectAgentDetails(agent: NamedAgent): void {
+    if (selectedAgentID === agent.id) return;
+    if (selectedAgentID) void saveAgentDetails(selectedAgentID, agentDetailDraftRef.current);
     setSelectedAgentID(agent.id);
     loadAgentDraft(agent);
   }
 
-  async function saveAgentDetails(agentID: string): Promise<void> {
-    if (!window.wuu || !agentName.trim()) return;
-    const [providerOverride, modelOverride] = agentModel.split("\u0000");
+  async function saveAgentDetails(agentID: string, draft: AgentDetailDraft = agentDetailDraftRef.current): Promise<void> {
+    if (!window.wuu || !draft.name.trim()) return;
+    const [providerOverride, modelOverride] = draft.model.split("\u0000");
+    const effortOverride = modelOverride && draft.effort ? draft.effort : undefined;
+    const currentAgent = agents.find((agent) => agent.id === agentID);
+    if (currentAgent
+      && currentAgent.name === draft.name.trim()
+      && currentAgent.avatar_key === draft.avatarKey
+      && (currentAgent.avatar_image ?? "") === draft.avatarImage
+      && (currentAgent.provider_override ?? "") === (providerOverride ?? "")
+      && (currentAgent.model_override ?? "") === (modelOverride ?? "")
+      && (currentAgent.effort_override ?? "") === (effortOverride ?? "")) return;
     setSavingAgentID(agentID);
     try {
       const result = await window.wuu.updateNamedAgent({
         agent_id: agentID,
-        name: agentName.trim(),
-        avatar_key: agentAvatarKey,
-        avatar_image: agentAvatarImage,
+        name: draft.name.trim(),
+        avatar_key: draft.avatarKey,
+        avatar_image: draft.avatarImage,
         provider_override: providerOverride || undefined,
         model_override: modelOverride || undefined,
-        effort_override: modelOverride && agentEffort ? agentEffort : undefined,
+        effort_override: effortOverride,
       });
       setAgents((current) => current.map((agent) => agent.id === result.agent.id ? result.agent : agent));
     } catch (reason) {
@@ -1614,6 +1653,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                   type="button"
                   aria-label={t("channels.newAgent")}
                   onClick={() => {
+                    if (selectedAgentID) void saveAgentDetails(selectedAgentID, agentDetailDraftRef.current);
                     setEditingAgentID("");
                     setAgentName("");
                     setAgentAvatarKey(randomAgentAvatarKey());
@@ -1634,7 +1674,10 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
               className={`channel-agent-graph-entry${selectedAgentID ? "" : " selected"}`}
               type="button"
               aria-current={selectedAgentID ? undefined : "page"}
-              onClick={() => setSelectedAgentID("")}
+              onClick={() => {
+                if (selectedAgentID) void saveAgentDetails(selectedAgentID, agentDetailDraftRef.current);
+                setSelectedAgentID("");
+              }}
             >
               <Network className="icon" />
               <span>{t("channels.relationshipGraph")}</span>
@@ -1702,9 +1745,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                   <div className="channel-agent-detail-actions">
                     <button type="button" disabled={Boolean(resettingAgentID || savingAgentID)} onClick={() => void resetAgent(selectedAgent.id)}>
                       {t(resettingAgentID === selectedAgent.id ? "channels.resettingAgent" : "channels.resetAgent")}
-                    </button>
-                    <button className="channel-management-primary" type="button" disabled={!agentName.trim() || Boolean(savingAgentID)} onClick={() => void saveAgentDetails(selectedAgent.id)}>
-                      {t(savingAgentID === selectedAgent.id ? "channels.saving" : "channels.save")}
                     </button>
                   </div>
                 </header>

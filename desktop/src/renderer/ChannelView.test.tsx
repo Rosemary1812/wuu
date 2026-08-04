@@ -1139,8 +1139,8 @@ describe("ChannelView", () => {
       if (!detailName) return;
       setInputValue(detailName, "Alpha Prime");
     });
-    const saveDetails = container.querySelector<HTMLButtonElement>(".channel-agent-detail-actions .channel-management-primary");
-    act(() => saveDetails?.click());
+    expect(container.querySelector(".channel-agent-detail-actions .channel-management-primary")).toBeNull();
+    act(() => graphEntry?.click());
     await settle();
     expect(api.updateNamedAgent).toHaveBeenCalledWith(expect.objectContaining({ agent_id: "agent-1", name: "Alpha Prime" }));
     const agentSettings = agentRow?.querySelector<HTMLButtonElement>(".channel-directory-settings");
@@ -1151,6 +1151,27 @@ describe("ChannelView", () => {
 
     act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("156");
+  });
+
+  it("hides archived rooms from an agent's channel list", async () => {
+    const agentRooms = rooms.map((room) => ({
+      ...room,
+      members: room.id === "room-2"
+        ? [{ room_id: room.id, member_type: "agent" as const, member_id: "agent-1", joined_at: "2026-07-23T00:00:00Z" }]
+        : room.members,
+    }));
+    const api = createApi();
+    api.bootstrapChannels = vi.fn(async () => ({ agents, rooms: agentRooms }));
+    api.listChannelRooms = vi.fn(async () => ({ rooms: agentRooms }));
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<ChannelView section="agents" archivedRoomIDs={["room-1"]} />));
+    await settle();
+
+    act(() => container.querySelector<HTMLButtonElement>("button.channel-directory-avatar")?.click());
+    const channelList = container.querySelector(".channel-agent-detail-rooms");
+    expect(channelList?.textContent).toContain("# research");
+    expect(channelList?.textContent).not.toContain("# general");
   });
 
   it("shows agent save failures in the global toast without an inline detail error", async () => {
@@ -1164,7 +1185,11 @@ describe("ChannelView", () => {
     await settle();
 
     act(() => container.querySelector<HTMLButtonElement>("button.channel-directory-avatar")?.click());
-    act(() => container.querySelector<HTMLButtonElement>(".channel-agent-detail-actions .channel-management-primary")?.click());
+    const detailName = container.querySelector<HTMLInputElement>(".channel-agent-detail-form input");
+    act(() => {
+      if (detailName) setInputValue(detailName, "Alpha Prime");
+    });
+    act(() => container.querySelector<HTMLButtonElement>(".channel-agent-graph-entry")?.click());
     await settle();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("save failed");

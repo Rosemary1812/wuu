@@ -4398,6 +4398,7 @@ export function App(): JSX.Element {
             <ChannelView
               initialized={sessionRuntime ?? state.initialized}
               section={channelSection ?? "rooms"}
+              archivedRoomIDs={channelRoomPreferences.archivedRoomIDs}
               selectedRoomID={selectedChannelRoomID}
               onSelectRoom={selectChannelRoom}
               onRoomRead={clearChannelRoomUnread}
