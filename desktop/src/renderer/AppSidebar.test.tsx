@@ -70,12 +70,11 @@ interface RenderOptions {
   channelRooms?: ChannelRoom[];
   pinnedChannelRooms?: ChannelRoom[];
   activeChannelRoomID?: string;
-  activeChannelSection?: "rooms" | "agents" | "tasks" | null;
+  activeChannelSection?: "rooms" | "tasks" | null;
   collapsedSidebarSectionIDs?: Set<string>;
   onSelectChannelRoom?: (roomID: string) => void;
   onToggleChannelRoomPinned?: (room: ChannelRoom) => void;
   onArchiveChannelRoom?: (room: ChannelRoom) => void;
-  onOpenChannelAgents?: () => void;
   onOpenChannelTasks?: () => void;
 }
 
@@ -118,7 +117,6 @@ function renderSidebar({
   onSelectChannelRoom,
   onToggleChannelRoomPinned,
   onArchiveChannelRoom,
-  onOpenChannelAgents,
   onOpenChannelTasks,
 }: RenderOptions = {}): void {
   act(() => {
@@ -150,7 +148,6 @@ function renderSidebar({
         onSelectChannelRoom={onSelectChannelRoom}
         onToggleChannelRoomPinned={onToggleChannelRoomPinned}
         onArchiveChannelRoom={onArchiveChannelRoom}
-        onOpenChannelAgents={onOpenChannelAgents}
         onOpenChannelTasks={onOpenChannelTasks}
         onOpenChannels={() => {}}
         onToggleConversationSearch={() => {}}
@@ -419,25 +416,9 @@ describe("AppSidebar 协作 section", () => {
     expect(container.querySelector(".sidebar-collab-list")?.textContent).not.toContain("任务");
   });
 
-  it("offers Agents as a top-level nav item next to 自动化 and 技能", () => {
-    let opened = "";
-    renderSidebar({
-      groupChatEnabled: true,
-      activeChannelSection: "agents",
-      onOpenChannelAgents: () => { opened = "agents"; },
-    });
-
-    // Global agents live in the primary nav, not under 协作: an agent is a
-    // workspace-wide actor, not a leaf of any single room group.
-    const agentsNav = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".nav-item"),
-    ).find((item) => item.textContent === "Agents");
-    expect(agentsNav).not.toBeNull();
-    expect(agentsNav?.getAttribute("aria-current")).toBe("page");
-    expect(container.querySelector(".sidebar-collab-list")?.textContent).not.toContain("Agents");
-
-    act(() => agentsNav?.click());
-    expect(opened).toBe("agents");
+  it("does not show an Agents top-level nav item", () => {
+    renderSidebar({ groupChatEnabled: true });
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>(".nav-item")).find((item) => item.textContent === "Agents")).toBeUndefined();
   });
 
   it("surfaces the aggregate unread dot on the collapsed section header", () => {

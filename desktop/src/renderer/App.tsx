@@ -92,7 +92,6 @@ import {
   cloneSessionTabDraft,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
-  createAgentsSessionTab,
   createChannelRoomSessionTab,
   channelRoomSessionTabID,
   createDraftSessionTab,
@@ -849,7 +848,7 @@ export function App(): JSX.Element {
     currentSessionTab?.kind === "channel-room"
       ? "rooms"
       : currentSessionTab?.kind === "agents"
-        ? "agents"
+        ? "rooms"
         : currentSessionTab?.kind === "tasks"
           ? "tasks"
           : null;
@@ -1763,7 +1762,7 @@ export function App(): JSX.Element {
     : currentSessionTab?.kind === "channel-room"
       ? currentSessionTab.title
       : currentSessionTab?.kind === "agents"
-        ? t("channels.agents")
+        ? t("channels.rooms")
         : currentSessionTab?.kind === "tasks"
           ? t("channels.tasks")
     : resolveLocalizedText(activeThread?.preview ?? "") ||
@@ -2888,15 +2887,6 @@ export function App(): JSX.Element {
     });
   }
 
-  function openChannelAgentsView(): void {
-    const context = appStateRef.current.activeContext;
-    if (!context) {
-      return;
-    }
-    openGlobalSessionTab(createAgentsSessionTab(context));
-    prepareChannelTab();
-  }
-
   function openChannelTasksView(): void {
     const context = appStateRef.current.activeContext;
     if (!context) {
@@ -2914,7 +2904,7 @@ export function App(): JSX.Element {
       selectChannelRoom(room.id);
       return;
     }
-    openChannelAgentsView();
+    openChannelTasksView();
   }
 
   function openNewChannelRoom(): void {
@@ -4222,7 +4212,6 @@ export function App(): JSX.Element {
             onSelectChannelRoom={selectChannelRoom}
             onToggleChannelRoomPinned={toggleChannelRoomPinnedState}
             onArchiveChannelRoom={archiveChannelRoom}
-            onOpenChannelAgents={openChannelAgentsView}
             onOpenChannelTasks={openChannelTasksView}
             onOpenChannels={openChannelsView}
             onCreateChannelRoom={openNewChannelRoom}
