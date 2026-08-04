@@ -36,6 +36,9 @@ describe("ToastViewport", () => {
     expect(toastErrorMessage(new Error(
       "Error invoking remote method 'wuu:channel-agent-update': Error: named agent cannot be edited while it is running",
     ))).toBe("named agent cannot be edited while it is running");
+    expect(toastErrorMessage(
+      "Error: Error invoking remote method 'wuu:channel-agent-update': Error: save failed",
+    )).toBe("save failed");
   });
 
   it("renders operation errors as global alert toasts", () => {

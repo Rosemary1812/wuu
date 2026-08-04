@@ -89,6 +89,9 @@ export function toastErrorMessage(error: unknown, fallback = ""): string {
   message = message.trim();
 
   const remoteMethodPrefix = /^Error invoking remote method ['"][^'"]+['"]:\s*/i;
+  while (/^Error:\s*/i.test(message)) {
+    message = message.replace(/^Error:\s*/i, "");
+  }
   if (remoteMethodPrefix.test(message)) {
     message = message.replace(remoteMethodPrefix, "");
   }

@@ -3,6 +3,7 @@ import type { GitCommitResult, GitPullRequestResult } from "../shared/protocol";
 import { sameRuntimeContext, type AppState } from "./AppState";
 import type { EnvironmentPanelMenu } from "./EnvironmentPanel";
 import { localizedText, translateCurrent } from "./i18n";
+import { showErrorToast } from "./Toast";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -49,10 +50,7 @@ export function createEnvironmentActions(
   deps: EnvironmentActionsDeps,
 ): EnvironmentActions {
   function setStatus(status: string): void {
-    deps.setAppState((current) => ({
-      ...current,
-      status,
-    }));
+    showErrorToast(status);
   }
 
   function environmentRootIsCurrent(root: string): boolean {
@@ -88,7 +86,6 @@ export function createEnvironmentActions(
         error instanceof Error
           ? error.message
           : translateCurrent("git.checkoutFailed");
-      setStatus(message);
       throw new Error(message);
     }
   }

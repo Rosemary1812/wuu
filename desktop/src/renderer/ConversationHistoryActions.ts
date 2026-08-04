@@ -227,10 +227,7 @@ export function createConversationHistoryActions(
         }),
       );
     } catch (error) {
-      deps.setAppState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : t("thread.forkFailed"),
-      }));
+      showErrorToast(error, t("thread.forkFailed"));
       throw error;
     }
   }
