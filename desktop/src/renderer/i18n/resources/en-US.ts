@@ -133,6 +133,7 @@ export const enUS = {
   "channels.agentAutostart": "Start automatically",
   "channels.enabled": "Enabled",
   "channels.disabled": "Disabled",
+  "channels.saving": "Saving…",
   "channels.agentRoomCount": "{count} channels",
   "channels.zoomIn": "Zoom in",
   "channels.zoomOut": "Zoom out",

@@ -131,6 +131,7 @@ export const zhCN = {
   "channels.agentAutostart": "自动启动",
   "channels.enabled": "已启用",
   "channels.disabled": "已停用",
+  "channels.saving": "保存中…",
   "channels.agentRoomCount": "{count} 个频道",
   "channels.zoomIn": "放大图谱",
   "channels.zoomOut": "缩小图谱",

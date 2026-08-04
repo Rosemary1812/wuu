@@ -1093,7 +1093,8 @@ describe("ChannelView", () => {
   });
 
   it("resizes the agents directory pane and persists the width", async () => {
-    Object.defineProperty(window, "wuu", { configurable: true, value: createApi() });
+    const api = createApi();
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
     root = createRoot(container);
     act(() => root?.render(<ChannelView />));
     await settle();
@@ -1125,6 +1126,15 @@ describe("ChannelView", () => {
     act(() => agentAvatar?.click());
     expect(container.querySelector(".channel-agent-detail h2")?.textContent).toBe("Alpha");
     expect(container.querySelector(".channel-agent-graph-canvas")).toBeNull();
+    const detailName = container.querySelector<HTMLInputElement>(".channel-agent-detail-form input");
+    act(() => {
+      if (!detailName) return;
+      setInputValue(detailName, "Alpha Prime");
+    });
+    const saveDetails = container.querySelector<HTMLButtonElement>(".channel-agent-detail-actions .channel-management-primary");
+    act(() => saveDetails?.click());
+    await settle();
+    expect(api.updateNamedAgent).toHaveBeenCalledWith(expect.objectContaining({ agent_id: "agent-1", name: "Alpha Prime" }));
     const agentSettings = agentRow?.querySelector<HTMLButtonElement>(".channel-directory-settings");
     act(() => agentSettings?.click());
     expect(document.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("编辑 Agent");
