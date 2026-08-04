@@ -254,6 +254,27 @@ describe("TurnGroupView — awaiting between turns", () => {
     expect(actionBars()).toHaveLength(1);
   });
 
+  it("keeps a completed parent live from its pending spawn timeline state", () => {
+    const turns = [
+      makeTurn("t1", [
+        userItem("审计文档"),
+        spawnItem("audit_docs"),
+        answerItem("已启动审计。"),
+      ]),
+    ];
+
+    // The parent model turn has completed and the external child snapshot is
+    // deliberately absent. The running spawn result itself must keep this
+    // interaction open until its completion notification arrives.
+    mountGroup(turns, false);
+
+    expect(section().dataset.turnStatus).toBe("in_progress");
+    expect(actionBars()).toHaveLength(0);
+    expect(
+      container.querySelector(".turn-subagent-status.is-live-gray")?.textContent,
+    ).toContain("子任务 audit_docs");
+  });
+
   it("keeps the waiting activity as a settled record when the orchestration is interrupted", () => {
     const turns = [
       makeTurn("t1", [

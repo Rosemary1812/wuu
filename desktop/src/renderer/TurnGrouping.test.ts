@@ -3,6 +3,7 @@ import type { ThreadItem, Turn } from "../shared/protocol";
 import {
   groupConversationTurns,
   isAgentWakeTurn,
+  turnsHavePendingSubagents,
   turnHasRealUserMessage,
   turnHasSpawnAgentCall,
 } from "./TurnGrouping";
@@ -23,9 +24,10 @@ function wakeItem(id: string): ThreadItem {
 function spawnItem(id: string): ThreadItem {
   return {
     id,
-    type: "collab_agent_tool_call",
+    type: "tool_call",
     name: "spawn_agent",
     status: "completed",
+    result: JSON.stringify({ status: "running" }),
   };
 }
 
@@ -52,7 +54,7 @@ function groupIDs(turns: Turn[], lastGroupOpen = false): string[][] {
 function spawnItemFor(id: string, agentID: string): ThreadItem {
   return {
     id,
-    type: "collab_agent_tool_call",
+    type: "tool_call",
     name: "spawn_agent",
     status: "completed",
     result: JSON.stringify({ agent_id: agentID, status: "running" }),
@@ -69,6 +71,18 @@ function wakeItemFor(id: string, agentID: string): ThreadItem {
 }
 
 describe("TurnGrouping classification", () => {
+  it("keeps a completed parent pending until its child notification arrives", () => {
+    const parent = makeTurn("t1", [
+      userItem("u1"),
+      spawnItemFor("s1", "agent-a"),
+      answerItem("a1"),
+    ]);
+    expect(turnsHavePendingSubagents([parent])).toBe(true);
+
+    const wake = makeTurn("t2", [wakeItemFor("w1", "agent-a")]);
+    expect(turnsHavePendingSubagents([parent, wake])).toBe(false);
+  });
+
   it("detects a wake turn only when every user item is a handoff", () => {
     expect(isAgentWakeTurn(makeTurn("t", [wakeItem("w1"), answerItem("a1")]))).toBe(true);
     expect(isAgentWakeTurn(makeTurn("t", [wakeItem("w1"), userItem("u1")]))).toBe(false);

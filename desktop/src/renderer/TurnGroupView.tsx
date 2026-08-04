@@ -28,6 +28,7 @@ import {
   turnHasAssistantOutput,
 } from "./TurnViewHelpers";
 import { TurnView } from "./TurnView";
+import { turnsHavePendingSubagents } from "./TurnGrouping";
 import type { TurnStreamStatus } from "./AppState";
 import type { SubagentChipDisplay } from "./AgentHandoff";
 import { translateCurrent } from "./i18n";
@@ -66,6 +67,7 @@ export type TurnGroupViewProps = {
 export function TurnGroupView(props: TurnGroupViewProps): JSX.Element {
   const { turns, awaiting, interrupted } = props;
   const first = turns[0];
+  const timelinePending = turnsHavePendingSubagents(turns);
   // A single-turn group with no live orchestration renders through the
   // ordinary per-turn path untouched; everything else (merged groups, and
   // the waiting-between-turns state) renders one shell for the whole run.
@@ -73,7 +75,7 @@ export function TurnGroupView(props: TurnGroupViewProps): JSX.Element {
   // history may no longer contain the original spawn_agent item, but the
   // conversation must not expose a completed block while the side panel still
   // reports work in flight.
-  const orchestrationLive = Boolean(awaiting);
+  const orchestrationLive = Boolean(awaiting) || (timelinePending && !interrupted);
   const orchestrationInterrupted = Boolean(interrupted);
   if (turns.length === 1 && !orchestrationLive && !orchestrationInterrupted && first) {
     const turn = first;
@@ -100,7 +102,7 @@ export function TurnGroupView(props: TurnGroupViewProps): JSX.Element {
       />
     );
   }
-  return <MergedTurnGroupView {...props} />;
+  return <MergedTurnGroupView {...props} awaiting={orchestrationLive} />;
 }
 
 function MergedTurnGroupView({

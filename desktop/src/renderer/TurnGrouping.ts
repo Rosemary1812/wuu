@@ -1,5 +1,9 @@
 import type { Turn } from "../shared/protocol";
-import { agentHandoffAgentIDs, isAgentHandoffItem } from "./AgentHandoff";
+import {
+  agentHandoffAgentIDs,
+  agentHandoffChipDisplayItems,
+  isAgentHandoffItem,
+} from "./AgentHandoff";
 
 /**
  * Subagent orchestration produces several real turns for what reads as one
@@ -56,17 +60,33 @@ export function turnHasRealUserMessage(turn: Turn): boolean {
 }
 
 export function turnHasSpawnAgentCall(turn: Turn): boolean {
-  return turn.items.some(
-    (item) =>
-      item.type === "collab_agent_tool_call" && item.name === "spawn_agent",
-  );
+  return turn.items.some(isSpawnAgentItem);
+}
+
+export function turnsHavePendingSubagents(turns: Turn[]): boolean {
+  let pending = 0;
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      if (isSpawnAgentItem(item) && spawnResultIsPending(item.result)) {
+        pending += 1;
+        continue;
+      }
+      if (item.type === "user_message" && isAgentHandoffItem(item)) {
+        pending = Math.max(
+          0,
+          pending - Math.max(1, agentHandoffChipDisplayItems(item).length),
+        );
+      }
+    }
+  }
+  return pending > 0;
 }
 
 /** Agent identities spawned by this turn, read from spawn_agent results. */
 function turnSpawnedAgentIDs(turn: Turn): string[] {
   const ids: string[] = [];
   for (const item of turn.items) {
-    if (item.type !== "collab_agent_tool_call" || item.name !== "spawn_agent") {
+    if (!isSpawnAgentItem(item)) {
       continue;
     }
     const id = spawnResultAgentID(item.result);
@@ -75,6 +95,33 @@ function turnSpawnedAgentIDs(turn: Turn): string[] {
     }
   }
   return ids;
+}
+
+function isSpawnAgentItem(item: Turn["items"][number]): boolean {
+  return (
+    (item.type === "tool_call" || item.type === "collab_agent_tool_call") &&
+    item.name === "spawn_agent"
+  );
+}
+
+function spawnResultIsPending(raw: string | undefined): boolean {
+  if (!raw) return true;
+  try {
+    const parsed = JSON.parse(raw) as { status?: unknown };
+    if (typeof parsed.status !== "string") return true;
+    switch (parsed.status.trim().toLowerCase()) {
+      case "completed":
+      case "failed":
+      case "cancelled":
+      case "canceled":
+      case "closed":
+        return false;
+      default:
+        return true;
+    }
+  } catch {
+    return true;
+  }
 }
 
 function spawnResultAgentID(result: string | undefined): string | undefined {
