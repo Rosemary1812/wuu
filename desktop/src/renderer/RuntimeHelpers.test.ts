@@ -23,15 +23,19 @@ function providerWithModel(model: ProviderModelSummary | undefined): ProviderSum
 }
 
 describe("codexEffortLabel", () => {
-  it("distinguishes xhigh from max", () => {
-    expect(codexEffortLabel("xhigh")).toBe("超高");
-    expect(codexEffortLabel("max")).toBe("最大");
+  it("uses canonical English labels in every locale", () => {
+    expect(codexEffortLabel("xhigh")).toBe("Extra high");
+    expect(codexEffortLabel("max")).toBe("Max");
+
+    setActiveLocale("en-US");
+
+    expect(codexEffortLabel("xhigh")).toBe("Extra high");
+    expect(codexEffortLabel("max")).toBe("Max");
   });
 
   it("uses the active language for generated runtime labels", () => {
     setActiveLocale("en-US");
 
-    expect(codexEffortLabel("xhigh")).toBe("Extra high");
     expect(pullRequestUnavailableReason()).toBe("Not a Git repository");
   });
 });

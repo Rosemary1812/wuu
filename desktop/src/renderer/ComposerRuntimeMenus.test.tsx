@@ -84,7 +84,7 @@ describe("RuntimePicker", () => {
 
     expect(rows.map((row) => row.textContent?.trim())).toEqual([
       "ModelClaude Sonnet",
-      "Effort中"
+      "EffortMedium"
     ]);
     expect(menu?.textContent).not.toContain("Speed");
     expect(menu?.textContent).not.toContain("Advanced");
@@ -123,7 +123,7 @@ describe("RuntimePicker", () => {
     const choices = Array.from(
       document.querySelectorAll<HTMLButtonElement>(".codex-effort-menu button")
     );
-    const high = choices.find((choice) => choice.textContent?.trim() === "高");
+    const high = choices.find((choice) => choice.textContent?.trim() === "High");
 
     act(() => high?.click());
     expect(onSelectEffort).toHaveBeenCalledWith("high");

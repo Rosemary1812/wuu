@@ -18,21 +18,21 @@ export function shortCodexModelLabel(model: string): string {
 export function codexEffortLabel(effort: string): string {
   switch (effort) {
     case "":
-      return t("runtime.effort.default");
+      return "Default";
     case "none":
-      return t("runtime.effort.none");
+      return "None";
     case "minimal":
-      return t("runtime.effort.minimal");
+      return "Minimal";
     case "low":
-      return t("runtime.effort.low");
+      return "Low";
     case "medium":
-      return t("runtime.effort.medium");
+      return "Medium";
     case "high":
-      return t("runtime.effort.high");
+      return "High";
     case "xhigh":
-      return t("runtime.effort.xhigh");
+      return "Extra high";
     case "max":
-      return t("runtime.effort.max");
+      return "Max";
     default:
       return effort;
   }

@@ -1241,7 +1241,7 @@ describe("ChannelView", () => {
       .find((button) => button.textContent?.includes("GPT Reasoner"));
     act(() => modelOption?.click());
     const highOption = Array.from(document.querySelectorAll<HTMLButtonElement>('.channel-effort-chip[role="radio"]'))
-      .find((button) => button.textContent?.trim() === "高");
+      .find((button) => button.textContent?.trim() === "High");
     expect(highOption).not.toBeNull();
     act(() => highOption?.click());
     await act(async () => document.querySelector<HTMLFormElement>(".sidebar-name-dialog")?.requestSubmit());
