@@ -1,5 +1,5 @@
 import { rawTimeZones } from "@vvo/tzdb";
-import { ChevronRight, CircleAlert, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ChevronRight, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -10,7 +10,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import type { AutomationTask, AutomationUpdateParams, DesktopProject } from "../shared/protocol";
 import {
   cronForAutomationSchedule,
@@ -24,7 +23,7 @@ import { CatalogSearchField } from "./CatalogSearchField";
 import { translateCurrent, useI18n } from "./i18n";
 import { MinuteClockPicker } from "./MinuteClockPicker";
 import { SelectMenu, type SelectMenuOption } from "./SelectMenu";
-import { TopNotice } from "./TopNotice";
+import { showErrorToast } from "./Toast";
 
 type Filter = "all" | "active" | "paused";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -162,7 +161,6 @@ export function AutomationsCatalog({
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [saveNotice, setSaveNotice] = useState<{ id: number; message: string } | null>(null);
   const [detailWidth, setDetailWidth] = useState(initialDetailWidth);
   const [resizingDetail, setResizingDetail] = useState(false);
   const availableProjects = useMemo(() => projects.filter((project) => !project.missing), [projects]);
@@ -326,16 +324,13 @@ export function AutomationsCatalog({
       setSelectedID(result.task.id);
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : translateCurrent("automations.createFailed"));
+      showErrorToast(reason, translateCurrent("automations.createFailed"));
       return false;
     }
   }
 
   const showSaveRejectedNotice = useCallback((): void => {
-    setSaveNotice({
-      id: Date.now(),
-      message: t("automations.changesReverted"),
-    });
+    showErrorToast(t("automations.changesReverted"));
   }, [t]);
 
   async function remove(task: AutomationTask): Promise<void> {
@@ -345,7 +340,7 @@ export function AutomationsCatalog({
       setTasks((current) => current.filter((candidate) => candidate.id !== task.id));
       setSelectedID("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : translateCurrent("automations.deleteFailed"));
+      showErrorToast(reason, translateCurrent("automations.deleteFailed"));
     }
   }
 
@@ -443,17 +438,6 @@ export function AutomationsCatalog({
               onClose={() => { setPendingNew(null); setSelectedID(""); }} />
           </div>
         </>
-      ) : null}
-      {saveNotice ? createPortal(
-        <TopNotice
-          key={saveNotice.id}
-          message={saveNotice.message}
-          icon={CircleAlert}
-          isError
-          dismissAriaLabel={t("common.closeNotice")}
-          onDismiss={() => setSaveNotice(null)}
-        />,
-        document.body,
       ) : null}
     </section>
   );

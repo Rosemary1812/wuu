@@ -16,6 +16,7 @@ import {
 } from "./AppState";
 import { loadRuntime as defaultLoadRuntime } from "./RuntimeLoadState";
 import { translateCurrent } from "./i18n";
+import { showErrorToast } from "./Toast";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -54,10 +55,7 @@ export function createProjectRuntimeActions(
   const loadRuntime = deps.loadRuntime ?? defaultLoadRuntime;
 
   function setStatus(status: string): void {
-    deps.setAppState((current) => ({
-      ...current,
-      status,
-    }));
+    showErrorToast(status);
   }
 
   function activateWorkspaceDraft(

@@ -21,8 +21,8 @@ import {
   type QueuedComposerMessage,
 } from "./ComposerMessages";
 import { lastUserMessageAnchor, scrollToUserMessage } from "./TurnViewHelpers";
-import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { localizedText, translateCurrent as t } from "./i18n";
+import { showErrorToast } from "./Toast";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -480,10 +480,7 @@ deps.rememberConversationScrollForEdit();
           ? { ...current, submitting: false }
           : current,
       );
-      deps.setAppState((current) => ({
-        ...current,
-        status: desktopApiErrorMessage(error, t("history.editFailed")),
-      }));
+      showErrorToast(error, t("history.editFailed"));
     }
   }
 

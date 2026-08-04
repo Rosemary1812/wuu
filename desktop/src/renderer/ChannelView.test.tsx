@@ -6,6 +6,7 @@ import type { ChannelRoom, InitializeResult, NamedAgent, WuuDesktopApi } from ".
 import { graphDensityScale } from "./AgentRelationshipGraph";
 import { groupAvatarRowSizes } from "./ChannelGroupAvatar";
 import { ChannelView, formatChannelUnreadCount } from "./ChannelView";
+import { clearToasts, ToastViewport } from "./Toast";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -195,6 +196,7 @@ function setSelectValue(select: HTMLSelectElement, value: string): void {
 }
 
 beforeEach(() => {
+  clearToasts();
   window.localStorage.clear();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -208,6 +210,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   container.remove();
+  clearToasts();
   vi.restoreAllMocks();
 });
 
@@ -1148,6 +1151,24 @@ describe("ChannelView", () => {
 
     act(() => agentSeparator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
     expect(agentSeparator?.getAttribute("aria-valuenow")).toBe("156");
+  });
+
+  it("shows agent save failures in the global toast without an inline detail error", async () => {
+    const api = createApi();
+    api.updateNamedAgent = vi.fn(async () => {
+      throw new Error("Error invoking remote method 'wuu:channel-agent-update': Error: save failed");
+    });
+    Object.defineProperty(window, "wuu", { configurable: true, value: api });
+    root = createRoot(container);
+    act(() => root?.render(<><ChannelView section="agents" /><ToastViewport /></>));
+    await settle();
+
+    act(() => container.querySelector<HTMLButtonElement>("button.channel-directory-avatar")?.click());
+    act(() => container.querySelector<HTMLButtonElement>(".channel-agent-detail-actions .channel-management-primary")?.click());
+    await settle();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("save failed");
+    expect(container.querySelector(".channel-agent-detail .channel-error")).toBeNull();
   });
 
   it("tracks tasks across channels from the task section", async () => {

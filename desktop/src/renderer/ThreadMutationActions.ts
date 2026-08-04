@@ -14,6 +14,7 @@ import {
 } from "./AppState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { translateCurrent } from "./i18n";
+import { showErrorToast } from "./Toast";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -84,10 +85,7 @@ export function createThreadMutationActions(
   deps: ThreadMutationActionsDeps,
 ): ThreadMutationActions {
   function setStatus(status: string): void {
-    deps.setAppState((current) => ({
-      ...current,
-      status,
-    }));
+    showErrorToast(status);
   }
 
   function upsertLocalDemoThread(thread: Thread): void {

@@ -27,6 +27,7 @@ import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { RichContent } from "./RichContent";
 import { effortLabel, providerModelEffortOptions } from "./RuntimeHelpers";
+import { showErrorToast, toastErrorMessage } from "./Toast";
 
 type SetupPanel = "agent" | "room" | "task" | null;
 type RoomMemberMode = "add" | null;
@@ -348,7 +349,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   const [resizingSplit, setResizingSplit] = useState(false);
   const [threadWidth, setThreadWidth] = useState(initialThreadPanelWidth);
   const [resizingThread, setResizingThread] = useState(false);
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [sendingAgentIDs, setSendingAgentIDs] = useState<Set<string>>(() => new Set());
@@ -722,7 +723,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       if (markedMessageSeqByRoomRef.current.get(roomID) === latestMessageSeq) {
         markedMessageSeqByRoomRef.current.delete(roomID);
       }
-      setError(String(reason));
+      showErrorToast(reason);
     });
   }, [onRoomRead]);
 
@@ -784,7 +785,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     let active = true;
     void refreshRoomsAndAgents()
       .catch((reason: unknown) => {
-        if (active) setError(String(reason));
+        if (active) setLoadError(toastErrorMessage(reason));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -803,10 +804,11 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         window.wuu!.listChannelRooms(),
       ]).then(([agentResult, roomResult]) => {
         if (!active) return;
+        setLoadError("");
         setAgents(agentResult.agents ?? []);
         setRooms(roomResult.rooms ?? []);
       }).catch((reason: unknown) => {
-        if (active) setError(String(reason));
+        if (active) setLoadError(toastErrorMessage(reason));
       });
     };
     refresh();
@@ -842,7 +844,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     let active = true;
     const refresh = (): void => {
       void refreshMessages(selectedRoomID).catch((reason: unknown) => {
-        if (active) setError(String(reason));
+        if (active) setLoadError(toastErrorMessage(reason));
       });
     };
     refresh();
@@ -862,7 +864,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     let active = true;
     const refresh = (): void => {
       void refreshTrackedTasks().catch((reason: unknown) => {
-        if (active) setError(String(reason));
+        if (active) setLoadError(toastErrorMessage(reason));
       });
     };
     refresh();
@@ -901,7 +903,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
 
   async function submitAgent(): Promise<void> {
     if (!window.wuu || !agentName.trim()) return;
-    setError("");
     try {
       const [providerOverride, modelOverride] = agentModel.split("\u0000");
       const params = {
@@ -917,14 +918,13 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       closeAgentPanel();
       await refreshRoomsAndAgents();
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     }
   }
 
   async function submitRoom(): Promise<void> {
     const name = roomName.trim();
     if (!window.wuu || !name) return;
-    setError("");
     try {
       if (editingRoomID) {
         const roomID = editingRoomID;
@@ -953,7 +953,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       await refreshRoomsAndAgents();
       setSelectedRoomID(result.room.id);
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     }
   }
 
@@ -961,7 +961,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     const messageBody = body.trim();
     if (!window.wuu || !selectedRoomID || (!messageBody && composerImages.length === 0 && composerFiles.length === 0) || sending) return;
     setSending(true);
-    setError("");
     try {
       const resolvedImages = await awaitComposerImages(composerImages);
       await window.wuu.sendChannelMessage({
@@ -975,7 +974,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       setComposerFiles([]);
       await refreshMessages(selectedRoomID);
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     } finally {
       setSending(false);
     }
@@ -993,7 +992,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     const messageBody = threadBody.trim();
     if (!window.wuu || !selectedRoomID || !activeThreadRootID || (!messageBody && threadComposerImages.length === 0 && threadComposerFiles.length === 0) || threadSending) return;
     setThreadSending(true);
-    setError("");
     try {
       const resolvedImages = await awaitComposerImages(threadComposerImages);
       await window.wuu.sendChannelMessage({
@@ -1010,7 +1008,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       setThreadReplyTargetID(activeThreadRootID);
       await refreshMessages(selectedRoomID);
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     } finally {
       setThreadSending(false);
     }
@@ -1025,7 +1023,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         (file) => setComposerFiles((current) => [...current, file]),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      showErrorToast(reason);
     }
   }
 
@@ -1038,7 +1036,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         (file) => setThreadComposerFiles((current) => [...current, file]),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      showErrorToast(reason);
     }
   }
 
@@ -1046,7 +1044,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     const title = taskTitle.trim();
     const roomID = taskRoomID || selectedRoomID;
     if (!window.wuu || !roomID || !title || !taskOwnerID) return;
-    setError("");
     try {
       await window.wuu.createChannelTask({
         room_id: roomID,
@@ -1060,34 +1057,32 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       await refreshMessages(selectedRoomID);
       if (section === "tasks") await refreshTrackedTasks();
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     }
   }
 
   async function deleteAgent(agentID: string): Promise<void> {
     if (!window.wuu) return;
     if (!window.confirm(t("channels.deleteAgentConfirm", { name: agentName.trim() }))) return;
-    setError("");
     try {
       await window.wuu.deleteNamedAgent({ agent_id: agentID });
       closeAgentPanel();
       await refreshRoomsAndAgents();
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     }
   }
 
   async function resetAgent(agentID: string): Promise<void> {
     if (!window.wuu) return;
     if (!window.confirm(t("channels.resetAgentConfirm", { name: agentName.trim() }))) return;
-    setError("");
     setAgentResetStatus("");
     setResettingAgentID(agentID);
     try {
       const result = await window.wuu.resetNamedAgent({ agent_id: agentID });
       setAgentResetStatus(t(result.requested ? "channels.resetAgentRequested" : "channels.resetAgentIdle"));
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     } finally {
       setResettingAgentID("");
     }
@@ -1117,7 +1112,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   async function saveAgentDetails(agentID: string): Promise<void> {
     if (!window.wuu || !agentName.trim()) return;
     const [providerOverride, modelOverride] = agentModel.split("\u0000");
-    setError("");
     setSavingAgentID(agentID);
     try {
       const result = await window.wuu.updateNamedAgent({
@@ -1131,7 +1125,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       });
       setAgents((current) => current.map((agent) => agent.id === result.agent.id ? result.agent : agent));
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     } finally {
       setSavingAgentID("");
     }
@@ -1211,7 +1205,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     if (!window.wuu || !editingRoomID || !name || name === savedRoomNameRef.current) return;
     const previousName = savedRoomNameRef.current;
     savedRoomNameRef.current = name;
-    setError("");
     try {
       const result = await window.wuu.updateChannelRoom({
         room_id: editingRoomID,
@@ -1223,7 +1216,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       savedRoomNameRef.current = result.room.name;
     } catch (reason) {
       savedRoomNameRef.current = previousName;
-      setError(String(reason));
+      showErrorToast(reason);
     }
   }
 
@@ -1233,7 +1226,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     if (!room) return;
     const nextAgentIDs = [...roomAgentIDs, ...roomMemberSelectionIDs.filter((agentID) => !roomAgentIDs.includes(agentID))];
     setUpdatingRoomMembers(true);
-    setError("");
     try {
       const result = await window.wuu.updateChannelRoom({
         room_id: editingRoomID,
@@ -1245,7 +1237,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       closeRoomMemberMode();
       await refreshRoomsAndAgents();
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     } finally {
       setUpdatingRoomMembers(false);
     }
@@ -1259,7 +1251,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
     if (!window.confirm(t("channels.removeMemberConfirm", { name: agent?.name ?? agentID }))) return;
     const nextAgentIDs = roomAgentIDs.filter((candidate) => candidate !== agentID);
     setUpdatingRoomMembers(true);
-    setError("");
     try {
       const result = await window.wuu.updateChannelRoom({
         room_id: editingRoomID,
@@ -1270,7 +1261,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       setRoomAgentIDs(nextAgentIDs);
       await refreshRoomsAndAgents();
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     } finally {
       setUpdatingRoomMembers(false);
     }
@@ -1279,7 +1270,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
   async function deleteRoom(): Promise<void> {
     if (!window.wuu || !editingRoomID) return;
     if (!window.confirm(t("channels.deleteRoomConfirm", { name: roomName.trim() }))) return;
-    setError("");
     try {
       const roomID = editingRoomID;
       await window.wuu.deleteChannelRoom({ room_id: roomID });
@@ -1300,7 +1290,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       }
       await refreshRoomsAndAgents();
     } catch (reason) {
-      setError(String(reason));
+      showErrorToast(reason);
     }
   }
 
@@ -1311,7 +1301,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
 
   async function updateRoomAvatarFromFile(file: File): Promise<void> {
     if (!window.wuu) return;
-    setError("");
     try {
       const avatarImage = await squareAvatarImageFromFile(file);
       const roomID = roomAvatarTargetRef.current;
@@ -1322,8 +1311,8 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
       const result = await window.wuu.updateChannelRoom({ room_id: roomID, avatar_image: avatarImage });
       setRooms((current) => current.map((room) => room.id === result.room.id ? result.room : room));
       if (editingRoomID === roomID) setRoomAvatarImage(result.room.avatar_image ?? "");
-    } catch {
-      setError(t("channels.invalidAvatarImage"));
+    } catch (reason) {
+      showErrorToast(reason, t("channels.invalidAvatarImage"));
     }
   }
 
@@ -1401,7 +1390,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
               void updateRoomAvatarFromFile(file).finally(() => { input.value = ""; });
             }}
           />
-          {error ? <div className="channel-error" role="alert">{error}</div> : null}
+          {loadError ? <div className="channel-error" role="alert">{loadError}</div> : null}
         <div ref={messageScroll.scrollRef} className="channel-message-stream" role="log" aria-live="polite">
           {rootMessages.map((message, index) => {
             const own = message.author_type === "human";
@@ -1639,7 +1628,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                 </button> : null}
               </div>
             </div>
-            {!listCollapsed && error ? <div className="channel-error" role="alert">{error}</div> : null}
+            {!listCollapsed && loadError ? <div className="channel-error" role="alert">{loadError}</div> : null}
             {!listCollapsed ? <div className="channel-agent-directory-list channel-directory-list">
             <button
               className={`channel-agent-graph-entry${selectedAgentID ? "" : " selected"}`}
@@ -1719,7 +1708,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                     </button>
                   </div>
                 </header>
-                {error ? <div className="channel-agent-detail-notice channel-error" role="alert">{error}</div> : null}
                 {agentAvatarError ? <div className="channel-agent-detail-notice channel-error" role="alert">{agentAvatarError}</div> : null}
                 {agentResetStatus ? <div className="channel-agent-detail-notice channel-agent-reset-status" role="status">{agentResetStatus}</div> : null}
                 <div className="channel-agent-detail-grid">
@@ -1824,7 +1812,7 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
               {t("channels.newTask")}
             </button>
           </div>
-          {error ? <div className="channel-error" role="alert">{error}</div> : null}
+          {loadError ? <div className="channel-error" role="alert">{loadError}</div> : null}
           <div className="channel-task-board channel-task-table">
             {(["open", "doing", "done"] as const).map((state) => {
               const tasks = trackedTasks.filter((task) => (task.task_state ?? "open") === state);
@@ -1879,7 +1867,6 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
         cancelLabel={t("channels.cancel")}
         submitDisabled={!agentName.trim() || Boolean(resettingAgentID)}
         content={<div className="channel-setup-form">
-          {error ? <div className="channel-error" role="alert">{error}</div> : null}
           {agentResetStatus ? <div className="channel-agent-reset-status" role="status">{agentResetStatus}</div> : null}
           <div className="channel-identity-row">
             <button

@@ -7,6 +7,7 @@ import { startRendererVisibilitySync } from "./RendererVisibility";
 import { applyThemePreference, startThemePreferenceSync } from "./Theme";
 import "./styles.css";
 import { I18nProvider } from "./i18n";
+import { ToastViewport } from "./Toast";
 
 // The preload script already stamped data-theme for the first paint;
 // re-applying here takes over the "system" media-query subscription for
@@ -48,5 +49,8 @@ window.addEventListener("dragover", ignoreStrayFileDrop);
 window.addEventListener("drop", ignoreStrayFileDrop);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <I18nProvider><App /></I18nProvider>,
+  <I18nProvider>
+    <App />
+    <ToastViewport />
+  </I18nProvider>,
 );

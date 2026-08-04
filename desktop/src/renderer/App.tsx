@@ -185,6 +185,7 @@ import {
 } from "./FeatureFlags";
 import { ArchiveTip } from "./ArchiveTip";
 import { TopNotice } from "./TopNotice";
+import { showErrorToast } from "./Toast";
 import { CircleAlert, RefreshCw } from "lucide-react";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
@@ -212,7 +213,6 @@ import { WorkspaceDocumentTurnDock } from "./WorkspaceDocumentTurnDock";
 import type { WorkspaceTerminalRunRequest } from "./WorkspaceTerminalPanel";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
-import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 import { useComposerDraftState } from "./ComposerDraftState";
@@ -1065,10 +1065,7 @@ export function App(): JSX.Element {
       );
       mergeActivityResponse(result.activity);
     } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: desktopApiErrorMessage(error, t("app.browserTakeoverFailed")),
-      }));
+      showErrorToast(error, t("app.browserTakeoverFailed"));
     }
   }
 
@@ -1083,10 +1080,7 @@ export function App(): JSX.Element {
       );
       mergeActivityResponse(result.activity);
     } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: desktopApiErrorMessage(error, t("app.browserReleaseFailed")),
-      }));
+      showErrorToast(error, t("app.browserReleaseFailed"));
     }
   }
 
@@ -1101,10 +1095,7 @@ export function App(): JSX.Element {
       );
       mergeActivityResponse(result.activity);
     } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: desktopApiErrorMessage(error, t("app.browserStopFailed")),
-      }));
+      showErrorToast(error, t("app.browserStopFailed"));
     }
   }
   const sessionRuntime = useMemo(
@@ -3018,13 +3009,7 @@ export function App(): JSX.Element {
     } catch (error) {
       setSkillsAssistantStatus("");
       setSkillsAssistantDraft(query);
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error
-            ? error.message
-            : t("skills.assistantStartFailed"),
-      }));
+      showErrorToast(error, t("skills.assistantStartFailed"));
     }
   }
 

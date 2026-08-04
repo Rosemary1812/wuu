@@ -25,6 +25,7 @@ import {
 } from "./RuntimeLoadState";
 import type { PendingViewSwitch } from "./ViewSwitchState";
 import { translateCurrent } from "./i18n";
+import { showErrorToast } from "./Toast";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type SidebarProjectThreads = Record<string, Thread[] | undefined>;
@@ -68,10 +69,7 @@ export function createThreadActivationActions(
     deps.selectRuntimeContext ?? defaultSelectRuntimeContext;
 
   function setStatus(status: string): void {
-    deps.setAppState((current) => ({
-      ...current,
-      status,
-    }));
+    showErrorToast(status);
   }
 
   async function selectThread(threadID: string): Promise<void> {

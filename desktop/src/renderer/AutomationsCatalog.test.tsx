@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationTask, DesktopProject, WuuDesktopApi } from "../shared/protocol";
 import { AutomationsCatalog } from "./AutomationsCatalog";
 
+const toastMocks = vi.hoisted(() => ({
+  showErrorToast: vi.fn(),
+}));
+
+vi.mock("./Toast", () => ({
+  showErrorToast: toastMocks.showErrorToast,
+}));
+
 let container: HTMLDivElement;
 let root: Root | null = null;
 
@@ -27,6 +35,7 @@ const project: DesktopProject = {
 };
 
 beforeEach(() => {
+  toastMocks.showErrorToast.mockClear();
   window.localStorage.removeItem("wuu.desktop.automationDetailPaneWidth");
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -462,9 +471,7 @@ describe("AutomationsCatalog", () => {
     });
 
     expect(schedule?.value).toBe("0 8 * * 1-5");
-    const notice = document.body.querySelector('[role="alert"]');
-    expect(notice?.classList.contains("archive-tip")).toBe(true);
-    expect(notice?.textContent).toContain("已恢复上一次有效设置");
+    expect(toastMocks.showErrorToast).toHaveBeenCalledWith("修改未能保存，已恢复上一次有效设置。");
   });
 });
 

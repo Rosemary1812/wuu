@@ -24,6 +24,7 @@ import {
   selectRuntimeContext as defaultSelectRuntimeContext,
 } from "./RuntimeLoadState";
 import { translateCurrent } from "./i18n";
+import { showErrorToast } from "./Toast";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type ViewSwitchKind = "thread" | "project" | "runtime";
@@ -70,10 +71,7 @@ export function createSessionTabActions(
   const poppingOutThreadIDs = new Set<string>();
 
   function setStatus(status: string): void {
-    deps.setAppState((current) => ({
-      ...current,
-      status,
-    }));
+    showErrorToast(status);
   }
 
   function activateGlobalSessionTab(tab: GlobalSessionTab): void {

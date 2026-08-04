@@ -10,6 +10,14 @@ import {
 } from "./AppState";
 import { createThreadMutationActions } from "./ThreadMutationActions";
 
+const toastMocks = vi.hoisted(() => ({
+  showErrorToast: vi.fn(),
+}));
+
+vi.mock("./Toast", () => ({
+  showErrorToast: toastMocks.showErrorToast,
+}));
+
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
 
 function restoreWuu(): void {
@@ -24,6 +32,7 @@ function restoreWuu(): void {
 }
 
 afterEach(() => {
+  toastMocks.showErrorToast.mockClear();
   restoreWuu();
 });
 
@@ -235,7 +244,8 @@ describe("createThreadMutationActions", () => {
     expect(outcome).toEqual({ ok: false, error: "会话仍在运行，结束后再归档" });
     expect(api.archiveThread).not.toHaveBeenCalled();
     expect(harness.getAppState().threads[0]?.archived).toBe(false);
-    expect(harness.getAppState().status).toBe("会话仍在运行，结束后再归档");
+    expect(harness.getAppState().status).toBe("ready");
+    expect(toastMocks.showErrorToast).toHaveBeenCalledWith("会话仍在运行，结束后再归档");
   });
 
   it("reports a remotely owned running turn without showing archive success", async () => {
@@ -261,7 +271,8 @@ describe("createThreadMutationActions", () => {
 
     expect(outcome).toEqual({ ok: false, error: "会话仍在运行，结束后再归档" });
     expect(harness.getAppState().threads[0]?.archived).toBe(false);
-    expect(harness.getAppState().status).toBe("会话仍在运行，结束后再归档");
+    expect(harness.getAppState().status).toBe("ready");
+    expect(toastMocks.showErrorToast).toHaveBeenCalledWith("会话仍在运行，结束后再归档");
   });
 
   it("reuses a parked workspace draft when archiving the active thread", async () => {
