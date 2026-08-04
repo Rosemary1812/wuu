@@ -785,7 +785,13 @@ func storeTableExists(db *sql.DB, name string) (bool, error) {
 }
 
 func sqliteDSN(path string) string {
-	u := url.URL{Scheme: "file", Path: path}
+	// Normalize Windows paths for file URI: C:\Users\... → /C:/Users/...
+	// On Unix filepath.ToSlash is a no-op and paths already start with /.
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	u := url.URL{Scheme: "file", Path: p}
 	q := u.Query()
 	q.Add("_pragma", "busy_timeout(5000)")
 	q.Add("_pragma", "foreign_keys(1)")

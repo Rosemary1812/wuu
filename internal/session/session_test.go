@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -48,6 +50,43 @@ func TestDirUsesUserHome(t *testing.T) {
 	if got := Dir(""); got != want {
 		t.Fatalf("Dir(empty) = %q, want %q", got, want)
 	}
+}
+
+func TestSQLiteDSNNormalizesPaths(t *testing.T) {
+	const suffix = "?_pragma=busy_timeout%285000%29&_pragma=foreign_keys%281%29&_txlock=immediate"
+
+	t.Run("unix absolute", func(t *testing.T) {
+		got := sqliteDSN("/Users/name/.wuu/sessions/sessions.sqlite3")
+		want := "file:///Users/name/.wuu/sessions/sessions.sqlite3" + suffix
+		if got != want {
+			t.Fatalf("sqliteDSN() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("windows drive absolute", func(t *testing.T) {
+		if runtime.GOOS != "windows" {
+			t.Skip("filepath.ToSlash only normalizes Windows separators on Windows")
+		}
+		got := sqliteDSN(`C:\Users\name\.wuu\sessions\sessions.sqlite3`)
+		want := "file:///C:/Users/name/.wuu/sessions/sessions.sqlite3" + suffix
+		if got != want {
+			t.Fatalf("sqliteDSN() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("url parse round trip", func(t *testing.T) {
+		// Whatever platform we are on, url.Parse must succeed and the path
+		// component must not be reinterpreted as authority — this is the exact
+		// failure that triggered "invalid uri authority" in production.
+		dsn := sqliteDSN(`C:\Users\wsmdm\.wuu\sessions\sessions.sqlite3`)
+		parsed, err := url.Parse(dsn)
+		if err != nil {
+			t.Fatalf("url.Parse(%q) error = %v", dsn, err)
+		}
+		if parsed.Host != "" {
+			t.Fatalf("DSN %q has non-empty host/authority %q", dsn, parsed.Host)
+		}
+	})
 }
 
 func TestSetRuntimeSelectionPersists(t *testing.T) {

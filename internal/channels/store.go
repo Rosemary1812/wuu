@@ -1190,7 +1190,13 @@ func (s *Service) WakeState(ctx context.Context, agentID string) (WakeState, err
 }
 
 func sqliteDSN(path string) string {
-	u := url.URL{Scheme: "file", Path: path}
+	// Normalize Windows paths for file URI: C:\Users\... → /C:/Users/...
+	// On Unix filepath.ToSlash is a no-op and paths already start with /.
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	u := url.URL{Scheme: "file", Path: p}
 	query := u.Query()
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "foreign_keys(1)")
