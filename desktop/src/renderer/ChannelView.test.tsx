@@ -956,11 +956,15 @@ describe("ChannelView", () => {
     expect(toggle?.textContent).toContain("显示更多");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
 
+    const stream = container.querySelector<HTMLElement>(".channel-message-stream");
+    expect(stream?.style.overflowAnchor).toBe("none");
+
     act(() => toggle?.click());
     expect(bubble?.classList.contains("expanded")).toBe(true);
     expect(Array.from(bubble?.querySelectorAll("strong") ?? []).at(-1)?.textContent).toBe("Final detail");
     expect(toggle?.textContent).toContain("收起");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(stream?.style.overflowAnchor).toBe("auto");
   });
 
   it("uses the same long-message collapse inside the thread panel", async () => {

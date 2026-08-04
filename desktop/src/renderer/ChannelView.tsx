@@ -232,13 +232,21 @@ function ChannelThreadDigest({
 function ChannelMessageBody({
   text,
   allowCollapse,
+  onExpand,
 }: {
   text: string;
   allowCollapse: boolean;
+  onExpand?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const { collapsible, expanded, toggleExpanded } = useLongTextCollapse(text);
   const canCollapse = allowCollapse && collapsible;
+  const handleToggleExpanded = (): void => {
+    if (!expanded) {
+      onExpand?.();
+    }
+    toggleExpanded();
+  };
 
   return (
     <div className={`channel-message-bubble${canCollapse ? ` long-card ${expanded ? "expanded" : "collapsed"}` : ""}`}>
@@ -248,7 +256,7 @@ function ChannelMessageBody({
           className="channel-message-expand-toggle"
           type="button"
           aria-expanded={expanded}
-          onClick={toggleExpanded}
+          onClick={handleToggleExpanded}
         >
           <span>{expanded ? t("common.collapse") : t("common.showMore")}</span>
           {expanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
@@ -1435,7 +1443,11 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                     </div>
                   </div>
                   {message.body ? (
-                    <ChannelMessageBody text={message.body} allowCollapse={!own} />
+                    <ChannelMessageBody
+                      text={message.body}
+                      allowCollapse={!own}
+                      onExpand={messageScroll.pauseAutoFollow}
+                    />
                   ) : null}
                   {message.images?.length || message.files?.length ? (
                     <ComposerAttachmentStrip
@@ -1549,7 +1561,13 @@ export function ChannelView({ initialized, section = "rooms", onSectionChange, s
                           <span>{repliedMessage.body}</span>
                         </button>
                       ) : null}
-                      {message.body ? <ChannelMessageBody text={message.body} allowCollapse={!own} /> : null}
+                      {message.body ? (
+                        <ChannelMessageBody
+                          text={message.body}
+                          allowCollapse={!own}
+                          onExpand={threadScroll.pauseAutoFollow}
+                        />
+                      ) : null}
                       {message.images?.length || message.files?.length ? (
                         <ComposerAttachmentStrip
                           images={(message.images ?? []).map((image, index) => ({ id: `${message.id}-thread-image-${index}`, ...image }))}

@@ -93,4 +93,18 @@ describe("useAutoFollowScrollContainer", () => {
 
     expect(handle?.autoFollowRef.current).toBe(false);
   });
+
+  it("does not restore the bottom after a user-triggered layout expansion", () => {
+    if (!layout || !handle || !scrollNode) throw new Error("probe not mounted");
+
+    handle.pauseAutoFollow();
+    layout.scrollHeight = 1600;
+    act(() => {
+      scrollNode?.dispatchEvent(new Event("scroll"));
+    });
+    handle.scrollToBottom();
+
+    expect(handle.autoFollowRef.current).toBe(false);
+    expect(layout.scrollTop).toBe(800);
+  });
 });

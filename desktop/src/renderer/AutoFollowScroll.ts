@@ -108,6 +108,7 @@ export function useAutoFollowScrollContainer({
     force?: boolean;
     revealScrollbar?: boolean;
   }) => void;
+  pauseAutoFollow: () => void;
   scheduleScrollToBottom: () => void;
   handleScrollFrame: () => void;
 } {
@@ -132,6 +133,10 @@ export function useAutoFollowScrollContainer({
       setAutoFollowOverflowAnchor(node, next);
     }
   }, []);
+
+  const pauseAutoFollow = useCallback((): void => {
+    setAutoFollow(false);
+  }, [setAutoFollow]);
 
   const refreshPointerScrollGestureLayout = useCallback((node: HTMLElement): void => {
     const gesture = pointerScrollGestureRef.current;
@@ -426,9 +431,10 @@ export function useAutoFollowScrollContainer({
       scrollRef,
       autoFollowRef,
       scrollToBottom,
+      pauseAutoFollow,
       scheduleScrollToBottom,
       handleScrollFrame,
     }),
-    [handleScrollFrame, scheduleScrollToBottom, scrollToBottom],
+    [handleScrollFrame, pauseAutoFollow, scheduleScrollToBottom, scrollToBottom],
   );
 }
