@@ -18,6 +18,7 @@ import {
   Plus,
   Search,
   Settings,
+  UsersRound,
   Wrench,
 } from "lucide-react";
 import {
@@ -348,6 +349,7 @@ export function AppSidebar({
   onSelectChannelRoom,
   onToggleChannelRoomPinned,
   onArchiveChannelRoom,
+  onOpenChannelAgents,
   onOpenChannelTasks,
   onOpenChannels,
   onCreateChannelRoom,
@@ -410,7 +412,7 @@ export function AppSidebar({
   activeChannelRoomID?: string;
   // Which channel canvas is on screen, or null when channels are closed —
   // drives the Agents / 任务 entry row highlights.
-  activeChannelSection?: "rooms" | "tasks" | null;
+  activeChannelSection?: "rooms" | "agents" | "tasks" | null;
   onSelectChannelRoom?: (roomID: string) => void;
   onToggleChannelRoomPinned?: (room: ChannelRoom) => void;
   onArchiveChannelRoom?: (room: ChannelRoom) => void;
@@ -556,6 +558,18 @@ export function AppSidebar({
             <Search className="icon-lg" />
             <span>{t("sidebar.searchConversations")}</span>
           </button>
+          {groupChatEnabled ? (
+            <button
+              className="nav-item"
+              type="button"
+              aria-current={activeChannelSection === "agents" ? "page" : undefined}
+              onClick={onOpenChannelAgents}
+              disabled={!state.initialized}
+            >
+              <UsersRound className="icon-lg" />
+              <span>{t("channels.agents")}</span>
+            </button>
+          ) : null}
           <button
             className="nav-item"
             onClick={onOpenAutomationsTab}
