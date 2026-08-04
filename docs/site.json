@@ -52,6 +52,7 @@
           "pages": [
             "zh-cn/automation/scheduled-tasks.md",
             "zh-cn/automation/exec.md",
+            "zh-cn/automation/app-server.md",
             "zh-cn/customize/mcp.md",
             "en/automation/jsonl-events.md",
             "en/integrations/app-server-protocol.md"
