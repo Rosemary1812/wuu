@@ -1875,10 +1875,31 @@
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.thread-row-context-menu[data-origin="top-left"] {
   transform-origin: top left;
   --menu-enter-x: -4px;
   --menu-enter-y: -4px;
-  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.thread-row-context-menu[data-origin="top-right"] {
+  transform-origin: top right;
+  --menu-enter-x: 4px;
+  --menu-enter-y: -4px;
+}
+
+.thread-row-context-menu[data-origin="bottom-left"] {
+  transform-origin: bottom left;
+  --menu-enter-x: -4px;
+  --menu-enter-y: 4px;
+}
+
+.thread-row-context-menu[data-origin="bottom-right"] {
+  transform-origin: bottom right;
+  --menu-enter-x: 4px;
+  --menu-enter-y: 4px;
 }
 
 .thread-row-context-menu-item {

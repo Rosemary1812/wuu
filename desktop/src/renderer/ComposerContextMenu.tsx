@@ -1,6 +1,9 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { placeContextMenu, type ContextMenuLayout } from "./ContextMenuPlacement";
 import { useI18n } from "./i18n";
+
+export { placeContextMenu } from "./ContextMenuPlacement";
 
 // Right-click edit menu for the composer textarea. Shares the visual
 // language of ThreadContextMenu (the conversation row's right-click
@@ -32,52 +35,6 @@ import { useI18n } from "./i18n";
 //     events the right-click itself dispatches doesn't immediately
 //     dismiss the menu we just opened.
 
-const VIEWPORT_MARGIN = 8;
-
-type MenuOrigin = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-
-type MenuLayout = {
-  left: number;
-  top: number;
-  origin: MenuOrigin;
-};
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), Math.max(min, max));
-}
-
-export function placeContextMenu(
-  x: number,
-  y: number,
-  menuWidth: number,
-  menuHeight: number,
-  viewportWidth: number,
-  viewportHeight: number
-): MenuLayout {
-  const fitsRight = x + menuWidth + VIEWPORT_MARGIN <= viewportWidth;
-  const fitsLeft = x - menuWidth >= VIEWPORT_MARGIN;
-  const fitsBelow = y + menuHeight + VIEWPORT_MARGIN <= viewportHeight;
-  const fitsAbove = y - menuHeight >= VIEWPORT_MARGIN;
-  // Flip only when the preferred side clips AND the opposite side has
-  // room; when neither fits, keep the preferred side and let the clamp
-  // pin the menu inside the viewport.
-  const growsRight = fitsRight || !fitsLeft;
-  const growsDown = fitsBelow || !fitsAbove;
-  return {
-    left: clamp(
-      growsRight ? x : x - menuWidth,
-      VIEWPORT_MARGIN,
-      viewportWidth - menuWidth - VIEWPORT_MARGIN
-    ),
-    top: clamp(
-      growsDown ? y : y - menuHeight,
-      VIEWPORT_MARGIN,
-      viewportHeight - menuHeight - VIEWPORT_MARGIN
-    ),
-    origin: `${growsDown ? "top" : "bottom"}-${growsRight ? "left" : "right"}`
-  };
-}
-
 export function ComposerContextMenu({
   textareaRef,
   x,
@@ -107,7 +64,7 @@ export function ComposerContextMenu({
   // coordinates. offsetWidth/offsetHeight are used instead of
   // getBoundingClientRect because the enter animation's first frame
   // applies a scale/translate transform that would skew the measurement.
-  const [layout, setLayout] = useState<MenuLayout | null>(null);
+  const [layout, setLayout] = useState<ContextMenuLayout | null>(null);
   useLayoutEffect(() => {
     const menuElement = ref.current;
     if (!menuElement) {

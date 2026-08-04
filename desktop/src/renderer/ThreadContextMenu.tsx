@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { placeContextMenu, type ContextMenuLayout } from "./ContextMenuPlacement";
 
 /**
  * ThreadContextMenu is a lightweight right-click menu for thread rows in the
@@ -40,6 +41,24 @@ export function ThreadContextMenu({
   onClose: () => void;
 }): JSX.Element {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [layout, setLayout] = useState<ContextMenuLayout | null>(null);
+
+  useLayoutEffect(() => {
+    const menuElement = menuRef.current;
+    if (!menuElement) {
+      return;
+    }
+    setLayout(
+      placeContextMenu(
+        x,
+        y,
+        menuElement.offsetWidth,
+        menuElement.offsetHeight,
+        window.innerWidth,
+        window.innerHeight,
+      ),
+    );
+  }, [x, y, items]);
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent): void {
@@ -65,7 +84,12 @@ export function ThreadContextMenu({
       ref={menuRef}
       role="menu"
       className="thread-row-context-menu"
-      style={{ left: x, top: y }}
+      data-origin={layout?.origin ?? "top-left"}
+      style={
+        layout
+          ? { left: layout.left, top: layout.top }
+          : { left: x, top: y, visibility: "hidden" }
+      }
       data-testid="thread-row-context-menu"
     >
       {items.map((item, idx) => {
