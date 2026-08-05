@@ -1353,9 +1353,11 @@ describe("Composer send control", () => {
     expect(responsiveDesignCSS).not.toMatch(
       /@container composer-toolbar[^{}]*{[^}]*(?:\.provider-pill|\.model-label)[^}]*display:\s*none/s,
     );
-    expect(workspaceCSS).toMatch(/\.codex-runtime-anchor\s*{[^}]*flex:\s*0 0 auto;/);
+    expect(workspaceCSS).toMatch(
+      /\.codex-runtime-anchor\s*{[^}]*max-width:\s*280px;[^}]*flex:\s*0 0 auto;/,
+    );
     expect(responsiveDesignCSS).toMatch(
-      /@media \(max-width: 1120px\)[\s\S]*?\.codex-runtime-anchor\s*{[^}]*flex:\s*0 0 124px;/,
+      /@media \(max-width: 1120px\)[\s\S]*?\.codex-runtime-anchor\s*{[^}]*max-width:\s*240px;[^}]*flex:\s*0 1 220px;/,
     );
   });
 

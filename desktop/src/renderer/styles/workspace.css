@@ -4261,7 +4261,7 @@ html.resizing-workspace-terminal-split * {
   position: relative;
   display: inline-flex;
   min-width: 0;
-  max-width: 180px;
+  max-width: 280px;
   flex: 0 0 auto;
   align-items: center;
   gap: 2px;
