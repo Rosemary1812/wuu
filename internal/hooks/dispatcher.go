@@ -1,11 +1,15 @@
 package hooks
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 // Dispatcher executes matching hooks for a given event. It is a thin
 // coordinator: the real work lives in the Hook implementations and the
 // Registry's matching logic.
 type Dispatcher struct {
+	mu       sync.RWMutex
 	registry *Registry
 }
 
@@ -32,7 +36,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev Event, input *Input) (*Out
 	}
 	input.Event = ev
 
-	hooks := d.registry.Match(ev, input.ToolName)
+	d.mu.RLock()
+	registry := d.registry
+	d.mu.RUnlock()
+	hooks := registry.Match(ev, input.ToolName)
 	if len(hooks) == 0 {
 		return &Output{}, nil
 	}
@@ -64,5 +71,22 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev Event, input *Input) (*Out
 
 // HasHooks reports whether any hooks are registered for the event.
 func (d *Dispatcher) HasHooks(ev Event) bool {
-	return d.registry.HasHooks(ev)
+	d.mu.RLock()
+	registry := d.registry
+	d.mu.RUnlock()
+	return registry.HasHooks(ev)
+}
+
+// Replace swaps the backing registry while keeping the dispatcher identity
+// stable for executors that captured it during session construction.
+func (d *Dispatcher) Replace(next *Dispatcher) {
+	registry := NewRegistry(nil)
+	if next != nil {
+		next.mu.RLock()
+		registry = next.registry
+		next.mu.RUnlock()
+	}
+	d.mu.Lock()
+	d.registry = registry
+	d.mu.Unlock()
 }

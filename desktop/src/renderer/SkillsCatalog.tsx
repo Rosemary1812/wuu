@@ -3,10 +3,12 @@ import {
   RefreshCw,
   Wrench,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   AppLocale,
   ExtensionInventoryRecord,
+  ExtensionPackageAction,
+  ExtensionPackageUpdateParams,
   RuntimeContext,
   SkillSummary,
 } from "../shared/protocol";
@@ -27,6 +29,19 @@ type SkillContentState = {
   content: string;
 };
 
+type ManagedExtensionPackage = ExtensionInventoryRecord & {
+  approval_state?: "official" | "pending" | "granted" | "changed" | "rejected";
+  runtime_state?: "inactive" | "starting" | "active" | "failed" | "stopping" | "stopped";
+  enabled?: boolean;
+  version?: string;
+  last_error?: string;
+  contributions?: {
+    commands?: unknown[];
+    settings?: unknown[];
+    themes?: unknown[];
+  };
+};
+
 const initialLoadState: LoadState = {
   loading: true,
   error: "",
@@ -37,16 +52,24 @@ export function SkillsCatalog({
   activeContext,
   extensionInventory = [],
   onTrySkill,
+  onRefreshCatalog,
+  onUpdateExtensionPackage,
 }: {
   activeContext?: RuntimeContext;
   extensionInventory?: ExtensionInventoryRecord[];
   onTrySkill?: (skill: SkillSummary) => void;
+  onRefreshCatalog?: () => Promise<SkillSummary[] | undefined>;
+  onUpdateExtensionPackage?: (update: ExtensionPackageUpdateParams) => Promise<void>;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [state, setState] = useState<LoadState>(initialLoadState);
   const [filter, setFilter] = useState("");
   const [previewSkill, setPreviewSkill] = useState<SkillSummary | null>(null);
+  const [packageMutation, setPackageMutation] = useState("");
+  const [packageMutationError, setPackageMutationError] = useState("");
   const contextKey = activeContext ? runtimeContextKey(activeContext) : "";
+  const contextKeyRef = useRef(contextKey);
+  contextKeyRef.current = contextKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -131,21 +154,45 @@ export function SkillsCatalog({
   }, [filter, locale, plugins]);
 
   async function refreshSkills(): Promise<void> {
+    const requestedContextKey = contextKey;
     setState((current) => ({ ...current, loading: true, error: "" }));
     try {
-      const [skillsResult] = await Promise.all([window.wuu.listSkills()]);
+      const skills = onRefreshCatalog
+        ? await onRefreshCatalog()
+        : (await window.wuu.listSkills()).skills;
+      if (!skills || contextKeyRef.current !== requestedContextKey) {
+        return;
+      }
       setState({
         loading: false,
         error: "",
-        skills: skillsResult.skills,
+        skills,
       });
     } catch (error) {
+      if (contextKeyRef.current !== requestedContextKey) {
+        return;
+      }
       setState({
         loading: false,
         error:
           error instanceof Error ? error.message : translateCurrent("skills.loadFailed"),
         skills: [],
       });
+    }
+  }
+
+  async function updateExtensionPackage(record: ExtensionInventoryRecord, action: ExtensionPackageAction): Promise<void> {
+    if (!onUpdateExtensionPackage || packageMutation) {
+      return;
+    }
+    setPackageMutation(`${record.id}:${action}`);
+    setPackageMutationError("");
+    try {
+      await onUpdateExtensionPackage({ id: record.id, fingerprint: record.fingerprint, action });
+    } catch (error) {
+      setPackageMutationError(error instanceof Error ? error.message : translateCurrent("skills.pluginUpdateFailed"));
+    } finally {
+      setPackageMutation("");
     }
   }
 
@@ -199,11 +246,19 @@ export function SkillsCatalog({
         />
       ) : null}
 
+      {packageMutationError ? <div className="skills-catalog-error">{packageMutationError}</div> : null}
+
       {plugins.length > 0 ? (
         <CatalogSection title={t("skills.sectionPlugins")}>
-          <div className="skills-list">
-            {visiblePlugins.map((record) => (
-              <article key={record.id} className="skill-row">
+          <div className="skills-list extension-package-list">
+            {visiblePlugins.map((record) => {
+              const managed = record as ManagedExtensionPackage;
+              const primaryAction = extensionPackagePrimaryAction(managed);
+              const secondaryAction = extensionPackageSecondaryAction(managed);
+              const mutating = packageMutation.startsWith(`${record.id}:`);
+              const grantUnavailable = primaryAction === "grant" && !record.fingerprint;
+              return (
+              <article key={record.id} className="skill-row extension-package-row">
                 <SkillArtwork
                   name={record.name}
                   official={record.provenance.official === true}
@@ -217,11 +272,51 @@ export function SkillsCatalog({
                         {t("skills.official")}
                       </span>
                     ) : null}
+                    <span className={`skill-row-tag skill-row-tag-neutral extension-status extension-status-${extensionPackageTone(managed)}`}>
+                      {extensionPackageStatusLabel(managed, t)}
+                    </span>
                   </span>
                   {record.description ? <p>{record.description}</p> : null}
+                  <span className="extension-package-meta">
+                    {managed.version ? <span>v{managed.version}</span> : null}
+                    <span>{t("skills.pluginScope", { scope: record.provenance.scope })}</span>
+                    <span>{extensionContributionSummary(managed, t)}</span>
+                  </span>
+                  <span className="extension-package-permissions">
+                    <strong>{t("skills.pluginPermissions")}</strong>
+                    {(record.requested_permissions ?? []).length > 0
+                      ? record.requested_permissions?.map((permission) => <code key={permission}>{permission}</code>)
+                      : <span>{t("skills.pluginNoPermissions")}</span>}
+                  </span>
+                  {managed.runtime_state === "failed" && managed.last_error ? (
+                    <span className="extension-package-error">{managed.last_error}</span>
+                  ) : null}
                 </span>
+                {onUpdateExtensionPackage ? (
+                  <span className="extension-package-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={Boolean(packageMutation) || grantUnavailable}
+                      onClick={() => void updateExtensionPackage(record, primaryAction)}
+                    >
+                      {mutating ? t("skills.pluginUpdating") : extensionPackageActionLabel(managed, primaryAction, t)}
+                    </button>
+                    {secondaryAction ? (
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={Boolean(packageMutation)}
+                        onClick={() => void updateExtensionPackage(record, secondaryAction)}
+                      >
+                        {extensionPackageActionLabel(managed, secondaryAction, t)}
+                      </button>
+                    ) : null}
+                  </span>
+                ) : null}
               </article>
-            ))}
+              );
+            })}
           </div>
         </CatalogSection>
       ) : null}
@@ -235,6 +330,79 @@ export function SkillsCatalog({
       ) : null}
     </section>
   );
+}
+
+function extensionPackageApproval(record: ManagedExtensionPackage): NonNullable<ManagedExtensionPackage["approval_state"]> {
+  if (record.approval_state) {
+    return record.approval_state;
+  }
+  return record.provenance.official ? "official" : "pending";
+}
+
+function extensionPackagePrimaryAction(record: ManagedExtensionPackage): ExtensionPackageAction {
+  const approval = extensionPackageApproval(record);
+  if (approval === "pending" || approval === "changed" || approval === "rejected") {
+    return "grant";
+  }
+  return record.enabled === false ? "enable" : "disable";
+}
+
+function extensionPackageSecondaryAction(record: ManagedExtensionPackage): ExtensionPackageAction | undefined {
+  const approval = extensionPackageApproval(record);
+  if (approval === "pending" || approval === "changed") {
+    return "reject";
+  }
+  if (approval === "granted") {
+    return "revoke";
+  }
+  return undefined;
+}
+
+function extensionPackageTone(record: ManagedExtensionPackage): "good" | "warning" | "danger" | "muted" {
+  if (record.runtime_state === "failed" || extensionPackageApproval(record) === "changed") {
+    return "danger";
+  }
+  if (record.runtime_state === "active" || extensionPackageApproval(record) === "official") {
+    return "good";
+  }
+  if (extensionPackageApproval(record) === "pending") {
+    return "warning";
+  }
+  return "muted";
+}
+
+function extensionPackageStatusLabel(record: ManagedExtensionPackage, t: ReturnType<typeof useI18n>["t"]): string {
+  if (record.runtime_state === "failed") return t("skills.pluginStatusFailed");
+  if (record.runtime_state === "starting") return t("skills.pluginStatusStarting");
+  if (record.runtime_state === "active") return t("skills.pluginStatusActive");
+  switch (extensionPackageApproval(record)) {
+    case "official": return t("skills.pluginStatusOfficial");
+    case "granted": return record.enabled === false ? t("skills.pluginStatusDisabled") : t("skills.pluginStatusGranted");
+    case "changed": return t("skills.pluginStatusChanged");
+    case "rejected": return t("skills.pluginStatusRejected");
+    case "pending": return t("skills.pluginStatusPending");
+  }
+}
+
+function extensionPackageActionLabel(
+  record: ManagedExtensionPackage,
+  action: ExtensionPackageAction,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  if (action === "grant") {
+    return extensionPackageApproval(record) === "changed" ? t("skills.pluginReauthorize") : t("skills.pluginGrant");
+  }
+  if (action === "reject") return t("skills.pluginReject");
+  if (action === "revoke") return t("skills.pluginRevoke");
+  if (action === "enable") return t("skills.pluginEnable");
+  return t("skills.pluginDisable");
+}
+
+function extensionContributionSummary(record: ManagedExtensionPackage, t: ReturnType<typeof useI18n>["t"]): string {
+  const commands = record.contributions?.commands?.length ?? 0;
+  const settings = record.contributions?.settings?.length ?? 0;
+  const themes = record.contributions?.themes?.length ?? 0;
+  return t("skills.pluginContributions", { commands, settings, themes });
 }
 
 function CatalogSection({

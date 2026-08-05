@@ -21,39 +21,41 @@ import (
 const (
 	ProtocolVersion = "wuu-app-server/v0.1"
 
-	MethodInitialize           = "initialize"
-	MethodConfigRead           = "config/read"
-	MethodConfigModelUpdate    = "config/model/update"
-	MethodConfigAdvancedUpdate = "config/advanced/update"
-	MethodConfigGeneralUpdate  = "config/general/update"
-	MethodConfigCodexModels    = "config/codex/models"
-	MethodConfigCatalogRefresh = "config/model-catalog/refresh"
-	MethodConfigProviderRemove = "config/provider/remove"
-	MethodSkillList            = "skill/list"
-	MethodChannelBootstrap     = "channel/bootstrap"
-	MethodChannelAgentList     = "channel/agent/list"
-	MethodChannelAgentInsights = "channel/agent/insights"
-	MethodChannelAgentCreate   = "channel/agent/create"
-	MethodChannelAgentUpdate   = "channel/agent/update"
-	MethodChannelAgentDelete   = "channel/agent/delete"
-	MethodChannelAgentStart    = "channel/agent/start"
-	MethodChannelAgentReset    = "channel/agent/reset"
-	MethodChannelRoomList      = "channel/room/list"
-	MethodChannelRoomCreate    = "channel/room/create"
-	MethodChannelRoomUpdate    = "channel/room/update"
-	MethodChannelRoomDelete    = "channel/room/delete"
-	MethodChannelRoomRead      = "channel/room/read"
-	MethodChannelMessageList   = "channel/message/list"
-	MethodChannelMessageSend   = "channel/message/send"
-	MethodChannelTaskCreate    = "channel/task/create"
-	MethodChannelTaskUpdate    = "channel/task/update"
-	MethodChannelMentionStatus = "channel/human-mention/status"
-	MethodChannelMentionAck    = "channel/human-mention/ack"
-	MethodAutomationList       = "automation/list"
-	MethodAutomationRuns       = "automation/run/list"
-	MethodAutomationCreate     = "automation/create"
-	MethodAutomationUpdate     = "automation/update"
-	MethodAutomationRemove     = "automation/remove"
+	MethodInitialize              = "initialize"
+	MethodConfigRead              = "config/read"
+	MethodConfigModelUpdate       = "config/model/update"
+	MethodConfigAdvancedUpdate    = "config/advanced/update"
+	MethodConfigGeneralUpdate     = "config/general/update"
+	MethodExtensionCatalogRefresh = "extension/catalog/refresh"
+	MethodExtensionPackageUpdate  = "extension/package/update"
+	MethodConfigCodexModels       = "config/codex/models"
+	MethodConfigCatalogRefresh    = "config/model-catalog/refresh"
+	MethodConfigProviderRemove    = "config/provider/remove"
+	MethodSkillList               = "skill/list"
+	MethodChannelBootstrap        = "channel/bootstrap"
+	MethodChannelAgentList        = "channel/agent/list"
+	MethodChannelAgentInsights    = "channel/agent/insights"
+	MethodChannelAgentCreate      = "channel/agent/create"
+	MethodChannelAgentUpdate      = "channel/agent/update"
+	MethodChannelAgentDelete      = "channel/agent/delete"
+	MethodChannelAgentStart       = "channel/agent/start"
+	MethodChannelAgentReset       = "channel/agent/reset"
+	MethodChannelRoomList         = "channel/room/list"
+	MethodChannelRoomCreate       = "channel/room/create"
+	MethodChannelRoomUpdate       = "channel/room/update"
+	MethodChannelRoomDelete       = "channel/room/delete"
+	MethodChannelRoomRead         = "channel/room/read"
+	MethodChannelMessageList      = "channel/message/list"
+	MethodChannelMessageSend      = "channel/message/send"
+	MethodChannelTaskCreate       = "channel/task/create"
+	MethodChannelTaskUpdate       = "channel/task/update"
+	MethodChannelMentionStatus    = "channel/human-mention/status"
+	MethodChannelMentionAck       = "channel/human-mention/ack"
+	MethodAutomationList          = "automation/list"
+	MethodAutomationRuns          = "automation/run/list"
+	MethodAutomationCreate        = "automation/create"
+	MethodAutomationUpdate        = "automation/update"
+	MethodAutomationRemove        = "automation/remove"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
 	// of the most-recently-updated non-terminal goal in the requested thread
 	// scope. The mutation methods are user-owned controls for the active
@@ -517,18 +519,91 @@ const (
 	ExtensionStateChanged  ExtensionState = "changed"
 )
 
+type ExtensionApprovalState string
+
+const (
+	ExtensionApprovalOfficial ExtensionApprovalState = "official"
+	ExtensionApprovalPending  ExtensionApprovalState = "pending"
+	ExtensionApprovalGranted  ExtensionApprovalState = "granted"
+	ExtensionApprovalChanged  ExtensionApprovalState = "changed"
+	ExtensionApprovalRejected ExtensionApprovalState = "rejected"
+)
+
+type ExtensionRuntimeState string
+
+const (
+	ExtensionRuntimeInactive ExtensionRuntimeState = "inactive"
+	ExtensionRuntimeStarting ExtensionRuntimeState = "starting"
+	ExtensionRuntimeActive   ExtensionRuntimeState = "active"
+	ExtensionRuntimeFailed   ExtensionRuntimeState = "failed"
+	ExtensionRuntimeStopping ExtensionRuntimeState = "stopping"
+	ExtensionRuntimeStopped  ExtensionRuntimeState = "stopped"
+)
+
+type ExtensionCommandKind string
+
+const (
+	ExtensionCommandPromptTemplate ExtensionCommandKind = "prompt_template"
+	ExtensionCommandRuntimeAction  ExtensionCommandKind = "runtime_action"
+)
+
+type ExtensionCommandDescriptor struct {
+	ID          string               `json:"id"`
+	Title       string               `json:"title"`
+	Description string               `json:"description,omitempty"`
+	Kind        ExtensionCommandKind `json:"kind"`
+	Template    string               `json:"template,omitempty"`
+	Contexts    []string             `json:"contexts,omitempty"`
+	Aliases     []string             `json:"aliases,omitempty"`
+	Keywords    []string             `json:"keywords,omitempty"`
+}
+
+type ExtensionContributions struct {
+	Commands []ExtensionCommandDescriptor `json:"commands,omitempty"`
+}
+
 type ExtensionInventoryRecord struct {
-	ID                   string                `json:"id"`
-	Name                 string                `json:"name"`
-	Description          string                `json:"description,omitempty"`
-	Kind                 extensions.Kind       `json:"kind"`
-	Provenance           extensions.Provenance `json:"provenance"`
-	State                ExtensionState        `json:"state"`
-	Executable           bool                  `json:"executable,omitempty"`
-	Fingerprint          string                `json:"fingerprint,omitempty"`
-	GrantScope           extensions.GrantScope `json:"grant_scope,omitempty"`
-	RequestedPermissions []string              `json:"requested_permissions,omitempty"`
-	UnsupportedFields    []string              `json:"unsupported_fields,omitempty"`
+	ID                   string                  `json:"id"`
+	Name                 string                  `json:"name"`
+	Description          string                  `json:"description,omitempty"`
+	Kind                 extensions.Kind         `json:"kind"`
+	Provenance           extensions.Provenance   `json:"provenance"`
+	State                ExtensionState          `json:"state"`
+	Executable           bool                    `json:"executable,omitempty"`
+	Fingerprint          string                  `json:"fingerprint,omitempty"`
+	GrantScope           extensions.GrantScope   `json:"grant_scope,omitempty"`
+	RequestedPermissions []string                `json:"requested_permissions,omitempty"`
+	UnsupportedFields    []string                `json:"unsupported_fields,omitempty"`
+	ParentID             string                  `json:"parent_id,omitempty"`
+	ApprovalState        ExtensionApprovalState  `json:"approval_state,omitempty"`
+	RuntimeState         ExtensionRuntimeState   `json:"runtime_state,omitempty"`
+	Enabled              *bool                   `json:"enabled,omitempty"`
+	Contributions        *ExtensionContributions `json:"contributions,omitempty"`
+}
+
+type ExtensionPackageAction string
+
+const (
+	ExtensionPackageGrant   ExtensionPackageAction = "grant"
+	ExtensionPackageReject  ExtensionPackageAction = "reject"
+	ExtensionPackageRevoke  ExtensionPackageAction = "revoke"
+	ExtensionPackageEnable  ExtensionPackageAction = "enable"
+	ExtensionPackageDisable ExtensionPackageAction = "disable"
+)
+
+type ExtensionPackageUpdateParams struct {
+	ID          string                 `json:"id"`
+	Fingerprint string                 `json:"fingerprint,omitempty"`
+	Action      ExtensionPackageAction `json:"action"`
+}
+
+type ExtensionPackageUpdateResult struct {
+	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory"`
+}
+
+type ExtensionCatalogRefreshResult struct {
+	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory"`
+	Skills             []SkillSummary             `json:"skills"`
 }
 
 type ConfigModelUpdateParams struct {

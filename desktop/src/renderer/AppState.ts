@@ -3,6 +3,7 @@ import type {
   AppServerNotification,
   ChannelRoom,
   DesktopProject,
+  ExtensionInventoryRecord,
   GitStatusResult,
   InitializeResult,
   PlanUpdate,
@@ -2474,6 +2475,23 @@ function sameRuntimeContext(
   return left.cwd === right.cwd;
 }
 
+function withExtensionInventoryForContext(
+  state: AppState,
+  sourceContext: RuntimeContext | undefined,
+  extensionInventory: ExtensionInventoryRecord[],
+): AppState {
+  if (!state.initialized || !sameRuntimeContext(state.activeContext, sourceContext)) {
+    return state;
+  }
+  return {
+    ...state,
+    initialized: {
+      ...state.initialized,
+      extension_inventory: extensionInventory,
+    },
+  };
+}
+
 function threadMatchesActiveContext(
   thread: Thread,
   context: RuntimeContext | undefined,
@@ -3403,6 +3421,7 @@ export {
   upsertThreadChildAgent,
   upsertTurn,
   upsertTurnItem,
+  withExtensionInventoryForContext,
   withLoadedRuntimeSessionTab,
 };
 

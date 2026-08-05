@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
@@ -96,23 +97,25 @@ const (
 // stream runner. UI surfaces should depend on this instead of reassembling the
 // pieces themselves.
 type Session struct {
-	ProviderName   string
-	Model          string
-	RootDir        string
-	Host           Host
-	WorkspaceID    string
-	StateDir       string
-	ConfigPath     string
-	HomeDir        string
-	ConfigLoadMode ConfigLoadMode
-	SessionDir     string
-	StreamRunner   *agent.StreamRunner
-	TitleClient    providers.Client
-	HookDispatcher *hooks.Dispatcher
-	Skills         []skills.Skill
-	Plugins        []pluginpkg.Plugin
-	PluginHost     *pluginhost.Host
-	Memory         []memory.File
+	ProviderName      string
+	Model             string
+	RootDir           string
+	Host              Host
+	WorkspaceID       string
+	StateDir          string
+	ConfigPath        string
+	HomeDir           string
+	ConfigLoadMode    ConfigLoadMode
+	SessionDir        string
+	StreamRunner      *agent.StreamRunner
+	TitleClient       providers.Client
+	HookDispatcher    *hooks.Dispatcher
+	Skills            []skills.Skill
+	Plugins           []pluginpkg.Plugin
+	ActivePlugins     []pluginpkg.Plugin
+	ExtensionSettings *extensions.Settings
+	PluginHost        *pluginhost.Host
+	Memory            []memory.File
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.
@@ -205,6 +208,8 @@ func (s *Session) cloneForThreadModel() *Session {
 		HookDispatcher:              s.HookDispatcher,
 		Skills:                      s.Skills,
 		Plugins:                     s.Plugins,
+		ActivePlugins:               s.ActivePlugins,
+		ExtensionSettings:           s.ExtensionSettings,
 		PluginHost:                  s.PluginHost,
 		Memory:                      s.Memory,
 		MemdirEnabled:               s.MemdirEnabled,
@@ -382,9 +387,10 @@ func NewSession(opts Options) (*Session, error) {
 	setupCatwalk(cfg)
 
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
-	pluginHost := startPluginHost(discoveredPlugins, rootDir, wuuHome)
-	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel, workspaceJournal)
-	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
+	activePlugins := activatedPlugins(cfg, discoveredPlugins)
+	pluginHost := startPluginHost(activePlugins, rootDir, wuuHome)
+	hookDispatcher := buildHookDispatcher(cfg, activePlugins, providers.Client(client), toolModeModel, workspaceJournal)
+	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, activePlugins)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
@@ -465,7 +471,7 @@ func NewSession(opts Options) (*Session, error) {
 		toolkit = kit
 		toolExecutor = hooks.NewHookedExecutor(kit, hookDispatcher, "", rootDir)
 		toolExecutor = newPluginToolExecutor(toolExecutor, pluginHost, "", rootDir)
-		connectMCPServers(cfg, discoveredPlugins, toolkit)
+		connectMCPServers(cfg, activePlugins, toolkit)
 	}
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
@@ -693,6 +699,8 @@ func NewSession(opts Options) (*Session, error) {
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
 		Plugins:                     discoveredPlugins,
+		ActivePlugins:               activePlugins,
+		ExtensionSettings:           cfg.Extensions,
 		PluginHost:                  pluginHost,
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
@@ -1795,6 +1803,101 @@ func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin, client p
 
 func discoverPlugins(rootDir, wuuHome string) []pluginpkg.Plugin {
 	return pluginpkg.Discover(rootDir, wuuHome)
+}
+
+// activatedPlugins separates inert discovery from executable activation.
+// Community packages require an exact user-owned grant; official bundled
+// packages are trusted by provenance. Either tier may be explicitly disabled.
+func activatedPlugins(cfg config.Config, discovered []pluginpkg.Plugin) []pluginpkg.Plugin {
+	settings := cfg.Extensions
+	out := make([]pluginpkg.Plugin, 0, len(discovered))
+	for _, item := range discovered {
+		if settings != nil && settings.IsDisabled(item.SubjectID) {
+			continue
+		}
+		if item.Official {
+			out = append(out, item)
+			continue
+		}
+		if settings == nil || settings.IsRejected(item.SubjectID, item.Fingerprint) {
+			continue
+		}
+		grant, ok := settings.FindGrant(item.SubjectID, item.Fingerprint)
+		if !ok || !permissionSetContains(grant.Permissions, item.EffectivePermissions) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func permissionSetContains(granted, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	set := make(map[string]struct{}, len(granted))
+	for _, permission := range granted {
+		set[strings.TrimSpace(permission)] = struct{}{}
+	}
+	for _, permission := range required {
+		if _, ok := set[strings.TrimSpace(permission)]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// ApplyExtensionPolicy refreshes all package-owned execution surfaces after a
+// grant, rejection, revoke, enable, or disable decision. Callers must ensure no
+// turn is running while the surface graph is replaced.
+func (s *Session) ApplyExtensionPolicy(cfg config.Config) error {
+	if s == nil {
+		return errors.New("runtime is not initialized")
+	}
+	s.ExtensionSettings = cfg.Extensions
+	active := activatedPlugins(cfg, s.Plugins)
+	if s.PluginHost != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = s.PluginHost.Close(ctx)
+		cancel()
+	}
+	if s.Toolkit != nil {
+		if manager := s.Toolkit.MCPManager(); manager != nil {
+			_ = manager.Close()
+		}
+	}
+	s.PluginHost = startPluginHost(active, s.RootDir, s.WuuHome)
+	if s.StreamRunner != nil {
+		inner := s.StreamRunner.Tools
+		if previous, ok := inner.(*pluginToolExecutor); ok {
+			inner = previous.inner
+		}
+		s.StreamRunner.Tools = newPluginToolExecutor(inner, s.PluginHost, "", s.RootDir)
+		s.StreamRunner.BeforeRequest = pluginRequestInterceptor(s.PluginHost, s.ProviderName, "", s.RootDir)
+	}
+	nextHooks := buildHookDispatcher(cfg, active, s.TitleClient, s.Model, nil)
+	if s.HookDispatcher == nil {
+		s.HookDispatcher = nextHooks
+	} else {
+		s.HookDispatcher.Replace(nextHooks)
+	}
+	s.Skills = discoverSkills(s.RootDir, s.HomeDir, s.WuuHome, active)
+	s.ActivePlugins = active
+	if s.Toolkit != nil {
+		connectMCPServers(cfg, active, s.Toolkit)
+	}
+	s.RefreshSystemPrompt(s.ProviderName, s.Model)
+	return nil
+}
+
+// RefreshExtensions rediscovers package manifests before rebuilding the active
+// extension surfaces. It is used by the catalog's explicit Refresh action.
+func (s *Session) RefreshExtensions(cfg config.Config) error {
+	if s == nil {
+		return errors.New("runtime is not initialized")
+	}
+	s.Plugins = discoverPlugins(s.RootDir, s.WuuHome)
+	return s.ApplyExtensionPolicy(cfg)
 }
 
 func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin) []skills.Skill {

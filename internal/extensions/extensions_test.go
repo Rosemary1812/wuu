@@ -80,6 +80,40 @@ func TestFingerprintChangesForExecutableBehavior(t *testing.T) {
 	}
 }
 
+func TestPackageFingerprintPreservesArgumentOrderAndHookOptions(t *testing.T) {
+	base := PackageSpec{
+		ID:      "ordered",
+		Runtime: &RuntimeSpec{Protocol: "wuu-plugin-v1", Command: "plugin", Args: []string{"--from", "one"}},
+		Hooks: map[string][]HookEntry{
+			"PreToolUse": {{Type: "prompt", Prompt: "check", Model: "model-one", Timeout: 10}},
+		},
+	}
+	baseFingerprint, err := ComputeFingerprint(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered := base
+	reordered.Runtime = &RuntimeSpec{Protocol: "wuu-plugin-v1", Command: "plugin", Args: []string{"one", "--from"}}
+	reorderedFingerprint, err := ComputeFingerprint(reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reorderedFingerprint == baseFingerprint {
+		t.Fatal("runtime argument order did not change package fingerprint")
+	}
+	hookChanged := base
+	hookChanged.Hooks = map[string][]HookEntry{
+		"PreToolUse": {{Type: "prompt", Prompt: "check", Model: "model-two", Timeout: 20}},
+	}
+	hookFingerprint, err := ComputeFingerprint(hookChanged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hookFingerprint == baseFingerprint {
+		t.Fatal("hook model and timeout did not change package fingerprint")
+	}
+}
+
 func TestGrantMatchesExactFingerprint(t *testing.T) {
 	grant := Grant{
 		SubjectID:   "mcp:project:docs",

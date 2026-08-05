@@ -3,6 +3,7 @@ import type {
   Agent,
   ChannelRoom,
   DesktopProject,
+  ExtensionInventoryRecord,
   RuntimeContext,
   Thread,
   ThreadItem,
@@ -60,6 +61,7 @@ import {
   threadSessionTabID,
   turnStreamStatusForThread,
   turnPreview,
+  withExtensionInventoryForContext,
   workspacePanelContext,
   type AppState,
   type ComposerDraftState,
@@ -3365,11 +3367,11 @@ describe("AppState English localization", () => {
       code: 0,
       message: "",
     });
-    expect(sessionTabLabel(skills, initialState)).toBe("Skills");
+    expect(sessionTabLabel(skills, initialState)).toBe("Extensions");
     expect(resolveLocalizedText(exited.status)).toBe("wuu core exited");
 
     setActiveLocale("zh-CN");
-    expect(sessionTabLabel(skills, initialState)).toBe("技能");
+    expect(sessionTabLabel(skills, initialState)).toBe("扩展");
     expect(resolveLocalizedText(exited.status)).toBe("wuu core 已退出");
   });
 
@@ -3535,5 +3537,35 @@ describe("threadNeedsResumeOnReselect", () => {
     };
 
     expect(threadNeedsResumeOnReselect(state, thread.id)).toBe(false);
+  });
+});
+
+describe("extension inventory context", () => {
+  const projectA: RuntimeContext = { kind: "project", project_id: "a", cwd: "/a" };
+  const projectB: RuntimeContext = { kind: "project", project_id: "b", cwd: "/b" };
+  const oldInventory: ExtensionInventoryRecord[] = [{
+    id: "old",
+    name: "Old",
+    kind: "plugin",
+    provenance: { kind: "plugin", source: "project", scope: "project" },
+    state: "pending",
+  }];
+  const nextInventory: ExtensionInventoryRecord[] = [{
+    id: "next",
+    name: "Next",
+    kind: "plugin",
+    provenance: { kind: "plugin", source: "project", scope: "project" },
+    state: "pending",
+  }];
+
+  it("applies inventory only to the runtime that requested it", () => {
+    const state = {
+      ...initialState,
+      activeContext: projectB,
+      initialized: { extension_inventory: oldInventory },
+    } as AppState;
+
+    expect(withExtensionInventoryForContext(state, projectA, nextInventory)).toBe(state);
+    expect(withExtensionInventoryForContext(state, projectB, nextInventory).initialized?.extension_inventory).toEqual(nextInventory);
   });
 });

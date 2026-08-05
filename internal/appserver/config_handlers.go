@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/config"
@@ -20,12 +21,14 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
+	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
@@ -278,7 +281,7 @@ func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
 		main.MCP = extensionSurfaceSummary(mcpKnownTools > 0, mcpKnownTools)
 		main.Skills = extensionSurfaceSummary(len(s.rt.Skills) > 0, len(s.rt.Skills))
 		main.Hooks = ExtensionSurfaceTrustSummary{Allowed: s.rt.HookDispatcher != nil, Active: hookDispatcherHasAny(s.rt.HookDispatcher)}
-		main.Plugins = ExtensionSurfaceTrustSummary{Allowed: true, Active: len(s.rt.Plugins) > 0, Count: len(s.rt.Plugins)}
+		main.Plugins = ExtensionSurfaceTrustSummary{Allowed: true, Active: len(s.rt.ActivePlugins) > 0, Count: len(s.rt.ActivePlugins)}
 		main.ExternalTools = main.MCP
 	}
 	reviewer := ExtensionSessionTrustSummary{
@@ -304,7 +307,9 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 	if cfg.Extensions != nil {
 		grants = *cfg.Extensions
 	}
-
+	if s.rt.ExtensionSettings != nil {
+		grants = *s.rt.ExtensionSettings
+	}
 	pluginsByID := make(map[string]struct {
 		scope    string
 		official bool
@@ -314,6 +319,10 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 			scope    string
 			official bool
 		}{scope: normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir), official: item.Official}
+	}
+	activePluginSubjects := make(map[string]struct{}, len(s.rt.ActivePlugins))
+	for _, item := range s.rt.ActivePlugins {
+		activePluginSubjects[item.SubjectID] = struct{}{}
 	}
 
 	records := make([]ExtensionInventoryRecord, 0, len(s.rt.Skills)+len(s.rt.Plugins))
@@ -344,8 +353,40 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 	for _, item := range s.rt.Plugins {
 		scope := normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir)
 		pluginSource := pluginManifestSource(item.ManifestPath)
-		records = append(records, ExtensionInventoryRecord{
-			ID:          extensionSubjectID("plugin", scope, item.ID),
+		if item.SubjectID == "" || item.Fingerprint == "" {
+			if contract, err := item.PackageContract(); err == nil {
+				item.SubjectID = contract.SubjectID
+				item.Fingerprint = contract.Fingerprint
+				item.EffectivePermissions = contract.Permissions
+			}
+		}
+		if item.SubjectID == "" {
+			item.SubjectID = extensions.SubjectID(scope, item.ID)
+		}
+		approval, state, grantScope, enabled := pluginPackageInventoryState(grants, item)
+		runtimeState := ExtensionRuntimeInactive
+		if _, ok := activePluginSubjects[item.SubjectID]; ok {
+			runtimeState = ExtensionRuntimeActive
+		}
+		commands := make([]ExtensionCommandDescriptor, 0, len(item.Commands))
+		for _, command := range item.Commands {
+			template := command.Prompt
+			if command.ResolvedPrompt != nil {
+				template = command.ResolvedPrompt.Text
+			}
+			commands = append(commands, ExtensionCommandDescriptor{
+				ID:          command.ID,
+				Title:       command.Title,
+				Description: command.Description,
+				Kind:        ExtensionCommandKind(command.Kind),
+				Template:    template,
+				Contexts:    append([]string(nil), command.Contexts...),
+				Aliases:     append([]string(nil), command.Aliases...),
+				Keywords:    append([]string(nil), command.Keywords...),
+			})
+		}
+		packageRecord := ExtensionInventoryRecord{
+			ID:          item.SubjectID,
 			Name:        item.ID,
 			Description: item.Description,
 			Kind:        extensions.KindPlugin,
@@ -357,10 +398,20 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 				PluginID: item.ID,
 				Official: item.Official,
 			},
-			State:                ExtensionStateReadOnly,
-			RequestedPermissions: cloneSortedStrings(item.RequestedPermissions),
+			State:                state,
+			Executable:           item.Runtime != nil || len(item.MCPServers) > 0 || len(item.Hooks) > 0,
+			Fingerprint:          item.Fingerprint,
+			GrantScope:           grantScope,
+			RequestedPermissions: cloneSortedStrings(item.EffectivePermissions),
 			UnsupportedFields:    cloneSortedStrings(item.UnsupportedFields),
-		})
+			ApprovalState:        approval,
+			RuntimeState:         runtimeState,
+			Enabled:              &enabled,
+		}
+		if len(commands) > 0 {
+			packageRecord.Contributions = &ExtensionContributions{Commands: commands}
+		}
+		records = append(records, packageRecord)
 
 		mcpNames := sortedMapKeys(item.MCPServers)
 		for _, name := range mcpNames {
@@ -466,6 +517,51 @@ func (s *Server) currentExtensionConfig() config.Config {
 		return cfg
 	}
 	return config.Config{}
+}
+
+func pluginPackageInventoryState(settings extensions.Settings, item pluginpkg.Plugin) (ExtensionApprovalState, ExtensionState, extensions.GrantScope, bool) {
+	enabled := !settings.IsDisabled(item.SubjectID)
+	if item.Official {
+		if !enabled {
+			return ExtensionApprovalOfficial, ExtensionStateRejected, "", false
+		}
+		return ExtensionApprovalOfficial, ExtensionStateActive, "", true
+	}
+	if settings.IsRejected(item.SubjectID, item.Fingerprint) {
+		return ExtensionApprovalRejected, ExtensionStateRejected, "", enabled
+	}
+	if grant, ok := settings.FindGrant(item.SubjectID, item.Fingerprint); ok && inventoryPermissionSetContains(grant.Permissions, item.EffectivePermissions) {
+		if !enabled {
+			return ExtensionApprovalGranted, ExtensionStateRejected, grant.Scope, false
+		}
+		return ExtensionApprovalGranted, ExtensionStateGranted, grant.Scope, true
+	}
+	if settingsHasSubjectGrant(settings, item.SubjectID) {
+		return ExtensionApprovalChanged, ExtensionStateChanged, "", enabled
+	}
+	return ExtensionApprovalPending, ExtensionStatePending, "", enabled
+}
+
+func settingsHasSubjectGrant(settings extensions.Settings, subjectID string) bool {
+	for _, grant := range settings.Grants {
+		if grant.SubjectID == subjectID {
+			return true
+		}
+	}
+	return false
+}
+
+func inventoryPermissionSetContains(granted, required []string) bool {
+	set := make(map[string]struct{}, len(granted))
+	for _, permission := range granted {
+		set[strings.TrimSpace(permission)] = struct{}{}
+	}
+	for _, permission := range required {
+		if _, ok := set[strings.TrimSpace(permission)]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func executableExtensionState(grants extensions.Settings, subjectID, fingerprint string, enabled *bool, official bool) (ExtensionState, extensions.GrantScope) {
@@ -604,6 +700,94 @@ func hookDispatcherHasAny(dispatcher *hooks.Dispatcher) bool {
 		}
 	}
 	return false
+}
+
+func (s *Server) handleExtensionPackageUpdate(req Request) error {
+	var params ExtensionPackageUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if s.rt == nil {
+		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot change extension packages while a turn is running"))
+	}
+	var selected *pluginpkg.Plugin
+	for index := range s.rt.Plugins {
+		if s.rt.Plugins[index].SubjectID == strings.TrimSpace(params.ID) {
+			selected = &s.rt.Plugins[index]
+			break
+		}
+	}
+	if selected == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("extension package %q was not found", params.ID))
+	}
+	providedFingerprint := strings.TrimSpace(params.Fingerprint)
+	if providedFingerprint != "" && providedFingerprint != selected.Fingerprint {
+		return s.writeResponse(req.ID, nil, errors.New("extension package changed; refresh inventory before updating policy"))
+	}
+	if (params.Action == ExtensionPackageGrant || params.Action == ExtensionPackageReject) && providedFingerprint == "" {
+		return s.writeResponse(req.ID, nil, errors.New("fingerprint is required for grant and reject actions"))
+	}
+	if selected.Official && (params.Action == ExtensionPackageGrant || params.Action == ExtensionPackageReject) {
+		return s.writeResponse(req.ID, nil, errors.New("official bundled packages cannot be granted or rejected"))
+	}
+
+	userConfigPath, err := statepath.ConfigPath(s.rt.HomeDir)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("resolve user config: %w", err))
+	}
+	settings, err := config.UpdateExtensionSettings(userConfigPath, func(settings *extensions.Settings) error {
+		switch params.Action {
+		case ExtensionPackageGrant:
+			return settings.RecordGrant(extensions.Grant{
+				SubjectID:   selected.SubjectID,
+				Fingerprint: selected.Fingerprint,
+				Scope:       extensions.GrantScopeProject,
+				Permissions: append([]string(nil), selected.EffectivePermissions...),
+				ApprovedAt:  time.Now().UTC(),
+			})
+		case ExtensionPackageReject:
+			return settings.RecordRejection(selected.SubjectID, selected.Fingerprint)
+		case ExtensionPackageRevoke:
+			settings.Revoke(selected.SubjectID)
+		case ExtensionPackageEnable:
+			settings.SetDisabled(selected.SubjectID, false)
+		case ExtensionPackageDisable:
+			settings.SetDisabled(selected.SubjectID, true)
+		default:
+			return fmt.Errorf("unsupported extension package action %q", params.Action)
+		}
+		return nil
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("persist extension policy: %w", err))
+	}
+	cfg := s.currentExtensionConfig()
+	cfg.Extensions = &settings
+	if err := s.rt.ApplyExtensionPolicy(cfg); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	s.resetThreadRuntimesForGeneralSettings("")
+	return s.writeResponse(req.ID, ExtensionPackageUpdateResult{ExtensionInventory: s.currentExtensionInventory()}, nil)
+}
+
+func (s *Server) handleExtensionCatalogRefresh(req Request) error {
+	if s.rt == nil {
+		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot refresh extensions while a turn is running"))
+	}
+	if err := s.rt.RefreshExtensions(s.currentExtensionConfig()); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	s.resetThreadRuntimesForGeneralSettings("")
+	return s.writeResponse(req.ID, ExtensionCatalogRefreshResult{
+		ExtensionInventory: s.currentExtensionInventory(),
+		Skills:             skillSummaries(s.rt.Skills),
+	}, nil)
 }
 
 func (s *Server) handleConfigAdvancedUpdate(req Request) error {

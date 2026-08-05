@@ -791,6 +791,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigAdvancedUpdate(req)
 	case MethodConfigGeneralUpdate:
 		return s.handleConfigGeneralUpdate(req)
+	case MethodExtensionCatalogRefresh:
+		return s.handleExtensionCatalogRefresh(req)
+	case MethodExtensionPackageUpdate:
+		return s.handleExtensionPackageUpdate(req)
 	case MethodConfigCodexModels:
 		// Model discovery performs an external Codex request. Keep it off the
 		// serial stdio dispatch loop so unrelated local mutations, especially a

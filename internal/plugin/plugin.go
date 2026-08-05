@@ -9,10 +9,13 @@ import (
 
 type Plugin struct {
 	Manifest
-	Source       string
-	Root         string
-	ManifestPath string
-	Official     bool
+	Source               string
+	Root                 string
+	ManifestPath         string
+	Official             bool
+	SubjectID            string
+	Fingerprint          string
+	EffectivePermissions []string
 }
 
 func Discover(projectRoot, wuuHome string) []Plugin {

@@ -54,6 +54,20 @@ describe("conversation message-flow rhythm", () => {
   });
 });
 
+describe("extension package layout", () => {
+  it("keeps lifecycle actions usable in wide and narrow catalogs", () => {
+    expect(cssRuleBody(".extension-package-row")).toMatch(
+      /grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\)\s+auto;/,
+    );
+    expect(workspaceCss).toMatch(
+      /@media \(max-width:\s*720px\)[\s\S]*?\.extension-package-row\s*\{[\s\S]*?grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\);/,
+    );
+    expect(workspaceCss).toMatch(
+      /@media \(max-width:\s*720px\)[\s\S]*?\.extension-package-actions\s*\{[\s\S]*?grid-column:\s*2;/,
+    );
+  });
+});
+
 describe("automation master-detail layout", () => {
   it("uses the same content column and narrow-screen inset as the skills catalog", () => {
     const automationMaster = cssRuleBody(".automations-master");

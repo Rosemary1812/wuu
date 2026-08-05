@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 )
 
 func writeSelfReferentialSymlink(t *testing.T, path string) {
@@ -523,6 +525,49 @@ func TestUpdateGeneralSettings_DreamFields(t *testing.T) {
 	}
 	if _, ok := memory["dream_interval_days"]; ok {
 		t.Fatal("legacy dream_interval_days should be removed after dream update")
+	}
+}
+
+func TestUpdateExtensionSettingsPreservesConcurrentDecisions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := writeConfigJSON(path, Default()); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, subjectID := range []string{"plugin:project:first", "plugin:project:second"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := UpdateExtensionSettings(path, func(settings *extensions.Settings) error {
+				settings.SetDisabled(subjectID, true)
+				return nil
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("update extension settings: %v", err)
+		}
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.Extensions == nil || !cfg.Extensions.IsDisabled("plugin:project:first") || !cfg.Extensions.IsDisabled("plugin:project:second") {
+		t.Fatalf("concurrent extension decisions were not preserved: %+v", cfg.Extensions)
 	}
 }
 

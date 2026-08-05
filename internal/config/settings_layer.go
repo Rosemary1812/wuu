@@ -169,7 +169,7 @@ func applySettingsLayers(basePath string, base Config, layers []settingsLayer) (
 			stripSharedLayerCredentials(overlay, p.spec.path)
 		}
 		if p.spec.stripExtensionGrants {
-			stripSharedLayerExtensionGrants(overlay, p.spec.path)
+			stripSharedLayerExtensionPolicy(overlay, p.spec.path)
 		}
 		deepMergeObject(merged, overlay)
 		applied = append(applied, p.spec.path)
@@ -326,17 +326,13 @@ func stripSharedLayerCredentials(overlay map[string]any, path string) {
 	}
 }
 
-func stripSharedLayerExtensionGrants(overlay map[string]any, path string) {
-	extensions, ok := overlay["extensions"].(map[string]any)
-	if !ok {
+func stripSharedLayerExtensionPolicy(overlay map[string]any, path string) {
+	if _, ok := overlay["extensions"]; !ok {
 		return
 	}
-	if _, present := extensions["grants"]; !present {
-		return
-	}
-	delete(extensions, "grants")
+	delete(overlay, "extensions")
 	fmt.Fprintf(os.Stderr,
-		"wuu: ignoring extensions.grants from shared settings layer %s; executable extension grants are only trusted from machine-local settings\n",
+		"wuu: ignoring extensions policy from shared settings layer %s; package decisions are only trusted from machine-local settings\n",
 		path,
 	)
 }

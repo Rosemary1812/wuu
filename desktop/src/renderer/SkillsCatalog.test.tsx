@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SkillSummary, WuuDesktopApi } from "../shared/protocol";
+import type { ExtensionInventoryRecord, SkillSummary, WuuDesktopApi } from "../shared/protocol";
 import { SkillsCatalog } from "./SkillsCatalog";
 
 vi.mock("./RichContent", () => ({
@@ -27,6 +27,29 @@ afterEach(() => {
 });
 
 describe("SkillsCatalog", () => {
+  it("refreshes the complete extension catalog through the parent runtime", async () => {
+    installSkillList([]);
+    const refreshedSkills: SkillSummary[] = [{
+      name: "fresh-skill",
+      description: "Discovered after refresh",
+      source: "plugin:fresh",
+      user_invocable: true,
+      disable_model_invoke: false,
+    }];
+    const onRefreshCatalog = vi.fn().mockResolvedValue(refreshedSkills);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog onRefreshCatalog={onRefreshCatalog} />);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".catalog-refresh")?.click();
+    });
+
+    expect(onRefreshCatalog).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("fresh-skill");
+  });
+
   it("separates official and personal skills and gives each a complete artwork", async () => {
     installSkillList([
       {
@@ -133,6 +156,99 @@ describe("SkillsCatalog", () => {
     // Non-plugin inventory records (the plugin's MCP server) stay out of the
     // plugin list.
     expect(container.textContent).not.toContain("computer");
+  });
+
+  it("shows package permissions and grants a pending plugin through the update callback", async () => {
+    installSkillList([]);
+    const onUpdateExtensionPackage = vi.fn().mockResolvedValue(undefined);
+    const extensionInventory = [
+      {
+        id: "plugin:project:docs",
+        name: "docs",
+        description: "Project documentation commands",
+        kind: "plugin",
+        provenance: {
+          kind: "plugin",
+          source: "project",
+          scope: "project",
+          plugin_id: "docs",
+          official: false,
+        },
+        state: "pending",
+        approval_state: "pending",
+        runtime_state: "inactive",
+        enabled: false,
+        fingerprint: "sha256:docs",
+        requested_permissions: ["file.read", "command.prompt"],
+        contributions: {
+          commands: [{ id: "ask-docs", title: "Ask docs", kind: "prompt_template", template: "Ask {{args}}" }],
+          settings: [],
+          themes: [],
+        },
+      },
+    ] as unknown as ExtensionInventoryRecord[];
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <SkillsCatalog
+          extensionInventory={extensionInventory}
+          onUpdateExtensionPackage={onUpdateExtensionPackage}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("待授权");
+    expect(container.textContent).toContain("file.read");
+    expect(container.textContent).toContain("命令 1 · 设置 0 · 主题 0");
+
+    const grantButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "授权并启用");
+    await act(async () => {
+      grantButton?.click();
+    });
+
+    expect(onUpdateExtensionPackage).toHaveBeenCalledWith({
+      id: "plugin:project:docs",
+      fingerprint: "sha256:docs",
+      action: "grant",
+    });
+  });
+
+  it("surfaces changed fingerprints and runtime failures", async () => {
+    installSkillList([]);
+    const extensionInventory = [
+      {
+        id: "plugin:project:changed",
+        name: "changed",
+        kind: "plugin",
+        provenance: { kind: "plugin", source: "project", scope: "project", plugin_id: "changed" },
+        state: "changed",
+        approval_state: "changed",
+        runtime_state: "inactive",
+        enabled: false,
+      },
+      {
+        id: "plugin:user:broken",
+        name: "broken",
+        kind: "plugin",
+        provenance: { kind: "plugin", source: "user", scope: "user", plugin_id: "broken" },
+        state: "granted",
+        approval_state: "granted",
+        runtime_state: "failed",
+        enabled: true,
+        last_error: "Plugin process exited before initialize",
+      },
+    ] as unknown as ExtensionInventoryRecord[];
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<SkillsCatalog extensionInventory={extensionInventory} />);
+    });
+
+    expect(container.textContent).toContain("内容已更改");
+    expect(container.textContent).toContain("启动失败");
+    expect(container.textContent).toContain("Plugin process exited before initialize");
   });
 
   it("opens a skill preview dialog from a skill row", async () => {

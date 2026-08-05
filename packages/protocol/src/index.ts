@@ -265,6 +265,25 @@ export type ExtensionKind = "skill" | "command" | "mcp" | "hook" | "plugin";
 
 export type ExtensionState = "active" | "read_only" | "pending" | "granted" | "rejected" | "changed";
 
+export type ExtensionApprovalState = "official" | "pending" | "granted" | "changed" | "rejected";
+
+export type ExtensionRuntimeState = "inactive" | "starting" | "active" | "failed" | "stopping" | "stopped";
+
+export type ExtensionCommandDescriptor = {
+  id: string;
+  title: string;
+  description?: string;
+  kind: "prompt_template" | "runtime_action";
+  template?: string;
+  contexts?: string[];
+  aliases?: string[];
+  keywords?: string[];
+};
+
+export type ExtensionContributions = {
+  commands?: ExtensionCommandDescriptor[];
+};
+
 export type ExtensionProvenance = {
   kind: ExtensionKind;
   source: string;
@@ -286,6 +305,28 @@ export type ExtensionInventoryRecord = {
   grant_scope?: "action" | "session" | "project" | "user";
   requested_permissions?: string[];
   unsupported_fields?: string[];
+  parent_id?: string;
+  approval_state?: ExtensionApprovalState;
+  runtime_state?: ExtensionRuntimeState;
+  enabled?: boolean;
+  contributions?: ExtensionContributions;
+};
+
+export type ExtensionPackageAction = "grant" | "reject" | "revoke" | "enable" | "disable";
+
+export type ExtensionPackageUpdateParams = {
+  id: string;
+  fingerprint?: string;
+  action: ExtensionPackageAction;
+};
+
+export type ExtensionPackageUpdateResult = {
+  extension_inventory: ExtensionInventoryRecord[];
+};
+
+export type ExtensionCatalogRefreshResult = {
+  extension_inventory: ExtensionInventoryRecord[];
+  skills: SkillSummary[];
 };
 
 export type ConfigModelUpdateResult = {
@@ -2212,6 +2253,10 @@ export type WuuDesktopApi = {
   updateGeneralSettings: (
     settings: RuntimeGeneralSettingsUpdate
   ) => Promise<ConfigGeneralUpdateResult>;
+  updateExtensionPackage: (
+    params: ExtensionPackageUpdateParams
+  ) => Promise<ExtensionPackageUpdateResult>;
+  refreshExtensionCatalog: () => Promise<ExtensionCatalogRefreshResult>;
   listMCPServers: () => Promise<MCPListResult>;
   connectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;

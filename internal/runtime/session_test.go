@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
@@ -940,21 +941,23 @@ description: Explore product options.
 ---
 Brainstorm options.
 `)
+	cfg := config.Config{
+		DefaultProvider: "test",
+		Providers: map[string]config.ProviderConfig{
+			"test": {
+				Type:      "openai-compatible",
+				BaseURL:   "https://example.test/v1",
+				APIKeyEnv: "TEST_WUU_KEY",
+				Model:     "gpt-test",
+			},
+		},
+	}
+	grantSessionTestPlugin(t, &cfg, root, filepath.Join(home, "state"), "compose-kit")
 	rt, err := NewSession(Options{
 		RootDir:    root,
 		HomeDir:    home,
 		ConfigPath: filepath.Join(root, ".wuu.json"),
-		Config: config.Config{
-			DefaultProvider: "test",
-			Providers: map[string]config.ProviderConfig{
-				"test": {
-					Type:      "openai-compatible",
-					BaseURL:   "https://example.test/v1",
-					APIKeyEnv: "TEST_WUU_KEY",
-					Model:     "gpt-test",
-				},
-			},
-		},
+		Config:     cfg,
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -975,6 +978,31 @@ func runtimeHasPlugin(items []pluginpkg.Plugin, id string) bool {
 		}
 	}
 	return false
+}
+
+func grantSessionTestPlugin(t *testing.T, cfg *config.Config, root, wuuHome, id string) {
+	t.Helper()
+	for _, item := range pluginpkg.Discover(root, wuuHome) {
+		if item.ID != id {
+			continue
+		}
+		settings := cfg.Extensions
+		if settings == nil {
+			settings = &extensions.Settings{}
+		}
+		if err := settings.RecordGrant(extensions.Grant{
+			SubjectID:   item.SubjectID,
+			Fingerprint: item.Fingerprint,
+			Scope:       extensions.GrantScopeProject,
+			Permissions: append([]string(nil), item.EffectivePermissions...),
+			ApprovedAt:  time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("grant plugin %q: %v", id, err)
+		}
+		cfg.Extensions = settings
+		return
+	}
+	t.Fatalf("plugin %q not discovered", id)
 }
 
 func TestNewSessionConsumesCodexPluginManifestAssets(t *testing.T) {
@@ -1002,6 +1030,7 @@ Review the change.
 			"test": {Type: "openai-compatible", BaseURL: "https://example.test/v1", APIKeyEnv: "TEST_WUU_KEY", Model: "gpt-test"},
 		},
 	}
+	grantSessionTestPlugin(t, &cfg, root, filepath.Join(home, "state"), "codex-kit")
 	rt, err := NewSession(Options{
 		RootDir:    root,
 		HomeDir:    home,
@@ -1137,21 +1166,23 @@ func TestNewSessionWiresPluginHooks(t *testing.T) {
   }
 }`)
 
+	cfg := config.Config{
+		DefaultProvider: "test",
+		Providers: map[string]config.ProviderConfig{
+			"test": {
+				Type:      "openai-compatible",
+				BaseURL:   "https://example.test/v1",
+				APIKeyEnv: "TEST_WUU_KEY",
+				Model:     "gpt-test",
+			},
+		},
+	}
+	grantSessionTestPlugin(t, &cfg, root, filepath.Join(home, "state"), "hook-kit")
 	rt, err := NewSession(Options{
 		RootDir:    root,
 		HomeDir:    home,
 		ConfigPath: filepath.Join(root, ".wuu.json"),
-		Config: config.Config{
-			DefaultProvider: "test",
-			Providers: map[string]config.ProviderConfig{
-				"test": {
-					Type:      "openai-compatible",
-					BaseURL:   "https://example.test/v1",
-					APIKeyEnv: "TEST_WUU_KEY",
-					Model:     "gpt-test",
-				},
-			},
-		},
+		Config:     cfg,
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)

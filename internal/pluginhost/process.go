@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +21,11 @@ import (
 const (
 	ProtocolName    = "wuu-plugin-v1"
 	ProtocolVersion = 1
+
+	// maxResponseLineSize bounds the JSON-lines wire format so a single
+	// plugin response cannot grow unbounded in memory. The limit applies to
+	// one line including its trailing newline.
+	maxResponseLineSize = 4 << 20 // 4 MiB
 )
 
 type ProcessConfig struct {
@@ -50,15 +56,15 @@ type rpcError struct {
 }
 
 type ProcessClient struct {
-	config ProcessConfig
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	reader *bufio.Reader
-	seq    atomic.Uint64
-	callMu sync.Mutex
-	mu     sync.RWMutex
-	status Status
-	stderr lockedBuffer
+	config  ProcessConfig
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	scanner *bufio.Scanner
+	seq     atomic.Uint64
+	callMu  sync.Mutex
+	mu      sync.RWMutex
+	status  Status
+	stderr  lockedBuffer
 }
 
 func Start(ctx context.Context, config ProcessConfig) (*ProcessClient, error) {
@@ -73,7 +79,7 @@ func Start(ctx context.Context, config ProcessConfig) (*ProcessClient, error) {
 
 	cmd := exec.Command(config.Command, config.Args...)
 	cmd.Dir = config.PluginRoot
-	cmd.Env = mergeEnv(os.Environ(), config.Env)
+	cmd.Env = buildEnv(config.Env)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("plugin %q stdout: %w", config.ID, err)
@@ -86,9 +92,11 @@ func Start(ctx context.Context, config ProcessConfig) (*ProcessClient, error) {
 		config: config,
 		cmd:    cmd,
 		stdin:  stdin,
-		reader: bufio.NewReader(stdout),
 		status: Status{ID: config.ID, State: StateStarting},
 	}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 4096), maxResponseLineSize)
+	client.scanner = scanner
 	cmd.Stderr = &client.stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start plugin %q: %w", config.ID, err)
@@ -191,8 +199,22 @@ func (c *ProcessClient) call(ctx context.Context, method string, params, result 
 	}
 	readCh := make(chan readResult, 1)
 	go func() {
-		line, readErr := c.reader.ReadBytes('\n')
-		readCh <- readResult{line: line, err: readErr}
+		if c.scanner.Scan() {
+			line := c.scanner.Bytes()
+			// Copy the token: the scanner reuses its buffer across calls.
+			buf := make([]byte, len(line))
+			copy(buf, line)
+			readCh <- readResult{line: buf, err: nil}
+			return
+		}
+		readErr := c.scanner.Err()
+		if readErr == nil {
+			readErr = io.EOF
+		}
+		if errors.Is(readErr, bufio.ErrTooLong) {
+			readErr = fmt.Errorf("plugin response line exceeds %d bytes", maxResponseLineSize)
+		}
+		readCh <- readResult{err: readErr}
 	}()
 	select {
 	case <-ctx.Done():
@@ -253,15 +275,22 @@ func (c *ProcessClient) stderrSuffix() string {
 	return ": " + value
 }
 
-func mergeEnv(base []string, extra map[string]string) []string {
-	values := make(map[string]string, len(base)+len(extra))
-	for _, item := range base {
-		key, value, ok := strings.Cut(item, "=")
-		if ok {
-			values[key] = value
+// buildEnv returns a minimal, deterministic environment for a plugin process.
+//
+// Only a documented cross-platform baseline is inherited from the parent
+// process (PATH, HOME, temp directories, locale variables, and Windows launch
+// essentials). The full parent os.Environ is intentionally not inherited, so
+// ambient API keys, tokens, and other secrets cannot leak into plugins. Values
+// supplied in ProcessConfig.Env are overlaid on the baseline and always take
+// precedence. The resulting slice is sorted by key for deterministic ordering.
+func buildEnv(explicit map[string]string) []string {
+	values := make(map[string]string, len(baselineEnvKeys)+len(explicit))
+	for _, key := range baselineEnvKeys {
+		if v := os.Getenv(key); v != "" {
+			values[key] = v
 		}
 	}
-	for key, value := range extra {
+	for key, value := range explicit {
 		values[key] = value
 	}
 	keys := make([]string, 0, len(values))
@@ -275,6 +304,55 @@ func mergeEnv(base []string, extra map[string]string) []string {
 	}
 	return out
 }
+
+// baselineEnvKeys lists the small set of parent variables that plugins need to
+// start command-line binaries and resolve basic paths. It intentionally omits
+// credential- and tool-specific variables.
+var baselineEnvKeys = func() []string {
+	keys := []string{
+		"PATH",
+		"HOME",
+		"USER",
+		"LOGNAME",
+		"SHELL",
+		"TMPDIR",
+		"TMP",
+		"TEMP",
+		"LANG",
+		"LC_ALL",
+		"LC_CTYPE",
+		"LC_MESSAGES",
+		"LC_NUMERIC",
+		"LC_TIME",
+		"LC_COLLATE",
+		"LC_MONETARY",
+		"LC_PAPER",
+		"LC_NAME",
+		"LC_ADDRESS",
+		"LC_TELEPHONE",
+		"LC_MEASUREMENT",
+		"LC_IDENTIFICATION",
+	}
+	if runtime.GOOS == "windows" {
+		keys = append(keys,
+			"SYSTEMROOT",
+			"SYSTEMDRIVE",
+			"USERPROFILE",
+			"APPDATA",
+			"LOCALAPPDATA",
+			"ProgramFiles",
+			"ProgramFiles(x86)",
+			"ProgramData",
+			"CommonProgramFiles",
+			"CommonProgramFiles(x86)",
+			"PROCESSOR_ARCHITECTURE",
+			"PROCESSOR_IDENTIFIER",
+			"COMPUTERNAME",
+			"USERNAME",
+		)
+	}
+	return keys
+}()
 
 type lockedBuffer struct {
 	mu sync.Mutex

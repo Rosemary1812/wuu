@@ -2720,6 +2720,80 @@ html.resizing-workspace-terminal-split * {
   padding-top: 4px;
 }
 
+.extension-package-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.extension-package-row {
+  min-height: 112px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: start;
+  padding-block: 14px;
+}
+
+.extension-package-actions {
+  display: grid;
+  min-width: 116px;
+  justify-items: stretch;
+  gap: 6px;
+}
+
+.extension-package-actions button {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.extension-package-meta,
+.extension-package-permissions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 9px;
+  color: var(--ink-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.extension-package-permissions strong {
+  color: var(--ink-secondary);
+  font-weight: var(--weight-medium);
+}
+
+.extension-package-permissions code {
+  border: 1px solid var(--skills-section-border);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  background: var(--skill-artwork-neutral-bg);
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.extension-package-error {
+  overflow: hidden;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extension-status-good {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.extension-status-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.extension-status-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .skill-row {
   display: grid;
   min-width: 0;
@@ -3018,6 +3092,20 @@ html.resizing-workspace-terminal-split * {
     grid-template-columns: 36px minmax(0, 1fr) 16px;
     gap: 11px;
     padding: 9px 6px;
+  }
+
+  .extension-package-row {
+    min-height: 112px;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+    padding-block: 14px;
+  }
+
+  .extension-package-actions {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .skill-artwork {

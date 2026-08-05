@@ -1,6 +1,11 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { InitializeResult, RuntimeContext, SkillSummary } from "../shared/protocol";
 import { translateCurrent as t } from "./i18n";
+import {
+  pluginCommandPackagesFromInventory,
+  registerPluginPromptCommands,
+  renderPluginPromptTemplate,
+} from "./PluginCommandRegistry";
 
 export type ComposerSlashCommandAction =
   | "new-thread"
@@ -34,6 +39,8 @@ export type ComposerSlashCommand = {
   keywords?: string[];
   argumentHint?: string;
   disabledReason?: string;
+  pluginId?: string;
+  promptTemplate?: string;
 };
 
 export type ComposerSlashDraft = {
@@ -381,7 +388,28 @@ export function buildComposerSlashCommands({
       keywords: ["provider", "模型", "配置"]
     }
   ];
-  return [...commands, ...buildSkillSlashCommands(skills, needsRuntime)];
+  const skillCommands = buildSkillSlashCommands(skills, needsRuntime);
+  const reservedNames = new Set(
+    [...commands, ...skillCommands].flatMap((command) => [command.name, ...(command.aliases ?? [])]),
+  );
+  const pluginCommands = registerPluginPromptCommands(
+    pluginCommandPackagesFromInventory(initialized?.extension_inventory ?? []),
+    reservedNames,
+    activeContext?.kind,
+  ).commands.map((command): ComposerSlashCommand => ({
+    id: command.id,
+    name: command.name,
+    title: command.title,
+    description: command.description,
+    tag: `Plugin · ${command.pluginId}`,
+    kind: "prompt",
+    aliases: command.aliases,
+    keywords: [command.pluginId, "plugin", ...command.keywords],
+    disabledReason: needsRuntime,
+    pluginId: command.pluginId,
+    promptTemplate: command.template,
+  }));
+  return [...commands, ...pluginCommands, ...skillCommands];
 }
 
 // The side-chat composer exposes its own command surface instead of the main
@@ -441,9 +469,12 @@ export function filterComposerSlashCommands(commands: ComposerSlashCommand[], qu
 // Skills keep their source ordering (project, then user, then bundled), so the
 // reserved slots surface the most project-specific workflows first.
 function defaultComposerSlashCommands(commands: ComposerSlashCommand[]): ComposerSlashCommand[] {
-  const builtIns = commands.filter((command) => command.kind !== "skill").slice(0, COMPOSER_SLASH_COMMAND_LIMIT);
+  const builtIns = commands
+    .filter((command) => command.kind !== "skill" && !command.pluginId)
+    .slice(0, COMPOSER_SLASH_COMMAND_LIMIT);
+  const plugins = commands.filter((command) => command.pluginId).slice(0, 2);
   const skills = commands.filter((command) => command.kind === "skill").slice(0, COMPOSER_SLASH_DEFAULT_SKILL_LIMIT);
-  return [...builtIns, ...skills];
+  return [...builtIns, ...plugins, ...skills];
 }
 
 export function firstEnabledSlashCommandIndex(commands: ComposerSlashCommand[]): number {
@@ -471,6 +502,9 @@ function composerSlashCommandSearchText(command: ComposerSlashCommand): string {
 }
 
 export function composerSlashPrompt(command: ComposerSlashCommand, args: string): string {
+  if (command.promptTemplate) {
+    return renderPluginPromptTemplate(command.promptTemplate, args);
+  }
   const instructions = args.trim();
   return `/${command.name}${instructions ? ` ${instructions}` : " "}`;
 }

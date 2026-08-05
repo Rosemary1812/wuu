@@ -14,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/storelock"
 	"github.com/blueberrycongee/wuu/prompts"
 )
 
@@ -1489,6 +1490,72 @@ func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) erro
 		return err
 	}
 	return securefs.WriteFileAtomic(configPath, append(out, '\n'))
+}
+
+// UpdateExtensionSettings atomically mutates user-owned extension grants and
+// package decisions without rewriting unrelated configuration fields. The
+// file lock keeps app-server instances from replacing each other's decisions.
+func UpdateExtensionSettings(configPath string, update func(*extensions.Settings) error) (extensions.Settings, error) {
+	lock, err := storelock.Acquire(filepath.Dir(configPath))
+	if err != nil {
+		return extensions.Settings{}, err
+	}
+	defer func() { _ = lock.Release() }()
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return extensions.Settings{}, err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return extensions.Settings{}, err
+	}
+	settings := extensions.Settings{}
+	if extensionRaw, ok := raw["extensions"]; ok {
+		encoded, err := json.Marshal(extensionRaw)
+		if err != nil {
+			return extensions.Settings{}, fmt.Errorf("marshal current extension settings: %w", err)
+		}
+		if err := json.Unmarshal(encoded, &settings); err != nil {
+			return extensions.Settings{}, fmt.Errorf("decode current extension settings: %w", err)
+		}
+	}
+	if update == nil {
+		return extensions.Settings{}, errors.New("extension settings update is required")
+	}
+	if err := update(&settings); err != nil {
+		return extensions.Settings{}, err
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return extensions.Settings{}, fmt.Errorf("marshal extension settings: %w", err)
+	}
+	var extensionRaw map[string]any
+	if err := json.Unmarshal(encoded, &extensionRaw); err != nil {
+		return extensions.Settings{}, fmt.Errorf("decode extension settings: %w", err)
+	}
+	if len(extensionRaw) == 0 {
+		delete(raw, "extensions")
+	} else {
+		raw["extensions"] = extensionRaw
+	}
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return extensions.Settings{}, fmt.Errorf("marshal config: %w", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		return extensions.Settings{}, err
+	}
+	applyDefaults(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return extensions.Settings{}, err
+	}
+	if err := securefs.WriteFileAtomic(configPath, append(out, '\n')); err != nil {
+		return extensions.Settings{}, err
+	}
+	return settings, nil
 }
 
 func setOptionalString(target map[string]any, key string, value *string) {

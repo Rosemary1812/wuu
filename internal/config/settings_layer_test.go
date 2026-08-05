@@ -138,6 +138,8 @@ func TestLoadFrom_SharedSettingsCannotGrantExtensions(t *testing.T) {
 	writeBaseConfig(t, home, layerBaseConfigJSON)
 	writeProjectSettings(t, workdir, sharedSettingsFile, `{
   "extensions": {
+    "disabled": {"plugin:project:blocked": true},
+    "rejected": {"plugin:project:rejected": {"fingerprint": "shared", "at": "2026-07-10T08:00:00Z"}},
     "grants": {
       "hook:project:test": {
         "subject_id": "hook:project:test",
@@ -154,9 +156,7 @@ func TestLoadFrom_SharedSettingsCannotGrantExtensions(t *testing.T) {
 		t.Fatalf("LoadFrom: %v", err)
 	}
 	if cfg.Extensions != nil {
-		if _, ok := cfg.Extensions.FindGrant("hook:project:test", "shared"); ok {
-			t.Fatal("shared settings granted an executable extension")
-		}
+		t.Fatalf("shared settings supplied extension policy: %+v", cfg.Extensions)
 	}
 }
 

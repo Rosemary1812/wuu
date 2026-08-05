@@ -302,6 +302,86 @@ describe("composer slash commands", () => {
     expect(composerSlashPrompt(pr!, "draft")).toBe("/pr draft");
   });
 
+  it("registers active plugin prompt templates and renders them in the composer", () => {
+    const runtime = initialized("gpt-5.5", ["gpt-5.5"]);
+    runtime.extension_inventory = [
+      {
+        id: "plugin:project:docs",
+        name: "docs",
+        kind: "plugin",
+        provenance: { kind: "plugin", source: "project", scope: "project", plugin_id: "docs" },
+        state: "granted",
+        approval_state: "granted",
+        runtime_state: "inactive",
+        enabled: true,
+        contributions: {
+          commands: [{
+            id: "ask-docs",
+            title: "Ask the docs",
+            description: "Answer using project documentation",
+            kind: "prompt_template",
+            template: "Use the project documentation to answer:\n\n{{args}}",
+            aliases: ["docs"],
+          }],
+        },
+      },
+    ] as unknown as NonNullable<InitializeResult["extension_inventory"]>;
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: runtime,
+      running: false,
+    });
+
+    const pluginCommand = filterComposerSlashCommands(commands, "docs")[0];
+
+    expect(pluginCommand).toMatchObject({
+      id: "plugin:docs:ask-docs",
+      name: "ask-docs",
+      pluginId: "docs",
+      tag: "Plugin · docs",
+      kind: "prompt",
+    });
+    expect(composerSlashPrompt(pluginCommand!, "release process")).toBe(
+      "Use the project documentation to answer:\n\nrelease process",
+    );
+  });
+
+  it("fails closed for inactive and runtime-backed plugin commands", () => {
+    const runtime = initialized("gpt-5.5", ["gpt-5.5"]);
+    runtime.extension_inventory = [
+      {
+        id: "plugin:project:pending",
+        name: "pending",
+        kind: "plugin",
+        provenance: { kind: "plugin", source: "project", scope: "project", plugin_id: "pending" },
+        state: "pending",
+        approval_state: "pending",
+        runtime_state: "inactive",
+        enabled: true,
+        contributions: { commands: [{ id: "pending", title: "Pending", kind: "prompt_template", template: "No" }] },
+      },
+      {
+        id: "plugin:project:runtime",
+        name: "runtime",
+        kind: "plugin",
+        provenance: { kind: "plugin", source: "project", scope: "project", plugin_id: "runtime" },
+        state: "granted",
+        approval_state: "granted",
+        runtime_state: "active",
+        enabled: true,
+        contributions: { commands: [{ id: "runtime", title: "Runtime", kind: "runtime_action" }] },
+      },
+    ] as unknown as NonNullable<InitializeResult["extension_inventory"]>;
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: runtime,
+      running: false,
+    });
+
+    expect(filterComposerSlashCommands(commands, "pending")).toEqual([]);
+    expect(filterComposerSlashCommands(commands, "runtime")).toEqual([]);
+  });
+
   it("hides /helpme unless the runtime feature is enabled", () => {
     const activeContext = { kind: "project", project_id: "repo", cwd: "/repo" } as const;
     const disabled = buildComposerSlashCommands({

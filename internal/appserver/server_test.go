@@ -528,6 +528,7 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	rt.Toolkit = kit
 	rt.Skills = []skills.Skill{{Name: "docs", Description: "Docs"}}
 	rt.Plugins = []pluginpkg.Plugin{{Manifest: pluginpkg.Manifest{ID: "compose-kit"}}}
+	rt.ActivePlugins = append([]pluginpkg.Plugin(nil), rt.Plugins...)
 	rt.HookDispatcher = hooks.NewDispatcher(hooks.NewRegistry(map[hooks.Event][]hooks.HookConfig{
 		hooks.PreToolUse: {{Command: "true"}},
 	}))
@@ -647,7 +648,7 @@ func TestServerInitializeExposesExtensionInventoryWithoutSecrets(t *testing.T) {
 		t.Fatalf("skill inventory = %+v", got)
 	}
 	pluginRecord := byID["plugin:project:compose-kit"]
-	if pluginRecord.State != ExtensionStateReadOnly || len(pluginRecord.UnsupportedFields) != 1 || pluginRecord.Provenance.Source != "codex" {
+	if pluginRecord.State != ExtensionStatePending || pluginRecord.ApprovalState != ExtensionApprovalPending || len(pluginRecord.UnsupportedFields) != 1 || pluginRecord.Provenance.Source != "codex" {
 		t.Fatalf("plugin inventory = %+v", pluginRecord)
 	}
 	mcpRecord := byID["mcp:plugin:compose-kit:docs"]
