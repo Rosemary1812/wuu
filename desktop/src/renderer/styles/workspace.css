@@ -40,27 +40,27 @@
   --skill-artwork-official-bg: #ffffff;
   --skill-artwork-official-fg: #ffffff;
   --skill-mark-highlight: rgba(255, 255, 255, 0.54);
-  --skill-mark-browser-a: #31d2f5;
-  --skill-mark-browser-b: #4d88f2;
-  --skill-mark-browser-c: #7658e9;
-  --skill-mark-commit-a: #ffbd4a;
-  --skill-mark-commit-b: #ff705f;
-  --skill-mark-commit-c: #d93672;
-  --skill-mark-goal-a: #48d8ff;
-  --skill-mark-goal-b: #6978ed;
-  --skill-mark-goal-c: #8c52d9;
-  --skill-mark-presentation-a: #ffdb58;
-  --skill-mark-presentation-b: #f1a11b;
-  --skill-mark-presentation-c: #dc7116;
-  --skill-mark-creator-a: #20d8c6;
-  --skill-mark-creator-b: #6c78f4;
-  --skill-mark-creator-c: #e24dc2;
-  --skill-mark-plugin-a: #66d4ff;
-  --skill-mark-plugin-b: #7770ed;
-  --skill-mark-plugin-c: #dc4d9e;
-  --skill-mark-default-a: #ff9f52;
-  --skill-mark-default-b: #f25b56;
-  --skill-mark-default-c: #d93d86;
+  --skill-mark-browser-a: #20d7e8;
+  --skill-mark-browser-b: #3478f6;
+  --skill-mark-browser-c: #6c4ee8;
+  --skill-mark-commit-a: #ffbd3d;
+  --skill-mark-commit-b: #ff6b52;
+  --skill-mark-commit-c: #d92f81;
+  --skill-mark-goal-a: #9cdb3b;
+  --skill-mark-goal-b: #22b89a;
+  --skill-mark-goal-c: #1978e7;
+  --skill-mark-presentation-a: #ffd84a;
+  --skill-mark-presentation-b: #f59a18;
+  --skill-mark-presentation-c: #e84b35;
+  --skill-mark-creator-a: #8e68f7;
+  --skill-mark-creator-b: #d64fd2;
+  --skill-mark-creator-c: #28bfe7;
+  --skill-mark-plugin-a: #68d64c;
+  --skill-mark-plugin-b: #19b9aa;
+  --skill-mark-plugin-c: #3b6fea;
+  --skill-mark-default-a: #ff8a52;
+  --skill-mark-default-b: #ee4d74;
+  --skill-mark-default-c: #8d4de8;
   --hljs-keyword: #2f6ea5;
   --hljs-function: #7a4b9d;
   --hljs-string: #2f7d5c;
@@ -2841,39 +2841,51 @@ html.resizing-workspace-terminal-split * {
 }
 
 .skill-artwork-palette-0 {
-  --skill-mark-a: #35dcc5;
-  --skill-mark-b: #438bf4;
-  --skill-mark-c: #7458e8;
+  --skill-mark-a: #27d7d0;
+  --skill-mark-b: #3478f6;
+  --skill-mark-c: #754ce8;
 }
 
 .skill-artwork-palette-1 {
-  --skill-mark-a: #ffb14a;
-  --skill-mark-b: #ff646a;
-  --skill-mark-c: #d63fa5;
+  --skill-mark-a: #ffbd3d;
+  --skill-mark-b: #ff6655;
+  --skill-mark-c: #d92f81;
 }
 
 .skill-artwork-palette-2 {
-  --skill-mark-a: #ffe15b;
-  --skill-mark-b: #f3a526;
-  --skill-mark-c: #e6672f;
+  --skill-mark-a: #f7dc46;
+  --skill-mark-b: #ee9d20;
+  --skill-mark-c: #e24c37;
 }
 
 .skill-artwork-palette-3 {
-  --skill-mark-a: #8cdb55;
-  --skill-mark-b: #20bfa6;
-  --skill-mark-c: #368ae8;
+  --skill-mark-a: #9cdb3b;
+  --skill-mark-b: #20b995;
+  --skill-mark-c: #247bea;
 }
 
 .skill-artwork-palette-4 {
-  --skill-mark-a: #9d69f5;
-  --skill-mark-b: #e54db3;
-  --skill-mark-c: #fa6b69;
+  --skill-mark-a: #8e68f7;
+  --skill-mark-b: #d84dd0;
+  --skill-mark-c: #ff6f5d;
 }
 
 .skill-artwork-palette-5 {
-  --skill-mark-a: #56d7f2;
-  --skill-mark-b: #5979eb;
-  --skill-mark-c: #3dc7b4;
+  --skill-mark-a: #40d2f2;
+  --skill-mark-b: #536eea;
+  --skill-mark-c: #24c2a5;
+}
+
+.skill-artwork-palette-6 {
+  --skill-mark-a: #ff7394;
+  --skill-mark-b: #ed4a66;
+  --skill-mark-c: #ffad35;
+}
+
+.skill-artwork-palette-7 {
+  --skill-mark-a: #43d58b;
+  --skill-mark-b: #16a8c7;
+  --skill-mark-c: #475ee8;
 }
 
 .skill-artwork-official-browser {
@@ -2940,6 +2952,17 @@ html.resizing-workspace-terminal-split * {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.4;
+}
+
+.skill-mark-color-c-fill {
+  fill: var(--skill-mark-c);
+}
+
+.skill-mark-color-c-stroke {
+  fill: none;
+  stroke: var(--skill-mark-c);
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .skill-mark-stroke-wide {

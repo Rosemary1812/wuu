@@ -561,8 +561,8 @@ function customSkillArtworkIdentity(name: string): {
   const motifs: CustomSkillMotif[] = ["orbit", "ribbon", "bloom", "spark"];
   const hash = stableSkillHash(name);
   return {
-    palette: hash % 6,
-    motif: motifs[Math.floor(hash / 6) % motifs.length],
+    palette: hash % 8,
+    motif: motifs[Math.floor(hash / 8) % motifs.length],
   };
 }
 
@@ -597,8 +597,9 @@ function CustomSkillMark({
     return (
       <svg viewBox="0 0 32 32" focusable="false">
         {gradient}
-        <path d="M5 4h7.5a3.5 3.5 0 1 0 7 0H27v8a3.5 3.5 0 1 1 0 7v8h-8a3.5 3.5 0 1 0-7 0H5v-7.5a3.5 3.5 0 1 1 0-7Z" fill={`url(#${gradientID})`} />
-        <circle className="skill-mark-light-fill skill-mark-muted" cx="16" cy="15.5" r="3" />
+        <rect x="4" y="4" width="24" height="24" rx="7" fill={`url(#${gradientID})`} />
+        <path className="skill-mark-color-c-fill skill-mark-translucent" d="M19 4h9v9.2a4 4 0 0 0-5.2 5.2H19Z" />
+        <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="M10 11h4a2.5 2.5 0 1 1 5 0h3v3.5a2.5 2.5 0 1 1 0 5V22h-3.5a2.5 2.5 0 1 1-5 0H10v-3a2.5 2.5 0 1 1 0-5Z" />
       </svg>
     );
   }
@@ -608,17 +609,19 @@ function CustomSkillMark({
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <circle cx="16" cy="16" r="12.5" fill={`url(#${gradientID})`} />
-          <ellipse className="skill-mark-light-stroke skill-mark-muted" cx="16" cy="16" rx="9" ry="4.8" transform="rotate(-28 16 16)" />
-          <circle className="skill-mark-light-fill" cx="23.5" cy="11.3" r="2" />
-          <circle className="skill-mark-light-fill skill-mark-muted" cx="14.5" cy="17" r="2.6" />
+          <rect x="4" y="4" width="24" height="24" rx="8" fill={`url(#${gradientID})`} />
+          <circle className="skill-mark-color-c-fill skill-mark-translucent" cx="11" cy="11" r="5" />
+          <ellipse className="skill-mark-light-stroke skill-mark-stroke-wide" cx="16" cy="16" rx="9" ry="5" transform="rotate(-28 16 16)" />
+          <circle className="skill-mark-light-fill" cx="23.5" cy="11.3" r="2.1" />
+          <circle className="skill-mark-light-fill skill-mark-muted" cx="14.5" cy="17" r="2.8" />
         </svg>
       );
     case "ribbon":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <rect x="4" y="4" width="24" height="24" rx="8" transform="rotate(-7 16 16)" fill={`url(#${gradientID})`} />
+          <rect x="4" y="4" width="24" height="24" rx="8" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-color-c-fill skill-mark-translucent" d="M4 20.5 16.2 5.2 28 8.5v8.2L17.2 28H8Z" />
           <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="m8.5 18 6-8 9 2.5-5.5 9Z" />
           <path className="skill-mark-light-fill skill-mark-muted" d="m14.5 10 3.5 11.5 5.5-9Z" />
         </svg>
@@ -627,21 +630,24 @@ function CustomSkillMark({
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <ellipse cx="16" cy="9.5" rx="6" ry="7.5" fill={`url(#${gradientID})`} />
-          <ellipse cx="22.5" cy="16" rx="7.5" ry="6" fill={`url(#${gradientID})`} />
-          <ellipse cx="16" cy="22.5" rx="6" ry="7.5" fill={`url(#${gradientID})`} />
-          <ellipse cx="9.5" cy="16" rx="7.5" ry="6" fill={`url(#${gradientID})`} />
-          <circle className="skill-mark-light-fill" cx="16" cy="16" r="3.2" />
-          <circle className="skill-mark-highlight-fill skill-mark-translucent" cx="17" cy="15" r="1.3" />
+          <circle cx="16" cy="16" r="12" fill={`url(#${gradientID})`} />
+          <ellipse className="skill-mark-color-c-fill skill-mark-translucent" cx="16" cy="10.5" rx="4.2" ry="6" />
+          <ellipse className="skill-mark-light-fill skill-mark-muted" cx="21.5" cy="16" rx="6" ry="4.2" />
+          <ellipse className="skill-mark-color-c-fill skill-mark-translucent" cx="16" cy="21.5" rx="4.2" ry="6" />
+          <ellipse className="skill-mark-light-fill skill-mark-muted" cx="10.5" cy="16" rx="6" ry="4.2" />
+          <circle className="skill-mark-light-fill" cx="16" cy="16" r="3" />
+          <circle className="skill-mark-color-c-fill" cx="16" cy="16" r="1.4" />
         </svg>
       );
     case "spark":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <path d="m16 2.8 4.2 8.4 9 4.8-9 4.8-4.2 8.4-4.2-8.4-9-4.8 9-4.8Z" fill={`url(#${gradientID})`} />
-          <path className="skill-mark-light-fill" d="m16 9.2 1.8 4.8 4.8 2-4.8 2-1.8 4.8-1.8-4.8-4.8-2 4.8-2Z" />
-          <circle className="skill-mark-light-fill skill-mark-muted" cx="24.5" cy="7.5" r="1.5" />
+          <rect x="4" y="4" width="24" height="24" rx="8" fill={`url(#${gradientID})`} />
+          <circle className="skill-mark-color-c-fill skill-mark-translucent" cx="22.5" cy="10" r="5.5" />
+          <path className="skill-mark-light-fill" d="m15 7 2.5 6.1L24 16l-6.5 2.9L15 25l-2.5-6.1L6 16l6.5-2.9Z" />
+          <path className="skill-mark-color-c-fill" d="m15 11.5 1.1 3.1 3.4 1.4-3.4 1.4-1.1 3.1-1.1-3.1-3.4-1.4 3.4-1.4Z" />
+          <circle className="skill-mark-light-fill" cx="24" cy="8" r="1.5" />
         </svg>
       );
   }
@@ -668,60 +674,66 @@ function OfficialSkillMark({
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <rect x="2.5" y="4.5" width="27" height="23" rx="6" fill={`url(#${gradientID})`} />
-          <path className="skill-mark-light-stroke" d="M3 11.2h26" />
-          <circle className="skill-mark-light-fill" cx="7" cy="8" r="1" />
-          <circle className="skill-mark-light-fill skill-mark-muted" cx="10.3" cy="8" r="1" />
-          <path className="skill-mark-light-fill" d="m15 13.5 9.8 4.2-4 1.8-1.8 4Z" />
+          <rect x="4" y="4" width="24" height="24" rx="7" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-color-c-fill skill-mark-translucent" d="M4 4h24v7.5H4Z" />
+          <path className="skill-mark-light-stroke" d="M4.5 11.5h23" />
+          <circle className="skill-mark-light-fill" cx="8" cy="8" r="1" />
+          <circle className="skill-mark-light-fill skill-mark-muted" cx="11.2" cy="8" r="1" />
+          <path className="skill-mark-light-fill" d="m14 14 10 4.2-4.1 1.7-1.7 4.1Z" />
+          <path className="skill-mark-color-c-fill" d="m18.2 18.2 5.8 0-4.1 1.7Z" />
         </svg>
       );
     case "official-commit":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <circle cx="16" cy="16" r="13.5" fill={`url(#${gradientID})`} />
-          <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="M9 8.5v9a5.5 5.5 0 0 0 5.5 5.5H23" />
-          <circle className="skill-mark-light-fill" cx="9" cy="8.5" r="2.3" />
-          <circle className="skill-mark-light-fill" cx="23" cy="23" r="2.3" />
-          <circle className="skill-mark-light-fill" cx="9" cy="17.5" r="2.3" />
+          <circle cx="16" cy="16" r="12" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-color-c-fill skill-mark-translucent" d="M16 4a12 12 0 0 1 12 12v2.5L18.5 28H16Z" />
+          <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="M10 9v8a5 5 0 0 0 5 5h7" />
+          <circle className="skill-mark-light-fill" cx="10" cy="9" r="2.2" />
+          <circle className="skill-mark-light-fill" cx="22" cy="22" r="2.2" />
+          <circle className="skill-mark-color-c-fill" cx="10" cy="17" r="2.2" />
         </svg>
       );
     case "official-goal":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <circle cx="15" cy="17" r="13" fill={`url(#${gradientID})`} />
-          <circle className="skill-mark-light-stroke skill-mark-muted" cx="15" cy="17" r="8" />
-          <circle className="skill-mark-light-stroke" cx="15" cy="17" r="3.5" />
-          <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="m17.5 14.5 9-9m-4.5.5 4.8-.8-.8 4.8" />
+          <circle cx="16" cy="16" r="12" fill={`url(#${gradientID})`} />
+          <circle className="skill-mark-color-c-stroke skill-mark-stroke-wide" cx="16" cy="16" r="8" />
+          <circle className="skill-mark-light-stroke skill-mark-stroke-wide" cx="16" cy="16" r="3.5" />
+          <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="m18.5 13.5 8-8m-4.2.4 4.4-.7-.7 4.4" />
+          <circle className="skill-mark-light-fill" cx="16" cy="16" r="1.5" />
         </svg>
       );
     case "official-presentation":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <path d="M6 2.5h13.5L27 10v17.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-23a2 2 0 0 1 2-2Z" fill={`url(#${gradientID})`} />
-          <path className="skill-mark-highlight-fill" d="M19.5 2.5V8a2 2 0 0 0 2 2H27Z" />
-          <rect className="skill-mark-light-stroke skill-mark-stroke-wide" x="8" y="13" width="15" height="10" rx="2.5" />
-          <path className="skill-mark-light-stroke skill-mark-muted" d="M11 19.5h9" />
+          <path d="M7 4h13l7 7v15a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-color-c-fill" d="M20 4v5a2 2 0 0 0 2 2h5Z" />
+          <rect className="skill-mark-light-fill skill-mark-muted" x="8" y="14" width="16" height="10" rx="3" />
+          <path className="skill-mark-color-c-stroke skill-mark-stroke-wide" d="M11.5 20.5h9" />
         </svg>
       );
     case "official-creator":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <rect x="3" y="8" width="17" height="17" rx="5" transform="rotate(-17 3 8)" fill={`url(#${gradientID})`} />
-          <rect className="skill-mark-highlight-fill skill-mark-translucent" x="13" y="8" width="15" height="17" rx="5" transform="rotate(18 13 8)" />
-          <path className="skill-mark-light-fill" d="m21.5 4 1.1 3.2L26 8.4l-3.4 1.1-1.1 3.3-1.2-3.3L17 8.4l3.3-1.2Z" />
-          <circle className="skill-mark-light-fill skill-mark-muted" cx="9" cy="25" r="1.5" />
+          <rect x="4" y="4" width="24" height="24" rx="8" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-color-c-fill skill-mark-translucent" d="M17 4h11v13L17 28h-6Z" />
+          <path className="skill-mark-light-fill" d="m18 7 1.8 5.2L25 14l-5.2 1.8L18 21l-1.8-5.2L11 14l5.2-1.8Z" />
+          <path className="skill-mark-color-c-fill" d="m18 11 1 2 2 1-2 1-1 2-1-2-2-1 2-1Z" />
+          <circle className="skill-mark-light-fill skill-mark-muted" cx="9" cy="23" r="1.6" />
         </svg>
       );
     case "official-plugin":
       return (
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
-          <path d="M5 4h7.5a3.5 3.5 0 1 0 7 0H27v8a3.5 3.5 0 1 1 0 7v8h-8a3.5 3.5 0 1 0-7 0H5v-7.5a3.5 3.5 0 1 1 0-7Z" fill={`url(#${gradientID})`} />
-          <circle className="skill-mark-light-fill skill-mark-muted" cx="16" cy="15.5" r="3" />
+          <rect x="4" y="4" width="24" height="24" rx="7" fill={`url(#${gradientID})`} />
+          <path className="skill-mark-color-c-fill skill-mark-translucent" d="M19 4h9v9.2a4 4 0 0 0-5.2 5.2H19Z" />
+          <path className="skill-mark-light-stroke skill-mark-stroke-wide" d="M10 11h4a2.5 2.5 0 1 1 5 0h3v3.5a2.5 2.5 0 1 1 0 5V22h-3.5a2.5 2.5 0 1 1-5 0H10v-3a2.5 2.5 0 1 1 0-5Z" />
         </svg>
       );
     case "official-default":
@@ -729,7 +741,9 @@ function OfficialSkillMark({
         <svg viewBox="0 0 32 32" focusable="false">
           {gradient}
           <rect x="4" y="4" width="24" height="24" rx="8" fill={`url(#${gradientID})`} />
+          <circle className="skill-mark-color-c-fill skill-mark-translucent" cx="22" cy="10" r="5" />
           <path className="skill-mark-light-fill" d="m16 7 2.1 6.2L24 16l-5.9 2.4L16 25l-2.3-6.6L8 16l5.7-2.8Z" />
+          <circle className="skill-mark-color-c-fill" cx="16" cy="16" r="2" />
         </svg>
       );
   }
