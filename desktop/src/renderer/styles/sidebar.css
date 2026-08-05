@@ -847,7 +847,9 @@
   background: var(--sidebar-glass-hover);
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--sidebar-nav-item-hover-ring);
-  transform: translateX(1px);
+  /* Keep the hitbox and its contents on the same x-axis. A 1 CSS px hover
+   * nudge becomes a visible 2 physical px jump on Retina displays. */
+  transform: none;
 }
 
 .nav-item[aria-current="page"] {
@@ -857,7 +859,7 @@
 
 .nav-item:active,
 .project-row:active {
-  transform: translateX(1px) scale(0.992);
+  transform: scale(0.992);
 }
 
 .thread-row.active {
@@ -948,6 +950,8 @@
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
+  line-height: 0;
+  padding: 0;
   transition:
     background-color var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
@@ -969,6 +973,21 @@
 .sidebar-functional-action > svg {
   width: 16px;
   height: 16px;
+}
+
+/* SidebarSection renders its add action beside the 32px header row. Center it
+ * against that container instead of carrying a one-off top offset; the same
+ * button box, glyph centering, and hover background are shared with the
+ * workspace heading action above. */
+.sidebar-section-add-action {
+  position: absolute;
+  top: 50%;
+  right: var(--sidebar-row-pad-x, 8px);
+  transform: translateY(-50%);
+}
+
+.sidebar-section-add-action:active {
+  transform: translateY(-50%) scale(0.96);
 }
 
 .project-list {
@@ -1269,9 +1288,7 @@
  * stopped matching and the button never appeared (regression fixed per
  * sidebar-groups-andy-workspaces.md §1.2). */
 .project-group:hover .project-row-new-thread,
-.project-group:focus-within .project-row-new-thread,
-.collab-section:hover .project-row-new-thread,
-.collab-section:focus-within .project-row-new-thread {
+.project-group:focus-within .project-row-new-thread {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
@@ -1865,7 +1882,7 @@
   background: var(--sidebar-glass-hover);
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--sidebar-settings-button-hover-ring);
-  transform: translateX(1px);
+  transform: none;
 }
 
 .thread-row-context-menu {
@@ -1983,11 +2000,10 @@
     );
 }
 
-/* Header right-edge spacing: sections without a right-side button
- * so col 3 stays an empty 24px slot that pushes the label leftward.
- * Collapse to 2 cols when no .project-row-new-thread button is present
- * so the label spans the full row width. */
-.sidebar-section-header-group:not(:has(.project-row-new-thread)) .sidebar-section-row {
+/* Header right-edge spacing: col 3 stays an empty 24px slot when a section
+ * has either kind of right-side add action. Collapse to 2 cols only when no
+ * action is present so the label spans the full row width. */
+.sidebar-section-header-group:not(:has(.project-row-new-thread, .sidebar-section-add-action)) .sidebar-section-row {
   grid-template-columns:
     var(--sidebar-nav-icon-col)
     minmax(0, 1fr);

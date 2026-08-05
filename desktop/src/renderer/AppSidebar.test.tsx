@@ -260,6 +260,61 @@ describe("AppSidebar layout", () => {
     expect(scrollRegion?.querySelector(".project-section")).not.toBeNull();
   });
 
+  it("keeps workspace and collaboration add actions visible and centered in matching containers", () => {
+    renderSidebar({ groupChatEnabled: true });
+
+    const workspaceAction = container.querySelector<HTMLButtonElement>(
+      '[aria-label="添加工作区"]',
+    );
+    const collaborationAction = container.querySelector<HTMLButtonElement>(
+      '[aria-label="新建频道"]',
+    );
+    expect(workspaceAction?.classList.contains("sidebar-functional-action")).toBe(true);
+    expect(collaborationAction?.classList.contains("sidebar-functional-action")).toBe(true);
+    expect(collaborationAction?.classList.contains("sidebar-section-add-action")).toBe(true);
+    expect(collaborationAction?.classList.contains("project-row-new-thread")).toBe(false);
+
+    const sharedActionRule =
+      sidebarCSS.match(/\.sidebar-functional-action\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(sharedActionRule).toMatch(/place-items:\s*center/);
+    expect(sharedActionRule).toMatch(/padding:\s*0/);
+    expect(sharedActionRule).toMatch(/background:\s*transparent/);
+
+    const sharedActionHoverRule =
+      sidebarCSS.match(
+        /\.sidebar-functional-action:hover,\s*\.sidebar-functional-action:focus-visible,\s*\.sidebar-functional-action\[aria-expanded="true"\]\s*\{[^}]*\}/,
+      )?.[0] ?? "";
+    expect(sharedActionHoverRule).toMatch(
+      /background:\s*var\(--sidebar-row-icon-hover-bg-default\)/,
+    );
+
+    const sectionActionRule =
+      sidebarCSS.match(/\.sidebar-section-add-action\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(sectionActionRule).toMatch(/top:\s*50%/);
+    expect(sectionActionRule).toMatch(/right:\s*var\(--sidebar-row-pad-x, 8px\)/);
+    expect(sectionActionRule).toMatch(/transform:\s*translateY\(-50%\)/);
+  });
+
+  it("keeps sidebar buttons on a stable horizontal axis across interaction states", () => {
+    const rowHoverRule =
+      sidebarCSS.match(
+        /\.nav-item:hover,\s*\.project-row:hover,\s*\.thread-row:hover\s*\{[^}]*\}/,
+      )?.[0] ?? "";
+    const rowActiveRule =
+      sidebarCSS.match(/\.nav-item:active,\s*\.project-row:active\s*\{[^}]*\}/)?.[0] ?? "";
+    const settingsHoverRule =
+      sidebarCSS.match(
+        /\.sidebar-settings-button:hover,\s*\.sidebar-settings-button\[aria-expanded="true"\]\s*\{[^}]*\}/,
+      )?.[0] ?? "";
+
+    expect(rowHoverRule).toMatch(/transform:\s*none/);
+    expect(rowActiveRule).toMatch(/transform:\s*scale\(0\.992\)/);
+    expect(settingsHoverRule).toMatch(/transform:\s*none/);
+    expect([rowHoverRule, rowActiveRule, settingsHoverRule].join("\n")).not.toMatch(
+      /translateX|translate3d/,
+    );
+  });
+
   it("renders the brand placeholder above the primary nav", () => {
     renderSidebar();
 

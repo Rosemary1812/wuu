@@ -710,13 +710,13 @@ export function AppSidebar({
                     }
                     newItemButton={
                       <button
-                        className="sidebar-row-icon-button project-row-new-thread"
+                        className="sidebar-functional-action sidebar-section-add-action"
                         type="button"
                         aria-label={t("channels.newRoom")}
                         title={t("channels.newRoom")}
                         onClick={onCreateChannelRoom ?? onOpenChannels}
                       >
-                        <Plus className="icon" />
+                        <Plus aria-hidden="true" />
                       </button>
                     }
                     emptyNote={t("sidebar.collaborationEmpty")}
