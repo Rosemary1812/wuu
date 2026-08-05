@@ -20,6 +20,7 @@ import {
   applyHeldComposerSnapshot,
   emptyThreadPendingComposerMessages,
   findPendingComposerMessage,
+  materializedComposerMessageIDs,
   pendingComposerMessagesForThread,
   reconcilePendingComposerMessagesForThread,
   removePendingComposerMessagesByID,
@@ -306,20 +307,12 @@ export function useComposerPendingState({
     if (!target) {
       return false;
     }
-    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-      ...previous,
-      queued: previous.queued.filter((message) => message.id !== id),
-    }));
-    try {
-      const result = await window.wuu.dequeueTurn(target.threadID, id);
-      if (!result.ok) {
-        setStatus(localizedText("composer.queueAlreadyHandled"));
-        return false;
-      }
-      return true;
-    } catch (error) {
+    const restoreTargetIfAbsent = (): void => {
       updateThreadPendingComposerMessages(target.threadID, (previous) => {
-        if (previous.queued.some((message) => message.id === id)) {
+        if (
+          previous.queued.some((message) => message.id === id) ||
+          previous.guides.some((message) => message.id === id)
+        ) {
           return previous;
         }
         const insertAt = Math.min(target.index, previous.queued.length);
@@ -332,6 +325,31 @@ export function useComposerPendingState({
           ],
         };
       });
+    };
+    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+      ...previous,
+      queued: previous.queued.filter((message) => message.id !== id),
+    }));
+    try {
+      const result = await window.wuu.dequeueTurn(target.threadID, id);
+      if (!result.ok) {
+        const targetThread = threadForTab(getAppState(), target.threadID);
+        const materialized = materializedComposerMessageIDs(targetThread).has(id);
+        if (!materialized) {
+          restoreTargetIfAbsent();
+        }
+        setStatus(
+          localizedText(
+            materialized
+              ? "composer.queueAlreadyHandled"
+              : "composer.queueStillPending",
+          ),
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      restoreTargetIfAbsent();
       setStatus(
         error instanceof Error
           ? error.message

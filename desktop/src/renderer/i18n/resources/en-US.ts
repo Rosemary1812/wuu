@@ -1894,6 +1894,7 @@ export const enUS = {
   "chipGallery.inContextDescriptionPrefix": "Mock Turns rendered through the real",
   "chipGallery.inContextDescriptionSuffix": "show each Chip's actual position and spacing below user messages or after assistant Turns.",
   "composer.queueAlreadyHandled": "This queued message has already been handled and cannot be canceled",
+  "composer.queueStillPending": "The message is still queued. Try again shortly",
   "composer.cancelQueueFailed": "Failed to cancel the queued message",
   "composer.guideAlreadyHandled": "This guidance message has already been handled and cannot be canceled",
   "composer.cancelGuideFailed": "Failed to cancel the guidance message",

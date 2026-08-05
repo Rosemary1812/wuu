@@ -499,7 +499,7 @@ describe("useComposerPendingState", () => {
     );
   });
 
-  it("does not restore a queued message that already started", async () => {
+  it("restores a queued message when dequeue misses it before turn/started", async () => {
     installWuuStub({
       dequeueTurn: vi.fn().mockResolvedValue({ ok: false }),
     });
@@ -514,13 +514,57 @@ describe("useComposerPendingState", () => {
       await hook.get().editQueuedMessage("queue-1");
     });
 
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"]?.queued,
+    ).toEqual([message("queue-1", "Too late")]);
+    expect(hook.restorePrimaryComposerDraft).not.toHaveBeenCalled();
+    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
+      "消息仍在排队，请稍后重试",
+    );
+  });
+
+  it("does not restore a queued message that already materialized", async () => {
+    installWuuStub({
+      dequeueTurn: vi.fn().mockResolvedValue({ ok: false }),
+    });
+    const startedThread = {
+      ...thread("thread-a", true),
+      turns: [
+        {
+          id: "turn-running",
+          status: "in_progress",
+          items: [
+            {
+              id: "item-user",
+              type: "user_message",
+              source_id: "queue-1",
+              text: "Too late",
+            },
+          ],
+        },
+      ],
+    } as unknown as Thread;
+    const hook = await renderComposerPendingState({
+      appState: {
+        ...initialState,
+        thread: startedThread,
+        threads: [startedThread],
+      },
+    });
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Too late"));
+    });
+    await act(async () => {
+      await hook.get().editQueuedMessage("queue-1");
+    });
+
     expect(hook.restorePrimaryComposerDraft).not.toHaveBeenCalled();
     expect(
       hook.get().pendingComposerMessagesByThread["thread-a"],
     ).toBeUndefined();
-    expect(resolveLocalizedText(hook.setStatus.mock.calls[0][0] as string)).toBe(
-      "排队消息已被处理，无法取消",
-    );
   });
 
   it("restores an edited draft to its originating thread after a tab switch", async () => {

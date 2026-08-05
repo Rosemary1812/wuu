@@ -1892,6 +1892,7 @@ export const zhCN = {
   "chipGallery.inContextDescriptionPrefix": "模拟的 Turn 通过真实",
   "chipGallery.inContextDescriptionSuffix": "渲染，展示 Chip 在用户消息下方或助手 Turn 后的实际位置和间距。",
   "composer.queueAlreadyHandled": "排队消息已被处理，无法取消",
+  "composer.queueStillPending": "消息仍在排队，请稍后重试",
   "composer.cancelQueueFailed": "取消排队失败",
   "composer.guideAlreadyHandled": "引导消息已被处理，无法取消",
   "composer.cancelGuideFailed": "取消引导失败",
