@@ -2381,7 +2381,7 @@ describe("Composer expand button", () => {
       /\.composer\s+textarea\s*\{[^}]*display:\s*block[^}]*height:\s*60px[^}]*min-height:\s*60px[^}]*padding:\s*10px\s+44px\s+8px\s+var\(--composer-text-start\)/,
     );
     expect(composerCSS).toMatch(
-      /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*height:\s*48px[^}]*min-height:\s*48px[^}]*padding:\s*16px\s+52px\s+8px\s+var\(--composer-text-start\)/,
+      /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*height:\s*66px[^}]*min-height:\s*66px[^}]*padding:\s*16px\s+52px\s+8px\s+var\(--composer-text-start\)/,
     );
     expect(composerCSS).toMatch(
       /\.composer-bar\s*\{[^}]*height:\s*40px[^}]*padding:\s*0\s+8px\s+4px\s+calc\(var\(--composer-text-start\)\s*-\s*var\(--composer-control-icon-inset\)\)/,
@@ -2394,13 +2394,13 @@ describe("Composer expand button", () => {
     );
     expect(composerCSS).toContain("--composer-expanded-min-height: clamp(240px, 44vh, 420px)");
     expect(composerCSS).toMatch(
-      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*88px/,
+      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*106px/,
     );
     expect(composerCSS).toMatch(
       /\.dock-composer-wrap\s*\{[^}]*align-self:\s*end/,
     );
     expect(turnsCSS).toMatch(
-      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*88px[^}]*align-items:\s*flex-end/,
+      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*106px[^}]*align-items:\s*flex-end/,
     );
     expect(composerCSS).toMatch(
       /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,
