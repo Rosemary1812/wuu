@@ -483,12 +483,18 @@ export function useComposerPendingState({
         files,
         target.message.activeDocument,
       );
-      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-        queued: previous.queued.filter((message) => message.id !== id),
-        guides: target.message.held
-          ? previous.guides.filter((message) => message.id !== id)
-          : [...previous.guides, target.message],
-      }));
+      updateThreadPendingComposerMessages(target.threadID, (previous) => {
+        const withoutQueue = {
+          ...previous,
+          queued: previous.queued.filter((message) => message.id !== id),
+        };
+        return target.message.held
+          ? {
+              ...withoutQueue,
+              guides: previous.guides.filter((message) => message.id !== id),
+            }
+          : appendPendingComposerMessage(withoutQueue, "guide", target.message);
+      });
     } catch (error) {
       setStatus(
         error instanceof Error

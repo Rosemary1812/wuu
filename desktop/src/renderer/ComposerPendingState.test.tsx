@@ -354,6 +354,69 @@ describe("useComposerPendingState", () => {
     ).toEqual(["queue-2"]);
   });
 
+  it("does not duplicate a queue converted to steer when interrupt holds it before the response", async () => {
+    let resolveSteer: ((value: { turn_id: string }) => void) | undefined;
+    const steerTurn = vi.fn(
+      () =>
+        new Promise<{ turn_id: string }>((resolve) => {
+          resolveSteer = resolve;
+        }),
+    );
+    installWuuStub({ steerTurn: steerTurn as WuuDesktopApi["steerTurn"] });
+    const runningThread = thread("thread-a", true);
+    const hook = await renderComposerPendingState({
+      appState: {
+        ...initialState,
+        thread: runningThread,
+        threads: [runningThread],
+      },
+    });
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("shared-id", "Guide this"));
+    });
+    let converting: Promise<void> | undefined;
+    act(() => {
+      converting = hook.get().guideQueuedMessage("shared-id");
+    });
+    act(() => {
+      hook.get().syncPendingComposerMessagesFromServerEvent({
+        kind: "notification",
+        message: {
+          method: "turn/held",
+          params: {
+            thread_id: "thread-a",
+            messages: [
+              {
+                id: "shared-id",
+                thread_id: "thread-a",
+                origin: "steer",
+                prompt: "Guide this",
+              },
+            ],
+          },
+        },
+      } as ServerEvent);
+    });
+
+    await act(async () => {
+      resolveSteer?.({ turn_id: "turn-running" });
+      await converting;
+    });
+
+    const pending = hook.get().pendingComposerMessagesByThread["thread-a"];
+    expect(pending?.queued).toEqual([]);
+    expect(pending?.guides).toEqual([
+      expect.objectContaining({
+        id: "shared-id",
+        held: true,
+        origin: "steer",
+      }),
+    ]);
+  });
+
   it("keeps a queued document snapshot when converting it to a steer", async () => {
     const steerTurn = vi.fn().mockResolvedValue({ turn_id: "turn-running" });
     installWuuStub({ steerTurn });
