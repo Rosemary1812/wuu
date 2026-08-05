@@ -1851,7 +1851,11 @@
 }
 
 .turn-subagent-wait-tail.expanded {
-  margin-top: var(--conversation-process-detail-gap);
+  /* `.turn` already contributes its item gap. Top up only to the same
+     activity rhythm used by ordinary tool-call rows. */
+  margin-top: calc(
+    var(--conversation-activity-gap) - var(--conversation-turn-item-gap)
+  );
 }
 
 .turn-process-entry {
