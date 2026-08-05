@@ -502,6 +502,7 @@ export function App(): JSX.Element {
     updateCachedSidebarThread,
     updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
+    syncSidebarServerEvent,
     toggleSidebarSectionCollapsed,
   } = useSidebarProjectState({
     projects: state.projects,
@@ -514,6 +515,7 @@ export function App(): JSX.Element {
         status,
       })),
   });
+  const syncSidebarServerEventStable = useStableCallback(syncSidebarServerEvent);
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [codexRuntimeMenu, setCodexRuntimeMenu] =
@@ -1566,6 +1568,10 @@ export function App(): JSX.Element {
         return;
       }
       setActivitySessions((current) => reduceActivitySessionEvent(current, event));
+      // All app-server clients share this event channel. Keep folded workspace
+      // snapshots live so expanding a workspace only reveals state; it never
+      // needs to wait for a status refresh first.
+      syncSidebarServerEventStable(event);
       if (!serverEventTargetsActiveContext(event, appStateRef.current)) {
         return;
       }

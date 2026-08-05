@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DesktopProject, RuntimeContext, Thread } from "../shared/protocol";
 import {
+  isThreadRunning,
+  isThreadUnread,
   SCRATCH_PSEUDO_PROJECT_ID,
 } from "./AppState";
 import {
@@ -231,6 +233,68 @@ describe("useSidebarProjectState", () => {
     expect(
       hook.get().projectThreadsByProjectID.alpha?.map((item) => item.id).sort(),
     ).toEqual(["thread-first", "thread-second"]);
+  });
+
+  it("keeps folded workspace session status current from background server events", async () => {
+    const alpha = project("alpha", "/tmp/alpha");
+    const beta = project("beta", "/tmp/beta");
+    const betaThread = thread("thread-beta", beta.path);
+    const hook = await renderSidebarProjectState({ projects: [alpha, beta] });
+
+    act(() => {
+      hook.get().cacheSidebarThreads([betaThread]);
+      hook.get().syncSidebarServerEvent({
+        kind: "notification",
+        workdir: beta.path,
+        message: {
+          method: "turn/started",
+          params: {
+            thread_id: betaThread.id,
+            turn: {
+              id: "turn-beta",
+              items: [],
+              items_view: "full",
+              status: "in_progress",
+            },
+          },
+        },
+      });
+    });
+
+    expect(hook.get().expandedSidebarSectionIDs.has(beta.id)).toBe(false);
+    const runningThread = hook.get().projectThreadsByProjectID.beta?.[0];
+    expect(runningThread?.turns.at(-1)).toMatchObject({
+      id: "turn-beta",
+      status: "in_progress",
+    });
+    expect(isThreadRunning(runningThread)).toBe(true);
+
+    act(() => {
+      hook.get().syncSidebarServerEvent({
+        kind: "notification",
+        workdir: beta.path,
+        message: {
+          method: "turn/completed",
+          params: {
+            thread_id: betaThread.id,
+            turn: {
+              id: "turn-beta",
+              items: [],
+              items_view: "full",
+              status: "completed",
+            },
+          },
+        },
+      });
+    });
+
+    const completedThread = hook.get().projectThreadsByProjectID.beta?.[0];
+    expect(completedThread?.turns.at(-1)).toMatchObject({
+      id: "turn-beta",
+      status: "completed",
+    });
+    expect(isThreadRunning(completedThread)).toBe(false);
+    expect(isThreadUnread(completedThread, undefined)).toBe(true);
   });
 
   it("caches search results across projects without requiring sidebar expansion", async () => {

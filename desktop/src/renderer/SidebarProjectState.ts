@@ -9,13 +9,17 @@ import {
 import type {
   DesktopProject,
   RuntimeContext,
+  ServerEvent,
   Thread,
 } from "../shared/protocol";
 import {
   SCRATCH_PSEUDO_PROJECT_ID,
+  initialState,
   isScratchThread,
+  reduceNotification,
   sortThreads,
   threadBelongsToProject,
+  threadFromRecord,
   upsertThread,
 } from "./AppState";
 import {
@@ -24,6 +28,7 @@ import {
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { isRecord, recordValue } from "./ToolActivity";
 import { translateCurrent } from "./i18n";
 
 const SIDEBAR_COLLAPSED_SECTION_IDS_KEY =
@@ -47,8 +52,19 @@ export type SidebarProjectStateController = {
   updateCachedSidebarThread: (thread: Thread) => void;
   updateCachedSidebarThreadPinned: (threadID: string, pinned: boolean) => void;
   removeCachedSidebarThread: (threadID: string) => void;
+  syncSidebarServerEvent: (event: ServerEvent) => void;
   toggleSidebarSectionCollapsed: (sectionID: string) => void;
 };
+
+const SIDEBAR_THREAD_LIFECYCLE_METHODS = new Set([
+  "thread/started",
+  "thread/resumed",
+  "thread/updated",
+  "turn/started",
+  "turn/completed",
+  "turn/error",
+  "agent/updated",
+]);
 
 function storedSidebarSectionIDSet(
   key: string,
@@ -439,6 +455,51 @@ export function useSidebarProjectState({
     });
   }
 
+  function syncSidebarServerEvent(event: ServerEvent): void {
+    if (
+      event.kind !== "notification" ||
+      !SIDEBAR_THREAD_LIFECYCLE_METHODS.has(event.message.method)
+    ) {
+      return;
+    }
+    const params = event.message.params;
+    const record = isRecord(params) ? params : undefined;
+    const incomingThread = threadFromRecord(recordValue(record, "thread"));
+    if (incomingThread) {
+      updateCachedSidebarThread(incomingThread);
+      return;
+    }
+    const threadID = typeof record?.thread_id === "string" ? record.thread_id : undefined;
+    if (!threadID) {
+      return;
+    }
+    const applyEvent = (current: Thread[]): Thread[] => {
+      if (!current.some((thread) => thread.id === threadID)) {
+        return current;
+      }
+      const next = reduceNotification(
+        {
+          ...initialState,
+          activeContext: { kind: "no_project", cwd: event.workdir },
+          threads: current,
+        },
+        event.message,
+      ).threads;
+      return next === current ? current : next;
+    };
+    setCachedScratchThreads(applyEvent);
+    setProjectThreadsByProjectID((current) => {
+      let changed = false;
+      const next: Record<string, Thread[]> = {};
+      for (const [projectID, projectThreads] of Object.entries(current)) {
+        const synced = applyEvent(projectThreads);
+        changed ||= synced !== projectThreads;
+        next[projectID] = synced;
+      }
+      return changed ? next : current;
+    });
+  }
+
   function toggleSidebarSectionCollapsed(sectionID: string): void {
     // Fixed sections are pure manual sidebar sections:
     // expanded ⇔ !collapsedSidebarSectionIDs.has(id).
@@ -513,6 +574,7 @@ export function useSidebarProjectState({
     updateCachedSidebarThread,
     updateCachedSidebarThreadPinned,
     removeCachedSidebarThread,
+    syncSidebarServerEvent,
     toggleSidebarSectionCollapsed,
   };
 }
