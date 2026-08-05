@@ -1,6 +1,6 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
   InputFile,
   InputImage,
@@ -156,36 +156,17 @@ function MergedTurnGroupView({
     ? messageFlowAgentMessageItemID(last)
     : undefined;
 
-  // Some synthetic wake turns settle before their completed_at reaches the
-  // renderer. Preserve the wall-clock edge observed by this mounted
-  // orchestration instead of falling back to the sum of member durations,
-  // which excludes the subagent wait and makes the unified timer jump back.
-  const fallbackStartedAtRef = useRef(Date.now());
-  const sawLiveRef = useRef(live);
-  const fallbackCompletedAtRef = useRef<number | undefined>(undefined);
-  if (live) {
-    sawLiveRef.current = true;
-    fallbackCompletedAtRef.current = undefined;
-  } else if (sawLiveRef.current && fallbackCompletedAtRef.current === undefined) {
-    fallbackCompletedAtRef.current = Date.now();
-  }
-
   // The shell sees a synthetic turn: identity of the first, items of all
   // (turnProgressContent reads running tools / latest item), status and
   // timing of the whole run. Per-item rendering still resolves each
   // entry's origin turn via TurnEntry.turn.
   const shellTurn = useMemo<Turn>(() => {
+    const startMs = turnStartedAtMs(first);
     let durationMs: number | undefined;
     if (!live) {
-      const startMs = parseTurnTimestampMs(first.started_at);
-      const endMs = parseTurnTimestampMs(last.completed_at);
+      const endMs = turnCompletedAtMs(last);
       if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs) {
         durationMs = endMs - startMs;
-      } else if (sawLiveRef.current && fallbackCompletedAtRef.current !== undefined) {
-        const effectiveStartMs = Number.isFinite(startMs)
-          ? startMs
-          : fallbackStartedAtRef.current;
-        durationMs = Math.max(0, fallbackCompletedAtRef.current - effectiveStartMs);
       } else {
         const sum = turns.reduce(
           (acc, turn) =>
@@ -199,7 +180,9 @@ function MergedTurnGroupView({
       ...first,
       items: turns.flatMap((turn) => turn.items),
       status: live ? "in_progress" : interrupted ? "interrupted" : last.status,
-      started_at: first.started_at,
+      started_at: Number.isFinite(startMs)
+        ? new Date(startMs).toISOString()
+        : first.started_at,
       completed_at: live ? undefined : last.completed_at,
       duration_ms: durationMs,
       error: live ? undefined : last.error,
@@ -321,6 +304,32 @@ function TransientSubagentWait({ label }: { label?: string }): JSX.Element {
       </div>
     </div>
   );
+}
+
+function turnStartedAtMs(turn: Turn): number {
+  const startedAtMs = parseTurnTimestampMs(turn.started_at);
+  if (Number.isFinite(startedAtMs)) {
+    return startedAtMs;
+  }
+  const completedAtMs = parseTurnTimestampMs(turn.completed_at);
+  return Number.isFinite(completedAtMs) && validTurnDuration(turn.duration_ms)
+    ? completedAtMs - turn.duration_ms
+    : NaN;
+}
+
+function turnCompletedAtMs(turn: Turn): number {
+  const completedAtMs = parseTurnTimestampMs(turn.completed_at);
+  if (Number.isFinite(completedAtMs)) {
+    return completedAtMs;
+  }
+  const startedAtMs = parseTurnTimestampMs(turn.started_at);
+  return Number.isFinite(startedAtMs) && validTurnDuration(turn.duration_ms)
+    ? startedAtMs + turn.duration_ms
+    : NaN;
+}
+
+function validTurnDuration(durationMs: number | undefined): durationMs is number {
+  return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0;
 }
 
 function mergeTurnDisplays(turns: Turn[]): AssistantTurnDisplay | undefined {

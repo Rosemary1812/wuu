@@ -30,6 +30,13 @@ function render(element: JSX.Element): void {
   });
 }
 
+function unmountGroup(): void {
+  act(() => {
+    root?.unmount();
+  });
+  root = null;
+}
+
 let idCounter = 0;
 function nextID(prefix: string): string {
   idCounter += 1;
@@ -351,6 +358,9 @@ describe("TurnGroupView — awaiting between turns", () => {
     act(() => {
       vi.advanceTimersByTime(2_000);
     });
+    // Switching session tabs removes this conversation pane. The timer must
+    // be reconstructable from persisted turn data after a fresh mount.
+    unmountGroup();
     const wakeTurn = makeTurn(
       "t2",
       [wakeItem("agent-research_a"), answerItem("汇总如下。")],
@@ -366,6 +376,30 @@ describe("TurnGroupView — awaiting between turns", () => {
     expect(container.querySelector(".turn-process-title")?.textContent).toContain(
       "1 分 2 秒",
     );
+  });
+
+  it("reconstructs a live orchestration start after switching session tabs", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T10:01:00Z"));
+    const spawnTurn = makeTurn(
+      "t1",
+      [userItem("帮我查 X"), spawnItem("research_a"), answerItem("我先派一个子任务。")],
+      {
+        completedAt: "2026-07-29T10:00:12Z",
+        durationMs: 12_000,
+      },
+    );
+
+    mountGroup([spawnTurn], true);
+    expect(container.querySelector(".turn-process-meta")?.textContent).toBe("1m 0s");
+
+    unmountGroup();
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    mountGroup([spawnTurn], true);
+
+    expect(container.querySelector(".turn-process-meta")?.textContent).toBe("1m 2s");
   });
 
   it("publishes a notification-only completion on the original spawn node", () => {
