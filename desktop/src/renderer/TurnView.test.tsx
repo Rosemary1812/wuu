@@ -236,7 +236,7 @@ describe("TurnView", () => {
     expect(view.textContent).toContain("思考过程");
   });
 
-  it("renders one stop notice when a manual interruption also records a cancellation error item", () => {
+  it("preserves partial output without a notice after a manual interruption", () => {
     const view = render(
       makeTurn("interrupted", [
         makeCommentary("partial progress"),
@@ -245,8 +245,9 @@ describe("TurnView", () => {
     );
 
     expect(view.textContent).toContain("partial progress");
-    expect(view.querySelectorAll(".turn-notice")).toHaveLength(1);
-    expect(view.textContent?.match(/已停止/g)).toHaveLength(1);
+    expect(view.querySelectorAll(".turn-notice")).toHaveLength(0);
+    expect(view.textContent).not.toContain("已停止");
+    expect(view.textContent).not.toContain("回复已中断");
   });
 
   it("renders one failure notice when a failed turn also records an error item", () => {

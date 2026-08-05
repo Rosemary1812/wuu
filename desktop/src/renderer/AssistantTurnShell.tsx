@@ -676,7 +676,7 @@ function turnProcessTitle(
   elapsedMs: number,
   hasFinalText: boolean,
 ): string {
-  if (turn.status === "completed") {
+  if (turn.status === "completed" || turn.status === "interrupted") {
     return taskFinishedLabel(elapsedMs);
   }
   return turnProgressContent(turn, elapsedMs, hasFinalText).label;

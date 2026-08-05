@@ -395,7 +395,7 @@ describe("userFacingErrorForMessage", () => {
 });
 
 describe("TurnEvents", () => {
-  it("maps manual interruption to one user-stopped turn event", () => {
+  it("does not render an event for a manual interruption", () => {
     const turn: Turn = {
       id: "turn-1",
       items: [],
@@ -405,9 +405,7 @@ describe("TurnEvents", () => {
 
     const event = turnEventForTurn(turn, false);
 
-    expect(event?.kind).toBe("user_stopped");
-    expect(event?.source).toBe("turn");
-    expect(event?.presentation).toBe("notice");
+    expect(event).toBeUndefined();
   });
 
   it("adds preserved-output detail once for partial Responses stream failures", () => {

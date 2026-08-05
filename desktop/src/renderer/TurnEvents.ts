@@ -46,6 +46,12 @@ export function turnEventForTurn(
   hasAssistantOutput: boolean,
   hasMissingReply: boolean = false,
 ): TurnEventDisplay | undefined {
+  // A manual stop is an expected user action. Preserve any generated output,
+  // but do not add a redundant turn-level divider after the user just clicked
+  // the stop control.
+  if (turn.status === "interrupted") {
+    return undefined;
+  }
   // Soft outcome: turn completed but only produced commentary, no
   // `final_answer`. Rendered as a warning system event (not an error) and
   // checked first so a completed turn with commentary but no answer
@@ -66,37 +72,26 @@ export function turnEventForTurn(
   }
   const rawMessage = turn.error?.message || latestTurnItemError(turn);
   const baseDisplay =
-    turn.status === "interrupted"
-      ? userFacingErrorForMessage("context canceled", "turn")
-      : isCancellationMessage((rawMessage ?? "").toLowerCase())
-        ? userFacingErrorForMessage(rawMessage, "turn")
-        // For a failed turn, prefer the structured `turn.error` populated
-        // by the Go core's BuildTurnError so the renderer can derive one
-        // accurate user-facing label while keeping diagnostics internal.
-        // The legacy string fallback in userFacingErrorForMessage still
-        // works for older app-servers that only send the message.
-        : turn.status === "failed"
-          ? userFacingErrorForMessage(turn.error, "turn")
-          : undefined;
+    isCancellationMessage((rawMessage ?? "").toLowerCase())
+      ? userFacingErrorForMessage(rawMessage, "turn")
+      // For a failed turn, prefer the structured `turn.error` populated
+      // by the Go core's BuildTurnError so the renderer can derive one
+      // accurate user-facing label while keeping diagnostics internal.
+      // The legacy string fallback in userFacingErrorForMessage still
+      // works for older app-servers that only send the message.
+      : turn.status === "failed"
+        ? userFacingErrorForMessage(turn.error, "turn")
+        : undefined;
   if (!baseDisplay) {
     return undefined;
   }
 
-  const notice =
-    baseDisplay.category === "cancelled"
-      ? {
-          ...baseDisplay,
-          title: hasAssistantOutput ? translateCurrent("turn.interrupted.title") : translateCurrent("turn.stopped.title"),
-          detail: hasAssistantOutput
-            ? translateCurrent("turn.interrupted.detail")
-            : translateCurrent("turn.stopped.detail"),
-        }
-      : {
-          ...baseDisplay,
-          detail: hasAssistantOutput
-            ? translateCurrent("turn.error.preservedOutput", { detail: baseDisplay.detail })
-            : baseDisplay.detail,
-        };
+  const notice = {
+    ...baseDisplay,
+    detail: hasAssistantOutput
+      ? translateCurrent("turn.error.preservedOutput", { detail: baseDisplay.detail })
+      : baseDisplay.detail,
+  };
 
   return {
     kind: turnEventKindForNotice(notice),

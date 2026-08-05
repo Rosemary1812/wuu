@@ -373,9 +373,6 @@ export function turnProgressContent(
   hasFinalText: boolean,
 ): TurnProgressContent {
   const locale = getActiveLocale() === "zh-CN" ? "zh" : "en";
-  if (turn.status === "interrupted") {
-    return { label: t("error.cancelledTitle"), detail: t("turn.requestStopped") };
-  }
   if (turn.status !== "in_progress") {
     return {
       label: messageFlowStatusLabel({

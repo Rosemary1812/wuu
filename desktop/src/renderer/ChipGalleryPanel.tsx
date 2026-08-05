@@ -8,7 +8,7 @@
  *      / `userFacingErrorForMissingReply` / `ContextCompactionNotice`
  *      entry points the real turn pipeline uses, so what you see here
  *      is what the user sees in the conversation.
- *   2. In-Context: four mock `Turn` records rendered through the real
+ *   2. In-Context: three mock `Turn` records rendered through the real
  *      `TurnView` component, so the chip is shown next to a user
  *      message bubble and an assistant turn body, at the real spacing.
  *
@@ -22,7 +22,6 @@ import type { Turn } from "../shared/protocol";
 import {
   userFacingErrorForMessage,
   userFacingErrorForMissingReply,
-  type UserFacingErrorDisplay,
 } from "./UserFacingErrors";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { TurnView } from "./TurnView";
@@ -98,20 +97,8 @@ type GalleryEntry = {
 function galleryEntries(): GalleryEntry[] {
   return [
   // -----------------------------------------------------------------------
-  // Cancellation / soft outcomes
+  // Soft outcomes
   // -----------------------------------------------------------------------
-  {
-    label: translateCurrent("turn.stopped.title"),
-    kind: "cancelled · neutral",
-    description: translateCurrent("chipGallery.cancelledEmpty"),
-    render: () => <TurnNotice display={cancelledEmpty()} />,
-  },
-  {
-    label: translateCurrent("turn.interrupted.title"),
-    kind: "cancelled · neutral",
-    description: translateCurrent("chipGallery.cancelledWithOutput"),
-    render: () => <TurnNotice display={cancelledWithOutput()} />,
-  },
   {
     label: translateCurrent("chipGallery.noFinalAnswer"),
     kind: "missing_final_answer · warning",
@@ -266,30 +253,6 @@ function galleryEntries(): GalleryEntry[] {
   ];
 }
 
-/**
- * The two `cancelled` displays are not produced by `userFacingErrorForMessage`
- * directly — `turnEventForTurn` overrides the title / detail based on whether
- * the turn had preserved output. Build them explicitly so the gallery
- * documents the exact strings the user sees.
- */
-function cancelledEmpty(): UserFacingErrorDisplay {
-  return {
-    category: "cancelled",
-    tone: "neutral",
-    title: translateCurrent("turn.stopped.title"),
-    detail: translateCurrent("turn.stopped.detail"),
-  };
-}
-
-function cancelledWithOutput(): UserFacingErrorDisplay {
-  return {
-    category: "cancelled",
-    tone: "neutral",
-    title: translateCurrent("turn.interrupted.title"),
-    detail: translateCurrent("turn.interrupted.detail"),
-  };
-}
-
 function ChipGalleryGallery(): JSX.Element {
   const { t } = useI18n();
   const entries = galleryEntries();
@@ -336,42 +299,12 @@ type ContextTurn = {
 };
 
 /**
- * Four representative scenarios. Each one constructs a `Turn` with the
+ * Three representative scenarios. Each one constructs a `Turn` with the
  * minimum items needed to surface the target chip via the real
  * `turnEventForTurn` / `turnEventForItem` pipeline.
  */
 function contextTurns(): ContextTurn[] {
   return [
-  {
-    heading: translateCurrent("chipGallery.cancelledEmpty"),
-    turn: {
-      id: "demo-cancelled-empty",
-      // No assistant items on purpose — `turnHasAssistantOutput(turn)`
-      // must return false so the real `turnEventForTurn` pipeline
-      // picks the `已停止` title (vs `回复已中断` for the partial-
-      // output case below). The user message bubble still renders
-      // from `userItems` in TurnView, so the in-context view shows
-      // a question followed by the chip with no assistant body.
-      items: [userMessage(translateCurrent("chipGallery.mock.inspectSource"))],
-      items_view: "full",
-      status: "interrupted",
-    },
-  },
-  {
-    heading: translateCurrent("chipGallery.cancelledWithOutput"),
-    turn: {
-      id: "demo-cancelled-partial",
-      items: [
-        userMessage(translateCurrent("chipGallery.mock.writeParser")),
-        commentary(translateCurrent("chipGallery.mock.checkRequirements")),
-        finalAnswer(
-          translateCurrent("chipGallery.mock.parserAnswer"),
-        ),
-      ],
-      items_view: "full",
-      status: "interrupted",
-    },
-  },
   {
     heading: translateCurrent("chipGallery.commentaryOnly"),
     turn: {

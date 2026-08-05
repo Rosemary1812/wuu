@@ -70,14 +70,13 @@ describe("ChipGalleryPanel", () => {
     const host = mount({ open: true, onClose: () => {} });
 
     const entries = host.querySelectorAll(".chip-gallery-entry");
-    // 15 entries: 2 cancelled + missing reply + 4 context compaction
+    // 13 entries: missing reply + 4 context compaction
     // + 4 provider/network + 2 auth + 2 tool/internal.
-    expect(entries.length).toBe(15);
+    expect(entries.length).toBe(13);
 
-    // The cancelled variants use the established 已停止 / 回复已中断 titles.
-    expect(host.textContent).toContain("已停止");
-    expect(host.textContent).toContain("回复已中断");
-    // The missing-reply chip we just added in the previous commit.
+    // Manual interruptions are intentionally silent and are not chip variants.
+    expect(host.textContent).not.toContain("已停止");
+    expect(host.textContent).not.toContain("回复已中断");
     expect(host.textContent).toContain("无最终回答");
     // A few representative chip titles from the error / auth path.
     expect(host.textContent).toContain("401 unauthorized");
@@ -111,33 +110,18 @@ describe("ChipGalleryPanel", () => {
     });
 
     const items = host.querySelectorAll(".chip-gallery-context-item");
-    // 5 representative scenarios: cancelled-empty, cancelled-partial,
-    // missing-reply, context-compaction, failed-provider.
-    expect(items.length).toBe(5);
+    // 3 representative scenarios: missing-reply, context-compaction,
+    // failed-provider.
+    expect(items.length).toBe(3);
 
     // Each item has a heading and a framed mock turn.
     const firstItem = items[0];
     expect(firstItem?.querySelector("h4")?.textContent).toBe(
-      "用户中断，无已生成内容",
+      "完成但只有 commentary，无 final_answer",
     );
     expect(
       firstItem?.querySelector(".chip-gallery-context-frame"),
     ).not.toBeNull();
-  });
-
-  it("renders the real turn-level chip inside the cancelled in-context mock turn", () => {
-    vi.useFakeTimers();
-    const host = mount({ open: true, onClose: () => {} });
-    act(() => {
-      vi.advanceTimersByTime(ASSISTANT_TURN_PRESENTATION_STABILIZE_MS);
-    });
-
-    // The first in-context item is a cancelled turn with no preserved
-    // output, so it should surface the `已停止` chip via the real
-    // `turnEventForTurn` pipeline.
-    const firstItem = host.querySelector(".chip-gallery-context-item");
-    const title = firstItem?.querySelector(".turn-event-title")?.textContent;
-    expect(title).toBe("已停止");
   });
 
   it("calls onClose when the backdrop is clicked", () => {
