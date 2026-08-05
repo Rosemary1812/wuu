@@ -328,7 +328,7 @@ describe("JumpToLatestPill", () => {
     const frame = document.createElement("div");
     frame.className = "composer-frame";
     anchor.appendChild(frame);
-    stubRect(frame, { left: 100, top: 700, bottom: 780, width: 600, height: 80 });
+    stubRect(frame, { left: 150, top: 700, bottom: 780, width: 400, height: 80 });
     Object.defineProperty(window, "innerHeight", {
       configurable: true,
       value: 900,
@@ -358,8 +358,10 @@ describe("JumpToLatestPill", () => {
     expect(pill?.querySelector("span")?.textContent).toBe(
       pill?.getAttribute("aria-label"),
     );
-    // left = container.left + container.width / 2 = 100 + 300
-    expect(pill?.style.left).toBe("400px");
+    // The composer can move independently when the environment panel reserves
+    // room on the right, so the pill follows the frame rather than the unchanged
+    // scroll-container bounds: 150 + 400 / 2.
+    expect(pill?.style.left).toBe("350px");
     // The queued drawer is part of the same visual height used by the progress
     // pill, so the jump pill clears it instead of overlapping it.
     expect(pill?.style.bottom).toBe("288px");
@@ -370,6 +372,7 @@ describe("JumpToLatestPill", () => {
     act(() => {
       document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
       stubRect(node, { left: 100, top: 56, bottom: 800, width: 400, height: 744 });
+      stubRect(frame, { left: 100, top: 700, bottom: 780, width: 400, height: 80 });
       flushResizeObservers(resizeObservers, node);
       vi.advanceTimersToNextFrame();
     });
@@ -381,6 +384,15 @@ describe("JumpToLatestPill", () => {
       document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
       vi.advanceTimersByTime(WINDOW_RESIZE_SETTLE_DELAY_MS + 1);
     });
+
+    act(() => {
+      // A panel padding transition moves the frame without resizing either
+      // observed box. The transition-end signal must still settle the pill.
+      stubRect(frame, { left: 60, top: 700, bottom: 780, width: 400, height: 80 });
+      node.dispatchEvent(new Event("transitionend"));
+      vi.advanceTimersToNextFrame();
+    });
+    expect(pill?.style.left).toBe("260px");
 
     act(() => {
       stubRect(frame, { left: 100, top: 640, bottom: 780, width: 600, height: 140 });

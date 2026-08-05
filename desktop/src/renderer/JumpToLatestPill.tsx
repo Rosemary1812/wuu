@@ -55,6 +55,16 @@ const COMPOSER_FRAME_SELECTOR = ".composer-frame";
 
 type PillPosition = { left: number; bottom: number };
 
+function horizontalAnchorCenter(
+  container: HTMLElement,
+  bottomAnchor: HTMLElement,
+): number {
+  const composerFrame =
+    bottomAnchor.querySelector<HTMLElement>(COMPOSER_FRAME_SELECTOR);
+  const anchorRect = (composerFrame ?? container).getBoundingClientRect();
+  return anchorRect.left + anchorRect.width / 2;
+}
+
 export function JumpToLatestPill({
   containerRef,
   bottomAnchor,
@@ -139,12 +149,13 @@ export function JumpToLatestPill({
     if (!container || !bottomAnchor) {
       return;
     }
-    const containerRect = container.getBoundingClientRect();
     const anchorRect = bottomAnchor.getBoundingClientRect();
     const visualHeight = dockComposerVisualHeight(bottomAnchor);
     setPosition({
-      // Centered on the scroll container's visible width (issue #5 intent).
-      left: containerRect.left + containerRect.width / 2,
+      // Follow the input's actual visual center. The environment panel reserves
+      // room with right padding, which moves the composer without changing the
+      // scroll container's bounding box.
+      left: horizontalAnchorCenter(container, bottomAnchor),
       // Use the complete dock height so this shares the exact slot used by
       // the progress pill. In particular, queued-message drawers sit above
       // the frame and must move this pill up with them.
@@ -157,18 +168,17 @@ export function JumpToLatestPill({
 
   const recomputeHorizontalPosition = useCallback((): void => {
     const container = containerRef.current;
-    if (!container) {
+    if (!container || !bottomAnchor) {
       return;
     }
-    const containerRect = container.getBoundingClientRect();
-    const left = containerRect.left + containerRect.width / 2;
+    const left = horizontalAnchorCenter(container, bottomAnchor);
     setPosition((current) => {
       if (!current || current.left === left) {
         return current;
       }
       return { ...current, left };
     });
-  }, [containerRef]);
+  }, [containerRef, bottomAnchor]);
 
   // Measured positioning for the portaled pill. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the
@@ -212,6 +222,11 @@ export function JumpToLatestPill({
     };
     const container = containerRef.current;
     container?.addEventListener("scroll", schedule, { passive: true });
+    // Opening or closing the environment panel transitions padding-right on
+    // the scroll region. Its border-box size does not change, so ResizeObserver
+    // cannot see the composer's horizontal move; settle once the transition
+    // finishes to keep the pill centered above the input.
+    container?.addEventListener("transitionend", schedule);
     window.addEventListener("resize", schedule);
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
@@ -243,6 +258,7 @@ export function JumpToLatestPill({
         window.cancelAnimationFrame(frame);
       }
       container?.removeEventListener("scroll", schedule);
+      container?.removeEventListener("transitionend", schedule);
       window.removeEventListener("resize", schedule);
       anchorChildObserver?.disconnect();
       resizeObserver?.disconnect();
