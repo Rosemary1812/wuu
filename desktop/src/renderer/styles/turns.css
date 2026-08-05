@@ -468,7 +468,10 @@
 .user-message-edit-input {
   width: 100%;
   min-width: 0;
-  min-height: 32px;
+  min-height: 60px;
+  max-height: min(240px, 36vh);
+  field-sizing: content;
+  overflow-y: auto;
   resize: none;
   display: block;
   border: 0;
