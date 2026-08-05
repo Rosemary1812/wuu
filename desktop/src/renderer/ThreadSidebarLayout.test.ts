@@ -27,10 +27,10 @@ describe("project sidebar row layout", () => {
     expect(cssRule(".sidebar-row-icon-button")).toMatch(/width:\s*var\(--sidebar-row-action-size,\s*24px\)/);
   });
 
-  it("reveals the collaboration new-room action on hover and keyboard focus", () => {
-    expect(sidebarCSS).toMatch(/\.collab-section:hover \.project-row-new-thread/);
-    expect(sidebarCSS).toMatch(/\.collab-section:focus-within \.project-row-new-thread/);
-    expect(sidebarCSS).toMatch(/[\s\S]*\.collab-section:focus-within \.project-row-new-thread\s*\{[^}]*pointer-events:\s*auto/);
+  it("keeps the collaboration new-room action independent of project hover controls", () => {
+    expect(sidebarCSS).not.toMatch(/\.collab-section:hover \.project-row-new-thread/);
+    expect(sidebarCSS).not.toMatch(/\.collab-section:focus-within \.project-row-new-thread/);
+    expect(cssRule(".sidebar-section-add-action")).toMatch(/top:\s*50%/);
   });
 
   it("aligns thread list footer text with the navigation body column", () => {
@@ -43,6 +43,12 @@ describe("project sidebar row layout", () => {
   });
 
   it("keeps session action hit boxes fixed while hover controls appear", () => {
+    const actionButton = cssRule(".sidebar-row-icon-button");
+    expect(actionButton).toMatch(/display:\s*grid/);
+    expect(actionButton).toMatch(/place-items:\s*center/);
+    expect(actionButton).toMatch(/line-height:\s*0/);
+    expect(actionButton).toMatch(/padding:\s*0/);
+
     const actions = cssRule(".thread-row-actions");
     expect(actions).toMatch(/transform:\s*translateY\(-50%\)/);
     expect(actions).toMatch(/transition:\s*opacity/);
