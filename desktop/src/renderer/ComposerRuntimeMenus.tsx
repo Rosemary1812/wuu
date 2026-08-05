@@ -178,7 +178,7 @@ export function RuntimePicker({
           owner="codex-runtime"
           placement={placement}
           align="right"
-          width={320}
+          width={260}
           flip
         >
           <RuntimeModelMenu

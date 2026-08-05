@@ -223,6 +223,7 @@ describe("RuntimePicker", () => {
       '[data-floating-menu-owner="codex-runtime"]'
     );
     expect(layer?.classList.contains("floating-menu-below")).toBe(true);
+    expect(layer?.style.left).toBe("620px");
     expect(layer?.style.top).toBe("78px");
     expect(layer?.style.bottom).toBe("");
     expect(layer?.style.getPropertyValue("--floating-menu-available-height")).toBe(
