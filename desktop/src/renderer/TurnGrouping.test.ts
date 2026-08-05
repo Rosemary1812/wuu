@@ -261,4 +261,53 @@ describe("groupConversationTurns — spawning interjections", () => {
       ["t3", "t4"],
     ]);
   });
+
+  it("does not traverse cumulative agent sets for long subagent histories", () => {
+    const agentCount = 200;
+    const turns: Turn[] = [];
+    for (let index = 0; index < agentCount; index += 1) {
+      turns.push(
+        makeTurn(`spawn-turn-${index}`, [
+          userItem(`user-${index}`),
+          spawnItemFor(`spawn-${index}`, `agent-${index}`),
+        ]),
+      );
+    }
+    for (let index = 0; index < agentCount; index += 1) {
+      turns.push(
+        makeTurn(`wake-turn-${index}`, [
+          wakeItemFor(`wake-${index}`, `agent-${index}`),
+        ]),
+      );
+    }
+
+    const originalIterator = Set.prototype[Symbol.iterator];
+    let iteratedSetValues = 0;
+    Set.prototype[Symbol.iterator] = function countedSetIterator(
+      this: Set<unknown>,
+    ) {
+      const iterator = originalIterator.call(this);
+      return (function* countValues() {
+        for (;;) {
+          const result = iterator.next();
+          if (result.done) return;
+          iteratedSetValues += 1;
+          yield result.value;
+        }
+      })();
+    } as typeof originalIterator;
+
+    let groups: ReturnType<typeof groupConversationTurns>;
+    try {
+      groups = groupConversationTurns(turns);
+    } finally {
+      Set.prototype[Symbol.iterator] = originalIterator;
+    }
+
+    expect(groups).toHaveLength(1);
+    // Linear implementations inspect at most a small constant number of Set
+    // values per agent. Cumulative snapshots visit ~40k values for this 400
+    // turn fixture, exposing the old O(n²) regrouping path deterministically.
+    expect(iteratedSetValues).toBeLessThan(agentCount * 10);
+  });
 });

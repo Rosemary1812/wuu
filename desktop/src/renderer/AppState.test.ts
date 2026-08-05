@@ -37,6 +37,7 @@ import {
   isThreadUnread,
   latestCompletedTurnID,
   latestContextUsageForThread,
+  RETAINED_TURN_TELEMETRY_LIMIT,
   mergeListedThreads,
   markThreadTurnsViewed,
   openForkThreadAsPrimary,
@@ -999,6 +1000,75 @@ describe("AppState token usage", () => {
     expect(usage?.requestContext?.turnPrefix).toBe(6);
     expect(usage?.requestContext?.toolCount).toBe(14);
     expect(usage?.requestContext?.promptCacheKey).toBe("thread-1");
+  });
+
+  it("bounds transient per-turn telemetry during long app sessions", () => {
+    let state = initialState;
+    const totalTurns = RETAINED_TURN_TELEMETRY_LIMIT + 20;
+    for (let index = 0; index < totalTurns; index += 1) {
+      const turnID = `turn-${index}`;
+      state = appendTurnTokenSample(
+        state,
+        turnID,
+        "thread-1",
+        index,
+        index,
+        0,
+        0,
+        index,
+      );
+      state = reduceServerEvent(state, {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/event",
+          params: {
+            thread_id: "thread-1",
+            turn_id: turnID,
+            event: {
+              request_context: {
+                step_index: index,
+                message_count: index + 1,
+                stable_prefix: index,
+                turn_prefix: index,
+              },
+            },
+          },
+        },
+      });
+    }
+
+    expect(Object.keys(state.turnTokenUsage)).toHaveLength(
+      RETAINED_TURN_TELEMETRY_LIMIT,
+    );
+    expect(Object.keys(state.turnRequestContext)).toHaveLength(
+      RETAINED_TURN_TELEMETRY_LIMIT,
+    );
+    expect(state.turnTokenUsage["turn-0"]).toBeUndefined();
+    expect(state.turnRequestContext["turn-0"]).toBeUndefined();
+    expect(state.turnTokenUsage[`turn-${totalTurns - 1}`]).toBeDefined();
+    expect(state.turnRequestContext[`turn-${totalTurns - 1}`]).toBeDefined();
+
+    const persistedThread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      model: "fake-model",
+      turns: [
+        {
+          id: "turn-0",
+          items: [],
+          items_view: "full",
+          status: "completed",
+          input_tokens: 120,
+          context_tokens: 80,
+          usage_model: "fake-model",
+        },
+      ],
+    };
+    expect(
+      latestContextUsageForThread(state, persistedThread, {
+        contextWindowTokens: 200_000,
+      }),
+    ).toMatchObject({ turnID: "turn-0", used: 80, window: 200_000 });
   });
 
   it("surfaces live stream reconnect attempts as transient turn status", () => {

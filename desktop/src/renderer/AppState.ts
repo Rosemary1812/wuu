@@ -267,6 +267,11 @@ type ContextUsageFallback = {
 
 const TOKEN_SPEED_WINDOW_MS = 2000;
 const STREAM_TEXT_FIELDS: StreamTextField[] = ["text", "arguments", "result"];
+// Live token speed and request-shape telemetry are UI caches, not the durable
+// turn history. Completed turns already persist their usage totals on Turn.
+// Keeping a generous recent window preserves model/context fallbacks while
+// preventing every 250ms stream sample from copying an ever-growing record.
+export const RETAINED_TURN_TELEMETRY_LIMIT = 256;
 
 const INITIAL_DRAFT_SESSION_TAB_ID = "draft:initial";
 
@@ -765,10 +770,11 @@ function reduceNotification(
       }
       return {
         ...stateWithLifecycle,
-        turnRequestContext: {
-          ...stateWithLifecycle.turnRequestContext,
-          [turnID]: digest,
-        },
+        turnRequestContext: withRetainedTurnTelemetry(
+          stateWithLifecycle.turnRequestContext,
+          turnID,
+          digest,
+        ),
       };
     }
     default:
@@ -2960,9 +2966,10 @@ function appendTurnTokenSample(
     contextTokens && contextTokens > 0 ? contextTokens : previous?.contextTokens;
   return {
     ...state,
-    turnTokenUsage: {
-      ...turnTokenUsage,
-      [turnID]: {
+    turnTokenUsage: withRetainedTurnTelemetry<TurnTokenUsage>(
+      turnTokenUsage,
+      turnID,
+      {
         threadID,
         inputTokens,
         outputTokens,
@@ -2977,7 +2984,7 @@ function appendTurnTokenSample(
         ...(resolvedWindow ? { contextWindowTokens: resolvedWindow } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
       },
-    },
+    ),
   };
 }
 
@@ -3078,9 +3085,10 @@ function appendEstimatedTokenSample(
   samples.push({ tokens: speedTokens, at });
   return {
     ...state,
-    turnTokenUsage: {
-      ...turnTokenUsage,
-      [turnID]: {
+    turnTokenUsage: withRetainedTurnTelemetry<TurnTokenUsage>(
+      turnTokenUsage,
+      turnID,
+      {
         threadID: previous?.threadID || threadID,
         inputTokens: previous?.inputTokens ?? 0,
         outputTokens: previous?.outputTokens ?? 0,
@@ -3101,8 +3109,24 @@ function appendEstimatedTokenSample(
           : {}),
         ...(previous?.model ? { model: previous.model } : {}),
       },
-    },
+    ),
   };
+}
+
+function withRetainedTurnTelemetry<T>(
+  record: Readonly<Record<string, T>>,
+  turnID: string,
+  value: T,
+): Record<string, T> {
+  const retainedTurnIDs = Object.keys(record)
+    .filter((candidate) => candidate !== turnID)
+    .slice(-(RETAINED_TURN_TELEMETRY_LIMIT - 1));
+  const next: Record<string, T> = {};
+  for (const retainedTurnID of retainedTurnIDs) {
+    next[retainedTurnID] = record[retainedTurnID];
+  }
+  next[turnID] = value;
+  return next;
 }
 
 function estimateStreamingOutputTokens(text: string): number {

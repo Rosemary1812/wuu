@@ -40,27 +40,24 @@ export type TurnGroup = {
   turns: Turn[];
 };
 
+type TurnGroupingFacts = {
+  isAgentWake: boolean;
+  hasRealUserMessage: boolean;
+  hasSpawnAgentCall: boolean;
+  spawnedAgentIDs: string[];
+  wakeAgentIDs: string[];
+};
+
 export function isAgentWakeTurn(turn: Turn): boolean {
-  let sawHandoff = false;
-  for (const item of turn.items) {
-    if (item.type !== "user_message") continue;
-    if (isAgentHandoffItem(item)) {
-      sawHandoff = true;
-    } else {
-      return false;
-    }
-  }
-  return sawHandoff;
+  return turnGroupingFacts(turn).isAgentWake;
 }
 
 export function turnHasRealUserMessage(turn: Turn): boolean {
-  return turn.items.some(
-    (item) => item.type === "user_message" && !isAgentHandoffItem(item),
-  );
+  return turnGroupingFacts(turn).hasRealUserMessage;
 }
 
 export function turnHasSpawnAgentCall(turn: Turn): boolean {
-  return turn.items.some(isSpawnAgentItem);
+  return turnGroupingFacts(turn).hasSpawnAgentCall;
 }
 
 export function turnsHavePendingSubagents(turns: Turn[]): boolean {
@@ -96,19 +93,38 @@ export function subagentProgressForTurns(turns: Turn[]): SubagentTimelineProgres
   return { total: pending + finished, finished, remaining: pending };
 }
 
-/** Agent identities spawned by this turn, read from spawn_agent results. */
-function turnSpawnedAgentIDs(turn: Turn): string[] {
-  const ids: string[] = [];
+function turnGroupingFacts(turn: Turn): TurnGroupingFacts {
+  const spawnedAgentIDs: string[] = [];
+  const wakeAgentIDs: string[] = [];
+  let sawAgentHandoff = false;
+  let hasRealUserMessage = false;
+  let hasSpawnAgentCall = false;
   for (const item of turn.items) {
-    if (!isSpawnAgentItem(item)) {
+    if (isSpawnAgentItem(item)) {
+      hasSpawnAgentCall = true;
+      const id = spawnResultAgentID(item.result);
+      if (id) {
+        spawnedAgentIDs.push(id);
+      }
+    }
+    if (item.type !== "user_message") {
       continue;
     }
-    const id = spawnResultAgentID(item.result);
-    if (id) {
-      ids.push(id);
+    if (!isAgentHandoffItem(item)) {
+      hasRealUserMessage = true;
+      continue;
     }
+    sawAgentHandoff = true;
+    wakeAgentIDs.push(...agentHandoffAgentIDs(item));
   }
-  return ids;
+  const isAgentWake = sawAgentHandoff && !hasRealUserMessage;
+  return {
+    isAgentWake,
+    hasRealUserMessage,
+    hasSpawnAgentCall,
+    spawnedAgentIDs,
+    wakeAgentIDs: isAgentWake ? wakeAgentIDs : [],
+  };
 }
 
 function isSpawnAgentItem(item: Turn["items"][number]): boolean {
@@ -157,15 +173,6 @@ function spawnResultAgentID(result: string | undefined): string | undefined {
   return undefined;
 }
 
-function turnWakeAgentIDs(turn: Turn): string[] {
-  const ids: string[] = [];
-  for (const item of turn.items) {
-    if (item.type !== "user_message") continue;
-    ids.push(...agentHandoffAgentIDs(item));
-  }
-  return ids;
-}
-
 export function groupConversationTurns(
   turns: Turn[],
   options?: {
@@ -182,61 +189,59 @@ export function groupConversationTurns(
 
   const runningIDs = new Set(options?.runningAgentIDs ?? []);
   const lastGroupOpen = options?.lastGroupOpen ?? runningIDs.size > 0;
-
-  // spawnedBefore[i]: agent ids spawned by turns 0..i-1. Sets are shared
-  // between indexes until a spawn actually lands, so this stays O(spawns).
-  const spawnedBefore: Array<ReadonlySet<string>> = new Array(count);
-  let spawnedSoFar: ReadonlySet<string> = new Set<string>();
+  const facts = new Array<TurnGroupingFacts>(count);
+  const firstSpawnIndexByAgentID = new Map<string, number>();
+  const lastWakeIndexByAgentID = new Map<string, number>();
   for (let index = 0; index < count; index += 1) {
-    spawnedBefore[index] = spawnedSoFar;
-    const spawned = turnSpawnedAgentIDs(turns[index]);
-    if (spawned.length > 0) {
-      const next = new Set(spawnedSoFar);
-      for (const id of spawned) next.add(id);
-      spawnedSoFar = next;
-    }
-  }
-
-  // wakedAfter[i]: agent ids reported by wake turns at indexes > i.
-  const wakedAfter: Array<ReadonlySet<string>> = new Array(count);
-  let wakedSoFar: ReadonlySet<string> = new Set<string>();
-  for (let index = count - 1; index >= 0; index -= 1) {
-    wakedAfter[index] = wakedSoFar;
-    const waked = isAgentWakeTurn(turns[index])
-      ? turnWakeAgentIDs(turns[index])
-      : [];
-    if (waked.length > 0) {
-      const next = new Set(wakedSoFar);
-      for (const id of waked) next.add(id);
-      wakedSoFar = next;
-    }
-  }
-
-  const earlierOrchestrationOpen = (index: number): boolean => {
-    const earlier = spawnedBefore[index];
-    if (earlier.size === 0) {
-      return false;
-    }
-    for (const id of earlier) {
-      if (wakedAfter[index].has(id) || runningIDs.has(id)) {
-        return true;
+    const turnFacts = turnGroupingFacts(turns[index]);
+    facts[index] = turnFacts;
+    for (const id of turnFacts.spawnedAgentIDs) {
+      if (!firstSpawnIndexByAgentID.has(id)) {
+        firstSpawnIndexByAgentID.set(id, index);
       }
     }
-    return false;
-  };
+    for (const id of turnFacts.wakeAgentIDs) {
+      lastWakeIndexByAgentID.set(id, index);
+    }
+  }
+
+  // A spawning turn at index i belongs to an earlier orchestration when an
+  // agent spawned before i either wakes after i or is still running. Model
+  // each agent as an open interval and merge those intervals with a prefix
+  // sum. The old implementation retained a cumulative Set snapshot at every
+  // turn and cloned it on each spawn/wake, making subagent-heavy histories
+  // quadratic to regroup on every server event.
+  const openIntervalDelta = new Int32Array(count + 1);
+  for (const [agentID, spawnIndex] of firstSpawnIndexByAgentID) {
+    const openFrom = spawnIndex + 1;
+    const openUntil = runningIDs.has(agentID)
+      ? count
+      : (lastWakeIndexByAgentID.get(agentID) ?? 0);
+    if (openFrom >= openUntil) {
+      continue;
+    }
+    openIntervalDelta[openFrom] += 1;
+    openIntervalDelta[openUntil] -= 1;
+  }
+  const earlierOrchestrationOpen = new Uint8Array(count);
+  let openOrchestrationCount = 0;
+  for (let index = 0; index < count; index += 1) {
+    openOrchestrationCount += openIntervalDelta[index];
+    earlierOrchestrationOpen[index] = openOrchestrationCount > 0 ? 1 : 0;
+  }
 
   const joinsPrevious = new Array<boolean>(count).fill(false);
   for (let index = count - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (isAgentWakeTurn(turn)) {
+    const turnFacts = facts[index];
+    if (turnFacts.isAgentWake) {
       joinsPrevious[index] = true;
       continue;
     }
-    if (!turnHasRealUserMessage(turn)) {
+    if (!turnFacts.hasRealUserMessage) {
       continue;
     }
-    if (turnHasSpawnAgentCall(turn)) {
-      joinsPrevious[index] = earlierOrchestrationOpen(index);
+    if (turnFacts.hasSpawnAgentCall) {
+      joinsPrevious[index] = earlierOrchestrationOpen[index] === 1;
       continue;
     }
     const nextJoins =
