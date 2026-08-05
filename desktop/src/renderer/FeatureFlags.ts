@@ -21,14 +21,11 @@ export const ENABLE_ULTRA_MODE =
   import.meta.env.VITE_ENABLE_ULTRA_MODE === "true";
 
 /**
- * Group chat is hidden while named-agent collaboration is still maturing.
- * Keep the channel implementation available for internal testing without
- * exposing its navigation entry or background mention polling to users.
- *
- * Use `VITE_ENABLE_GROUP_CHAT=true npm run dev` for internal testing.
+ * Collaboration is a standard desktop capability from v0.14.0 onward. Keep a
+ * named constant while the renderer still shares gated component boundaries,
+ * but do not let build-time environment drift hide the released product.
  */
-export const ENABLE_GROUP_CHAT =
-  import.meta.env.VITE_ENABLE_GROUP_CHAT === "true";
+export const ENABLE_GROUP_CHAT = true;
 
 /**
  * Voice input and its optional BYOK text polish are hidden while the native

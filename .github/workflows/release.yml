@@ -55,7 +55,6 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           NODE_OPTIONS: "--max-old-space-size=4096"
-          VITE_ENABLE_GROUP_CHAT: "true"
 
       - name: Verify packaged app
         run: |

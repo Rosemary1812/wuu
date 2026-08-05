@@ -24,10 +24,10 @@ describe("frontend feature flags", () => {
     expect(featureFlags.ENABLE_ULTRA_MODE).toBe(true);
   });
 
-  it("keeps group chat disabled unless explicitly enabled", async () => {
+  it("keeps released collaboration enabled regardless of the legacy build flag", async () => {
     vi.stubEnv("VITE_ENABLE_GROUP_CHAT", "false");
     let featureFlags = await import("./FeatureFlags");
-    expect(featureFlags.ENABLE_GROUP_CHAT).toBe(false);
+    expect(featureFlags.ENABLE_GROUP_CHAT).toBe(true);
 
     vi.resetModules();
     vi.stubEnv("VITE_ENABLE_GROUP_CHAT", "true");

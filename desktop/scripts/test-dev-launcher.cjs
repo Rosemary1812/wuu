@@ -96,7 +96,6 @@ assert.equal(
 );
 const devLauncherSource = readFileSync(resolve(__dirname, "dev.cjs"), "utf8");
 assert.doesNotMatch(devLauncherSource, /env\.WUU_ENABLE_CUA_MAC\s*=\s*["']1["']/);
-assert.match(devLauncherSource, /env\.VITE_ENABLE_GROUP_CHAT \?\?= ["']true["']/);
 assert.equal(packageJSON.scripts["build:core"], "node scripts/build-core.cjs");
 assert.equal(
   packageJSON.scripts["build:core:win"],

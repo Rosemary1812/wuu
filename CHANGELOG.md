@@ -8,6 +8,42 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-05
+
+### Added
+
+- Released collaboration as a standard desktop capability, with persistent
+  rooms, mentions and replies, room tasks, global named Agents, and a shared
+  collaboration graph.
+- Added editable Agent details, dedicated Agent workspaces and memory access,
+  plus reset and model-change controls that preserve runtime identity.
+- Added usage trend and model charts, persisted skill-call metrics, and model
+  catalog refresh from Settings.
+- Added reviewable workspace diffs with a file tree and full-width Monaco diff
+  editor for inspecting changes without leaving the app.
+
+### Changed
+
+- Rebuilt room creation, group details, member management, and Agent settings
+  into denser session-based workflows that stay available across tab switches.
+- Improved background-agent orchestration so parent sessions remain visibly
+  active while delegated work, steering, and follow-up waits are still running.
+- Simplified tool result continuation and aligned model effort and media support
+  with the active provider catalog.
+- Compacted the home composer while preserving the full conversation composer
+  and attachment workflow.
+
+### Fixed
+
+- Kept running and unread session state live across folded workspaces, so opening
+  another workspace reveals its current status immediately.
+- Preserved room views, replies, scroll position, message identity, archived
+  rooms, and Agent activity across navigation and development restarts.
+- Stabilized sidebar actions, session tabs, menus, composer sizing, operation
+  errors, and long-running conversation rendering.
+- Corrected installed CLI version detection, provider credential reporting, and
+  automation-safe JSONL output.
+
 ## [0.13.1-nightly.3] - 2026-08-02
 
 ### Added
