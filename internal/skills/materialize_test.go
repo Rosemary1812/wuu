@@ -48,7 +48,7 @@ func TestMaterializeBundledIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first materialize: %v", err)
 	}
-	sentinel := filepath.Join(first, "commit", "sentinel.txt")
+	sentinel := filepath.Join(first, "long-running-goal", "sentinel.txt")
 	if err := os.WriteFile(sentinel, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write sentinel: %v", err)
 	}
@@ -68,22 +68,22 @@ func TestMaterializeBundledIsIdempotent(t *testing.T) {
 // load_skill's base-directory reference and file sampling resolve.
 func TestMergeWithBundledGivesRealDir(t *testing.T) {
 	merged := MergeWithBundled(nil, t.TempDir())
-	commit, ok := Find(merged, "commit")
+	goal, ok := Find(merged, "long-running-goal")
 	if !ok {
-		t.Fatalf("bundled 'commit' missing from %+v", merged)
+		t.Fatalf("bundled 'long-running-goal' missing from %+v", merged)
 	}
-	if commit.Source != "bundled" {
-		t.Fatalf("commit.Source = %q, want bundled", commit.Source)
+	if goal.Source != "bundled" {
+		t.Fatalf("long-running-goal Source = %q, want bundled", goal.Source)
 	}
-	if info, err := os.Stat(commit.Dir); err != nil || !info.IsDir() {
-		t.Fatalf("commit.Dir %q is not a real directory: %v", commit.Dir, err)
+	if info, err := os.Stat(goal.Dir); err != nil || !info.IsDir() {
+		t.Fatalf("long-running-goal Dir %q is not a real directory: %v", goal.Dir, err)
 	}
 }
 
 // With no cache root, bundled skills still surface (embed-only fallback).
 func TestMergeWithBundledEmptyCacheFallsBack(t *testing.T) {
-	if _, ok := Find(MergeWithBundled(nil, ""), "commit"); !ok {
-		t.Fatal("bundled 'commit' missing with empty cacheRoot")
+	if _, ok := Find(MergeWithBundled(nil, ""), "long-running-goal"); !ok {
+		t.Fatal("bundled 'long-running-goal' missing with empty cacheRoot")
 	}
 }
 

@@ -15,7 +15,7 @@ Skill 是一份可复用的任务说明，让 Agent 在特定工作流中遵循�
 已发现的 Skill 也会出现在 `/` 菜单中。你可以直接输入名称和参数，例如：
 
 ```text
-/commit 只提交文档改动
+/long-running-goal 完成认证系统迁移
 ```
 
 Agent 也会看到带名称和简介的可用 Skill 目录，并在任务匹配时通过 `load_skill` 按需
