@@ -519,6 +519,12 @@ describe("TurnGroupView — awaiting between turns", () => {
     });
     expect(container.querySelectorAll(".turn-subagent-status")).toHaveLength(1);
     expect(batchRow?.textContent).toContain("2 个 subagent 已结束，仍在等待 1 个");
+    expect(batchRow?.classList.contains("is-live-gray")).toBe(false);
+    expect(
+      container.querySelector(
+        ".process-surface-row.is-live-gray:not(.turn-subagent-status)",
+      )?.textContent,
+    ).toContain("运行测试");
     expect(waitTail().textContent).toContain("2 个 subagent 已结束，仍在等待 1 个");
     expect(actionBars()).toHaveLength(0);
 

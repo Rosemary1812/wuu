@@ -113,12 +113,22 @@ export function AssistantTurnShell({
       streamFieldValue(entry.turn?.id ?? turn.id, entry.item, "text").trim().length > 0,
   );
   const processCollapseRequested = answerHandoffRequested;
-  const liveSubagentStatusKey = subagentWaiting
-    ? display.entries.findLast(
+  const latestProcessEntry = processEntries.at(-1);
+  const latestPendingSubagentEntry = subagentWaiting
+    ? processEntries.findLast(
         (entry) =>
           entry.kind === "subagent_status" && entry.subagentStatus?.outcome === "updated",
-      )?.key
+      )
     : undefined;
+  // The synthetic subagent wait row participates in the same latest-item
+  // rule as real tool calls and reasoning. Once newer process work appears,
+  // the wait is still unresolved but no longer the operation currently in
+  // focus, so its sweep must yield to that newer row.
+  const liveSubagentStatusKey =
+    latestPendingSubagentEntry &&
+    latestPendingSubagentEntry.key === latestProcessEntry?.key
+      ? latestPendingSubagentEntry.key
+      : undefined;
 
   const className = [
     "assistant-turn-shell",
