@@ -348,6 +348,12 @@ function gitFileDiffResult(
     change.binary ||
     rawPatch.includes("Binary files ") ||
     rawPatch.includes("GIT binary patch");
+  const originalText = binary
+    ? undefined
+    : gitRevisionFileText(root, "HEAD", change.old_path ?? change.path);
+  const modifiedText = binary
+    ? undefined
+    : readWorkingTreeFileText(absolutePath);
   return {
     is_repo: true,
     path: change.path,
@@ -357,6 +363,8 @@ function gitFileDiffResult(
     deletions: change.deletions,
     binary,
     patch: truncatedPatch.text,
+    original_text: originalText,
+    modified_text: modifiedText,
     truncated: truncatedPatch.truncated,
   };
 }
@@ -849,10 +857,48 @@ function gitNewFileDiffResult(
       deletions: change.deletions,
       binary,
       patch,
+      original_text: binary ? undefined : "",
+      modified_text: binary ? undefined : previewBuffer.toString("utf8"),
       truncated,
     };
   } catch {
     return emptyGitFileDiffResult(change.path, true);
+  }
+}
+
+function gitRevisionFileText(
+  root: string,
+  revision: string,
+  relativePath: string,
+): string {
+  const result = spawnSync(
+    "git",
+    ["-C", root, "show", `${revision}:${relativePath}`],
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: process.env,
+      maxBuffer: GIT_DIFF_COMMAND_MAX_BUFFER,
+    },
+  );
+  if (result.status !== 0) {
+    return "";
+  }
+  return truncateTextBytes(result.stdout, GIT_DIFF_PREVIEW_MAX_BYTES).text;
+}
+
+function readWorkingTreeFileText(absolutePath: string): string {
+  try {
+    const stats = statSync(absolutePath);
+    if (!stats.isFile()) {
+      return "";
+    }
+    return readFilePreviewBuffer(
+      absolutePath,
+      Math.min(stats.size, GIT_DIFF_PREVIEW_MAX_BYTES),
+    ).toString("utf8");
+  } catch {
+    return "";
   }
 }
 

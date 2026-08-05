@@ -14,6 +14,8 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  Suspense,
+  lazy,
   useEffect,
   useMemo,
   useRef,
@@ -37,6 +39,10 @@ import {
   type GitChangeTreeNode
 } from "./WorkspaceReviewHelpers";
 import { useI18n } from "./i18n";
+
+const WorkspaceMonacoDiffEditor = lazy(async () => ({
+  default: (await import("./WorkspaceMonacoDiffEditor")).WorkspaceMonacoDiffEditor,
+}));
 
 const WORKSPACE_REVIEW_TREE_DEFAULT_WIDTH = 280;
 const WORKSPACE_REVIEW_TREE_MIN_WIDTH = 220;
@@ -377,7 +383,6 @@ function WorkspaceReviewDiffPeekPanel({
   branch?: string;
 }): JSX.Element {
   const { t } = useI18n();
-  const diffLines = useMemo(() => (fileDiff?.patch ? gitDiffDisplayLines(fileDiff.patch) : []), [fileDiff?.patch]);
   return (
     <section
       className="workspace-review-diff-panel workspace-diff-detail"
@@ -386,34 +391,10 @@ function WorkspaceReviewDiffPeekPanel({
       <div className="workspace-diff-detail-header">
         <div>
           <strong>{gitChangeFilePathLabel(file)}</strong>
-          <span>
-            {branch ?? t("workspaceReview.currentBranch")} · {gitChangeStatusDescription(file)}
-          </span>
+          <WorkspaceDiffFileMeta file={file} prefix={branch ?? t("workspaceReview.currentBranch")} />
         </div>
       </div>
-      {error ? <div className="workspace-diff-error">{error}</div> : null}
-      {loading ? (
-        <div className="workspace-diff-empty">{t("workspaceReview.readingDiff")}</div>
-      ) : fileDiff?.binary ? (
-        <div className="workspace-diff-empty">{t("workspaceReview.binaryNoTextDiff")}</div>
-      ) : fileDiff?.patch ? (
-        <div className="workspace-diff-code-scroll">
-          <pre
-            className="workspace-diff-code"
-            aria-label={t("workspaceReview.codeDiffFor", { path: fileDiff.path })}
-          >
-            {diffLines.map((line, index) => (
-              <span className={`workspace-diff-line ${line.kind}`} key={`${index}:${line.content.slice(0, 24)}`}>
-                <span className="workspace-diff-line-number">{line.oldLine ?? ""}</span>
-                <span className="workspace-diff-line-number">{line.newLine ?? ""}</span>
-                <span className="workspace-diff-line-code">{line.content || " "}</span>
-              </span>
-            ))}
-          </pre>
-        </div>
-      ) : (
-        <div className="workspace-diff-empty">{t("workspaceReview.noTextDiff")}</div>
-      )}
+      <WorkspaceDiffBody fileDiff={fileDiff} loading={loading} error={error} />
       {fileDiff?.truncated ? (
         <div className="workspace-diff-truncated">
           {t("workspaceReview.diffTruncated")}
@@ -445,7 +426,6 @@ export function WorkspaceDiffReview({
   const totals = useMemo(() => summarizeGitChangeFiles(files), [files]);
   const filteredFiles = useMemo(() => filterGitChangeFiles(files, treeQuery), [files, treeQuery]);
   const treeNodes = useMemo(() => buildGitChangeTree(filteredFiles), [filteredFiles]);
-  const diffLines = useMemo(() => (fileDiff?.patch ? gitDiffDisplayLines(fileDiff.patch) : []), [fileDiff?.patch]);
   const selectedFile = files.find((file) => file.path === selectedPath);
   const branchLabel = gitStatus?.is_repo
     ? gitStatus.branch ?? "detached"
@@ -653,32 +633,14 @@ export function WorkspaceDiffReview({
           <div className="workspace-diff-detail-header">
             <div>
               <strong>{selectedFile ? gitChangeFilePathLabel(selectedFile) : t("workspaceReview.selectFile")}</strong>
-              <span>{selectedFile ? gitChangeStatusDescription(selectedFile) : t("workspaceReview.selectFromLeft")}</span>
+              {selectedFile ? (
+                <WorkspaceDiffFileMeta file={selectedFile} />
+              ) : (
+                <span>{t("workspaceReview.selectFromLeft")}</span>
+              )}
             </div>
           </div>
-          {error ? <div className="workspace-diff-error">{error}</div> : null}
-          {loadingDiff ? (
-            <div className="workspace-diff-empty">{t("workspaceReview.readingDiff")}</div>
-          ) : fileDiff?.binary ? (
-            <div className="workspace-diff-empty">{t("workspaceReview.binaryNoTextDiff")}</div>
-          ) : fileDiff?.patch ? (
-            <div className="workspace-diff-code-scroll">
-              <pre className="workspace-diff-code" aria-label={t("workspaceReview.codeDiffFor", { path: fileDiff.path })}>
-                {diffLines.map((line, index) => (
-                  <span
-                    className={`workspace-diff-line ${line.kind}`}
-                    key={`${index}:${line.content.slice(0, 24)}`}
-                  >
-                    <span className="workspace-diff-line-number">{line.oldLine ?? ""}</span>
-                    <span className="workspace-diff-line-number">{line.newLine ?? ""}</span>
-                    <span className="workspace-diff-line-code">{line.content || " "}</span>
-                  </span>
-                ))}
-              </pre>
-            </div>
-          ) : (
-            <div className="workspace-diff-empty">{t("workspaceReview.noTextDiff")}</div>
-          )}
+          <WorkspaceDiffBody fileDiff={fileDiff} loading={loadingDiff} error={error} />
           {fileDiff?.truncated ? <div className="workspace-diff-truncated">{t("workspaceReview.diffTruncated")}</div> : null}
         </section>
         <GitChangeTreePanel
@@ -693,6 +655,76 @@ export function WorkspaceDiffReview({
         />
       </div>
     </article>
+  );
+}
+
+function WorkspaceDiffFileMeta({
+  file,
+  prefix,
+}: {
+  file: GitChangeFile;
+  prefix?: string;
+}): JSX.Element {
+  const { formatNumber } = useI18n();
+  return (
+    <span className="workspace-diff-file-meta">
+      {prefix ? <span>{prefix}</span> : null}
+      <span>{gitChangeStatusDescription(file)}</span>
+      {file.binary ? null : (
+        <>
+          <span className="additions">+{formatNumber(file.additions)}</span>
+          <span className="deletions">-{formatNumber(file.deletions)}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function WorkspaceDiffBody({
+  fileDiff,
+  loading,
+  error,
+}: {
+  fileDiff?: GitFileDiffResult;
+  loading: boolean;
+  error?: string;
+}): JSX.Element {
+  const { t } = useI18n();
+  const diffLines = useMemo(
+    () => (fileDiff?.patch ? gitDiffDisplayLines(fileDiff.patch) : []),
+    [fileDiff?.patch],
+  );
+  if (error) return <div className="workspace-diff-error">{error}</div>;
+  if (loading) return <div className="workspace-diff-empty">{t("workspaceReview.readingDiff")}</div>;
+  if (fileDiff?.binary) {
+    return <div className="workspace-diff-empty">{t("workspaceReview.binaryNoTextDiff")}</div>;
+  }
+  if (fileDiff && typeof fileDiff.original_text === "string" && typeof fileDiff.modified_text === "string") {
+    return (
+      <Suspense fallback={<div className="workspace-diff-empty">{t("workspaceReview.readingDiff")}</div>}>
+        <WorkspaceMonacoDiffEditor
+          path={fileDiff.path}
+          originalText={fileDiff.original_text}
+          modifiedText={fileDiff.modified_text}
+        />
+      </Suspense>
+    );
+  }
+  if (!fileDiff?.patch) {
+    return <div className="workspace-diff-empty">{t("workspaceReview.noTextDiff")}</div>;
+  }
+  return (
+    <div className="workspace-diff-code-scroll">
+      <pre className="workspace-diff-code" aria-label={t("workspaceReview.codeDiffFor", { path: fileDiff.path })}>
+        {diffLines.map((line, index) => (
+          <span className={`workspace-diff-line ${line.kind}`} key={`${index}:${line.content.slice(0, 24)}`}>
+            <span className="workspace-diff-line-number">{line.oldLine ?? ""}</span>
+            <span className="workspace-diff-line-number">{line.newLine ?? ""}</span>
+            <span className="workspace-diff-line-code">{line.content || " "}</span>
+          </span>
+        ))}
+      </pre>
+    </div>
   );
 }
 

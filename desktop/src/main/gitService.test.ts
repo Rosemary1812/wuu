@@ -64,6 +64,18 @@ describe("GitService file previews", () => {
     expect(result.patch).toContain("new file mode 100644");
     expect(result.patch).toContain("+# Brief");
     expect(result.patch).toContain("+Body");
+    expect(result.original_text).toBe("");
+    expect(result.modified_text).toBe("# Brief\n\nBody\n");
+  });
+
+  it("returns both text revisions for a modified file", () => {
+    const root = makeRepository();
+    writeFileSync(join(root, "README.md"), "workspace improved\n");
+
+    const result = serviceFor(root).fileDiff("README.md");
+
+    expect(result.original_text).toBe("workspace\n");
+    expect(result.modified_text).toBe("workspace improved\n");
   });
 
   it("keeps ignored files out of the workspace Git change list", () => {

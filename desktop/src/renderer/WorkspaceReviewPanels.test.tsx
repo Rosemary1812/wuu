@@ -8,6 +8,12 @@ vi.mock("./WorkspaceFiles", () => ({
   formatWorkspaceRoot: (root: string) => root,
 }));
 
+vi.mock("./WorkspaceMonacoDiffEditor", () => ({
+  WorkspaceMonacoDiffEditor: ({ path }: { path: string }) => (
+    <div className="workspace-monaco-diff-editor" data-path={path} />
+  ),
+}));
+
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
@@ -51,6 +57,8 @@ function installGitReviewStub(files: GitChangeFile[]): {
       "-old value",
       "+new value that is deliberately long enough to exercise wrapping in the review pane",
     ].join("\n"),
+    original_text: "old value\n",
+    modified_text: "new value\n",
     truncated: false,
   };
   const listGitChanges = vi.fn().mockResolvedValue(changes);
@@ -114,6 +122,7 @@ describe("WorkspaceReviewPanel", () => {
     const panel = container?.querySelector<HTMLElement>(".workspace-review-panel");
     expect(panel?.classList.contains("single-file")).toBe(true);
     expect(container?.querySelector(".workspace-review-diff-panel")).toBeTruthy();
+    expect(container?.querySelector(".workspace-monaco-diff-editor")).toBeTruthy();
     expect(container?.querySelector(".workspace-review-tree-pane")).toBeNull();
     expect(container?.querySelector(".workspace-review-resizer")).toBeNull();
   });

@@ -33,7 +33,7 @@ type MonacoLanguage =
   | "xml"
   | "yaml";
 
-function workspaceMonacoTheme(theme: AppliedTheme): string {
+export function workspaceMonacoTheme(theme: AppliedTheme): string {
   return theme === "dark" ? "wuu-workspace-dark" : "wuu-workspace";
 }
 
@@ -216,7 +216,7 @@ export function WorkspaceMonacoEditor({
   );
 }
 
-function workspaceScrollbarSize(host: HTMLElement): number {
+export function workspaceScrollbarSize(host: HTMLElement): number {
   const configuredSize = Number.parseFloat(
     window.getComputedStyle(host).getPropertyValue("--scrollbar-width"),
   );
@@ -229,7 +229,7 @@ export function workspaceMonacoModelURI(resourceID: string): monaco.Uri {
   return monaco.Uri.parse(`wuu-workspace:///${encodeURIComponent(resourceID)}`);
 }
 
-function installMonacoWorkers(): void {
+export function installMonacoWorkers(): void {
   if (typeof window === "undefined" || window.MonacoEnvironment) {
     return;
   }

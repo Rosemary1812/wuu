@@ -451,6 +451,12 @@ describe("workspace review diff layout", () => {
     expect(lineCode).toMatch(/white-space:\s*pre-wrap;/);
     expect(lineCode).toMatch(/overflow-wrap:\s*anywhere;/);
     expect(lineCode).toMatch(/word-break:\s*break-word;/);
+
+    const monacoDiff = cssRuleBody(".workspace-monaco-diff-editor");
+    expect(monacoDiff).toMatch(/grid-row:\s*3;/);
+    expect(monacoDiff).toMatch(/width:\s*100%;/);
+    expect(monacoDiff).toMatch(/height:\s*100%;/);
+    expect(monacoDiff).toMatch(/min-height:\s*0;/);
   });
 
   it("lets a single-file review use the full panel width", () => {
@@ -471,20 +477,20 @@ describe("workspace review diff layout", () => {
 
     // Active row must NOT share the hover background — otherwise the user
     // can't tell which file's diff is currently being shown in the diff pane.
-    // Both rows use --surface-* tints so the file tree and review tree read
-    // as the same component family; active keeps its accent fill.
+    // Both rows use the same neutral surface language as the file tree, while
+    // keeping different values for selected and hover states.
     expect(activeRow).not.toMatch(/background:\s*var\(--surface-2\)/);
-    expect(activeRow).toMatch(/color-mix\(in srgb,\s*var\(--wuu-accent\)/);
+    expect(activeRow).toMatch(/background:\s*var\(--surface-3\)/);
     expect(hoverRow).toMatch(/background:\s*var\(--surface-2\)/);
 
-    // The file icon and stat count in the active row should pick up the
-    // accent so the row reads as "currently diffed" at a glance.
+    // Active metadata stays readable without introducing a second accent
+    // language that the polished file tree does not use.
     expect(cssRuleBody(".workspace-diff-tree-row.active svg")).toMatch(
-      /color:\s*var\(--wuu-accent\)/,
+      /color:\s*var\(--ink\)/,
     );
     expect(
       cssRuleBody(".workspace-diff-tree-row.active .workspace-diff-tree-count"),
-    ).toMatch(/color:\s*var\(--wuu-accent\)/);
+    ).toMatch(/color:\s*var\(--ink-muted\)/);
   });
 
   it("keeps the review tree from eating too much horizontal space so file names don't get cut off", () => {

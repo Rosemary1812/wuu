@@ -882,6 +882,8 @@ export type GitFileDiffResult = {
   deletions: number;
   binary?: boolean;
   patch: string;
+  original_text?: string;
+  modified_text?: string;
   truncated: boolean;
 };
 
