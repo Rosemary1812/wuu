@@ -30,8 +30,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   active while delegated work, steering, and follow-up waits are still running.
 - Simplified tool result continuation and aligned model effort and media support
   with the active provider catalog.
-- Compacted the home composer while preserving the full conversation composer
-  and attachment workflow.
+- Refined the home composer spacing while preserving a comfortable writing area,
+  the full conversation composer, and attachment workflow.
 
 ### Fixed
 
@@ -43,6 +43,8 @@ Versioning rules are documented in [the release guide](docs/en/project/release.m
   errors, and long-running conversation rendering.
 - Corrected installed CLI version detection, provider credential reporting, and
   automation-safe JSONL output.
+- Reconciled held steer responses after their requests settle, preventing stale
+  pending composer state from surviving a completed or failed steer.
 
 ## [0.13.1-nightly.3] - 2026-08-02
 
