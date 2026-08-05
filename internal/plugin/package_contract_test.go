@@ -90,3 +90,35 @@ func TestPackageContractTracksSkillTreeContent(t *testing.T) {
 		t.Fatal("skill content did not change package fingerprint")
 	}
 }
+
+func TestPackageContractTracksEveryRegularPackageFile(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, ManifestFilename)
+	chunkPath := filepath.Join(root, "dist", "desktop-chunk.js")
+	if err := os.MkdirAll(filepath.Dir(chunkPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte(`{"id":"desktop-kit"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(chunkPath, []byte("version one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := LoadManifest(manifestPath, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := item.Fingerprint
+
+	if err := os.WriteFile(chunkPath, []byte("version two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := item.PackageContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Fingerprint == first {
+		t.Fatal("transitive desktop chunk did not change package fingerprint")
+	}
+}

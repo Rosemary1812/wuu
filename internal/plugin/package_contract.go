@@ -99,23 +99,12 @@ func (p Plugin) PackageContract() (PackageContract, error) {
 		})
 	}
 
-	entryPaths := append([]string(nil), p.HookPaths...)
-	entryPaths = append(entryPaths, p.MCPPaths...)
-	entryPaths = append(entryPaths, p.CommandPaths...)
-	entryPaths = append(entryPaths, p.Skills...)
-	if p.RuntimePath != "" {
-		entryPaths = append(entryPaths, p.RuntimePath)
-	}
-	entryHashes, err := hashPackageEntries(p.Root, entryPaths)
-	if err != nil {
-		return PackageContract{}, err
-	}
-	for _, command := range p.Commands {
-		if command.ResolvedPrompt != nil {
-			if entryHashes == nil {
-				entryHashes = make(map[string]string)
-			}
-			entryHashes[command.ResolvedPrompt.RelPath] = command.ResolvedPrompt.SHA256
+	var entryHashes map[string]string
+	if strings.TrimSpace(p.Root) != "" {
+		var err error
+		entryHashes, err = hashPackageEntries(p.Root, []string{"."})
+		if err != nil {
+			return PackageContract{}, err
 		}
 	}
 	spec.EntryHashes = entryHashes
@@ -138,7 +127,7 @@ func hashPackageEntries(root string, paths []string) (map[string]string, error) 
 	unique := make(map[string]struct{}, len(paths))
 	for _, rel := range paths {
 		rel = filepath.Clean(strings.TrimSpace(rel))
-		if rel == "" || rel == "." {
+		if rel == "" {
 			continue
 		}
 		unique[rel] = struct{}{}
