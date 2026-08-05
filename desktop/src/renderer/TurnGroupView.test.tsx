@@ -340,6 +340,66 @@ describe("TurnGroupView — awaiting between turns", () => {
     expect(completedRow).toBe(waitingRow);
   });
 
+  it("settles the synthetic wait row until the active parent turn completes", () => {
+    const spawnTurn = makeTurn("t1", [
+      userItem("帮我查 X"),
+      spawnItem("research_a"),
+      answerItem("等待子任务。"),
+    ]);
+    mountGroup([spawnTurn], true);
+
+    const liveWait = waitTail();
+    expect(liveWait.textContent).toContain("仍在等待 1 个 subagent");
+    expect(
+      liveWait.querySelector(".turn-subagent-wait-status")?.classList.contains("is-live-gray"),
+    ).toBe(true);
+
+    const wakeTurn = makeTurn(
+      "t2",
+      [answerItem("主 agent 已开始整理。"), wakeItem("agent-research_a")],
+      { status: "in_progress" },
+    );
+    mountGroup([spawnTurn, wakeTurn], false);
+
+    const completedWait = waitTail();
+    expect(completedWait.classList.contains("expanded")).toBe(true);
+    expect(completedWait.getAttribute("aria-hidden")).toBeNull();
+    expect(completedWait.textContent).toContain("1 个 subagent 已结束");
+    expect(
+      completedWait
+        .querySelector(".turn-subagent-wait-status")
+        ?.classList.contains("is-live-gray"),
+    ).toBe(false);
+    expect(actionBars()).toHaveLength(0);
+  });
+
+  it("keeps partial subagent progress visible while the parent processes a wake", () => {
+    const spawnTurn = makeTurn("t1", [
+      userItem("并行检查"),
+      spawnItem("research_a"),
+      spawnItem("research_b"),
+      answerItem("等待两个子任务。"),
+    ]);
+    mountGroup([spawnTurn], true);
+    expect(waitTail().textContent).toContain("仍在等待 2 个 subagent");
+
+    const wakeTurn = makeTurn("t2", [wakeItem("agent-research_a")], {
+      status: "in_progress",
+    });
+    mountGroup([spawnTurn, wakeTurn], true);
+
+    const partialWait = waitTail();
+    expect(partialWait.classList.contains("expanded")).toBe(true);
+    expect(partialWait.textContent).toContain(
+      "1 个 subagent 已结束，仍在等待 1 个",
+    );
+    expect(
+      partialWait
+        .querySelector(".turn-subagent-wait-status")
+        ?.classList.contains("is-live-gray"),
+    ).toBe(false);
+  });
+
   it("keeps wall-clock timing when a completed wake has no completed_at yet", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-29T10:01:00Z"));
@@ -475,7 +535,16 @@ describe("TurnGroupView — awaiting between turns", () => {
       liveWait.compareDocumentPosition(wakeAnswer) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(actionBars()).toHaveLength(0);
-    expect(waitTail().classList.contains("expanded")).toBe(false);
+    const partialWait = waitTail();
+    expect(partialWait.classList.contains("expanded")).toBe(true);
+    expect(partialWait.textContent).toContain(
+      "1 个 subagent 已结束，仍在等待 1 个",
+    );
+    expect(
+      partialWait
+        .querySelector(".turn-subagent-wait-status")
+        ?.classList.contains("is-live-gray"),
+    ).toBe(false);
   });
 
   it("updates one three-agent batch row across asynchronous wake turns", async () => {

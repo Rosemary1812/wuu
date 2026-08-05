@@ -138,17 +138,38 @@ function MergedTurnGroupView({
   // orchestration is parked between turns waiting for a completion wake.
   const live = anyMemberInProgress || Boolean(awaiting);
   const subagentProgress = subagentProgressForTurns(turns);
-  const waitingTailLabel =
-    awaiting && !anyMemberInProgress && !interrupted && subagentProgress.remaining > 0
-      ? subagentProgress.finished > 0
-        ? translateCurrent("process.subagentsProgress", {
-            finished: subagentProgress.finished,
-            remaining: subagentProgress.remaining,
-          })
-        : translateCurrent("process.subagentsWaiting", {
-            remaining: subagentProgress.remaining,
-          })
-      : undefined;
+  const waitingTail = (() => {
+    if (interrupted || subagentProgress.total === 0) return undefined;
+    if (awaiting && subagentProgress.remaining > 0) {
+      return {
+        label:
+          subagentProgress.finished > 0
+            ? translateCurrent("process.subagentsProgress", {
+                finished: subagentProgress.finished,
+                remaining: subagentProgress.remaining,
+              })
+            : translateCurrent("process.subagentsWaiting", {
+                remaining: subagentProgress.remaining,
+              }),
+        // The row remains visible while a completion wake is being processed,
+        // but the active shimmer belongs to the parent turn's newer work.
+        live: !anyMemberInProgress,
+      };
+    }
+    // Keep the synthetic row for the lifetime of the active parent turn. A
+    // final child can finish after the model has already produced commentary;
+    // like a real tool call, the settled row must not disappear merely because
+    // newer assistant text exists.
+    if (subagentProgress.remaining === 0 && live) {
+      return {
+        label: translateCurrent("process.subagentsFinished", {
+          count: subagentProgress.finished,
+        }),
+        live: false,
+      };
+    }
+    return undefined;
+  })();
   const closed = !live && !interrupted && last.status === "completed";
   // Only the group's final answer carries the action bar; intermediate
   // answers (the wake-up progress reports) render as plain text.
@@ -253,7 +274,7 @@ function MergedTurnGroupView({
           subagentWaiting={Boolean(awaiting)}
         />
       ) : null}
-      <TransientSubagentWait label={waitingTailLabel} />
+      <SubagentWaitTail display={waitingTail} />
       {turns.map((member) => {
         const event = turnEventForTurn(
           member,
@@ -284,21 +305,32 @@ function MergedTurnGroupView({
   );
 }
 
-function TransientSubagentWait({ label }: { label?: string }): JSX.Element {
-  const [retainedLabel, setRetainedLabel] = useState(label);
+interface SubagentWaitTailDisplay {
+  label: string;
+  live: boolean;
+}
+
+function SubagentWaitTail({
+  display,
+}: {
+  display?: SubagentWaitTailDisplay;
+}): JSX.Element {
+  const [retainedDisplay, setRetainedDisplay] = useState(display);
   useEffect(() => {
-    if (label) setRetainedLabel(label);
-  }, [label]);
+    if (display) setRetainedDisplay(display);
+  }, [display]);
 
   return (
     <div
-      className={`collapsible-details turn-subagent-wait-tail${label ? " expanded" : ""}`}
-      aria-hidden={label ? undefined : "true"}
+      className={`collapsible-details turn-subagent-wait-tail${display ? " expanded" : ""}`}
+      aria-hidden={display ? undefined : "true"}
     >
       <div className="collapsible-details-inner">
-        {retainedLabel ? (
-          <div className="process-surface-row is-live-gray turn-subagent-wait-status">
-            <AnimatedProcessText text={retainedLabel} />
+        {retainedDisplay ? (
+          <div
+            className={`process-surface-row turn-subagent-wait-status${retainedDisplay.live ? " is-live-gray" : ""}`}
+          >
+            <AnimatedProcessText text={retainedDisplay.label} />
           </div>
         ) : null}
       </div>
