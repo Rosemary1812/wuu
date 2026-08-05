@@ -113,8 +113,12 @@ func (p Plugin) PackageContract() (PackageContract, error) {
 	if err != nil {
 		return PackageContract{}, err
 	}
+	subjectID := extensions.SubjectID(source, p.ID)
+	if source == "project" && strings.TrimSpace(p.WorkspaceID) != "" {
+		subjectID = extensions.SubjectID(source, strings.TrimSpace(p.WorkspaceID)+":"+p.ID)
+	}
 	return PackageContract{
-		SubjectID:   extensions.SubjectID(source, p.ID),
+		SubjectID:   subjectID,
 		Fingerprint: fingerprint,
 		Permissions: append([]string(nil), spec.RequestedPermissions...),
 	}, nil

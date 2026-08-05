@@ -108,8 +108,9 @@ type RuntimeSpec struct {
 }
 
 type LoadOptions struct {
-	Source   string
-	Official bool
+	Source      string
+	Official    bool
+	WorkspaceID string
 }
 
 type rawManifest struct {
@@ -176,6 +177,7 @@ func LoadManifestWithOptions(path string, options LoadOptions) (Plugin, error) {
 		Root:         root,
 		ManifestPath: path,
 		Official:     options.Official,
+		WorkspaceID:  strings.TrimSpace(options.WorkspaceID),
 	}
 	contract, err := item.PackageContract()
 	if err != nil {

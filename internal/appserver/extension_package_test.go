@@ -124,10 +124,21 @@ func TestExtensionCatalogRefreshRediscoversPackages(t *testing.T) {
 		t.Fatalf("refresh extension catalog: %v", err)
 	}
 	result := remarshal[ExtensionCatalogRefreshResult](t, responseByID(t, parseOutput(t, out.String()), "refresh")["result"])
-	record := findExtensionRecord(t, result.ExtensionInventory, "plugin:project:fresh")
+	record := findPluginExtensionRecord(t, result.ExtensionInventory, "fresh")
 	if record.Name != "fresh" || record.ApprovalState != ExtensionApprovalPending {
 		t.Fatalf("refreshed package record = %+v", record)
 	}
+}
+
+func findPluginExtensionRecord(t *testing.T, records []ExtensionInventoryRecord, pluginID string) ExtensionInventoryRecord {
+	t.Helper()
+	for _, record := range records {
+		if record.Provenance.PluginID == pluginID {
+			return record
+		}
+	}
+	t.Fatalf("plugin extension record %q not found in %+v", pluginID, records)
+	return ExtensionInventoryRecord{}
 }
 
 func findExtensionRecord(t *testing.T, records []ExtensionInventoryRecord, id string) ExtensionInventoryRecord {

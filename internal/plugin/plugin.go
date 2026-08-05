@@ -1,6 +1,8 @@
 package plugin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +15,7 @@ type Plugin struct {
 	Root                 string
 	ManifestPath         string
 	Official             bool
+	WorkspaceID          string
 	SubjectID            string
 	Fingerprint          string
 	EffectivePermissions []string
@@ -24,8 +27,8 @@ func Discover(projectRoot, wuuHome string) []Plugin {
 
 func DiscoverWithOptions(projectRoot, wuuHome string, options DiscoverOptions) []Plugin {
 	bundledPlugins := discoverBundled(wuuHome, options)
-	userPlugins := scanPluginRoots(userPluginRoots(wuuHome), "user")
-	projectPlugins := scanPluginRoots(projectPluginRoots(projectRoot), "project")
+	userPlugins := scanPluginRoots(userPluginRoots(wuuHome), "user", "")
+	projectPlugins := scanPluginRoots(projectPluginRoots(projectRoot), "project", workspacePolicyID(projectRoot))
 
 	byID := make(map[string]Plugin, len(bundledPlugins)+len(userPlugins)+len(projectPlugins))
 	for _, item := range userPlugins {
@@ -85,14 +88,14 @@ func (p Plugin) resolveDirs(entries []string, fallback string) []string {
 	return dirs
 }
 
-func scanPluginRoots(roots []string, source string) []Plugin {
+func scanPluginRoots(roots []string, source, workspaceID string) []Plugin {
 	var out []Plugin
 	for _, root := range roots {
 		root = strings.TrimSpace(root)
 		if root == "" || !isDir(root) {
 			continue
 		}
-		if plugin, err := loadPluginDir(root, source); err == nil {
+		if plugin, err := loadPluginDir(root, source, workspaceID); err == nil {
 			out = append(out, plugin)
 		}
 		entries, err := os.ReadDir(root)
@@ -103,7 +106,7 @@ func scanPluginRoots(roots []string, source string) []Plugin {
 			if !entry.IsDir() {
 				continue
 			}
-			if plugin, err := loadPluginDir(filepath.Join(root, entry.Name()), source); err == nil {
+			if plugin, err := loadPluginDir(filepath.Join(root, entry.Name()), source, workspaceID); err == nil {
 				out = append(out, plugin)
 			}
 		}
@@ -111,14 +114,29 @@ func scanPluginRoots(roots []string, source string) []Plugin {
 	return out
 }
 
-func loadPluginDir(dir, source string) (Plugin, error) {
+func loadPluginDir(dir, source, workspaceID string) (Plugin, error) {
 	for _, rel := range []string{ManifestFilename, CodexManifestFilename, ClaudeManifestFilename} {
 		path := filepath.Join(dir, rel)
-		if plugin, err := LoadManifest(path, source); err == nil {
+		if plugin, err := LoadManifestWithOptions(path, LoadOptions{Source: source, WorkspaceID: workspaceID}); err == nil {
 			return plugin, nil
 		}
 	}
 	return Plugin{}, os.ErrNotExist
+}
+
+func workspacePolicyID(projectRoot string) string {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return ""
+	}
+	if absolute, err := filepath.Abs(root); err == nil {
+		root = absolute
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(root)))
+	return hex.EncodeToString(sum[:16])
 }
 
 func userPluginRoots(wuuHome string) []string {

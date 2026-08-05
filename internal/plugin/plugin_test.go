@@ -51,6 +51,32 @@ func TestDiscoverLoadsNestedCodexAndClaudeManifestLocations(t *testing.T) {
 	}
 }
 
+func TestDiscoverScopesProjectPluginPolicyByWorkspace(t *testing.T) {
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+	writePlugin(t, filepath.Join(firstRoot, ".wuu", "plugins", "same-id"), `{"id":"same-id"}`)
+	writePlugin(t, filepath.Join(secondRoot, ".wuu", "plugins", "same-id"), `{"id":"same-id"}`)
+
+	first, ok := findPlugin(Discover(firstRoot, ""), "same-id")
+	if !ok {
+		t.Fatal("first workspace plugin missing")
+	}
+	second, ok := findPlugin(Discover(secondRoot, ""), "same-id")
+	if !ok {
+		t.Fatal("second workspace plugin missing")
+	}
+	if first.WorkspaceID == "" || second.WorkspaceID == "" {
+		t.Fatalf("workspace policy ids are required: %q %q", first.WorkspaceID, second.WorkspaceID)
+	}
+	if first.WorkspaceID == second.WorkspaceID || first.SubjectID == second.SubjectID {
+		t.Fatalf("project plugin policy leaked across workspaces: %q %q", first.SubjectID, second.SubjectID)
+	}
+	firstAgain, ok := findPlugin(Discover(firstRoot, ""), "same-id")
+	if !ok || firstAgain.SubjectID != first.SubjectID {
+		t.Fatalf("workspace policy identity is not stable: %q %q", first.SubjectID, firstAgain.SubjectID)
+	}
+}
+
 func TestDiscoverUsesDefaultAssetDirsWhenManifestOmitsThem(t *testing.T) {
 	root := t.TempDir()
 	pluginDir := filepath.Join(root, ".wuu", "plugins", "default-assets")
