@@ -3585,7 +3585,7 @@ pre {
      grows upward from the original toolbar edge instead of pushing it down. */
   grid-column: 1 / -1;
   display: flex;
-  height: 106px;
+  height: 88px;
   align-items: flex-end;
   justify-content: center;
 }

@@ -377,7 +377,7 @@
    empty-home-inner's outer padding), which is the price of matching
    the dock composer exactly. */
 .hero-composer-wrap .composer-stack {
-  --composer-collapsed-min-height: 106px;
+  --composer-collapsed-min-height: 88px;
   width: var(--session-composer-width);
 }
 
@@ -1103,8 +1103,8 @@
 }
 
 .hero-composer-wrap .composer textarea {
-  height: 66px;
-  min-height: 66px;
+  height: 48px;
+  min-height: 48px;
   padding: 16px 52px 8px var(--composer-text-start);
 }
 
